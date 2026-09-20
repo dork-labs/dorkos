@@ -474,6 +474,244 @@ describe('trigger rules', () => {
     const fresh = entry({ id: '260917-120000', status: 'proposed' });
     expect(ids(triage(input({ ledger: [fresh] })))).toEqual([]);
   });
+
+  describe('rule 11: the main canary', () => {
+    /** A canary result of `workflow` on `date`, finishing at `hour`:30 UTC. */
+    const run = (date: string, workflow: string, hour: number, red = false) => ({
+      workflow,
+      sha: `abc123def456${hour}`.slice(0, 12),
+      event: 'schedule',
+      started: `${date}T${String(hour).padStart(2, '0')}:00:00Z`,
+      done: `${date}T${String(hour).padStart(2, '0')}:30:00Z`,
+      red,
+    });
+
+    /** Four green canary rounds of one workflow, six hours apart. */
+    const round = (date: string, workflow = 'test.yml') =>
+      [0, 6, 12, 18].map((h) => run(date, workflow, h));
+
+    /** A day both configured canary workflows reported four green rounds on. */
+    const greenDay = (date: string) =>
+      snap(date, { canary: [...round(date), ...round(date, 'nightly.yml')] });
+
+    /** A day whose test.yml canary ran `runs` and whose nightly.yml was green. */
+    const dayOf = (date: string, runs: ReturnType<typeof run>[]) =>
+      snap(date, { canary: [...runs, ...round(date, 'nightly.yml')] });
+
+    it('says nothing until the canary has produced a result', () => {
+      // The days between this landing and the first cron are not an outage.
+      expect(ids(triage(input({ snapshots: [snap(TODAY)] })))).toEqual([]);
+    });
+
+    it('fires red on the first red run, names the commit and the time, and clears on the next green', () => {
+      const red = run(TODAY, 'test.yml', 18, true);
+      const { first, second } = fireThenClear(
+        { snapshots: [dayOf(TODAY, [run(TODAY, 'test.yml', 12), red])] },
+        { snapshots: [greenDay(TODAY)] }
+      );
+      expect(ids(first)).toEqual([`main-canary:${red.sha}`]);
+      const t = first.open[0]!;
+      expect(t.severity).toBe('red');
+      expect(t.rule).toBe('main-canary');
+      expect(t.what).toBe(
+        `main canary red on ${red.sha.slice(0, 7)} since ${TODAY} 18:30Z: test.yml ×1.`
+      );
+      expect(ids(second)).toEqual([]);
+      expect(second.cleared.map((x) => x.id)).toEqual([`main-canary:${red.sha}`]);
+    });
+
+    it('is one episode however many workflows are in it, anchored on the oldest red', () => {
+      const first = run(TODAY, 'nightly.yml', 6, true);
+      const t = triage(
+        input({
+          snapshots: [
+            snap(TODAY, {
+              canary: [first, run(TODAY, 'test.yml', 12, true), run(TODAY, 'test.yml', 18, true)],
+            }),
+          ],
+        })
+      );
+      expect(ids(t)).toEqual([`main-canary:${first.sha}`]);
+      expect(t.open[0]!.what).toContain('nightly.yml ×1, test.yml ×2');
+    });
+
+    it('keeps its first-fired day while the break stays open, so it does not nag', () => {
+      const red = run(addDays(TODAY, -3), 'test.yml', 6, true);
+      const day = dayOf(addDays(TODAY, -3), [red]);
+      const shared = repo();
+      const yesterday = triage(
+        input({
+          ...shared,
+          snapshots: [day],
+          latest: latest({ date: addDays(TODAY, -3) }),
+        })
+      );
+      const today = triage(input({ ...shared, snapshots: [day], prior: yesterday }));
+      expect(openDays(today.open[0]!, TODAY)).toBe(3);
+    });
+
+    it('fires amber when a configured canary workflow has gone quiet, and only then', () => {
+      // Four rounds a day on both configured workflows: the newest is 18:30,
+      // 5.5 h before the reported day's end, inside the 18 h threshold.
+      expect(ids(triage(input({ snapshots: [greenDay(TODAY)] })))).toEqual([]);
+
+      // A configured workflow that produced nothing at all is silent, even
+      // while its sibling is healthy — the whole point of the arm is that a
+      // canary which stopped running reads exactly like a green one.
+      const onlyTest = triage(input({ snapshots: [snap(TODAY, { canary: round(TODAY) })] }));
+      expect(ids(onlyTest)).toEqual(['main-canary-silent']);
+      expect(onlyTest.open[0]!.severity).toBe('amber');
+      expect(onlyTest.open[0]!.what).toBe('main canary silent over 18h: nightly.yml.');
+
+      // A last result 19.5 h before the reported day's end is an outage too.
+      const stale = snap(TODAY, {
+        canary: [run(addDays(TODAY, -1), 'test.yml', 4), run(addDays(TODAY, -1), 'nightly.yml', 4)],
+      });
+      expect(triage(input({ snapshots: [stale] })).open[0]!.what).toBe(
+        'main canary silent over 18h: nightly.yml, test.yml.'
+      );
+    });
+
+    it('goes RED, not silent, once the canary has stopped and its last result aged out', () => {
+      // The failure this arm exists for: an earlier version returned [] when
+      // the window held no canary runs, so a canary that stopped for long
+      // enough went quiet in BOTH arms while the verdict side read
+      // `inconclusive` rather than `failed`. Total silence would have been the
+      // one thing the rule could not say.
+      const alive = triage(input({ snapshots: [greenDay(addDays(TODAY, -20))] }));
+      expect(alive.canary_since).not.toBeNull();
+      const gone = triage(
+        input({ snapshots: [snap(TODAY)], prior: alive, latest: latest({ date: TODAY }) })
+      );
+      expect(ids(gone)).toEqual(['main-canary-stopped']);
+      expect(gone.open[0]!.severity).toBe('red');
+      expect(gone.open[0]!.what).toContain('produced nothing in the whole window');
+      // And it keeps saying so: `canary_since` never moves once set.
+      expect(gone.canary_since).toBe(alive.canary_since);
+      const stillGone = triage(input({ snapshots: [snap(TODAY)], prior: gone }));
+      expect(ids(stillGone)).toEqual(['main-canary-stopped']);
+    });
+
+    it('still goes red after a data-branch rewrite erases canary_since', () => {
+      // `canary_since` lives in triggers.json, and `readData` returns null for
+      // a MISSING file exactly as it does for a fresh one. A rewrite of the
+      // data branch, or a prepare step starting from an empty tree, would hand
+      // triage `prior: null` — and without a floor on `main` the arm would go
+      // straight back to the silence it was added to break. The floor is the
+      // main-canary ledger entry's own id date.
+      const landed = entry({
+        id: '260910-120000',
+        status: 'active',
+        hypothesis: {
+          metric: 'tracked.time-to-detect',
+          baseline: 20160,
+          target: 720,
+          after_days: 14,
+        },
+      });
+      const wiped = triage(input({ snapshots: [snap(TODAY)], prior: null, ledger: [landed] }));
+      expect(ids(wiped)).toEqual(['main-canary-stopped']);
+      expect(wiped.open[0]!.severity).toBe('red');
+      expect(wiped.open[0]!.what).toContain('due since 2026-09-10');
+      // With no ledger entry there is nothing to stand on, and it stays quiet.
+      expect(ids(triage(input({ snapshots: [snap(TODAY)], prior: null })))).toEqual([]);
+    });
+
+    it.each([
+      ['active', true],
+      ['proposed', false],
+      ['reverted', false],
+      ['withdrawn', false],
+    ] as const)('only an %s ledger entry arms the stopped arm (%s)', (status, fires) => {
+      // `proposed` would arm the red before anything landed; `reverted` is the
+      // documented rollback, and a red left standing after it could only be
+      // cleared by hand. Both fired before this was narrowed to `active`.
+      const e = entry({
+        id: '260910-120000',
+        status,
+        hypothesis: {
+          metric: 'tracked.time-to-detect',
+          baseline: 20160,
+          target: 720,
+          after_days: 14,
+        },
+      });
+      const t = triage(input({ snapshots: [snap(TODAY)], prior: null, ledger: [e] }));
+      expect(ids(t)).toEqual(fires ? ['main-canary-stopped'] : []);
+    });
+
+    it('gives the change one silence threshold of grace before the first cron', () => {
+      // The entry landed on the day being reported, so no cron has had time to
+      // fire. That is not an outage.
+      const today = entry({
+        id: '260919-120000',
+        status: 'active',
+        hypothesis: {
+          metric: 'tracked.time-to-detect',
+          baseline: 20160,
+          target: 720,
+          after_days: 14,
+        },
+      });
+      expect(ids(triage(input({ snapshots: [snap(TODAY)], ledger: [today] })))).toEqual([]);
+    });
+
+    it('stays silent before the canary has ever run, and starts watching once it has', () => {
+      const never = triage(input({ snapshots: [snap(TODAY)] }));
+      expect(ids(never)).toEqual([]);
+      expect(never.canary_since).toBeNull();
+    });
+
+    it('keeps one id while a break spreads and partly heals, so first_fired survives', () => {
+      // The red trigger is anchored on the oldest red streak, and that anchor
+      // MOVES when one workflow heals first. Re-keying would reset the
+      // first-fired day the trigger exists to carry.
+      const old = run(TODAY, 'nightly.yml', 6, true);
+      const spread = triage(
+        input({ snapshots: [snap(TODAY, { canary: [old, run(TODAY, 'test.yml', 12, true)] })] })
+      );
+      expect(ids(spread)).toEqual([`main-canary:${old.sha}`]);
+      // nightly.yml heals; test.yml is still red, so the anchor would move.
+      const partial = triage(
+        input({
+          snapshots: [
+            snap(TODAY, {
+              canary: [old, run(TODAY, 'test.yml', 12, true), run(TODAY, 'nightly.yml', 18)],
+            }),
+          ],
+          prior: spread,
+        })
+      );
+      expect(ids(partial)).toEqual([`main-canary:${old.sha}`]);
+      expect(partial.open[0]!.first_fired).toBe(spread.open[0]!.first_fired);
+    });
+
+    it('never counts a canary run as a failure of the gate it shares', () => {
+      // The canary reuses the queue's jobs, so its runs carry the same gate
+      // ids. A gate failing every canary round and never in the queue must not
+      // read as a failing gate: that is `gate-failure-spike`'s population, and
+      // it describes what merging costs.
+      const canaryGate = (date: string): Snapshot =>
+        snap(date, {
+          gates: {
+            [gateKey('wf.test.test-shard', 'schedule')]: {
+              durations: [[3600, 600]],
+              conclusions: { failure: 40 },
+              retried: 0,
+              runs: 40,
+            },
+            [gateKey('wf.test.test-shard', 'merge_group')]: {
+              durations: [[3600, 600]],
+              conclusions: { success: 40 },
+              retried: 0,
+              runs: 40,
+            },
+          },
+        });
+      const days = Array.from({ length: 14 }, (_, i) => canaryGate(addDays(TODAY, -13 + i)));
+      expect(ids(triage(input({ snapshots: days })))).toEqual([]);
+    });
+  });
 });
 
 describe('trigger state', () => {

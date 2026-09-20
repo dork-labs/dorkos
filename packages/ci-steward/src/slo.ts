@@ -6,7 +6,7 @@
  * snapshot holds). A reading is `insufficient` below the SLO's `min_n`, so a
  * quiet weekend never reads as a breach or a win.
  */
-import { gateDays, type LocalDay, type SloReading, type Snapshot } from './data.ts';
+import { gateDays, mergePathGates, type LocalDay, type SloReading, type Snapshot } from './data.ts';
 import type { Slos } from './schemas.ts';
 import { addDays, quantile, round } from './time.ts';
 
@@ -98,10 +98,18 @@ function headroom(inp: SloInputs, minN: number): Raw {
   let worst: { gate: string; ratio: number } | null = null;
   let n = 0;
   const ratios = new Map<string, number[]>();
+  const onPath = mergePathGates(inp.snapshots);
   for (const s of inp.snapshots) {
     for (const [gate, timeout] of Object.entries(s.timeouts)) {
       const list = ratios.get(gate) ?? [];
-      for (const g of gateDays(s.gates, gate))
+      // Unqualified, so a gate that runs on the merge path is read over that
+      // population only and not over the main canary's runs of the same job.
+      // A gate that runs on nothing but a schedule — merge-tail's arm, evals,
+      // CodeQL, the collector itself — keeps every sample, because otherwise
+      // this tripwire would stop watching the four jobs whose timeouts nothing
+      // else looks at. Membership is decided over the WHOLE window, never per
+      // day; `mergePathGates` says why.
+      for (const g of gateDays(s.gates, gate, undefined, onPath))
         for (const [, sec] of g.durations) list.push(sec / 60 / timeout);
       ratios.set(gate, list);
     }

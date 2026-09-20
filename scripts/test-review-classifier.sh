@@ -115,6 +115,52 @@ for shape in 'sk-ant-' 'ghs_'; do
 done
 
 # ─────────────────────────────────────────────────────────────────────────────
+# `limit` — a spent subscription is not a broken reviewer
+#
+# The workflow reports one of these as the run's outcome class, and
+# `review-completes` is supposed to measure our infrastructure rather than our
+# quota (ci/slos.yaml). Three properties, in order of how badly each fails:
+#
+#   1. MODEL TEXT IS NEVER READ. `.result` is consulted only on a run that took
+#      at most one turn and spent nothing, which is the arithmetic way of saying
+#      no model turn happened. `limit-model-prose` is a successful review whose
+#      summary quotes all three phrases, because the PR it read contained them;
+#      `died-mid-run` is a REAL log whose limit string sits in `.result` after
+#      24 turns of work. Both must answer empty. This is the injection case, and
+#      it now has teeth: `SKIP quota` stops the retry ladder, so an answer a PR
+#      could forge would be a PR suppressing its own re-review.
+#      `died-mid-run` is the price, and it is a deliberate one — a genuine quota
+#      stall at turn 24 now falls back to `died` and costs one wasted retry.
+#      Under-detecting is cheap; over-detecting is not.
+#   2. The window is named when the error names it, and `unknown` when it does
+#      not. `never-started` is a REAL log carrying
+#      "Claude AI usage limit reached|<epoch>" at one turn for $0 — proof both
+#      that today's `no` class already contains quota stalls with no way to see
+#      them, and that clause 1 does not cost us that case.
+#   3. Anything unrecognised prints nothing, so the run keeps the class it
+#      already had. An API "rate limit" is deliberately in that group: it is
+#      throughput, not quota, and waiting it out is the wrong remedy.
+limit() { bash "$classifier" limit "$1"; }
+
+while read -r fixture expected; do
+  [ -n "${fixture:-}" ] || continue
+  check "limit($fixture)" "${expected:-}" "$(limit "$fixtures/$fixture")"
+done <<'LIMITS'
+limit-model-prose.json
+clean-success.json
+died-mid-run.json
+limit-session.json          session
+limit-weekly.json           weekly
+never-started.json          unknown
+error-during-execution.json
+max-turns.json
+no-result-message.json
+empty-array.json
+malformed.json
+does-not-exist.json
+LIMITS
+
+# ─────────────────────────────────────────────────────────────────────────────
 # `stands` — both facts required before any review outcome may pass
 #
 # The stakes are asymmetric and this table is where that asymmetry is written
@@ -602,6 +648,38 @@ under_runner_temp() {
 check "workflow: the helper is materialized under runner.temp, not the checkout" yes \
   "$(under_runner_temp "$helper_dir")"
 
+# WHO MAY TRIGGER THE REVIEWER AT ALL, which is a power exactly like the tool
+# lists above and was not fenced until 2026-09-20. `allowed_bots` decides which
+# non-human actors the action will start for
+# (src/github/validation/actor.ts). Its own documentation warns that `*` on a
+# public repository lets external Apps invoke the action with prompts they
+# control — so a ONE-WORD edit here, `'*'` in place of the two names, is a
+# strictly larger change to the reviewer's exposure than adding a sixth tool to
+# the allow-list, and every gate in this repo would have passed it. Pinned to
+# the exact string, like the claude_args block, so widening it is a deliberate
+# act that fails this suite first. The two names are this repo's own automation:
+# the Dependabot author, and the merge-tail app, which re-requests a lost review
+# by label and is therefore the ACTOR of the run it causes.
+check "workflow: allowed_bots is exactly these two bots" \
+  "dependabot[bot],dorkos-merge-tail[bot]" \
+  "$(sed -n "s/^ *allowed_bots: *'\(.*\)'$/\1/p" "$workflow")"
+
+# THE TURN BUDGET AND THE JOB TIMEOUT ARE ONE DECISION, and nothing but this
+# check ties them together. `--max-turns` bounds a runaway loop; `timeout-minutes`
+# bounds wall clock; raising the first without the second silently converts a
+# turn-budget failure into a wall-clock KILL, which is strictly worse because the
+# action never writes a result message and the failure comes out as `infra` with
+# no cause named. Measured rate: successful runs took 3.7 min median and 6.8 min
+# p90 for roughly 32 and 49 turns, i.e. 7-8 s a turn; 10 s is the conservative
+# figure, and 5 minutes covers checkout, the two `git show` materializations and
+# the action's own startup.
+max_turns_ceiling=$(sed -n "s/^ *REVIEW_MAX_TURNS_MAX: *'\([0-9]*\)'$/\1/p" "$workflow")
+job_timeout=$(sed -n 's/^ *timeout-minutes: *\([0-9]*\)$/\1/p' "$workflow")
+check "workflow: the turn ceiling was found" yes \
+  "$([ -n "$max_turns_ceiling" ] && [ -n "$job_timeout" ] && echo yes || echo no)"
+check "workflow: the job timeout covers the turn ceiling at 10s a turn" yes \
+  "$([ $(( max_turns_ceiling * 10 / 60 + 5 )) -le "${job_timeout:-0}" ] && echo yes || echo no)"
+
 # Defence in depth for the `diff.external` route, asserted so it is not dropped by
 # accident. NOT the control — the control is that the set above grants no `git`.
 for pin in GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM; do
@@ -682,6 +760,38 @@ check "workflow: the verdict probe covers every non-skipped review outcome" pres
 # shellcheck disable=SC2016
 check "workflow: the verdict is the trusted classifier's call" present \
   "$(presence 'stands=$(bash "$classifier" stands "$exec_file" "$posted")' "$workflow_text")"
+
+# ── a PR that edits the reviewer says so, and still stays red ────────────────
+#
+# The action refuses to start when the workflow it runs differs from the default
+# branch's copy, exits SUCCESSFULLY in under two seconds and writes no execution
+# log — so the classifier correctly reports `unknown` and the old wording told
+# the author the review "left no readable record of why" and to add `re-review`.
+# Both halves were wrong: the reason is knowable, and `re-review` repeats it
+# forever. Measured on PR #1945, run 35534353235.
+#
+# Three properties, and the first is the one that must never bend.
+#   1. IT IS STILL RED. A PR that edits the reviewer has not been reviewed, so
+#      the naming must not touch `stands`. The check below asserts the override
+#      sets only `why`, which is wording, and the gate's own verbatim pin above
+#      already guarantees `stands` is the classifier's call alone.
+#   2. The remedy it names is the trusted dispatch, never the label.
+#   3. It is asked on `pull_request` only. A dispatch runs the DEFAULT BRANCH's
+#      workflow, so validation passes and the review really happens; the same
+#      comparison would answer "yes" while everything worked.
+check "workflow: the verdict step reads the self-edit answer" present \
+  "$(presence 'SELF_EDIT: ${{ steps.self-edit.outputs.edits }}' "$workflow_text")"
+check "workflow: the self-edit probe is pull_request-only" present \
+  "$(presence "$(printf '%s\n' '        id: self-edit' \
+    "        if: github.event_name == 'pull_request'")" "$workflow_text")"
+# shellcheck disable=SC2016
+check "workflow: naming it changes the wording, not the verdict" present \
+  "$(presence "$(printf '%s\n' '          if [ "$SELF_EDIT" = yes ] && [ "$why" = unknown ]; then' \
+    '            why=workflow_edit')" "$workflow_text")"
+check "workflow: it points at the trusted dispatch" present \
+  "$(presence 'gh workflow run claude-code-review.yml -f pr=' "$workflow_text")"
+check "workflow: the outcome class separates it from infra" present \
+  "$(presence 'workflow_edit) class=workflow_edit ;;' "$workflow_text")"
 
 # A silent clean result is an infrastructure failure, not a finding about the
 # pull request. Keep that failure visible and actionable instead of relying on

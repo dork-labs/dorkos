@@ -1,0 +1,156 @@
+{
+  "spec": "specs/community-live-deployment/02-specification.md",
+  "slug": "community-live-deployment",
+  "generatedAt": "2026-09-20T19:15:00Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Reconcile and Deploy",
+      "subject": "[community-live-deployment] [P1] Reconcile the resources created before the stage gate",
+      "description": "Inventory the already-created standalone deployment resources without printing secrets: the separate Fly app, private Tigris bucket, Neon project/database/role in the operator-selected organization, staged secret names, allocated public IPs, DNS record, and issued canonical-domain certificate. Confirm ownership is independent of DorkOS Cloud, Tigris is private, the selected regions are intentional, no application Machine exists, and no Community account exists. Record the out-of-order provisioning event in private operational evidence, including the cleanup boundary for every resource. Stop before deployment if an owner, region, visibility, or isolation check fails.\n\nAcceptance criteria:\n- The live inventory is recorded with provider identifiers and secret values redacted from public artifacts.\n- Every resource is confirmed independent of DorkOS Cloud.\n- DNS points to the intended Fly app and the certificate is issued for the canonical domain.\n- No Machine or Community account exists before reconciliation completes.\n- Any mismatch stops later tasks rather than being silently accepted.",
+      "activeForm": "Reconciling pre-created deployment resources",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Reconcile and Deploy",
+      "subject": "[community-live-deployment] [P1] Preflight the Neon connection and schema-owner role",
+      "description": "Preflight the direct TLS PostgreSQL URL held in the provider secret store without running a separate migration command. Confirm it targets the intended separate database and schema-owner role, preserves TLS verification parameters, and exposes the expected PostgreSQL version and region metadata. The same role intentionally runs startup migrations and serves runtime queries for this first deployment; do not claim a separate least-privilege runtime role exists. Capture only redacted facts. Do not expose the URL, password, provider project identifier, or organization identifier in the repository, tracker, logs, screenshots, or command history. Task 1.3's real application startup is the migration and connectivity proof.\n\nAcceptance criteria:\n- The URL targets the intended separate database and schema-owner role with TLS verification enabled.\n- PostgreSQL version and region metadata match the selected deployment shape.\n- No separate migration runner is invoked.\n- No DorkOS Cloud database or credential is used.\n- Failure leaves onboarding and deployment blocked with redacted evidence.",
+      "activeForm": "Preflighting the Neon connection and schema-owner role",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Reconcile and Deploy",
+      "subject": "[community-live-deployment] [P1] Deploy one Community Machine with private Tigris",
+      "description": "Validate the private runtime Fly configuration with `fly config validate --strict`, including that relative paths such as the Dockerfile resolve from the private config file's directory, then deploy the pinned Community revision with `--ha=false`. Keep exactly one always-on Machine, use the staged Community and private Tigris secrets, and confirm the bucket is not public. Verify startup migrations finish before the service becomes ready, Fly checks pass, and the Machine uses S3-compatible storage rather than its temporary filesystem. Preserve redacted deployment output and the exact source revision. DOR-2190 owns any correction needed in the public guide or example config.\n\nAcceptance criteria:\n- Strict Fly configuration validation passes from the actual private config path.\n- Exactly one application Machine runs the pinned revision.\n- Readiness follows successful migrations.\n- Private Tigris is configured and no bucket URL is exposed directly.\n- Secret values do not appear in evidence.",
+      "activeForm": "Deploying one Community Machine with private Tigris",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Canonicalize and Verify",
+      "subject": "[community-live-deployment] [P2] Smoke-test the Fly hostname without onboarding",
+      "description": "Use the Fly-provided HTTPS hostname only for infrastructure smoke testing before any owner or member account exists. Verify `/health`, startup and migration evidence in redacted logs, expected security and cache response headers, and the public browser assets. Confirm the response comes from the single deployed Machine and that no secret or bootstrap value appears in URLs or captured evidence. Do not attempt authenticated file, streaming, or reconnect checks; do not create the owner, invite a person, or publish the temporary hostname.\n\nAcceptance criteria:\n- Health, startup/migration evidence, expected headers, and public assets pass on the Fly hostname.\n- No authenticated behavior is claimed from the temporary-host smoke test.\n- No account has been created and no invitation has been issued.\n- Evidence is redacted and tied to the pinned revision.",
+      "activeForm": "Smoke-testing the Fly hostname",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.3"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Canonicalize and Verify",
+      "subject": "[community-live-deployment] [P2] Make spaces.dorkos.ai the canonical origin",
+      "description": "Re-verify the existing DNS target and issued Fly certificate for `spaces.dorkos.ai`. Set `COMMUNITY_PUBLIC_URL` to exactly `https://spaces.dorkos.ai`, update any configured sign-in callbacks to the same origin, redeploy the pinned revision, and wait for health readiness. Verify HTTPS, redirects, and origin checks on the canonical domain. Keep onboarding blocked until these infrastructure checks pass. Authenticated proxy streaming and reconnect require accounts and are verified in task 2.3, as specified in the verification strategy.\n\nAcceptance criteria:\n- DNS still points to the intended Fly app and its certificate remains ready for `spaces.dorkos.ai`.\n- The running app uses the exact canonical HTTPS origin.\n- HTTPS, redirects, and origin/callback behavior pass on the canonical domain; authenticated streaming and reconnect are required in task 2.3.\n- No account or invitation predates canonical readiness.",
+      "activeForm": "Making spaces.dorkos.ai canonical",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Canonicalize and Verify",
+      "subject": "[community-live-deployment] [P2] Verify people, files, revocation, and one local agent",
+      "description": "On `spaces.dorkos.ai`, use the bootstrap flow to create the first owner, rotate the bootstrap secret, create a channel, invite a second person, and join from a separate browser profile. Exchange posts and a thread reply, upload and download a file with a byte comparison, disconnect and reconnect a browser, connect one local DorkOS agent, and verify one mention produces one reply before stopping participation. Remove the second member and verify the old browser and credentials cannot read the channel or download the file.\n\nAcceptance criteria:\n- Two people and one local agent complete the intended interaction path on the canonical domain.\n- File bytes match and live reconnect produces ordered history without duplicate posts.\n- Removed membership loses channel and file access.\n- Standalone local accounts and agent pairing work without DorkOS Cloud.",
+      "activeForm": "Verifying people, files, revocation, and one local agent",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.2"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Durability and Recovery",
+      "subject": "[community-live-deployment] [P3] Prove restart and pinned-revision upgrade persistence",
+      "description": "Restart the single Community Machine and verify sign-in, channel history, live updates, and the uploaded file still work. Redeploy the same pinned revision using the documented rolling strategy without running old and new application processes side by side, then repeat the checks. Record reconnect behavior and any interruption without claiming zero downtime.\n\nAcceptance criteria:\n- Database history and private file bytes survive Machine restart.\n- The pinned-revision redeploy preserves accounts, membership, history, and files.\n- Exactly one application process remains active.\n- Observed interruption and reconnect behavior are recorded honestly.",
+      "activeForm": "Proving restart and upgrade persistence",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "2.3"
+      ],
+      "parallelWith": [
+        "3.2"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "Durability and Recovery",
+      "subject": "[community-live-deployment] [P3] Rehearse coordinated Neon and Tigris recovery",
+      "description": "Pause writes, create a matching Neon database backup and private Tigris file backup, and record them as one recovery point. Restore both into an isolated target that cannot overwrite the live deployment. Verify restored owner access, channel history, membership, attachment metadata, and attachment bytes. A database-only restore or a file-only restore fails acceptance. Keep provider identifiers and credentials in private operational evidence.\n\nAcceptance criteria:\n- One coordinated database-and-file recovery point is recorded.\n- Both halves restore into an isolated target without mutating the live service.\n- Restored history and attachment bytes match the source.\n- Recovery steps are repeatable and redacted.",
+      "activeForm": "Rehearsing coordinated Neon and Tigris recovery",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.3"
+      ],
+      "parallelWith": [
+        "3.1"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.3",
+      "phase": 3,
+      "phaseName": "Durability and Recovery",
+      "subject": "[community-live-deployment] [P3] Assemble redacted acceptance evidence and resource disposition",
+      "description": "Assemble the live acceptance bundle with the source revision, public app/domain, regions at a non-sensitive level, configuration names, check timestamps, product results, restart/redeploy results, recovery results, and final disposition of every created resource. Redact secrets and provider-internal identifiers. Record any discrepancy as a follow-up rather than weakening the checklist. DOR-2167 may advance to VERIFY only when every task is evidenced; it may advance to DONE only after review confirms the evidence.\n\nAcceptance criteria:\n- Every task has concrete evidence or an explicit unresolved failure.\n- No secret, credential, private provider identifier, or commercial term appears in public artifacts.\n- Remaining resources and cleanup obligations are explicit.\n- The tracker is not advanced prematurely.",
+      "activeForm": "Assembling redacted acceptance evidence",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "3.1",
+        "3.2"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    }
+  ]
+}

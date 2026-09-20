@@ -304,7 +304,7 @@ describe('collect on a recorded day', () => {
     expect(r.failures.some((f) => f.startsWith('Data-branch safeguard ruleset 3'))).toBe(true);
   });
 
-  it('counts flaky tests from sampled queue-build reports', () => {
+  it('counts flaky tests from sampled queue-build reports, and NAMES them', () => {
     const rec = dayRecording();
     rec.artifacts = {
       '302:vitest-shard-report-*': {
@@ -314,7 +314,11 @@ describe('collect on a recorded day', () => {
           numTodoTests: 1,
         }),
         'vitest-shard-report-1/packages/a/vitest-flake-report.json': JSON.stringify({
-          flaky: [{ test: 'x' }, { test: 'y' }],
+          cwd: '/home/runner/work/dorkos/dorkos/packages/a',
+          flaky: [
+            { file: 'src/__tests__/x.test.ts', test: 'x', retries: 1 },
+            { file: 'src/__tests__/y.test.ts', test: 'y', retries: 1 },
+          ],
         }),
       },
     };
@@ -324,5 +328,22 @@ describe('collect on a recorded day', () => {
       test_flaky: 2,
       flaky_builds_sampled: 1,
     });
+    // The counts answer "how much"; only these answer "where", which is the
+    // whole input to the quarantine classifier.
+    expect(snap.flaky_tests).toEqual([
+      {
+        runner: 'vitest',
+        file: 'packages/a/src/__tests__/x.test.ts',
+        title: 'x',
+        sha: 'ccc',
+      },
+      {
+        runner: 'vitest',
+        file: 'packages/a/src/__tests__/y.test.ts',
+        title: 'y',
+        sha: 'ccc',
+      },
+    ]);
+    expect(snap.flaky_builds).toEqual([{ sha: 'ccc', runner: 'vitest' }]);
   });
 });

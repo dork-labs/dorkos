@@ -7,8 +7,11 @@
  * the verdicts issued that week, real catches per gate, the tracked metrics
  * and the collector's own health.
  */
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import type { Floors, SloReading, Snapshot, Verdict } from './data.ts';
 import { pickConstraint } from './floors.ts';
+import { hoursToExpiry, quarantineTriage, readQuarantine, testId } from './quarantine.ts';
 import type { StewardContext } from './steward.ts';
 import { round } from './time.ts';
 import type { LedgerEntry } from './verdicts.ts';
@@ -170,6 +173,34 @@ function health(inp: ReportInput): string[] {
 }
 
 /**
+ * The quarantine lane, and the debt it represents.
+ *
+ * Reported every week whether or not anything is in it, because an empty lane
+ * is the fact worth confirming: a lane that quietly fills up is how a repo
+ * ends up storing broken tests instead of fixing them.
+ */
+function quarantine(inp: ReportInput): string[] {
+  const cfg = inp.ctx.files.config.quarantine;
+  const file = path.join(inp.ctx.dataDir, cfg.file);
+  const read = readQuarantine(
+    existsSync(file) ? readFileSync(file, 'utf8') : null,
+    cfg,
+    inp.ctx.now
+  );
+  const out = [
+    `- ${read.entries.length} of ${cfg.max_entries} slot(s) in use${read.honoured ? '' : ' — THE LIST IS REFUSED, so nothing is quarantined'}.`,
+  ];
+  for (const e of read.entries) {
+    out.push(
+      `- \`${testId(e)}\` — ${e.evidence.occurrences} of ${e.evidence.builds_sampled} build(s) flaked (${e.evidence.first_day}..${e.evidence.last_day}); expires in ${Math.round(hoursToExpiry(e, inp.ctx.now))} h; ledger ${e.ledger}. ${e.reason}`
+    );
+  }
+  for (const t of quarantineTriage(read, cfg, inp.ctx.now)) out.push(`- **${t}**`);
+  for (const n of read.notes) out.push(`- ${n}`);
+  return out;
+}
+
+/**
  * Render the report.
  *
  * @param inp - The inputs.
@@ -208,6 +239,10 @@ export function renderReport(inp: ReportInput): string {
     '## Tracked metrics',
     '',
     ...tracked(inp),
+    '',
+    '## Quarantine lane',
+    '',
+    ...quarantine(inp),
     '',
     '## Collector health',
     '',

@@ -41,7 +41,7 @@ gates:
   # --- claude-code-review.yml ---
   - id: wf.claude-code-review.review
     source: .github/workflows/claude-code-review.yml
-    purpose: Automated Claude review of a PR against REVIEW.md; a red result stops merge-tail from arming until the next push.
+    purpose: Automated Claude review of a PR against REVIEW.md; a red result stops merge-tail from arming, and merge-tail re-requests the review up to three times per head SHA.
 
   # --- claude.yml ---
   - id: wf.claude.claude
@@ -135,7 +135,7 @@ gates:
   # --- merge-tail.yml ---
   - id: wf.merge-tail.arm
     source: .github/workflows/merge-tail.yml
-    purpose: Every 10 minutes, arms auto-merge on PRs that are finished, green and unblocked.
+    purpose: Every 10 minutes, arms auto-merge on PRs that are finished, green and unblocked, and re-requests a lost automated review on the ones whose review check is red.
 
   # --- operating-skills-version-check.yml ---
   - id: wf.operating-skills-version-check.version-outranks-base

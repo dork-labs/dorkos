@@ -2,6 +2,23 @@
   "version": 1,
   "specs": [
     {
+      "id": "260920-200102",
+      "slug": "community-self-host-launcher",
+      "title": "Guided Community self-host launch",
+      "created": "2026-09-20",
+      "status": "specified",
+      "project": "Community Self-Hosting"
+    },
+    {
+      "id": "260920-192428",
+      "slug": "community-tenancy-contract",
+      "title": "Community tenant identity, authorization, and migration contracts",
+      "created": "2026-09-20",
+      "status": "specified",
+      "linearIssue": "DOR-2171",
+      "project": "Multi-Community Hosting"
+    },
+    {
       "id": "260915-202248",
       "slug": "warm-process-lifecycle",
       "title": "A warm agent process keeps its background work",
@@ -196,7 +213,7 @@
       "slug": "tool-only-room-replies",
       "title": "Room replies go through tool calls only — silence, reactions and DMs become real choices",
       "created": "2026-08-28",
-      "status": "specified",
+      "status": "implemented",
       "linearIssue": "DOR-2099"
     },
     {
@@ -3019,6 +3036,15 @@
       "status": "specified",
       "project": "Agent secrets and vault",
       "linearIssue": "DOR-2155"
+    },
+    {
+      "id": "260920-191500",
+      "slug": "community-live-deployment",
+      "title": "Live Community deployment on Fly",
+      "created": "2026-09-20",
+      "status": "specified",
+      "project": "Community Self-Hosting",
+      "linearIssue": "DOR-2167"
     },
     {
       "id": "260920-201100",

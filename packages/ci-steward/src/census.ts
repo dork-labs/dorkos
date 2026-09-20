@@ -12,7 +12,7 @@ import { trackAllowlist } from './allowlist.ts';
 import { claudeHookGates, lefthookGates, workflowGates, type DiscoveredGate } from './discover.ts';
 import { blockState, renderRequiredChecksBlock, replaceBlock } from './doc-blocks.ts';
 import type { Finding } from './finding.ts';
-import { loadHandFiles, type HandFiles } from './load.ts';
+import { CONFIG_PATH, loadHandFiles, type HandFiles } from './load.ts';
 import { checkRequiredContexts, checkTimeouts } from './required.ts';
 import { loadWorkflows, type WorkflowModel } from './workflows.ts';
 
@@ -172,6 +172,117 @@ function checkCrossFile(root: string, files: HandFiles): Finding[] {
   return out;
 }
 
+/**
+ * The main canary's list and the workflows it names must agree (DOR-2150).
+ *
+ * `ci/config.yaml`'s `canary.workflows` is what the collector reads a run's
+ * event against; the `schedule:` and `workflow_dispatch:` triggers are what
+ * make the runs happen. Nothing joins the two at runtime, so either half can be
+ * removed without the other noticing — and a canary that stopped running reads
+ * exactly like a healthy `main` in every number on the report. This is the
+ * registry that makes the pair conform, rather than opting in by name twice.
+ *
+ * It binds in BOTH directions:
+ *
+ *   * a name in `canary.workflows` must be a real workflow that carries both
+ *     triggers, with at least one cron and at least one job that can actually
+ *     run on a schedule — a `schedule: []`, or a workflow whose every job skips
+ *     on that event, would report green while running nothing;
+ *   * every workflow that owns a required context must be in `canary.workflows`
+ *     or in `canary.exempt` with a reason. Without that half, deleting a name
+ *     from the list leaves the census green while collection and the silence
+ *     arm both stop, which is the failure mode with no symptom.
+ *
+ * @param files - The hand files.
+ * @param workflows - The parsed workflows.
+ */
+function checkCanary(files: HandFiles, workflows: readonly WorkflowModel[]): Finding[] {
+  const out: Finding[] = [];
+  const { canary } = files.config;
+  const byFile = new Map(workflows.map((w) => [w.file, w]));
+  for (const file of canary.workflows) {
+    const wf = byFile.get(file);
+    if (!wf) {
+      out.push({
+        code: 'canary/missing-workflow',
+        file: CONFIG_PATH,
+        where: file,
+        message: `canary.workflows names ${file}, which is not in ${files.config.workflows_dir}.`,
+        fix: `Remove it from canary.workflows in ${CONFIG_PATH}, or restore the workflow.`,
+      });
+      continue;
+    }
+    const missing = ['schedule', 'workflow_dispatch'].filter((t) => !wf.triggers.has(t));
+    if (missing.length) {
+      out.push({
+        code: 'canary/missing-trigger',
+        file: wf.path,
+        message: `${file} is a main-canary workflow but has no ${missing.join(' and no ')} trigger, so it never runs against main.`,
+        fix: `Add the missing trigger(s) to ${wf.path}, or drop ${file} from canary.workflows in ${CONFIG_PATH}.`,
+      });
+      continue;
+    }
+    if ((wf.triggers.get('schedule')?.crons?.length ?? 0) === 0)
+      out.push({
+        code: 'canary/no-cron',
+        file: wf.path,
+        message: `${file} declares schedule: with no cron, so the canary never fires for it. A trigger with an empty list reports green and runs nothing.`,
+        fix: `Give the schedule at least one cron in ${wf.path}, or drop ${file} from canary.workflows in ${CONFIG_PATH}.`,
+      });
+    if (!wf.jobs.some((j) => j.if === undefined || canRunOnSchedule(j.if)))
+      out.push({
+        code: 'canary/no-job-runs',
+        file: wf.path,
+        message: `${file} is a main-canary workflow but every job's if: skips on a scheduled run, so the canary reports green having run nothing.`,
+        fix: `Let at least one job run on schedule in ${wf.path}, or drop ${file} from canary.workflows in ${CONFIG_PATH}.`,
+      });
+  }
+  const listed = new Set(canary.workflows);
+  for (const [file, reason] of Object.entries(canary.exempt))
+    if (listed.has(file))
+      out.push({
+        code: 'canary/exempt-and-listed',
+        file: CONFIG_PATH,
+        where: file,
+        message: `${file} is in canary.workflows AND canary.exempt ("${reason.slice(0, 40)}…"). One of the two is a lie.`,
+        fix: `Delete the entry from whichever list is wrong in ${CONFIG_PATH}.`,
+      });
+  for (const context of files.requiredChecks?.contexts ?? []) {
+    const owners = workflows.filter((wf) => wf.jobs.some((j) => j.checkName === context));
+    for (const wf of owners) {
+      if (listed.has(wf.file) || wf.file in canary.exempt) continue;
+      out.push({
+        code: 'canary/required-unwatched',
+        file: CONFIG_PATH,
+        where: wf.file,
+        message: `${wf.file} owns the required context "${context}" but is in neither canary.workflows nor canary.exempt, so nothing runs it against main and nothing says why.`,
+        fix: `Add ${wf.file} to canary.workflows in ${CONFIG_PATH} (and give it schedule: and workflow_dispatch: triggers), or add it to canary.exempt with the reason it cannot run on main.`,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Whether a job-level `if:` can be true on a scheduled run.
+ *
+ * The census's expression evaluator only knows the two gating events, so a
+ * condition naming `merge_group` or `pull_request` positively is read here as
+ * false on a schedule. Anything it cannot decide counts as runnable: this
+ * finding exists to catch a workflow that provably runs nothing, never to
+ * guess.
+ *
+ * @param cond - The job's `if:`.
+ */
+function canRunOnSchedule(cond: string | boolean): boolean {
+  if (typeof cond === 'boolean') return cond;
+  const text = cond.replace(/\s+/g, ' ');
+  // Decidably event-gated to the merge path, with no `||` offering another way
+  // in: `github.event_name == 'merge_group'` and friends.
+  const positive = /github\.event_name\s*==\s*'(pull_request|merge_group)'/.test(text);
+  return !(positive && !text.includes('||'));
+}
+
 function checkDocBlocks(root: string, files: HandFiles, fix: boolean, fixed: string[]): Finding[] {
   const out: Finding[] = [];
   const { config, requiredChecks } = files;
@@ -250,6 +361,7 @@ export function runCensus(opts: CensusOptions): CensusResult {
   }
   if (files.allowlist) findings.push(...allow.leftovers());
   findings.push(...checkCrossFile(opts.root, files));
+  findings.push(...checkCanary(files, workflows));
   findings.push(...checkDocBlocks(opts.root, files, opts.fix === true, fixed));
   return { findings, fixed };
 }
