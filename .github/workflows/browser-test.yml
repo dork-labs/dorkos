@@ -758,14 +758,14 @@ jobs:
       # exactly backwards. Each copy carries its own `i/N`, so a missing,
       # duplicated or stale one is refused by name.
       - name: Collect every shard's quarantine lane
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/download-artifact@v8
         with:
           pattern: quarantine-lane-shard-*
           path: lane
 
       - name: Agree on the lane this build ran under
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         run: |
           shopt -s nullglob
           lanes=(lane/*/quarantine.txt)

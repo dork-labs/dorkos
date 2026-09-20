@@ -184,10 +184,19 @@ name: test
 # The canary is THIS workflow, unchanged, run against `main` HEAD on a
 # schedule. Not a second workflow that re-states the suite: there is exactly
 # one definition of `turbo test`, and a canary that could drift from what the
-# queue runs would be worse than none. The four steps below that used to read
-# `github.event_name == 'merge_group'` now read `!= 'pull_request'`, which is
+# queue runs would be worse than none. Every step below that used to read
+# `github.event_name == 'merge_group'` now reads `!= 'pull_request'`, which is
 # the same two-way split it always was — full sweep everywhere but a PR — with
 # the canary on the full side where it belongs.
+#
+# THAT INCLUDES THE QUARANTINE LANE, all six of its steps here: the shard reads
+# the lane, runs the sweep and gates it, and the fan-in collects the copies,
+# agrees on the lane and proves the union. The canary runs what the queue runs
+# or it is not measuring the same thing — a round that failed on a flake the
+# queue excuses would report a break that is not there, and one that excused
+# more than the queue does would report green on a break that is. With no
+# `quarantine.json` on the data branch, `quarantine-list` writes an empty list
+# and exits 0, and an empty lane behaves exactly as no lane at all.
 #
 # IT CAN NEVER TOUCH A PR OR THE QUEUE. A required context is required on the
 # `pull_request` and `merge_group` events; a `schedule` run reports on neither,

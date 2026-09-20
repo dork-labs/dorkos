@@ -83,12 +83,12 @@ entries:
     job: test
     step: Collect every shard's quarantine lane
     kind: step-if
-    reason: Collects the lane the merge_group shards ran under; on pull_request the shards run affected-only, no lane applies and no shard uploads one.
+    reason: Collects the lane the full-sweep shards ran under — the queue's and the main canary's; on pull_request the shards run affected-only, no lane applies and no shard uploads one.
   - workflow: test.yml
     job: test
     step: Agree on the lane this build ran under
     kind: step-if
-    reason: Intersects the merge_group shards' copies of the lane for the union proof; there is no lane and no full union on a pull request.
+    reason: Intersects the full-sweep shards' copies of the lane for the union proof, on the queue and on the main canary alike; there is no lane and no full union on a pull request.
 
   # --- browser-test.yml ---
   - workflow: browser-test.yml
@@ -110,12 +110,12 @@ entries:
     job: browser-test
     step: Collect every shard's quarantine lane
     kind: step-if
-    reason: Collects the lane the merge_group shards ran under; on pull_request the shards are skipped and none uploads one.
+    reason: Collects the lane the shards ran under, in the queue and on the main canary; on pull_request the shards are skipped and none uploads one.
   - workflow: browser-test.yml
     job: browser-test
     step: Agree on the lane this build ran under
     kind: step-if
-    reason: Intersects the merge_group shards' copies of the lane, so the execution proof can name what it absorbed and refuse a quarantined test that stopped running; the PR leg runs no suite.
+    reason: Intersects the shards' copies of the lane, in the queue and on the main canary, so the execution proof can name what it absorbed and refuse a quarantined test that stopped running; the PR leg runs no suite.
   - workflow: browser-test.yml
     job: browser-test
     step: Collect every shard's JSON report
@@ -149,17 +149,17 @@ entries:
     job: test-shard
     step: Hand this shard's quarantine lane to the fan-in
     kind: step-if
-    reason: Uploads the lane this merge_group shard ran under, for the fan-in's union proof; on pull_request no lane is read and none is uploaded.
+    reason: Uploads the lane this full-sweep shard ran under, for the fan-in's union proof; on pull_request no lane is read and none is uploaded.
   - workflow: test.yml
     job: test-shard
     step: Read the quarantine lane
     kind: step-if
-    reason: The quarantine lane applies to the merge_group full sweep, the only leg that retries and the only one whose failures can eject a queue build; the affected-only PR leg blocks on every failure as it always did.
+    reason: The quarantine lane applies to the full sweep — the queue's, whose failures eject a build, and the main canary's, which runs the identical suite against main; the affected-only PR leg blocks on every failure as it always did.
   - workflow: test.yml
     job: test-shard
     step: Refuse any failure the quarantine lane does not cover
     kind: step-if
-    reason: The gate for the merge_group sweep's exit code; the PR leg's own sweep step still fails the shard directly, so nothing is ungated on either event.
+    reason: The gate for the full sweep's exit code, on the queue and on the main canary; the PR leg's own sweep step still fails the shard directly, so nothing is ungated on any event.
   - workflow: test.yml
     job: test-shard
     step: Prove the suite actually executed

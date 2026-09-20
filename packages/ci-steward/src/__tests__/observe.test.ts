@@ -179,69 +179,87 @@ describe('the daily workflow sequence, end to end against a bare origin', () => 
     return { code, out, err };
   };
 
-  it('creates the branch, collects, publishes, reports on Monday, tags the week, and status reads it', () => {
-    const w = world();
-    const SAT = '2026-09-19T05:00:00Z';
-    const MON = '2026-09-21T05:00:00Z';
-    expect(run(w.root, ['data-prepare', '--data', w.data, '--now', SAT]).out).toContain(
-      'created the ci-steward-data branch'
-    );
-    const daily = run(w.root, ['daily', '--data', w.data, '--now', SAT]);
-    expect(daily).toMatchObject({ code: 0 });
-    expect(daily.out).toContain(`collected ${DAY}`);
-    // The daily run also triages and writes the day's human-readable page.
-    expect(daily.out).toContain('triggers:');
-    expect(daily.out).toContain(`wrote reports/${DAY}.html`);
-    expect(readFileSync(path.join(w.data, `reports/${DAY}.html`), 'utf8')).toContain(
-      `<title>CI report for ${DAY}</title>`
-    );
-    expect(readFileSync(path.join(w.data, 'reports/index.html'), 'utf8')).toContain(`${DAY}.html`);
-    const sat = run(w.root, ['data-publish', '--data', w.data, '--tag-week', '--now', SAT]).out;
-    expect(sat).toContain('pushed');
-    // Any day tags a week that has no backup yet, not only Monday.
-    expect(sat).toContain('tagged ci-steward-data/2026-W38');
-    expect(run(w.root, ['data-publish', '--data', w.data, '--tag-week', '--now', SAT]).out).toBe(
-      'nothing to publish\n'
-    );
-    expect(run(w.root, ['report', '--data', w.data, '--now', MON]).out).toContain(
-      'wrote reports/2026-W38.md'
-    );
-    const report = readFileSync(path.join(w.data, 'reports/2026-W38.md'), 'utf8');
-    for (const h of [
-      '## SLO trend',
-      '## The constraint',
-      '## Verdicts',
-      '## Real catches per gate',
-      '## Tracked metrics',
-      '## Collector health',
-    ]) {
-      expect(report).toContain(h);
+  // 60s, against vitest's 5s default, because this one test drives the WHOLE
+  // daily sequence for real: `git init` twice, a bare origin, a push, a full
+  // collect, a publish, a week tag, a Monday report and a status read. It
+  // measures 5.7-6.0s on this machine, which is over the default already, and
+  // it went red in three of six full-suite runs once two more test files
+  // joined the package and the workers started competing. A timeout is not a
+  // retry budget and nothing here is racy — the clocks are fixed, the gh calls
+  // are replayed and the repo is a fresh temp dir; the ceiling was simply set
+  // below what the test costs. 60s is a ceiling on a wedged `git`, not a
+  // budget: if this ever approaches it, something is genuinely wrong.
+  it(
+    'creates the branch, collects, publishes, reports on Monday, tags the week, and status reads it',
+    { timeout: 60_000 },
+    () => {
+      const w = world();
+      const SAT = '2026-09-19T05:00:00Z';
+      const MON = '2026-09-21T05:00:00Z';
+      expect(run(w.root, ['data-prepare', '--data', w.data, '--now', SAT]).out).toContain(
+        'created the ci-steward-data branch'
+      );
+      const daily = run(w.root, ['daily', '--data', w.data, '--now', SAT]);
+      expect(daily).toMatchObject({ code: 0 });
+      expect(daily.out).toContain(`collected ${DAY}`);
+      // The daily run also triages and writes the day's human-readable page.
+      expect(daily.out).toContain('triggers:');
+      expect(daily.out).toContain(`wrote reports/${DAY}.html`);
+      expect(readFileSync(path.join(w.data, `reports/${DAY}.html`), 'utf8')).toContain(
+        `<title>CI report for ${DAY}</title>`
+      );
+      expect(readFileSync(path.join(w.data, 'reports/index.html'), 'utf8')).toContain(
+        `${DAY}.html`
+      );
+      const sat = run(w.root, ['data-publish', '--data', w.data, '--tag-week', '--now', SAT]).out;
+      expect(sat).toContain('pushed');
+      // Any day tags a week that has no backup yet, not only Monday.
+      expect(sat).toContain('tagged ci-steward-data/2026-W38');
+      expect(run(w.root, ['data-publish', '--data', w.data, '--tag-week', '--now', SAT]).out).toBe(
+        'nothing to publish\n'
+      );
+      expect(run(w.root, ['report', '--data', w.data, '--now', MON]).out).toContain(
+        'wrote reports/2026-W38.md'
+      );
+      const report = readFileSync(path.join(w.data, 'reports/2026-W38.md'), 'utf8');
+      for (const h of [
+        '## SLO trend',
+        '## The constraint',
+        '## Verdicts',
+        '## Real catches per gate',
+        '## Tracked metrics',
+        '## Collector health',
+      ]) {
+        expect(report).toContain(h);
+      }
+      expect(report).toContain('| `wf.test.test-shard` | 1 | 1 |');
+      // Deterministic: the same inputs render the same bytes.
+      run(w.root, ['report', '--data', w.data, '--now', MON]);
+      expect(readFileSync(path.join(w.data, 'reports/2026-W38.md'), 'utf8')).toBe(report);
+      expect(
+        run(w.root, ['data-publish', '--data', w.data, '--tag-week', '--now', MON]).out
+      ).toContain('tagged ci-steward-data/2026-W39');
+      expect(w.g(w.origin, 'ls-tree', '-r', '--name-only', 'ci-steward-data')).toContain(
+        'snapshots/2026-09-18.json'
+      );
+      w.g(
+        w.root,
+        'fetch',
+        '-q',
+        'origin',
+        '+refs/heads/ci-steward-data:refs/remotes/origin/ci-steward-data'
+      );
+      const status = run(w.root, ['status', '--now', '2026-09-21T06:00:00Z']).out;
+      expect(status).toContain(
+        'CI Steward status: data for 2026-09-18 from origin/ci-steward-data'
+      );
+      expect(status).toContain('Health: OK');
+      expect(status).toContain(
+        'Weekly deep summary: git show origin/ci-steward-data:reports/2026-W38.md'
+      );
+      expect(status).toContain('Triggers (');
     }
-    expect(report).toContain('| `wf.test.test-shard` | 1 | 1 |');
-    // Deterministic: the same inputs render the same bytes.
-    run(w.root, ['report', '--data', w.data, '--now', MON]);
-    expect(readFileSync(path.join(w.data, 'reports/2026-W38.md'), 'utf8')).toBe(report);
-    expect(
-      run(w.root, ['data-publish', '--data', w.data, '--tag-week', '--now', MON]).out
-    ).toContain('tagged ci-steward-data/2026-W39');
-    expect(w.g(w.origin, 'ls-tree', '-r', '--name-only', 'ci-steward-data')).toContain(
-      'snapshots/2026-09-18.json'
-    );
-    w.g(
-      w.root,
-      'fetch',
-      '-q',
-      'origin',
-      '+refs/heads/ci-steward-data:refs/remotes/origin/ci-steward-data'
-    );
-    const status = run(w.root, ['status', '--now', '2026-09-21T06:00:00Z']).out;
-    expect(status).toContain('CI Steward status: data for 2026-09-18 from origin/ci-steward-data');
-    expect(status).toContain('Health: OK');
-    expect(status).toContain(
-      'Weekly deep summary: git show origin/ci-steward-data:reports/2026-W38.md'
-    );
-    expect(status).toContain('Triggers (');
-  });
+  );
 
   it('keeps a failing step to itself, so the exit code still means the collector', () => {
     const w = world();
