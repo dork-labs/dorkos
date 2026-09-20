@@ -127,3 +127,22 @@ Database migrations only move forward. Before upgrading, save a tested backup an
 | Files disappear after redeploy       | Confirm `COMMUNITY_STORAGE_DRIVER=s3`; the Machine's ordinary filesystem is temporary.                                         |
 
 A Fly Volume is another possible storage choice, but it attaches to one Machine and is not replicated automatically. The bucket recipe avoids relying on that local disk. See [Fly Volumes](https://fly.io/docs/volumes/overview/).
+
+### Pause writes for a matching backup
+
+Stopping a Machine is not enough if Fly proxy autostart can start it again when a request arrives. For a single-Machine deployment, first disable autostart and stop the Machine:
+
+```bash
+fly machine update <machine-id> --app <app-name> --autostart=false --skip-start --yes
+fly machine list --app <app-name>
+```
+
+Confirm it stays stopped after a request to the public address. While it is stopped, export the database and copy the private file bucket. Keep both copies, their checksums, and the application image revision as one protected recovery set. Store the matching application secrets separately in protected storage, as described in the [operations guide](./OPERATIONS.md).
+
+When the matching pair is complete, restore autostart and start the service:
+
+```bash
+fly machine update <machine-id> --app <app-name> --autostart=true --yes
+```
+
+Check `/health` and sign-in afterward. This procedure causes a service interruption. If capture fails, treat that backup pair as incomplete; resuming service does not make a partial backup usable. Rehearse the restore in an isolated environment before relying on it.
