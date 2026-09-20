@@ -49,6 +49,10 @@ import {
   remoteRoomAccessOf,
   remoteSequenceOf,
 } from '../services/communities/remote/remote-community-adapter.js';
+import {
+  RemoteConnectionAuthorizationError,
+  RemoteConnectionNotFoundError,
+} from '../services/communities/remote/connection-store.js';
 
 function isSafeAttachmentName(value: string): boolean {
   return [...value].every((character) => {
@@ -100,11 +104,18 @@ async function* requestBytes(req: import('express').Request): AsyncIterable<Uint
 }
 
 function fail(res: import('express').Response, error: unknown): void {
-  const status =
-    error instanceof Error && error.name === 'RemoteConnectionNotFoundError' ? 404 : 502;
-  res
-    .status(status)
-    .json({ error: status === 404 ? 'Community connection not found.' : 'Community unavailable.' });
+  if (error instanceof RemoteConnectionAuthorizationError) {
+    res.status(409).json({
+      code: 'COMMUNITY_RECONNECT_REQUIRED',
+      error: 'Reconnect this community to continue.',
+    });
+    return;
+  }
+  if (error instanceof RemoteConnectionNotFoundError) {
+    res.status(404).json({ error: 'Community connection not found.' });
+    return;
+  }
+  res.status(502).json({ error: 'Community unavailable.' });
 }
 
 function remoteRoom(room: CommunityRoom, remoteCommunityId: string) {
@@ -158,6 +169,7 @@ export function createRemoteCommunitiesRouter(): Router {
       const connection = await store.get(ref.data, owner);
       const adapter = getRemoteCommunityAdapter(ref.data, owner);
       const connected = await adapter.connect();
+      if (connected.status === 'unauthorized') throw new RemoteConnectionAuthorizationError();
       if (connected.status !== 'connected') throw new Error('Community unavailable');
       const rooms = (await adapter.listRooms()).map((room) =>
         remoteRoom(room, connection.remoteCommunityId)
@@ -421,7 +433,7 @@ export function createRemoteCommunitiesRouter(): Router {
           type: 'closed',
           community: ref.data,
           roomId: req.params.roomId,
-          reason: 'unavailable',
+          reason: error instanceof RemoteConnectionAuthorizationError ? 'revoked' : 'unavailable',
         });
     } finally {
       removeDeliveryListener();
