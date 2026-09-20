@@ -31,7 +31,14 @@
  * because Actions data older than 90 days can no longer be re-read.
  */
 import { createHash } from 'node:crypto';
-import { gateDays, type LocalDay, type Snapshot, type TimedSample, type Verdict } from './data.ts';
+import {
+  gateDays,
+  mergePathGates,
+  type LocalDay,
+  type Snapshot,
+  type TimedSample,
+  type Verdict,
+} from './data.ts';
 import type { HandFiles } from './load.ts';
 import { computeSlos } from './slo.ts';
 import type { LedgerFrontmatter } from './schemas.ts';
@@ -108,13 +115,18 @@ function within<T extends { date: string }>(
 /**
  * `tracked.time-to-detect`: how long a break on `main` can go unseen.
  *
- * A break lands between two canary results, so the longest it can hide is the
- * gap from the previous result of that workflow to the moment this one
- * finished. That is what is measured here, per result, and reported as p90 —
- * an upper bound on time-to-detect that can be computed every day, from days
- * on which nothing broke at all. Measuring the real thing instead (merge →
+ * A canary run tests the tree it CHECKED OUT, which is the tree as of its
+ * `started`. So a break landing one second after run i-1 started is invisible
+ * until run i finishes, and the hiding window is `done(i) − started(i-1)` —
+ * not `done(i) − done(i-1)`, which leaves out the whole duration of the
+ * earlier run and is therefore not an upper bound at all. On four rounds six
+ * hours apart with a half-hour run that is the difference between claiming
+ * 6.0 h and the true 6.5 h.
+ *
+ * Reported as p90 over the window. Measuring the real thing instead (merge →
  * first red canary) would need a break to measure, and `main` is usually
- * green: an honest metric has to be readable when the pipeline is healthy.
+ * green: a metric that has no value on a healthy week cannot tell you whether
+ * the canary is still running, which is the failure this is here to catch.
  *
  * Per workflow, because the four canary legs are throttled independently and a
  * gap in one is a blind spot whatever the others did. The first result of each
@@ -124,18 +136,19 @@ function within<T extends { date: string }>(
  * @param snaps - The window's whole days.
  */
 function canaryDetect(snaps: readonly Snapshot[]): MetricReading {
-  const byWorkflow = new Map<string, string[]>();
+  const byWorkflow = new Map<string, { started: string; done: string }[]>();
   for (const r of snaps.flatMap((s) => s.canary)) {
     const list = byWorkflow.get(r.workflow) ?? [];
-    list.push(r.done);
+    list.push({ started: r.started, done: r.done });
     byWorkflow.set(r.workflow, list);
   }
-  const gaps: number[] = [];
-  for (const dones of byWorkflow.values()) {
-    dones.sort();
-    for (let i = 1; i < dones.length; i += 1) gaps.push(minutesBetween(dones[i - 1]!, dones[i]!));
+  const windows: number[] = [];
+  for (const rs of byWorkflow.values()) {
+    rs.sort((a, b) => a.started.localeCompare(b.started));
+    for (let i = 1; i < rs.length; i += 1)
+      windows.push(minutesBetween(rs[i - 1]!.started, rs[i]!.done));
   }
-  return { n: gaps.length, value: round1(quantile(gaps, 0.9)) };
+  return { n: windows.length, value: round1(quantile(windows, 0.9)) };
 }
 
 /**
@@ -156,12 +169,17 @@ function readMetric(id: string, files: HandFiles, series: Series, w: Window): Me
     const cut = body.lastIndexOf('.');
     const gate = body.slice(0, cut);
     const metric = body.slice(cut + 1);
-    const days = wholeSnaps.flatMap((s) => gateDays(s.gates, gate, event));
-    const c = (k: string) => sum(days.map((g) => g.conclusions[k] ?? 0));
+    // Unqualified reads the gate's merge-path population, decided once over the
+    // whole window; `…@schedule` still reads the canary leg by name.
+    const onPath = mergePathGates(snaps);
+    const days = wholeSnaps.flatMap((s) => gateDays(s.gates, gate, event, onPath));
     const minutes = () =>
-      within(snaps, (s) => gateDays(s.gates, gate, event).flatMap((g) => g.durations), w).map(
-        (x) => x / 60
-      );
+      within(
+        snaps,
+        (s) => gateDays(s.gates, gate, event, onPath).flatMap((g) => g.durations),
+        w
+      ).map((x) => x / 60);
+    const c = (k: string) => sum(days.map((g) => g.conclusions[k] ?? 0));
     switch (metric) {
       case 'duration_p50': {
         const d = minutes();
@@ -221,6 +239,13 @@ function readMetric(id: string, files: HandFiles, series: Series, w: Window): Me
     };
   }
   if (id === 'tracked.time-to-detect') return canaryDetect(wholeSnaps);
+  if (id === 'tracked.canary-minutes') {
+    const n = wholeSnaps.length;
+    return {
+      n,
+      value: n ? round(sum(wholeSnaps.map((s) => s.counts.canary_minutes)) / n, 1) : null,
+    };
+  }
   if (id === 'tracked.job-minutes-per-merged-pr' || id === 'tracked.review-runs-per-merged-pr') {
     const merged = sum(wholeSnaps.map((s) => s.counts.merged_prs));
     const top = sum(

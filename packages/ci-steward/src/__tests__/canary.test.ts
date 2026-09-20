@@ -9,7 +9,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { Run } from '../collect.ts';
-import { emptySnapshot, gateDays, gateKey, onMergePath, type GateDay } from '../data.ts';
+import {
+  emptySnapshot,
+  gateDays,
+  gateKey,
+  mergePathGates,
+  onMergePath,
+  type GateDay,
+} from '../data.ts';
 import { canaryRuns, mainCommits } from '../series.ts';
 
 const CANARY_WORKFLOWS = ['test.yml', 'browser-test.yml', 'typecheck.yml', 'lint.yml'];
@@ -126,8 +133,9 @@ describe('a gate that runs on both paths is measured over the merge path', () =>
       [gateKey('wf.test.test-shard', 'merge_group')]: gateDay(10),
       [gateKey('wf.test.test-shard', 'schedule')]: gateDay(4, 4),
     });
-    expect(gateDays(s.gates, 'wf.test.test-shard')).toHaveLength(1);
-    expect(onMergePath(s.gates, gateKey('wf.test.test-shard', 'schedule'))).toBe(false);
+    const onPath = mergePathGates([s]);
+    expect(gateDays(s.gates, 'wf.test.test-shard', undefined, onPath)).toHaveLength(1);
+    expect(onMergePath(onPath, gateKey('wf.test.test-shard', 'schedule'))).toBe(false);
     // Named explicitly, the canary leg is still readable: `…@schedule` in a
     // hypothesis is how an experiment measures the canary itself.
     expect(gateDays(s.gates, 'wf.test.test-shard', 'schedule')).toHaveLength(1);
@@ -138,7 +146,24 @@ describe('a gate that runs on both paths is measured over the merge path', () =>
     // Dropping them would make `headroom` blind to the four jobs whose timeouts
     // nothing else looks at.
     const s = day({ [gateKey('wf.merge-tail.arm', 'schedule')]: gateDay(47) });
-    expect(gateDays(s.gates, 'wf.merge-tail.arm')).toHaveLength(1);
-    expect(onMergePath(s.gates, gateKey('wf.merge-tail.arm', 'schedule'))).toBe(true);
+    const onPath = mergePathGates([s]);
+    expect(gateDays(s.gates, 'wf.merge-tail.arm', undefined, onPath)).toHaveLength(1);
+    expect(onMergePath(onPath, gateKey('wf.merge-tail.arm', 'schedule'))).toBe(true);
+  });
+
+  it('decides membership over the window, not per day', () => {
+    // The live bug this pins: a gate with a zero-run `@pull_request` key on one
+    // day counted as on the merge path that day and off it the next, which cut
+    // wf.evals.structural's headroom population from 8 samples to 0.
+    const quiet = day({
+      [gateKey('wf.evals.structural', 'pull_request')]: { ...gateDay(0), runs: 0 },
+      [gateKey('wf.evals.structural', 'schedule')]: gateDay(1),
+    });
+    const busy = day({ [gateKey('wf.evals.structural', 'schedule')]: gateDay(1) });
+    const onPath = mergePathGates([quiet, busy]);
+    // A key with no runs is not evidence the gate runs on the merge path.
+    expect(onPath.has('wf.evals.structural')).toBe(false);
+    for (const s of [quiet, busy])
+      expect(gateDays(s.gates, 'wf.evals.structural', undefined, onPath).length).toBeGreaterThan(0);
   });
 });

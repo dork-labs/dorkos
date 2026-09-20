@@ -216,6 +216,11 @@ export const SnapshotSchema = z
         test_flaky: z.number(),
         flaky_builds_sampled: z.number(),
         job_minutes: z.number(),
+        /**
+         * Runner minutes the main canary spent, kept OUT of `job_minutes`.
+         * Defaulted, because snapshots written before the canary have no key.
+         */
+        canary_minutes: z.number().default(0),
       })
       .strict(),
     /** Which tests flaked, on which build. Defaulted, so snapshots written before it read fine. */
@@ -262,32 +267,51 @@ export function gateKey(gate: string, event: string): string {
 }
 
 /**
- * Whether a snapshot gate key belongs in its gate's merge-path population.
+ * The gates that ran on the merge path anywhere in a window.
  *
  * The main canary runs the required workflows against `main` HEAD, so its runs
  * carry the SAME gate ids as the PR and queue legs and are told apart only by
- * the event. For a gate that also runs on the merge path, those canary samples
+ * the event. For a gate that also runs on the merge path those canary samples
  * are a different population — a diagnostic on a tree nobody is trying to merge
- * — and counting them would move numbers that are supposed to describe what
- * merging costs.
+ * — and counting them would move numbers that describe what merging costs.
  *
  * For a gate that runs on NOTHING BUT a schedule, the canary events are its
  * whole population. `wf.merge-tail.arm`, `wf.evals.structural`,
  * `wf.codeql.analyze` and `wf.ci-steward.collect` are all of that shape, and
  * dropping them outright would make `headroom` — the tripwire that catches a
- * job about to be killed by its own timeout — blind to every one of them. So
- * the test is per gate, not per event.
+ * job about to be killed by its own timeout — blind to every one of them.
  *
- * @param gates - A snapshot's `gates`.
- * @param key - A `<gate-id>@<event>` key from it.
+ * ACROSS THE WHOLE WINDOW, and counting only keys with runs. Deciding this per
+ * snapshot made membership flip day to day: a gate with a zero-run
+ * `@pull_request` key on one day counted as on the merge path that day and off
+ * it the next, which on live data cut `wf.evals.structural`'s duration samples
+ * from 15 to 1 and its `headroom` population from 8 to 0. A window-wide set
+ * also stops a quiet weekend from letting the canary become the entire
+ * population of a gate the queue normally runs.
+ *
+ * @param snaps - Every snapshot in the window being read.
  */
-export function onMergePath(gates: Snapshot['gates'], key: string): boolean {
+export function mergePathGates(snaps: readonly Snapshot[]): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const s of snaps)
+    for (const [k, g] of Object.entries(s.gates)) {
+      const at = k.lastIndexOf('@');
+      if (at < 0 || g.runs <= 0) continue;
+      if (MERGE_EVENTS.has(k.slice(at + 1))) out.add(k.slice(0, at));
+    }
+  return out;
+}
+
+/**
+ * Whether a snapshot gate key belongs in its gate's merge-path population.
+ *
+ * @param onPath - The window's merge-path gates, from `mergePathGates`.
+ * @param key - A `<gate-id>@<event>` key.
+ */
+export function onMergePath(onPath: ReadonlySet<string>, key: string): boolean {
   const at = key.lastIndexOf('@');
   if (at < 0 || !CANARY_EVENTS.has(key.slice(at + 1))) return true;
-  const prefix = `${key.slice(0, at)}@`;
-  return !Object.keys(gates).some(
-    (k) => k.startsWith(prefix) && MERGE_EVENTS.has(k.slice(prefix.length))
-  );
+  return !onPath.has(key.slice(0, at));
 }
 
 /**
@@ -301,14 +325,22 @@ export function onMergePath(gates: Snapshot['gates'], key: string): boolean {
  * @param gates - A snapshot's `gates`.
  * @param gate - The gate id.
  * @param event - One event, or undefined for the gate's merge-path population.
+ * @param onPath - The window's merge-path gates (`mergePathGates`). Omitting it
+ *   reads every event, which is right only when there is no window to compute
+ *   one over.
  */
-export function gateDays(gates: Snapshot['gates'], gate: string, event?: string): GateDay[] {
+export function gateDays(
+  gates: Snapshot['gates'],
+  gate: string,
+  event?: string,
+  onPath?: ReadonlySet<string>
+): GateDay[] {
   if (event) {
     const g = gates[gateKey(gate, event)];
     return g ? [g] : [];
   }
   return Object.entries(gates).flatMap(([k, v]) =>
-    k.startsWith(`${gate}@`) && onMergePath(gates, k) ? [v] : []
+    k.startsWith(`${gate}@`) && (!onPath || onMergePath(onPath, k)) ? [v] : []
   );
 }
 
@@ -689,6 +721,7 @@ export function emptySnapshot(day: string, collectedAt: string, budget: number):
       test_flaky: 0,
       flaky_builds_sampled: 0,
       job_minutes: 0,
+      canary_minutes: 0,
     },
     flaky_tests: [],
     flaky_builds: [],

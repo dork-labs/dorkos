@@ -305,6 +305,7 @@ describe('the daily report', () => {
       date: addDays(DAY, -1),
       computed_at: `${addDays(DAY, -1)}T05:00:00Z`,
       constraint: null,
+      canary_since: null,
       open: [],
       cleared: [],
     };
@@ -334,6 +335,7 @@ describe('the daily report', () => {
       date: DAY,
       computed_at: `${DAY}T05:00:00Z`,
       constraint: 'queue-green',
+      canary_since: null,
       open: [
         {
           id: 'collector-health',

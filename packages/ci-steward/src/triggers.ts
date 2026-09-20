@@ -25,6 +25,7 @@
 import { z } from 'zod';
 import {
   gateDays,
+  mergePathGates,
   onMergePath,
   type Latest,
   type Snapshot,
@@ -110,6 +111,13 @@ export const TriggersSchema = z.object({
   computed_at: z.string(),
   /** The constraint this run saw, so tomorrow's run can tell whether it changed. */
   constraint: z.string().nullable(),
+  /**
+   * The first main-canary result ever observed. Once set it never moves: it is
+   * what lets rule 11 tell "the canary has not started yet" apart from "the
+   * canary has stopped", after the last result has aged out of the window.
+   * Optional, because `triggers.json` files written before rule 11 have none.
+   */
+  canary_since: z.string().nullable().default(null),
   /** Open triggers, most important first. */
   open: z.array(TriggerSchema),
   /** Triggers that were open yesterday and whose condition has cleared. */
@@ -157,6 +165,8 @@ type GateWindows = Map<string, GateWindow>;
 
 function gateWindow(snaps: readonly Snapshot[]): GateWindows {
   const out = new Map<string, GateWindow>();
+  // Decided once, over the whole window: see `mergePathGates`.
+  const onPath = mergePathGates(snaps);
   const get = (gate: string) => {
     const cur = out.get(gate) ?? { runs: 0, done: 0, failed: 0, minutes: [], ratios: [] };
     out.set(gate, cur);
@@ -171,7 +181,7 @@ function gateWindow(snaps: readonly Snapshot[]): GateWindows {
       // and would fire `gate-failure-spike` on the canary doing its job. A gate
       // that runs on nothing but a schedule keeps its own runs; see
       // `onMergePath`.
-      if (!onMergePath(s.gates, key)) continue;
+      if (!onMergePath(onPath, key)) continue;
       const w = get(gate);
       const c = (k: string) => g.conclusions[k] ?? 0;
       w.runs += g.runs;
@@ -182,7 +192,7 @@ function gateWindow(snaps: readonly Snapshot[]): GateWindows {
     for (const [gate, timeout] of Object.entries(s.timeouts)) {
       if (timeout <= 0) continue;
       const w = get(gate);
-      for (const g of gateDays(s.gates, gate))
+      for (const g of gateDays(s.gates, gate, undefined, onPath))
         for (const [, sec] of g.durations) w.ratios.push(sec / 60 / timeout);
     }
   }
@@ -571,8 +581,9 @@ export function triage(inp: TriageInput): Triggers {
     ...headroom(inp, curGates),
     ...collectorHealth(inp, cur),
     ...staleLedger(inp),
-    ...mainCanary(inp, inp.snapshots),
   ];
+  const canary = mainCanary(inp, inp.snapshots, inp.prior?.canary_since ?? null);
+  found.push(...canary.triggers);
   const before = new Map((inp.prior?.open ?? []).map((t) => [t.id, t]));
   const open: Trigger[] = [];
   const seen = new Set<string>();
@@ -598,6 +609,7 @@ export function triage(inp: TriageInput): Triggers {
     date: today,
     computed_at: inp.now.toISOString(),
     constraint: inp.latest.constraint.id,
+    canary_since: canary.since,
     open,
     cleared,
   };

@@ -196,35 +196,74 @@ name: test
 #
 # WHAT FOUR CRONS A DAY ACTUALLY BUY, given GitHub's throttling.
 #
-# Measured on this repo, 2026-09-19, over 200+ runs of merge-tail's `*/10`
-# cron: GitHub delivered about 7 runs a day, a median 2.7 h late, p90 5 h, max
-# 12 h. So a cron here is a request, not an appointment, and NO cron schedule
-# on this repo can promise a run inside a named two-hour window. What these
-# four buy is honest but smaller:
+# THE EVIDENCE IS `evals.yml`, not merge-tail. merge-tail asks for a run every
+# ten minutes and gets about seven a day; the "162-minute median" often quoted
+# from it is the GAP BETWEEN DELIVERED RUNS, which is a statement about how
+# many requests GitHub drops, not about how late any one of them is. A canary
+# cron is low-frequency, and the right comparable is `evals.yml`'s `0 8 * * *`:
+# 57 runs, 100% DELIVERED, lateness p50 2.60 h, p90 5.61 h, max 11.88 h.
+#
+# Two consequences, and they pull in opposite directions:
+#
+#   * a low-frequency cron is not dropped. All four rounds arrive, so the
+#     canary does not quietly stop;
+#   * but each arrives hours late, and the delay is SHARED across the day's
+#     slots rather than drawn fresh for each, because it tracks how busy the
+#     Actions scheduler is. Four slots are therefore four correlated shots at a
+#     window, not four independent ones.
+#
+# So a cron here is a request, not an appointment, and NO cron schedule on this
+# repo can promise a run inside a named two-hour window. What these four buy:
 #
 #   * a break on `main` is found in hours rather than days — nominal 6 h
 #     spacing, plus skew, plus the run itself;
-#   * the 00:00-02:00 UTC window is hit on perhaps one day in three, and so
-#     near-certainly within a week. The 00:37 slot lands inside it when the
-#     schedule is close to on time, and the 18:37 slot lands inside it when it
-#     is 5-6 h late — which is why the slots are 6 h apart rather than clustered
-#     around midnight. Throttling only ever DELAYS a run, never advances it, so
-#     an earlier slot is also a later one.
+#   * the 00:00-02:00 UTC window, where the 09-20 bug lived, is hit on about
+#     one day in three. Over a week that is ~86% (empirical, NOT the 95% an
+#     independence assumption gives: lag-1 autocorrelation of the daily lateness
+#     is 0.754, and the longest measured blind streak is 12 days). Two weeks is
+#     the honest near-certainty.
+#
+# THE SLOTS ARE CHOSEN AGAINST THAT SKEW, not against the clock face. A run
+# fired at hour H lands near H+2.6 at the median, so `0` lands in the window
+# when close to on time and `21` lands in it at the median; `5` lands near
+# 07:36, inside the 07:00-11:00 trough where the queue is quietest, and `10`
+# fills the afternoon. Throttling only ever DELAYS a run, never advances it, so
+# an earlier slot is also a later one — which is why there is no slot inside
+# the queue's own busiest stretch, 17:00-02:00, except the one whose landing
+# zone is the dark window.
 #
 # That is the coverage claim, and it is deliberately weaker than "we watch the
-# dark window". A real time-of-day bug is caught here by repetition over days,
-# not by one appointment.
+# dark window". A real time-of-day bug is caught here by repetition over about
+# a fortnight, not by one appointment.
 #
-# `workflow_dispatch` is the on-demand leg: run this suite against `main` now,
-# from the Actions tab or `gh workflow run test.yml --ref main`. Plan §4.9's
-# targeted canary dispatches the same leg on the first failed-checks ejection.
+# `workflow_dispatch` is the on-demand leg: run this whole suite against `main`
+# now, from the Actions tab or `gh workflow run test.yml --ref main`.
+#
+# IT IS NOT PLAN §4.9'S TARGETED CANARY, and nothing here should be read as
+# that. §4.9 wants a dispatch with a `job` INPUT, so one failing job re-runs in
+# 5-25 minutes and an incident can tell a manufacturable failure from a real
+# one. This leg runs the entire workflow: about 150 job minutes and half an
+# hour of wall clock. The `job` input, and the matrix gating it needs, are a
+# separate change; until they land the targeted canary does not exist.
+#
+# A dispatch is also ref-free, so `--ref <a PR's branch>` posts this check run
+# on that PR's head. `scripts/assert-canary-ref.sh` runs first in every job and
+# FAILS such a run rather than letting it skip, because a skipped job satisfies
+# a required context and a failed one does not.
+#
+# TURBO CACHE: this repository has no remote cache, so a canary run cannot
+# replay another machine's green `test` task; `assert-tests-executed.sh` is
+# measuring a real execution here exactly as it does in the queue. The canary
+# also re-warms the `refs/heads/main` Actions caches (pnpm store, Playwright
+# browsers), which have had no writer since the push-to-main legs were retired
+# on 2026-09-19 and which every PR branch restores from.
 on:
   pull_request:
   merge_group:
   schedule:
     # Staggered by minute against its three sibling canaries, so four workflows
     # do not ask GitHub for runners in the same second.
-    - cron: '37 0,6,12,18 * * *'
+    - cron: '37 0,5,10,21 * * *'
   workflow_dispatch:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
@@ -239,7 +278,13 @@ env:
 # them in step); the history of why grouping semantics matter is #543
 # (DOR-517), where real merges' runs were cancelled before they ever started.
 concurrency:
-  group: test-${{ github.ref }}
+  # EVENT-AWARE, because of the canary. A `schedule` run and a
+  # `workflow_dispatch --ref main` run share `github.ref`, so on one group the
+  # on-demand leg would queue behind a scheduled round for up to half an hour —
+  # and the two are correlated in time, because the reason to dispatch by hand
+  # is usually the reason a round is already running. The suffix is constant
+  # for `pull_request` and `merge_group`, so neither changes behaviour.
+  group: test-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || 'gate' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -266,6 +311,14 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     steps:
+      # A canary run is against `main` or it is nothing, and this says so before
+      # anything is installed. No `if:`: the script is a no-op on the gating
+      # events, which keeps it out of the census allowlist. See its header.
+      - name: A canary run is against main
+        run: bash scripts/assert-canary-ref.sh
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -301,6 +354,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # A canary run is against `main` or it is nothing, and this says so before
+      # anything is installed. No `if:`: the script is a no-op on the gating
+      # events, which keeps it out of the census allowlist. See its header.
+      - name: A canary run is against main
+        run: bash scripts/assert-canary-ref.sh
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
       - name: Packaged proof runs on the merge queue
         if: github.event_name == 'pull_request'
         run: echo "The merge queue and the main canary run the sealed packaged community proof."
@@ -354,6 +415,14 @@ jobs:
     env:
       NODE_OPTIONS: --max-old-space-size=8192
     steps:
+      # A canary run is against `main` or it is nothing, and this says so before
+      # anything is installed. No `if:`: the script is a no-op on the gating
+      # events, which keeps it out of the census allowlist. See its header.
+      - name: A canary run is against main
+        run: bash scripts/assert-canary-ref.sh
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
       # fetch-depth: 0 for the tags, not the history. actions/checkout@v7
       # defaults to depth 1 and does NOT fetch tags at that depth, so
       # `git tag -l` in config-manager.test.ts's DOR-339 regression guard
@@ -754,6 +823,14 @@ jobs:
     # PR can enqueue. Thoroughness, and every proof, stay with the queue leg.
     timeout-minutes: 10
     steps:
+      # A canary run is against `main` or it is nothing, and this says so before
+      # anything is installed. No `if:`: the script is a no-op on the gating
+      # events, which keeps it out of the census allowlist. See its header.
+      - name: A canary run is against main
+        run: bash scripts/assert-canary-ref.sh
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
       # First, before spending a second on anything else: a failed, cancelled
       # or skipped shard fails this job, on BOTH events — the shard matrix is
       # where the tests run now, so this gate is the whole of what `test`

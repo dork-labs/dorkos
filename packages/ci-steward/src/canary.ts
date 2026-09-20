@@ -16,7 +16,19 @@
  */
 import type { CanaryRun, Snapshot } from './data.ts';
 import { h, raw, type Html } from './html.ts';
+import { round } from './time.ts';
 import type { NewTrigger, TriageInput } from './triggers.ts';
+
+/** What `mainCanary` found, plus the day the canary was first seen alive. */
+export interface CanaryTriage {
+  triggers: NewTrigger[];
+  /**
+   * The `done` time of the first canary result ever observed, carried forward
+   * in `triggers.json`. Once set it never moves: it is what makes silence
+   * detectable after every snapshot in the window has gone empty.
+   */
+  since: string | null;
+}
 
 /**
  * The main canary (trigger rule 11).
@@ -28,34 +40,78 @@ import type { NewTrigger, TriageInput } from './triggers.ts';
  * diagnosed it (#1934). The canary is those same suites, on a schedule,
  * against `main` HEAD — and this is where its answer is said out loud.
  *
- * Two arms, one rule:
+ * Three arms, one rule:
  *
- *   * **red** — a workflow's newest canary runs are red. One episode, however
- *     many workflows are in it, keyed on the commit the oldest red streak
- *     started at, so its `first_fired` survives a break that spreads.
- *   * **amber** — no canary result for `canary_silent_hours`. A canary that
- *     stopped running reads exactly like a green one in every other number, so
- *     silence has to speak for itself. It is only ever evaluated once the
- *     canary has produced at least one result, so the days between this landing
- *     and the first cron are not reported as an outage.
+ *   * **red, broken** — a workflow's newest canary runs are red.
+ *   * **red, stopped** — the canary has been alive before (`since` is set) and
+ *     the whole loaded window holds NO result at all.
+ *   * **amber, quiet** — some workflows reported and others have not for
+ *     `canary_silent_hours`.
  *
- * Both are read off the reported day's end rather than the wall clock, like
- * every other rule, so a page rebuilt by hand reaches the same answer.
+ * THE SECOND ARM IS THE ONE THAT MATTERS MOST. An earlier version of this rule
+ * returned nothing when the window held no canary runs, which meant that once
+ * the canary stopped for long enough for its last result to age out of the
+ * 28-day window, both the red and the amber arms went quiet and the verdict
+ * side read `inconclusive` rather than `failed` (`quantile([])` is null and
+ * n=0 is under `min_n`). Total silence would have been the one thing this rule
+ * could not say — the exact failure it exists to prevent. `since` is persisted
+ * for that reason and for no other.
+ *
+ * WHAT SILENCE ACTUALLY COSTS IN TIME. A day is collected the morning after,
+ * and every rule here reads the reported day's end rather than the wall clock
+ * so a page rebuilt by hand reaches the same answer. So an 18-hour threshold
+ * detects a stopped canary in about 18 + up to 24 (the rest of the day) minus
+ * nothing, plus the collector's own delay: **about 39 hours in the worst
+ * case**, not 18. Tightening the number does not fix that; only collecting
+ * more often would, and that is a different change.
+ *
+ * ONE EPISODE, ONE ID. The red trigger is keyed on the commit the oldest red
+ * streak started at, but that anchor MOVES when one workflow of a spreading
+ * break heals first — which would re-key the trigger and reset the
+ * `first_fired` day it exists to carry. So an episode that is already open
+ * keeps the id it opened with.
  *
  * @param inp - The inputs.
  * @param all - Every snapshot loaded (28 days).
+ * @param since - The first canary result ever seen, from yesterday's triggers.
  */
-export function mainCanary(inp: TriageInput, all: readonly Snapshot[]): NewTrigger[] {
+export function mainCanary(
+  inp: TriageInput,
+  all: readonly Snapshot[],
+  since: string | null
+): CanaryTriage {
   const t = inp.files.config.triage;
   const runs = all.flatMap((s) => s.canary);
-  if (runs.length === 0) return [];
+  const firstSeen = since ?? runs.map((r) => r.done).sort()[0] ?? null;
   const endOfDay = Date.parse(`${inp.latest.date}T23:59:59Z`);
+  const out: NewTrigger[] = [];
+
+  if (runs.length === 0) {
+    // Never alive: the days between this landing and the first cron are not an
+    // outage, and there is nothing to be silent about.
+    if (firstSeen === null) return { triggers: out, since: null };
+    const days = Math.max(0, Math.round((endOfDay - Date.parse(firstSeen)) / 86_400_000));
+    return {
+      triggers: [
+        {
+          id: 'main-canary-stopped',
+          rule: 'main-canary',
+          severity: 'red',
+          scope: 'tracked.time-to-detect',
+          what: `main canary has produced nothing in the whole window; first seen ${firstSeen.slice(0, 10)}, ${days}d ago.`,
+          action: `Nothing has checked main since. Run gh workflow run test.yml --ref main, then find out why the schedule stopped.`,
+          ledger_entry: null,
+        },
+      ],
+      since: firstSeen,
+    };
+  }
+
   const byWorkflow = new Map<string, CanaryRun[]>();
   for (const wf of inp.files.config.canary.workflows) byWorkflow.set(wf, []);
   for (const r of runs) byWorkflow.get(r.workflow)?.push(r);
   for (const rs of byWorkflow.values()) rs.sort((a, b) => a.done.localeCompare(b.done));
 
-  const out: NewTrigger[] = [];
   const streaks: { workflow: string; since: CanaryRun; runs: number }[] = [];
   const silent: string[] = [];
   for (const [workflow, rs] of byWorkflow) {
@@ -78,8 +134,9 @@ export function mainCanary(inp: TriageInput, all: readonly Snapshot[]): NewTrigg
       .sort((a, b) => a.workflow.localeCompare(b.workflow))
       .map((s) => `${s.workflow} ×${s.runs}`)
       .join(', ');
+    const open = (inp.prior?.open ?? []).find((x) => x.id.startsWith('main-canary:'));
     out.push({
-      id: `main-canary:${first.since.sha}`,
+      id: open?.id ?? `main-canary:${first.since.sha}`,
       rule: 'main-canary',
       severity: 'red',
       scope: 'main-green',
@@ -98,7 +155,7 @@ export function mainCanary(inp: TriageInput, all: readonly Snapshot[]): NewTrigg
       action: `Check the schedule still exists and GitHub is still delivering it. A silent canary reads green.`,
       ledger_entry: null,
     });
-  return out;
+  return { triggers: out, since: firstSeen };
 }
 
 /**
@@ -119,5 +176,5 @@ export function canaryRow(snap: Snapshot): Html {
   const red = runs.filter((r) => r.red);
   return h`<li><strong>${runs.length}</strong> main-canary runs against main, ${red.length} red${
     red.length ? h` (${[...new Set(red.map((r) => r.workflow))].sort().join(', ')})` : raw('')
-  }.</li>`;
+  }; ${round(snap.counts.canary_minutes, 0)} job minutes, not charged to a merged PR.</li>`;
 }

@@ -291,7 +291,7 @@ describe('tracked.time-to-detect: what the main canary buys', () => {
     prs: [900],
     hypothesis: {
       metric: 'tracked.time-to-detect',
-      baseline: 3964,
+      baseline: 20160,
       target: 720,
       after_days: 7,
     },
@@ -341,21 +341,24 @@ describe('tracked.time-to-detect: what the main canary buys', () => {
       now: new Date('2026-09-20T05:00:00Z'),
     })!;
 
-  it('reads the gap between one workflow s consecutive canary results, not across workflows', () => {
-    // Four rounds a day of each of two workflows: the gap per workflow is 6 h
-    // (360 min), and it stays 360 whatever the second workflow does — an
-    // interleaved gap of 3 h would be a lie about either one s blind spot.
+  it('measures from the previous run s START, per workflow, not across workflows', () => {
+    // Four rounds a day of each of two workflows, each run half an hour long:
+    // the hiding window per workflow is 6 h of gap PLUS the earlier run s own
+    // 30 minutes, because that run tested the tree it checked out at its
+    // start. 390, not 360. It stays 390 whatever the second workflow does — an
+    // interleaved 3 h would be a lie about either one s blind spot.
     const v = verdictOn(canaryDays(4));
-    expect(v.after.value).toBe(360);
+    expect(v.after.value).toBe(390);
     expect(v.verdict).toBe('verified');
   });
 
   it('does not read green when the schedule thins out, which is the whole risk being tested', () => {
-    // One round a day: a break can hide 24 h. Better than the 66 h baseline and
-    // nowhere near the 12 h target, so `partial` — the honest answer, and the
-    // one that says the crons were throttled rather than that the canary works.
+    // One round a day: a break can hide 24.5 h, twice the 12 h target. Against
+    // a baseline of "never ran against main at all" that is `partial` — a real
+    // improvement that missed, which is the honest answer, and the one that
+    // says the crons were throttled rather than that the canary works.
     const v = verdictOn(canaryDays(1));
-    expect(v.after.value).toBe(1440);
+    expect(v.after.value).toBe(1470);
     expect(v.verdict).toBe('partial');
   });
 

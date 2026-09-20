@@ -23,6 +23,7 @@
 import { mkdirSync } from 'node:fs';
 import {
   emptySnapshot,
+  CANARY_EVENTS,
   gateKey,
   latestDay,
   localExportDays,
@@ -40,6 +41,7 @@ import { gateMapper, gateTimeouts, requiredWorkflowPaths, type GateMapper } from
 import { sampleFlaky } from './artifacts.ts';
 import { BudgetExhausted, type Gh } from './gh.ts';
 import type { HandFiles } from './load.ts';
+import type { Config } from './schemas.ts';
 import { fetchMergedPrs, type PrFacts } from './prs.ts';
 import { canaryRuns, FAILED, mainCommits, prFeedback, queueBuilds, reviews } from './series.ts';
 import { globalChecks, type GlobalChecks } from './rulesets.ts';
@@ -244,7 +246,41 @@ function fetchShaJobs(
   return out;
 }
 
-function addJobs(snap: Snapshot, jobs: readonly JobRecord[]): void {
+/**
+ * Whether a job belongs to a main-canary run: a canary workflow's job on a
+ * canary event. A gate id is `wf.<workflow stem>.<job>`, so the stem is what
+ * joins it to `ci/config.yaml`'s `canary.workflows`.
+ *
+ * Narrow on purpose. Every other scheduled workflow — the collector's own
+ * tick, the evals, CodeQL, merge-tail — keeps counting exactly where it always
+ * did, because moving those too would redefine `job_minutes` under three live
+ * verdicts rather than just keeping the canary's new spend out of it.
+ *
+ * @param j - The job.
+ * @param canaryStems - Canary workflow file names with their extension dropped.
+ */
+function isCanaryJob(j: JobRecord, canaryStems: ReadonlySet<string>): boolean {
+  if (!CANARY_EVENTS.has(j.event) || !j.gate.startsWith('wf.')) return false;
+  const rest = j.gate.slice(3);
+  const cut = rest.lastIndexOf('.');
+  return cut > 0 && canaryStems.has(rest.slice(0, cut));
+}
+
+/**
+ * The canary workflows' file names with their extension dropped, which is the
+ * `<stem>` half of a `wf.<stem>.<job>` gate id.
+ *
+ * @param config - The parsed config.
+ */
+function canaryStems(config: Config): ReadonlySet<string> {
+  return new Set(config.canary.workflows.map((f: string) => f.replace(/\.ya?ml$/, '')));
+}
+
+function addJobs(
+  snap: Snapshot,
+  jobs: readonly JobRecord[],
+  canaryStems: ReadonlySet<string>
+): void {
   const dayMs = Date.parse(`${snap.date}T00:00:00Z`);
   const attempts = new Map<string, number>();
   for (const j of jobs) {
@@ -264,9 +300,21 @@ function addJobs(snap: Snapshot, jobs: readonly JobRecord[]): void {
       // A job that ended after midnight still belongs to the day its run was created.
       g.durations.push([Math.round((Date.parse(j.completedAt) - dayMs) / 1000), j.seconds]);
     }
-    if (j.seconds !== null && j.conclusion !== 'skipped') snap.counts.job_minutes += j.seconds / 60;
+    // Merge-path minutes only. `job_minutes` is what merging costs: it is the
+    // numerator of `tracked.job-minutes-per-merged-pr`, which a verdict reads
+    // and which rule 5 compares week over week. The main canary spends a fixed
+    // ~150 minutes a day on a tree nobody is merging, so folding it in makes
+    // the per-PR figure move with how BUSY the week was rather than with what
+    // the pipeline costs — measured, 365.2 to 399.9 over a week and 400 to 577
+    // on a quiet day, which trips rule 5's 20% growth arm on the canary's fixed
+    // cost alone. It is carried beside, never inside.
+    if (j.seconds !== null && j.conclusion !== 'skipped') {
+      if (isCanaryJob(j, canaryStems)) snap.counts.canary_minutes += j.seconds / 60;
+      else snap.counts.job_minutes += j.seconds / 60;
+    }
   }
   snap.counts.job_minutes = round(snap.counts.job_minutes, 1);
+  snap.counts.canary_minutes = round(snap.counts.canary_minutes, 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -359,7 +407,7 @@ function collectDay(
       }
       throw e;
     }
-    addJobs(snap, jobs);
+    addJobs(snap, jobs, canaryStems(config));
     const failed = [
       ...new Set(jobs.filter((j) => FAILED.has(j.conclusion)).map((j) => j.gate)),
     ].sort();

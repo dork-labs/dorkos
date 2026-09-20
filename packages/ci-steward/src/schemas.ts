@@ -131,6 +131,16 @@ const CanaryConfigSchema = z
   .object({
     /** Workflow file names whose scheduled runs on the default branch are the canary. */
     workflows: z.array(z.string().regex(/^[\w.-]+\.ya?ml$/, 'a workflow file name')).min(1),
+    /**
+     * Workflows that own a required context and are deliberately NOT in the
+     * canary, each with the reason. Every required workflow must be in one list
+     * or the other, so dropping a name from `workflows` cannot quietly stop the
+     * canary watching it: the census fails until someone writes down why.
+     */
+    exempt: z.record(
+      z.string().regex(/^[\w.-]+\.ya?ml$/, 'a workflow file name'),
+      z.string().min(20)
+    ),
   })
   .strict();
 

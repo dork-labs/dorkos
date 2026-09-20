@@ -84,21 +84,27 @@ name: lint
 #
 # This workflow gates the queue but never watches `main` afterwards, so a break
 # that lands is invisible until the next PR is ejected by it. The canary is
-# this workflow, unchanged, run against `main` HEAD four times a day. Every
-# step here already runs on both events, so nothing needed rewriting: the one
-# step that is `pull_request`-only (the ledger COVERAGE check, which needs a
-# PR's diff and branch) simply does not run, as it does not in the queue.
+# this workflow, unchanged, run against `main` HEAD four times a day.
+#
+# NOTHING NEEDED REWRITING HERE. Every step in this file — the Prettier check,
+# `turbo lint`, `pnpm lint:root` — is unconditional and means exactly the same
+# thing on a tree as on a diff, so the canary runs the whole job as written.
+# (typecheck.yml is the one that had a `pull_request`-only step; this file has
+# none, and a comment claiming otherwise would be a false claim about the code
+# beneath it.)
 #
 # A scheduled run reports on no PR and no queue build, so it can neither block
-# nor eject anything. The reasoning, the four slots and what their coverage is
-# worth given GitHub's throttling are in test.yml's matching header; the cron
-# here is the same four hours, offset by minutes so the four canary workflows
-# do not ask for runners in the same second.
+# nor eject anything, and `scripts/assert-canary-ref.sh` runs first in the job
+# so a dispatch aimed anywhere but `main` fails instead of posting this check
+# on a pull request's head. The reasoning, the four slots and what their
+# coverage is worth given GitHub's throttling are in test.yml's matching
+# header; the cron here is the same four hours, offset by minutes so the four
+# canary workflows do not ask for runners in the same second.
 on:
   pull_request:
   merge_group:
   schedule:
-    - cron: '33 0,6,12,18 * * *'
+    - cron: '33 0,5,10,21 * * *'
   workflow_dispatch:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
@@ -112,7 +118,13 @@ env:
 # dequeuing them. (Copied deliberately from test.yml, now that push-to-main is
 # dropped here too — same reasoning, same fix.)
 concurrency:
-  group: lint-${{ github.ref }}
+  # EVENT-AWARE, because of the canary. A `schedule` run and a
+  # `workflow_dispatch --ref main` run share `github.ref`, so on one group the
+  # on-demand leg would queue behind a scheduled round for up to half an hour —
+  # and the two are correlated in time, because the reason to dispatch by hand
+  # is usually the reason a round is already running. The suffix is constant
+  # for `pull_request` and `merge_group`, so neither changes behaviour.
+  group: lint-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || 'gate' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -131,6 +143,14 @@ jobs:
     # This is a stop for a hung run, not a perf budget.
     timeout-minutes: 15
     steps:
+      # A canary run is against `main` or it is nothing, and this says so before
+      # anything is installed. No `if:`: the script is a no-op on the gating
+      # events, which keeps it out of the census allowlist. See its header.
+      - name: A canary run is against main
+        run: bash scripts/assert-canary-ref.sh
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
       - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6

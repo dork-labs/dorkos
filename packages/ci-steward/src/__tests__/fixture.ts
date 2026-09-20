@@ -100,7 +100,14 @@ export function baseSpec(): FixtureSpec {
       // workflow_dispatch triggers; the census holds the pair together.
       // Deliberately not lint.yml: the deadlock cases rewrite its `on:` block
       // wholesale, and a canary finding there would be noise in every one.
-      canary: { workflows: ['test.yml', 'nightly.yml'] },
+      canary: {
+        workflows: ['test.yml', 'nightly.yml'],
+        // lint.yml owns the required `lint` context and is not in the canary,
+        // so the two-way bind needs it excused here.
+        exempt: {
+          'lint.yml': 'The fixture keeps one required workflow out of the canary on purpose.',
+        },
+      },
       verdicts: { before_days: 7, min_n: 5 },
       triage: {
         failure_spike_ratio: 1.5,

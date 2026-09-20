@@ -139,7 +139,7 @@ on:
   pull_request:
   merge_group:
   schedule:
-    - cron: '41 0,6,12,18 * * *'
+    - cron: '41 0,5,10,21 * * *'
   workflow_dispatch:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
@@ -153,7 +153,13 @@ env:
 # dequeuing them. Deliberately IDENTICAL in form to test.yml (keep them in
 # step).
 concurrency:
-  group: browser-test-${{ github.ref }}
+  # EVENT-AWARE, because of the canary. A `schedule` run and a
+  # `workflow_dispatch --ref main` run share `github.ref`, so on one group the
+  # on-demand leg would queue behind a scheduled round for up to half an hour —
+  # and the two are correlated in time, because the reason to dispatch by hand
+  # is usually the reason a round is already running. The suffix is constant
+  # for `pull_request` and `merge_group`, so neither changes behaviour.
+  group: browser-test-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || 'gate' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -306,6 +312,14 @@ jobs:
       # gate job's flaky warning. A test that keeps appearing there gets
       # fixed, or the budget goes to zero.
     steps:
+      # A canary run is against `main` or it is nothing, and this says so before
+      # anything is installed. No `if:`: the script is a no-op on the gating
+      # events, which keeps it out of the census allowlist. See its header.
+      - name: A canary run is against main
+        run: bash scripts/assert-canary-ref.sh
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
       - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
@@ -637,6 +651,14 @@ jobs:
     # hung artifact download, not a budget anything is expected to approach.
     timeout-minutes: 10
     steps:
+      # A canary run is against `main` or it is nothing, and this says so before
+      # anything is installed. No `if:`: the script is a no-op on the gating
+      # events, which keeps it out of the census allowlist. See its header.
+      - name: A canary run is against main
+        run: bash scripts/assert-canary-ref.sh
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
       # The pull_request pass-through. On a PR event the shard matrix was
       # skipped by design, so this succeeds loudly and every later step (all
       # gated on merge_group) is skipped. The real verdict on this code is
@@ -800,6 +822,13 @@ jobs:
     # loudly rather than certifying an unchecked tree, which is right on a PR
     # and pointless four times a day. It is not a required context, so skipping
     # it here blocks nothing.
+    #
+    # ENUMERATED POSITIVELY, where its siblings above use `!= 'pull_request'`.
+    # Deliberate, and the asymmetry is the point: the shards run on every event
+    # that is not a PR, so a future event should run them too; this job needs a
+    # base SHA, so a future event should NOT reach it until someone has checked
+    # that the event carries one. A `!=` list here would fail that new event
+    # loudly on its first run instead.
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
     # Nothing here runs a browser or a build. Two minutes is the install; ten is
     # a backstop, not a budget.

@@ -572,6 +572,56 @@ describe('trigger rules', () => {
       );
     });
 
+    it('goes RED, not silent, once the canary has stopped and its last result aged out', () => {
+      // The failure this arm exists for: an earlier version returned [] when
+      // the window held no canary runs, so a canary that stopped for long
+      // enough went quiet in BOTH arms while the verdict side read
+      // `inconclusive` rather than `failed`. Total silence would have been the
+      // one thing the rule could not say.
+      const alive = triage(input({ snapshots: [greenDay(addDays(TODAY, -20))] }));
+      expect(alive.canary_since).not.toBeNull();
+      const gone = triage(
+        input({ snapshots: [snap(TODAY)], prior: alive, latest: latest({ date: TODAY }) })
+      );
+      expect(ids(gone)).toEqual(['main-canary-stopped']);
+      expect(gone.open[0]!.severity).toBe('red');
+      expect(gone.open[0]!.what).toContain('produced nothing in the whole window');
+      // And it keeps saying so: `canary_since` never moves once set.
+      expect(gone.canary_since).toBe(alive.canary_since);
+      const stillGone = triage(input({ snapshots: [snap(TODAY)], prior: gone }));
+      expect(ids(stillGone)).toEqual(['main-canary-stopped']);
+    });
+
+    it('stays silent before the canary has ever run, and starts watching once it has', () => {
+      const never = triage(input({ snapshots: [snap(TODAY)] }));
+      expect(ids(never)).toEqual([]);
+      expect(never.canary_since).toBeNull();
+    });
+
+    it('keeps one id while a break spreads and partly heals, so first_fired survives', () => {
+      // The red trigger is anchored on the oldest red streak, and that anchor
+      // MOVES when one workflow heals first. Re-keying would reset the
+      // first-fired day the trigger exists to carry.
+      const old = run(TODAY, 'nightly.yml', 6, true);
+      const spread = triage(
+        input({ snapshots: [snap(TODAY, { canary: [old, run(TODAY, 'test.yml', 12, true)] })] })
+      );
+      expect(ids(spread)).toEqual([`main-canary:${old.sha}`]);
+      // nightly.yml heals; test.yml is still red, so the anchor would move.
+      const partial = triage(
+        input({
+          snapshots: [
+            snap(TODAY, {
+              canary: [old, run(TODAY, 'test.yml', 12, true), run(TODAY, 'nightly.yml', 18)],
+            }),
+          ],
+          prior: spread,
+        })
+      );
+      expect(ids(partial)).toEqual([`main-canary:${old.sha}`]);
+      expect(partial.open[0]!.first_fired).toBe(spread.open[0]!.first_fired);
+    });
+
     it('never counts a canary run as a failure of the gate it shares', () => {
       // The canary reuses the queue's jobs, so its runs carry the same gate
       // ids. A gate failing every canary round and never in the queue must not
