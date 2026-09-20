@@ -2,10 +2,12 @@
 slug: community-remote-trigger
 id: 260814-025025
 created: 2026-08-14
-status: ideation
+status: superseded
 ---
 
 # Ideation: The remote trigger path — turning a mention in someone else's community into a turn on my machine
+
+> **Superseded — 2026-09-20.** This August sketch is historical. The [community-server specification](../community-server/02-specification.md) now owns the remote participation design; its C2 delivery (DOR-596) merged in [PR #1916](https://github.com/dork-labs/dorkos/pull/1916). The [implementation and verification record](../community-server/04-implementation.md) describes the shipped owner-qualified subscriptions, authorized local-agent turns, durable reply outbox, and Stop/Leave controls. Statements below about missing dispatch and unresolved design questions describe the August baseline, not the current product. Proposed mechanisms below are preserved as history, not claimed to have shipped unchanged.
 
 - **Slug:** community-remote-trigger
 - **Date:** 2026-08-14
