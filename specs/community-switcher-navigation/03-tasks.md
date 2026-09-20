@@ -18,7 +18,7 @@ project: Community Navigation
 - **1.3** Make the qualified route the selection authority and implement keyed switch epochs, cancellation, and stream teardown.
 - **1.4** Bind sends, uploads, retries, receipts, drafts, and read cursors to their source destination.
 
-The phase gate is a route-driven context model that cannot render or mutate across owner/community boundaries. It combines view epochs with an owner/session/connection authorization generation so cleared state cannot be repopulated by late work. Tasks 1.1 and 1.2 may run in parallel; 1.3 consumes both, and 1.4 consumes the switch contract.
+The phase gate is a route-driven context model that cannot render or mutate across owner/community boundaries. Reads and streams must pass both the current view epoch and owner/session/connection authorization generation. Only an exact source-bound idempotent mutation receipt may settle after an ordinary switch, and it cannot replace newer-epoch cache data; invalid authority discards every outcome. Tasks 1.1 and 1.2 may run in parallel; 1.3 consumes both, and 1.4 consumes the switch contract.
 
 ## Phase 2 — Responsive switcher (DOR-2184)
 
@@ -37,7 +37,7 @@ This phase starts only after the referenced tenancy, administration, and members
 
 ## Phase 4 — Isolation proof (DOR-2186)
 
-- **4.1** Prove rapid-switch, late-event/mutation, delayed completion after revocation/owner change, same-host, independent-host, cache, and standalone isolation.
+- **4.1** Prove rapid-switch and A→B→A epoch rejection, exact-record mutation settlement, delayed completion after revocation/owner change, same-host, independent-host, cache, and standalone isolation.
 - **4.2** Prove keyboard, screen reader, touch, responsive, reduced-motion, zoom, long-label, and fifty-destination behavior.
 
 Both proof tasks run in parallel after Phase 3. Neither configuration inspection nor unit tests alone satisfy the gate; browser evidence must exercise the real shell and delayed network/stream behavior.
