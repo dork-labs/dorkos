@@ -1,6 +1,7 @@
 /**
- * What `ensureManaged` registers into an OpenCode sidecar once
- * `runtimes.dorkosTools` is on (spec `tool-only-room-replies` §D4, DOR-1613).
+ * What `ensureManaged` registers into an OpenCode sidecar for an agent-bound
+ * directory (spec `tool-only-room-replies` §D4). There is no setting: the
+ * experiment that used to gate it graduated and was removed (DOR-2099).
  *
  * ## Why the turn binding is the whole story here
  *
@@ -108,7 +109,7 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
 
   beforeEach(async () => {
     agentDir = await mkdtemp(path.join(tmpdir(), 'opencode-dorkos-tools-'));
-    configState.value = { runtimes: { dorkosTools: true }, mcp: { enabled: true } };
+    configState.value = { mcp: { enabled: true } };
   });
 
   afterEach(async () => {
@@ -203,11 +204,11 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
   });
 
   describe('when it withholds', () => {
-    it('adds nothing while the experiment is off, and makes no round trip', async () => {
-      // The default path for every OpenCode turn in the product. The status
-      // read matters as much as the add: this used to be served by an early
-      // return on a missing resolver, and the `dorkos` entry made that wrong.
-      configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: true } };
+    it('adds nothing when boot handed the runtime no loopback boundary', async () => {
+      // No turn binding means no address to register and no credential to
+      // present. The status read matters as much as the add: this used to be
+      // served by an early return on a missing resolver, and the `dorkos` entry
+      // made that wrong.
       const { client, adds } = fakeSidecar();
       await makeManager(agentDir).ensureManaged(client, agentDir);
 
@@ -222,11 +223,7 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
     });
 
     it('still adds agent tools when public MCP is off and login is on', async () => {
-      configState.value = {
-        runtimes: { dorkosTools: true },
-        mcp: { enabled: false },
-        auth: { enabled: true },
-      };
+      configState.value = { mcp: { enabled: false }, auth: { enabled: true } };
       const { client, adds } = fakeSidecar();
       const result = await makeManager(agentDir).ensureManaged(client, agentDir, runtimeTools());
       expect(result.dorkosApplied).toBe(true);
@@ -237,8 +234,8 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
   });
 
   describe('connector runtime server', () => {
-    it('registers independently of external MCP and the room-tools experiment', async () => {
-      configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: false } };
+    it('registers independently of external MCP posture', async () => {
+      configState.value = { mcp: { enabled: false } };
       const { client, adds } = fakeSidecar();
       const manager = makeManager(agentDir);
 
@@ -257,22 +254,20 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
         agentDir
       );
 
-      expect(result).toEqual({ dorkosApplied: false, connectorApplied: true });
-      expect(adds).toEqual([
-        {
-          name: 'dorkos_connections',
-          config: {
-            type: 'remote',
-            url: 'http://127.0.0.1:4341/mcp',
-            headers: {
-              Authorization: 'Bearer connector-secret',
-              'X-DorkOS-Connector-Runtime': 'opencode',
-              'X-DorkOS-Connector-Cwd': encodeURIComponent('/canonical/repo'),
-            },
-            enabled: true,
-          },
+      expect(result).toEqual({ dorkosApplied: true, connectorApplied: true });
+      // Exactly the two DorkOS servers, and the connections one carries the
+      // turn's own credential rather than anything the external MCP switch owns.
+      expect(adds.map((entry) => entry.name).sort()).toEqual(['dorkos', 'dorkos_connections']);
+      expect(adds.find((entry) => entry.name === 'dorkos_connections')?.config).toEqual({
+        type: 'remote',
+        url: 'http://127.0.0.1:4341/mcp',
+        headers: {
+          Authorization: 'Bearer connector-secret',
+          'X-DorkOS-Connector-Runtime': 'opencode',
+          'X-DorkOS-Connector-Cwd': encodeURIComponent('/canonical/repo'),
         },
-      ]);
+        enabled: true,
+      });
       expect(client.mcp.add).toHaveBeenCalledWith(
         expect.objectContaining({ query: { directory: '/canonical/repo' } })
       );

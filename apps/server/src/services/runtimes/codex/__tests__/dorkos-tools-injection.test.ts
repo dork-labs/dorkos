@@ -1,21 +1,19 @@
 /**
- * What a Codex turn carries once `runtimes.dorkosTools` is on: the `dorkos` MCP
- * server in `CodexOptions.config.mcp_servers`, and the room verbs in its prompt
- * under Codex's own tool prefix (spec `tool-only-room-replies` §D4/§D11,
- * DOR-1613).
+ * What every agent-bound Codex turn carries: the `dorkos` MCP server in
+ * `CodexOptions.config.mcp_servers`, and the room verbs in its prompt under
+ * Codex's own tool prefix (spec `tool-only-room-replies` §D4/§D11).
  *
  * These read the REAL options handed to the `Codex` constructor and the REAL
  * prompt handed to `runStreamed`, so an entry that is built but never passed to
  * the SDK fails here.
  *
- * ## The flag-OFF case is the important one
+ * ## There is no setting any more
  *
- * This is a wiring change on the default path of every Codex turn in the
- * product, shipped behind a flag that is off. So "off changes nothing" is not a
- * nicety, it is the claim the flag makes — and it is asserted as a whole-object
- * comparison against the same turn with the module absent, not as an absence
- * check on one key, because an absence check passes while an unrelated field
- * quietly changes shape.
+ * The experiment that used to gate this graduated and was removed (DOR-2099).
+ * What remains are the two postures that are facts about the turn rather than
+ * choices: a directory hosting no registered agent, and a runtime that boot
+ * never handed a loopback boundary. Both are exercised below, because both
+ * still decide whether an agent can speak in a room.
  *
  * @vitest-environment node
  */
@@ -153,7 +151,7 @@ describe('the dorkos tool server on a Codex turn', () => {
     sdkMocks.behavior = 'complete';
     sdkMocks.releaseParked = undefined;
     loggerMocks.warn.mockClear();
-    configState.value = { runtimes: { dorkosTools: true }, mcp: { enabled: true } };
+    configState.value = { mcp: { enabled: true } };
     agentDir = await mkdtemp(path.join(tmpdir(), 'codex-dorkos-tools-'));
     await mkdir(path.join(agentDir, '.dork'), { recursive: true });
     await writeFile(
@@ -227,7 +225,7 @@ describe('the dorkos tool server on a Codex turn', () => {
     return runtime;
   }
 
-  describe('flag ON', () => {
+  describe('an agent-bound turn', () => {
     it('injects the agent route with the complete turn binding via env vars', async () => {
       await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
 
@@ -312,11 +310,7 @@ describe('the dorkos tool server on a Codex turn', () => {
     });
 
     it('keeps agent tools available when login is on and public MCP is off', async () => {
-      configState.value = {
-        runtimes: { dorkosTools: true },
-        mcp: { enabled: false },
-        auth: { enabled: true },
-      };
+      configState.value = { mcp: { enabled: false }, auth: { enabled: true } };
 
       await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
 
@@ -355,8 +349,7 @@ describe('the dorkos tool server on a Codex turn', () => {
   });
 
   describe('connector runtime binding', () => {
-    it('sends fresh account awareness on a resumed thread even with generic DorkOS tools off', async () => {
-      configState.value.runtimes = { dorkosTools: false };
+    it('sends fresh account awareness on a resumed thread', async () => {
       let revision = 'grant-one';
       const runtime = makeRuntime({ accessSnapshot: async () => ({ accountCount: 1, revision }) });
       await drain(
@@ -406,7 +399,7 @@ describe('the dorkos tool server on a Codex turn', () => {
     });
 
     it('injects independently of external MCP posture and revokes on terminal completion', async () => {
-      configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: false } };
+      configState.value = { mcp: { enabled: false } };
       const principals = connectorPort();
       const stop = vi.fn();
       vi.mocked(principals.openTurn).mockImplementationOnce(async (_input, ownership) => {
@@ -651,20 +644,17 @@ describe('the dorkos tool server on a Codex turn', () => {
     });
   });
 
-  describe('flag OFF', () => {
-    it('produces byte-identical SDK options to a turn built without the feature', async () => {
-      // The claim the flag makes, asserted as a whole-object comparison: an
-      // absence check on the `dorkos` key would pass while some neighbouring
-      // field changed shape.
-      configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: true } };
+  describe('a runtime boot never handed a loopback boundary', () => {
+    it('injects nothing at all, asserted against the whole options object', async () => {
+      // An absence check on the `dorkos` key would pass while some neighbouring
+      // field changed shape, so this compares the whole object.
       await drain(
         makeRuntime({ runtimeTools: false }).sendMessage('s1', 'hello', { cwd: agentDir })
       );
-      const withFlagOff = sdkMocks.constructorOptions.at(-1);
 
-      expect(withFlagOff).toEqual({
+      expect(sdkMocks.constructorOptions.at(-1)).toEqual({
         codexPathOverride: '/bin/codex',
-        // No `config` at all: with the flag off and no managed servers, DorkOS
+        // No `config` at all: with no boundary and no managed servers, DorkOS
         // injects nothing. It used to inject the `dorkos_ui` bridge here on every
         // turn regardless; that is retired (spec `canvas-agent-seat` §5).
         env: expect.any(Object),
@@ -673,7 +663,6 @@ describe('the dorkos tool server on a Codex turn', () => {
     });
 
     it('names no room tool in the prompt, because the session has none', async () => {
-      configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: true } };
       await drain(
         makeRuntime({ runtimeTools: false }).sendMessage('s1', 'hello', { cwd: agentDir })
       );
@@ -683,16 +672,13 @@ describe('the dorkos tool server on a Codex turn', () => {
     });
 
     it('lets a user server called dorkos through untouched, and warns about nothing', async () => {
-      // The name is reserved only on the turns DorkOS actually injects it. Off,
-      // DorkOS wants nothing called `dorkos`, so dropping this person's own
-      // server of that name would take something and give nothing back — and it
-      // would make the flag-OFF path stop being byte-identical to what shipped
-      // before the feature, which is the one promise the flag makes.
+      // The name is reserved only on the turns DorkOS actually injects it. With
+      // nothing of ours to protect, dropping this person's own server of that
+      // name would take something and give nothing back.
       //
       // OpenCode already behaved this way (its desired set simply has no
-      // `dorkos` entry when the experiment is off), so this is also what keeps
+      // `dorkos` entry when nothing was resolved), so this is also what keeps
       // the two runtimes answering the same question the same way.
-      configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: true } };
       const managed: ManagedMcpServerResolver = {
         injectableServersForCwd: () => ({
           dorkos: { transport: 'stdio', command: '/bin/their-server' },
@@ -750,30 +736,30 @@ describe('the dorkos tool server on a Codex turn', () => {
       expect(await runtime.carriesRoomTools({ cwd: agentDir })).toBe(false);
     });
 
-    it('answers FALSE whenever the injection is withheld, across every configuration', async () => {
-      // The property rather than four separate cases: whatever the config says,
-      // what the ROOM is told and what the RUNTIME did must agree. Two readings
-      // of one gate is how a room comes to suppress a turn's words for a session
-      // that never got the tool.
+    it('agrees with what was injected whatever the external MCP posture says', async () => {
+      // The property rather than three separate cases: what the ROOM is told and
+      // what the RUNTIME did must agree. Two readings of one gate is how a room
+      // comes to suppress a turn's words for a session that never got the tool.
+      // The external MCP settings are in the loop because they are the ones a
+      // reader keeps expecting to matter here, and they must not.
       const runtime = makeRuntime();
       let asserted = 0;
       for (const config of [
-        { runtimes: { dorkosTools: true }, mcp: { enabled: true } },
-        { runtimes: { dorkosTools: true }, mcp: { enabled: false } },
-        { runtimes: { dorkosTools: false }, mcp: { enabled: true } },
+        { mcp: { enabled: true } },
+        { mcp: { enabled: false }, auth: { enabled: true } },
         {},
       ]) {
         configState.value = config;
         // `lastMcpServers` reads the newest constructed client, so each case
         // needs its own turn on its own session rather than a cleared mock.
         await drain(runtime.sendMessage(`s-${asserted}`, 'hello', { cwd: agentDir }));
-        const injected = lastMcpServers()['dorkos'] !== undefined;
+        expect(lastMcpServers()['dorkos'], JSON.stringify(config)).toBeDefined();
         expect(await runtime.carriesRoomTools({ cwd: agentDir }), JSON.stringify(config)).toBe(
-          injected
+          true
         );
         asserted += 1;
       }
-      expect(asserted).toBe(4);
+      expect(asserted).toBe(3);
     });
   });
 });

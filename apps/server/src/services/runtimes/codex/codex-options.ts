@@ -35,7 +35,8 @@ import { type CodexManagedMcpServers, type CodexMcpServerRecord } from './mcp-se
  * `config.mcp_servers` carries four contributors: the agent's enabled managed
  * servers (`managedServers`, spec `mcp-server-management`), the scoped
  * `dorkos_ui` bridge when a UI MCP URL is provided, and the `dorkos` tool server
- * when one is injected (`dorkosTools`, spec `tool-only-room-replies`), plus the
+ * when one is injected (the `dorkosTools` parameter — the resolved entry, not a
+ * setting; spec `tool-only-room-replies`), plus the
  * turn-bound connector server — see {@link buildMcpServersConfig} for the merge
  * and the shadowing guarantee.
  * `config` is omitted entirely when no source contributes a server.

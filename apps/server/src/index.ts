@@ -4321,7 +4321,6 @@ async function start() {
     connectorRuntimeMcpListener = await startConnectorRuntimeMcpListener({
       principals: agentScopedRuntimePrincipals,
       serverFactory: (principal) => createConnectorRuntimeMcpServer(capabilityRegistry!, principal),
-      agentToolsEnabled: () => configManager.get('runtimes')?.dorkosTools === true,
       agentServerFactory: async (principal) => {
         const identity = await agentScopedRuntimePrincipals.identityFor(principal);
         if (!identity) return null;

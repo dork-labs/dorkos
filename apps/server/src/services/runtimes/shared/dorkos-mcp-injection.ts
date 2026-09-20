@@ -17,7 +17,6 @@
  * @module services/runtimes/shared/dorkos-mcp-injection
  */
 import { logger } from '../../../lib/logger.js';
-import { configManager } from '../../core/config-manager.js';
 import {
   CONNECTOR_RUNTIME_AUTHORIZATION_HEADER,
   CONNECTOR_RUNTIME_CWD_HEADER,
@@ -46,16 +45,19 @@ export interface DorkosMcpInjection {
 
 /** Whether this instance would inject the `dorkos` server for a directory. */
 export type DorkosToolsPosture =
-  | { wired: true }
-  | { wired: false; why: 'experiment-off' | 'no-agent' | 'runtime-boundary-unavailable' };
+  { wired: true } | { wired: false; why: 'no-agent' | 'runtime-boundary-unavailable' };
 
 /**
- * Ask whether this instance is configured to hand a directory's sessions the
- * DorkOS tools.
+ * Ask whether this instance can hand a directory's sessions the DorkOS tools.
  *
  * This is the one decision both injection and `AgentRuntime.carriesRoomTools`
- * read. A room therefore suppresses a turn's text only when the same runtime is
- * able to inject the tool server that lets the agent speak for itself.
+ * read, so the room and the runtime can never disagree about whether an agent
+ * was given the tool that lets it speak for itself.
+ *
+ * **Nothing here is a setting.** The experiment that used to gate it graduated
+ * and was removed (DOR-2099): an agent-bound session gets the tools. The two
+ * remaining refusals are facts about the turn, not choices — there is no agent
+ * to act as, or boot never installed the loopback listener the entry points at.
  *
  * The public `mcp.enabled`, login, local MCP token, and `MCP_API_KEY` settings
  * are intentionally absent. They govern clients outside the runtime trust
@@ -69,9 +71,6 @@ export function dorkosToolsPosture(
   agentPath: string | undefined,
   runtimeBoundaryAvailable = false
 ): DorkosToolsPosture {
-  if (configManager?.get('runtimes')?.dorkosTools !== true) {
-    return { wired: false, why: 'experiment-off' };
-  }
   if (agentPath === undefined) return { wired: false, why: 'no-agent' };
   if (!runtimeBoundaryAvailable) return { wired: false, why: 'runtime-boundary-unavailable' };
   return { wired: true };

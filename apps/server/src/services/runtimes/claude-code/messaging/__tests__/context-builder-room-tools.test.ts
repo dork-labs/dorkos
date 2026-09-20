@@ -10,9 +10,9 @@
  * claude-code-only — codex and opencode carried no room tools at all, so
  * naming `react_to_room_entry` in shared prose would have told a runtime with
  * no reaction tool to react anyway. That premise is retired:
- * `runtimes.dorkosTools` gives both runtimes the same `dorkos` server, and the
- * block itself now lives in `runtimes/shared/room-tools-context.ts`, rendered
- * per runtime under that runtime's own tool prefix.
+ * both runtimes get the same `dorkos` server, and the block itself now lives in
+ * `runtimes/shared/room-tools-context.ts`, rendered per runtime under that
+ * runtime's own tool prefix.
  *
  * What survives is the distinction the pin was really about. `<room_tools>` is
  * built for a KNOWN session — the caller supplies the prefix, and the block is

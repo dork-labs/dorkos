@@ -1785,8 +1785,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * The `dorkos` server runs INSIDE a claude-code session rather than over a
    * wire, so there is no configuration to be wrong: all four room verbs sit in
    * `ALWAYS_LOADED_TOOLS` (`mcp-tools/tool-exposure.ts`) and reach the registry
-   * in-process. Nothing an operator can switch off — `runtimes.dorkosTools`
-   * included, which is about the OTHER two runtimes — takes them away.
+   * in-process. Nothing an operator can switch off takes them away.
    *
    * @returns `true`.
    */

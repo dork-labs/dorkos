@@ -18,16 +18,12 @@ import {
 } from '../listener.js';
 import { AgentIdentitySnapshotPrincipalPort } from '../agent-identity-snapshots.js';
 
-type TestListenerOptions = Omit<
-  ConnectorRuntimeMcpListenerOptions,
-  'agentServerFactory' | 'agentToolsEnabled'
-> &
-  Partial<Pick<ConnectorRuntimeMcpListenerOptions, 'agentServerFactory' | 'agentToolsEnabled'>>;
+type TestListenerOptions = Omit<ConnectorRuntimeMcpListenerOptions, 'agentServerFactory'> &
+  Partial<Pick<ConnectorRuntimeMcpListenerOptions, 'agentServerFactory'>>;
 
 function startConnectorRuntimeMcpListener(options: TestListenerOptions) {
   return startRawListener({
     agentServerFactory: () => new McpServer({ name: 'dorkos-agent-test', version: '1.0.0' }),
-    agentToolsEnabled: () => true,
     ...options,
   });
 }
@@ -211,24 +207,6 @@ describe('connector runtime MCP listener', () => {
       bindingId: opened.bindingId,
       permit: renewalPermit,
     });
-  });
-
-  it('keeps the agent route dark while runtime tools are disabled', async () => {
-    const agentFactory = vi.fn(
-      () => new McpServer({ name: 'dorkos-agent-test', version: '1.0.0' })
-    );
-    const listener = await startConnectorRuntimeMcpListener({
-      principals: port({ status: 'resolved', principal }),
-      serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
-      agentToolsEnabled: () => false,
-      agentServerFactory: agentFactory,
-    });
-    listeners.push(listener);
-
-    const response = await request(listener.agentUrl);
-
-    expect(response.status).toBe(404);
-    expect(agentFactory).not.toHaveBeenCalled();
   });
 
   it('rejects revoked bindings on the agent route before projection', async () => {

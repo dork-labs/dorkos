@@ -73,6 +73,44 @@ import {
   reachedDeclarations,
 } from './migration-closure.js';
 
+/**
+ * Shipped migration keys this repository has deliberately REMOVED, each with the
+ * one-line reason it was safe to remove.
+ *
+ * ## Why removal needs a list rather than a rule
+ *
+ * Every other loop in this rule walks the WORKING tree, so until DOR-2099 a key
+ * that was present in the release and simply deleted here was invisible: no
+ * loop ever reached it. The pins next door did not cover it either — they only
+ * report a pin left behind without its key, and the commit that deletes a key
+ * deletes its pin in the same breath. Deleting a shipped migration therefore
+ * passed both guards in silence, which is the opposite of what both exist for.
+ *
+ * Removal is not always wrong, though, so this is an allowlist rather than a
+ * ban. A shipped key owes an upgrading install one state change; when that state
+ * change has become empty — the leaf it seeded no longer exists anywhere in the
+ * product — the key owes nothing and keeping it costs something. That is a
+ * judgement a person makes once, in review, and records here.
+ *
+ * ## Adding an entry
+ *
+ * Three things move together, and the guards check two of them:
+ *
+ * 1. Delete the key (and any helper only it reached) from `CONFIG_MIGRATIONS`.
+ * 2. Add its line HERE, with a reason naming why nothing is owed.
+ * 3. Delete its pin from `merged-migration-hashes.ts` — `checkAppendOnly`
+ *    reports a pin whose key is gone, so this is not optional.
+ *
+ * An entry whose key is still in the table is refused, so the list cannot rot
+ * into a standing excuse for a deletion nobody reviewed.
+ */
+export const REMOVED_SHIPPED_KEYS: Readonly<Record<string, string>> = {
+  '0.71.0':
+    'seeded runtimes.dorkosTools; DOR-2099 graduated that experiment and deleted the leaf, so ' +
+    'there is no behaviour left for a stored value to select and the state change it owed is ' +
+    'empty. Its own removal note sits where the key used to be in config-manager.ts.',
+};
+
 /** Everything the rule needs, with git and the filesystem already resolved. */
 export interface MigrationSafetyInput {
   /** The working tree's `config-manager.ts` source. */
@@ -86,6 +124,16 @@ export interface MigrationSafetyInput {
    * @param version - The release version, without the leading `v`.
    */
   readAtTag: (version: string) => string | null;
+  /**
+   * Shipped keys whose deletion has been reviewed, defaulting to
+   * {@link REMOVED_SHIPPED_KEYS}.
+   *
+   * Passed in so the fixtures can drive both answers — an unlisted removal must
+   * fail and a listed one must pass — while production gets the repository's own
+   * list by omitting it. Omission is the SAFE direction: forgetting it means
+   * every removal but the recorded ones is refused.
+   */
+  removedShippedKeys?: Readonly<Record<string, string>>;
 }
 
 /** The rule's verdict, with every problem named rather than just a boolean. */
@@ -265,6 +313,31 @@ export function checkMigrationSafety(input: MigrationSafetyInput): MigrationSafe
   }
 
   const problems: string[] = [];
+  const removed = input.removedShippedKeys ?? REMOVED_SHIPPED_KEYS;
+
+  // A key the release carries and this tree does not. Checked before the loop
+  // below, which can only ever see keys that are still here.
+  for (const key of Object.keys(released)) {
+    if (working[key] !== undefined || (removed[key]?.trim() ?? '') !== '') continue;
+    problems.push(
+      `migration "${key}" shipped in v${latestReleased} but is GONE from the table here. An ` +
+        'install still upgrading through it silently skips the state change it was owed, and ' +
+        'nothing else notices: the pins next door only catch a pin left WITHOUT its key, and a ' +
+        'deletion removes both. Put it back, or — if the state change it owed has become empty, ' +
+        'because the thing it wrote no longer exists anywhere — record it in ' +
+        'REMOVED_SHIPPED_KEYS with a non-empty reason, and delete its pin.'
+    );
+  }
+
+  // An entry claiming a removal that did not happen. Without this the list rots
+  // into a standing excuse for a LATER deletion of that key which nobody read.
+  for (const key of Object.keys(removed)) {
+    if (working[key] === undefined) continue;
+    problems.push(
+      `migration "${key}" is listed as removed but is still in CONFIG_MIGRATIONS. Remove the ` +
+        'REMOVED_SHIPPED_KEYS entry, or finish the removal it describes.'
+    );
+  }
 
   for (const [key, body] of Object.entries(working)) {
     const shipped = released[key];

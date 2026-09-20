@@ -541,3 +541,69 @@ None. The three flagged in `01-ideation.md` §9 were ruled on by the orchestrato
 - `specs/room-participation/02-specification.md` §2.6, §10.2, §10.2.1, §10.2.2; `specs/rooms-management-tools/02-specification.md` D1.
 - `.claude/rules/room-conduct.md`; `meta/agent-etiquette.md` E1/E4/E7/E8/E16a/E16b/E21; `meta/chat-capabilities.md`.
 - `contributing/configuration.md`; `.claude/skills/adding-config-fields/SKILL.md`; `packages/evals/README.md`.
+
+---
+
+## Amendment 2026-09-19 — graduation and removal (DOR-2099)
+
+**Status of this amendment:** specified. **Author:** the DOR-2099 orchestrator. **Supersedes:** "PR 4 — graduation" above, and DOR-1613 (closed as absorbed).
+
+### A0. The decision
+
+The operator ruled on 2026-09-17 (#dorkos): "Agents decide when to speak" is the only way agents talk in rooms and DMs. Both experiments graduate and are **removed**, not merely flipped: `rooms.toolOnlyReplies` and `runtimes.dorkosTools` cease to exist as config leaves, Experiments entries, or branches. The dogfood-week criterion (5) is satisfied by that ruling; criteria 1, 3 and 4 are re-asserted in the work below; criterion 2's Codex/OpenCode legs are **not** paid for by this work (see A6).
+
+### A1. `runtimes.dorkosTools` graduates first (PR 1)
+
+The flag was the only gate between an agent-bound Codex/OpenCode session and the `dorkos` MCP entry. `dorkosToolsPosture` loses its `'experiment-off'` branch; the two remaining reasons (`'no-agent'`, `'runtime-boundary-unavailable'`) stay, because they are safety, not experiment. The runtime boundary is the internal loopback listener that boot installs; it is **not** gated by the public `mcp.enabled` switch, so graduating this flag cannot mute an agent when the operator has turned external MCP off. `index.ts`'s `agentToolsEnabled` capability flag becomes a constant `true` or is deleted with its consumers. Both policy tables (`config-disclosure`, `config-write-policy`, `default-verdicts`) drop the path. Migration `'0.80.0'` retires the leaf via the retired-keys mechanism so an existing file converges on first write; the schema stops declaring it. PR 1 ships alone and changes room behaviour for nobody: it only makes the tools always present for agent-bound sessions in every runtime.
+
+### A2. Tool-only becomes the only reply path (PR 2)
+
+- **`RoomReplyMode` is deleted**, along with `resolveReplyMode`, `roomReplyModeForToolCapableSession`, the caller-pinned `request.replyMode` seam, the `replyMode` field on the turn result / room context / presence claim, and every `=== 'tool-only'` branch. A room turn has one delivery: `deliverToolOnly`, renamed to whatever `deliver` becomes once its text half is gone.
+- **D2 is resolved the other way.** There is no text path to fail open to. A session whose runtime reports `carriesRoomTools() === false` still runs its turn; if it ends with no post and no reaction, the existing `agent_declined` silence notice fires exactly as for any other turn, and the runner logs one `warn` line naming the posture reason. Stated here, tested in PR 2. `carriesRoomTools` survives on the `AgentRuntime` interface only for that log line and for test-mode's scenario opt-in.
+- **D3 completes.** `TOOL_POST_NOT_IN_DM` is deleted (code, error string, TSDoc, tool-description caveat). A tool post in a DM is ordinary.
+- **D11 collapses to one set of strings.** `buildTextReplyBlock` and the text-mode sentences in `room-context-block.ts` are deleted; the tool-only strings become the strings. The DM literal-call directive from DOR-1643 stays.
+- **D12 is reversed: the welcome-back offer moves to the tool.** One path. The offer turn runs like any room turn: the agent posts via `post_to_room` or does not. An offer that produces no post produces nothing and no notice, consistent with the four already-silent outcomes of `askAside` and with "ambient stays silent". The greeter's own `deps.post` and its caller-pinned mode go. Two things the implementer must preserve and test: `welcomeBackOfferPrompt` carries the literal-call directive (else the DOR-1643 narration inversion returns), and an offer post must still be unable to start a conversation (it is stamped at the cascade ceiling, or the test proves the equivalent).
+- **D7 simplifies.** `done.outcome` (`'answered' | 'silent'`) is published for every room turn, since every turn is tool-only.
+- **Test-mode carries the room tools on every scenario.** `TOOL_CAPABLE_SCENARIOS` is deleted; `TestModeRuntime.carriesRoomTools()` returns `true`. Scenarios that today rely on their narration being posted (the ones `room-autonomy.spec.ts`, `team-room.spec.ts`, the rooms conformance and `communityConformance` suites drive) are rewritten to post through the real `post_to_room` capability, the way `rooms-post-attachment` already does. Every rooms browser spec and both conformance suites must go green **with no flag**, and this is verified locally before the PR opens because `browser-test` is a pass-through on PRs.
+- **Evals.** `rooms-tool-only.ts` folds into `rooms.ts` with its flag toggling removed; `setRoomsToolOnlyReplies` is deleted from `room-drive.ts`; `rooms-ack-only-reacts-under-the-flip` stops flipping anything; `rooms-ack-only-reacts-not-replies` is un-quarantined (graduation criterion 4) and its `experimental` tag dropped.
+- **Config.** `rooms.toolOnlyReplies` is retired by migration `'0.81.0'` (retired-keys mechanism) and removed from the schema and both default literals. `rooms.maxPostsPerTurn` stays; it is a tunable, not an experiment. Both Experiments-registry entries are gone after PR 2, and the registry's contract test keeps passing on whatever remains.
+- **Client.** The presence hook and Live Lane showcase keep their behaviour; their comments stop naming a flag. Settings → Experiments renders whatever the registry sends and needs no edit.
+
+### A3. Docs, ADR, meta (PR 3)
+
+`docs/concepts/rooms.mdx` describes the one behaviour and drops the "turn on DorkOS tools first" caveat; `docs/getting-started/configuration.mdx` and `contributing/configuration.md` drop both rows; `meta/chat-capabilities.md` rows M-04, A-06, A-08 record graduation; `.claude/rules/room-conduct.md` loses its flag references; ADR `260829-025020` is amended to "graduated, flag removed 2026-09" and a new ADR records the D2 and D12 reversals; this spec's manifest gains `linearIssue: DOR-2099` and status `implemented` once PR 3 merges.
+
+### A4. Acceptance (from DOR-2099, made precise)
+
+1. `grep -rn "toolOnlyReplies\|dorkosTools" apps packages docs specs contributing meta .claude/rules` returns only: the two migration bodies, the changelog fragments, the history in this spec and its ideation, and `chat-capabilities.md`'s history rows.
+2. Settings → Experiments lists neither entry; a config file carrying either leaf, set either way, loads and behaves identically.
+3. A Codex or OpenCode agent mentioned in a room answers with nothing switched on (unit: posture wired for an agent-bound session with the boundary up; structural evals on test-mode; conformance suites).
+4. A room turn that writes text and calls no tool produces the `agent_declined` notice, not a post (unit + browser spec).
+5. The welcome-back offer posts through the tool and cannot start a conversation.
+
+### A5. PR plan
+
+| PR  | Branch                             | Migration  | Scope                                 |
+| --- | ---------------------------------- | ---------- | ------------------------------------- |
+| 1   | `dor-2099-dorkos-tools-graduation` | `'0.80.0'` | A1 + this amendment + `03-tasks.json` |
+| 2   | `dor-2099-tool-only-replies`       | `'0.81.0'` | A2, stacked on PR 1                   |
+| 3   | `dor-2099-docs`                    | none       | A3, stacked on PR 2, `skip-changelog` |
+
+Each PR faces an adversarial review before it opens.
+
+### A6. What this work does not pay for
+
+The Codex/OpenCode credentialed judgment legs (criterion 2 on those runtimes) need `DORKOS_EVALS_PAID_PROVIDER=1` beside an OpenRouter key, which is the operator's decision, not the agent's. Their behaviour is covered here by the unit posture tests, the free structural tier, and both conformance suites. The six deferred drills from DOR-1643 are paid on the same terms and are recorded on DOR-2099 as owed.
+
+### Decisions register (amendment)
+
+| #   | Decision                                                    | Ruled by                                       |
+| --- | ----------------------------------------------------------- | ---------------------------------------------- |
+| A0  | Remove both experiments, not flip them                      | Operator (2026-09-17)                          |
+| A1  | Graduate `runtimes.dorkosTools` in its own PR, first        | Orchestrator                                   |
+| A2  | D2 → unresolvable mode is tool-only + silence notice + warn | Operator (DOR-2099 scope 2)                    |
+| A2  | D12 → the welcome-back offer moves to the tool              | Operator recommendation, orchestrator confirms |
+| A2  | `carriesRoomTools` survives for the warn line and test-mode | Orchestrator                                   |
+| A2  | Test-mode is tool-capable on every scenario                 | Orchestrator                                   |
+| A5  | Three stacked PRs, two migration keys                       | Orchestrator                                   |
+| A6  | No OpenRouter spend; Codex/OpenCode legs owed               | Money rule (AGENTS.md)                         |
