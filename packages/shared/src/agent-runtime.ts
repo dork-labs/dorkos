@@ -1801,25 +1801,21 @@ export interface AgentRuntime {
 
   /**
    * Whether a session in this directory is KNOWN to carry the DorkOS room tools
-   * — `post_to_room` and its three siblings (spec `tool-only-room-replies` §D2).
+   * — `post_to_room` and its three siblings.
    *
-   * Asked by a room before it decides how that turn's words reach the room. With
-   * `rooms.toolOnlyReplies` on, `true` means the turn's own text is never posted
-   * and the agent answers by calling the tool; anything else means the text
-   * posts, exactly as it does today.
+   * **It decides nothing, and that is the whole of it since DOR-2099.** A room
+   * turn now speaks only by calling the tool, so there is no second delivery for
+   * a `false` answer to select: the turn runs either way, and a turn that ends
+   * with no post and no reaction is silence, which the room reports with the
+   * ordinary `agent_declined` notice. What this buys is a WARNING — the room
+   * logs one line naming the session that was about to take a turn with no
+   * posting verb — so an operator whose agent went quiet can find the wiring gap
+   * instead of guessing at the model's judgment.
    *
-   * **It is a positive claim, and "we do not know" must answer `false`.** The
-   * question fails OPEN by design and the polarity is deliberately the opposite
-   * of a permission check: an agent that cannot reach the tool AND whose text is
-   * suppressed is silently mute, and silence is the worse failure
-   * (`.claude/rules/room-conduct.md`). A runtime that answers `true` on a
-   * maybe buys nothing and costs a room its answer.
-   *
+   * **It is still a positive claim, and "we do not know" answers `false`.**
    * Optional for the same reason: a runtime that has not thought about the
-   * question is not asserting anything, so an absent implementation reads as "we
-   * do not know" and the room keeps posting the turn's text. Nothing about
-   * permission is decided here — the agent could always post; this decides only
-   * whether DorkOS ALSO posts for it.
+   * question is not asserting anything. Since the answer only steers a log line,
+   * a wrong one now costs a diagnostic rather than an answer.
    *
    * @param session.cwd - The session's working directory, which is the agent's
    *   directory for every agent-bound session. The two production runtimes that

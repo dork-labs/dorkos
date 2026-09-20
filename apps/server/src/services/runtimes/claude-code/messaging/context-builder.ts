@@ -12,10 +12,7 @@ import { configManager } from '../../../core/config-manager.js';
 import type { ResolvedToolConfig } from '../tooling/tool-filter.js';
 import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import { buildAgentContextAppend } from '../../shared/agent-context.js';
-import {
-  buildRoomToolsBlock,
-  roomReplyModeForToolCapableSession,
-} from '../../shared/room-tools-context.js';
+import { buildRoomToolsBlock } from '../../shared/room-tools-context.js';
 import { buildCanvasContentCatalog, buildUiActionCatalog } from '../../shared/ui-tool-contract.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
 import { formatApprovalVerdict } from '../../shared/approval-verdict-block.js';
@@ -699,10 +696,7 @@ export async function buildSystemPromptAppend(
   // it was survivable because the per-turn `<room_context>` block is mode-aware
   // anyway. The second half is true and the first half was not — the mechanism
   // that closes it was three lines below.)
-  const roomBlock = buildRoomToolsBlock(
-    IN_SESSION_TOOL_PREFIX,
-    roomReplyModeForToolCapableSession()
-  );
+  const roomBlock = buildRoomToolsBlock(IN_SESSION_TOOL_PREFIX);
   const uiBlock = buildUiToolsBlock();
   const genUiBlock = GEN_UI_CONTEXT;
 

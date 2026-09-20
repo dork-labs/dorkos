@@ -201,7 +201,6 @@ describe('a room turn’s canvas commands', () => {
       attachmentProjection: [],
       onWaiting: () => undefined,
       onActivity: () => undefined,
-      onReplyMode: () => undefined,
       onSessionBound: () => undefined,
     };
   }

@@ -100,18 +100,15 @@ export const EXPERIMENTS: readonly ExperimentEntry[] = [
     envOverride: 'DORKOS_A2A_ENABLED',
     graduationIssue: 'DOR-1304',
   },
-  // `runtimes.dorkosTools` GRADUATED here (DOR-2099, spec
-  // `tool-only-room-replies` §A1) on 2026-09-19: Codex and OpenCode agents carry
-  // the DorkOS tools on every agent-bound session, so there is no switch left to
-  // offer. The setting went with it — unlike warm agents above, nothing about it
-  // was worth keeping as a control.
-  {
-    path: 'rooms.toolOnlyReplies',
-    title: 'Agents decide when to speak',
-    description:
-      'Right now, whatever your agent writes during a room turn gets posted. With this on, it chooses: it can answer, it can just react with an emoji, or it can decide nothing needs saying and stay quiet — and its thinking stays in its own session instead of landing in the room.',
-    costNote:
-      'An agent that forgets to answer says nothing. The room tells you when that happens, but it is a new way for a reply to go missing, so watch a few conversations after you turn it on.',
-    graduationIssue: 'DOR-1613',
-  },
+  // **Two entries GRADUATED here on 2026-09-19 (DOR-2099, spec
+  // `tool-only-room-replies`), and both settings went with them.**
+  //
+  // `runtimes.dorkosTools` (§A1): Codex and OpenCode agents carry the DorkOS
+  // tools on every agent-bound session, so there is no switch left to offer.
+  //
+  // `rooms.toolOnlyReplies` (§A2), which read "Agents decide when to speak": a
+  // room turn now answers by calling `post_to_room`, reacts, or says nothing, in
+  // channels and direct messages alike. Unlike warm agents above, neither was
+  // worth keeping as a control — a switch is only worth having where both sides
+  // of it are behaviours the product still has.
 ];

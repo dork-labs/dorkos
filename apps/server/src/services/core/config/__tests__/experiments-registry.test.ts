@@ -399,11 +399,18 @@ describe('EXPERIMENTS', () => {
 
     const MENTIONS = FILES.flatMap(mentionsIn);
 
-    it('found the pages that say it, so the check below is about something', () => {
-      // Vacuously green against an empty corpus, which is the one way this could
-      // stop working without saying so.
+    it('reads a real corpus, so the check below is about something', () => {
+      // **The corpus, not the mentions.** A scanner pointed at nothing is the
+      // one way this could stop working without saying so, and that is what
+      // this asserts. How many pages currently INSTRUCT a reader is the corpus's
+      // business rather than the guard's: every remaining experiment may
+      // legitimately go undocumented, and DOR-2099 took the count to zero by
+      // graduating both of the switches that had a page. A guard that required
+      // an experiment to be written about would then be demanding prose for its
+      // own sake — and the scanner is still proven, on fixtures below and on
+      // whatever the corpus carries.
       expect(FILES.length).toBeGreaterThan(50);
-      expect(MENTIONS.length).toBeGreaterThan(0);
+      expect(MENTIONS.length).toBeGreaterThanOrEqual(0);
     });
 
     /**
@@ -465,23 +472,51 @@ describe('EXPERIMENTS', () => {
         }
       });
 
-      it('reds on a wrong label seeded into any page that really names one', () => {
-        // The same re-seed against the live corpus, so the guard is proven on the
-        // files it actually reads and not only on fixtures. Asserted per FILE and
-        // by equality: a page with two instruction sites where the re-seed only
-        // still reds at one of them would pass a `toContain`.
-        expect(MENTIONS.length).toBeGreaterThan(0);
-        const byFile = new Map<string, Mention[]>();
+      it('reds on a wrong label seeded into a page shaped like a real one', () => {
+        // The re-seed, over WHOLE PAGES rather than sentences: a page that names
+        // a switch twice, where the re-seed only still reds at one of the two,
+        // would pass a `toContain`. Asserted per file and by equality.
+        //
+        // **The live corpus first, and a fixture page when it carries none.**
+        // Proving it on the files this actually reads is the stronger of the
+        // two, so it is what runs whenever there is anything to run it on. When
+        // there is not — DOR-2099 graduated both switches that had a page, and
+        // the remaining experiments may legitimately go undocumented — the
+        // fixture keeps the guard from quietly becoming a no-op. What it cannot
+        // do is pass by finding nothing: `pages` is never empty, and every
+        // entry's re-seed has to red.
+        const byFile = new Map<string, { text: string; mentions: Mention[] }>();
         for (const mention of MENTIONS) {
-          byFile.set(mention.file, [...(byFile.get(mention.file) ?? []), mention]);
+          const entry = byFile.get(mention.file) ?? {
+            text: readFileSync(path.join(REPO_ROOT, mention.file), 'utf-8'),
+            mentions: [],
+          };
+          entry.mentions.push(mention);
+          byFile.set(mention.file, entry);
         }
-        for (const [file, mentions] of byFile) {
-          let text = readFileSync(path.join(REPO_ROOT, file), 'utf-8');
+        if (byFile.size === 0) {
+          const file = 'a page shaped like the ones this reads';
+          const text = [
+            '## How an agent decides to speak',
+            '',
+            'Turn on **Let outside agents reach yours** in Settings under Experiments and it',
+            'starts working.',
+            '',
+            'Switch **Let outside agents reach yours** on in Settings under Experiments to try it.',
+            '',
+          ].join('\n');
+          byFile.set(file, { text, mentions: mentionsInText(text, file) });
+          expect(byFile.get(file)!.mentions.length, 'the fixture page names a switch twice').toBe(
+            2
+          );
+        }
+        for (const [file, { text, mentions }] of byFile) {
+          let seeded = text;
           for (const mention of mentions) {
-            text = text.replaceAll(`**${mention.named}**`, `**${WRONG}**`);
+            seeded = seeded.replaceAll(`**${mention.named}**`, `**${WRONG}**`);
           }
           expect(
-            mentionsInText(text, file).map((found) => found.named),
+            mentionsInText(seeded, file).map((found) => found.named),
             file
           ).toEqual(mentions.map(() => WRONG));
         }

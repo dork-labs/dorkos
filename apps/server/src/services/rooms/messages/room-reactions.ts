@@ -156,10 +156,10 @@ export class RoomReactions {
       new Date().toISOString(),
       on
     );
-    // **A reaction can BE the answer** (spec `tool-only-room-replies` §D10). Under
-    // `rooms.toolOnlyReplies` a turn that reacts and says nothing has still put
-    // something in front of the reader, so it releases as `'answered'` and earns
-    // no "read this and did not reply" line.
+    // **A reaction can BE the answer** (spec `tool-only-room-replies` §D10). A
+    // turn that reacts and says nothing has still put something in front of the
+    // reader, so it releases as `'answered'` and earns no "read this and did not
+    // reply" line.
     //
     // Marked AFTER the write and only when a pill is now STANDING. Both halves
     // matter: every refusal above throws, so nothing that put nothing in front of

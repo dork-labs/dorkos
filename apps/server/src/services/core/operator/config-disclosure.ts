@@ -229,10 +229,9 @@ export const CONFIG_DISCLOSURE = {
   'rooms.collectDebounceMs': 'expose',
   'rooms.collectMaxEntries': 'expose',
   'rooms.responseGate': 'expose',
-  // How agents behave in this person's own rooms. Neither names a credential or
-  // where one lives, and an agent that can read them can explain why a colleague
-  // stayed quiet or why its fourth post in one turn was refused.
-  'rooms.toolOnlyReplies': 'expose',
+  // How much one agent may say in this person's own rooms. It names no
+  // credential and nowhere one lives, and an agent that can read it can say why
+  // its fourth post in one turn was refused.
   'rooms.maxPostsPerTurn': 'expose',
   // The same reasoning one line further: an agent that can read its canvas
   // ceiling can say why its fourth change to the room's table was refused,

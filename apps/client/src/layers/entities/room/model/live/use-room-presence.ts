@@ -43,8 +43,8 @@
  * **One field beyond the lifecycle is a fact ABOUT the release, not the work.**
  * `done` can carry `outcome: 'silent'` (spec `tool-only-room-replies` §D7): the
  * turn ran and put nothing durable in front of the room. Without it, a working
- * pill simply vanishes — indistinguishable from a crash under `rooms.toolOnlyReplies`,
- * where it happens many times a day rather than rarely. `silentFinish` is where
+ * pill simply vanishes — indistinguishable from a crash, and it happens many
+ * times a day rather than rarely. `silentFinish` is where
  * that one fact is kept, past tense and briefly, so the lane can say the pill
  * released into something rather than nothing — see {@link useRoomSilentFinish}.
  *

@@ -180,7 +180,6 @@ function request(): RoomTurnRequest {
     attachmentProjection: [],
     onWaiting: () => undefined,
     onActivity: () => undefined,
-    onReplyMode: () => undefined,
     onSessionBound: () => undefined,
   };
 }

@@ -13,6 +13,7 @@ import {
   createRoomHarness,
   agentLookupFor,
   outcomeRunner,
+  type ScriptedTurnRunner,
   type RoomHarness,
 } from '../../rooms/__tests__/room-test-harness.js';
 import { deliverNotifyDm, type NotifyDmDeps, type NotifyDmOutcome } from '../notify-dm.js';
@@ -91,9 +92,12 @@ describe('deliverNotifyDm', () => {
     // runs — the only moment a claim is actually held — and the deps cannot
     // exist until the harness the runner is built into does.
     const wiring: { deps?: NotifyDmDeps } = {};
-    const runner = outcomeRunner(() => {
+    const runner: ScriptedTurnRunner = outcomeRunner((request) => {
       midTurn = deliverNotifyDm({ agentId: ANA_ID, message: 'Deploy finished.' }, wiring.deps!);
-      return { text: 'on it' };
+      // The turn's own answer, said the way a turn says anything: through the
+      // posting tool, from inside the same claim.
+      runner.sayInRoom(request, 'on it');
+      return { text: null };
     });
     const harness = createRoomHarness({
       agents: agentLookupFor({ [ANA_PATH]: { name: 'ana' } }),
@@ -118,7 +122,7 @@ describe('deliverNotifyDm', () => {
     expect(midTurn?.ok).toBe(true);
     const entries = harness.service.listEntries(dm.id, harness.human, { limit: 10 });
     const notified = entries.find((e) => e.id === (midTurn?.ok ? midTurn.entryId : ''));
-    // The turn's own answer, written by the dispatcher under the same claim.
+    // The turn's own answer, posted under the same claim.
     const replied = entries.find((e) => (e.body as { text?: string }).text === 'on it');
     expect(notified).toBeDefined();
     expect(replied).toBeDefined();

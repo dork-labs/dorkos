@@ -19,7 +19,6 @@ import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { DispatchOutcome } from '../observability/dispatch-buffers.js';
 import type { BusyContext } from './notices/notice-copy.js';
 import type { CascadeStamp, RoomTurnUnanswered } from './notices/notice-log.js';
-import type { RoomReplyMode } from '@dorkos/shared/additional-context';
 import type { EngagementWindow } from './engagement.js';
 
 /**
@@ -132,10 +131,9 @@ export interface ActiveClaim {
    * turn, and the reaction landed (spec `tool-only-room-replies` §D10).
    *
    * {@link ActiveClaim.spokeViaTool}'s sibling, and it exists for the outcome the
-   * operator named: **a thumbs-up can BE the answer.** Under
-   * `rooms.toolOnlyReplies` a turn that reacts and says nothing has still put
-   * something in front of the reader, so it is `'answered'` and it must not earn
-   * an `agent_declined` line.
+   * operator named: **a thumbs-up can BE the answer.** A turn that reacts and
+   * says nothing has still put something in front of the reader, so it is
+   * `'answered'` and it must not earn an `agent_declined` line.
    *
    * **Only a SUCCESSFUL reaction sets it.** One refused by the hourly
    * `ReactionBudget`, or by the `stoppedIn` mark, put nothing on any message and
@@ -154,8 +152,8 @@ export interface ActiveClaim {
    * (spec `tool-only-room-replies` §D9).
    *
    * The counter behind `rooms.maxPostsPerTurn`, and it is a MECHANISM rather than
-   * a prompt on purpose: under the flip, posting is the only voice an agent has,
-   * and `.claude/rules/room-conduct.md` is unambiguous that a bound belongs in
+   * a prompt on purpose: posting is the only voice an agent has in a room, and
+   * `.claude/rules/room-conduct.md` is unambiguous that a bound belongs in
    * code. Etiquette E8 ("one message, not three") is exactly the kind of prompt
    * that does not hold.
    *
@@ -166,20 +164,6 @@ export interface ActiveClaim {
    * already costs a turn against the cascade budget on its own.
    */
   postsThisTurn: number;
-  /**
-   * How this turn's words reach the room, once the runner has resolved it, or
-   * `undefined` before the turn starts and for a claim no runner ever ran under
-   * (spec `tool-only-room-replies` §D2).
-   *
-   * Read by exactly one thing: `postFromTool`'s DM refusal. In text mode the
-   * refusal stands — the reply genuinely IS the message in a DM — and in a
-   * tool-only turn it is false, because nothing the turn writes is posted.
-   *
-   * `undefined` reads as `'text'`, which is the fail-open direction: a post made
-   * with no turn behind it, or before the mode was known, is refused in a DM
-   * exactly as it was before this feature existed.
-   */
-  replyMode?: RoomReplyMode;
   /**
    * The session this turn is actually running on, once the runtime has named it.
    *
@@ -483,9 +467,9 @@ export const DISPATCH_OUTCOMES: Record<ClaimOutcome, DispatchOutcome> = {
  *
  * **Only two outcomes are worth an ephemeral statement.** `answered` and `quiet`
  * are the two where the indicator would otherwise drop into nothing a reader can
- * interpret — and under `rooms.toolOnlyReplies` the second stops being rare, so
- * a pill that appears and vanishes many times a day reads as a crash rather than
- * as an agent exercising judgment. Every other outcome writes a room notice of
+ * interpret — and the second is not rare, so a pill that appears and vanishes
+ * many times a day reads as a crash rather than as an agent exercising
+ * judgment. Every other outcome writes a room notice of
  * its own; a second, ephemeral version of the same news beside it would be the
  * room saying one thing twice.
  *

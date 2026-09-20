@@ -19,6 +19,7 @@ import {
   agentLookupFor,
   createRoomHarness,
   outcomeRunner,
+  speakingRunner,
   settleUntil,
 } from './room-test-harness.js';
 
@@ -155,7 +156,7 @@ describe('a room dispatch is one agent answering one trigger', () => {
         agents,
         // Ana answers by naming Bo, which re-enters the cascade at the ceiling
         // and gets Bo refused — from inside Ana's scope.
-        runner: outcomeRunner((request) => {
+        runner: speakingRunner((request) => {
           const id = currentDispatch()?.dispatchId;
           if (id) seen.push(id);
           return { text: request.authorId === anaId ? 'over to @bo' : 'on it' };

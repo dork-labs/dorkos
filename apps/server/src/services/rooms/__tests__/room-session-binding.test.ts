@@ -27,7 +27,12 @@ import { describe, it, expect, vi } from 'vitest';
 import { eq, roomSessions } from '@dorkos/db';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { RoomStore } from '../room-store.js';
-import { agentLookupFor, createRoomHarness, outcomeRunner } from './room-test-harness.js';
+import {
+  agentLookupFor,
+  createRoomHarness,
+  outcomeRunner,
+  speakingRunner,
+} from './room-test-harness.js';
 import type { RoomHarness, ScriptedTurnRunner } from './room-test-harness.js';
 
 /** The id Claude Code hands back once it has named the session itself. */
@@ -62,7 +67,18 @@ function open(runner: ScriptedTurnRunner): {
  * @param says - What the agent says each turn. `null` is an agent staying quiet.
  */
 function renamesItsSession(says: string | null = 'on it'): ScriptedTurnRunner {
-  return outcomeRunner(() => ({ text: says, sessionId: CANONICAL }));
+  const runner: ScriptedTurnRunner = outcomeRunner((request) => {
+    // **Named mid-turn, BEFORE the turn says anything**, which is the whole
+    // ordering `onSessionBound` exists for: a room binds a placeholder before
+    // the claim, the runtime names the real session while the turn runs, and a
+    // `post_to_room` made after that has to be stamped with the real one. A
+    // fake that only returned the canonical id would report it after the body
+    // had already posted.
+    request.onSessionBound(CANONICAL);
+    if (says !== null) runner.sayInRoom(request, says);
+    return { text: says, sessionId: CANONICAL };
+  });
+  return runner;
 }
 
 /** Post as the human and wait for every turn it sets off. */
@@ -139,36 +155,51 @@ describe('the room binding follows the session the turn ran on', () => {
     expect(runner.turns[1].sessionId).toBe(bound);
   });
 
-  it('records the session before it posts, so a failed post cannot cost the room its memory', async () => {
-    // The ordering is a promise the code makes in a comment, and a comment
-    // cannot fail. Moving the rebind below `deliver` left every other room test
-    // green, because in every one of them the post succeeds — so this is the
-    // only place the order is actually pinned.
+  it('stamps a mid-turn post with the canonical session, and keeps the binding when it fails', async () => {
+    // **The promise, in the shape the code now has.** The room posts nothing on
+    // an agent's behalf (spec `tool-only-room-replies`), so the write that can
+    // fail mid-turn is the agent's OWN tool call — and what has to be true
+    // before it is that the claim already knows which session the turn is
+    // really running on. `onSessionBound` is reported before the turn body runs
+    // for exactly that reason; without it a mid-turn post would be stamped with
+    // the placeholder the room bound before the turn started, which is an id
+    // nothing ever writes to again.
     //
-    // It is not a hypothetical order to get wrong: a write into the room log can
-    // fail (a busy database, a room archived mid-turn), and the turn still ran.
-    // Losing the answer is bad; losing the whole conversation the answer came
-    // from, silently, until the next idle sweep, is worse.
+    // The second half is the one the comment in the code cannot fail on its
+    // own: a write into the room log CAN fail (a busy database, a room archived
+    // mid-turn) and the turn still ran. Losing the message is bad; losing the
+    // whole conversation it came from, silently, until the next idle sweep, is
+    // worse.
     const runner = renamesItsSession();
     const { harness, room, ana } = open(runner);
-    const order: string[] = [];
-    vi.spyOn(harness.store, 'rebindRoomSession').mockImplementation((...args) => {
-      order.push('rebind');
-      return RoomStore.prototype.rebindRoomSession.apply(harness.store, args);
-    });
-    const post = harness.service.post.bind(harness.service);
-    vi.spyOn(harness.service, 'post').mockImplementation((roomId, input) => {
-      // Only the agent's reply fails; the human's message has to land, or there
-      // is no turn to order anything against.
-      if (input.authorId !== ana) return post(roomId, input);
-      order.push('post');
-      throw new Error('the log rejected that write');
-    });
 
     await seedAndSettle(harness, room.id, 'is the build green?');
 
-    expect(order).toEqual(['rebind', 'post']);
+    // The post went in stamped with the id the runtime named, not the
+    // placeholder — which is what says the binding was recorded first.
+    const said = harness.service
+      .listEntries(room.id, harness.human, { limit: 20 })
+      .find((entry) => entry.authorId === ana);
+    expect(said?.sessionId).toBe(CANONICAL);
     expect(boundSession(harness, room.id)).toBe(CANONICAL);
+
+    // And again with the write refused. The turn ran on the canonical session,
+    // so the room keeps knowing that however the write went.
+    const second = renamesItsSession();
+    const failing = open(second);
+    vi.spyOn(failing.harness.service, 'postFromTool').mockImplementation(() => {
+      throw new Error('the log rejected that write');
+    });
+
+    await seedAndSettle(failing.harness, failing.room.id, 'is the build green?');
+
+    expect(second.refusals).toEqual(['the log rejected that write']);
+    expect(
+      failing.harness.service
+        .listEntries(failing.room.id, failing.harness.human, { limit: 20 })
+        .filter((entry) => entry.authorId === failing.ana && entry.kind === 'post')
+    ).toEqual([]);
+    expect(boundSession(failing.harness, failing.room.id)).toBe(CANONICAL);
   });
 
   it('does not rebind when the session was too busy to run a turn', async () => {

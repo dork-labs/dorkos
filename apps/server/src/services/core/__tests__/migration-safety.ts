@@ -109,6 +109,12 @@ export const REMOVED_SHIPPED_KEYS: Readonly<Record<string, string>> = {
     'seeded runtimes.dorkosTools; DOR-2099 graduated that experiment and deleted the leaf, so ' +
     'there is no behaviour left for a stored value to select and the state change it owed is ' +
     'empty. Its own removal note sits where the key used to be in config-manager.ts.',
+  '0.72.0':
+    'seeded rooms.toolOnlyReplies beside rooms.maxPostsPerTurn; DOR-2099 graduated that ' +
+    'experiment and deleted the leaf, so the state change it owed for that half is empty — and ' +
+    'its helper read USER_CONFIG_DEFAULTS.rooms.toolOnlyReplies, which a shipped body may not be ' +
+    'edited to stop doing. The surviving half, seeding maxPostsPerTurn, moves to 0.81.0. Its own ' +
+    'removal note sits where the key used to be in config-manager.ts.',
 };
 
 /** Everything the rule needs, with git and the filesystem already resolved. */

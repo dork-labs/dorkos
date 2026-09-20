@@ -316,7 +316,6 @@ describe('applyProtectedState', () => {
       collectDebounceMs: 500,
       collectMaxEntries: 20,
       responseGate: 'routing',
-      toolOnlyReplies: false,
       maxPostsPerTurn: 3,
       maxCanvasOpsPerTurn: 3,
       repo: {

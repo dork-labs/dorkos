@@ -217,8 +217,7 @@ export interface RoomServiceDeps {
    * Injected in the same style as {@link RoomServiceDeps.limitsFor}, so this
    * domain still reads no config. Read PER POST rather than captured, because an
    * operator who feels the number is wrong must be able to move it without
-   * restarting anything — posting is the agent's only voice once
-   * `rooms.toolOnlyReplies` is on.
+   * restarting anything — posting is the agent's only voice in a room.
    */
   maxPostsPerTurn(): number;
   /**

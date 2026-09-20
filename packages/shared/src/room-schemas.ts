@@ -2183,8 +2183,9 @@ export const RoomSignalEventSchema = z
      * build that predates it.
      *
      * It exists because a working pill that appears and vanishes with nothing to
-     * show reads as a crash, and under `rooms.toolOnlyReplies` that happens many
-     * times a day rather than rarely. It rides the ephemeral lane on purpose:
+     * show reads as a crash, and a turn that decides nothing needs saying is now
+     * an ordinary outcome rather than a rare one. It rides the ephemeral lane on
+     * purpose:
      * the fact is past tense, so a reload forgetting it costs nothing, and
      * etiquette E16a is what makes a mechanical presence signal legal without it
      * counting as the agent participating.

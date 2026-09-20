@@ -354,10 +354,10 @@ export function LiveLaneShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Silent finish (D7) — the pill releasing into a brief, fading past-tense line. Under
-        `rooms.toolOnlyReplies` a turn often runs and puts nothing durable in front of the room;
-        this is what stops that from reading as a crash. No dot, no elapsed time — it is a report,
-        styled like the session’s own finished-turn summary below.
+        Silent finish (D7) — the pill releasing into a brief, fading past-tense line. A turn often
+        runs and puts nothing durable in front of the room; this is what stops that from reading as
+        a crash. No dot, no elapsed time — it is a report, styled like the session’s own
+        finished-turn summary below.
       </ShowcaseLabel>
       <ShowcaseDemo>
         <LaneBox>

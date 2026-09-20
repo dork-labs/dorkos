@@ -20,11 +20,7 @@ import { evaluateRunGate } from '../../report/summary.js';
 import { selectSuite } from '../index.js';
 import { roomsStructuralCases } from '../rooms.js';
 import { roomsCredentialedCases } from '../rooms-recall.js';
-import {
-  DM_ANSWER_RATE_SEEDS,
-  TOOL_ONLY_WHILE_DRIVING,
-  roomsJudgmentCases,
-} from '../rooms-judgment.js';
+import { DM_ANSWER_RATE_SEEDS, roomsJudgmentCases } from '../rooms-judgment.js';
 
 // The local-sign-in probe shells out to the real `claude` binary. Left real, the
 // credential-gate test below would boot a credentialed server and SPEND on a
@@ -95,17 +91,35 @@ describe('the structural tier', () => {
 });
 
 describe('the credentialed tier', () => {
-  it('is quarantined, budget-capped, and asks for a real model', () => {
+  /**
+   * The cases a credentialed run has promoted out of quarantine.
+   *
+   * **Promotion is a human decision on the evidence** (README), so the list is
+   * an enumeration rather than a rule: a case that quietly stopped being
+   * quarantined would otherwise take a gate with it and say nothing.
+   * `rooms-ack-only-reacts-not-replies` was promoted on 2026-09-19 (DOR-2099),
+   * because what it measures stopped being a disposition and became a judgment:
+   * a turn's text reaches nobody unless it calls the tool, so the "reacted AND
+   * posted Ack." half of the A-06 failure is structurally unreachable and what
+   * is left is a choice the model really makes.
+   */
+  const PROMOTED = new Set(['rooms-ack-only-reacts-not-replies']);
+
+  it('is budget-capped, asks for a real model, and gates only where it was promoted', () => {
     for (const evalCase of roomsCredentialedCases) {
       expect(evalCase.runtimeTier, evalCase.id).toBe('claude-code-cheap');
       expect(evalCase.costClass, evalCase.id).toBe('cheap');
       // Quarantined: it reports and never gates until credentialed runs promote
       // it, which is a human decision on the evidence (README).
-      expect(evalCase.quarantined, evalCase.id).toBe(true);
+      expect(evalCase.quarantined ?? false, evalCase.id).toBe(!PROMOTED.has(evalCase.id));
       expect(evalCase.perEvalCeilingUsd, evalCase.id).toBeGreaterThan(0);
       expect(evalCase.tags, evalCase.id).toContain('rooms');
       expect(evalCase.tags, evalCase.id).not.toContain('core');
     }
+    // And every promoted id is really in this tier, so the set cannot rot into
+    // an excuse for a case that has been renamed or removed.
+    const ids = new Set(roomsCredentialedCases.map((evalCase) => evalCase.id));
+    for (const id of PROMOTED) expect(ids, id).toContain(id);
   });
 
   it('covers the X-row probes chat-capabilities §7 asks for, minus the two it cannot reach', () => {
@@ -157,15 +171,6 @@ describe('the credentialed tier', () => {
         evalCase.id
       ).toEqual([evalCase.id]);
     }
-  });
-
-  it('drives the flip ON — the direction the whole tier depends on', () => {
-    // **Mutation E, and it used to be unobservable.** `underTheFlip` wrote
-    // `on: true` as an inline literal; flipping it to `false` left every test in
-    // this package green, and the twelve cases would have run against the OLD
-    // behaviour while reporting judgment findings about a feature that was
-    // switched off. Nothing about a case's shape reveals which way it drove.
-    expect(TOOL_ONLY_WHILE_DRIVING).toBe(true);
   });
 
   it('holds the twelve judgment cases the flip added, then the early-signal case', () => {

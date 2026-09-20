@@ -3,12 +3,12 @@
  * speaking for it (spec `tool-only-room-replies` §D13; DOR-1613 PR3).
  *
  * Thirteen credentialed cases, every one of them quarantined, every one of them
- * driving `rooms.toolOnlyReplies` ON before it posts. Every count and figure
+ * driving a real room turn and reading what the model chose to do. Every count and figure
  * below was measured on the first twelve; the thirteenth,
  * `rooms-signals-before-a-long-turn` (DOR-1975), has not been run. They spend real money and
  * they are not a check.
  *
- * ## What separates this file from `rooms.ts` and `rooms-tool-only.ts`
+ * ## What separates this file from `rooms.ts`
  *
  * Those measure MECHANISM on `test-mode`: given a scripted turn that posts, or
  * reacts, or says nothing, does the room do the right thing? They gate, they are
@@ -100,7 +100,7 @@
  * ### The DM drill, in the five parts the README requires
  *
  * 1. **The seed.** In `apps/server/src/services/runtimes/shared/room-context-block.ts`,
- *    delete the `data.replyMode === 'tool-only'` push at the END of
+ *    delete the `closingDirective` push at the END of
  *    `formatRoomContext` — the closing directive, "Before you end this turn,
  *    exactly one of these two". **Not the D11 paragraph this step used to name.**
  *    That paragraph was present, and reworded to state the association outright,
@@ -218,7 +218,7 @@
  *
  * ### The mutation drill, run live (DOR-1643)
  *
- * Deleting the closing directive — the `data.replyMode === 'tool-only'` push at
+ * Deleting the closing directive — the `closingDirective` push at
  * the end of `formatRoomContext` — and re-running the three answer-rate seeds
  * took them from 3 of 3 to 1 of 3: `rooms-dm-answers-a-direct-question` red,
  * `rooms-dm-answers-an-ambiguous-request` red, `rooms-dm-answers-an-implied-question`
@@ -285,7 +285,7 @@
  *   ASKED you … answering is not optional". The whole block is emitted only when
  *   the reply mode is `tool-only`;
  * - `room-context-block.ts:1004`, inside the
- *   `replyMode === 'tool-only' && room.kind !== 'channel'` guard — "This is a
+ *   `room.kind !== 'channel'` guard — "This is a
  *   direct message, so answering is not optional".
  *
  * Two conditional SOURCE sites whose conditions a DM under the flip satisfies is
@@ -347,28 +347,19 @@
  * tracker issues included — is describing runs 4 and 6 and needs the same
  * correction.
  *
- * ### How to run a case with the flip OFF (the control)
+ * ### The control that produced run 3, and why it cannot be re-run
  *
- * Run 3 is the control the whole reading rests on, and it was produced by hand —
- * editing {@link TOOL_ONLY_WHILE_DRIVING} to `false` and re-running. That is a
- * recipe now rather than a thing somebody has to reconstruct:
+ * Run 3 was produced by hand, by turning the flip off and re-running: the same
+ * agent, the same question, answering in 15 seconds. That control is history
+ * now rather than a recipe. DOR-2099 graduated the flip and deleted it, so there
+ * is no second behaviour to compare against and no switch to turn off — a room
+ * turn speaks by calling the tool or it says nothing, on every install.
  *
- * 1. **The seed**: set `TOOL_ONLY_WHILE_DRIVING` to `false` in this file.
- * 2. **The command**: the same one the module doc gives, narrowed to one case
- *    with `--suite <case-id>`.
- * 3. **What to expect**: the case behaves as it did before DOR-1613 — the turn's
- *    text posts, so any answer-rate case should PASS. A red here means something
- *    other than the flip is wrong.
- * 4. **Reproduction versus noise**: the run is only a control if the turn RAN.
- *    Check `roomTurnRanFor` is green before reading anything else.
- * 5. **Where to read the answer**: `results.json`.
- *
- * Note that the unit test `drives the flip ON` fails while the seed is in place,
- * which is deliberate: it is the guard that stops the seed being committed. The
- * restore inside {@link underTheFlip} is a literal `false` for this recipe's
- * sake: written as the negation of {@link TOOL_ONLY_WHILE_DRIVING} it turned the
- * flip back ON after every case, which is exactly backwards for the one person
- * this recipe is for.
+ * What replaces it as the discriminating control is the mutation drill below:
+ * remove the closing directive and measure the drop. It was run live on
+ * 2026-09-02 and took DM answer-rate from 3 of 3 seeds to 1 of 3, which is the
+ * same question run 3 was asking — does this green come from the feature or
+ * from the model's disposition — asked in the one way that still has an answer.
  *
  * **What this suite was for at that point**: it was the instrument that said the
  * flip must not graduate yet, and it said where to look — the DM path
@@ -397,7 +388,7 @@
  * @module evals/suite/rooms-judgment
  */
 import type { EvalCase, RoomScriptResult } from '../types.js';
-import { postToRoom, setToolOnlyReplies } from '../runner/room-drive.js';
+import { postToRoom } from '../runner/room-drive.js';
 import {
   agentPostedInRoom,
   agentStayedQuietInRoom,
@@ -469,47 +460,6 @@ const ADA: RoomAgentSpec = {
 const ADA_ENGAGED: RoomAgentSpec = { ...ADA, responseMode: 'engaged' };
 
 /**
- * Turn the flip on for one case, and put it back afterwards.
- *
- * **Every case in this file owes the restore**, and on this tier the reason is
- * sharper than tidiness: the credentialed runner boots a child-process server
- * per case but the sandbox `DORK_HOME` can outlive one, so a flag left on would
- * reach a neighbour that never asked for it — and a neighbour running under the
- * flip when its author wrote it for the old behaviour is a false result in
- * whichever direction it happens to fall.
- *
- * @param baseUrl - The running harness server.
- * @param body - The drive itself.
- */
-async function underTheFlip<T>(baseUrl: string, body: () => Promise<T>): Promise<T> {
-  await setToolOnlyReplies({ baseUrl, on: TOOL_ONLY_WHILE_DRIVING });
-  try {
-    return await body();
-  } finally {
-    // **Back to OFF, written as a literal, which is the shipped default and what
-    // every neighbour in this package was written against** — not "whatever it
-    // was before", and NOT the negation of {@link TOOL_ONLY_WHILE_DRIVING}. That
-    // negation restored the flip to ON for anyone following this module's own
-    // flip-OFF recipe, which is the one time the restore has any work to do. A
-    // credentialed case boots its own child-process server on a fresh sandbox, so
-    // there is no operator setting here to preserve; restoring a value read from
-    // the sandbox would only ever restore the default the long way round, while
-    // quietly making the case depend on a read that can fail.
-    await setToolOnlyReplies({ baseUrl, on: false });
-  }
-}
-
-/**
- * What {@link underTheFlip} sets, named so a test can assert the direction.
- *
- * **A constant rather than a literal, because the literal was untestable.** With
- * `on: true` written inline, flipping it to `false` left every test in this
- * package green — the cases would have run against the OLD behaviour and
- * reported judgment findings about a feature that was switched off.
- */
-export const TOOL_ONLY_WHILE_DRIVING = true;
-
-/**
  * One DM answer-rate probe: open a direct message, say one thing, and collect.
  *
  * The three phrasings differ ONLY in the sentence, which is what makes them
@@ -559,29 +509,28 @@ function dmAnswerRateCase(id: keyof typeof DM_ANSWER_RATE_SEEDS, title: string):
     quarantined: true,
     perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
     seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
-    roomScript: async (ctx): Promise<RoomScriptResult> =>
-      underTheFlip(ctx.baseUrl, async () => {
-        const { room, stream } = await openRoomFor(ctx, {
-          slug: id,
-          title,
-          agents: [ADA],
-          kind: 'dm',
-          timeoutMs: CREDENTIALED_TIMEOUT_MS,
+    roomScript: async (ctx): Promise<RoomScriptResult> => {
+      const { room, stream } = await openRoomFor(ctx, {
+        slug: id,
+        title,
+        agents: [ADA],
+        kind: 'dm',
+        timeoutMs: CREDENTIALED_TIMEOUT_MS,
+      });
+      try {
+        // No mention: in a DM every message a person sends is addressed to
+        // whoever is on the other side, and needing an `@` would make this a
+        // test of mentions rather than of a direct message.
+        await postToRoom({ baseUrl: ctx.baseUrl, roomId: room.roomId, text: says });
+        const frames = await stream.settle({
+          settleWhen: (collected) => agentSpoke(collected, room, 'ada'),
+          quietMs: CREDENTIALED_QUIET_MS,
         });
-        try {
-          // No mention: in a DM every message a person sends is addressed to
-          // whoever is on the other side, and needing an `@` would make this a
-          // test of mentions rather than of a direct message.
-          await postToRoom({ baseUrl: ctx.baseUrl, roomId: room.roomId, text: says });
-          const frames = await stream.settle({
-            settleWhen: (collected) => agentSpoke(collected, room, 'ada'),
-            quietMs: CREDENTIALED_QUIET_MS,
-          });
-          return { frames, room };
-        } finally {
-          stream.close();
-        }
-      }),
+        return { frames, room };
+      } finally {
+        stream.close();
+      }
+    },
     oracles: [
       roomTurnRanFor('ada', 'the direct message reached the agent'),
       agentPostedInRoom('ada', {
@@ -694,46 +643,45 @@ export const roomsDmRestraintOnThanksCase: EvalCase = {
   quarantined: true,
   perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
-  roomScript: async (ctx): Promise<RoomScriptResult> =>
-    underTheFlip(ctx.baseUrl, async () => {
-      const { room, stream } = await openRoomFor(ctx, {
-        slug: 'dm-restraint',
-        title: 'dm-restraint',
-        agents: [ADA],
-        kind: 'dm',
-        timeoutMs: CREDENTIALED_TIMEOUT_MS,
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'dm-restraint',
+      title: 'dm-restraint',
+      agents: [ADA],
+      kind: 'dm',
+      timeoutMs: CREDENTIALED_TIMEOUT_MS,
+    });
+    try {
+      // The exchange is set up first, so "thanks" is a REAL closing rather
+      // than an opening nobody can interpret. Without the answer above it, a
+      // model has to guess what it is being thanked for, and silence would be
+      // confusion rather than restraint.
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text: 'did the importer fix go out in yesterday’s release?',
       });
-      try {
-        // The exchange is set up first, so "thanks" is a REAL closing rather
-        // than an opening nobody can interpret. Without the answer above it, a
-        // model has to guess what it is being thanked for, and silence would be
-        // confusion rather than restraint.
-        await postToRoom({
-          baseUrl: ctx.baseUrl,
-          roomId: room.roomId,
-          text: 'did the importer fix go out in yesterday’s release?',
-        });
-        await stream.settle({
-          settleWhen: (collected) => agentSpoke(collected, room, 'ada'),
-          quietMs: CREDENTIALED_QUIET_MS,
-        });
-        const opener = observedEntries(stream.frames()).find(
-          (e) => e.authorId === room.agents.ada && e.kind === 'post'
-        );
-        // Restraint is judged from here on: the answer above is correct and
-        // must not read as a failure of it.
-        room.notes.windowOpenedBy = opener?.id ?? '';
+      await stream.settle({
+        settleWhen: (collected) => agentSpoke(collected, room, 'ada'),
+        quietMs: CREDENTIALED_QUIET_MS,
+      });
+      const opener = observedEntries(stream.frames()).find(
+        (e) => e.authorId === room.agents.ada && e.kind === 'post'
+      );
+      // Restraint is judged from here on: the answer above is correct and
+      // must not read as a failure of it.
+      room.notes.windowOpenedBy = opener?.id ?? '';
 
-        await postToRoom({ baseUrl: ctx.baseUrl, roomId: room.roomId, text: 'thanks!' });
-        // No `settleWhen`: the pass shape is that nothing more arrives, so
-        // waiting for a post would either hang out the drive on a correct run or
-        // bias collection toward the failure being checked for.
-        const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
-        return { frames, room };
-      } finally {
-        stream.close();
-      }
-    }),
+      await postToRoom({ baseUrl: ctx.baseUrl, roomId: room.roomId, text: 'thanks!' });
+      // No `settleWhen`: the pass shape is that nothing more arrives, so
+      // waiting for a post would either hang out the drive on a correct run or
+      // bias collection toward the failure being checked for.
+      const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
+      return { frames, room };
+    } finally {
+      stream.close();
+    }
+  },
   oracles: [
     openerLanded('the agent answered the question that came first'),
     agentStayedQuietInRoom('ada', {
@@ -787,32 +735,31 @@ export const roomsChannelMentionedQuestionPostsCase: EvalCase = {
   quarantined: true,
   perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
-  roomScript: async (ctx): Promise<RoomScriptResult> =>
-    underTheFlip(ctx.baseUrl, async () => {
-      const { room, stream } = await openRoomFor(ctx, {
-        slug: 'channel-asked',
-        title: 'channel-asked',
-        agents: [ADA],
-        timeoutMs: CREDENTIALED_TIMEOUT_MS,
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'channel-asked',
+      title: 'channel-asked',
+      agents: [ADA],
+      timeoutMs: CREDENTIALED_TIMEOUT_MS,
+    });
+    try {
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text:
+          `${mentionOf(room, 'ada')} last night's importer log rejected 12 rows: 9 of them ` +
+          'failed on a semicolon in the address field and 3 on an empty postcode. Which of ' +
+          'those two should we fix first?',
       });
-      try {
-        await postToRoom({
-          baseUrl: ctx.baseUrl,
-          roomId: room.roomId,
-          text:
-            `${mentionOf(room, 'ada')} last night's importer log rejected 12 rows: 9 of them ` +
-            'failed on a semicolon in the address field and 3 on an empty postcode. Which of ' +
-            'those two should we fix first?',
-        });
-        const frames = await stream.settle({
-          settleWhen: (collected) => agentSpoke(collected, room, 'ada'),
-          quietMs: CREDENTIALED_QUIET_MS,
-        });
-        return { frames, room };
-      } finally {
-        stream.close();
-      }
-    }),
+      const frames = await stream.settle({
+        settleWhen: (collected) => agentSpoke(collected, room, 'ada'),
+        quietMs: CREDENTIALED_QUIET_MS,
+      });
+      return { frames, room };
+    } finally {
+      stream.close();
+    }
+  },
   oracles: [
     roomTurnRanFor('ada', 'the mention triggered a turn'),
     agentPostedInRoom('ada', { label: 'the agent answered the question it was asked' }),
@@ -849,52 +796,51 @@ export const roomsChannelYieldsToHumanCase: EvalCase = {
   quarantined: true,
   perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA_ENGAGED]),
-  roomScript: async (ctx): Promise<RoomScriptResult> =>
-    underTheFlip(ctx.baseUrl, async () => {
-      const { room, stream } = await openRoomFor(ctx, {
-        slug: 'yield',
-        title: 'yield',
-        agents: [ADA_ENGAGED],
-        timeoutMs: CREDENTIALED_TIMEOUT_MS,
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'yield',
+      title: 'yield',
+      agents: [ADA_ENGAGED],
+      timeoutMs: CREDENTIALED_TIMEOUT_MS,
+    });
+    try {
+      // The window has to be OPENED, or an `engaged` agent is not triggered at
+      // all and a green would prove nothing — the same setup the restraint
+      // case in `rooms-recall.ts` argues for at length.
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text: `${mentionOf(room, 'ada')} morning — anything from you on the importer today?`,
       });
-      try {
-        // The window has to be OPENED, or an `engaged` agent is not triggered at
-        // all and a green would prove nothing — the same setup the restraint
-        // case in `rooms-recall.ts` argues for at length.
-        await postToRoom({
-          baseUrl: ctx.baseUrl,
-          roomId: room.roomId,
-          text: `${mentionOf(room, 'ada')} morning — anything from you on the importer today?`,
-        });
-        await stream.settle({
-          settleWhen: (collected) => agentSpoke(collected, room, 'ada'),
-          quietMs: CREDENTIALED_QUIET_MS,
-        });
-        const opener = observedEntries(stream.frames()).find(
-          (e) => e.authorId === room.agents.ada && e.kind === 'post'
-        );
-        room.notes.windowOpenedBy = opener?.id ?? '';
+      await stream.settle({
+        settleWhen: (collected) => agentSpoke(collected, room, 'ada'),
+        quietMs: CREDENTIALED_QUIET_MS,
+      });
+      const opener = observedEntries(stream.frames()).find(
+        (e) => e.authorId === room.agents.ada && e.kind === 'post'
+      );
+      room.notes.windowOpenedBy = opener?.id ?? '';
 
-        // A question the agent is NOT named in, immediately and completely
-        // answered by somebody else. One human, two voices — this install
-        // resolves every un-headered caller to its owner, so the speakers are
-        // named inside the text (the restraint case makes the same concession).
-        await postToRoom({
-          baseUrl: ctx.baseUrl,
-          roomId: room.roomId,
-          text: 'Kai: does anyone know which branch the importer fix landed on?',
-        });
-        await postToRoom({
-          baseUrl: ctx.baseUrl,
-          roomId: room.roomId,
-          text: 'Priya: it went out on release/2026-08-27 — I merged it myself yesterday afternoon.',
-        });
-        const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
-        return { frames, room };
-      } finally {
-        stream.close();
-      }
-    }),
+      // A question the agent is NOT named in, immediately and completely
+      // answered by somebody else. One human, two voices — this install
+      // resolves every un-headered caller to its owner, so the speakers are
+      // named inside the text (the restraint case makes the same concession).
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text: 'Kai: does anyone know which branch the importer fix landed on?',
+      });
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text: 'Priya: it went out on release/2026-08-27 — I merged it myself yesterday afternoon.',
+      });
+      const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
+      return { frames, room };
+    } finally {
+      stream.close();
+    }
+  },
   oracles: [
     openerLanded('the agent answered when it WAS addressed'),
     agentStayedQuietInRoom('ada', {
@@ -934,29 +880,28 @@ export const roomsAckOnlyReactsUnderFlipCase: EvalCase = {
   quarantined: true,
   perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
-  roomScript: async (ctx): Promise<RoomScriptResult> =>
-    underTheFlip(ctx.baseUrl, async () => {
-      const { room, stream } = await openRoomFor(ctx, {
-        slug: 'ack-flip',
-        title: 'ack-flip',
-        agents: [ADA],
-        timeoutMs: CREDENTIALED_TIMEOUT_MS,
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'ack-flip',
+      title: 'ack-flip',
+      agents: [ADA],
+      timeoutMs: CREDENTIALED_TIMEOUT_MS,
+    });
+    try {
+      const posted = await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text:
+          `${mentionOf(room, 'ada')} the release notes are proofread and merged. ` +
+          'No reply needed, just ack this.',
       });
-      try {
-        const posted = await postToRoom({
-          baseUrl: ctx.baseUrl,
-          roomId: room.roomId,
-          text:
-            `${mentionOf(room, 'ada')} the release notes are proofread and merged. ` +
-            'No reply needed, just ack this.',
-        });
-        room.notes.ackEntryId = posted.entryId;
-        const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
-        return { frames, room };
-      } finally {
-        stream.close();
-      }
-    }),
+      room.notes.ackEntryId = posted.entryId;
+      const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
+      return { frames, room };
+    } finally {
+      stream.close();
+    }
+  },
   oracles: [
     roomTurnRanFor('ada', 'the mention triggered a turn'),
     agentReactedInRoom('ada', {
@@ -990,28 +935,27 @@ export const roomsDmReactionIsTheAnswerCase: EvalCase = {
   quarantined: true,
   perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
-  roomScript: async (ctx): Promise<RoomScriptResult> =>
-    underTheFlip(ctx.baseUrl, async () => {
-      const { room, stream } = await openRoomFor(ctx, {
-        slug: 'dm-ack',
-        title: 'dm-ack',
-        agents: [ADA],
-        kind: 'dm',
-        timeoutMs: CREDENTIALED_TIMEOUT_MS,
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'dm-ack',
+      title: 'dm-ack',
+      agents: [ADA],
+      kind: 'dm',
+      timeoutMs: CREDENTIALED_TIMEOUT_MS,
+    });
+    try {
+      const posted = await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text: 'heads up — I moved the importer notes into the shared drive. Just ack, no reply needed.',
       });
-      try {
-        const posted = await postToRoom({
-          baseUrl: ctx.baseUrl,
-          roomId: room.roomId,
-          text: 'heads up — I moved the importer notes into the shared drive. Just ack, no reply needed.',
-        });
-        room.notes.ackEntryId = posted.entryId;
-        const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
-        return { frames, room };
-      } finally {
-        stream.close();
-      }
-    }),
+      room.notes.ackEntryId = posted.entryId;
+      const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
+      return { frames, room };
+    } finally {
+      stream.close();
+    }
+  },
   oracles: [
     roomTurnRanFor('ada', 'the direct message reached the agent'),
     agentReactedInRoom('ada', {
@@ -1057,34 +1001,33 @@ export const roomsThinkingStaysPrivateCase: EvalCase = {
   quarantined: true,
   perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
-  roomScript: async (ctx): Promise<RoomScriptResult> =>
-    underTheFlip(ctx.baseUrl, async () => {
-      const { room, stream } = await openRoomFor(ctx, {
-        slug: 'private-thinking',
-        title: 'private-thinking',
-        agents: [ADA],
-        timeoutMs: CREDENTIALED_TIMEOUT_MS,
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'private-thinking',
+      title: 'private-thinking',
+      agents: [ADA],
+      timeoutMs: CREDENTIALED_TIMEOUT_MS,
+    });
+    try {
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text:
+          `${mentionOf(room, 'ada')} we have three importer bugs open and one afternoon. ` +
+          'Which one should we take first?',
       });
-      try {
-        await postToRoom({
-          baseUrl: ctx.baseUrl,
-          roomId: room.roomId,
-          text:
-            `${mentionOf(room, 'ada')} we have three importer bugs open and one afternoon. ` +
-            'Which one should we take first?',
-        });
-        // **No `settleWhen`, and that is the assertion's precondition.**
-        // Settling on the first post truncates collection there, which makes the
-        // shape this case exists to catch — a second and third bubble, or a
-        // scratchpad dump after the answer — structurally uncollectable. The
-        // pass shape is "one post and then nothing", so the wait has to be for
-        // quiet, exactly as the ack and decline cases do it.
-        const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
-        return { frames, room };
-      } finally {
-        stream.close();
-      }
-    }),
+      // **No `settleWhen`, and that is the assertion's precondition.**
+      // Settling on the first post truncates collection there, which makes the
+      // shape this case exists to catch — a second and third bubble, or a
+      // scratchpad dump after the answer — structurally uncollectable. The
+      // pass shape is "one post and then nothing", so the wait has to be for
+      // quiet, exactly as the ack and decline cases do it.
+      const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
+      return { frames, room };
+    } finally {
+      stream.close();
+    }
+  },
   oracles: [
     agentPostedInRoom('ada', { label: 'it answered the question' }),
     noRoomEntryContains(
@@ -1121,34 +1064,33 @@ export const roomsAnswersInOneMessageCase: EvalCase = {
   quarantined: true,
   perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
-  roomScript: async (ctx): Promise<RoomScriptResult> =>
-    underTheFlip(ctx.baseUrl, async () => {
-      const { room, stream } = await openRoomFor(ctx, {
-        slug: 'one-message',
-        title: 'one-message',
-        agents: [ADA],
-        timeoutMs: CREDENTIALED_TIMEOUT_MS,
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'one-message',
+      title: 'one-message',
+      agents: [ADA],
+      timeoutMs: CREDENTIALED_TIMEOUT_MS,
+    });
+    try {
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text:
+          `${mentionOf(room, 'ada')} three things: is the importer green, ` +
+          'did the CSV fix ship, and who is on call this weekend?',
       });
-      try {
-        await postToRoom({
-          baseUrl: ctx.baseUrl,
-          roomId: room.roomId,
-          text:
-            `${mentionOf(room, 'ada')} three things: is the importer green, ` +
-            'did the CSV fix ship, and who is on call this weekend?',
-        });
-        // **No `settleWhen`, and that is the assertion's precondition.**
-        // Settling on the first post truncates collection there, which makes the
-        // shape this case exists to catch — a second and third bubble, or a
-        // scratchpad dump after the answer — structurally uncollectable. The
-        // pass shape is "one post and then nothing", so the wait has to be for
-        // quiet, exactly as the ack and decline cases do it.
-        const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
-        return { frames, room };
-      } finally {
-        stream.close();
-      }
-    }),
+      // **No `settleWhen`, and that is the assertion's precondition.**
+      // Settling on the first post truncates collection there, which makes the
+      // shape this case exists to catch — a second and third bubble, or a
+      // scratchpad dump after the answer — structurally uncollectable. The
+      // pass shape is "one post and then nothing", so the wait has to be for
+      // quiet, exactly as the ack and decline cases do it.
+      const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
+      return { frames, room };
+    } finally {
+      stream.close();
+    }
+  },
   oracles: [
     agentPostedInRoom('ada', { label: 'the agent answered' }),
     agentPostCount('ada', 1, 'and said it in ONE message rather than three'),
@@ -1192,44 +1134,43 @@ export const roomsAmbientSilenceIsFreeCase: EvalCase = {
   quarantined: true,
   perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA_ENGAGED]),
-  roomScript: async (ctx): Promise<RoomScriptResult> =>
-    underTheFlip(ctx.baseUrl, async () => {
-      const { room, stream } = await openRoomFor(ctx, {
-        slug: 'ambient-free',
-        title: 'ambient-free',
-        agents: [ADA_ENGAGED],
-        timeoutMs: CREDENTIALED_TIMEOUT_MS,
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'ambient-free',
+      title: 'ambient-free',
+      agents: [ADA_ENGAGED],
+      timeoutMs: CREDENTIALED_TIMEOUT_MS,
+    });
+    try {
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text:
+          `${mentionOf(room, 'ada')} the importer dropped 12 rows with semicolons in ` +
+          'the address field last night. Worth blocking the release for?',
       });
-      try {
-        await postToRoom({
-          baseUrl: ctx.baseUrl,
-          roomId: room.roomId,
-          text:
-            `${mentionOf(room, 'ada')} the importer dropped 12 rows with semicolons in ` +
-            'the address field last night. Worth blocking the release for?',
-        });
-        await stream.settle({
-          settleWhen: (collected) => agentSpoke(collected, room, 'ada'),
-          quietMs: CREDENTIALED_QUIET_MS,
-        });
-        const opener = observedEntries(stream.frames()).find(
-          (e) => e.authorId === room.agents.ada && e.kind === 'post'
-        );
-        room.notes.windowOpenedBy = opener?.id ?? '';
+      await stream.settle({
+        settleWhen: (collected) => agentSpoke(collected, room, 'ada'),
+        quietMs: CREDENTIALED_QUIET_MS,
+      });
+      const opener = observedEntries(stream.frames()).find(
+        (e) => e.authorId === room.agents.ada && e.kind === 'post'
+      );
+      room.notes.windowOpenedBy = opener?.id ?? '';
 
-        for (const line of [
-          'Kai: is the offsite still the 14th?',
-          'Priya: yes, and I booked the room with the whiteboard.',
-          'Kai: perfect, I will bring the retro notes.',
-        ]) {
-          await postToRoom({ baseUrl: ctx.baseUrl, roomId: room.roomId, text: line });
-        }
-        const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
-        return { frames, room };
-      } finally {
-        stream.close();
+      for (const line of [
+        'Kai: is the offsite still the 14th?',
+        'Priya: yes, and I booked the room with the whiteboard.',
+        'Kai: perfect, I will bring the retro notes.',
+      ]) {
+        await postToRoom({ baseUrl: ctx.baseUrl, roomId: room.roomId, text: line });
       }
-    }),
+      const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
+      return { frames, room };
+    } finally {
+      stream.close();
+    }
+  },
   oracles: [
     openerLanded('the agent answered when it WAS addressed'),
     agentStayedQuietInRoom('ada', {
@@ -1268,28 +1209,27 @@ export const roomsDeclinesVisiblyCase: EvalCase = {
   quarantined: true,
   perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
-  roomScript: async (ctx): Promise<RoomScriptResult> =>
-    underTheFlip(ctx.baseUrl, async () => {
-      const { room, stream } = await openRoomFor(ctx, {
-        slug: 'visible-decline',
-        title: 'visible-decline',
-        agents: [ADA],
-        timeoutMs: CREDENTIALED_TIMEOUT_MS,
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'visible-decline',
+      title: 'visible-decline',
+      agents: [ADA],
+      timeoutMs: CREDENTIALED_TIMEOUT_MS,
+    });
+    try {
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text:
+          `${mentionOf(room, 'ada')} what did Priya say about the importer in the ` +
+          'standup this morning?',
       });
-      try {
-        await postToRoom({
-          baseUrl: ctx.baseUrl,
-          roomId: room.roomId,
-          text:
-            `${mentionOf(room, 'ada')} what did Priya say about the importer in the ` +
-            'standup this morning?',
-        });
-        const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
-        return { frames, room };
-      } finally {
-        stream.close();
-      }
-    }),
+      const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
+      return { frames, room };
+    } finally {
+      stream.close();
+    }
+  },
   oracles: [
     roomTurnRanFor('ada', 'the mention triggered a turn'),
     somethingVisibleLanded(
@@ -1346,30 +1286,29 @@ export const roomsSignalsBeforeALongTurnCase: EvalCase = {
   quarantined: true,
   perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
-  roomScript: async (ctx): Promise<RoomScriptResult> =>
-    underTheFlip(ctx.baseUrl, async () => {
-      const { room, stream } = await openRoomFor(ctx, {
-        slug: 'long-turn',
-        title: 'long-turn',
-        agents: [ADA],
-        timeoutMs: CREDENTIALED_TIMEOUT_MS,
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'long-turn',
+      title: 'long-turn',
+      agents: [ADA],
+      timeoutMs: CREDENTIALED_TIMEOUT_MS,
+    });
+    try {
+      const posted = await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text:
+          `${mentionOf(room, 'ada')} can you go through every file in this repo, ` +
+          'work out which ones have no tests at all, and come back with the list ' +
+          'grouped by directory? This will take you a while, so take your time.',
       });
-      try {
-        const posted = await postToRoom({
-          baseUrl: ctx.baseUrl,
-          roomId: room.roomId,
-          text:
-            `${mentionOf(room, 'ada')} can you go through every file in this repo, ` +
-            'work out which ones have no tests at all, and come back with the list ' +
-            'grouped by directory? This will take you a while, so take your time.',
-        });
-        room.notes.longTurnEntryId = posted.entryId;
-        const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
-        return { frames, room };
-      } finally {
-        stream.close();
-      }
-    }),
+      room.notes.longTurnEntryId = posted.entryId;
+      const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
+      return { frames, room };
+    } finally {
+      stream.close();
+    }
+  },
   oracles: [
     roomTurnRanFor('ada', 'the mention triggered a turn'),
     agentReactedInRoom('ada', {

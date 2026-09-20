@@ -216,25 +216,17 @@ export class RoomPosting {
   ): PostedEntry {
     const room = this.visibility.requireVisibleRoom(roomId, input.authorId);
     // The turn this post is being made from inside, when there is one. Read
-    // once, before every refusal below, because three separate things need it:
-    // the mode conditioning the DM refusal, the ceiling, and the answer/session
-    // pointers a tool post has never carried.
-    const turn = this.triggers.activeTurnHere(roomId, input.authorId);
-    // `!== 'channel'`, never `=== 'dm'`: `rooms.kind` is a text column narrowed by
-    // an unchecked cast, so an unrecognized kind takes the narrower branch
-    // (`.claude/rules/room-conduct.md`).
+    // once, before every refusal below, because two separate things need it: the
+    // ceiling, and the answer/session pointers a tool post has never carried.
     //
-    // **Conditioned on the reply mode since DOR-1613** (spec
-    // `tool-only-room-replies` §D3). In text mode the refusal is exactly as
-    // right as it was: the reply genuinely IS the message there. In a tool-only
-    // turn it is false — nothing the turn writes is posted — so keeping it would
-    // leave the agent structurally unable to answer a direct message.
-    if (turn?.replyMode !== 'tool-only' && room.kind !== 'channel') {
-      throw new RoomError(
-        'TOOL_POST_NOT_IN_DM',
-        'This is a direct message and your reply is being posted for you, so there is nothing to post here. Just answer.'
-      );
-    }
+    // **A direct message is an ordinary room here** (spec
+    // `tool-only-room-replies` §D3, completed by DOR-2099). This used to refuse
+    // a post outside a channel, on the argument that in a DM the turn's own
+    // reply already IS the message. A turn's reply is nobody's message any more,
+    // so the refusal would leave an agent structurally unable to answer somebody
+    // who wrote to it directly — and a reply into a human's DM triggers nobody
+    // (`selectTriggerTargets`), so nothing about it can loop.
+    const turn = this.triggers.activeTurnHere(roomId, input.authorId);
     // **A stopped turn says nothing here either** (DOR-1313). The room already
     // throws away the narration of a turn somebody stopped; this is the same
     // refusal on the other half of that turn's voice, and it is the half that

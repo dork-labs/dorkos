@@ -109,7 +109,14 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   // empty. A pin cannot outlive its key — `checkAppendOnly` reports a pin with
   // no key as loudly as a key with no pin — so unpinning is part of the removal
   // rather than a separate judgement.
-  '0.72.0': '006d72696c6ef26d',
+  // `'0.72.0'` was UNPINNED here (DOR-2099) for the same reason and by the same
+  // recorded judgement as `'0.71.0'` above: the key was removed from
+  // `CONFIG_MIGRATIONS`. In one line — it seeded `rooms.toolOnlyReplies: false`
+  // beside `rooms.maxPostsPerTurn: 3`, the experiment graduated on 2026-09-19,
+  // and its helper read a default the schema no longer declares, which a shipped
+  // body may not be edited to avoid. `'0.81.0'` does the surviving half of its
+  // job. The reasoning is written where the key used to sit in
+  // `config-manager.ts`.
   '0.73.0': 'a8975be23d86d5d2',
   '0.75.0': 'a890d6cad524a714',
   '0.76.0': 'c1ab29334a1d4a5b',
@@ -124,4 +131,5 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   '0.78.0': 'acc5c682defa7a55',
   '0.79.0': '1944a8d45a438c6c',
   '0.80.0': '35d415b132e1a80b',
+  '0.81.0': '9d5bd3affde344ed',
 };

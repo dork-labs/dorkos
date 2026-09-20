@@ -241,17 +241,10 @@ vi.mock('@dorkos/shared/manifest', () => ({
  */
 let runtimesConfig: UserConfig['runtimes'] = USER_CONFIG_DEFAULTS.runtimes;
 
-/**
- * The stored `rooms` section, for the reply-mode cases. Absent by default, which
- * is what every other test in this file wants: the flip off, and `'text'`.
- */
-let roomsConfig: { toolOnlyReplies?: boolean } | undefined;
-
 vi.mock('../../core/config-manager.js', () => ({
   configManager: {
     get: (key: string) => {
       if (key === 'runtimes') return runtimesConfig;
-      if (key === 'rooms') return roomsConfig;
       return undefined;
     },
   },
@@ -433,7 +426,6 @@ function request(
     onWaiting: () => undefined,
     // Also a no-op by default — only the activity tests below listen.
     onActivity: () => undefined,
-    onReplyMode: () => undefined,
     onSessionBound: () => undefined,
     ...rest,
     // **Last, and computed, because it TRACKS `agentPath` by default.** A room
@@ -486,7 +478,6 @@ describe('createSessionRoomTurnRunner', () => {
     interruptQuery.mockImplementation(() => Promise.resolve(mockInterruptReceipt('not-running')));
     internalSessionId = () => undefined;
     turnBehaviour = saysAndCloses('green');
-    roomsConfig = undefined;
     roomToolDirectories = [];
     roomToolsAskedFor = [];
     sessionOwners.clear();
@@ -997,9 +988,9 @@ describe('createSessionRoomTurnRunner', () => {
     });
   });
 
-  describe('the reply mode it resolves, and which of a turn\u2019s two paths it asks about', () => {
-    it('asks about where the turn RUNS, not about the agent\u2019s identity path', async () => {
-      // **DOR-1597 \u00d7 DOR-1613, and getting it wrong is a mute.** Since the cwd
+  describe('the posting posture it asks about, and which path it asks with', () => {
+    it('asks about where the turn RUNS, not about the agent identity path', async () => {
+      // **DOR-1597, and getting it wrong names the wrong thing.** Since the cwd
       // rung split identity from where a turn stands, a turn in a room with
       // files runs in that agent's WORKTREE — and both runtimes that can be
       // given the room tools gate their injection on the directory the session
@@ -1007,124 +998,46 @@ describe('createSessionRoomTurnRunner', () => {
       // builds the `dorkos` entry; opencode's reconcile is keyed by the same
       // cwd). A worktree hosts no registered agent, so neither injects.
       //
-      // Asking this question about the IDENTITY path would therefore answer
-      // `true` for a session that was just left with no posting tool at all:
-      // the room would suppress its text, the agent would have nothing to
-      // suppress it in favour of, and every project-room turn would go silent.
-      // Recording the ARGUMENT rather than the answer is what makes this
-      // discriminating — a stub that ignored its cwd could not tell the two
-      // paths apart.
-      roomsConfig = { toolOnlyReplies: true };
+      // Asking this question about the IDENTITY path would answer for a session
+      // nobody configured — no warning where there is a real gap, which is the
+      // one thing this question is still here to produce. Recording the
+      // ARGUMENT rather than the answer is what makes this discriminating: a
+      // stub that ignored its cwd could not tell the two paths apart.
       roomToolDirectories = ['/repo/ana'];
 
-      const result = await createSessionRoomTurnRunner().run(
+      await createSessionRoomTurnRunner().run(
         request({ agentPath: '/repo/ana', cwd: '/rooms/build/worktrees/ana' })
       );
 
       expect(roomToolsAskedFor).toEqual(['/rooms/build/worktrees/ana']);
-      // And the answer follows: the worktree is not in the tool-capable set, so
-      // the turn keeps posting its text rather than going quiet.
-      expect(result.replyMode).toBe('text');
     });
 
-    it('is tool-only when the RUN directory is the one carrying the tools', async () => {
-      // The other side of the same read: a room with no files of its own runs
-      // the turn in the agent's own directory, the two paths are one string, and
-      // the flip applies exactly as it always did.
-      roomsConfig = { toolOnlyReplies: true };
-      roomToolDirectories = ['/repo/ana'];
-
-      const result = await createSessionRoomTurnRunner().run(
-        request({ agentPath: '/repo/ana', cwd: '/repo/ana' })
-      );
-
-      expect(roomToolsAskedFor).toEqual(['/repo/ana']);
-      expect(result.replyMode).toBe('tool-only');
-    });
-
-    it('never leaves a worktree turn mute, whatever the runtime answers', async () => {
-      // The property, stated as the thing that must not happen rather than as a
-      // value: whichever way the runtime answers about a directory nobody
-      // configured, a turn that produced text must still have it delivered.
-      roomsConfig = { toolOnlyReplies: true };
+    it('runs the turn anyway when the session carries no posting tool', async () => {
+      // **The D2 reversal, stated as behaviour** (spec §A2). There is no second
+      // delivery to fall back to, so a wiring gap does not change what happens:
+      // the turn runs, and whether the room hears anything is the agent's own
+      // business. The earlier revision resolved a reply mode here and posted the
+      // turn's narration instead, which hid the gap behind an answer nobody
+      // chose to send.
       roomToolDirectories = [];
 
       const result = await createSessionRoomTurnRunner().run(
         request({ agentPath: '/repo/ana', cwd: '/rooms/build/worktrees/ana' })
       );
 
-      expect(result.replyMode).toBe('text');
       expect(result.text).toBe('green');
+      expect(result.unanswered).toBeUndefined();
     });
 
-    it('does not ask at all while the flip is off', async () => {
-      // The flag is read first, so an install that never turned this on pays
-      // nothing for it — not even a registry hop.
-      roomsConfig = { toolOnlyReplies: false };
-      roomToolDirectories = ['/repo/ana'];
-
-      const result = await createSessionRoomTurnRunner().run(request({ agentPath: '/repo/ana' }));
-
-      expect(roomToolsAskedFor).toEqual([]);
-      expect(result.replyMode).toBe('text');
-    });
-
-    it('is `text` for a runtime that does not implement the question', async () => {
-      // "Not implemented" is no answer, not a `false` one, and the two land in
-      // the same place only because that place is the safe one.
-      roomsConfig = { toolOnlyReplies: true };
+    it('runs the turn for a runtime that does not implement the question', async () => {
+      // "Not implemented" is no answer, not a `false` one — the claude-code
+      // shape from the room's point of view, and every scripted runner's.
       roomToolDirectories = null;
 
       const result = await createSessionRoomTurnRunner().run(request({ agentPath: '/repo/ana' }));
 
-      expect(result.replyMode).toBe('text');
-    });
-
-    it('carries `tool-only` onto a LATE answer, which is the shape the bug had', async () => {
-      // **The case the mapping exists for, and the one the flag-off late test
-      // cannot make.** That test pins propagation with `'text'` on both sides,
-      // which does catch a dropped mapping (`'text' !== undefined`) but never
-      // proves the value that matters survives. `deliverLate` calls straight
-      // back into `deliver`, and `deliver` reads the mode off the REPLY — so a
-      // late answer arriving without `'tool-only'` takes the fail-open branch
-      // and posts the very narration the flip keeps private, minutes after the
-      // room moved on. Nothing else in the suite watches the real runner do it.
-      //
-      // Fake timers for the reason the flag-off late test uses them: the wait
-      // has to elapse deterministically rather than on wall clock.
-      roomsConfig = { toolOnlyReplies: true };
-      roomToolDirectories = ['/repo/ana'];
-      vi.useFakeTimers();
-      try {
-        let finishTurn = (): void => undefined;
-        turnBehaviour = (opts) => {
-          const { sessionId, projector } = opts;
-          openTurn(opts);
-          finishTurn = () => {
-            projector.ingest({ type: 'text_delta', text: 'the long answer' });
-            projector.ingest({ type: 'turn_end' });
-          };
-          return { accepted: true, canonicalId: sessionId };
-        };
-
-        const running = createSessionRoomTurnRunner({ waitMs: () => 5 }).run(
-          request({ agentPath: '/repo/ana', cwd: '/repo/ana' })
-        );
-        await vi.advanceTimersByTimeAsync(1);
-        await vi.advanceTimersByTimeAsync(4);
-        const result = await running;
-        expect(result.replyMode).toBe('tool-only');
-        expect(result.late).toBeDefined();
-
-        finishTurn();
-        const late = await result.late;
-        expect(late?.text).toBe('the long answer');
-        // The whole point: the words came back, and the mode came back with
-        // them, so `deliver` will drop the text rather than post it.
-        expect(late?.replyMode).toBe('tool-only');
-      } finally {
-        vi.useRealTimers();
-      }
+      expect(roomToolsAskedFor).toEqual([]);
+      expect(result.text).toBe('green');
     });
   });
 
@@ -1543,18 +1456,6 @@ describe('createSessionRoomTurnRunner', () => {
       expect(late?.text).toBe('green');
       expect(late?.unanswered).toBeUndefined();
       expect(late?.waitedMs).toBe(5);
-      // **The reply mode rides the LATE shape too** (spec
-      // `tool-only-room-replies` §D2). `collectRoomReply` builds that shape
-      // before the mode is known and knows nothing about rooms, so the runner
-      // maps it on — and without it `deliverLate` → `deliver` reads `undefined`,
-      // takes the fail-open `'text'` branch, and posts the very narration the
-      // flip exists to keep private, minutes after the room moved on.
-      //
-      // Asserted HERE rather than only in the rooms tests, and that is the
-      // point: those drive a fake runner which mirrors the mapping, so they
-      // would stay green against a production runner that had lost it. This is
-      // the only place the real one is measured.
-      expect(late?.replyMode).toBe(result.replyMode);
     } finally {
       vi.useRealTimers();
     }

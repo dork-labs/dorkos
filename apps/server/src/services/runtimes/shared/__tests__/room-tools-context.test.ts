@@ -1,13 +1,11 @@
 /**
- * What the `<room_tools>` block promises, per reply mode.
+ * What the `<room_tools>` block promises.
  *
- * The text-reply half is already pinned where it is rendered
- * (`claude-code/messaging/__tests__/context-builder-room-tools.test.ts`). What
- * had no test at all was the TOOL-ONLY half, which is the one the flip turns on
- * — and the sentences asserted here are the ones DOR-1643's live DM probes
- * showed were missing rather than merely worded weakly: the model formed an
- * answer, narrated it into a session nobody reads, and spent the posting tool on
- * a pleasantry.
+ * There was briefly a second block, for turns whose own words were posted for
+ * them; there is one now (DOR-2099), and the sentences asserted here are the
+ * ones DOR-1643's live DM probes showed were missing rather than merely worded
+ * weakly: the model formed an answer, narrated it into a session nobody reads,
+ * and spent the posting tool on a pleasantry.
  *
  * So these are behaviour assertions on prompt copy, and they are worth their
  * cost for a specific reason: the block is the only place the association
@@ -20,8 +18,8 @@ import { buildRoomToolsBlock } from '../room-tools-context.js';
 /** The prefix claude-code and codex both use, so the assertions read as a model sees them. */
 const PREFIX = 'mcp__dorkos__';
 
-describe('the tool-only room tools block', () => {
-  const block = buildRoomToolsBlock(PREFIX, 'tool-only');
+describe('the room tools block', () => {
+  const block = buildRoomToolsBlock(PREFIX);
 
   it('says the answer the turn worked out is what goes in the tool call', () => {
     // The DOR-1643 inversion in one sentence: an agent that knows the tool is
@@ -55,27 +53,9 @@ describe('the tool-only room tools block', () => {
   });
 });
 
-describe('the text-reply room tools block', () => {
-  const block = buildRoomToolsBlock(PREFIX);
-
-  it('carries none of the tool-only association copy', () => {
-    // The default path is unchanged by DOR-1643, and it must stay that way: in
-    // text mode the turn's words ARE the message, so telling an agent its
-    // answer only counts once it reaches a tool call would be false.
-    expect(block).not.toContain('THE ANSWER YOU WORK OUT THIS TURN');
-    expect(block).not.toContain('AND THE ANSWER YOU FORMED IS THE THING YOU POST');
-    expect(block).toContain('there your reply is already the message');
-  });
-});
-
-describe('what both blocks say about a pinned document', () => {
-  // Stated in BOTH variants, because a pin is not a thing about how a turn
-  // speaks: an agent whose words are posted and one whose words are dropped
-  // both need to know that a pinned document is the one that stays.
-  it.each([
-    ['text-reply', buildRoomToolsBlock(PREFIX)],
-    ['tool-only', buildRoomToolsBlock(PREFIX, 'tool-only')],
-  ])('tells a %s turn that a pin is how a board stays put', (_mode, block) => {
+describe('what the block says about a pinned document', () => {
+  it('tells a turn that a pin is how a board stays put', () => {
+    const block = buildRoomToolsBlock(PREFIX);
     expect(block).toContain('A pinned document stays on the table');
     // The board is the whole of D13's "documentation, not a primitive": the
     // teaching names it, and nothing in the schema does.
@@ -83,15 +63,13 @@ describe('what both blocks say about a pinned document', () => {
   });
 });
 
-describe('what both blocks say about the early signal (DOR-1975)', () => {
+describe('what the block says about the early signal (DOR-1975)', () => {
   // FB-10: an agent that takes a long turn leaves nothing on the message until
-  // it finishes. The rule has to survive a reword in BOTH reply modes, and the
-  // two wrap the same sentences at different columns, so every assertion here
-  // reads the words with the line breaks folded away.
-  it.each([
-    ['text-reply', buildRoomToolsBlock(PREFIX)],
-    ['tool-only', buildRoomToolsBlock(PREFIX, 'tool-only')],
-  ])('%s: signals BEFORE the long work, not after', (_mode, block) => {
+  // it finishes. Every assertion here reads the words with the line breaks
+  // folded away, so a reflow cannot red a rule that is still stated.
+  const block = buildRoomToolsBlock(PREFIX);
+
+  it('signals BEFORE the long work, not after', () => {
     // The ordering word is the part that matters: the instruction is worthless
     // if the signal arrives with the result.
     const words = block.replace(/\s+/g, ' ');
@@ -99,10 +77,7 @@ describe('what both blocks say about the early signal (DOR-1975)', () => {
     expect(words).toContain('first, before the work');
   });
 
-  it.each([
-    ['text-reply', buildRoomToolsBlock(PREFIX)],
-    ['tool-only', buildRoomToolsBlock(PREFIX, 'tool-only')],
-  ])('%s: forbids BOTH a reaction and an "on it" message for one trigger', (_mode, block) => {
+  it('forbids BOTH a reaction and an "on it" message for one trigger', () => {
     // The over-participation failure this rule has to not cause: two
     // acknowledgments of the same nothing is worse than the silence it fixes.
     expect(block.replace(/\s+/g, ' ')).toContain(
@@ -110,26 +85,17 @@ describe('what both blocks say about the early signal (DOR-1975)', () => {
     );
   });
 
-  it.each([
-    ['text-reply', buildRoomToolsBlock(PREFIX)],
-    ['tool-only', buildRoomToolsBlock(PREFIX, 'tool-only')],
-  ])(
-    '%s: swaps the 👀 for a ✅ when the work is done, and says what that ✅ means',
-    (_mode, block) => {
-      // Without the swap an agent leaves a room saying it is still working when
-      // it is not; `on: false` is the mechanism, and naming it is what makes the
-      // instruction actionable. And ✅ already means "seen" in the ack triple a
-      // few lines up, so the text has to say which ✅ this is.
-      const words = block.replace(/\s+/g, ' ');
-      expect(words).toContain('take the 👀 off (on: false) and put ✅ on');
-      expect(words).toContain('A ✅ that replaced your own 👀 means finished');
-    }
-  );
+  it('swaps the 👀 for a ✅ when the work is done, and says what that ✅ means', () => {
+    // Without the swap an agent leaves a room saying it is still working when
+    // it is not; `on: false` is the mechanism, and naming it is what makes the
+    // instruction actionable. And ✅ already means "seen" in the ack triple a
+    // few lines up, so the text has to say which ✅ this is.
+    const words = block.replace(/\s+/g, ' ');
+    expect(words).toContain('take the 👀 off (on: false) and put ✅ on');
+    expect(words).toContain('A ✅ that replaced your own 👀 means finished');
+  });
 
-  it.each([
-    ['text-reply', buildRoomToolsBlock(PREFIX)],
-    ['tool-only', buildRoomToolsBlock(PREFIX, 'tool-only')],
-  ])('%s: asks for no signal at all when the answer is coming in this turn', (_mode, block) => {
+  it('asks for no signal at all when the answer is coming in this turn', () => {
     // The bound. Without it "signal early" becomes a progress narration in emoji.
     expect(block.replace(/\s+/g, ' ')).toContain(
       'If the answer is coming in THIS turn, signal nothing; the answer is the acknowledgment'

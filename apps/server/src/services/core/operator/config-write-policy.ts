@@ -439,13 +439,6 @@ export const CONFIG_WRITE_POLICY = {
   'rooms.collectDebounceMs': 'operator-only',
   'rooms.collectMaxEntries': 'operator-only',
   'rooms.responseGate': 'operator-only',
-  // Whether an agent decides for itself when to speak in a room (spec
-  // `tool-only-room-replies` §D5). Operator-only, and on the same side of the
-  // line as the engaged window: it changes what an agent's turn DOES with its
-  // own words in front of everybody else in the room, install-wide. An agent
-  // that could set it is an agent deciding, for every other agent here, whether
-  // its colleagues' turns are heard at all.
-  'rooms.toolOnlyReplies': 'operator-only',
   // How many messages one agent may post into a room in one turn. Operator-only
   // for the plainest reason in this list: it is a bound on the agent itself, and
   // an agent that could raise it is voting itself more of the room.
@@ -1044,10 +1037,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'rooms.collectDebounceMs',
       'rooms.collectMaxEntries',
       'rooms.responseGate',
-      // Whether a turn's words reach the room at all, and how many of them may
-      // (spec `tool-only-room-replies`). Both decide how much your agents say on
-      // their own, which is this stake exactly.
-      'rooms.toolOnlyReplies',
+      // How much one turn may say in a room (spec `tool-only-room-replies`).
+      // It decides how much your agents say on their own, which is this stake
+      // exactly.
       'rooms.maxPostsPerTurn',
       // And how much of the room's shared canvas one turn may rearrange. Same
       // stake: how much your agents do on their own in front of everybody else.

@@ -50,7 +50,6 @@ import { resolveRoomLimits, type RoomLimitsResolver } from '../limits/room-limit
 import { RoomTurnBudget } from '../limits/turn-budget.js';
 import type {
   LateRoomReply,
-  RoomReplyMode,
   RoomTurnRequest,
   RoomTurnResult,
   RoomTurnRunner,
@@ -136,40 +135,109 @@ export interface ScriptedTurnRunner extends RoomTurnRunner {
    * `interrupt` would let a halt that stopped nothing pass it.
    */
   readonly interrupted: Array<{ sessionId: string; agentPath: string }>;
+  /**
+   * Every refusal a scripted post ran into, newest last.
+   *
+   * A refused `post_to_room` does not fail a turn in production — the agent is
+   * handed an error and the turn ends however it ends — so {@link
+   * ScriptedTurnRunner.sayInRoom} swallows one and records it here. A test about
+   * a bound (the per-turn ceiling, a stopped turn) reads this rather than
+   * catching a rejection the product would never raise.
+   */
+  readonly refusals: string[];
+  /**
+   * Hand this runner the service its scripted turns speak through.
+   *
+   * Called by {@link createRoomHarness} once the service exists. A runner asked
+   * to speak before that throws rather than silently saying nothing, because a
+   * silent turn is a legitimate outcome here and a wiring mistake that looked
+   * like one would pass.
+   *
+   * @param service - The live room service.
+   */
+  speaksThrough(service: RoomService): void;
+  /**
+   * Say something in the room this turn was triggered from, the way an agent
+   * does: through the real `post_to_room` capability, mid-turn.
+   *
+   * **This is the only way a scripted turn puts anything in the room**, because
+   * it is the only way a real one does. A turn's own words are never posted for
+   * it, so a fake that returned text and expected the room to publish it would
+   * be testing a path the product does not have.
+   *
+   * @param request - The turn being taken.
+   * @param text - What to say.
+   * @param opts.replyTo - The thread to answer inside. Defaults to the thread
+   *   the triggering entry is in, which is what a well-behaved agent does and
+   *   what the room used to do on the agent's behalf.
+   */
+  sayInRoom(request: RoomTurnRequest, text: string, opts?: { replyTo?: string }): void;
 }
 
 /**
- * Build a runner that replies with `reply(request)` for every turn, minting a
- * session id the first time each `(room, agent)` pair answers.
+ * Build a runner that says `reply(request)` in the room for every turn, minting
+ * a session id the first time each `(room, agent)` pair answers.
  *
- * @param reply - What the agent says. Return `null` to say nothing.
+ * The string is POSTED through the tool and also narrated back to the turn's own
+ * session, which is what a well-behaved agent does: the room gets the message,
+ * and the session transcript records that the agent wrote it.
+ *
+ * @param reply - What the agent says. Return `null` for a turn that says
+ *   nothing — which is silence, and earns the `agent_declined` notice when a
+ *   person had asked.
  */
 export function scriptedRunner(
   reply: (request: RoomTurnRequest) => string | null = () => 'on it'
 ): ScriptedTurnRunner {
-  return outcomeRunner((request) => ({ text: reply(request) }));
+  const runner: ScriptedTurnRunner = outcomeRunner((request) => {
+    const said = reply(request);
+    // Blank counts as nothing, exactly as `null` does: an agent with nothing to
+    // say does not call the tool with nothing in it. Several suites say "this
+    // turn produced nothing" by returning whitespace, and a fake that posted it
+    // would put a blank message in a room the product never would.
+    if (said !== null && said.trim() !== '') runner.sayInRoom(request, said);
+    return { text: said };
+  });
+  return runner;
 }
 
 /**
- * The same runner, with `rooms.toolOnlyReplies` in effect for its turns.
+ * {@link outcomeRunner} that also SAYS its `text` in the room, through the tool.
  *
- * A named wrapper rather than an options object at every call site, because
- * "this turn's words are not the room's message" is the single most consequential
- * thing a scenario in this suite can be saying about itself.
+ * The middle case between the two above, and it exists because a scenario often
+ * needs both halves: a turn that answers in one branch and reports `busy` or
+ * `failed` in another. {@link scriptedRunner} cannot express the refusal;
+ * {@link outcomeRunner} does not speak. This does both, and the rule is the one
+ * a real agent follows — a non-blank answer is posted, and a turn that was
+ * refused says nothing.
+ *
+ * A LATE answer is not posted here: it lands after this function has returned,
+ * so a scenario about a late turn calls {@link ScriptedTurnRunner.sayInRoom}
+ * itself at the moment it means the words to arrive.
  *
  * @param outcome - The whole turn result; see {@link outcomeRunner}.
  */
-export function toolOnlyRunner(
+export function speakingRunner(
   outcome: (
     request: RoomTurnRequest
   ) => (Omit<RoomTurnResult, 'sessionId'> & { sessionId?: string }) | { throws: Error }
 ): ScriptedTurnRunner {
-  return outcomeRunner(outcome, { replyMode: 'tool-only' });
+  const runner: ScriptedTurnRunner = outcomeRunner((request) => {
+    const result = outcome(request);
+    if ('throws' in result) return result;
+    const said = result.text?.trim();
+    if (said !== undefined && said !== '' && result.unanswered === undefined) {
+      runner.sayInRoom(request, result.text!);
+    }
+    return result;
+  });
+  return runner;
 }
 
 /**
  * The same runner, for the outcomes a reply string cannot express: a session
- * that was busy, a turn that failed, an answer still on its way.
+ * that was busy, a turn that failed, an answer still on its way, or a turn that
+ * posts more than once.
  *
  * Kept separate from {@link scriptedRunner} so the common case stays a
  * one-liner, and shared with it so both mint sessions the same way.
@@ -181,30 +249,22 @@ export function toolOnlyRunner(
  * could see the difference between the two; supply one to model a runtime that
  * renames the session out from under the room.
  *
- * **`replyMode` is a property of the RUNNER, not of the result**, and that
- * mirrors production exactly: the real runner resolves the mode before the turn
- * starts and reports it onto the claim, so a `post_to_room` made mid-turn can
- * read it. A fake that returned it with the answer would report it after the
- * body had already run, which is too late for the one consumer that matters —
- * `postFromTool`'s DM refusal.
- *
  * @param outcome - The whole turn result; `sessionId` defaults to the requested one.
  * @param outcome.throws - Throw instead of returning, for the runtime-is-down path.
- * @param opts.replyMode - How this runner's turns reach the room. Defaults to
- *   `'text'`, which is what every scenario that predates the flip means.
  */
 export function outcomeRunner(
   outcome: (
     request: RoomTurnRequest
-  ) => (Omit<RoomTurnResult, 'sessionId'> & { sessionId?: string }) | { throws: Error },
-  opts: { replyMode?: RoomReplyMode } = {}
+  ) => (Omit<RoomTurnResult, 'sessionId'> & { sessionId?: string }) | { throws: Error }
 ): ScriptedTurnRunner {
   const turns: RecordedTurn[] = [];
   const interrupted: Array<{ sessionId: string; agentPath: string }> = [];
+  const voice = roomVoice();
   let minted = 0;
   return {
     turns,
     interrupted,
+    ...voice,
     interrupt(request): Promise<InterruptReceipt> {
       interrupted.push(request);
       // Nothing is being held here, so nothing was stopped — the honest answer
@@ -213,27 +273,13 @@ export function outcomeRunner(
     },
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       const sessionId = request.sessionId ?? `session-${(minted += 1)}`;
-      // **Both reported BEFORE the body runs, exactly as the production runner
-      // reports them** (spec `tool-only-room-replies` §D2, §D8). A scripted turn
-      // that posts through the tool does it from inside `outcome`, and by then
-      // the claim has to already carry the mode (which conditions the DM
-      // refusal) and the session id (which stamps the entry). Reporting after
-      // would let a test assert the flip while the mechanism the flip depends on
-      // was never exercised.
-      // **A PINNED mode wins, exactly as it does in production.** One caller
-      // pins it — the welcome-back offer, whose text the greeter posts itself —
-      // and a fake that ignored the pin would let a test assert D12 while the
-      // mechanism that keeps D12 true was never asked.
-      const replyMode = request.replyMode ?? opts.replyMode ?? 'text';
-      request.onReplyMode(replyMode);
+      // **Reported BEFORE the body runs, exactly as the production runner
+      // reports it** (spec `tool-only-room-replies` §D8). A scripted turn that
+      // posts through the tool does it from inside `outcome`, and by then the
+      // claim has to already carry the session id, which is what stamps the
+      // entry. Reporting after would let a test assert a post while the
+      // mechanism that provenances it was never exercised.
       request.onSessionBound(sessionId);
-      // And the CONTEXT the turn is handed carries it, which is the production
-      // runner's `{ ...request.roomContext, replyMode }`. It is what the model
-      // reads, so a test about what an agent is TOLD has to see the same thing.
-      const withMode: RoomTurnRequest = {
-        ...request,
-        roomContext: { ...request.roomContext, replyMode },
-      };
       turns.push({
         roomId: request.room.id,
         authorId: request.authorId,
@@ -241,27 +287,60 @@ export function outcomeRunner(
         cwd: request.cwd,
         sessionId: request.sessionId,
         prompt: request.prompt,
-        // The context AS THE TURN SAW IT, mode included.
-        roomContext: withMode.roomContext,
+        roomContext: request.roomContext,
         attachmentProjection: request.attachmentProjection,
       });
-      const result = outcome(withMode);
+      const result = outcome(request);
       if ('throws' in result) return Promise.reject(result.throws);
       const { sessionId: ranOn, ...reply } = result;
-      return Promise.resolve({
-        sessionId: ranOn ?? sessionId,
-        replyMode,
-        ...reply,
-        // **The mode rides the LATE shape too, exactly as the production runner
-        // maps it on.** `deliverLate` calls straight back into `deliver`, which
-        // reads the mode off the REPLY — so a fake that put it only on the
-        // top-level result would let a late answer take the fail-open `'text'`
-        // branch and post its narration, which is the regression this mirrors
-        // rather than reproduces.
-        ...(reply.late !== undefined
-          ? { late: reply.late.then((landed) => ({ ...landed, replyMode })) }
-          : {}),
-      });
+      return Promise.resolve({ sessionId: ranOn ?? sessionId, ...reply });
+    },
+  };
+}
+
+/**
+ * The voice every scripted runner here speaks with — the real posting
+ * capability, bound once the harness has a service to speak through.
+ *
+ * Shared between {@link outcomeRunner} and {@link gatedRunner} rather than
+ * written twice, because "how a fake turn says something in a room" is exactly
+ * the thing two copies of would drift on. **Exported for the hand-rolled runners
+ * a few suites build inline**: spread it into one and `createRoomHarness` binds
+ * it like any other, which is cheaper than making every such runner reimplement
+ * a seam it mostly does not use.
+ *
+ * @returns The three members {@link ScriptedTurnRunner} requires for speaking.
+ */
+export function roomVoice(): Pick<ScriptedTurnRunner, 'refusals' | 'speaksThrough' | 'sayInRoom'> {
+  const refusals: string[] = [];
+  let service: RoomService | undefined;
+  return {
+    refusals,
+    speaksThrough(bound) {
+      service = bound;
+    },
+    sayInRoom(request, text, opts = {}) {
+      if (service === undefined) {
+        throw new Error(
+          'this runner was asked to speak before it was handed a service; ' +
+            'build it through createRoomHarness, or call speaksThrough() yourself'
+        );
+      }
+      try {
+        service.postFromTool(request.room.id, {
+          authorId: request.authorId,
+          text,
+          // Answer where you were asked. The room used to do this on the agent's
+          // behalf on the text path; a tool post carries whatever the caller
+          // passes, so a well-behaved agent passes the thread it is in.
+          ...((opts.replyTo ?? request.entry.threadRootEntryId)
+            ? { replyTo: opts.replyTo ?? request.entry.threadRootEntryId! }
+            : {}),
+        });
+      } catch (err) {
+        // Swallowed on purpose — see {@link ScriptedTurnRunner.refusals}.
+        refusals.push(err instanceof Error ? err.message : String(err));
+      }
     },
   };
 }
@@ -323,9 +402,10 @@ export function gatedRunner({
 } = {}): GatedRunner {
   const turns: ScriptedTurnRunner['turns'] = [];
   const interrupted: ScriptedTurnRunner['interrupted'] = [];
+  const voice = roomVoice();
   const held = new Map<
     string,
-    Array<{ request: RoomTurnRequest; finish: () => void; stop: () => void }>
+    Array<{ request: RoomTurnRequest; finish: () => void; stop: () => void; stopped?: boolean }>
   >();
   /** The oldest held turn for one agent, or a failure naming what was wanted. */
   const oldest = (authorId: string, verb: string) => {
@@ -336,6 +416,7 @@ export function gatedRunner({
   return {
     turns,
     interrupted,
+    ...voice,
     interrupt(request): Promise<InterruptReceipt> {
       interrupted.push(request);
       // The stop reached a runtime with no turn bound to it — it stopped
@@ -346,7 +427,19 @@ export function gatedRunner({
       // recorded the call would leave the dispatcher awaiting a turn nothing can
       // finish — which is not what a halt does, and would let a halt that never
       // reached the runtime pass.
-      if (!interruptEndsTurn) return Promise.resolve(mockInterruptReceipt('acked'));
+      if (!interruptEndsTurn) {
+        // **The turn does not settle, and it does not speak again either.** This
+        // models the runtime that will not come back promptly: the interrupt was
+        // delivered, so whatever the turn produces from here reaches its own
+        // session and nothing else. A fake whose stopped turn still called the
+        // posting tool would put a halted turn's words in the room.
+        for (const [, queued] of held) {
+          for (const turn of queued) {
+            if (turn.request.agentPath === request.agentPath) turn.stopped = true;
+          }
+        }
+        return Promise.resolve(mockInterruptReceipt('acked'));
+      }
       let stoppedSomething = false;
       for (const [authorId, queued] of held) {
         if (queued[0]?.request.agentPath !== request.agentPath) continue;
@@ -375,11 +468,35 @@ export function gatedRunner({
       // either way (DOR-1232), which is what makes the second shape worth having
       // a fake for.
       const stoppedText = interruptedTurnStillAnswers ? 'on it' : null;
+      /**
+       * This turn's own record, so a stop that reaches it while it is parked is
+       * still readable once `release` has taken it out of the queue.
+       */
+      const mine: {
+        request: RoomTurnRequest;
+        finish: () => void;
+        stop: () => void;
+        stopped: boolean;
+      } = { request, finish: () => {}, stop: () => {}, stopped: false };
       /** Park this turn's two endings where the test's levers can reach them. */
       const park = (finish: () => void, stop: () => void): void => {
+        mine.finish = finish;
+        mine.stop = stop;
         const queued = held.get(request.authorId) ?? [];
-        queued.push({ request, finish, stop });
+        queued.push(mine);
         held.set(request.authorId, queued);
+      };
+      // **A released turn SPEAKS, and a stopped one does not try to.** The room
+      // posts nothing on a turn's behalf, so a held turn that only resolved with
+      // text would release into silence and every test that waits for an answer
+      // would wait for ever. A stopped turn deliberately does not call the tool:
+      // `stoppedText` models the runtime that closes its stream with the whole
+      // answer in it after an interrupt was delivered (DOR-1232), and what the
+      // room must do with that is nothing.
+      /** Say "on it" in the room, unless a stop has already reached this turn. */
+      const speak = (): void => {
+        if (mine.stopped) return;
+        voice.sayInRoom(request, 'on it');
       };
       if (answersLate) {
         // The room stopped WAITING and the turn did not stop: `run` resolves now
@@ -389,7 +506,10 @@ export function gatedRunner({
           text: null,
           late: new Promise<LateRoomReply>((resolve) => {
             park(
-              () => resolve({ text: 'on it', waitedMs: 1 }),
+              () => {
+                speak();
+                resolve({ text: 'on it', waitedMs: 1 });
+              },
               () => resolve({ text: stoppedText, waitedMs: 1 })
             );
           }),
@@ -397,7 +517,10 @@ export function gatedRunner({
       }
       return new Promise<RoomTurnResult>((resolve) => {
         park(
-          () => resolve({ sessionId, text: 'on it' }),
+          () => {
+            speak();
+            resolve({ sessionId, text: 'on it' });
+          },
           () => resolve({ sessionId, text: stoppedText })
         );
       });
@@ -794,6 +917,11 @@ export function createRoomHarness(opts: {
     readCursors,
     isRoomMuted,
   });
+  // **The runner's voice, bound now that there is something to speak through.**
+  // A scripted turn says what it says by calling the real posting capability,
+  // exactly as an agent does, so it needs the service — which is built here,
+  // after the runner (`turns: runner` above is why the order cannot flip).
+  runner.speaksThrough(service);
   const human = ownerUserId === null ? authors.localHuman() : authors.bindOwner(ownerUserId);
   return {
     db,

@@ -34,6 +34,7 @@ import {
   createRoomHarness,
   gatedRunner,
   outcomeRunner,
+  speakingRunner,
   scriptedRunner,
   settleUntil,
   type RoomHarness,
@@ -161,7 +162,7 @@ describe('what a post says about who it reached', () => {
       maxTurnsPerAgentPerCascade: 1,
       // Bo says nothing, so the only entry in the cascade besides the seed is
       // Ana's — which is what makes her the one the repeat rule counts.
-      runner: outcomeRunner((request) =>
+      runner: speakingRunner((request) =>
         request.authorId === ana ? { text: 'green' } : { text: null }
       ),
     });

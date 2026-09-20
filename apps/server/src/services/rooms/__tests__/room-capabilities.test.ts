@@ -34,6 +34,7 @@ import {
   scriptedRunner,
   type RoomHarness,
   type ScriptedTurnRunner,
+  roomVoice,
 } from './room-test-harness.js';
 
 /**
@@ -114,6 +115,7 @@ function midTurnRunner(during: (request: RoomTurnRequest) => Promise<void>): Scr
   return {
     turns: base.turns,
     interrupted: base.interrupted,
+    ...roomVoice(),
     interrupt: (request) => base.interrupt(request),
     run: async (request) => {
       const result = await base.run(request);
@@ -510,15 +512,21 @@ describe('the rooms capability domain', () => {
       expect(authors.getById(entry!.authorId)?.displayName).toBe('Ana');
     });
 
-    it('comes back as a typed refusal, not a stack trace, in a direct message', async () => {
+    it('lands in a direct message, which is an ordinary room for this verb', async () => {
+      // **The §2.6 reversal, completed** (spec `tool-only-room-replies` §D3,
+      // DOR-2099). This used to refuse, on the argument that in a DM the turn's
+      // own reply already IS the message. A turn's reply is nobody's message
+      // any more, so refusing here would leave an agent structurally unable to
+      // answer somebody who wrote to it directly.
       const dm = service.createRoom(
         { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
         human
       );
 
-      await expect(call('rooms.post', { roomId: dm.id, text: 'hello' })).rejects.toMatchObject({
-        payload: { code: 'TOOL_POST_NOT_IN_DM' },
+      await expect(call('rooms.post', { roomId: dm.id, text: 'hello' })).resolves.toMatchObject({
+        posted: true,
       });
+      expect(harness.store.listEntries(dm.id, { limit: 10 }).at(-1)?.body.text).toBe('hello');
     });
 
     it('refuses a room the agent is not in the way it refuses one that is not there', async () => {

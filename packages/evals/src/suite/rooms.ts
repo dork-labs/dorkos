@@ -105,7 +105,9 @@ import type { EvalCase, RoomScriptResult } from '../types.js';
 import {
   finishTestTurns,
   haltRoom,
+  postAsAgent,
   postToRoom,
+  reactAsAgent,
   resetTestMode,
   selectTestScenario,
 } from '../runner/room-drive.js';
@@ -113,6 +115,7 @@ import { waitForRoomFrames } from '../runner/room-drive.js';
 import {
   agentPostedInRoom,
   agentStayedQuietInRoom,
+  noRoomEntryContains,
   noRoomTurnFor,
   observedTurns,
   roomNoticeCount,
@@ -122,8 +125,13 @@ import {
   roomTurnRanFor,
   roomTurnsRanFor,
 } from '../oracles/rooms.js';
-import { mentionOf, openRoomFor, seedRoomAgents, setCollectDebounce } from './rooms-setup.js';
-import { roomsToolOnlyCases } from './rooms-tool-only.js';
+import {
+  agentDir,
+  mentionOf,
+  openRoomFor,
+  seedRoomAgents,
+  setCollectDebounce,
+} from './rooms-setup.js';
 import type { RoomAgentSpec } from './rooms-setup.js';
 
 /**
@@ -539,24 +547,363 @@ export const roomsRementionAfterTurnStartCase: EvalCase = {
   ],
 };
 
+/** The same agent, seated to answer everything — the ambient case's shape. */
+const ADA_ALWAYS: RoomAgentSpec = { ...ADA, responseMode: 'always' };
+
+/** The scenario that holds a turn open and then narrates a line at the end. */
+const NARRATING = 'rooms-hold-then-narrate';
+
+/** The scenario that holds a turn open and then ends having said nothing. */
+const QUIET = 'rooms-hold-then-quiet';
+
+/** What {@link NARRATING} says back to its own session. Must never reach a room. */
+const NARRATION = 'I looked at it and here is what I think.';
+
 /**
- * Every structural rooms case, in registration order — this file's five, then
- * the six the tool-only flip added (`rooms-tool-only.ts`).
+ * How long the delivery cases give the room to settle after the turn is landed.
  *
- * **One array, two files, and the split is organisational rather than
- * taxonomic.** Those six live apart because every one of them mutates
- * install-wide state before it drives — the `rooms.toolOnlyReplies` flag and the
- * scenario the runtime answers with, both singletons in the in-process runner —
- * so grouping them makes the reset obligation one rule for one file. What they
- * ARE is exactly what the five above are: test-mode, free, gating, and about a
- * mechanism rather than a judgment.
+ * Longer than {@link QUIET_MS} above on purpose: these turns are HELD open and
+ * released by the driver, so the room has a post, a claim release and a notice
+ * to get through after the release rather than only an answer.
+ */
+const DELIVERY_QUIET_MS = 2_500;
+
+/** Hard ceiling on one drive here — a guard against a hang, not a target. */
+const TIMEOUT_MS = 60_000;
+
+/**
+ * Put the install back the way every other case expects to find it.
  *
- * So they belong in this array, and being in it is not bookkeeping. It is what
- * `__tests__/rooms.test.ts` iterates to hold the whole tier to its promises —
- * free, deterministic, un-quarantined, and out of `core` so no local run ever
- * bills for them — and what its `--suite rooms` count derives from. Registering
- * them only into `ALL_CASES` left them selectable but unpoliced, and reddened
- * that count with a number nothing explained.
+ * The scenario store is a module singleton in the in-process runner, so a case
+ * that selects one owes the reset — it was measured, not feared: after the halt
+ * case picked `long-turn`, every later case in the run got that scenario's text.
+ *
+ * @param baseUrl - The running harness server.
+ */
+async function restore(baseUrl: string): Promise<void> {
+  await finishTestTurns({ baseUrl });
+  await resetTestMode({ baseUrl });
+}
+
+/**
+ * Select the held scenario this case drives.
+ *
+ * @param baseUrl - The running harness server.
+ * @param scenario - Which held scenario this case drives.
+ */
+async function arm(baseUrl: string, scenario: string): Promise<void> {
+  await selectTestScenario({ baseUrl, scenario });
+}
+
+/**
+ * `rooms-tool-post-is-the-only-reply` — the turn posts through the tool AND
+ * narrates, and exactly one entry lands.
+ *
+ * Acceptance criterion 2. The narration is a distinctive sentence, so the
+ * assertion is that THAT string is absent rather than that a count is right —
+ * a count alone would pass on the wrong entry.
+ */
+export const roomsToolPostIsTheOnlyReplyCase: EvalCase = {
+  id: 'rooms-tool-post-is-the-only-reply',
+  title: 'Rooms — a tool-only turn answers with its tool call, and its narration stays private',
+  prompt: '',
+  runtimeTier: 'test-mode',
+  costClass: 'free',
+  tags: ['rooms'],
+  seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    await arm(ctx.baseUrl, NARRATING);
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'tool-only-reply',
+      title: 'Tool only reply',
+      agents: [ADA],
+      timeoutMs: TIMEOUT_MS,
+    });
+    try {
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text: `${mentionOf(room, 'ada')} are the release notes ready?`,
+      });
+      // The turn is held open, so this is mid-turn — exactly where an injected
+      // `dorkos` server would make the call.
+      // Wait for the working indicator, so the post below is genuinely MID-TURN:
+      // that is the whole shape under test, and a post that raced ahead of the
+      // claim would carry no turn and exercise none of the marks.
+      await stream.settle({
+        settleWhen: (collected) => observedTurns(collected).length >= 1,
+        quietMs: 500,
+      });
+      await postAsAgent({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        agentPath: agentDir(ctx.sandbox, 'ada'),
+        text: 'Yes — they are ready and I have linked them.',
+      });
+      await finishTestTurns({ baseUrl: ctx.baseUrl });
+      const frames = await stream.settle({ quietMs: DELIVERY_QUIET_MS });
+      return { frames, room };
+    } finally {
+      await restore(ctx.baseUrl);
+      stream.close();
+    }
+  },
+  oracles: [
+    roomTurnRanFor('ada', 'the mentioned agent ran a turn'),
+    agentPostedInRoom('ada', {
+      matches: (text) => text.includes('they are ready'),
+      label: 'the tool post is what landed',
+    }),
+    // **`agentPostedInRoom` passes when ANY post matches, so it cannot express
+    // this**: with the flip removed BOTH the tool post and the narration land,
+    // and the tool post satisfies "a post without the narration in it". Measured
+    // in the drill — the case stayed green with `deliverToolOnly` deleted. What
+    // discriminates is the absence across every entry.
+    noRoomEntryContains(NARRATION, 'the turn’s own narration never reached the room'),
+    roomNoticeCount('agent_declined', 0, 'a turn that answered earned no "did not reply" line'),
+  ],
+};
+
+/**
+ * `rooms-addressed-silence-writes-one-notice` — a person asked, the turn
+ * produced nothing, and the room says so exactly once.
+ *
+ * Acceptance criterion 4. The floor, not the goal: an agent with nothing useful
+ * to say should post one sentence in its own voice (etiquette E21), and this is
+ * what happens when it does not.
+ */
+export const roomsAddressedSilenceWritesOneNoticeCase: EvalCase = {
+  id: 'rooms-addressed-silence-writes-one-notice',
+  title: 'Rooms — asked and answered with nothing, the room writes one line saying so',
+  prompt: '',
+  runtimeTier: 'test-mode',
+  costClass: 'free',
+  tags: ['rooms'],
+  seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    await arm(ctx.baseUrl, QUIET);
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'addressed-silence',
+      title: 'Addressed silence',
+      agents: [ADA],
+      timeoutMs: TIMEOUT_MS,
+    });
+    try {
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text: `${mentionOf(room, 'ada')} are the release notes ready?`,
+      });
+      await finishTestTurns({ baseUrl: ctx.baseUrl });
+      const frames = await stream.settle({ quietMs: DELIVERY_QUIET_MS });
+      return { frames, room };
+    } finally {
+      await restore(ctx.baseUrl);
+      stream.close();
+    }
+  },
+  oracles: [
+    roomTurnRanFor('ada', 'the mentioned agent ran a turn'),
+    agentStayedQuietInRoom('ada', { label: 'nothing the turn wrote reached the room' }),
+    roomNoticeCount('agent_declined', 1, 'the room wrote exactly one "did not reply" line'),
+  ],
+};
+
+/**
+ * `rooms-ambient-silence-writes-nothing` — nobody asked, so silence costs
+ * nothing and leaves no trace.
+ *
+ * Acceptance criterion 5, and the whole reason the flip is worth having:
+ * etiquette E7 says silence must be free, and this is the case that would catch
+ * `agent_declined` widening into the ambient half.
+ */
+export const roomsAmbientSilenceWritesNothingCase: EvalCase = {
+  id: 'rooms-ambient-silence-writes-nothing',
+  title: 'Rooms — nobody asked, so a quiet turn writes nothing at all',
+  prompt: '',
+  runtimeTier: 'test-mode',
+  costClass: 'free',
+  tags: ['rooms'],
+  seed: (sandbox) => seedRoomAgents(sandbox, [ADA_ALWAYS]),
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    // **The NARRATING scenario, not the quiet one**, and the difference is what
+    // makes this case able to fail. A turn that produces no text posts nothing
+    // with the flip on and nothing with it off, so a quiet scenario would assert
+    // silence against a path that is silent either way. This turn writes a
+    // sentence back to its own session, and the assertion is that the sentence
+    // stays there.
+    await arm(ctx.baseUrl, NARRATING);
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'ambient-silence',
+      title: 'Ambient silence',
+      agents: [ADA_ALWAYS],
+      timeoutMs: TIMEOUT_MS,
+    });
+    try {
+      // No mention: the agent answers because its mode is `always`, which is the
+      // ambient case E7 says must stay free.
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text: 'the deploy finished a minute ago',
+      });
+      await finishTestTurns({ baseUrl: ctx.baseUrl });
+      const frames = await stream.settle({ quietMs: DELIVERY_QUIET_MS });
+      return { frames, room };
+    } finally {
+      await restore(ctx.baseUrl);
+      stream.close();
+    }
+  },
+  oracles: [
+    roomTurnRanFor('ada', 'the agent still ran a turn — it read the room'),
+    agentStayedQuietInRoom('ada', { label: 'and posted nothing' }),
+    noRoomEntryContains(NARRATION, 'what it wrote back to itself stayed in its own session'),
+    roomNoticeCount('agent_declined', 0, 'nobody asked, so the room said nothing about it'),
+  ],
+};
+
+/**
+ * `rooms-reaction-discharges-the-answer` — a reaction is a complete answer.
+ *
+ * Acceptance criterion 6, and the A-06 case stated as a mechanism: an
+ * acknowledgment that only needs "seen" gets an emoji and nothing else, and the
+ * room does not then write a line saying nobody replied.
+ */
+export const roomsReactionDischargesTheAnswerCase: EvalCase = {
+  id: 'rooms-reaction-discharges-the-answer',
+  title: 'Rooms — a reaction is the whole answer, and earns no "did not reply" line',
+  prompt: '',
+  runtimeTier: 'test-mode',
+  costClass: 'free',
+  tags: ['rooms'],
+  seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    // The NARRATING scenario for the reason the ambient case uses it: a turn
+    // that says nothing would let this pass with the flip removed.
+    await arm(ctx.baseUrl, NARRATING);
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'reaction-answers',
+      title: 'Reaction answers',
+      agents: [ADA],
+      timeoutMs: TIMEOUT_MS,
+    });
+    try {
+      const asked = await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text: `${mentionOf(room, 'ada')} no reply needed, just ack this`,
+      });
+      // Wait for the working indicator, so the post below is genuinely MID-TURN:
+      // that is the whole shape under test, and a post that raced ahead of the
+      // claim would carry no turn and exercise none of the marks.
+      await stream.settle({
+        settleWhen: (collected) => observedTurns(collected).length >= 1,
+        quietMs: 500,
+      });
+      await reactAsAgent({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        entryId: asked.entryId,
+        agentPath: agentDir(ctx.sandbox, 'ada'),
+        emoji: '✅',
+      });
+      await finishTestTurns({ baseUrl: ctx.baseUrl });
+      const frames = await stream.settle({ quietMs: DELIVERY_QUIET_MS });
+      return { frames, room };
+    } finally {
+      await restore(ctx.baseUrl);
+      stream.close();
+    }
+  },
+  oracles: [
+    roomTurnRanFor('ada', 'the mentioned agent ran a turn'),
+    agentStayedQuietInRoom('ada', { label: 'and said nothing beyond the reaction' }),
+    noRoomEntryContains(
+      NARRATION,
+      'the "Done — acknowledged." shape is gone: nothing followed the reaction'
+    ),
+    roomNoticeCount('agent_declined', 0, 'the reaction discharged the obligation'),
+  ],
+};
+
+/**
+ * `rooms-dm-tool-post-lands-and-triggers-nobody` — the §2.6 reversal, and the
+ * loop protection that makes it safe.
+ *
+ * Acceptance criteria 8 and 9. The post landing is the reversal; the SECOND turn
+ * not running is ADR `260814-025326` holding — an agent's post outside a channel
+ * addresses only the members it NAMES, and the person is filtered by kind
+ * anyway, so `selectTriggerTargets` returns `[]`.
+ */
+export const roomsDmToolPostLandsAndTriggersNobodyCase: EvalCase = {
+  id: 'rooms-dm-tool-post-lands-and-triggers-nobody',
+  title: 'Rooms — an agent answers a direct message with the tool, and nothing re-triggers',
+  prompt: '',
+  runtimeTier: 'test-mode',
+  costClass: 'free',
+  tags: ['rooms'],
+  seed: (sandbox) => seedRoomAgents(sandbox, [ADA_ALWAYS]),
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    await arm(ctx.baseUrl, QUIET);
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'dm-tool-post',
+      title: 'DM tool post',
+      agents: [ADA_ALWAYS],
+      kind: 'dm',
+      timeoutMs: TIMEOUT_MS,
+    });
+    try {
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text: 'are the release notes ready?',
+      });
+      // Wait for the working indicator, so the post below is genuinely MID-TURN:
+      // that is the whole shape under test, and a post that raced ahead of the
+      // claim would carry no turn and exercise none of the marks.
+      await stream.settle({
+        settleWhen: (collected) => observedTurns(collected).length >= 1,
+        quietMs: 500,
+      });
+      await postAsAgent({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        agentPath: agentDir(ctx.sandbox, 'ada'),
+        text: 'Yes — ready, and linked.',
+      });
+      await finishTestTurns({ baseUrl: ctx.baseUrl });
+      const frames = await stream.settle({ quietMs: DELIVERY_QUIET_MS });
+      return { frames, room };
+    } finally {
+      await restore(ctx.baseUrl);
+      stream.close();
+    }
+  },
+  oracles: [
+    agentPostedInRoom('ada', {
+      matches: (text) => text.includes('ready, and linked'),
+      label: 'the tool post landed in the direct message',
+    }),
+    roomNoticeCount('agent_declined', 0, 'the agent answered, so nothing said it had not'),
+  ],
+};
+
+/**
+ * Every structural rooms case, in registration order.
+ *
+ * Five are about which turns RUN — addressing, the budget, the burst, the halt.
+ * Five are about what a turn's outcome DOES to the room: it posts through the
+ * tool, it reacts, or it is silent and the room either says so or does not.
+ * They arrived in a file of their own while they were behind a flag; the flag
+ * graduated (DOR-2099) and they are ordinary rooms cases now.
+ *
+ * Being in this array is not bookkeeping. It is what `__tests__/rooms.test.ts`
+ * iterates to hold the whole tier to its promises — free, deterministic,
+ * un-quarantined, and out of `core` so no local run ever bills for them — and
+ * what its `--suite rooms` count derives from. Registering a case only into
+ * `ALL_CASES` leaves it selectable but unpoliced, and reddens that count with a
+ * number nothing explains.
  */
 export const roomsStructuralCases: EvalCase[] = [
   roomsAddressedRunsATurnCase,
@@ -564,5 +911,9 @@ export const roomsStructuralCases: EvalCase[] = [
   roomsBurstCollectsCase,
   roomsHaltStopsCase,
   roomsRementionAfterTurnStartCase,
-  ...roomsToolOnlyCases,
+  roomsToolPostIsTheOnlyReplyCase,
+  roomsAddressedSilenceWritesOneNoticeCase,
+  roomsAmbientSilenceWritesNothingCase,
+  roomsReactionDischargesTheAnswerCase,
+  roomsDmToolPostLandsAndTriggersNobodyCase,
 ];

@@ -111,7 +111,19 @@ describe('two rooms, one agent, over HTTP', () => {
           turns.push({
             roomId: req.room.id,
             prompt: req.prompt,
-            finish: (text) => resolve({ sessionId: req.sessionId ?? 'session-1', text }),
+            // **A finished turn SPEAKS through the tool**: nothing posts a
+            // turn's words for it, so an answer that only came back on the
+            // result would leave the room with nothing to show (spec
+            // `tool-only-room-replies`). `replyTo` follows the thread the
+            // triggering message is in, as a well-behaved agent's would.
+            finish: (text) => {
+              getRoomService().postFromTool(req.room.id, {
+                authorId: req.authorId,
+                text,
+                ...(req.entry.threadRootEntryId ? { replyTo: req.entry.threadRootEntryId } : {}),
+              });
+              resolve({ sessionId: req.sessionId ?? 'session-1', text });
+            },
           });
         });
       },

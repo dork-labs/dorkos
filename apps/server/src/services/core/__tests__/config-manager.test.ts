@@ -62,7 +62,7 @@ import {
   seedHarnessGlobal,
   seedHarnessRefusedHooks,
   seedRoomCanvasOps,
-  seedToolOnlyReplyDefaults,
+  retireToolOnlyReplies,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -995,58 +995,67 @@ describe('dropRetiredDorkosTools migration (tool-only-room-replies §A1, DOR-209
   });
 });
 
-describe('seedToolOnlyReplyDefaults migration (tool-only-room-replies §D5, DOR-1613)', () => {
-  it('reserves both leaves on a `rooms` block that predates them', () => {
-    // What this catches: conf merges top-level defaults SHALLOWLY, so an
-    // upgrading install with a stored `rooms` block never inherits either new
-    // leaf on its own. Drop the body and both read `undefined`.
-    const store = createMockStore({ rooms: { maxAgentDepth: 12, replyWaitMinutes: 25 } });
-    seedToolOnlyReplyDefaults(store);
-    expect(store.data.rooms).toEqual({
-      maxAgentDepth: 12,
-      replyWaitMinutes: 25,
-      toolOnlyReplies: false,
-      maxPostsPerTurn: 3,
-    });
+describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099)', () => {
+  it('deletes the retired leaf from a `rooms` block that carries it, whatever it was set to', () => {
+    // Both stored values, because the whole point of the removal is that NEITHER
+    // selects a behaviour any more: a `true` an operator opted into and a
+    // `false` a migration seeded have to converge on the same config.
+    for (const stored of [true, false]) {
+      const store = createMockStore({
+        rooms: { maxAgentDepth: 12, maxPostsPerTurn: 1, toolOnlyReplies: stored },
+      });
+      retireToolOnlyReplies(store);
+      expect(store.data.rooms, `stored ${String(stored)}`).toEqual({
+        maxAgentDepth: 12,
+        maxPostsPerTurn: 1,
+      });
+    }
   });
 
-  it('never overwrites choices somebody made (idempotent)', () => {
-    // What this catches: a re-run — corrupt-recovery instantiates conf twice —
-    // switching the flip back OFF, or widening a ceiling somebody tightened.
-    // Both stored values differ from the seeded ones, so a body that wrote
-    // unconditionally is caught here rather than passing on a coincidence.
-    const store = createMockStore({ rooms: { toolOnlyReplies: true, maxPostsPerTurn: 1 } });
-    seedToolOnlyReplyDefaults(store);
-    expect(store.data.rooms).toEqual({ toolOnlyReplies: true, maxPostsPerTurn: 1 });
+  it('seeds the ceiling that outlived the experiment when it is absent', () => {
+    // The surviving half of the removed `'0.72.0'`'s job. `maxPostsPerTurn` is a
+    // nested leaf, conf's defaults merge is shallow, and this is now the only
+    // body that writes it — so an install that never ran `'0.72.0'` gets it here
+    // or not at all.
+    const store = createMockStore({ rooms: { maxAgentDepth: 12, toolOnlyReplies: true } });
+    retireToolOnlyReplies(store);
+    expect(store.data.rooms).toEqual({ maxAgentDepth: 12, maxPostsPerTurn: 3 });
   });
 
-  it('seeds only the leaf that is missing', () => {
-    // The two are independent: a config that already carries one must gain the
-    // other without its own value being rewritten.
-    const store = createMockStore({ rooms: { toolOnlyReplies: true } });
-    seedToolOnlyReplyDefaults(store);
-    expect(store.data.rooms).toEqual({ toolOnlyReplies: true, maxPostsPerTurn: 3 });
+  it('never overwrites a ceiling somebody chose', () => {
+    const store = createMockStore({ rooms: { maxPostsPerTurn: 1 } });
+    retireToolOnlyReplies(store);
+    expect(store.writes).toEqual([]);
+    expect(store.data.rooms).toEqual({ maxPostsPerTurn: 1 });
   });
 
-  it('does nothing when there is no `rooms` block to extend', () => {
+  it('writes nothing when the leaf is gone and the ceiling is set (idempotent)', () => {
+    // A re-run — corrupt recovery instantiates conf twice — must not rewrite a
+    // section it has nothing to change in. `writes` counts `set` calls, so a body
+    // that wrote unconditionally is caught here rather than passing on the
+    // deep-equality coincidence that the result looks the same either way.
+    const store = createMockStore({ rooms: { maxAgentDepth: 12, maxPostsPerTurn: 3 } });
+    retireToolOnlyReplies(store);
+    expect(store.writes).toEqual([]);
+    expect(store.data.rooms).toEqual({ maxAgentDepth: 12, maxPostsPerTurn: 3 });
+  });
+
+  it('does nothing when there is no `rooms` block at all', () => {
     // The schema default supplies the whole section on read in that case, and
     // writing a partial `rooms` here would drop every other default in it.
     const store = createMockStore({ server: { port: 4242 } });
-    seedToolOnlyReplyDefaults(store);
+    retireToolOnlyReplies(store);
     expect(store.data.rooms).toBeUndefined();
   });
 
-  it('a real pre-0.72.0 config file gains both leaves on disk (full conf path)', () => {
+  it('a real config file loses the leaf and gains the ceiling on disk (full conf path)', () => {
     // The half neither the mock store nor a `getDot` assertion can reach (see
     // `seedRoomRepoDefaults` above for the DOR-1496 measurement this shape comes
-    // from). Both are nested-leaf cases, so this body is the ONLY thing that puts
-    // them on the file: suppress it and this goes red while
-    // `store.get('rooms').toolOnlyReplies` still answers `false` from Ajv's
-    // discarded copy.
+    // from). Suppress the body and this goes red.
     //
     // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
     // `0.0.0` in a dev tree, which runs no migration at all.
-    const dir = path.join(os.tmpdir(), 'test-dork-tool-only-mig-' + Date.now());
+    const dir = path.join(os.tmpdir(), 'test-dork-tool-only-retire-' + Date.now());
     const cfgPath = path.join(dir, 'config.json');
     fs.mkdirSync(dir, { recursive: true });
     try {
@@ -1054,8 +1063,8 @@ describe('seedToolOnlyReplyDefaults migration (tool-only-room-replies §D5, DOR-
         cfgPath,
         JSON.stringify({
           version: 1,
-          rooms: { maxAgentDepth: 12, replyWaitMinutes: 25 },
-          __internal__: { migrations: { version: '0.71.0' } },
+          rooms: { maxAgentDepth: 12, replyWaitMinutes: 25, toolOnlyReplies: true },
+          __internal__: { migrations: { version: '0.80.0' } },
         }),
         'utf-8'
       );
@@ -1067,19 +1076,53 @@ describe('seedToolOnlyReplyDefaults migration (tool-only-room-replies §D5, DOR-
         schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
         defaults: USER_CONFIG_DEFAULTS,
         clearInvalidConfig: false,
-        projectVersion: '0.72.0',
+        projectVersion: '0.81.0',
         migrations: CONFIG_MIGRATIONS,
       });
 
       const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
         rooms: Record<string, unknown>;
       };
-      expect(onDisk.rooms.toolOnlyReplies).toBe(false);
+      expect('toolOnlyReplies' in onDisk.rooms).toBe(false);
       expect(onDisk.rooms.maxPostsPerTurn).toBe(3);
-      // The upgrade adds two leaves; it changes nothing the person had set.
+      // The upgrade removes one leaf and adds one; it changes nothing the person
+      // had set.
       expect(onDisk.rooms.maxAgentDepth).toBe(12);
       expect(onDisk.rooms.replyWaitMinutes).toBe(25);
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('an install the migration never reached loses the leaf on a Zod-parsed write', () => {
+    // The other half of the retired-keys mechanism, and the reason the leaf is
+    // still DECLARED to Ajv after the schema stopped carrying it — the same pair
+    // `dropRetiredDorkosTools` above documents, over `rooms` this time. Delete
+    // the declaration in `tolerateRetiredRoomKeys` and this goes red while every
+    // other test here stays green.
+    const dir = path.join(os.tmpdir(), 'test-dork-tool-only-declared-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          rooms: { ...USER_CONFIG_DEFAULTS.rooms, toolOnlyReplies: true },
+          __internal__: { migrations: { version: '0.81.0' } },
+        }),
+        'utf-8'
+      );
+
+      initConfigManager(dir);
+      expect(applyConfigPatch({ rooms: { maxPostsPerTurn: 2 } }).ok).toBe(true);
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        rooms: Record<string, unknown>;
+      };
+      expect('toolOnlyReplies' in onDisk.rooms).toBe(false);
+      expect(onDisk.rooms.maxPostsPerTurn).toBe(2);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

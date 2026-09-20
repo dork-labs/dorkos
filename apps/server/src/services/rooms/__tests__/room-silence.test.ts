@@ -29,6 +29,7 @@ import {
   agentLookupFor,
   createRoomHarness,
   outcomeRunner,
+  speakingRunner,
   scriptedRunner,
   settleUntil,
   type ScriptedTurnRunner,
@@ -316,7 +317,7 @@ describe('a room says why an agent did not answer', () => {
       const reported = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
       const warned = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
       open(
-        outcomeRunner((request) =>
+        speakingRunner((request) =>
           request.authorId === ana ? { text: null, unanswered: 'busy' } : { text: 'over to @ana' }
         ),
         ['/agents/ana', '/agents/bo', '/agents/cy']
@@ -361,7 +362,7 @@ describe('a room says why an agent did not answer', () => {
       // over is news, and an agent that goes quiet for good after one line is
       // exactly the state a notice exists to prevent.
       let busy = true;
-      open(outcomeRunner(() => (busy ? { text: null, unanswered: 'busy' } : { text: 'on it' })));
+      open(speakingRunner(() => (busy ? { text: null, unanswered: 'busy' } : { text: 'on it' })));
 
       await seedAndSettle('first message');
       expect(noticesAbout(ana)).toHaveLength(1);
@@ -407,7 +408,7 @@ describe('a room says why an agent did not answer', () => {
       // damped" rather than borrowing the "a person is never damped" exemption
       // that sits beside it.
       open(
-        outcomeRunner((request) =>
+        speakingRunner((request) =>
           request.authorId === ana ? { text: null, unanswered: 'failed' } : { text: 'over to @ana' }
         ),
         ['/agents/ana', '/agents/bo']
@@ -683,7 +684,7 @@ describe('a room says why an agent did not answer', () => {
       // Four agents, each naming the next, against a ceiling of three: the
       // fourth hop is refused on depth alone, by a chain that really ran.
       open(
-        outcomeRunner((request) => ({
+        speakingRunner((request) => ({
           text: `over to @${nextInChain[request.authorId] ?? 'nobody'}`,
         })),
         ['/agents/ana', '/agents/bo', '/agents/cy', '/agents/di']
@@ -712,7 +713,7 @@ describe('a room says why an agent did not answer', () => {
       // the depth ceiling, which is the point of having an ancestry rule at
       // all. That refusal is a real exchange stopping, so the room says so.
       open(
-        outcomeRunner((request) =>
+        speakingRunner((request) =>
           request.authorId === ana ? { text: 'asking @bo now' } : { text: 'confirmed' }
         ),
         ['/agents/ana', '/agents/bo']
@@ -746,44 +747,51 @@ describe('a room says why an agent did not answer', () => {
   });
 
   describe('when the answer outruns the room wait', () => {
-    it('posts it when it lands, saying how long it took', async () => {
-      open(
-        outcomeRunner(() => ({
-          text: null,
-          late: Promise.resolve({ text: 'green', waitedMs: 12 * 60_000 }),
-        }))
-      );
+    it('lands as the agent’s own words, with no prefix the room wrote', async () => {
+      // **The late prefix is gone with the text path** (spec §A2). It used to
+      // read "This answers the message from 12 minutes ago: …" because the room
+      // was posting the words itself, minutes after the question, into a
+      // conversation that had moved on. A late turn posts through the tool now,
+      // carrying its own timestamp, so a note about how long it took would be
+      // attached to nothing — and the words are the agent's alone.
+      const slow: ScriptedTurnRunner = outcomeRunner((request) => ({
+        text: null,
+        late: Promise.resolve(null).then(() => {
+          slow.sayInRoom(request, 'green');
+          return { text: null, waitedMs: 12 * 60_000 };
+        }),
+      }));
+      open(slow);
       await seedAndSettle();
 
       expect(postsBy(ana)).toHaveLength(1);
-      expect(postsBy(ana)[0].body.text).toBe(
-        'This answers the message from 12 minutes ago: "is the build green?"\n\ngreen'
-      );
+      expect(postsBy(ana)[0].body.text).toBe('green');
       expect(notices()).toHaveLength(0);
     });
 
     it('re-addresses nobody from the question it quotes, however many names it held', async () => {
-      // The late answer used to re-address the whole question it was answering.
-      //
-      // Its prefix quotes that question, and the quote kept the `@` sigils — so
-      // the handles were resolved again at write time and everyone the person
-      // originally named was addressed by the ANSWER to them, minutes later. One
-      // observed entry mentioned the agent that wrote it, from nothing but the
-      // quote in its own prefix.
-      //
-      // The fix is at the source: the quote carries the words and not the
-      // addresses. Nothing about the POST is special — see the test below, which
-      // is the half that says so.
+      // The late answer used to re-address the whole question it was answering,
+      // because the room prefixed it with a quote of that question and the quote
+      // kept the `@` sigils. There is no prefix any more — the agent posts its
+      // own words through the tool (spec §A2) — so the question's handles cannot
+      // reach the answer at all. This is the standing assertion of that, and the
+      // shape it is measured in is the one the incident had.
       let land: (reply: { text: string; waitedMs: number }) => void = () => undefined;
       const late = new Promise<{ text: string; waitedMs: number }>((resolve) => {
         land = resolve;
       });
-      open(
-        outcomeRunner((request) =>
-          request.authorId === ana ? { text: null, late } : { text: 'nothing from me' }
-        ),
-        ['/agents/ana', '/agents/bo', '/agents/cy']
+      const slow: ScriptedTurnRunner = speakingRunner((request) =>
+        request.authorId === ana
+          ? {
+              text: null,
+              late: late.then((reply) => {
+                slow.sayInRoom(request, reply.text);
+                return { text: null, waitedMs: reply.waitedMs };
+              }),
+            }
+          : { text: 'nothing from me' }
       );
+      open(slow, ['/agents/ana', '/agents/bo', '/agents/cy']);
       for (const agent of [ana, bo, cy]) {
         service.updateMembership(room.id, human, agent, 'mention-only');
       }
@@ -804,11 +812,9 @@ describe('a room says why an agent did not answer', () => {
       await service.triggersIdle();
 
       const answer = postsBy(ana)[0];
-      // The quote is still there — it is what tells the reader which message
-      // this belongs to — and it still carries the words, minus the addresses.
-      expect(answer.body.text).toBe(
-        'This answers the message from 12 minutes ago: "ana bo cy is the build green?"\n\nall green'
-      );
+      // The agent's own words, and only those: there is no quote of the question
+      // for a handle to survive in.
+      expect(answer.body.text).toBe('all green');
       // Ana said nothing that addresses anybody, so the entry addresses nobody.
       // Ana least of all: an agent cannot be re-triggered by a quote of the
       // question it was asked, which is exactly the self-mention in the incident.
@@ -840,12 +846,18 @@ describe('a room says why an agent did not answer', () => {
       const late = new Promise<{ text: string; waitedMs: number }>((resolve) => {
         land = resolve;
       });
-      open(
-        outcomeRunner((request) =>
-          request.authorId === ana ? { text: null, late } : { text: 'nothing from me' }
-        ),
-        ['/agents/ana', '/agents/bo', '/agents/cy']
+      const slow: ScriptedTurnRunner = speakingRunner((request) =>
+        request.authorId === ana
+          ? {
+              text: null,
+              late: late.then((reply) => {
+                slow.sayInRoom(request, reply.text);
+                return { text: null, waitedMs: reply.waitedMs };
+              }),
+            }
+          : { text: 'nothing from me' }
       );
+      open(slow, ['/agents/ana', '/agents/bo', '/agents/cy']);
       for (const agent of [ana, bo, cy]) {
         service.updateMembership(room.id, human, agent, 'mention-only');
       }
@@ -890,7 +902,14 @@ describe('a room says why an agent did not answer', () => {
       const late = new Promise<{ text: string; waitedMs: number }>((resolve) => {
         land = resolve;
       });
-      open(outcomeRunner(() => ({ text: null, late })));
+      const slow: ScriptedTurnRunner = outcomeRunner((request) => ({
+        text: null,
+        late: late.then((reply) => {
+          slow.sayInRoom(request, reply.text);
+          return { text: null, waitedMs: reply.waitedMs };
+        }),
+      }));
+      open(slow);
 
       service.post(room.id, { authorId: human, text: 'is the build green?' });
       const settled = service.triggersIdle();
