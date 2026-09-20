@@ -36,10 +36,10 @@ import { noOpenCodeBinaryMessage, resolveHostOpenCodeBinary } from './opencode-s
 import { runWithInfrastructureRetry, transcriptNameForAttempt } from './retry.js';
 import { createLauncherResolver, type IsolationTier } from './isolation/resolve-launcher.js';
 import {
+  paidPathFor,
   paidProviderRefusesDockerMessage,
   resolveModelCredential,
   resolvePaidProviderCredential,
-  spendsOnExternalProvider,
   type ModelCredential,
 } from './credentials.js';
 import { writeResults } from '../report/summary.js';
@@ -95,7 +95,7 @@ export function defaultRunBudgetUsd(
   runtime: string | undefined,
   provider: string | undefined
 ): number {
-  return spendsOnExternalProvider(tier, runtime, provider)
+  return paidPathFor(tier, runtime, provider) !== null
     ? PAID_PROVIDER_RUN_BUDGET_USD
     : DEFAULT_RUN_BUDGET_USD;
 }
@@ -283,11 +283,9 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
   // be fixed by producing a key, so answering it first is the more useful order.
   // `auto` never reaches for a container on this tier either — a silent degrade
   // would hand an operator who asked for containment a bare-host turn.
-  if (
-    opts.isolation === 'docker' &&
-    spendsOnExternalProvider(opts.tier, opts.runtime, opts.provider)
-  ) {
-    throw new PaidTierRefusedError(paidProviderRefusesDockerMessage());
+  const requestedPaidPath = paidPathFor(opts.tier, opts.runtime, opts.provider);
+  if (opts.isolation === 'docker' && requestedPaidPath) {
+    throw new PaidTierRefusedError(paidProviderRefusesDockerMessage(requestedPaidPath));
   }
   const isolation: IsolationTier | undefined = paid ? 'child-process' : opts.isolation;
 
@@ -329,15 +327,16 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
   // fix-it message rather than silently passing.
   //
   // WHICH question gets asked follows the MONEY, not the tier string
-  // ({@link spendsOnExternalProvider}). Keying it on `tier === 'real-provider'`
+  // ({@link paidPathFor}). Keying it on `tier === 'real-provider'`
   // was a hole a reviewer walked straight through: `--tier claude-code-cheap
   // --runtime opencode --model openrouter/…` reached OpenRouter with
   // DORKOS_EVALS_PAID_PROVIDER never set, and then recorded
   // `credentialSource: 'anthropic-…'`, so the run named the wrong bill as well
   // as skipping the gate.
   let credential: ModelCredential | undefined;
-  if (spendsOnExternalProvider(opts.tier, runtime, provider)) {
-    const gate = resolvePaidProviderCredential();
+  const paidPath = paidPathFor(opts.tier, runtime, provider);
+  if (paidPath) {
+    const gate = resolvePaidProviderCredential(paidPath);
     if (!gate.ok && gate.reason === 'no-opt-in') throw new PaidTierRefusedError(gate.message);
     // `no-key` deliberately falls through with NO credential: `runEval`'s
     // credential gate then errors every case with the fix-it message, so a run

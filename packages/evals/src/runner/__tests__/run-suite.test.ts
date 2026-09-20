@@ -356,6 +356,28 @@ describe('runSuite on the paid real-provider tier', () => {
     ).rejects.toThrow(/needs you to say so/);
   });
 
+  it('refuses a cheap-tier Codex run, which bills OpenAI and asked for no flag at all', async () => {
+    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-'));
+    // The third arm, and the DOR-2207 🔴: `--runtime codex` spends at OpenAI on
+    // every tier, because the sandbox pins `CODEX_HOME` to an empty directory —
+    // so the operator's ChatGPT login is invisible and a forwarded key is the
+    // only way in. A key is exported here to make the same point the OpenCode
+    // case makes: the refusal is about the missing DECISION.
+    vi.stubEnv('CODEX_API_KEY', 'sk-codex-not-a-real-key');
+    await expect(
+      runSuite([{ ...paidCase, runtimeTier: 'claude-code-cheap' }], {
+        tier: 'claude-code-cheap',
+        runtime: 'codex',
+        outDir: outDir as string,
+        runId: 'cheap-tier-codex',
+        notify: () => {},
+      })
+    ).rejects.toThrow(/DORKOS_EVALS_PAID_CODEX/);
+
+    // Nothing was written, because nothing was attempted.
+    await expect(stat(path.join(outDir as string, 'cheap-tier-codex'))).rejects.toThrow();
+  });
+
   it('leaves an ordinary claude-code run on the Anthropic credential ladder', async () => {
     outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-'));
     // The negative control that keeps the rule above from being "refuse
@@ -449,20 +471,24 @@ describe('runSuite runtime selection', () => {
   it('records the runtime and model the run was pointed at', async () => {
     outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-'));
     // Deliberately a NON-SPENDING shape: no provider named and a runtime that
-    // fronts none, so this exercises the recording without tripping the spend
-    // gate. Naming a provider here would (correctly) refuse — that is what the
-    // 'refuses a cheap-tier run that names a provider explicitly' case above
-    // asserts, and `summary.provider` is covered on the paid path where it is
-    // the only place it can honestly be set.
+    // spends on no external account, so this exercises the recording without
+    // tripping the spend gate. Naming a provider here would (correctly) refuse —
+    // that is what the 'refuses a cheap-tier run that names a provider
+    // explicitly' case above asserts, and `summary.provider` is covered on the
+    // paid path where it is the only place it can honestly be set.
+    //
+    // It used to say `codex`, which read as non-spending until DOR-2207 measured
+    // where a Codex turn's bill lands: at OpenAI, on a forwarded key, because
+    // the sandbox pins `CODEX_HOME` to an empty directory.
     const { summary } = await runSuite([crossRuntime], {
       tier: 'claude-code-cheap',
-      runtime: 'codex',
+      runtime: 'claude-code',
       model: 'some-model',
       outDir,
       runId: 'triple',
       notify: () => {},
     });
-    expect(summary.runtime).toBe('codex');
+    expect(summary.runtime).toBe('claude-code');
     expect(summary.model).toBe('some-model');
     expect(summary.provider).toBeUndefined();
   });

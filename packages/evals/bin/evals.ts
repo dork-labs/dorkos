@@ -35,16 +35,23 @@
  * locally; see `packages/evals/README.md`. The docker tier is the exception: a
  * container cannot see the local sign-in, so it needs one of the two variables.
  *
- * ANY run that reaches an external provider spends OUTSIDE a Claude
- * subscription, and needs two deliberate acts: `DORKOS_EVALS_PAID_PROVIDER=1`
- * AND `OPENROUTER_API_KEY`. That is `--tier real-provider`, and equally
- * `--runtime opencode` or `--provider <id>` on ANY tier — the gate follows what
- * the run reaches, not the tier name (`spendsOnExternalProvider` in
- * `src/runner/credentials.ts`, which exists because keying it on the tier let a
- * cheap-tier OpenCode run spend with the flag unset). Without the flag the run
- * stops before it boots anything (exit 2, nothing billed); with the flag and no
- * key every case is a runner error, never a pass. Such a run also refuses
- * `--isolation docker`, whose containers have no network at all.
+ * ANY run that spends OUTSIDE a Claude subscription needs two deliberate acts,
+ * and WHICH pair depends on which account the run would bill (`paidPathFor` in
+ * `src/runner/credentials.ts`, which exists because keying the gate on the tier
+ * let a cheap-tier OpenCode run spend with the flag unset):
+ *
+ * - `DORKOS_EVALS_PAID_PROVIDER=1` AND `OPENROUTER_API_KEY` for anything that
+ *   reaches OpenRouter — `--tier real-provider`, and equally `--runtime
+ *   opencode` or `--provider <id>` on ANY tier.
+ * - `DORKOS_EVALS_PAID_CODEX=1` AND `CODEX_API_KEY` for `--runtime codex` on any
+ *   tier, which bills OpenAI. The sandbox pins `CODEX_HOME` to an empty
+ *   directory, so a ChatGPT login on this machine is invisible to the run and
+ *   the key is the only way in.
+ *
+ * Without the flag the run stops before it boots anything (exit 2, nothing
+ * billed); with the flag and no key every case is a runner error, never a pass.
+ * Such a run also refuses `--isolation docker`, whose containers have no network
+ * at all.
  *
  * @module evals/bin
  */
