@@ -555,39 +555,53 @@ describe('the copy rule', () => {
     expect(cells(html, /<td[^>]*>([\s\S]*?)<\/td>/g).length).toBeGreaterThanOrEqual(10);
   });
 
-  it('compresses a list of dates into a range, and writes days in English', () => {
+  it('compresses consecutive dates into a run, and keeps a gap a gap', () => {
     expect(
       shorten('Waiting for data: 13 day(s) (2026-08-30, 2026-08-31, 2026-09-01, 2026-09-11).')
-    ).toBe('Waiting for data: 13 days (2026-08-30 to 09-11).');
+    ).toBe('Waiting for data: 13 days (2026-08-30 to 09-01, 09-11).');
     expect(shorten('1 day(s) left')).toBe('1 day left');
     expect(shorten('no day(s) here')).toBe('no days here');
-    // Two dates are already a range; they are left alone.
+    // Two dates are already as short as they get; they are left alone.
     expect(shorten('between 2026-08-30, 2026-09-11')).toBe('between 2026-08-30, 2026-09-11');
-    // Still too long: the trailing clause goes, every number stays.
-    const long = shorten(
-      'Waiting for data: 13 day(s) of the after-window have no complete snapshot yet (2026-08-30, 2026-08-31, 2026-09-11); the backfill reaches them first.'
-    );
-    expect(long).toBe(
-      'Waiting for data: 13 days of the after-window have no complete snapshot yet (2026-08-30 to 09-11).'
-    );
-    expect(long.length).toBeLessThanOrEqual(120);
-    // One clause and no way to shorten it: cut at a word, and say so.
-    expect(shorten('x'.repeat(200))).toMatch(/…$/);
   });
 
-  it('keeps the headline and every trigger line under 120 characters', () => {
-    const html = busy();
-    const heads = cells(html, /<div class="headline-text">([\s\S]*?)<\/div>/g);
-    expect(heads.length).toBe(1);
-    expect(heads[0]!.length).toBeLessThanOrEqual(120);
-    const lines = cells(html, /<div class="trigger-head">([\s\S]*?)<\/div>/g);
-    expect(lines.length).toBeGreaterThan(0);
-    for (const line of lines) expect(line.length).toBeLessThanOrEqual(120);
+  it('never drops a caveat and then writes a full stop', () => {
+    // Both of these say the opposite of themselves without their last clause.
+    const confounded =
+      'gate.wf.test.test-shard.duration_p50 moved from 26 to 12.2, a 32% improvement on the objective; this is NOT attributable to the change, because 260824-121951 touched the same gate inside the window';
+    const thin =
+      'wf.test.test-shard failed 15% against 5%, which looks like a spike; the comparison window holds only 1 day of data, so it means nothing yet';
+    for (const text of [confounded, thin]) {
+      const out = shorten(text);
+      expect(out.length).toBeLessThanOrEqual(120);
+      // Either the caveat survives, or the sentence is visibly unfinished.
+      expect(out.endsWith('…') || out.includes(text.split('; ')[1]!)).toBe(true);
+      // Never a clean full stop on a sentence whose caveat was cut.
+      expect(out.endsWith('objective.')).toBe(false);
+      expect(out.endsWith('spike.')).toBe(false);
+    }
+    expect(shorten(confounded)).toContain('this is NOT');
+    expect(shorten(thin)).toContain('holds only 1 day of data');
+  });
+
+  it('swaps a long wording for a true synonym before it cuts anything', () => {
+    const out = shorten(
+      "Waiting for data: 13 day(s) of the after-window have no complete snapshot yet (2026-08-30, 2026-08-31, 2026-09-01, 2026-09-11); the collector's backfill reaches them first."
+    );
+    expect(out).toBe(
+      'Waiting: 13 days of the after-window not collected (2026-08-30 to 09-01, 09-11); backfill reaches them first.'
+    );
+    expect(out.endsWith('…')).toBe(false);
   });
 
   it('bans the filler words', () => {
     const banned = /\b(actually|simply|just|please note|it is worth noting|in order to)\b/i;
-    const pages = [busy(), renderDailyReport(recorded()).html, readFileSync(TEMPLATE, 'utf8')];
+    const pages = [
+      busy(),
+      withVerdict(),
+      renderDailyReport(recorded()).html,
+      readFileSync(TEMPLATE, 'utf8'),
+    ];
     for (const page of pages) {
       const body = page.slice(page.indexOf('<body>'));
       const hit = banned.exec(body.replace(/<[^>]+>/g, ' '));

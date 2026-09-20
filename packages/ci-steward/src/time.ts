@@ -143,17 +143,44 @@ export function count(n: number, singular: string, plural = `${singular}s`): str
 }
 
 /**
- * A list of days as a range: "2026-08-30 to 09-11". A list of 20 dates carries
- * no more meaning than its ends and eats a whole line of the report.
+ * A list of days, written as short as it can be **without saying something
+ * that is not true**. Only consecutive days collapse into a range; a gap is
+ * kept as a gap, because gaps are normal here (GitHub runs the collector's
+ * cron hours late, and a backfill fills days out of order). Turning
+ * `2026-09-14, 2026-09-18` into "2026-09-14 to 09-18" would contradict the
+ * count printed right beside it.
  *
- * @param days - The days, in any order.
+ * A run of three or more consecutive days becomes "first to last"; anything
+ * shorter is listed. Past `maxGroups` groups the rest is counted, not listed,
+ * so one cell cannot eat the page.
+ *
+ * @param days - The days, in any order; duplicates are ignored.
+ * @param maxGroups - How many runs to print before counting the remainder.
  */
-export function dayRange(days: readonly string[]): string {
-  const sorted = [...days].sort();
-  const first = sorted[0];
-  const last = sorted.at(-1);
-  if (!first || !last) return 'none';
-  if (first === last) return first;
-  // The year is almost always the same; print it once.
-  return `${first} to ${first.slice(0, 4) === last.slice(0, 4) ? last.slice(5) : last}`;
+export function dayRange(days: readonly string[], maxGroups = 4): string {
+  const sorted = [...new Set(days)].sort();
+  if (sorted.length === 0) return 'none';
+  const runs: string[][] = [];
+  for (const day of sorted) {
+    const run = runs.at(-1);
+    if (run && addDays(run.at(-1)!, 1) === day) run.push(day);
+    else runs.push([day]);
+  }
+  const year = sorted[0]!.slice(0, 4);
+  // The year is printed once; a later day in the same year is MM-DD.
+  const short = (d: string, first: boolean) => (first || d.slice(0, 4) !== year ? d : d.slice(5));
+  const parts: string[] = [];
+  let printed = 0;
+  for (const [i, run] of runs.entries()) {
+    if (i >= maxGroups) break;
+    const from = short(run[0]!, i === 0);
+    parts.push(
+      run.length >= 3
+        ? `${from} to ${short(run.at(-1)!, false)}`
+        : run.map((d, j) => short(d, i === 0 && j === 0)).join(', ')
+    );
+    printed += run.length;
+  }
+  const rest = sorted.length - printed;
+  return rest > 0 ? `${parts.join(', ')}, and ${count(rest, 'more day')}` : parts.join(', ');
 }

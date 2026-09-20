@@ -317,6 +317,27 @@ describe('trigger rules', () => {
     expect(ids(triage(input({ snapshots: old })))).toEqual([]);
   });
 
+  it('6b-guard. refuses to fold when the fan-in carries fewer ejections than its shard', () => {
+    // A fan-in without `if: always()` is SKIPPED by a red dependency rather
+    // than failed. Folding into it would then lose the shard's ejections, and
+    // its own count is what gives that away.
+    const t = triage(
+      input({
+        snapshots: [
+          snap(addDays(TODAY, -2), {
+            counts: { ...emptySnapshot('x', 'x', 0).counts, ejections_failed_checks: 9 },
+            ejections_caused: { 'wf.test.test': 4, 'wf.test.test-shard': 8 },
+            real_catches: { 'wf.test.test-shard': 3 },
+          }),
+        ],
+      })
+    );
+    // Both stand on their own rather than one swallowing the other.
+    expect(ids(t)).toEqual(['repeat-ejection:wf.test.test', 'repeat-ejection:wf.test.test-shard']);
+    expect(t.open.map((x) => x.what).join(' ')).toContain('failed on 8 of 9');
+    expect(t.open.map((x) => x.what).join(' ')).not.toContain('(with ');
+  });
+
   it('6b. counts a fan-in and the shards it waits on once, not twice', () => {
     // The census makes an always() fan-in read needs.<job>.result, so it is red
     // whenever a shard is: the collector records both, and two rows would claim

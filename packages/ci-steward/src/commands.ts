@@ -366,6 +366,22 @@ export function cmdReport(env: Env, dataDir: string): number {
 }
 
 /**
+ * Run one step of the daily job, reporting a failure under its own name.
+ *
+ * @param env - The environment.
+ * @param name - What was being done, for the message.
+ * @param run - The step.
+ */
+function step(env: Env, name: string, run: () => void): void {
+  try {
+    run();
+  } catch (e) {
+    env.io.err(`${name} failed: ${e instanceof Error ? e.message : String(e)}\n`);
+    summary(env, `### CI Steward: ${name} failed\n\n${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/**
  * `daily`: what the workflow runs between prepare and publish. Collect, then
  * verdicts, then (on Mondays) the report. The exit code is the collector's
  * health, so an unhealthy day turns the run red after everything is written.
@@ -390,17 +406,24 @@ export function cmdDaily(env: Env, dataDir: string): number {
   }
   const verdicts = runVerdicts(ctx(env, dataDir), ledger, merged);
   env.io.out(`verdicts: ${verdicts.map((v) => `${v.id} ${v.verdict}`).join(', ') || 'none'}\n`);
-  // Triage and the page are reported on their own. A crash in either must not
-  // read as a collector-health failure, which is what the exit code means here.
-  const triaged = cmdTriage(env, dataDir);
-  if (triaged !== 0) env.io.err('triage failed; the page below has no triggers on it\n');
-  const page = writeDailyReport(env, dataDir);
-  if (page) env.io.out(`wrote ${page}\n`);
-  else env.io.err('the daily report was not written\n');
+  // Triage, the page and the weekly summary each stand on their own. A crash
+  // in one must not read as a collector-health failure (the exit code means
+  // exactly that), and must not stop the others: the whole point of the run is
+  // that what it could compute reaches the branch.
+  step(env, 'triage', () => {
+    if (cmdTriage(env, dataDir) !== 0) throw new Error('triage reported a problem');
+  });
+  step(env, 'the daily report', () => {
+    const page = writeDailyReport(env, dataDir);
+    if (!page) throw new Error('no page was written');
+    env.io.out(`wrote ${page}\n`);
+  });
   // Monday's deep summary: week over week, the verdicts closed, the floors moved.
   if (env.now.getUTCDay() === 1) {
-    const r = runReport(ctx(env, dataDir), ledger, verdicts);
-    env.io.out(`wrote ${r.path}\n`);
+    step(env, 'the weekly deep summary', () => {
+      const r = runReport(ctx(env, dataDir), ledger, verdicts);
+      env.io.out(`wrote ${r.path}\n`);
+    });
   }
   return health;
 }

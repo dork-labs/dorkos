@@ -4,7 +4,7 @@
  * tag) against a temporary bare origin.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -241,6 +241,30 @@ describe('the daily workflow sequence, end to end against a bare origin', () => 
       'Weekly deep summary: git show origin/ci-steward-data:reports/2026-W38.md'
     );
     expect(status).toContain('Triggers (');
+  });
+
+  it('keeps a failing step to itself, so the exit code still means the collector', () => {
+    const w = world();
+    const SAT = '2026-09-19T05:00:00Z';
+    run(w.root, ['data-prepare', '--data', w.data, '--now', SAT]);
+    // `reports` as a FILE makes every write under it fail, so the daily page
+    // cannot be written. Nothing else about the run should change. Each step
+    // of `daily` is wrapped on its own (triage, the page, and on Mondays the
+    // weekly deep summary), so one failing never skips the next.
+    mkdirSync(w.data, { recursive: true });
+    writeFileSync(path.join(w.data, 'reports'), 'not a directory');
+    const daily = run(w.root, ['daily', '--data', w.data, '--now', SAT]);
+    // The exit code is the collector's health, not the renderer's luck.
+    expect(daily.code).toBe(0);
+    expect(daily.err).toContain('the daily report failed:');
+    expect(daily.err).not.toContain('triage failed:');
+    // Everything that did not depend on it still landed.
+    expect(daily.out).toContain('triggers:');
+    expect(existsSync(path.join(w.data, 'triggers.json'))).toBe(true);
+    expect(existsSync(path.join(w.data, 'latest.json'))).toBe(true);
+    expect(
+      JSON.parse(readFileSync(path.join(w.data, 'latest.json'), 'utf8')) as { triggers?: unknown }
+    ).toHaveProperty('triggers');
   });
 
   it('writes a heartbeat on every local export, so an idle clone never reads as stale', () => {

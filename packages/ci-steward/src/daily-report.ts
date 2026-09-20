@@ -36,7 +36,7 @@ import { fill, h, raw, sparkline, type Html } from './html.ts';
 import type { HandFiles } from './load.ts';
 import type { Slos } from './schemas.ts';
 import { computeSlos } from './slo.ts';
-import { addDays, dayRange, daysBetween, round } from './time.ts';
+import { addDays, count, dayRange, daysBetween, round } from './time.ts';
 import { ejectionLegs, legName } from './ejections.ts';
 import { openDays, type Trigger, type Triggers } from './triggers.ts';
 import type { LedgerEntry } from './verdicts.ts';
@@ -110,37 +110,62 @@ function template(): string {
 export const CELL_MAX = 120;
 
 /**
- * Squeeze text the engine wrote elsewhere into something a cell can hold: a
- * run of dates becomes a range, "day(s)" becomes English, and a sentence still
- * over the cap loses its trailing explanatory clauses — never its numbers. The
- * strings this reaches (verdict reasons, collector warnings) are written short
- * at source now, but a snapshot or a final verdict recorded before that keeps
- * its old wording forever, and the page still has to fit.
+ * Wordings the engine used before it learned to be brief, and the shorter way
+ * of saying exactly the same thing. A snapshot or a final verdict written
+ * before that keeps its old text forever, and the page still has to fit.
+ *
+ * Every pair here must be a true synonym. This table is where wording gets
+ * shorter; it is never where a fact goes missing.
+ */
+const SHORTER: readonly (readonly [RegExp, string])[] = [
+  [/\bWaiting for data:/g, 'Waiting:'],
+  [/\bMissing data:/g, 'Missing:'],
+  [/\bof the after-window have no complete snapshot yet\b/g, 'of the after-window not collected'],
+  [
+    /\bwere never collected and Actions no longer keeps them\b/g,
+    'never collected, now past retention',
+  ],
+  [/\bthe collector's backfill reaches them first\b/g, 'backfill reaches them first'],
+  [/\bNo snapshot for\b/g, 'No snapshot:'],
+  [/\bin the 28 days to\b/g, 'of the 28 days to'],
+];
+
+/**
+ * Squeeze text the engine wrote elsewhere into something a cell can hold.
+ *
+ * Three steps, in order: consecutive dates collapse into runs (a gap stays a
+ * gap, `dayRange`), "day(s)" becomes English, and known long wordings are
+ * swapped for true synonyms.
+ *
+ * **It never drops a trailing clause.** A clause after a semicolon is usually
+ * the caveat — "this is NOT attributable to the change, because…", "the window
+ * holds only 1 day of data, so it means nothing yet" — and cutting it and then
+ * writing a full stop turns a hedged sentence into a confident claim of the
+ * opposite. Terse is never worth that. If the sentence is still too long it is
+ * cut at a word and ends with an ellipsis, so the page never presents a
+ * truncated thought as a complete one.
  *
  * @param text - The sentence to shorten.
  * @param max - The cap, in characters.
  */
 export function shorten(text: string, max = CELL_MAX): string {
-  const squeezed = text
-    .replace(/(\d{4}-\d{2}-\d{2})(?:,\s*\d{4}-\d{2}-\d{2}){2,}/g, (all, first: string) => {
-      const days = all.split(/,\s*/);
-      return dayRange([first, days.at(-1)!]);
-    })
+  let out = text
+    .replace(/(\d{4}-\d{2}-\d{2})(?:,\s*\d{4}-\d{2}-\d{2}){2,}/g, (all) =>
+      dayRange(all.split(/,\s*/))
+    )
     .replace(
       /(\d+)\s+([a-z]+)\(s\)/gi,
       (_all, n: string, word: string) => `${n} ${Number(n) === 1 ? word : `${word}s`}`
     )
     .replace(/\b([a-z]+)\(s\)/gi, '$1s');
-  if (squeezed.length <= max) return squeezed;
-  // Still long: drop trailing explanatory clauses, never the numbers in front
-  // of them. Clauses are separated by "; ", and the first one carries the fact.
-  const clauses = squeezed.split('; ');
-  while (clauses.length > 1 && clauses.join('; ').length > max) clauses.pop();
-  const kept = clauses.join('; ').replace(/[;,]\s*$/, '');
-  const ended = /[.!?]$/.test(kept) ? kept : `${kept}.`;
-  if (ended.length <= max) return ended;
-  // One clause and still too long: cut at a word, and say that it was cut.
-  return `${ended.slice(0, max - 1).replace(/\s+\S*$/, '')}…`;
+  for (const [long, short] of SHORTER) {
+    if (out.length <= max) break;
+    out = out.replace(long, short);
+  }
+  if (out.length <= max) return out;
+  // Still too long. Cut at a word and say so; never trim to a clause boundary
+  // and add a full stop, which would assert what the dropped clause denied.
+  return `${out.slice(0, max - 1).replace(/\s+\S*$/, '')}…`;
 }
 
 /** A statistic's short label in a cell. Empty when the value speaks for itself. */
@@ -455,8 +480,10 @@ function healthBlock(inp: DailyReportInput, snap: Snapshot | null): Html {
         <ul class="plain">
           <li><strong>${inp.latest.api_calls}</strong> of ${budget} GitHub requests used (GitHub allows 1,000 an hour).</li>
           <li><strong>${have.length}</strong> of 7 days recorded${
-            missing.length ? h`; missing ${dayRange(missing)}` : raw('')
-          }${late.length ? h`; still finishing ${dayRange(late)}` : raw('')}.</li>
+            missing.length
+              ? h`; ${count(missing.length, 'day')} missing (${dayRange(missing)})`
+              : raw('')
+          }${late.length ? h`; ${count(late.length, 'day')} still finishing (${dayRange(late)})` : raw('')}.</li>
           <li>Machines sending hook timings: ${
             exports.length
               ? exports.map(([clone, e], i) => h`${i ? ', ' : ''}${clone} (${e.state}, ${e.last})`)

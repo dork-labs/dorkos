@@ -83,7 +83,13 @@ export function ejectionLegs(
   const folded = new Map<string, string[]>();
   for (const gate of present) {
     for (const under of absorbs.get(gate) ?? []) {
-      if (present.has(under)) folded.set(under, [...(folded.get(under) ?? []), gate]);
+      // The fold only holds while the fan-in really is red whenever a job it
+      // needs is red. A fan-in without `if: always()` is SKIPPED by a red
+      // dependency, not failed, and folding into it would then undercount the
+      // shard's ejections. Its own count proves it either way: fold only when
+      // the fan-in carries at least as many as the job it would swallow.
+      if (present.has(under) && (counts[gate] ?? 0) >= (counts[under] ?? 0))
+        folded.set(under, [...(folded.get(under) ?? []), gate]);
     }
   }
   return Object.entries(counts)

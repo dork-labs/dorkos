@@ -65,23 +65,27 @@ const RANK: Record<TriggerRule, number> = {
   'stale-ledger': 10,
 };
 
-const TriggerSchema = z
-  .object({
-    id: z.string(),
-    rule: z.enum(TRIGGER_RULES),
-    severity: z.enum(['red', 'amber']),
-    /** The gate id, SLO id or ledger id this belongs to; empty when it is pipeline-wide. */
-    scope: z.string(),
-    /** What fired, with the measured numbers, in one plain sentence. */
-    what: z.string(),
-    /** The suggested next step. Nothing acts on it; a person or an agent reads it. */
-    action: z.string(),
-    /** A `proposed` ledger entry that already covers this, matched on metric id and gate. */
-    ledger_entry: z.string().nullable(),
-    first_fired: z.string(),
-    last_fired: z.string(),
-  })
-  .strict();
+/**
+ * One trigger. Not `strict`, for the reason `TriggersSchema` is not: a
+ * checkout behind the collector must be able to read what it wrote, and a
+ * field added here is additive.
+ */
+const TriggerSchema = z.object({
+  id: z.string(),
+  rule: z.enum(TRIGGER_RULES),
+  severity: z.enum(['red', 'amber']),
+  /** The gate id, SLO id or ledger id this belongs to; empty when it is pipeline-wide. */
+  scope: z.string(),
+  /** What fired, with the measured numbers, in one plain sentence. */
+  what: z.string(),
+  /** The suggested next step. Nothing acts on it; a person or an agent reads it. */
+  action: z.string(),
+  /** A `proposed` ledger entry that already covers this, matched on metric id and gate. */
+  ledger_entry: z.string().nullable(),
+  first_fired: z.string(),
+  last_fired: z.string(),
+});
+
 /** One open trigger. */
 export type Trigger = z.infer<typeof TriggerSchema>;
 
