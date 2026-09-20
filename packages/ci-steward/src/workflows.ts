@@ -44,6 +44,12 @@ export interface JobModel {
 
 /** One trigger block, e.g. `pull_request: { types, paths }`. */
 interface TriggerModel {
+  /**
+   * `schedule:` entries' cron expressions. A `schedule: []` declares the
+   * trigger and fires nothing, which is why the count is kept rather than just
+   * the trigger's presence (the census's canary check reads it).
+   */
+  crons?: string[];
   types?: string[];
   paths?: unknown;
   pathsIgnore?: unknown;
@@ -83,6 +89,9 @@ function parseTriggers(on: unknown): Map<string, TriggerModel> {
     for (const [event, cfg] of Object.entries(on)) {
       const c = isObj(cfg) ? cfg : {};
       out.set(event, {
+        crons: Array.isArray(cfg)
+          ? cfg.flatMap((e) => (isObj(e) && typeof e.cron === 'string' ? [e.cron] : []))
+          : undefined,
         types: asStrings(c.types),
         paths: c.paths,
         pathsIgnore: c['paths-ignore'],

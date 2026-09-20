@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { once } from 'node:events';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Pool } from 'pg';
+import { Pool, type PoolClient } from 'pg';
 import { hashPassword } from 'better-auth/crypto';
 import { migrate } from '../migrate.js';
 import { recoverPassword } from '../recover-password.js';
@@ -77,10 +78,19 @@ beforeAll(async () => {
   ]);
 });
 afterAll(async () => {
-  await pool?.end();
-  await admin.query(`DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`);
+  if (pool) await endRecoveryPool(pool);
+  await admin.query(`DROP DATABASE IF EXISTS "${dbName}"`);
   await admin.end();
 });
+
+async function endRecoveryPool(pool: Pool) {
+  const disconnected = pool.totalCount === 0 ? Promise.resolve() : once(pool, 'remove');
+  await Promise.all([pool.end(), disconnected]);
+}
+
+type CloseablePoolClient = PoolClient & {
+  end(callback: (error: Error) => void): void;
+};
 
 function signIn(email: string, password: string) {
   return auth.handler(
@@ -93,6 +103,41 @@ function signIn(email: string, password: string) {
 }
 
 describe('offline member recovery', () => {
+  it('waits for the PostgreSQL client close acknowledgement before teardown completes', async () => {
+    const delayedPool = new Pool({ connectionString: dbUrl.toString(), max: 1 });
+    const client = (await delayedPool.connect()) as CloseablePoolClient;
+    await client.query('SELECT 1');
+    const originalEnd = client.end.bind(client);
+    let reportCloseAttempt!: () => void;
+    const closeAttempted = new Promise<void>((resolve) => {
+      reportCloseAttempt = resolve;
+    });
+    let acknowledgeClose!: () => void;
+    const closeAcknowledged = new Promise<void>((resolve) => {
+      acknowledgeClose = resolve;
+    });
+    client.end = (callback: (error: Error) => void) => {
+      originalEnd((error) => {
+        reportCloseAttempt();
+        void closeAcknowledged.then(() => callback(error));
+      });
+    };
+    client.release();
+
+    let teardownSettled = false;
+    const teardown = endRecoveryPool(delayedPool).then(() => {
+      teardownSettled = true;
+    });
+    try {
+      await closeAttempted;
+      expect(teardownSettled).toBe(false);
+    } finally {
+      acknowledgeClose();
+      await teardown;
+    }
+    expect(teardownSettled).toBe(true);
+  });
+
   it('changes the real login, revokes existing access, and preserves another member and owner role', async () => {
     expect((await signIn('owner@example.test', 'old-password-123')).status).toBe(200);
     expect((await signIn('other@example.test', 'old-password-123')).status).toBe(200);

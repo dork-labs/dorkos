@@ -123,7 +123,55 @@ Admin bypass is narrowed to `pull_request`: nobody pushes to `main` directly, ad
 - **A skipped job satisfies a required context.** A job-level `if:` that skips posts a _skipped_ check run, and GitHub counts skipped as passing. Never "fix" a required check by making it skip.
 - **An ejection is usually not your fault.** 22% of PRs are ejected at least once; 85% of failed-checks ejections (209 of 247 over 30 days) re-pass with no change. The first response to one is to read the failing job without pushing or rerunning, and to re-arm with `gh pr merge --auto <n>` once it is plainly not yours (merge-tail would re-arm it too, but only every 2-3 hours). It counts as real only on a second ejection by the same job with no commit in between.
 
-## merge-tail: who arms a merge
+## The main canary: who watches `main`
+
+`test` and `browser-test` run their real suites on `merge_group` only, and the push-to-main legs were retired on 2026-09-19 because the queue already tested the byte-identical tree. Both are right, and together they left a hole: once a commit is on `main`, nothing looked at it again. On 2026-09-17 a fixture pinned the browser clock past Today's 04:00 boundary (#1916). It was green in every queue build outside 00:00–02:00 UTC, hid for three days, then ejected #1930, #1932 and #1933 about nine times in one evening before a person diagnosed it (#1934).
+
+The canary closes it. `test.yml`, `browser-test.yml`, `typecheck.yml` and `lint.yml` each carry `schedule:` (four slots a day, staggered by minute) and `workflow_dispatch:`, and run their own suites against `main` HEAD.
+
+- **There is no canary workflow.** It is the same workflows: the steps that read `github.event_name == 'merge_group'` now read `!= 'pull_request'`, so the full sweep runs everywhere but a PR. A second copy of the suite could drift from what the queue runs, and a canary that disagrees with the gate is worse than none.
+- **It can never touch a pull request or the queue.** A required context is required on the `pull_request` and `merge_group` events; a `schedule` run reports on neither, belongs to no PR and to no queue build, and arms nothing. It is not a required check and must not become one.
+- **Run one now:** `gh workflow run test.yml --ref main` (or the Actions tab). This is **not** plan §4.9's targeted canary: that wants a `job` input so one failing job re-runs in 5–25 minutes, and this dispatch runs the whole workflow (~150 job minutes, ~30 minutes wall). The input and the matrix gating it needs are a separate change; until they land the targeted canary does not exist. The dispatch has its own concurrency group, so an incident run never queues behind a scheduled round.
+- **What four crons a day actually buy.** The evidence is `evals.yml`, not merge-tail: merge-tail's `*/10` cron delivers about 7 runs a day, and the "162-minute median" from it is the gap between delivered runs — how many requests GitHub drops, not how late one is. For a low-frequency cron the comparable is `evals.yml`'s `0 8 * * *`: 57 runs, **100% delivered**, lateness p50 2.60 h, p90 5.61 h, max 11.88 h. So the rounds arrive, but hours late, and the delay is shared across the day's slots rather than drawn fresh for each — four correlated shots at a window, not four independent ones. No schedule here can promise a run inside a named window. What the four slots (`0,5,10,21` UTC) buy is a break on `main` found in hours rather than days, and the 00:00–02:00 UTC window hit on about one day in three and **about six days in seven** (86.3% empirical, not the ~95% independence would give: lag-1 autocorrelation 0.754, longest measured blind streak 12 days). Two weeks is the honest near-certainty. Throttling only ever delays a run, so the `21` slot is a late-night slot and `5` lands in the queue's 07:00–11:00 trough.
+- **`credential-free-build` and `copy-spec-drift` are not in it.** Both read a base SHA to diff against, which a scheduled run does not carry. Neither do the PR-diff checks (`fragment-present`, `no-fragment-under-skip-label`, `version-outranks-base`, `db-check`): they measure a diff, and `main` has none. Every one of those is named in `canary.exempt` with its reason.
+- **It runs against `main` or it fails.** `workflow_dispatch` is ref-free, so `--ref <a PR's branch>` would post a required context's check run on that pull request's head. A three-line guard is the **first** step of every canary job and **fails** such a run — never skips it, because a skipped job satisfies a required context. It is inline in the `run:` block rather than a script, because it runs before `actions/checkout` and a `bash scripts/…` there exits 127 on every event; `packages/ci-steward/src/__tests__/canary-ref-guard.test.ts` extracts the shipped block, runs it, and pins that it stays step 1 and reads no file.
+- **The list is a registry, not a convention, and it binds both ways.** `ci/config.yaml`'s `canary.workflows` is what the collector reads a run against. The census fails when a workflow named there is missing, has no `schedule` or `workflow_dispatch` trigger, declares a `schedule:` with no cron, or has no job that can run on one — and it fails when a workflow owning a required context is in neither `canary.workflows` nor `canary.exempt`. Without the second direction, deleting a name would leave the census green while collection and the silence arm both stopped, and a canary that stopped running reads exactly like a healthy `main`.
+- **What it does to the data.** Canary runs carry the same gate ids as the PR and queue legs, so every reader that aggregates a gate across events skips them for a gate that also runs on the merge path — decided once **across the window** (`mergePathGates`), never per day, because per-day membership flipped with a single zero-run key. A gate that runs on nothing but a schedule keeps its own samples, so `headroom` still watches merge-tail, the evals, CodeQL and the collector. `main-green` counts `push` runs only and is untouched. The canary's runner minutes are kept out of `job_minutes` and carried as `tracked.canary-minutes`, because its cost is fixed while everything else's is proportional to what was merged. Its own results are `snapshot.canary`, and `tracked.time-to-detect` reads from the previous run's **start** to this one's finish — a run only tests the tree it checked out.
+- **It rides the quarantine lane.** The lane's shard steps and fan-in proofs run on the canary exactly as in the queue, because it is the same job: a canary that failed on a flake the queue excuses would report a break that is not there. With no `quarantine.json` on the data branch, `quarantine-list` writes an empty list and exits 0, and an empty lane behaves exactly as no lane at all.
+- **What it costs.** About 150 job minutes a round, 600 a day: **+11%** against the 8-day mean, +6.5% against a busy day and +50% on a quiet one, because the canary's cost is fixed. The repository is public, so those are unbilled; the price is contention on the pool the queue shares.
+
+## merge-tail: who arms a merge, and who asks for a lost review again
+
+`merge-tail.yml` has two duties. The second one, added 2026-09-20 (ledger
+`260920-175925`): on the same tick it re-requests the automated Claude review on
+any open PR whose `review` check is red, by applying the `re-review` label. The
+decision is `scripts/should-redispatch-review.sh`, pinned by
+`scripts/test-should-redispatch-review.sh`. **What actually bounds it is a
+ceiling of three retries per head SHA**, not the 10/20/40-minute backoff in the
+script: every rung is shorter than one tick (median gap 162 minutes below), so
+the backoff never fires on today's trigger and only becomes real under an
+event-driven one. It counts attempts, not runs — a `skipped` or `cancelled` run
+never reviewed anything, and it counts `run_attempt` rather than rows, because
+GitHub reuses a run id when a run is re-run by hand. It holds off while the
+subscription window the last attempt died against is plausibly still shut (300
+minutes for a session limit, 360 for a weekly one) and then tries again: a
+pause, not a terminus, because the class never changes on its own and only this
+gate creates new attempts. It refuses outright when the PR carries
+`skip-review`, and when the PR edits `claude-code-review.yml`, because the
+action refuses to review a PR that changes its own workflow. It also **removes** a `re-review` label stranded
+on a conflicting PR: GitHub creates no run for a conflicting PR, so nothing
+inside a run can clear it and the human button would stay pressed down.
+One consequence of that rework for people: `gh workflow run claude-code-review.yml -f pr=N`
+is keyed by PR number, not head SHA, so it now runs **beside** an automatic
+review instead of cancelling it — two verdicts and double the spend if one is
+already in flight. Dispatch when there is no run, not when one is slow.
+
+The mechanism is a label rather than a workflow dispatch because dispatching
+needs `actions: write`, which the merge-tail app does not hold, and GITHUB_TOKEN
+cannot substitute: GitHub creates no workflow run for an event its own token
+triggered. Reading the review's runs does need `actions: read`; if the app lacks
+it, the tick says so in its summary and in a warning rather than quietly
+retrying nothing.
 
 `merge-tail.yml` arms auto-merge on PRs that are finished. Its schedule says every 10 minutes, but GitHub throttles it: over 200 scheduled runs from 2026-08-25 to 09-19 the median gap was 162 minutes (p90 305, max 748), so it runs roughly every 2-3 hours and is a backstop, not the arming path. Arm your own green PR with `gh pr merge --auto <n>`, and re-arm after a failed-checks ejection once the failing job's log shows it was not yours; arming is idempotent. A finished PR is open, not a draft, no hold label (`hold`, `do-not-merge`, `do not merge`, `wip`, `blocked`), not conflicting, mergeability known, no requested changes, no unresolved review threads (outdated ones count), and every check settled green with none cancelled. Its decision is `scripts/should-arm-automerge.sh`, pinned by `scripts/test-should-arm-automerge.sh`, and it is affirmative: anything unknown is a skip.
 
@@ -208,7 +256,7 @@ The entry's `slo` is read over the same windows and reported beside the verdict 
 
 **The constraint** is exactly one, by fixed precedence: (1) a tripwire, meaning a collector health failure or a `headroom` breach (ratchet violations join in phase 2); (2) a quality SLO in breach, in `ci/slos.yaml` order; (3) the SLO with the most excess wait-hours against its **objective**: the sum over the population of each item's time beyond the tail objective, plus killed pushes at the tool ceiling for `local-push` and wasted builds at (median ejected wait − median clean queue build) for `wasted-queue-builds`.
 
-**The triggers**, `triggers.json`, are the ranked list of things worth doing something about, computed by `triage` from the data alone, with no model in the loop. Ten rules, each with its threshold in `ci/config.yaml`'s `triage:` block (which the fence covers, so an unattended change cannot widen a threshold until its own trigger stops firing):
+**The triggers**, `triggers.json`, are the ranked list of things worth doing something about, computed by `triage` from the data alone, with no model in the loop. Eleven rules, each with its threshold in `ci/config.yaml`'s `triage:` block (which the fence covers, so an unattended change cannot widen a threshold until its own trigger stops firing):
 
 | #   | Fires when                                                                                                                                                                                                                                                                                           | Severity                                           |
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
@@ -222,6 +270,7 @@ The entry's `slo` is read over the same windows and reported beside the verdict 
 | 8   | a gate's p95 duration is at or above `headroom_ratio` (0.9) of its `timeout-minutes`                                                                                                                                                                                                                 | red                                                |
 | 9   | the collector's health failed on any of the last `collector_health_days` (3) days                                                                                                                                                                                                                    | red                                                |
 | 10  | an `active` experiment is `stale_verdict_days` (7) past its after-window with no verdict, or a `proposed` entry is older than `stale_proposed_days` (30) and untouched                                                                                                                               | amber                                              |
+| 11  | the main canary's newest run of a workflow is red (`canary_red_min_runs`, 1), which is one episode however many workflows are in it; **or** no canary result at all for `canary_silent_hours` (18), because a canary that stopped running reads exactly like a green one                             | red for a red canary, amber for silence            |
 
 A spell on `main` that already recovered is amber, not red: the `main-green` SLO counts it, and a 22-minute blip must not drive the page's light for a week after it healed. A trigger names a `proposed` ledger entry only when the entry names that gate **and** its hypothesis measures it, so an entry listing six gates is not offered as the answer to every trigger on any of them.
 
@@ -273,6 +322,33 @@ The other order leaves a window where live protection differs from declared inte
 
 The steward may change gates, never the steward or the judge. When the unattended `ci-improve-tick` exists (phase 3), the coverage step fails a `ci-improve/*` PR that touches any path in `ci/steward-owned-paths.json`: `packages/ci-steward/src/**`, `ci/slos.yaml`, `ci/metrics.yaml`, `ci/ratchets.yaml`, `ci/required-checks.json`, `ci/steward-owned-paths.json`, `ci/config.yaml`, `.claude/rules/ci-pipeline.md`, this guide, `claude-code-review.yml`, `REVIEW.md`, `scripts/should-arm-automerge.sh` and `merge-tail.yml`. `typecheck.yml` and `lefthook.yml` are fenced by content instead (the census steps and the time-wrap must stay present), checked by a different runner, because the census cannot guard its own removal.
 
+### The quarantine lane
+
+A test the data has classified flaky can be taken out of the blocking path without a PR, while somebody fixes it. It keeps running, keeps retrying and is still reported; it only loses the power to fail the queue. The list lives on the data branch as `quarantine.json`, so it takes effect on the next queue build.
+
+```bash
+pnpm ci:flaky                     # which tests failed and then passed on the same tree
+pnpm ci:flaky --fetch             # the same, read live from Actions (artifacts expire after 7 days)
+pnpm ci:quarantine list
+pnpm ci:quarantine add --runner playwright --file '<spec>' --title '<test>' --reason '<why>'
+pnpm ci:quarantine remove --runner playwright --file '<spec>' --title '<test>' --publish
+pnpm ci:quarantine reset --publish   # empty the list when no reader will honour it
+```
+
+The full walkthrough is the `ci-quarantine` skill. The rules worth knowing here:
+
+- **Evidence, never assertion.** An occurrence is one merge-group SHA on which the test failed and then passed. Two distinct SHAs in 14 days qualify; a test quiet for longer than its own average gap between flakes is `cooling` and is refused, because that is what a fixed test looks like. **A test that fails deterministically is a real bug and may not be quarantined.**
+- **Nothing is skipped.** Quarantine is per test, decided by a gate that reads the shard reports — not `grepInvert`, not vitest `exclude`. Every file is still collected and the shard union is unchanged.
+- **A failure the list does not name fails as before.** That is the whole gate.
+- **An exit code with nothing behind it is not excused.** The gate reads three numbers out of the same reports: the runner's own failed-test tally, its own per-test walk, and the failures it attributes to no test at all (`numFailedTestSuites`, Playwright's top-level `errors[]` — a file that throws on import fails to _collect_, so it never appears as a failed test). It refuses the first two when they disagree, refuses the third outright, and excuses a non-zero exit only when the tally is exactly the set the lane absorbed.
+- **One hole is open and named.** A package whose process dies before writing any report — an OOM kill, a segfault in the worker — appears in none of those three numbers, so in a run where a quarantined test also failed it is excused, and **nothing downstream catches it**: `assert-tests-executed.sh` counts turbo tasks and a failed task still ran, and the union check unions the files the other shards collected. Closing it means reading the turbo summary's per-task exit codes in the gate and requiring a named failure from every task that failed. It is not built.
+- **The whole lane is printed** in the job summary of every queue build that read it, with its evidence and expiry.
+- **The union checks take the list.** `assert-browser-tests-executed.sh` fails when a quarantined browser test did not run — missing, or collected and then skipped. `assert-shard-union.sh` fails when a quarantined vitest test's FILE contributed nothing to any shard. The vitest side is file-level, not per-test: the fan-in has no install and reads no per-test reports, so a quarantined vitest test that stopped running while its file still collects something is not caught there.
+- **The ratchets are phase 2, and the exclusion is a requirement on them, not a fact about today.** When `ratchet-assert` is built, the pass-count ratchets must exclude quarantined tests on both sides of every comparison, or quarantining one lowers a high-water mark with no release and no record. `ci/ratchets.yaml` says so in each ratchet's description and `packages/ci-steward/src/__tests__/quarantine.test.ts` fails if that sentence is ever removed.
+- **It expires.** 7 days by default, 10 entries at most, and adding one writes a `proposed` "fix or delete this test" ledger entry. `pnpm ci:status` and the weekly report flag a full lane or an entry near expiry. Every threshold is in `ci/config.yaml` under `quarantine:`, with `quarantine-size` and `quarantine-days` in `ci/ratchets.yaml` behind them.
+- **It fails safe.** A list that is missing, unreadable, invalid, over the cap, expired, dated in the future, or outliving `max_expiry_days` measured against the reader's own clock is ignored entirely, and then every test blocks as normal. The step that reads it always exits 0: "we could not read the list" must never be a red queue build.
+- **You are never locked out of it.** A refused list still parses, so `remove` edits it to repair it, and `reset --publish` replaces it with an empty one. Hand-editing the data branch is never the answer.
+
 ### What exists now
 
 | Piece                                                                                                                                            | Phase | Status      |
@@ -284,6 +360,18 @@ The steward may change gates, never the steward or the judge. When the unattende
 | Local hook timings (time-wrap) and the `ci-local-export` scheduled skill                                                                         | 1     | this change |
 | `/ci-record` (writes an entry with its baseline read from `latest.json`)                                                                         | 1     | not built   |
 | Incident mode: sentinel, freeze, quarantine, `/ci-incident`, `/ci-break-glass`, `ci-steward arm`                                                 | 1b    | not built   |
+| Ratchet assertions, the blocking `review-gate`                                                                                                   | 2     | not built   |
+| `/ci-improve`, `ci-improve-tick`, fence enforcement                                                                                              | 3     | not built   |
+| Piece                                                                                                                                            | Phase | Status      |
+| ----------------------------------------------------------------------------------------                                                         | ----- | ----------- |
+| `ci/` hand files, `census`, `ledger-check`, `ledger-new`, typecheck steps                                                                        | 0     | on `main`   |
+| Merge guard, de-staled `creating-pull-requests` skill and watcher                                                                                | 0     | on `main`   |
+| `MERGE_TAIL_TOKEN` replaced by the `dorkos-merge-tail` app                                                                                       | 0     | on `main`   |
+| Daily collector, data branch, verdicts, floors, weekly report, `/ci-status`, `/ci-pulse`                                                         | 1     | this change |
+| Local hook timings (time-wrap) and the `ci-local-export` scheduled skill                                                                         | 1     | this change |
+| `/ci-record` (writes an entry with its baseline read from `latest.json`)                                                                         | 1     | not built   |
+| Quarantine lane from data: `flaky`, `quarantine`, the queue gates, `/ci-quarantine`                                                              | 1b    | this change |
+| Incident mode: sentinel, freeze, `/ci-incident`, `/ci-break-glass`, `ci-steward arm`                                                             | 1b    | not built   |
 | Ratchet assertions, the blocking `review-gate`                                                                                                   | 2     | not built   |
 | `/ci-improve`, `ci-improve-tick`, fence enforcement                                                                                              | 3     | not built   |
 

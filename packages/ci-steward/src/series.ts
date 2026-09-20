@@ -4,7 +4,14 @@
  * and the automated review's completions and recoveries.
  */
 import type { Run } from './collect.ts';
-import type { MainCommit, QueueBuild, Snapshot, TimedSample } from './data.ts';
+import {
+  CANARY_EVENTS,
+  type CanaryRun,
+  type MainCommit,
+  type QueueBuild,
+  type Snapshot,
+  type TimedSample,
+} from './data.ts';
 import { minutesBetween, round, secondOfDay } from './time.ts';
 
 /** Conclusions that count as a failure. */
@@ -108,7 +115,62 @@ export function queueBuilds(
   return out.sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
-/** Commits on the default branch and whether their push checks went red. */
+/**
+ * The day's completed main-canary runs: the required suites run against `main`
+ * HEAD on a schedule, or dispatched by hand at the same legs.
+ *
+ * Only the workflows `ci/config.yaml`'s `canary.workflows` names are canary
+ * runs. That list is not decoration: `ci-steward.yml`, `evals.yml` and
+ * `codeql.yml` also run on `schedule` against `main`, and counting the
+ * collector's own daily tick as a canary result would report the pipeline
+ * healthy on the strength of the run that said so.
+ *
+ * A cancelled run is dropped rather than recorded green: a canary cancelled by
+ * a newer one, or by a runner going away, proves nothing about `main`.
+ *
+ * @param runs - The day's runs.
+ * @param defaultBranch - The branch the canary runs against.
+ * @param workflows - Workflow file names that are canary legs.
+ */
+export function canaryRuns(
+  runs: readonly Run[],
+  defaultBranch: string,
+  workflows: readonly string[]
+): CanaryRun[] {
+  const wanted = new Set(workflows);
+  return runs
+    .filter(
+      (r) =>
+        r.status === 'completed' &&
+        CANARY_EVENTS.has(r.event) &&
+        r.head_branch === defaultBranch &&
+        wanted.has(r.path.slice(r.path.lastIndexOf('/') + 1)) &&
+        r.conclusion !== 'cancelled' &&
+        r.conclusion !== 'skipped'
+    )
+    .map((r) => ({
+      workflow: r.path.slice(r.path.lastIndexOf('/') + 1),
+      sha: r.head_sha.slice(0, 12),
+      event: r.event,
+      started: r.created_at,
+      done: r.updated_at,
+      red: FAILED.has(r.conclusion ?? ''),
+    }))
+    .sort((a, b) => a.done.localeCompare(b.done) || a.workflow.localeCompare(b.workflow));
+}
+
+/**
+ * Commits on the default branch, and whether their PUSH checks went red.
+ *
+ * `push` only, deliberately, and the filter is load-bearing: the main canary
+ * runs the same required workflows against the same branch on `schedule`, and
+ * folding those in would redefine `main-green` in the middle of the experiment
+ * that added them (plan §4.9, round-5 follow-up 4). The canary has its own
+ * trigger and its own metric; this population stays what it always was.
+ *
+ * @param runs - The day's runs.
+ * @param defaultBranch - The default branch.
+ */
 export function mainCommits(runs: readonly Run[], defaultBranch: string): MainCommit[] {
   const push = runs.filter((r) => r.event === 'push' && r.head_branch === defaultBranch);
   const out: MainCommit[] = [];

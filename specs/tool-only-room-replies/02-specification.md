@@ -2,12 +2,12 @@
 slug: tool-only-room-replies
 number: 260828-010140
 created: 2026-08-28
-status: specified
+status: implemented
 ---
 
 # Room replies go through tool calls only — silence, reactions and DMs become real choices
 
-**Status:** Draft
+**Status:** Implemented. Graduated 2026-09-19 (DOR-2099); see the Amendment below.
 **Author:** ideator-1613 (DOR-1613)
 **Date:** 2026-08-28
 
@@ -546,7 +546,7 @@ None. The three flagged in `01-ideation.md` §9 were ruled on by the orchestrato
 
 ## Amendment 2026-09-19 — graduation and removal (DOR-2099)
 
-**Status of this amendment:** specified. **Author:** the DOR-2099 orchestrator. **Supersedes:** "PR 4 — graduation" above, and DOR-1613 (closed as absorbed).
+**Status of this amendment:** implemented (A1 merged in #1933, A2 and A3 in the two PRs that followed). **Author:** the DOR-2099 orchestrator. **Supersedes:** "PR 4 — graduation" above, and DOR-1613 (closed as absorbed).
 
 ### A0. The decision
 

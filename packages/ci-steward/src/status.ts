@@ -13,6 +13,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { LatestSchema, VerdictSchema, type Latest, type Verdict } from './data.ts';
 import { openDays, TriggersSchema } from './triggers.ts';
+import { hoursToExpiry, quarantineTriage, readQuarantine, testId } from './quarantine.ts';
+import type { QuarantineConfig } from './schemas.ts';
 import type { LedgerEntry } from './verdicts.ts';
 
 /** Reads data-branch files from somewhere. */
@@ -87,16 +89,37 @@ function sloTable(latest: Latest): string[] {
 }
 
 /**
+ * The quarantine section: what is in the lane, and what the daily triage owes
+ * a person about it (a full lane, an entry about to expire, a refused list).
+ */
+function quarantineLines(reader: DataReader | null, cfg: QuarantineConfig, now: Date): string[] {
+  const read = readQuarantine(reader?.read(cfg.file) ?? null, cfg, now);
+  const triage = quarantineTriage(read, cfg, now);
+  if (read.entries.length === 0 && triage.length === 0) return [];
+  const out = ['', `Quarantine lane (${read.entries.length} of ${cfg.max_entries}):`];
+  for (const e of read.entries) {
+    out.push(
+      `  ${testId(e)}`,
+      `      ${e.evidence.occurrences} of ${e.evidence.builds_sampled} build(s) flaked; expires in ${Math.round(hoursToExpiry(e, now))} h; ledger ${e.ledger}`
+    );
+  }
+  for (const t of triage) out.push(`  ! ${t}`);
+  return out;
+}
+
+/**
  * Render the status screen.
  *
  * @param reader - Where the data branch is read from, or `null` when it does not exist.
  * @param ledger - The ledger entries on this checkout.
  * @param now - The clock (for the snapshot's age).
+ * @param quarantine - The quarantine thresholds from `ci/config.yaml`.
  */
 export function renderStatus(
   reader: DataReader | null,
   ledger: readonly LedgerEntry[],
-  now: Date
+  now: Date,
+  quarantine: QuarantineConfig
 ): string {
   const out: string[] = [];
   if (!reader) {
@@ -154,6 +177,7 @@ export function renderStatus(
     if (t.cleared.length)
       out.push(`  cleared since the last run: ${t.cleared.map((c) => c.id).join(', ')}`);
   }
+  out.push(...quarantineLines(reader, quarantine, now));
   const live = ledger.filter((e) => e.kind !== 'hygiene' && e.status !== 'withdrawn');
   const started = live.filter((e) => e.status !== 'proposed');
   out.push('', `Experiments (${started.length} live or reverted; hygiene entries not shown):`);

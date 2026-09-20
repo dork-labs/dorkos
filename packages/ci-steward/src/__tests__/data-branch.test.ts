@@ -17,7 +17,12 @@ import {
   tagWeek,
   type DataBranchRef,
 } from '../data-branch.ts';
+import { loadHandFiles } from '../load.ts';
 import { gitReader, renderStatus } from '../status.ts';
+
+/** This repo's own quarantine thresholds; the status screen needs them to read the lane. */
+const QUARANTINE = loadHandFiles(path.resolve(import.meta.dirname, '../../../..')).files!.config
+  .quarantine;
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -145,7 +150,8 @@ describe('the data branch', () => {
     const none = renderStatus(
       gitReader(w.clone, 'origin/ci-steward-data'),
       [],
-      new Date('2026-09-19T06:00:00Z')
+      new Date('2026-09-19T06:00:00Z'),
+      QUARANTINE
     );
     expect(none).toContain('the ci-steward-data branch does not exist yet');
     const dir = w.dir('data');
@@ -161,7 +167,8 @@ describe('the data branch', () => {
     const some = renderStatus(
       gitReader(w.clone, 'origin/ci-steward-data'),
       [],
-      new Date('2026-09-19T06:00:00Z')
+      new Date('2026-09-19T06:00:00Z'),
+      QUARANTINE
     );
     expect(some).toContain('origin/ci-steward-data has no latest.json yet');
   });

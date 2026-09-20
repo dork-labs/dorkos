@@ -2,6 +2,36 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260920-200112",
+      "slug": "community-self-hosting-starts-with-a-local-guided-launcher",
+      "title": "Community self-hosting starts with a local guided launcher",
+      "status": "draft",
+      "created": "2026-09-20",
+      "extractedFrom": "community-self-host-launcher",
+      "specSlug": "community-self-host-launcher",
+      "supersedes": null,
+      "affects": [
+        "packages/cli/src/commands/community-deploy/",
+        "apps/community/",
+        "apps/community/FLY.md"
+      ]
+    },
+    {
+      "id": "260920-192429",
+      "slug": "scope-host-accounts-through-immutable-community-memberships",
+      "title": "Scope host accounts through immutable community memberships",
+      "status": "proposed",
+      "created": "2026-09-20",
+      "extractedFrom": "community-tenancy-contract",
+      "specSlug": "community-tenancy-contract",
+      "supersedes": null,
+      "affects": [
+        "apps/community/",
+        "apps/server/src/services/communities/remote/",
+        "packages/shared/src/community-wire.ts"
+      ]
+    },
+    {
       "id": "260916-210003",
       "slug": "remote-agent-output-uses-confirmed-outbox",
       "title": "Remote agent output uses a transactional local outbox and remote confirmation",
@@ -5783,6 +5813,24 @@
         ".github/workflows/typecheck.yml",
         ".claude/rules/ci-pipeline.md",
         "contributing/ci.md"
+      ]
+    },
+    {
+      "id": "260920-043933",
+      "slug": "there-is-no-second-delivery",
+      "title": "There is no second delivery, so a room turn that posts nothing is silence",
+      "status": "accepted",
+      "created": "2026-09-19",
+      "specSlug": "tool-only-room-replies",
+      "amends": ["260829-025020"],
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/rooms/room-turn-runner.ts",
+        "apps/server/src/services/rooms/room-trigger.ts",
+        "apps/server/src/services/rooms/welcome-back/greeter.ts",
+        "apps/server/src/services/rooms/room-turn-port.ts",
+        "packages/shared/src/agent-runtime.ts",
+        "packages/shared/src/room-schemas.ts"
       ]
     },
     {
