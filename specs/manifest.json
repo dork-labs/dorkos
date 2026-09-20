@@ -3019,6 +3019,15 @@
       "status": "specified",
       "project": "Agent secrets and vault",
       "linearIssue": "DOR-2155"
+    },
+    {
+      "id": "260920-205153",
+      "slug": "community-switcher-navigation",
+      "title": "Community context and navigation contract",
+      "created": "2026-09-20",
+      "status": "specified",
+      "project": "Community Navigation",
+      "linearIssue": "DOR-2183"
     }
   ]
 }
