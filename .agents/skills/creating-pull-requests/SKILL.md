@@ -259,6 +259,25 @@ This mirrors how human teams work: pushes are work-in-progress, and the author
 pulls the reviewer back in with an explicit "ready again" signal. It avoids
 re-reviewing five or six times while you address feedback.
 
+**You no longer lose the review by creating a PR with labels on it.** Until
+2026-09-20, `gh pr create --label ...` fired `opened` plus one `labeled` event
+per label within the same second; the labeled runs evicted the still-pending
+`opened` run from its concurrency group and then skipped, so about 3% of merged
+PRs were never reviewed and nothing was red. Runs that will not review now sit in
+their own group and cannot evict one that will, and the group is keyed by head
+SHA, so one commit gets exactly one review.
+
+**A review lost to an infrastructure failure is re-requested for you.**
+merge-tail applies `re-review` on your behalf when the check is red, up to three
+times per head SHA (`scripts/should-redispatch-review.sh`). Do not wait on it if
+you want a review now: GitHub throttles scheduled workflows and the median gap
+between merge-tail ticks is about 2.7 hours, so apply `re-review` yourself. It
+leaves a `skip-review` label alone, never retries a PR that edits the review
+workflow (that one cannot be reviewed by it at all), and waits out the Claude
+subscription window when the last attempt died against a quota (about 5 hours,
+6 for a weekly limit) before trying again — a pause, not a give-up. If your PR is conflicting and `re-review` seems stuck on it, merge-tail
+removes it for you — a conflicting PR produces no run, so nothing else can.
+
 ## Rebase before you expect a review
 
 **A pull request with merge conflicts gets no CI at all — no review, and no red
@@ -285,8 +304,17 @@ gh workflow run claude-code-review.yml -f pr=<number>
 
 Manual dispatch reviews the PR's head directly. It ignores `skip-review` and draft
 state (you asked for it explicitly), refuses fork PRs, and clears `re-review` if
-the PR is carrying it. Two differences from an automatic run, because the Claude
-action treats a manual trigger as having no PR identity:
+the PR is carrying it.
+
+**Since the concurrency rework it runs _beside_ an automatic review rather than
+replacing one.** A dispatch has no head SHA in its payload, so it is keyed by PR
+number and shares no group with the automatic run. If a review is already in
+flight, dispatching gets you two reviewers, two verdicts and double the
+subscription spend. Check for a running `review` check first; the hatch exists
+for PRs that have no run at all.
+
+Two more differences from an automatic run, because the Claude action treats a
+manual trigger as having no PR identity:
 
 - It posts its line-level findings through the GitHub API instead of the action's
   inline-comment tool. Same result, slightly more turns spent.
@@ -742,8 +770,15 @@ gh label create re-review    --description "Request another automated review pas
   editing this review workflow gets a red automatic check and needs the trusted
   manual dispatch described above.
 - **A red review check is not always a finding.** When the review breaks in a way
-  that cost you the verdict, it posts a comment saying so and naming which of five
+  that cost you the verdict, it posts a comment saying so and naming which of six
   things happened:
+  - **This PR edits the review workflow.** The action refuses to run from a copy
+    of its own workflow that differs from `main` — a pull request must not be
+    able to rewrite the file holding the reviewer's credentials — so it exits in
+    under two seconds having reviewed nothing. Expected, and the check stays red
+    on purpose. Re-running or `re-review` does the same thing every time; the
+    only way to get this PR reviewed is the trusted dispatch above.
+
   - **It never started.** It ended without naming a cause, after one turn or fewer
     and with nothing spent, so nothing in the PR was looked at. The Claude
     subscription behind `CLAUDE_CODE_OAUTH_TOKEN` hit its usage limit (clears on its
