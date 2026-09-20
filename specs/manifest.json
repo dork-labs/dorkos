@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260920-200102",
+      "slug": "community-self-host-launcher",
+      "title": "Guided Community self-host launch",
+      "created": "2026-09-20",
+      "status": "specified",
+      "project": "Community Self-Hosting"
+    },
+    {
       "id": "260920-192428",
       "slug": "community-tenancy-contract",
       "title": "Community tenant identity, authorization, and migration contracts",
