@@ -582,7 +582,20 @@ export function triage(inp: TriageInput): Triggers {
     ...collectorHealth(inp, cur),
     ...staleLedger(inp),
   ];
-  const canary = mainCanary(inp, inp.snapshots, inp.prior?.canary_since ?? null);
+  // The ledger entry that introduced the canary, read from `main`: the floor
+  // under `canary_since` that a data-branch rewrite cannot erase.
+  const landed = inp.ledger.find(
+    (e) => e.status !== 'withdrawn' && e.hypothesis?.metric === 'tracked.time-to-detect'
+  );
+  const landedDay = landed ? ledgerDay(landed.id) : null;
+  const canary = mainCanary(
+    inp,
+    inp.snapshots,
+    inp.prior?.canary_since ?? null,
+    // End of the day it landed, not the start: the canary is due from when
+    // the change was in, and a threshold of grace runs from there.
+    landedDay ? `${landedDay}T23:59:59Z` : null
+  );
   found.push(...canary.triggers);
   const before = new Map((inp.prior?.open ?? []).map((t) => [t.id, t]));
   const open: Trigger[] = [];

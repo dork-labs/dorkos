@@ -281,13 +281,18 @@ export function gateKey(gate: string, event: string): string {
  * dropping them outright would make `headroom` — the tripwire that catches a
  * job about to be killed by its own timeout — blind to every one of them.
  *
- * ACROSS THE WHOLE WINDOW, and counting only keys with runs. Deciding this per
- * snapshot made membership flip day to day: a gate with a zero-run
- * `@pull_request` key on one day counted as on the merge path that day and off
- * it the next, which on live data cut `wf.evals.structural`'s duration samples
- * from 15 to 1 and its `headroom` population from 8 to 0. A window-wide set
- * also stops a quiet weekend from letting the canary become the entire
- * population of a gate the queue normally runs.
+ * ACROSS THE WHOLE WINDOW, so membership cannot flip day to day, and counting
+ * only runs that DID SOMETHING. Both halves are load-bearing, and the second
+ * one is the half that is easy to get wrong.
+ *
+ * The live shape is not a zero-run key. `wf.evals.structural@pull_request`
+ * carries `runs: 32` with `conclusions: {skipped: 32}` on all 15 days it
+ * appears, and there is no zero-run merge-event key in any snapshot at all. A
+ * `runs > 0` test therefore passes, the gate joins the merge-path set on the
+ * strength of 32 jobs that never ran, and every one of its scheduled durations
+ * is dropped — which is exactly the 8 headroom samples that went missing. A
+ * job GitHub skipped is not evidence that a gate runs on the merge path; it is
+ * evidence that it does not.
  *
  * @param snaps - Every snapshot in the window being read.
  */
@@ -296,7 +301,8 @@ export function mergePathGates(snaps: readonly Snapshot[]): ReadonlySet<string> 
   for (const s of snaps)
     for (const [k, g] of Object.entries(s.gates)) {
       const at = k.lastIndexOf('@');
-      if (at < 0 || g.runs <= 0) continue;
+      const real = g.runs - (g.conclusions.skipped ?? 0);
+      if (at < 0 || real <= 0) continue;
       if (MERGE_EVENTS.has(k.slice(at + 1))) out.add(k.slice(0, at));
     }
   return out;

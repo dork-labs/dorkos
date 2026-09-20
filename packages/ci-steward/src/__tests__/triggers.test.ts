@@ -592,6 +592,47 @@ describe('trigger rules', () => {
       expect(ids(stillGone)).toEqual(['main-canary-stopped']);
     });
 
+    it('still goes red after a data-branch rewrite erases canary_since', () => {
+      // `canary_since` lives in triggers.json, and `readData` returns null for
+      // a MISSING file exactly as it does for a fresh one. A rewrite of the
+      // data branch, or a prepare step starting from an empty tree, would hand
+      // triage `prior: null` — and without a floor on `main` the arm would go
+      // straight back to the silence it was added to break. The floor is the
+      // main-canary ledger entry's own id date.
+      const landed = entry({
+        id: '260910-120000',
+        status: 'active',
+        hypothesis: {
+          metric: 'tracked.time-to-detect',
+          baseline: 20160,
+          target: 720,
+          after_days: 14,
+        },
+      });
+      const wiped = triage(input({ snapshots: [snap(TODAY)], prior: null, ledger: [landed] }));
+      expect(ids(wiped)).toEqual(['main-canary-stopped']);
+      expect(wiped.open[0]!.severity).toBe('red');
+      expect(wiped.open[0]!.what).toContain('due since 2026-09-10');
+      // With no ledger entry there is nothing to stand on, and it stays quiet.
+      expect(ids(triage(input({ snapshots: [snap(TODAY)], prior: null })))).toEqual([]);
+    });
+
+    it('gives the change one silence threshold of grace before the first cron', () => {
+      // The entry landed on the day being reported, so no cron has had time to
+      // fire. That is not an outage.
+      const today = entry({
+        id: '260919-120000',
+        status: 'active',
+        hypothesis: {
+          metric: 'tracked.time-to-detect',
+          baseline: 20160,
+          target: 720,
+          after_days: 14,
+        },
+      });
+      expect(ids(triage(input({ snapshots: [snap(TODAY)], ledger: [today] })))).toEqual([]);
+    });
+
     it('stays silent before the canary has ever run, and starts watching once it has', () => {
       const never = triage(input({ snapshots: [snap(TODAY)] }));
       expect(ids(never)).toEqual([]);

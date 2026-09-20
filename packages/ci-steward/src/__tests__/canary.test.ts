@@ -7,6 +7,9 @@
  * only the configured workflows count as canary results, and `main-green` never
  * sees a canary run.
  */
+import { gunzipSync } from 'node:zlib';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Run } from '../collect.ts';
 import {
@@ -16,10 +19,20 @@ import {
   mergePathGates,
   onMergePath,
   type GateDay,
+  type Snapshot,
 } from '../data.ts';
 import { canaryRuns, mainCommits } from '../series.ts';
 
 const CANARY_WORKFLOWS = ['test.yml', 'browser-test.yml', 'typecheck.yml', 'lint.yml'];
+
+/** The recorded week 2026-09-12..18, the same fixture `slo.test.ts` reads. */
+function recordedWeek(): Snapshot[] {
+  const file = path.join(import.meta.dirname, 'fixtures', 'week-2026-09-12.snapshots.json.gz');
+  const raw = JSON.parse(gunzipSync(readFileSync(file)).toString()) as {
+    days: Snapshot[] | Record<string, Snapshot>;
+  };
+  return Array.isArray(raw.days) ? raw.days : Object.values(raw.days);
+}
 
 function run(over: Partial<Run> & { path: string; event: string }): Run {
   return {
@@ -151,19 +164,49 @@ describe('a gate that runs on both paths is measured over the merge path', () =>
     expect(onMergePath(onPath, gateKey('wf.merge-tail.arm', 'schedule'))).toBe(true);
   });
 
-  it('decides membership over the window, not per day', () => {
-    // The live bug this pins: a gate with a zero-run `@pull_request` key on one
-    // day counted as on the merge path that day and off it the next, which cut
-    // wf.evals.structural's headroom population from 8 samples to 0.
-    const quiet = day({
-      [gateKey('wf.evals.structural', 'pull_request')]: { ...gateDay(0), runs: 0 },
+  it('does not count SKIPPED jobs as evidence a gate runs on the merge path', () => {
+    // The live shape, and the one a `runs > 0` guard gets wrong:
+    // wf.evals.structural@pull_request carries runs: 32 with
+    // conclusions: {skipped: 32} on all 15 days it appears, and there is no
+    // zero-run merge-event key anywhere in the data. So `runs > 0` passes on
+    // the strength of 32 jobs that never ran, the gate joins the merge-path
+    // set, and every scheduled duration it has is dropped.
+    const skippedOnly = (n: number): GateDay => ({
+      durations: [],
+      conclusions: { skipped: n },
+      retried: 0,
+      runs: n,
+    });
+    const s = day({
+      [gateKey('wf.evals.structural', 'pull_request')]: skippedOnly(32),
       [gateKey('wf.evals.structural', 'schedule')]: gateDay(1),
     });
-    const busy = day({ [gateKey('wf.evals.structural', 'schedule')]: gateDay(1) });
-    const onPath = mergePathGates([quiet, busy]);
-    // A key with no runs is not evidence the gate runs on the merge path.
+    const onPath = mergePathGates([s]);
     expect(onPath.has('wf.evals.structural')).toBe(false);
-    for (const s of [quiet, busy])
-      expect(gateDays(s.gates, 'wf.evals.structural', undefined, onPath).length).toBeGreaterThan(0);
+    // Its scheduled durations survive, which is the 8 headroom samples that
+    // went missing while the guard only asked whether runs was above zero.
+    const kept = gateDays(s.gates, 'wf.evals.structural', undefined, onPath);
+    expect(kept.flatMap((g) => g.durations)).toHaveLength(1);
+  });
+
+  it('decides membership over the window, not per day', () => {
+    // A gate the queue really runs stays on the merge path on the quiet days
+    // too, so a weekend cannot let the canary become its whole population.
+    const busy = day({
+      [gateKey('wf.test.test-shard', 'merge_group')]: gateDay(40),
+      [gateKey('wf.test.test-shard', 'schedule')]: gateDay(4),
+    });
+    const quiet = day({ [gateKey('wf.test.test-shard', 'schedule')]: gateDay(4) });
+    const onPath = mergePathGates([busy, quiet]);
+    expect(onPath.has('wf.test.test-shard')).toBe(true);
+    expect(gateDays(quiet.gates, 'wf.test.test-shard', undefined, onPath)).toHaveLength(0);
+  });
+
+  it('keeps the recorded week s evals gate off the merge path', () => {
+    // The regression pin, against real data rather than a hand-built shape.
+    const onPath = mergePathGates(recordedWeek());
+    expect(onPath.has('wf.evals.structural')).toBe(false);
+    // And a gate the queue really runs is still on it.
+    expect(onPath.has('wf.test.test-shard')).toBe(true);
   });
 });

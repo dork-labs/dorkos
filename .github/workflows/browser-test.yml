@@ -312,14 +312,45 @@ jobs:
       # gate job's flaky warning. A test that keeps appearing there gets
       # fixed, or the budget goes to zero.
     steps:
-      # A canary run is against `main` or it is nothing, and this says so before
-      # anything is installed. No `if:`: the script is a no-op on the gating
-      # events, which keeps it out of the census allowlist. See its header.
+      # A canary run is against `main` or it is nothing.
+      #
+      # `workflow_dispatch` is ref-free, so `--ref <a PR's branch>` would run
+      # this workflow against that branch and post the check run — under the
+      # name of a REQUIRED context — on that pull request's head. This refuses
+      # that, and refuses it by FAILING: a skipped job posts a skipped check
+      # run and GitHub counts skipped as passing, so a skip is how you hand a
+      # pull request a green required check that tested a different tree.
+      #
+      # INLINE, AND FIRST. Inline because this runs BEFORE `actions/checkout`,
+      # where the workspace is still empty: a `bash scripts/…` here would exit
+      # 127 on every event, reddening this required check on every PR and every
+      # queue build (the same 127 that killed a required check on 2026-07-29,
+      # which is why "Prove the browser suite actually executed" carries a
+      # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
+      # than 150 job minutes. Byte-identical in all eight canary jobs and
+      # pinned that way by scripts/__tests__/canary-ref-guard.test.ts, which
+      # extracts this very block and runs it.
+      #
+      # No `if:`: the body is a no-op on the gating events, which keeps it out
+      # of the census allowlist while gating exactly the same thing.
       - name: A canary run is against main
-        run: bash scripts/assert-canary-ref.sh
         env:
           EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
+        run: |
+          if [ -z "$EVENT" ] || [ -z "$REF" ]; then
+            echo "::error title=The main canary runs against main only::EVENT or REF is empty, so this cannot be shown to be a safe run. Refusing rather than assuming it is not a canary."
+            exit 1
+          fi
+          if [ "$EVENT" != 'schedule' ] && [ "$EVENT" != 'workflow_dispatch' ]; then
+            echo "event '$EVENT' is not a canary event; nothing to check."
+            exit 0
+          fi
+          if [ "$REF" != 'refs/heads/main' ]; then
+            echo "::error title=The main canary runs against main only::this $EVENT run is on '$REF', not 'refs/heads/main'. Nothing was tested. Dispatch it with --ref main; a run on a branch would post this check on that branch's head, under the name of a required context."
+            exit 1
+          fi
+          echo "canary $EVENT run against $REF."
       - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
@@ -651,14 +682,45 @@ jobs:
     # hung artifact download, not a budget anything is expected to approach.
     timeout-minutes: 10
     steps:
-      # A canary run is against `main` or it is nothing, and this says so before
-      # anything is installed. No `if:`: the script is a no-op on the gating
-      # events, which keeps it out of the census allowlist. See its header.
+      # A canary run is against `main` or it is nothing.
+      #
+      # `workflow_dispatch` is ref-free, so `--ref <a PR's branch>` would run
+      # this workflow against that branch and post the check run — under the
+      # name of a REQUIRED context — on that pull request's head. This refuses
+      # that, and refuses it by FAILING: a skipped job posts a skipped check
+      # run and GitHub counts skipped as passing, so a skip is how you hand a
+      # pull request a green required check that tested a different tree.
+      #
+      # INLINE, AND FIRST. Inline because this runs BEFORE `actions/checkout`,
+      # where the workspace is still empty: a `bash scripts/…` here would exit
+      # 127 on every event, reddening this required check on every PR and every
+      # queue build (the same 127 that killed a required check on 2026-07-29,
+      # which is why "Prove the browser suite actually executed" carries a
+      # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
+      # than 150 job minutes. Byte-identical in all eight canary jobs and
+      # pinned that way by scripts/__tests__/canary-ref-guard.test.ts, which
+      # extracts this very block and runs it.
+      #
+      # No `if:`: the body is a no-op on the gating events, which keeps it out
+      # of the census allowlist while gating exactly the same thing.
       - name: A canary run is against main
-        run: bash scripts/assert-canary-ref.sh
         env:
           EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
+        run: |
+          if [ -z "$EVENT" ] || [ -z "$REF" ]; then
+            echo "::error title=The main canary runs against main only::EVENT or REF is empty, so this cannot be shown to be a safe run. Refusing rather than assuming it is not a canary."
+            exit 1
+          fi
+          if [ "$EVENT" != 'schedule' ] && [ "$EVENT" != 'workflow_dispatch' ]; then
+            echo "event '$EVENT' is not a canary event; nothing to check."
+            exit 0
+          fi
+          if [ "$REF" != 'refs/heads/main' ]; then
+            echo "::error title=The main canary runs against main only::this $EVENT run is on '$REF', not 'refs/heads/main'. Nothing was tested. Dispatch it with --ref main; a run on a branch would post this check on that branch's head, under the name of a required context."
+            exit 1
+          fi
+          echo "canary $EVENT run against $REF."
       # The pull_request pass-through. On a PR event the shard matrix was
       # skipped by design, so this succeeds loudly and every later step (all
       # gated on merge_group) is skipped. The real verdict on this code is

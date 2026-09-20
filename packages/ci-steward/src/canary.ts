@@ -71,26 +71,45 @@ export interface CanaryTriage {
  * `first_fired` day it exists to carry. So an episode that is already open
  * keeps the id it opened with.
  *
+ * IT CANNOT REST ON THE DATA BRANCH ALONE. `canary_since` lives in
+ * `triggers.json`, and `readData` returns null for a MISSING file exactly as
+ * it does for a fresh one — so a data-branch rewrite, or a prepare step that
+ * starts from an empty tree, would hand this function `since: null` while the
+ * canary was dead and its last result had aged out, returning the arm to the
+ * silence it exists to break. `landed` is the floor under that: the day the
+ * main-canary ledger entry was allocated, which lives on `main` where no
+ * rewrite of the data branch can reach it. From one silence threshold after
+ * that day, "no result in the whole window" is a red whatever the data branch
+ * says.
+ *
  * @param inp - The inputs.
  * @param all - Every snapshot loaded (28 days).
  * @param since - The first canary result ever seen, from yesterday's triggers.
+ * @param landed - When the canary was due to start, from the ledger entry.
  */
 export function mainCanary(
   inp: TriageInput,
   all: readonly Snapshot[],
-  since: string | null
+  since: string | null,
+  landed: string | null
 ): CanaryTriage {
   const t = inp.files.config.triage;
   const runs = all.flatMap((s) => s.canary);
-  const firstSeen = since ?? runs.map((r) => r.done).sort()[0] ?? null;
+  const observed = since ?? runs.map((r) => r.done).sort()[0] ?? null;
+  const firstSeen = observed ?? landed;
   const endOfDay = Date.parse(`${inp.latest.date}T23:59:59Z`);
   const out: NewTrigger[] = [];
 
   if (runs.length === 0) {
-    // Never alive: the days between this landing and the first cron are not an
-    // outage, and there is nothing to be silent about.
-    if (firstSeen === null) return { triggers: out, since: null };
-    const days = Math.max(0, Math.round((endOfDay - Date.parse(firstSeen)) / 86_400_000));
+    // Nothing has landed and nothing has ever run: there is no canary yet, so
+    // there is nothing to be silent about.
+    if (firstSeen === null) return { triggers: out, since: observed };
+    const hours = (endOfDay - Date.parse(firstSeen)) / 3_600_000;
+    // The hours between the change landing and the first cron are not an
+    // outage. One silence threshold is the grace period, and after it the
+    // absence of a single result is the loudest thing the rule can say.
+    if (hours < t.canary_silent_hours) return { triggers: out, since: observed };
+    const days = Math.max(0, Math.round(hours / 24));
     return {
       triggers: [
         {
@@ -98,12 +117,12 @@ export function mainCanary(
           rule: 'main-canary',
           severity: 'red',
           scope: 'tracked.time-to-detect',
-          what: `main canary has produced nothing in the whole window; first seen ${firstSeen.slice(0, 10)}, ${days}d ago.`,
+          what: `main canary has produced nothing in the whole window; ${observed ? 'last alive' : 'due since'} ${firstSeen.slice(0, 10)}, ${days}d ago.`,
           action: `Nothing has checked main since. Run gh workflow run test.yml --ref main, then find out why the schedule stopped.`,
           ledger_entry: null,
         },
       ],
-      since: firstSeen,
+      since: observed,
     };
   }
 
@@ -155,7 +174,7 @@ export function mainCanary(
       action: `Check the schedule still exists and GitHub is still delivering it. A silent canary reads green.`,
       ledger_entry: null,
     });
-  return { triggers: out, since: firstSeen };
+  return { triggers: out, since: observed };
 }
 
 /**

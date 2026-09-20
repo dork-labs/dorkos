@@ -182,6 +182,8 @@ interface JobRecord {
   gate: string;
   /** The run's event (pull_request, merge_group, push, ...). */
   event: string;
+  /** The run's head branch, which a canary run's must be the default branch. */
+  branch: string | null;
   runId: number;
   name: string;
   conclusion: string;
@@ -233,6 +235,7 @@ function fetchShaJobs(
       out.push({
         gate,
         event: run.event,
+        branch: run.head_branch,
         runId: run.id,
         name: String(c.name),
         conclusion: c.conclusion,
@@ -256,11 +259,23 @@ function fetchShaJobs(
  * did, because moving those too would redefine `job_minutes` under three live
  * verdicts rather than just keeping the canary's new spend out of it.
  *
+ * The branch is checked as well as the event, exactly as `canaryRuns` checks
+ * it. A canary workflow dispatched against a PR branch is not a statement
+ * about `main` and must not be charged to `canary_minutes`; the workflows' own
+ * ref guard refuses such a run, but the collector reads history, including
+ * days before that guard existed.
+ *
  * @param j - The job.
  * @param canaryStems - Canary workflow file names with their extension dropped.
+ * @param defaultBranch - The branch the canary runs against.
  */
-function isCanaryJob(j: JobRecord, canaryStems: ReadonlySet<string>): boolean {
-  if (!CANARY_EVENTS.has(j.event) || !j.gate.startsWith('wf.')) return false;
+function isCanaryJob(
+  j: JobRecord,
+  canaryStems: ReadonlySet<string>,
+  defaultBranch: string
+): boolean {
+  if (!CANARY_EVENTS.has(j.event) || j.branch !== defaultBranch || !j.gate.startsWith('wf.'))
+    return false;
   const rest = j.gate.slice(3);
   const cut = rest.lastIndexOf('.');
   return cut > 0 && canaryStems.has(rest.slice(0, cut));
@@ -279,7 +294,8 @@ function canaryStems(config: Config): ReadonlySet<string> {
 function addJobs(
   snap: Snapshot,
   jobs: readonly JobRecord[],
-  canaryStems: ReadonlySet<string>
+  canaryStems: ReadonlySet<string>,
+  defaultBranch: string
 ): void {
   const dayMs = Date.parse(`${snap.date}T00:00:00Z`);
   const attempts = new Map<string, number>();
@@ -309,7 +325,7 @@ function addJobs(
     // on a quiet day, which trips rule 5's 20% growth arm on the canary's fixed
     // cost alone. It is carried beside, never inside.
     if (j.seconds !== null && j.conclusion !== 'skipped') {
-      if (isCanaryJob(j, canaryStems)) snap.counts.canary_minutes += j.seconds / 60;
+      if (isCanaryJob(j, canaryStems, defaultBranch)) snap.counts.canary_minutes += j.seconds / 60;
       else snap.counts.job_minutes += j.seconds / 60;
     }
   }
@@ -407,7 +423,7 @@ function collectDay(
       }
       throw e;
     }
-    addJobs(snap, jobs, canaryStems(config));
+    addJobs(snap, jobs, canaryStems(config), config.default_branch);
     const failed = [
       ...new Set(jobs.filter((j) => FAILED.has(j.conclusion)).map((j) => j.gate)),
     ].sort();
