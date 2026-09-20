@@ -8,6 +8,12 @@ const cliEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   DORK_HOME: z.string().optional(),
   LOG_LEVEL: z.string().optional(),
+  // Where `dorkos browser` looks for Chrome: PATH on Linux, the three install
+  // roots on Windows (lib/agent-browser/chrome-locator.ts).
+  PATH: z.string().optional(),
+  LOCALAPPDATA: z.string().optional(),
+  PROGRAMFILES: z.string().optional(),
+  'PROGRAMFILES(X86)': z.string().optional(),
 });
 
 export const env = cliEnvSchema.parse(process.env);

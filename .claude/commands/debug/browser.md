@@ -52,4 +52,5 @@ If the issue turns out to be too large for a spot fix, offer to escalate to `/fl
 - **Dev server not running**: prompt the user to start `pnpm dev` (or `pnpm dev:dogfood`).
 - **404/500 on navigation**: check the route exists (`apps/client/src/router.tsx`) and the server log for errors.
 - **Suspected hot-reload weirdness**: hard refresh or restart the dev server before chasing ghosts.
+- **Browser tools fail with a profile "already in use" error**, or the issue is on a third-party site you must be signed in to: see `contributing/browser-verification.md` § The agent browser (`--isolated`, and `dorkos browser login`).
 - **Multiple issues found**: fix one at a time, track with TaskCreate/TaskUpdate.

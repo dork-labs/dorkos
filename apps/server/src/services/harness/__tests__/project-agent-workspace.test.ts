@@ -52,9 +52,12 @@ import { logger } from '../../../lib/logger.js';
  *
  * 6 → 7 for `working-in-room-repos` (DOR-1599), which teaches an agent how to
  * work in a room's own files.
+ *
+ * 7 → 8 for `using-the-agent-browser` (DOR-2155), which teaches an agent to hand
+ * a sign-in page back to the person instead of asking for a password.
  */
 const PACK_NAMES = OPERATING_SKILLS_PACK.map((skill) => skill.name).sort();
-const PACK_SIZE = 7;
+const PACK_SIZE = 8;
 
 let tmpRoot: string;
 

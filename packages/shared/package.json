@@ -93,6 +93,10 @@
       "types": "./src/manifest.ts",
       "default": "./dist/manifest.js"
     },
+    "./agent-browser": {
+      "types": "./src/agent-browser.ts",
+      "default": "./dist/agent-browser.js"
+    },
     "./agent-face": {
       "types": "./src/agent-face.ts",
       "default": "./dist/agent-face.js"

@@ -1,0 +1,177 @@
+---
+title: Signed-in Browser
+description: Sign in to websites once, and your agents' browsers start already signed in. They never see your passwords.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Signed-in Browser
+
+Agents that browse the web keep running into sign-in pages. With the signed-in browser, you sign in to a site once, yourself, and every browser your agents open starts already signed in. Your agents never see a password. They only get the sign-in the website already gave you.
+
+<Callout type="info">
+  Tested on macOS with Google Chrome: the `dorkos browser` commands, and Playwright's browser server
+  starting signed in from the save (two at once). Claude Code connects to that server. A full agent
+  turn inside DorkOS has not been checked yet on any runtime, and Windows and Linux are not tested
+  at all. The commands look for Chrome in the usual places there, but we have not confirmed they
+  work.
+</Callout>
+
+## How it works
+
+1. You run `dorkos browser login`. DorkOS opens the **agent browser**: your own Google Chrome, with a separate profile and a bright orange frame so you never mix it up with your everyday browser.
+2. You sign in to the sites your agents need. Your password manager (1Password, for example) works in it as usual, once you install its extension there.
+3. You press Enter in the terminal. DorkOS saves the sign-ins and closes the browser.
+4. Each agent you give the signed-in browser starts every browser session from that save.
+
+## Sign in to a site
+
+```bash
+dorkos browser login github.com
+```
+
+Sign in, leave the tab open, then go back to the terminal and press **Enter**. DorkOS lists the sites it saved:
+
+```
+Saved sign-ins for 2 sites:
+  github.com
+  linear.app
+```
+
+Run it again whenever you want to add a site or refresh one. Each save replaces the last one, so the save always matches what the agent browser holds.
+
+Press Ctrl+C instead of Enter to stop without saving. If you quit the agent browser before pressing Enter, nothing is saved and your earlier sign-ins stay as they were.
+
+### If a site will not let you sign in
+
+A few sites, Google among them, can tell when a browser is being watched by another program, and some refuse to sign you in. Try the plain mode:
+
+```bash
+dorkos browser login --plain accounts.google.com
+```
+
+This opens Chrome exactly as if you had opened it yourself. DorkOS saves after the browser closes. One catch: a sign-in that ends when the browser closes is lost in this mode, so tick "keep me signed in" (or its equivalent) when the site offers it.
+
+### If Chrome is somewhere unusual
+
+DorkOS looks for Google Chrome first, then Chromium. If yours is somewhere else, point at it:
+
+```bash
+dorkos browser login --chrome "/path/to/Google Chrome"
+```
+
+## See what is saved
+
+```bash
+dorkos browser status
+```
+
+This shows each site and how long its cookies last (cookies are the small files a website uses to remember you are signed in). It never shows a cookie itself. A website can end a sign-in sooner than its cookies say, so an old save can stop working early. If that happens, sign in again.
+
+## Give an agent the signed-in browser
+
+Open the agent's profile, then **Tools & MCP**. The **Signed-in browser** card shows which sites are saved. Press **Give it the browser**, check the command it shows you, and confirm.
+
+The agent gets browser tools the next time it starts a session. The card works the same way for Claude Code, Codex and OpenCode agents. How long each browser lives differs by runtime; see [Several agents at once](#several-agents-at-once).
+
+The browser runs hidden, so no window opens for each session. To watch it, remove `--headless` from the `browser` server's `args` in the agent's `.dork/agent.json` file. The next session opens a window.
+
+DorkOS gives your sign-ins only to the agents you pick. An agent you have not given the browser gets no browser from DorkOS. (The file itself is readable by programs running as you; see the trade-off below.)
+
+If you give an agent the browser before you have saved anything, it still works, but it starts signed out: DorkOS puts an empty save in place for it. DorkOS also tells the agent it is signed out, so it asks you to run `dorkos browser login` instead of trying a password.
+
+## Several agents at once
+
+Every copy of Playwright's browser server keeps its browser in memory, started fresh from your save. Two copies never share a browser, and nothing an agent does is written back to your save. If an agent signs out of a site, only that browser is signed out. We tested two copies running side by side.
+
+How many copies you get depends on the runtime. This part is what we expect from how each runtime starts servers; only the first line has been seen working:
+
+- **Claude Code**: each session starts its own copy, so each session has its own browser.
+- **Codex**: Codex starts a fresh process for every turn, so the browser starts over each turn. Tabs and anything the agent did in the page do not carry over to the next turn. The saved sign-ins do.
+- **OpenCode**: OpenCode runs one server per project folder, so two sessions of the same agent at the same time probably share one browser and its tabs.
+
+## Why agents never see your passwords
+
+Your password goes from your password manager into the agent browser, on your screen, while you sign in. DorkOS never reads it. What DorkOS saves afterwards is what the website handed back: the cookies that say "this browser is signed in." Agents start from those. So an agent can use a site as you, but it cannot learn your password, change it, or use it anywhere else.
+
+## The trade-off, honestly
+
+The saved sign-ins let whoever holds them use those sites as you, for as long as the site keeps them valid. Treat the save like a saved `gh` login or a browser's own cookie store:
+
+- It lives in one file, `~/.dork/browser/storage-state.json`, which only your user account can read. Any program running as you can still read it, including your agents' own tools.
+- **An agent with the browser can read every saved sign-in in it, for every site, not only the ones it needs.** Playwright's browser server always includes tools that run code in the browser and show request details, and there is no setting to turn them off. The agent is told never to do this, but that is an instruction, not a lock.
+- Anything an agent can do on a site, it can do as you. Give the browser only to agents you trust with every account in the save.
+- Where you can, sign agents in with **separate accounts** made for them, with only the access they need, instead of your personal ones.
+
+To take a site away from your agents:
+
+```bash
+dorkos browser forget github.com
+```
+
+This removes the site from the save straight away, and from the agent browser too, so the next save does not bring it back. Browsers your agents already have open keep the site until they close. To take everything away, use `dorkos browser forget --all`, which leaves an empty save so agents' browsers still start, signed out.
+
+`forget` removes DorkOS's copies. It does not end the sign-in on the website itself. If you think a save was copied somewhere it should not be, sign out of that site's sessions from the site's own security settings, then sign in again.
+
+## Use it with Claude Code, Codex or OpenCode outside DorkOS
+
+The same save works in the `claude`, `codex` and `opencode` command-line tools. Each gets the browser through Playwright's MCP server (MCP is the standard that lets AI tools plug in extra tools). Add a server named `browser`. The Claude Code Playwright plugin already uses the name `playwright`, and a different name keeps the two apart.
+
+The setups below pin Playwright's browser server to the version DorkOS tests with, and run it hidden (drop `--headless` to see it). Each setup needs the full path to your save, and the save has to exist: run `dorkos browser login` once first, or every browser tool fails. On a Mac that is usually `/Users/<you>/.dork/browser/storage-state.json`; `dorkos browser status` prints yours.
+
+**Claude Code** (for every project on your computer):
+
+```bash
+claude mcp add --scope user browser -- npx -y @playwright/mcp@0.0.82 --isolated --headless --storage-state "$HOME/.dork/browser/storage-state.json"
+```
+
+**Codex**: add this to `~/.codex/config.toml`, with your own path:
+
+```toml
+[mcp_servers.browser]
+command = "npx"
+args = ["-y", "@playwright/mcp@0.0.82", "--isolated", "--headless", "--storage-state", "/Users/you/.dork/browser/storage-state.json"]
+```
+
+**OpenCode**: add this to `~/.config/opencode/opencode.json`, with your own path:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "browser": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@playwright/mcp@0.0.82",
+        "--isolated",
+        "--headless",
+        "--storage-state",
+        "/Users/you/.dork/browser/storage-state.json"
+      ],
+      "enabled": true
+    }
+  }
+}
+```
+
+Keep `--isolated` in all three. Without it, every session shares one browser profile on disk, and the second agent to open a browser fails while the first one is using it. The runtime notes in [Several agents at once](#several-agents-at-once) apply here too.
+
+## Reference
+
+This part is for people who want to know exactly what runs.
+
+| Command                                | What it does                                                        |
+| -------------------------------------- | ------------------------------------------------------------------- |
+| `dorkos browser login [site]`          | Opens the agent browser; press Enter to save                        |
+| `dorkos browser login --plain [site]`  | Opens it with no automation link; saves after it closes             |
+| `dorkos browser login --chrome <path>` | Uses that Chrome or Chromium                                        |
+| `dorkos browser status [--json]`       | Lists saved sites and how long their cookies last, never the values |
+| `dorkos browser forget <site>`         | Removes one site (and its subdomains) from the save and the browser |
+| `dorkos browser forget --all [--yes]`  | Removes every site; extensions stay installed                       |
+
+- The agent browser's profile is `~/.dork/browser/profile`, and the save is `~/.dork/browser/storage-state.json`. If you set `DORK_HOME`, both live under that folder instead.
+- DorkOS talks to the agent browser over a private pipe that only the `dorkos` command holds, never over a network port, so no other program can drive the browser while you sign in.
+- The save is a Playwright storage-state file: cookies, plus the page storage of the tabs that were open when you pressed Enter.
+- Each agent runs `npx -y @playwright/mcp@0.0.82 --isolated --headless --storage-state <save>`. The version is pinned so an upstream release cannot change what agents' browsers can do without DorkOS checking it first. The first run downloads it, and it uses your installed Chrome.

@@ -40,6 +40,7 @@ const knownCommands = new Set([
   'package',
   'harness',
   'cache',
+  'browser',
   'install',
   'uninstall',
   'update',
@@ -179,6 +180,16 @@ if (process.argv[2] === 'cache') {
   const { runCacheDispatcher } = await import('./commands/cache-dispatcher.js');
   const exitCode = await runCacheDispatcher(process.argv[3], process.argv.slice(4));
   process.exit(exitCode);
+}
+
+// `browser` subcommand (`login`/`status`/`forget`): the agent browser the
+// operator signs in with, whose saved session agents' browsers start from. It
+// needs neither the server nor config, so it is intercepted here like `cache`,
+// before the top-level parseArgs would reject its flags (`--plain`, `--all`).
+// Dispatch + help text live in commands/browser-dispatcher.ts.
+if (process.argv[2] === 'browser') {
+  const { runBrowserDispatcher } = await import('./commands/browser-dispatcher.js');
+  process.exit(await runBrowserDispatcher(process.argv[3], process.argv.slice(4)));
 }
 
 // `install` subcommand has its own flag namespace (`--marketplace`, `--source`,
@@ -569,6 +580,7 @@ Commands:
   update [<name>]      Check for (or apply with --apply) package updates
   marketplace <sub>    Manage + validate marketplace sources (add|remove|list|refresh|validate)
   cache <sub>          Inspect the marketplace cache (list|prune|clear)
+  browser <sub>        Sign in once for your agents' browsers (login|status|forget)
   agent <sub>          Manage agents (list|show|create|update) — add --json for machine output
   task <sub>           Manage scheduled tasks (list|create|trigger|runs)
   room export <room>   Save a channel or DM's history as a file (--out|--force)

@@ -1407,4 +1407,37 @@ describe('AgentMcpServers', () => {
     await waitFor(() => expect(within(container).getByText('Not checked yet')).toBeInTheDocument());
     expect(within(container).queryByText('Connecting…')).not.toBeInTheDocument();
   });
+
+  it('offers the signed-in browser until the agent has one, whatever it is named', async () => {
+    const offered = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([managedServer]),
+      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
+    });
+    const first = renderComponent(offered);
+    await waitFor(() =>
+      expect(within(first.container).getByText('Signed-in browser')).toBeInTheDocument()
+    );
+    first.unmount();
+
+    const alreadyHas = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([
+        {
+          ...managedServer,
+          name: 'my-browser',
+          connection: {
+            transport: 'stdio',
+            command: 'npx',
+            args: ['@playwright/mcp@0.0.82', '--isolated', '--storage-state', '/s.json'],
+            env: {},
+          },
+        },
+      ]),
+      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
+    });
+    const second = renderComponent(alreadyHas);
+    await waitFor(() =>
+      expect(within(second.container).getByText('my-browser')).toBeInTheDocument()
+    );
+    expect(within(second.container).queryByText('Signed-in browser')).not.toBeInTheDocument();
+  });
 });

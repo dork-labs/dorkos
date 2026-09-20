@@ -265,4 +265,11 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     category: 'MCP servers',
     keywords: ['mcp', 'server', 'card', 'order', 'sort', 'freeze', 'panel', 'attention first'],
   },
+  {
+    id: 'mcp-cards-the-signed-in-browser',
+    title: 'MCP cards: the signed-in browser',
+    page: 'home-inbox',
+    category: 'MCP servers',
+    keywords: ['mcp', 'browser', 'playwright', 'signed in', 'sign-in', 'cookies', 'agent browser'],
+  },
 ];

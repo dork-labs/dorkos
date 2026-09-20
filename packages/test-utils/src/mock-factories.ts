@@ -1,3 +1,4 @@
+import { agentBrowserConnection } from '@dorkos/shared/agent-browser';
 import crypto from 'node:crypto';
 import { vi } from 'vitest';
 import type {
@@ -1233,6 +1234,17 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // The list reads honest-empty; the writes must be stated by a test that
     // exercises them (an add can resolve to `{ status: 'approval_required' }`).
     listAgentMcpServers: vi.fn().mockResolvedValue([]),
+    getAgentBrowserPreset: vi.fn().mockResolvedValue({
+      stateFile: '/home/test/.dork/browser/storage-state.json',
+      saved: false,
+      savedAt: null,
+      sites: [],
+      loginCommand: 'dorkos browser login',
+      server: {
+        name: 'browser',
+        connection: agentBrowserConnection('/home/test/.dork/browser/storage-state.json'),
+      },
+    }),
     addAgentMcpServer: vi.fn(),
     importAgentMcpServer: vi.fn(),
     updateAgentMcpServer: vi.fn(),

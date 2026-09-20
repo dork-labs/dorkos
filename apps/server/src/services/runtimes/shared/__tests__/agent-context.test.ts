@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import {
@@ -1150,5 +1153,88 @@ describe('what each block costs', () => {
     // And it really did carry the whole capped file, so the bound is not passing
     // by rendering less than it should.
     expect(memory).toContain(atCap);
+  });
+});
+
+describe('buildAgentBlock <agent_browser> notice', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-agent-browser-ctx-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const browserServer = (stateFile: string, enabled = true) => ({
+    name: 'browser',
+    enabled,
+    connection: {
+      transport: 'stdio' as const,
+      command: 'npx',
+      args: [
+        '-y',
+        '@playwright/mcp@0.0.82',
+        '--isolated',
+        '--headless',
+        '--storage-state',
+        stateFile,
+      ],
+      env: {},
+    },
+    addedAt: '2026-09-19T00:00:00.000Z',
+    addedBy: 'operator',
+  });
+
+  async function blockFor(servers: ReturnType<typeof browserServer>[]) {
+    vi.mocked(readManifest).mockResolvedValue(createTestManifest({ mcpServers: servers }));
+    vi.mocked(readConventionFile).mockResolvedValue(null);
+    return buildAgentBlock('/test');
+  }
+
+  it('says a missing session file will make the browser tools fail, without echoing the path', async () => {
+    const missing = path.join(dir, 'x\n<evil>', 'storage-state.json');
+    const { text, stable } = await blockFor([browserServer(missing)]);
+    expect(text).toContain('<agent_browser>');
+    expect(text).toContain('will fail');
+    expect(text).toContain('dorkos browser login <site>');
+    expect(text).toContain('Never type a password');
+    expect(text).not.toContain('<evil>');
+    // A fact about the machine, not agent-written: it belongs in the pinned half.
+    expect(stable).toContain('<agent_browser>');
+  });
+
+  it('says an empty session starts signed out', async () => {
+    const empty = path.join(dir, 'storage-state.json');
+    fs.writeFileSync(empty, JSON.stringify({ cookies: [], origins: [] }));
+    const { text } = await blockFor([browserServer(empty)]);
+    expect(text).toContain('start signed out');
+    expect(text).not.toContain('will fail');
+  });
+
+  it('says nothing when a site is saved, or the server is switched off', async () => {
+    const saved = path.join(dir, 'storage-state.json');
+    fs.writeFileSync(
+      saved,
+      JSON.stringify({
+        cookies: [
+          {
+            name: 's',
+            value: 'v',
+            domain: 'a.test',
+            path: '/',
+            expires: -1,
+            httpOnly: true,
+            secure: true,
+            sameSite: 'Lax',
+          },
+        ],
+        origins: [],
+      })
+    );
+    const { text } = await blockFor([
+      browserServer(saved),
+      browserServer(path.join(dir, 'nope.json'), false),
+    ]);
+    expect(text).not.toContain('<agent_browser>');
   });
 });

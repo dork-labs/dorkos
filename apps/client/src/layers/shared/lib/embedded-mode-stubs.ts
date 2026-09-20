@@ -170,6 +170,7 @@ import type {
   ManagedMcpServer,
   ManagedMcpServerView,
 } from '@dorkos/shared/mesh-schemas';
+import type { AgentBrowserPreset } from '@dorkos/shared/agent-browser';
 import type {
   Task,
   TaskRun,
@@ -1498,6 +1499,10 @@ export const mcpManagementStubs = {
     _input: AddAgentMcpServerInput,
     _opts?: { approvalToken?: string }
   ): Promise<AgentMcpMutationResult> {
+    throw new Error(EMBEDDED_MCP_NOTICE);
+  },
+
+  async getAgentBrowserPreset(): Promise<AgentBrowserPreset> {
     throw new Error(EMBEDDED_MCP_NOTICE);
   },
 

@@ -17,6 +17,7 @@
     "agent-memory",
     "generative-ui",
     "runtimes",
+    "agent-browser",
     "---Go autonomous---",
     "flow",
     "---Scale to a fleet---",

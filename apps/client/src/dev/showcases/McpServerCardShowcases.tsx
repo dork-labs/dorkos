@@ -1,16 +1,23 @@
+import { useMemo } from 'react';
 import { LogIn, MoreHorizontal, Plus } from 'lucide-react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { agentBrowserConnection, type AgentBrowserPreset } from '@dorkos/shared/agent-browser';
+import type { Transport } from '@dorkos/shared/transport';
+import { TransportProvider } from '@/layers/shared/model';
 import { Button, Switch } from '@/layers/shared/ui';
 import type { McpSigninFlow } from '@/layers/entities/agent';
 import {
   McpServerCard,
   McpServerCardDetails,
   McpSigninPanel,
+  SignedInBrowserCard,
   type McpCardStatus,
   type McpToolSummary,
 } from '@/layers/features/agent-settings';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
+import { createPlaygroundTransport } from '../playground-transport';
 
 /**
  * The width the cards actually get in the docked profile's right panel. Every state
@@ -521,6 +528,96 @@ function OpeningOrderSection() {
   );
 }
 
+const PLAYGROUND_STATE_FILE = '/Users/you/.dork/browser/storage-state.json';
+
+/** The agent browser as `mcp.browser_preset` reports it, with or without saved sign-ins. */
+function browserPreset(saved: boolean): AgentBrowserPreset {
+  return {
+    stateFile: PLAYGROUND_STATE_FILE,
+    saved,
+    savedAt: saved ? '2026-09-19T12:00:00.000Z' : null,
+    sites: saved
+      ? ['github.com', 'linear.app', 'vercel.com', 'notion.so'].map((site) => ({
+          site,
+          cookies: 4,
+          expiresAt: '2027-09-19T00:00:00.000Z',
+          expired: false,
+          pageStorage: false,
+        }))
+      : [],
+    loginCommand: 'dorkos browser login',
+    server: {
+      name: 'browser',
+      connection: agentBrowserConnection(PLAYGROUND_STATE_FILE),
+    },
+  };
+}
+
+/**
+ * The live card over a transport that answers the preset read and asks for the
+ * confirmation on add, so a reviewer can click through to the confirm state.
+ * Confirming is inert: the playground has no server.
+ */
+function SignedInBrowserDemo({ saved }: { saved: boolean }) {
+  const transport = useMemo(() => {
+    const base = createPlaygroundTransport();
+    return new Proxy(base, {
+      get: (target, prop) => {
+        if (prop === 'getAgentBrowserPreset') return async () => browserPreset(saved);
+        if (prop === 'addAgentMcpServer') {
+          return async () => ({
+            status: 'approval_required',
+            approval: {
+              status: 'approval_required',
+              approvalId: 'playground',
+              approvalToken: 'playground',
+              capabilityId: 'mcp.add',
+              tier: 'destructive',
+              summary: 'Add a managed MCP server',
+              expiresAt: '2026-09-19T13:00:00.000Z',
+            },
+          });
+        }
+        return Reflect.get(target, prop);
+      },
+    }) as Transport;
+  }, [saved]);
+  const queryClient = useMemo(() => new QueryClient(), []);
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>
+        <SignedInBrowserCard agentId="playground-agent" agentLabel="Researcher" />
+      </TransportProvider>
+    </QueryClientProvider>
+  );
+}
+
+function SignedInBrowserSection() {
+  return (
+    <PlaygroundSection
+      title="MCP cards: the signed-in browser"
+      description="Offered on Tools & MCP until the agent has one. It gives the agent a browser that starts signed in to the sites saved with `dorkos browser login`. The button goes through the same confirmation as Add server; press it to see the command."
+    >
+      <ShowcaseDemo>
+        <div className="flex flex-wrap gap-6">
+          <div className="space-y-2">
+            <ShowcaseLabel>Sign-ins saved</ShowcaseLabel>
+            <AtPanelWidth>
+              <SignedInBrowserDemo saved />
+            </AtPanelWidth>
+          </div>
+          <div className="space-y-2">
+            <ShowcaseLabel>Nothing saved yet</ShowcaseLabel>
+            <AtPanelWidth>
+              <SignedInBrowserDemo saved={false} />
+            </AtPanelWidth>
+          </div>
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
 /**
  * Every state an MCP server card can reach, at the 340px the docked profile's right
  * panel actually gives it (spec `mcp-server-cards-redesign`).
@@ -538,6 +635,7 @@ export function McpServerCardShowcases() {
       <WorkingStatesSection />
       <ElsewhereStatesSection />
       <OpeningOrderSection />
+      <SignedInBrowserSection />
     </>
   );
 }

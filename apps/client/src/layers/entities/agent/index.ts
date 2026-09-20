@@ -22,7 +22,7 @@ export type { AgentVisual, AgentVisualSource } from './model/use-agent-visual';
 export { useAgentToolStatus } from './model/use-agent-tool-status';
 export type { ChipState, AgentToolStatus } from './model/use-agent-tool-status';
 export { useMcpConfig } from './model/use-mcp-config';
-export { useAgentMcpServers } from './model/use-agent-mcp-servers';
+export { useAgentMcpServers, useAgentBrowserPreset } from './model/use-agent-mcp-servers';
 export {
   useAddAgentMcpServer,
   useImportAgentMcpServer,

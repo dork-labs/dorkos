@@ -129,6 +129,7 @@ Run by tag: `npx playwright test --grep @smoke`
 
 1. **Reproduce**: Run the failing test with `PWDEBUG=1` or `--trace on`
 2. **Snapshot**: Use Playwright MCP `browser_snapshot` to capture the current accessibility tree
+   - Several sessions using Playwright MCP at once collide on its default on-disk profile. Run it with `--isolated`; for a third-party site that needs you signed in, use the agent browser (`contributing/browser-verification.md` § The agent browser).
 3. **Compare**: Check if expected elements still exist with expected attributes
 4. **Classify**: Is it a TEST bug or CODE bug?
    - **TEST bug**: Selector changed, timing issue, new UI pattern → update POM/spec

@@ -203,11 +203,12 @@
     },
     {
       "guide": "browser-verification.md",
-      "description": "Verifying a change against a live instance; traps that make a check pass while proving nothing",
+      "description": "Verifying a change against a live instance; traps that make a check pass while proving nothing; the agent browser for signed-in third-party sites and parallel Playwright sessions",
       "patterns": [
         "apps/e2e/multi-window/",
         "browser-verification",
-        "multi-window"
+        "multi-window",
+        "agent-browser"
       ]
     },
     {
@@ -754,6 +755,18 @@
       "description": "CLI usage guide",
       "patterns": [
         "packages/cli/"
+      ]
+    },
+    {
+      "doc": "docs/guides/agent-browser.mdx",
+      "description": "Signed-in browser: `dorkos browser`, the Tools & MCP card, bare-CLI setup, the security trade-off",
+      "patterns": [
+        "packages/cli/src/commands/browser",
+        "packages/cli/src/lib/agent-browser/",
+        "packages/shared/src/agent-browser",
+        "agent-browser-preset",
+        "mcp-browser-capabilities",
+        "SignedInBrowserCard"
       ]
     },
     {
