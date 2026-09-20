@@ -1,7 +1,9 @@
 # CI Steward, the daily collector (plans/ci-steward-plan.md §4.4, phase 1).
 #
 # Once a day it records what the pipeline did, judges each ledger entry whose
-# window has closed, and on Mondays writes the weekly report. Everything it
+# window has closed, works out what is worth doing something about (`triage`),
+# writes a human-readable report at reports/YYYY-MM-DD.html, and on Mondays
+# writes the weekly deep summary. Everything it
 # writes goes to the orphan branch `ci-steward-data`, never to `main`, so it
 # opens no PR and needs no review: observations are machine-owned, intent
 # (ci/, the ledger) is hand-owned. Read the result with `pnpm ci:status`.
@@ -92,7 +94,10 @@ jobs:
         id: prepare
         run: node packages/ci-steward/src/cli.ts data-prepare --data .ci-steward-data
 
-      - name: Collect, compute verdicts, and on Mondays write the weekly report
+      # GitHub throttles scheduled workflows by hours (measured: p50 2.7 h
+      # late), which is fine for a daily report and is why nothing here is
+      # allowed to depend on the run's exact hour.
+      - name: Collect, judge, triage, and write the day's report
         env:
           GH_TOKEN: ${{ github.token }}
         run: node packages/ci-steward/src/cli.ts daily --data .ci-steward-data

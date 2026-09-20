@@ -1,0 +1,308 @@
+<!doctype html>
+<!--
+  The daily CI report's template. The engine (packages/ci-steward/src/html.ts)
+  fills the {{slots}} below and writes the result to reports/YYYY-MM-DD.html on
+  the ci-steward-data branch.
+
+  RESTYLE THIS FILE, NOT THE ENGINE. All the CSS is right here, inline, and the
+  engine only emits elements that carry the class names this stylesheet
+  defines. There is no build step and no network: no web fonts, no CDN, no
+  script. The page has to open from a file:// URL on a laptop with no internet.
+
+  The slots:
+    {{name}}    a value, HTML-escaped when it is filled in
+    {{{name}}}  a block of markup the engine built (already escaped inside)
+
+  An unknown slot is left alone rather than silently emptied, so a typo here
+  shows up on the page instead of deleting a section.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}}</title>
+    <style>
+      :root {
+        --bg: #fbfbfa;
+        --panel: #ffffff;
+        --ink: #1d1d1f;
+        --muted: #6b6b70;
+        --line: #e4e4e2;
+        --green: #2f7d4f;
+        --amber: #9a6400;
+        --red: #b3261e;
+        --accent: #3f4ea8;
+        --radius: 10px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #16171a;
+          --panel: #1e2024;
+          --ink: #ececee;
+          --muted: #9fa0a6;
+          --line: #2e3137;
+          --green: #6ddc9b;
+          --amber: #ecb44a;
+          --red: #ff8f85;
+          --accent: #9aa7f5;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 32px 16px 72px;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          15px/1.55 ui-sans-serif,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+      }
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 15px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin: 36px 0 12px;
+      }
+      p {
+        margin: 0 0 10px;
+      }
+      a {
+        color: var(--accent);
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 24px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 16px 18px;
+      }
+      .headline {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        border-left: 4px solid var(--line);
+      }
+      .headline.green {
+        border-left-color: var(--green);
+      }
+      .headline.amber {
+        border-left-color: var(--amber);
+      }
+      .headline.red {
+        border-left-color: var(--red);
+      }
+      .lamp {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        margin-top: 5px;
+        flex: none;
+        background: var(--muted);
+      }
+      .green .lamp {
+        background: var(--green);
+      }
+      .amber .lamp {
+        background: var(--amber);
+      }
+      .red .lamp {
+        background: var(--red);
+      }
+      .headline-text {
+        font-size: 17px;
+        font-weight: 600;
+      }
+      .headline-why {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 4px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        font-weight: 600;
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      td.num {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      code,
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+      }
+      .tag {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 999px;
+        font-size: 11px;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        border: 1px solid currentColor;
+      }
+      .tag.met,
+      .tag.ok,
+      .tag.green,
+      .tag.verified {
+        color: var(--green);
+      }
+      .tag.amber,
+      .tag.partial,
+      .tag.insufficient,
+      .tag.unmeasured,
+      .tag.pending,
+      .tag.inconclusive {
+        color: var(--amber);
+      }
+      .tag.red,
+      .tag.breach,
+      .tag.failed {
+        color: var(--red);
+      }
+      .trend {
+        font-variant-numeric: tabular-nums;
+      }
+      .trend.better {
+        color: var(--green);
+      }
+      .trend.worse {
+        color: var(--red);
+      }
+      .trend.flat {
+        color: var(--muted);
+      }
+      svg.spark {
+        display: block;
+      }
+      svg.spark path {
+        fill: none;
+        stroke: var(--accent);
+        stroke-width: 1.5;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+      .trigger {
+        border-left: 3px solid var(--line);
+        padding: 2px 0 2px 12px;
+        margin: 0 0 16px;
+      }
+      .trigger.red {
+        border-left-color: var(--red);
+      }
+      .trigger.amber {
+        border-left-color: var(--amber);
+      }
+      .trigger-head {
+        font-weight: 600;
+      }
+      .trigger-meta,
+      .note {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      ul.plain {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      ul.plain li {
+        padding: 6px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      ul.plain li:last-child {
+        border-bottom: none;
+      }
+      .days {
+        columns: 240px;
+      }
+      footer {
+        margin-top: 48px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      @media (max-width: 600px) {
+        body {
+          padding: 20px 12px 56px;
+        }
+        th,
+        td {
+          padding: 6px 6px;
+        }
+        table {
+          font-size: 13px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>{{title}}</h1>
+      <p class="sub">{{subtitle}}</p>
+
+      <div class="panel headline {{light}}">
+        <span class="lamp"></span>
+        <div>
+          <div class="headline-text">{{headline}}</div>
+          <div class="headline-why">{{headline_why}}</div>
+        </div>
+      </div>
+
+      <h2>What to work on</h2>
+      {{{constraint}}}
+
+      <h2>How the pipeline is doing</h2>
+      {{{slos}}}
+
+      <h2>Open triggers</h2>
+      {{{triggers}}}
+
+      <h2>Yesterday</h2>
+      {{{yesterday}}}
+
+      <h2>Experiments in flight</h2>
+      {{{experiments}}}
+
+      <h2>Is the data any good?</h2>
+      {{{health}}}
+
+      <footer>{{footer}}</footer>
+    </main>
+  </body>
+</html>

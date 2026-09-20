@@ -253,6 +253,15 @@ export const LatestSchema = z
     local_breaches: z.array(z.string()),
     /** Both data-branch rulesets present and unchanged. */
     safeguards_ok: z.boolean(),
+    /**
+     * What `triage` found, so SessionStart and `/ci-status` see an open red
+     * trigger without opening a second file. Absent until the day's triage has
+     * run (collect writes latest.json first, triage fills this in after).
+     */
+    triggers: z
+      .object({ red: z.number(), amber: z.number(), top: z.string().nullable() })
+      .strict()
+      .optional(),
   })
   .strict();
 /** `latest.json`. */

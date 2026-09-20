@@ -1,7 +1,7 @@
 /**
- * The phase-1 commands behind the CLI: `collect`, `verdicts`, `report`,
- * `daily` (what the workflow runs), `data-prepare`, `data-publish`, `status`,
- * `pulse` and `local-export`. Each takes its clock and its GitHub and git
+ * The phase-1 commands behind the CLI: `collect`, `verdicts`, `triage`,
+ * `report`, `daily-report`, `daily` (what the workflow runs), `data-prepare`,
+ * `data-publish`, `status`, `pulse` and `local-export`. Each takes its clock and its GitHub and git
  * access as inputs, so tests drive every one against recorded responses and
  * temporary bare repositories.
  */
@@ -12,12 +12,24 @@ import path from 'node:path';
 import { collect } from './collect.ts';
 import {
   LatestSchema,
+  loadSnapshots,
   readData,
   snapshotDays,
   snapshotPath,
   SnapshotSchema,
   writeData,
+  type Latest,
 } from './data.ts';
+import {
+  INDEX_DATA,
+  INDEX_PATH,
+  renderDailyReport,
+  renderIndex,
+  reportPath,
+  ReportIndexSchema,
+  updateIndex,
+} from './daily-report.ts';
+import { triage, TriggersSchema, triggerSummary, type Triggers } from './triggers.ts';
 import {
   DataBranchMissing,
   prepareDataDir,
@@ -41,7 +53,7 @@ import {
   writeLatest,
   type StewardContext,
 } from './steward.ts';
-import { addDays, dayOf, isoWeek } from './time.ts';
+import { addDays, dayOf, daysBetween, isoWeek } from './time.ts';
 import type { WorkflowModel } from './workflows.ts';
 
 /** Where a command writes. */
@@ -162,6 +174,128 @@ export function cmdVerdicts(env: Env, dataDir: string, gh?: Gh): number {
   return 0;
 }
 
+/** `triggers.json`, or null before the first triage run. */
+function readTriggers(dataDir: string): Triggers | null {
+  return readData(dataDir, 'triggers.json', TriggersSchema);
+}
+
+/**
+ * `triage`: today's improvement triggers, written to `triggers.json` and
+ * summarised into `latest.json`. It reads only what is already on the data
+ * branch, so it needs no GitHub access and can run after a day the collector
+ * spent its whole budget on.
+ *
+ * @param env - The environment.
+ * @param dataDir - A working tree of the data branch.
+ * @returns Exit code 0; a trigger is never an error.
+ */
+export function cmdTriage(env: Env, dataDir: string): number {
+  const latest = readData(dataDir, 'latest.json', LatestSchema);
+  if (!latest) {
+    env.io.err('triage needs a latest.json on the data branch; run collect first.\n');
+    return 1;
+  }
+  const triggers = triage({
+    files: env.files,
+    ledger: readLedger(env.root, env.files),
+    verdicts: loadVerdicts(dataDir),
+    latest,
+    snapshots: loadSnapshots(dataDir, daysBetween(addDays(latest.date, -27), latest.date)),
+    prior: readTriggers(dataDir),
+    now: env.now,
+  });
+  writeData(dataDir, 'triggers.json', triggers);
+  const counts = triggerSummary(triggers);
+  writeData(dataDir, 'latest.json', { ...latest, triggers: counts } satisfies Latest);
+  env.io.out(
+    `triggers: ${counts.red} red, ${counts.amber} amber${
+      triggers.cleared.length ? `, ${triggers.cleared.length} cleared` : ''
+    }\n`
+  );
+  for (const t of triggers.open) env.io.out(`  [${t.severity}] ${t.id}: ${t.what}\n`);
+  return 0;
+}
+
+/**
+ * Write `reports/<day>.html` and the index that lists the days.
+ *
+ * @param env - The environment.
+ * @param dataDir - A working tree of the data branch (or a copy of one).
+ * @param day - The day to report; the day `latest.json` points at by default.
+ * @param local - Marks the page as built by hand rather than by the daily job.
+ * @returns The path written, relative to the data directory, or null.
+ */
+function writeDailyReport(env: Env, dataDir: string, day?: string, local = false): string | null {
+  const latest = readData(dataDir, 'latest.json', LatestSchema);
+  if (!latest) {
+    env.io.err('no latest.json on the data branch; run collect first.\n');
+    return null;
+  }
+  const on = day ?? latest.date;
+  const { html, index } = renderDailyReport({
+    files: env.files,
+    dataDir,
+    day: on,
+    latest,
+    triggers: readTriggers(dataDir),
+    verdicts: loadVerdicts(dataDir),
+    ledger: readLedger(env.root, env.files),
+    now: env.now,
+    local,
+  });
+  const rel = reportPath(on);
+  writeData(dataDir, rel, html);
+  const idx = updateIndex(readData(dataDir, INDEX_DATA, ReportIndexSchema), index, env.now);
+  writeData(dataDir, INDEX_DATA, idx);
+  writeData(dataDir, INDEX_PATH, renderIndex(idx, env.now));
+  return rel;
+}
+
+/**
+ * `daily-report` (`pnpm ci:report`): build the day's HTML report from a data
+ * directory, or from a throwaway copy of the data branch, and print where it
+ * landed. It never writes to the data branch and never pushes.
+ *
+ * @param env - The environment.
+ * @param opts - The day; a data directory to read; whether to open the page.
+ */
+export function cmdDailyReport(
+  env: Env,
+  opts: { day?: string; data?: string; open?: boolean }
+): number {
+  // A temp copy is left on disk on purpose: the page is the point, and the
+  // caller is told exactly where it is.
+  const dir = opts.data ?? mkdtempSync(path.join(tmpdir(), 'ci-steward-report-'));
+  if (opts.data === undefined) {
+    const ref = `origin/${env.files.config.data_branch}`;
+    try {
+      const tar = execFileSync('git', ['archive', '--format=tar', ref], {
+        cwd: env.root,
+        maxBuffer: 512 * 1024 * 1024,
+      });
+      execFileSync('tar', ['-x', '-C', dir], { input: tar });
+    } catch {
+      env.io.err(
+        `${env.root} has no ${ref}. Run \`git fetch origin ${env.files.config.data_branch}\`, or pass --data <dir>.\n`
+      );
+      return 1;
+    }
+  }
+  const rel = writeDailyReport(env, dir, opts.day, true);
+  if (!rel) return 1;
+  const abs = path.join(dir, rel);
+  env.io.out(`${abs}\n`);
+  if (opts.open) {
+    const opener = process.platform === 'darwin' ? 'open' : 'xdg-open';
+    try {
+      execFileSync(opener, [abs], { stdio: 'ignore' });
+    } catch {
+      env.io.err(`could not open the page with ${opener}; it is at ${abs}\n`);
+    }
+  }
+  return 0;
+}
+
 /**
  * `report`: the weekly report for the week before `now`, and the floors.
  *
@@ -202,6 +336,10 @@ export function cmdDaily(env: Env, dataDir: string): number {
   }
   const verdicts = runVerdicts(ctx(env, dataDir), ledger, merged);
   env.io.out(`verdicts: ${verdicts.map((v) => `${v.id} ${v.verdict}`).join(', ') || 'none'}\n`);
+  cmdTriage(env, dataDir);
+  const page = writeDailyReport(env, dataDir);
+  if (page) env.io.out(`wrote ${page}\n`);
+  // Monday's deep summary: week over week, the verdicts closed, the floors moved.
   if (env.now.getUTCDay() === 1) {
     const r = runReport(ctx(env, dataDir), ledger, verdicts);
     env.io.out(`wrote ${r.path}\n`);
@@ -410,6 +548,7 @@ export function cmdPulse(env: Env, opts: { keep?: boolean }): number {
         failures: prior?.failures ?? [],
       });
     cmdVerdicts(env, dir);
+    cmdTriage(env, dir);
     env.io.out('\n');
     cmdStatus(env, { data: dir });
     env.io.out(`\n(pulse: collected locally, pushed nothing${opts.keep ? `; kept ${dir}` : ''})\n`);

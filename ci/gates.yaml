@@ -36,7 +36,7 @@ gates:
   # --- ci-steward.yml ---
   - id: wf.ci-steward.collect
     source: .github/workflows/ci-steward.yml
-    purpose: Daily at 05:00 UTC, records what the pipeline did, computes ledger verdicts and the weekly report, and pushes them to the ci-steward-data branch; red when its own health fails. Never required.
+    purpose: Daily at 05:00 UTC, records what the pipeline did, computes ledger verdicts, the improvement triggers and the day's HTML report (plus the weekly deep summary on Mondays), and pushes them to the ci-steward-data branch; red when its own health fails. Never required.
 
   # --- claude-code-review.yml ---
   - id: wf.claude-code-review.review

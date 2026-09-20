@@ -189,6 +189,13 @@ describe('the daily workflow sequence, end to end against a bare origin', () => 
     const daily = run(w.root, ['daily', '--data', w.data, '--now', SAT]);
     expect(daily).toMatchObject({ code: 0 });
     expect(daily.out).toContain(`collected ${DAY}`);
+    // The daily run also triages and writes the day's human-readable page.
+    expect(daily.out).toContain('triggers:');
+    expect(daily.out).toContain(`wrote reports/${DAY}.html`);
+    expect(readFileSync(path.join(w.data, `reports/${DAY}.html`), 'utf8')).toContain(
+      `<title>CI report for ${DAY}</title>`
+    );
+    expect(readFileSync(path.join(w.data, 'reports/index.html'), 'utf8')).toContain(`${DAY}.html`);
     const sat = run(w.root, ['data-publish', '--data', w.data, '--tag-week', '--now', SAT]).out;
     expect(sat).toContain('pushed');
     // Any day tags a week that has no backup yet, not only Monday.
@@ -230,7 +237,10 @@ describe('the daily workflow sequence, end to end against a bare origin', () => 
     const status = run(w.root, ['status', '--now', '2026-09-21T06:00:00Z']).out;
     expect(status).toContain('CI Steward status: data for 2026-09-18 from origin/ci-steward-data');
     expect(status).toContain('Health: OK');
-    expect(status).toContain('Weekly report: git show origin/ci-steward-data:reports/2026-W38.md');
+    expect(status).toContain(
+      'Weekly deep summary: git show origin/ci-steward-data:reports/2026-W38.md'
+    );
+    expect(status).toContain('Triggers (');
   });
 
   it('writes a heartbeat on every local export, so an idle clone never reads as stale', () => {
