@@ -49,14 +49,26 @@ describe('FeedbackPreviewDialog', () => {
     expect(scrollViewport?.contains(footerBar)).toBe(false);
   });
 
-  it('gives the footer an opaque background so scrolled content cannot show through', () => {
+  it('places the footer after the scroll area, as its sibling in the flex column', () => {
     renderDialog();
 
     const footerBar = screen
       .getByText(/Only the DorkOS core team sees these/)
       .closest('[data-slot="feedback-preview-footer"]');
+    const scrollArea = document.querySelector('[data-slot="scroll-area"]');
+    // The panel `<TabsContent>` wraps the scroll area — its parent is the same
+    // `Tabs` flex column the footer is a direct child of.
+    const tabPanel = scrollArea?.closest('[data-slot="tabs-content"]');
     expect(footerBar).not.toBeNull();
-    expect(footerBar?.className).toMatch(/\bbg-background\b/);
-    expect(footerBar?.className).toMatch(/\bshrink-0\b/);
+    expect(scrollArea).not.toBeNull();
+    expect(tabPanel).not.toBeNull();
+
+    // Same flex column, and the footer strictly AFTER the tab panel in tree
+    // order — the ordering `Tabs`' layout (and the paint order the docblock on
+    // `PrivacyNote` explains) depends on.
+    expect(footerBar?.parentElement).toBe(tabPanel?.parentElement);
+    expect(tabPanel?.compareDocumentPosition(footerBar as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
   });
 });
