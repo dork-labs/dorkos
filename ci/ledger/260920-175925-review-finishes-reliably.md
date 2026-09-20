@@ -84,6 +84,16 @@ operator adds one to the repository's Dependabot secrets (5 of 52 failures), PRs
 that edit the review workflow and therefore cannot be reviewed by it (3 of 52),
 and the reported-success-but-no-verdict class (4 of 52).
 
+The middle one is now classified rather than merely counted. The action refuses
+to run from a copy of its own workflow that differs from the default branch, and
+exits successfully in under two seconds having written no execution log, so the
+run used to come out `unknown`/`infra` with a comment telling the author to add
+`re-review` — which repeats it forever. It is detected structurally (the
+checkout's copy of the workflow diffed against `origin/<default>`) and reported
+as `workflow_edit`, which is by-design behaviour rather than a pipeline failure.
+It stays RED: a PR that edits the reviewer has not been reviewed. The first
+example is this change's own PR.
+
 ## Assumptions, stated so the verdict can be read against them
 
 - **0.976 assumes every `error_max_turns` run fits under the new ceiling, and

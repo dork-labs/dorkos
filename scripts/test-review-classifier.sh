@@ -761,6 +761,38 @@ check "workflow: the verdict probe covers every non-skipped review outcome" pres
 check "workflow: the verdict is the trusted classifier's call" present \
   "$(presence 'stands=$(bash "$classifier" stands "$exec_file" "$posted")' "$workflow_text")"
 
+# ── a PR that edits the reviewer says so, and still stays red ────────────────
+#
+# The action refuses to start when the workflow it runs differs from the default
+# branch's copy, exits SUCCESSFULLY in under two seconds and writes no execution
+# log — so the classifier correctly reports `unknown` and the old wording told
+# the author the review "left no readable record of why" and to add `re-review`.
+# Both halves were wrong: the reason is knowable, and `re-review` repeats it
+# forever. Measured on PR #1945, run 35534353235.
+#
+# Three properties, and the first is the one that must never bend.
+#   1. IT IS STILL RED. A PR that edits the reviewer has not been reviewed, so
+#      the naming must not touch `stands`. The check below asserts the override
+#      sets only `why`, which is wording, and the gate's own verbatim pin above
+#      already guarantees `stands` is the classifier's call alone.
+#   2. The remedy it names is the trusted dispatch, never the label.
+#   3. It is asked on `pull_request` only. A dispatch runs the DEFAULT BRANCH's
+#      workflow, so validation passes and the review really happens; the same
+#      comparison would answer "yes" while everything worked.
+check "workflow: the verdict step reads the self-edit answer" present \
+  "$(presence 'SELF_EDIT: ${{ steps.self-edit.outputs.edits }}' "$workflow_text")"
+check "workflow: the self-edit probe is pull_request-only" present \
+  "$(presence "$(printf '%s\n' '        id: self-edit' \
+    "        if: github.event_name == 'pull_request'")" "$workflow_text")"
+# shellcheck disable=SC2016
+check "workflow: naming it changes the wording, not the verdict" present \
+  "$(presence "$(printf '%s\n' '          if [ "$SELF_EDIT" = yes ] && [ "$why" = unknown ]; then' \
+    '            why=workflow_edit')" "$workflow_text")"
+check "workflow: it points at the trusted dispatch" present \
+  "$(presence 'gh workflow run claude-code-review.yml -f pr=' "$workflow_text")"
+check "workflow: the outcome class separates it from infra" present \
+  "$(presence 'workflow_edit) class=workflow_edit ;;' "$workflow_text")"
+
 # A silent clean result is an infrastructure failure, not a finding about the
 # pull request. Keep that failure visible and actionable instead of relying on
 # the red check alone.

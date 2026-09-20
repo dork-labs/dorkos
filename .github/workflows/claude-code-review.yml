@@ -664,6 +664,63 @@ jobs:
           chmod 0500 "$HELPER_DIR"
           echo "Materialized scripts/review-gh.sh from origin/$DEFAULT_BRANCH (read-only)"
 
+      # IS THIS PR EDITING THE REVIEWER'S OWN WORKFLOW? Asked structurally, here,
+      # so the job can say so instead of reporting a mystery.
+      #
+      # `anthropics/claude-code-action` refuses to start when the workflow file it
+      # is running from differs from the copy on the default branch — an
+      # anti-exfiltration guard, since a PR could otherwise rewrite this file to
+      # leak the OAuth token. It then exits SUCCESSFULLY, in about 1.7 seconds,
+      # having taken no turn and posted nothing (measured on PR #1945, run
+      # 35534353235: "Skipping action due to workflow validation ... must ... have
+      # identical content to the version on the repository's default branch").
+      # That is the KNOWN LIMITATION in the header, working as designed.
+      #
+      # WHY IT NEEDS NAMING. The classifier reads the action's execution log to
+      # say how a run ended, and there is no log: the action never got as far as
+      # writing one. So the run came out `unknown`, the comment told the author
+      # "the review did not finish and left no readable record of why ... add the
+      # `re-review` label to try again", and the outcome class was `infra`. All
+      # three are wrong in the same direction: this is not our infrastructure
+      # failing, `re-review` will do exactly this again forever (the retry ladder
+      # refuses these PRs for that reason — scripts/should-redispatch-review.sh),
+      # and a person reading it goes looking for a fault that does not exist.
+      #
+      # ASKED FROM THE TRUSTED SIDE, and it is the same question the action asks:
+      # does this checkout's copy of the workflow differ from the default
+      # branch's? `git diff` against `origin/$DEFAULT_BRANCH` reads the object
+      # database, so the answer does not depend on anything the PR wrote, and it
+      # needs no log parsing at all.
+      #
+      # `pull_request` ONLY, and that is not a detail. A `workflow_dispatch` run
+      # executes the DEFAULT BRANCH's copy of this workflow, so the action's
+      # validation passes and the review really does run — that is exactly why
+      # the dispatch hatch is the remedy for this case. Its checkout is still the
+      # PR's head, so this comparison would answer "yes" while the review was
+      # working perfectly.
+      - name: Detect a self-edit of the review workflow
+        id: self-edit
+        if: github.event_name == 'pull_request'
+        env:
+          WORKFLOW_PATH: .github/workflows/claude-code-review.yml
+        run: |
+          # No trusted branch means no comparison. `unknown` is not `yes`, so the
+          # wording below stays the cautious one rather than inventing a cause.
+          if [ -z "$DEFAULT_BRANCH" ] ||
+             ! git rev-parse --verify --quiet "refs/remotes/origin/$DEFAULT_BRANCH" >/dev/null; then
+            echo "edits=unknown" >> "$GITHUB_OUTPUT"
+            echo "could not compare this workflow against the default branch"
+            exit 0
+          fi
+
+          if git diff --quiet "origin/$DEFAULT_BRANCH" -- "$WORKFLOW_PATH"; then
+            echo "edits=no" >> "$GITHUB_OUTPUT"
+            echo "this PR does not change $WORKFLOW_PATH"
+          else
+            echo "edits=yes" >> "$GITHUB_OUTPUT"
+            echo "this PR changes $WORKFLOW_PATH, so the action will refuse to review it"
+          fi
+
       # Timestamp cutoff for the verdict probe below, so it only looks at comments
       # this run could plausibly have posted (not leftovers from an earlier review
       # or re-review pass on the same PR). Since DOR-1665 that probe decides the
@@ -1083,6 +1140,7 @@ jobs:
           REVIEW_OUTCOME: ${{ steps.claude-review.outcome }}
           SINCE: ${{ steps.review-start.outputs.time }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SELF_EDIT: ${{ steps.self-edit.outputs.edits }}
         run: |
           # Prefer the action's own output; fall back to the path it logs, since a
           # composite action's outputs are not guaranteed to survive its failure.
@@ -1119,6 +1177,18 @@ jobs:
             limit=$(bash "$classifier" limit "$exec_file") || limit=
           fi
           echo "review result class: $why (from $exec_file)"
+
+          # The action refused to start because this PR edits its workflow, so it
+          # never wrote an execution log and `unknown` is the classifier being
+          # honest about having nothing to read. Name the actual reason. Narrow on
+          # purpose: only when the trusted comparison said yes AND the classifier
+          # found nothing, so a run that really did leave an unreadable log still
+          # reports `unknown`. It does NOT touch `stands`, which is computed from
+          # the classifier alone below and must stay `no` — a PR that edits the
+          # reviewer has not been reviewed, whatever the reason is called.
+          if [ "$SELF_EDIT" = yes ] && [ "$why" = unknown ]; then
+            why=workflow_edit
+          fi
 
           # Handed to "Report the outcome class" below, which turns the pair
           # into the single word the collector reads. Emitted here because this
@@ -1244,6 +1314,12 @@ jobs:
                 body="This check is red because the review reported success but never posted a verdict, so nothing here has actually been reviewed. That is a problem with the reviewer, not with this PR. The review run is in the [Actions log]($RUN_URL). Add the \`re-review\` label to try again."
               fi
               ;;
+            workflow_edit)
+              # No "try again": there is nothing to try. Every automatic run on
+              # this PR will end the same way until it merges, which is why the
+              # remedy named here is the trusted dispatch rather than the label.
+              body="This check is red because this pull request changes \`.github/workflows/claude-code-review.yml\`, and the reviewer refuses to run from a copy of its own workflow that differs from \`$DEFAULT_BRANCH\`. That is an anti-exfiltration guard inside the action — a pull request must not be able to rewrite the workflow that holds the reviewer's credentials — and it is not a finding about this code. Nothing here has been reviewed, so this check stays red on purpose. Re-running it or adding \`re-review\` will do exactly the same thing. To get a real review, ask for one by hand from the default branch, which is trusted: \`gh workflow run claude-code-review.yml -f pr=<number>\`. Once this merges, reviews on other pull requests are unaffected."
+              ;;
             *)
               body="This check is red because the review did not finish, not because it found blocking issues — and it left no readable record of why, so the reason is only in the [Actions log]($RUN_URL). Add the \`re-review\` label to try again."
               ;;
@@ -1279,6 +1355,8 @@ jobs:
       #   quota_unknown   a subscription limit that did not name its window
       #   no_credentials  there was no usable token at all (our setup)
       #   fork            refused because the PR comes from a fork (by design)
+      #   workflow_edit   the PR edits this workflow, so the action refused to
+      #                   start at all (by design; see "Detect a self-edit")
       #   infra           everything else that failed (our bug, cause unknown)
       #
       # WHERE IT GOES, and why twice. The job summary is for a person opening the
@@ -1324,6 +1402,11 @@ jobs:
           else
             case "$CLASS" in
               max_turns) class=turn_budget ;;
+              # Neither our infrastructure nor our quota: the action declined to
+              # run on a PR that edits it. Separated so `review-completes` can
+              # stop counting a by-design refusal as a pipeline failure — about 3
+              # of 52 failures over 30 days (report 07 §6).
+              workflow_edit) class=workflow_edit ;;
               # `no` without a limit string: the run never got a usable model
               # response and named no cause. With the limit string it would
               # have been caught by the arm above, so what is left is a token

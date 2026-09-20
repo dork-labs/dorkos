@@ -770,8 +770,15 @@ gh label create re-review    --description "Request another automated review pas
   editing this review workflow gets a red automatic check and needs the trusted
   manual dispatch described above.
 - **A red review check is not always a finding.** When the review breaks in a way
-  that cost you the verdict, it posts a comment saying so and naming which of five
+  that cost you the verdict, it posts a comment saying so and naming which of six
   things happened:
+  - **This PR edits the review workflow.** The action refuses to run from a copy
+    of its own workflow that differs from `main` — a pull request must not be
+    able to rewrite the file holding the reviewer's credentials — so it exits in
+    under two seconds having reviewed nothing. Expected, and the check stays red
+    on purpose. Re-running or `re-review` does the same thing every time; the
+    only way to get this PR reviewed is the trusted dispatch above.
+
   - **It never started.** It ended without naming a cause, after one turn or fewer
     and with nothing spent, so nothing in the PR was looked at. The Claude
     subscription behind `CLAUDE_CODE_OAUTH_TOKEN` hit its usage limit (clears on its
