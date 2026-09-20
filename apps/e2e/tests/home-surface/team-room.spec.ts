@@ -540,6 +540,7 @@ test.describe("DorkBot's one quiet suggestion @smoke", () => {
     page,
     basePage,
     teamRoomApi,
+    request,
   }) => {
     // Two preconditions about state this test shares with the whole leg, read
     // rather than assumed. Each one is a case where the quiet line is CORRECT to
@@ -568,6 +569,24 @@ test.describe("DorkBot's one quiet suggestion @smoke", () => {
       .poll(() => teamRoomApi.registeredAgentCount(), { timeout: SERVER_ROUND_TRIP_MS })
       .toBeGreaterThanOrEqual(2);
 
+    // This serial file has already driven real turns, so the schedule suggestion
+    // is earned too: agents have run and there is no schedule yet. Read those
+    // two inputs explicitly so the ordered dismissal proof below fails if a
+    // future setup change silently removes either candidate.
+    const [sessionsResponse, tasksResponse] = await Promise.all([
+      request.get('/api/sessions'),
+      request.get('/api/tasks'),
+    ]);
+    expect(sessionsResponse.ok(), 'could not read the sessions that earn the schedule offer').toBe(
+      true
+    );
+    expect(tasksResponse.ok(), 'could not read schedules before asserting their absence').toBe(
+      true
+    );
+    const { sessions } = (await sessionsResponse.json()) as { sessions: unknown[] };
+    expect(sessions, 'no agent has run, so the schedule offer is not earned').not.toHaveLength(0);
+    expect((await tasksResponse.json()) as unknown[], 'a schedule already exists').toHaveLength(0);
+
     // First visit reads the room to the end. "All quiet." is a claim about right
     // now, measured against the cursor as it stood when the page opened, so the
     // reader has to have caught up on a PREVIOUS visit for it to be true.
@@ -588,18 +607,46 @@ test.describe("DorkBot's one quiet suggestion @smoke", () => {
     await expect(quiet).toContainText('All quiet.');
 
     // ONE suggestion, never a list: a quiet morning that answers with a menu is
-    // not a quiet morning.
+    // not a quiet morning. Here both suggestion candidates are earned. The
+    // registry deliberately shows the higher-priority schedule offer first,
+    // then the agent-chat offer after it is dismissed; each still arrives one at
+    // a time, never as a menu.
     const suggestion = quiet.locator('[data-slot="quiet-suggestion"]');
     await expect(suggestion).toHaveCount(1);
-    const dismiss = suggestion.getByRole('button', { name: /^Dismiss suggestion: / });
-    await expect(dismiss).toBeVisible();
+    const dismissed: string[] = [];
+    const dismissSuggestion = async (id: string, name: string): Promise<void> => {
+      const dismiss = suggestion.getByRole('button', { name });
+      await expect(dismiss).toBeVisible();
+      await dismiss.click();
+      await expect(dismiss).toHaveCount(0);
+      dismissed.push(id);
+    };
 
-    // Waving it away is one press, and it is remembered: the same suggestion
-    // does not come back the next morning.
-    await dismiss.click();
+    // The first press removes the schedule offer itself rather than merely
+    // changing a count. A distinct, lower-priority follow-up is expected because
+    // this test deliberately earns both registry candidates.
+    await dismissSuggestion('schedules', 'Dismiss suggestion: Run agents on a schedule');
+    await expect(suggestion).toHaveCount(1);
+    await dismissSuggestion('agent-chat', 'Dismiss suggestion: Agent-to-agent conversations');
+    expect(dismissed).toEqual(['schedules', 'agent-chat']);
     await expect(suggestion).toHaveCount(0);
     // The line above it stays — dismissing the offer is not dismissing the news.
     await expect(quiet).toContainText('All quiet.');
+
+    // This is a server read, not the session-only optimistic state that made the
+    // two buttons disappear. A new page must receive both persisted answers.
+    await expect
+      .poll(
+        async () => {
+          const response = await request.get('/api/config');
+          if (!response.ok()) return [];
+          return (
+            ((await response.json()) as { dismissedPromoIds?: string[] }).dismissedPromoIds ?? []
+          );
+        },
+        { timeout: SERVER_ROUND_TRIP_MS }
+      )
+      .toEqual(expect.arrayContaining(['schedules', 'agent-chat']));
 
     await page.reload();
     await basePage.waitForAppReady();
