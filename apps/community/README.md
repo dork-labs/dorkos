@@ -16,7 +16,7 @@ Use a unique random value of at least 32 characters for each secret. Set `COMMUN
 
 To create the owner account, open `COMMUNITY_PUBLIC_URL` in a browser. Enter the **Setup secret**, choose **Continue**, then choose **Create account**. Enter a name, email, password, Community name, and first channel, then choose **Create community**. The setup secret cannot claim a second owner. See [the Community guide](../../docs/guides/communities.mdx) for the browser flow and [the developer guide](../../contributing/community-server.md) for HTTP details.
 
-For HTTPS, backups, restoration and upgrades, see [the operations guide](OPERATIONS.md). For a forgotten password, see [account recovery](RECOVERY.md).
+For Fly.io hosting, see [the Fly deployment guide](FLY.md). For HTTPS, backups, restoration and upgrades, see [the operations guide](OPERATIONS.md). For a forgotten password, see [account recovery](RECOVERY.md).
 
 ## Develop and test
 
