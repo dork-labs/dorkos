@@ -2,6 +2,21 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260920-192429",
+      "slug": "scope-host-accounts-through-immutable-community-memberships",
+      "title": "Scope host accounts through immutable community memberships",
+      "status": "proposed",
+      "created": "2026-09-20",
+      "extractedFrom": "community-tenancy-contract",
+      "specSlug": "community-tenancy-contract",
+      "supersedes": null,
+      "affects": [
+        "apps/community/",
+        "apps/server/src/services/communities/remote/",
+        "packages/shared/src/community-wire.ts"
+      ]
+    },
+    {
       "id": "260916-210003",
       "slug": "remote-agent-output-uses-confirmed-outbox",
       "title": "Remote agent output uses a transactional local outbox and remote confirmation",
