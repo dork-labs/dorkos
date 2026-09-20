@@ -44,13 +44,27 @@ interface FeedbackPreviewDialogProps {
   screenshotDataUrl?: string;
 }
 
-/** The privacy scope line, repeated at the foot of the preview (design §5). */
+/**
+ * The privacy scope line, repeated at the foot of the preview (design §5).
+ *
+ * `shrink-0` keeps this bar at its natural size no matter how the flex column
+ * above it is squeezed — the scroll area (the sibling with `min-h-0`) is the
+ * only thing allowed to shrink. `bg-background` plus the bleed to the panel's
+ * edges (cancelling the `Tabs` wrapper's own padding, then reapplying it here)
+ * makes this an opaque bar rather than a transparent line floating over
+ * whatever the scroll area last painted beneath it (DOR-1962).
+ */
 function PrivacyNote() {
   return (
-    <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-      <Lock className="size-3 shrink-0" aria-hidden />
-      Private. Only the DorkOS core team sees these. Never public.
-    </p>
+    <div
+      data-slot="feedback-preview-footer"
+      className="bg-background -mx-4 -mb-4 shrink-0 border-t px-4 py-3 sm:mx-0 sm:px-0"
+    >
+      <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+        <Lock className="size-3 shrink-0" aria-hidden />
+        Private. Only the DorkOS core team sees these. Never public.
+      </p>
+    </div>
   );
 }
 
@@ -255,7 +269,7 @@ export function FeedbackPreviewDialog({
         >
           <TabsList
             className={cn(
-              'grid',
+              'grid shrink-0',
               available.length === 3 && 'grid-cols-3',
               available.length === 2 && 'grid-cols-2',
               available.length === 1 && 'grid-cols-1'
