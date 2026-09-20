@@ -768,34 +768,6 @@ export async function resetTestMode(opts: { baseUrl: string }): Promise<void> {
 }
 
 /**
- * Turn `rooms.toolOnlyReplies` on or off on the running harness
- * (`PATCH /api/config`).
- *
- * The flip is install-wide and read PER TURN, so a case that sets it here binds
- * the very next message rather than the next server start. A case that turns it
- * ON owes a `resetTestMode` afterwards for the same reason the scenario store
- * does: the in-process tier boots every eval inside one runner process, and a
- * flag one case set is still set for the next one.
- *
- * @param opts.baseUrl - The running harness server.
- * @param opts.on - Whether a turn's own words stop being the room's message.
- */
-export async function setToolOnlyReplies(opts: { baseUrl: string; on: boolean }): Promise<void> {
-  const res = await fetch(`${opts.baseUrl}/api/config`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rooms: { toolOnlyReplies: opts.on } }),
-  });
-  if (!res.ok) {
-    throw new RoomDriveError(
-      `could not set rooms.toolOnlyReplies: ${res.status} ${await res.text()}`,
-      'ROOM_REQUEST_FAILED',
-      res.status
-    );
-  }
-}
-
-/**
  * Mint a real identity token for an agent that is really registered here
  * (`POST /api/test/agent-token`).
  *

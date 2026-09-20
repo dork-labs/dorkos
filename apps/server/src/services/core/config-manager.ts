@@ -2939,48 +2939,49 @@ export function dropRetiredDorkosTools(store: {
 }
 
 /**
- * Seed `rooms.toolOnlyReplies` and `rooms.maxPostsPerTurn` — whether an agent
- * decides for itself when to speak in a room, and how much it may say in one
- * turn (spec `tool-only-room-replies` §D5; DOR-1613).
+ * Migration body: delete the retired `rooms.toolOnlyReplies` leaf, and seed
+ * `rooms.maxPostsPerTurn` for any install that never got it (spec
+ * `tool-only-room-replies` §A2, DOR-2099).
+ *
+ * **Two leaves, one body, because one key replaces another.** `'0.72.0'` seeded
+ * both together and was REMOVED with the experiment (see the reasoning where it
+ * used to sit): its helper read `USER_CONFIG_DEFAULTS.rooms.toolOnlyReplies`,
+ * which no longer exists, and a shipped body may not be edited. So the surviving
+ * half of its job moves here rather than being dropped — `maxPostsPerTurn` is a
+ * tunable that outlived the experiment, and nothing else writes it to disk.
  *
  * **This body is the mechanism, not an anchor**, for the reason
  * {@link seedRoomRepoDefaults} states at length: both are nested leaves inside a
  * section every stored config already carries, and conf's pre-migration
  * `Object.assign({}, defaults, fileStore)` is SHALLOW — a stored `rooms` object
- * wins wholesale and never gains a member. Nothing else writes either leaf to
- * disk, so deleting this body leaves them absent on every upgraded install.
+ * wins wholesale and never gains a member.
  *
- * Both in ONE body because they arrive together and neither is useful alone: the
- * ceiling exists because posting becomes the agent's only voice, and the flip is
- * what makes that true. Two keys for two leaves that ship in one PR would freeze
- * two bodies where one is the whole change.
+ * The delete half is the migration half of the retired-key mechanism
+ * {@link tolerateRetiredSidebarKeys} documents for `ui.sidebar`; the declaration
+ * half, which converges an install this key never reaches, is
+ * {@link tolerateRetiredRoomKeys}.
  *
- * Safety-neutral: `false` and `3` are what every existing install already
- * behaves as — the flip is off, and nothing counted posts before, so a ceiling
- * that only ever refuses a fourth post inside one turn refuses nothing that used
- * to happen.
+ * Safety-neutral: `3` is what every install already behaves as, and the deleted
+ * value chose between two behaviours only one of which the code still has.
  *
- * Additive + idempotent: each leaf is written only when absent, so a re-run after
- * corrupt recovery leaves an operator's own choice alone. Reads
- * {@link USER_CONFIG_DEFAULTS} rather than literals, so it cannot drift from the
- * schema.
+ * Idempotent, and quiet when there is nothing to do: the `set` happens only when
+ * something really changes, so a re-run after corrupt recovery writes nothing
+ * and leaves an operator's own ceiling alone. Reads {@link USER_CONFIG_DEFAULTS}
+ * rather than a literal, so it cannot drift from the schema.
  *
  * @internal Exported for testing only.
  * @param store - The `conf` store instance (provides `get`/`set`).
  */
-export function seedToolOnlyReplyDefaults(store: {
+export function retireToolOnlyReplies(store: {
   get: (key: string) => unknown;
   set: (key: string, value: unknown) => void;
 }): void {
   const rooms = store.get('rooms');
   if (rooms == null || typeof rooms !== 'object') return;
   const current = rooms as Record<string, unknown>;
-  const next = { ...current };
-  let changed = false;
-  if (current.toolOnlyReplies == null) {
-    next.toolOnlyReplies = USER_CONFIG_DEFAULTS.rooms.toolOnlyReplies;
-    changed = true;
-  }
+  const { toolOnlyReplies: _retired, ...rest } = current;
+  const next: Record<string, unknown> = { ...rest };
+  let changed = 'toolOnlyReplies' in current;
   if (current.maxPostsPerTurn == null) {
     next.maxPostsPerTurn = USER_CONFIG_DEFAULTS.rooms.maxPostsPerTurn;
     changed = true;
@@ -2994,7 +2995,7 @@ export function seedToolOnlyReplyDefaults(store: {
  * right now (DOR-1022).
  *
  * **This body is the mechanism, not an anchor**, for the reason
- * {@link seedToolOnlyReplyDefaults} states: a nested leaf inside a section every
+ * {@link seedRoomRepoDefaults} states: a nested leaf inside a section every
  * stored config already carries, and conf's pre-migration
  * `Object.assign({}, defaults, fileStore)` is SHALLOW — a stored `profile`
  * object wins wholesale and never gains a member. Nothing else writes this leaf,
@@ -3847,27 +3848,37 @@ export const CONFIG_MIGRATIONS = {
   // `0.0.0` and runs nothing — `tolerateRetiredRuntimeKeys` makes the first
   // write drop it. Both halves are tested.
   //
-  // 0.70.0 has merged (the room repo), and 0.71.0 is spent, so 0.72.0 is the
-  // next key. Frozen from merge, not from the release bump, for the reason
-  // `'0.60.0'` above states; anything further opens `'0.73.0'`.
+  // **`'0.72.0'` was REMOVED here (DOR-2099, spec `tool-only-room-replies`
+  // §A2), for the same reason `'0.71.0'` above was and by the same recorded
+  // judgement.** It seeded two leaves: `rooms.toolOnlyReplies: false` — the
+  // experiment that decided whether an agent chooses when to speak — and
+  // `rooms.maxPostsPerTurn: 3`.
   //
-  // Disjoint from every other key here: it writes two nested leaves under
-  // `rooms` that no other key names. `'0.66.0'` and `'0.70.0'` also touch that
-  // section — the first rewrites three sibling numbers, the second adds `repo` —
-  // so sequencing them any way round lands the same config.
-  '0.72.0': (store: {
-    get: (key: string) => unknown;
-    set: (key: string, value: unknown) => void;
-  }) => {
-    // `rooms.toolOnlyReplies` and `rooms.maxPostsPerTurn` — whether an agent
-    // decides when to speak, and how much it may say in one turn (spec
-    // `tool-only-room-replies` §D5). Nested leaves, so this body is the only
-    // thing that writes them; see `seedToolOnlyReplyDefaults`.
-    seedToolOnlyReplyDefaults(store);
-  },
-  // 0.72.0 has merged (tool-only room replies), so 0.73.0 is the next key.
-  // Frozen from merge, not from the release bump, for the reason `'0.60.0'`
-  // above states; anything further opens `'0.74.0'`.
+  // The experiment graduated on 2026-09-19: a room turn speaks by calling
+  // `post_to_room`, by reacting, or not at all, and the leaf no longer exists in
+  // `UserConfigSchema`, in the Experiments registry, or in any code path. So the
+  // state change the key owed for THAT leaf is empty by construction. What
+  // forced the removal rather than merely allowing it is the helper:
+  // `seedToolOnlyReplyDefaults` read `USER_CONFIG_DEFAULTS.rooms.toolOnlyReplies`
+  // and cannot survive the schema deletion, and a shipped body may not be
+  // edited. Removing the key is the honest answer rather than the convenient
+  // one, and keeping it would be worse — the next release is below `'0.81.0'`,
+  // so an upgrader would run `'0.72.0'` and not `'0.81.0'`, and gain a dead key
+  // this build's schema does not declare.
+  //
+  // **`maxPostsPerTurn` is the half that outlived it**, and it is not dropped:
+  // it is a tunable rather than an experiment, nothing else writes it to disk,
+  // and `'0.81.0'` below seeds it for any install that never ran `'0.72.0'`.
+  // Both halves of its job are therefore still done, by one key instead of two.
+  //
+  // The judgement is recorded in `REMOVED_SHIPPED_KEYS`
+  // (`__tests__/migration-safety.ts`) with its reason, exactly as `'0.71.0'`'s
+  // is; the rule compares the released table against this one and refuses any
+  // key that has vanished without a line there.
+  //
+  // 0.70.0 has merged (the room repo), and 0.71.0 and 0.72.0 are both spent, so
+  // 0.73.0 is the next key. Frozen from merge, not from the release bump, for
+  // the reason `'0.60.0'` above states; anything further opens `'0.74.0'`.
   //
   // Disjoint from every other key here: it writes one nested leaf under
   // `profile`, a section no other key has ever touched since `'0.45.0'` created
@@ -3963,9 +3974,9 @@ export const CONFIG_MIGRATIONS = {
   // `'0.80.0'`.
   //
   // Disjoint from every other key here: it writes one nested leaf under
-  // `rooms`. `'0.66.0'`, `'0.70.0'` and `'0.72.0'` also touch that section —
-  // rewriting three sibling numbers, adding `repo`, and seeding
-  // `toolOnlyReplies` with `maxPostsPerTurn` — and this body writes none of
+  // `rooms`. `'0.66.0'` and `'0.70.0'` also touch that section — rewriting three
+  // sibling numbers and adding `repo` — and `'0.81.0'` below retires
+  // `toolOnlyReplies` and seeds `maxPostsPerTurn`. This body writes none of
   // those members, so sequencing them any way round lands the same config.
   '0.79.0': (store: {
     get: (key: string) => unknown;
@@ -3994,6 +4005,26 @@ export const CONFIG_MIGRATIONS = {
     // `tool-only-room-replies` §A1). Retired rather than re-seeded; see
     // `dropRetiredDorkosTools`.
     dropRetiredDorkosTools(store);
+  },
+  // 0.80.0 has merged (the first graduated experiment), so 0.81.0 is the next
+  // key. Frozen from merge, not from the release bump, for the reason
+  // `'0.60.0'` above states; anything further opens `'0.82.0'`.
+  //
+  // Disjoint from every other key here: it deletes one nested leaf under `rooms`
+  // that only the removed `'0.72.0'` ever named, and seeds one that only that
+  // same removed key ever wrote — so nothing left in this table touches either
+  // and no ordering question arises. `'0.66.0'`, `'0.70.0'` and `'0.79.0'` also
+  // touch `rooms`, rewriting three sibling numbers, adding `repo` and adding
+  // `maxCanvasOpsPerTurn`, all of which this body preserves.
+  '0.81.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `rooms.toolOnlyReplies` — the graduated experiment — deleted, and
+    // `rooms.maxPostsPerTurn` seeded for the installs the removed `'0.72.0'`
+    // never reached (spec `tool-only-room-replies` §A2). Nested leaves, so this
+    // body is the only thing that touches either; see `retireToolOnlyReplies`.
+    retireToolOnlyReplies(store);
   },
 } as const;
 
@@ -4216,6 +4247,39 @@ function tolerateRetiredRuntimeKeys(schema: { properties?: Record<string, unknow
   properties['dorkosTools'] = { type: 'boolean' };
 }
 
+/**
+ * Declare the retired `rooms.toolOnlyReplies` key, for the same reason and with
+ * the same limits as {@link tolerateRetiredRuntimeKeys} next door.
+ *
+ * Its own pair of halves: `'0.81.0'` moves what the key MEANT (nothing — the
+ * experiment graduated, and a room turn speaks by calling the tool or not at
+ * all), and this is what makes the husk go away on an install that key never
+ * reaches. A dev tree resolves `SERVER_VERSION` to `0.0.0` and runs no migration
+ * at all, so without this the leaf could never leave: `ConfigManager.write`
+ * carries keys the schema does not declare across from disk on purpose, so an
+ * older build saving a theme cannot delete a newer build's settings.
+ *
+ * A SIBLING rather than an argument to the one next door, because the two name
+ * different sections and a single function taking a path table would be a bigger
+ * change than the thing it enables — the same call the sidebar and runtime
+ * tolerances already make twice.
+ *
+ * Everything its sibling says about what this does and does not promise applies
+ * here unchanged: it removes the floor under the key, it does not reach a write
+ * that re-supplies it by hand, and it carries no `default` because conf builds
+ * Ajv with `useDefaults` and a declared default would write the retired key into
+ * every config on earth.
+ *
+ * @param schema - The generated JSON Schema for the whole config, mutated in place.
+ */
+function tolerateRetiredRoomKeys(schema: { properties?: Record<string, unknown> }): void {
+  const rooms = schema.properties?.['rooms'];
+  if (rooms == null || typeof rooms !== 'object') return;
+  const properties = (rooms as { properties?: Record<string, unknown> }).properties;
+  if (properties == null || typeof properties !== 'object') return;
+  properties['toolOnlyReplies'] = { type: 'boolean' };
+}
+
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
   // Two tolerances, composed. `z.toJSONSchema` takes ONE override, so a second
@@ -4239,6 +4303,11 @@ tolerateUnknownKeys(jsonSchemaFull);
 // with no schema symbol to match on; see the function for why that is the
 // smaller change.
 tolerateRetiredRuntimeKeys(jsonSchemaFull);
+
+// And the retired `rooms.toolOnlyReplies`, for the same reason and by the same
+// route. Two calls rather than one call doing both: they name two sections, and
+// a miss on either is a husk that never leaves.
+tolerateRetiredRoomKeys(jsonSchemaFull);
 
 /**
  * The per-top-level-key JSON Schema conf validates against, tolerances included.

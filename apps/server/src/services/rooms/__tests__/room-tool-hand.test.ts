@@ -92,16 +92,21 @@ describe('the room tool hand', () => {
       expect(store.listEntries(channel.id, { limit: 10 }).at(-1)?.id).toBe(entry.id);
     });
 
-    it('refuses in a direct message — there the reply IS the message (§2.6)', () => {
+    it('lands in a direct message, because a reply is nobody’s message any more', () => {
+      // §2.6 refused this while a turn's own text was posted for it: the agent
+      // was unambiguously addressed, answering was obligatory, and a posting
+      // verb added nothing but a second way to fail. Every clause of that is
+      // gone (spec §D3, completed by DOR-2099), and a reply into a human's DM
+      // triggers nobody, so nothing about it can loop.
       const dm = service.createRoom(
         { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
         human
       );
 
-      expect(() => service.postFromTool(dm.id, { authorId: ana, text: 'hello' })).toThrow(
-        expect.objectContaining({ code: 'TOOL_POST_NOT_IN_DM' })
-      );
-      expect(store.listEntries(dm.id, { limit: 10 })).toEqual([]);
+      const entry = service.postFromTool(dm.id, { authorId: ana, text: 'hello' });
+
+      expect(entry.body.text).toBe('hello');
+      expect(store.listEntries(dm.id, { limit: 10 }).map((line) => line.id)).toEqual([entry.id]);
     });
 
     it('refuses a room the agent is not a member of, the way a missing room refuses', () => {
@@ -188,16 +193,16 @@ describe('the room tool hand', () => {
       // separate turn, with no tool call in it — must still land.
       let turns = 0;
       harness(
-        outcomeRunner((request) => {
+        scriptedRunner((request) => {
           turns += 1;
           if (turns === 1) {
             service.postFromTool(request.room.id, {
               authorId: request.authorId,
               text: 'looking at it now',
             });
-            return { text: 'I posted an update.' };
+            return null;
           }
-          return { text: 'and here is the answer to the second one' };
+          return 'and here is the answer to the second one';
         })
       );
 
@@ -217,12 +222,14 @@ describe('the room tool hand', () => {
       const landed = new Promise<void>((resolve) => {
         land = resolve;
       });
-      harness(
-        outcomeRunner(() => ({
-          text: null,
-          late: landed.then(() => ({ text: 'sorry — took a while', waitedMs: 1_000 })),
-        }))
-      );
+      const slow: ScriptedTurnRunner = outcomeRunner((request) => ({
+        text: null,
+        late: landed.then(() => {
+          slow.sayInRoom(request, 'sorry — took a while');
+          return { text: null, waitedMs: 1_000 };
+        }),
+      }));
+      harness(slow);
 
       service.post(channel.id, { authorId: human, text: '@ana slow question' });
       await settleUntil(() => land !== undefined, 'the turn went late');
@@ -261,9 +268,8 @@ describe('the room tool hand', () => {
     });
 
     it('keeps the greeter quiet when an aside turn spoke for itself', async () => {
-      // The second `if (!said) return null` path: a welcome-back offer that
-      // reached for `post_to_room` has already spoken, and handing its text back
-      // would have the greeter post the narration of that post a tick later.
+      // An offer turn that reached for `post_to_room` has already spoken, and
+      // the greeter adds nothing to it: the narration below reaches nobody.
       harness(
         outcomeRunner((request) => {
           service.postFromTool(request.room.id, {
@@ -275,29 +281,33 @@ describe('the room tool hand', () => {
       );
       const about = service.post(channel.id, { authorId: human, text: 'back at my desk' });
 
-      const offer = await service.askAside({
+      await service.askAside({
         roomId: channel.id,
         authorId: ana,
         aboutEntryId: about.id,
         prompt: 'anything worth offering?',
       });
 
-      expect(offer, 'the greeter is handed nothing to post').toBeNull();
       expect(anaSaid()).toEqual(['want me to open the PR?']);
     });
 
-    it('still hands the greeter its offer when the aside turn used no tool', async () => {
-      harness(scriptedRunner(() => 'want me to open the PR?'));
+    it('leaves nothing in the room when an aside turn used no tool', async () => {
+      // The other half of the D12 reversal: the greeter no longer posts what an
+      // offer turn wrote back, so a turn that narrated an offer and never called
+      // the tool made no offer at all — and, because nobody asked for the turn,
+      // it makes no notice either.
+      harness(outcomeRunner(() => ({ text: 'want me to open the PR?' })));
       const about = service.post(channel.id, { authorId: human, text: 'back at my desk' });
 
-      const offer = await service.askAside({
+      await service.askAside({
         roomId: channel.id,
         authorId: ana,
         aboutEntryId: about.id,
         prompt: 'anything worth offering?',
       });
 
-      expect(offer).toBe('want me to open the PR?');
+      expect(anaSaid()).toEqual([]);
+      expect(store.listEntries(channel.id, { limit: 20 }).map((e) => e.kind)).toEqual(['post']);
     });
 
     it('still posts the turn narration when the agent used no tool', async () => {

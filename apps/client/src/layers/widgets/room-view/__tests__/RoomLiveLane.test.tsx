@@ -925,7 +925,7 @@ describe('RoomLiveLane', () => {
 
       // The working pill is gone — a `done` always retires the claim — and in
       // its place is the past-tense report, not silence that would read as a
-      // crash under `rooms.toolOnlyReplies`.
+      // crash.
       expect(screen.queryByTestId('room-presence')).toBeNull();
       expect(screen.getByTestId('lane-silent-finish').textContent).toBe(
         'Kai finished, nothing to add'

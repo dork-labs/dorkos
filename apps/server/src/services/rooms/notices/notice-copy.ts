@@ -516,9 +516,9 @@ export function buildAgentLeftNotice(agentName: string, subjectAuthorId: string)
  * The durable `notice` for an agent that was asked, ran a turn, and chose not to
  * reply (spec `tool-only-room-replies` §D6; room-participation spec §10.2.2).
  *
- * **The ninth code, and it exists because silence became a real outcome.** Under
- * `rooms.toolOnlyReplies` a turn's words are not posted for it, so an agent that
- * decides nothing needs saying produces nothing at all. That is correct where
+ * **The ninth code, and it exists because silence became a real outcome.** A
+ * turn's words are not posted for it, so an agent that decides nothing needs
+ * saying produces nothing at all. That is correct where
  * nobody asked — etiquette E7, silence must be free — and it is not correct
  * where somebody did: E1 says being asked creates an obligation, discharged
  * visibly or not at all. This line is how it is discharged when the agent
@@ -742,36 +742,7 @@ export function buildBridgeUndeliveredNotice(message: string): RoomEntryBody {
   };
 }
 
-/**
- * An answer that arrived after the room stopped waiting for it, saying which
- * message it belongs to.
- *
- * The alternative was cancelling the turn, and it was rejected: silence is the
- * worse failure, and somebody who waited ten minutes deserves the answer more
- * than the log deserves to be tidy. But an answer that drops into a
- * conversation which has moved on is confusing unless it says what it is
- * answering — and a timestamp alone does not, because the reader has to count
- * backwards through a conversation to find out. So it quotes the question.
- *
- * The asker's name is deliberately NOT in this line. It would have to be
- * possessive to read naturally, and the owner's own author renders as "You",
- * which makes that sentence ungrammatical for the most common case. The quote
- * identifies the message on its own.
- *
- * @param answer - What the agent finally said.
- * @param context.waitedMs - How long the answer took, trigger to reply.
- * @param context.question - The message being answered, quoted in brief.
- */
-export function withLateAnswerNote(
-  answer: string,
-  context: { waitedMs: number; question: string }
-): string {
-  const minutes = Math.max(1, Math.round(context.waitedMs / 60_000));
-  const ago = minutes === 1 ? 'a minute ago' : `${minutes} minutes ago`;
-  return `This answers the message from ${ago}: "${excerpt(context.question)}"\n\n${answer}`;
-}
-
-/** How much of the original message the late note quotes back. */
+/** How much of somebody else's message a quoted excerpt keeps. */
 const QUOTE_LIMIT = 60;
 
 /**

@@ -671,8 +671,21 @@ export const roomsRestraintCase: EvalCase = {
  * nothing ever settled, so the run timed out before the agent's turn produced
  * anything to judge. Not a model choosing text over a reaction; a turn that
  * never finished, on a machine running several other agents' full-monorepo
- * lint/typecheck at the same time. Stays quarantined until a clean run — pass
- * or fail — actually observes what the model does.
+ * lint/typecheck at the same time.
+ *
+ * **UN-QUARANTINED on 2026-09-19 (DOR-2099), and the mechanism is why.** This
+ * case is the A-06 failure written down: told "no reply needed, just ack",
+ * both agents on trial reacted AND posted "Ack." Three rounds of prompt fixes
+ * did not close it, because a turn's text was posted unconditionally — the
+ * agent could not have reacted instead even if it had decided to. It can now:
+ * a turn's words reach nobody unless it calls the tool, so the second half of
+ * the failure is structurally unreachable and what is left for a model to get
+ * wrong is reaching for `post_to_room` when a reaction was the whole answer.
+ * That is a judgment this case can honestly hold it to, which is what makes it
+ * a gate rather than a note.
+ *
+ * It keeps its `claude-code-cheap` tier and its ceiling: this is a credentialed
+ * case, so it runs on `pnpm evals:local` and never in CI.
  */
 export const roomsAckOnlyReactsCase: EvalCase = {
   id: 'rooms-ack-only-reacts-not-replies',
@@ -680,8 +693,7 @@ export const roomsAckOnlyReactsCase: EvalCase = {
   prompt: '',
   runtimeTier: 'claude-code-cheap',
   costClass: 'cheap',
-  tags: ['rooms', 'experimental'],
-  quarantined: true,
+  tags: ['rooms'],
   perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
   roomScript: async (ctx): Promise<RoomScriptResult> => {

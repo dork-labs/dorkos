@@ -5,7 +5,7 @@ import { HELD_PROCESS_SCENARIOS } from './held-process-scenarios.js';
 import { interactionGate, type ScenarioContext } from './interaction-gate.js';
 import { INTERACTIVE_SCENARIOS } from './interactive-scenarios.js';
 import { Q3_SCENARIOS } from './q3-contention-scenarios.js';
-import { roomReplyScenarios, TOOL_CAPABLE_SCENARIOS } from './room-reply-scenarios.js';
+import { roomReplyScenarios, sayInRoom } from './room-reply-scenarios.js';
 import { browserDrivingScenarios } from './browser-driving-scenarios.js';
 
 /**
@@ -135,7 +135,7 @@ export function declaredInterruptOutcome(): DeclarableInterruptOutcome | undefin
  *   that predates it.
  */
 function workingTurn(ticks: number, closeDelayMs = 0): ScenarioFn {
-  return async function* (_content, ctx) {
+  return async function* (_content, ctx, opts) {
     yield {
       type: 'session_status',
       data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
@@ -145,6 +145,14 @@ function workingTurn(ticks: number, closeDelayMs = 0): ScenarioFn {
       await ctx.delay(WORKING_TICK_MS);
       yield { type: 'text_delta', data: { text: '.' } } as StreamEvent;
     }
+    // **In a room it says this by CALLING the posting tool**, because a room
+    // turn's own words are never posted for it (spec `tool-only-room-replies`).
+    // At the END rather than beside the first `text_delta`, and the difference
+    // is what a stopped turn looks like: the room refuses a post from a turn
+    // somebody halted, so a turn that is stopped mid-hold still leaves the room
+    // with nothing — which is what a halt means. Outside a room `sayInRoom` is
+    // a no-op, so an ordinary session is exactly what it always was.
+    await sayInRoom(opts, 'Working on it');
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
     if (closeDelayMs > 0) {
       try {
@@ -272,9 +280,9 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   ...Q3_SCENARIOS,
   ...INTERACTIVE_SCENARIOS,
   ...HELD_PROCESS_SCENARIOS,
-  // The two room turns that declare themselves tool-capable, so a spec can
-  // exercise `rooms.toolOnlyReplies` without any existing scenario changing
-  // behaviour (spec `tool-only-room-replies` §D14).
+  // The scripted room turns: two that say something through the real posting
+  // capability, and two that deliberately say nothing (spec
+  // `tool-only-room-replies` §D14).
   ...roomReplyScenarios(() => finishRequested),
   // A turn that really drives the preview: reads the page, clicks a button,
   // waits for what the click produced, and reads it back (spec
@@ -294,7 +302,7 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
    * explicitly, not something a reader should pick off a list.
    */
   [SLOW_CLOSE_SCENARIO]: workingTurn(180, SLOW_CLOSE_MS),
-  'simple-text': async function* (content) {
+  'simple-text': async function* (content, _ctx, opts) {
     // session_status data cast needed because data union requires sessionId
     yield {
       type: 'session_status',
@@ -342,7 +350,13 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
         },
       },
     } as StreamEvent;
-    yield { type: 'text_delta', data: { text: `Echo: ${content}` } } as StreamEvent;
+    // **In a room it says this by CALLING the posting tool**, because a room
+    // turn's own words are never posted for it (spec `tool-only-room-replies`).
+    // Outside a room `sayInRoom` is a no-op, so an ordinary session is exactly
+    // what it always was: one echoed line on its own stream.
+    const said = `Echo: ${content}`;
+    await sayInRoom(opts, said);
+    yield { type: 'text_delta', data: { text: said } } as StreamEvent;
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
   },
   'tool-call': async function* (_content) {
@@ -501,17 +515,6 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
 class ScenarioStore {
   private _sessionScenarios = new Map<string, ScenarioFn>();
   private _defaultScenario: ScenarioFn = BUILT_IN_SCENARIOS['simple-text']!;
-  /**
-   * The NAME behind each selection, kept beside the function purely so
-   * {@link ScenarioStore.isToolCapable} can answer.
-   *
-   * A second map rather than a name→function lookup on the way out, because
-   * {@link BUILT_IN_SCENARIOS} holds several entries built by the same factory
-   * and a reverse lookup by identity would answer for whichever one it found
-   * first.
-   */
-  private _sessionScenarioNames = new Map<string, string>();
-  private _defaultScenarioName = 'simple-text';
 
   /**
    * Set the default scenario used when no session-specific scenario is configured.
@@ -527,7 +530,6 @@ class ScenarioStore {
       );
     }
     this._defaultScenario = scenario;
-    this._defaultScenarioName = name;
   }
 
   /**
@@ -542,22 +544,6 @@ class ScenarioStore {
       throw new Error(`Unknown scenario: "${name}"`);
     }
     this._sessionScenarios.set(sessionId, scenario);
-    this._sessionScenarioNames.set(sessionId, name);
-  }
-
-  /**
-   * Whether the scenario this session will run declares itself as carrying the
-   * DorkOS room tools (spec `tool-only-room-replies` §D14).
-   *
-   * `false` for every scenario that predates the flip, which is what keeps the
-   * existing rooms e2e specs and free eval cases green with
-   * `rooms.toolOnlyReplies` on — see {@link TOOL_CAPABLE_SCENARIOS}.
-   *
-   * @param sessionId - The session about to run a turn.
-   */
-  isToolCapable(sessionId: string): boolean {
-    const name = this._sessionScenarioNames.get(sessionId) ?? this._defaultScenarioName;
-    return TOOL_CAPABLE_SCENARIOS.has(name);
   }
 
   /**
@@ -573,15 +559,12 @@ class ScenarioStore {
   /** Remove the session-specific scenario configuration. */
   clearSession(sessionId: string): void {
     this._sessionScenarios.delete(sessionId);
-    this._sessionScenarioNames.delete(sessionId);
   }
 
   /** Reset all session scenarios and the default back to 'simple-text'. */
   reset(): void {
     this._sessionScenarios.clear();
-    this._sessionScenarioNames.clear();
     this._defaultScenario = BUILT_IN_SCENARIOS['simple-text']!;
-    this._defaultScenarioName = 'simple-text';
     // A finish raised by one test must not end the next test's first turn
     // before it has begun.
     finishRequested = false;

@@ -22,6 +22,7 @@ import {
   scriptedRunner,
   type RecordedTurn,
   type ScriptedTurnRunner,
+  roomVoice,
 } from './room-test-harness.js';
 
 /** Both agents answer everything — the worst case the guard exists for. */
@@ -221,6 +222,7 @@ describe('cascade guard, wired', () => {
     const selfPosting: ScriptedTurnRunner = {
       turns,
       interrupted: [],
+      ...roomVoice(),
       interrupt: () => Promise.resolve(mockInterruptReceipt('not-running')),
       run(request) {
         turns.push({
@@ -335,6 +337,7 @@ describe('cascade guard, wired', () => {
     const narrating: ScriptedTurnRunner = {
       turns,
       interrupted: [],
+      ...roomVoice(),
       interrupt: () => Promise.resolve(mockInterruptReceipt('acked')),
       run(req) {
         turns.push({
@@ -353,8 +356,9 @@ describe('cascade guard, wired', () => {
         for (const note of ['looking', 'reading the migration', 'found it']) {
           postAsAgent(req.room.id, req.authorId, note);
         }
-        // And the answer the dispatcher posts for it, which is the fourth entry.
-        return Promise.resolve({ sessionId: 'session-1', text: 'the migration broke it' });
+        // And the answer, through the posting tool, which is the fourth entry.
+        narrating.sayInRoom(req, 'the migration broke it');
+        return Promise.resolve({ sessionId: 'session-1', text: null });
       },
     };
 
@@ -414,6 +418,7 @@ describe('cascade guard, wired', () => {
     const twoRooms: ScriptedTurnRunner = {
       turns,
       interrupted: [],
+      ...roomVoice(),
       interrupt: () => Promise.resolve(mockInterruptReceipt('acked')),
       run(req) {
         turns.push({
@@ -431,8 +436,9 @@ describe('cascade guard, wired', () => {
         if (turns.length === 1) {
           postAsAgent(req.room.id, req.authorId, 'looking here');
           postAsAgent(elsewhereId, req.authorId, 'heads up, working on the build');
+          twoRooms.sayInRoom(req, 'the migration broke it');
         }
-        return Promise.resolve({ sessionId: 'session-1', text: 'the migration broke it' });
+        return Promise.resolve({ sessionId: 'session-1', text: null });
       },
     };
 
@@ -502,6 +508,7 @@ describe('cascade guard, wired', () => {
     const chatty: ScriptedTurnRunner = {
       turns,
       interrupted: [],
+      ...roomVoice(),
       interrupt: () => Promise.resolve(mockInterruptReceipt('not-running')),
       run(req) {
         turns.push({
@@ -518,7 +525,8 @@ describe('cascade guard, wired', () => {
           selfPosts += 1;
           postAsAgent(req.room.id, req.authorId, 'thinking out loud');
         }
-        return Promise.resolve({ sessionId: 'session-1', text: 'and here is my answer' });
+        chatty.sayInRoom(req, 'and here is my answer');
+        return Promise.resolve({ sessionId: 'session-1', text: null });
       },
     };
 
@@ -659,7 +667,10 @@ describe('triggering', () => {
     expect(channel.runner.turns).toHaveLength(1);
   });
 
-  it('posts nothing when the agent says nothing', async () => {
+  it('posts nothing, and says so once, when the agent says nothing', async () => {
+    // A person wrote in a direct message and the turn called no tool, so the
+    // room owes them one line saying it was read (spec §D6): the obligation
+    // attaches to being ASKED, and a DM is always asking.
     const silent = createRoomHarness({
       agents: agentLookupFor({ '/agents/ana': { name: 'ana', displayName: 'Ana' } }),
       runner: scriptedRunner(() => '   '),
@@ -672,7 +683,9 @@ describe('triggering', () => {
     await silent.service.triggersIdle();
 
     expect(silent.runner.turns).toHaveLength(1);
-    expect(silent.service.listEntries(room.id, silent.human, { limit: 20 })).toHaveLength(1);
+    const log = silent.service.listEntries(room.id, silent.human, { limit: 20 });
+    expect(log.map((entry) => entry.kind)).toEqual(['post', 'notice']);
+    expect(log[1]?.body.notice).toBe('agent_declined');
   });
 
   it('keeps the room usable when a turn throws', async () => {
@@ -681,6 +694,7 @@ describe('triggering', () => {
       runner: {
         turns: [],
         interrupted: [],
+        ...roomVoice(),
         interrupt: () => Promise.resolve(mockInterruptReceipt('not-running')),
         run: () => Promise.reject(new Error('runtime exploded')),
       },

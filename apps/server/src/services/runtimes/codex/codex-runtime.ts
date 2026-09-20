@@ -96,10 +96,7 @@ import {
 } from '../shared/dorkos-mcp-injection.js';
 import { buildCodexOptions } from './codex-options.js';
 import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
-import {
-  buildRoomToolsBlock,
-  roomReplyModeForToolCapableSession,
-} from '../shared/room-tools-context.js';
+import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
 import { resolveManagedMcpServers, type CodexManagedMcpServers } from './mcp-server-config.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
 import { CodexContextGate } from './context-gate.js';
@@ -700,15 +697,7 @@ export class CodexRuntime implements AgentRuntime {
       // room tools is answered per turn, so a menu written in the wrong tense must
       // never survive into a turn where it is false.
       const agentContext = dorkosTools
-        ? [
-            neutralContextSelection.text,
-            buildRoomToolsBlock(
-              CODEX_DORKOS_TOOL_PREFIX,
-              // Per TURN here, unlike claude-code's cached prefix: codex builds this
-              // block on every turn anyway, so the mode is always current.
-              roomReplyModeForToolCapableSession()
-            ),
-          ]
+        ? [neutralContextSelection.text, buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX)]
             .filter(Boolean)
             .join('\n\n')
         : neutralContextSelection.text;

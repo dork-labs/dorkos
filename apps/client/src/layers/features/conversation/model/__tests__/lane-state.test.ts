@@ -626,8 +626,8 @@ describe('deriveLaneState — a turn that released with nothing to show', () => 
 
   it('beats an empty lane, which is the case it exists for', () => {
     // A working pill that simply vanished with nothing to show reads as a
-    // crash (D7) — this rung is what stops that, under `rooms.toolOnlyReplies`
-    // once presence and held have both gone quiet.
+    // crash (D7) — this rung is what stops that, once presence and held have
+    // both gone quiet.
     expect(deriveLaneState(input({ silentFinish: released('Kai') })).kind).toBe('silent-finish');
   });
 

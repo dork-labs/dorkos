@@ -39,6 +39,7 @@ import {
   settleUntil,
   type RecordedTurn,
   type ScriptedTurnRunner,
+  roomVoice,
 } from './room-test-harness.js';
 
 const agents = agentLookupFor({
@@ -73,9 +74,10 @@ function heldRunner(say: (request: RoomTurnRequest) => string = () => 'on it'): 
   const interrupted: ScriptedTurnRunner['interrupted'] = [];
   const open = new Map<string, Array<() => void>>();
   const paths = new Map<string, string>();
-  return {
+  const runner: HeldRunner = {
     turns,
     interrupted,
+    ...roomVoice(),
     interrupt(request): Promise<InterruptReceipt> {
       interrupted.push(request);
       // A real interrupt ENDS the turn: the runtime stops, the stream closes,
@@ -104,9 +106,15 @@ function heldRunner(say: (request: RoomTurnRequest) => string = () => 'on it'): 
       paths.set(request.authorId, request.agentPath);
       return new Promise<RoomTurnResult>((resolve) => {
         const queued = open.get(request.authorId) ?? [];
-        queued.push(() =>
-          resolve({ sessionId: request.sessionId ?? 'session-1', text: say(request) })
-        );
+        queued.push(() => {
+          // **A released turn SPEAKS through the tool**, because nothing posts a
+          // turn's words for it. An interrupt releases through the same gate,
+          // and the room refuses a stopped turn a post — so a halted turn still
+          // leaves the room with nothing, without this fake having to know it.
+          const said = say(request);
+          if (said.trim() !== '') runner.sayInRoom(request, said);
+          resolve({ sessionId: request.sessionId ?? 'session-1', text: said });
+        });
         open.set(request.authorId, queued);
       });
     },
@@ -119,6 +127,7 @@ function heldRunner(say: (request: RoomTurnRequest) => string = () => 'on it'): 
       gate();
     },
   };
+  return runner;
 }
 
 describe('a room gathers a burst into one turn', () => {

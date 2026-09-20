@@ -17,22 +17,22 @@ import { SERVER_ROUND_TRIP_MS, type SeededRoom } from '../../fixtures/rooms-api'
  *
  * ## What is pinned below the browser, and why these three are not
  *
- * The mechanism is covered heavily elsewhere: twenty-five cases in
- * `room-tool-only-replies.test.ts` over the real service and dispatcher, and six
- * gating structural evals in `packages/evals/src/suite/rooms-tool-only.ts`. What
+ * The mechanism is covered heavily elsewhere: the whole of
+ * `room-tool-only-replies.test.ts` over the real service and dispatcher, and the
+ * gating structural evals in `packages/evals/src/suite/rooms.ts`. What
  * only a browser can add is that a person can SEE the difference — that the
  * answer pointer is drawn on the tool post, that the notice renders as a notice
  * rather than as a message, and that a turn which produces nothing still clears
  * its indicator. All three are DOM facts and none of them is reachable from an
  * API assertion.
  *
- * ## New specs, and the six that already existed are untouched
+ * ## Nothing is switched on here, because there is no switch
  *
- * That is the point of D14 and it is a property of the code rather than a
- * promise: `test-mode` reports NOT tool-capable unless the selected scenario
- * opts in, so turning `rooms.toolOnlyReplies` on changes nothing for any
- * scenario that predates it. Every test here opts in explicitly; nothing here
- * edits `room-autonomy.spec.ts` or `team-room.spec.ts`.
+ * This behaviour graduated on 2026-09-19 (DOR-2099) and its config leaf was
+ * removed with it: a room turn speaks by calling the tool, reacts, or says
+ * nothing, on every install. What each test here still chooses is the SCENARIO
+ * — a held turn that narrates and calls nothing, or one that produces nothing at
+ * all — because that is what decides which of the three shapes it drives.
  *
  * ## Why the TEST-MODE leg, and why that is a safety property
  *
@@ -44,16 +44,13 @@ import { SERVER_ROUND_TRIP_MS, type SeededRoom } from '../../fixtures/rooms-api'
  *
  * ## How the agent "calls the tool"
  *
- * It does not, and it cannot: a test-mode scenario is handed the message it is
- * answering and nothing else — no room id, no registry. So the scenarios here
- * HOLD the turn open and the TEST makes the call an injected `dorkos` MCP server
- * would make: a real agent token from `POST /api/test/agent-token`, and the real
- * `rooms.post` capability. What is faked is the model's decision to call it;
- * everything downstream of the decision is the shipped path.
+ * The two scenarios here deliberately do not: they narrate, or they say nothing.
+ * So the TEST makes the call an injected `dorkos` MCP server would make — a real
+ * agent token from `POST /api/test/agent-token`, and the real `rooms.post`
+ * capability — while the turn is still held open. What is faked is the model's
+ * decision to call it; everything downstream of the decision is the shipped
+ * path, and a turn that never calls it is a turn that said nothing.
  */
-
-/** What `rooms.toolOnlyReplies` ships as, and what this file puts back. */
-const TOOL_ONLY_DEFAULT = false;
 
 /** The scenario that holds a turn open and then narrates a line at the end. */
 const NARRATING = 'rooms-hold-then-narrate';
@@ -115,21 +112,6 @@ async function useScenario(request: APIRequestContext, name: string): Promise<vo
         `The scenario store is server-global — something else on this leg is writing it.`
     );
   }
-}
-
-/**
- * Turn the flip on or off.
- *
- * Read live per turn, so this binds the very next message rather than the next
- * server start — the same contract `rooms.collectDebounceMs` keeps, and the same
- * `PATCH /api/config` route Settings writes.
- *
- * @param request - The test's API context.
- * @param on - Whether a turn's own words stop being the room's message.
- */
-async function setToolOnlyReplies(request: APIRequestContext, on: boolean): Promise<void> {
-  const res = await request.patch('/api/config', { data: { rooms: { toolOnlyReplies: on } } });
-  if (!res.ok()) throw new Error(`Could not set rooms.toolOnlyReplies: ${await res.text()}`);
 }
 
 /**
@@ -246,10 +228,10 @@ async function expectRoomIdle(page: Page): Promise<void> {
 
 /**
  * Serial, and for the reason `room-autonomy.spec.ts` is: every test here writes
- * two pieces of server-global state — the flip, and the scenario the runtime
- * answers with. Run in parallel they overwrite each other, and the way that
- * shows up is not a race that sometimes fails but a result that looks like a
- * product bug (a turn whose text posted anyway, or one that finished instantly).
+ * the scenario the runtime answers with, which is server-global. Run in parallel
+ * they overwrite each other, and the way that shows up is not a race that
+ * sometimes fails but a result that looks like a product bug (a turn that
+ * finished instantly, or one that answered the wrong message).
  *
  * The timeout is the file's because each test holds a turn open across a real
  * page load, which the suite's 30s default cannot fail informatively inside of.
@@ -259,12 +241,10 @@ test.describe.configure({ mode: 'serial', timeout: 120_000 });
 test.describe('An agent decides for itself whether to speak', () => {
   test.beforeEach(async ({ request }) => {
     await requireTestModeLeg(request);
-    await setToolOnlyReplies(request, true);
   });
 
   test.afterEach(async ({ request }) => {
     await finishTurns(request);
-    await setToolOnlyReplies(request, TOOL_ONLY_DEFAULT);
     await useScenario(request, 'simple-text').catch(() => {});
   });
 

@@ -122,7 +122,6 @@ describe('UserConfigSchema', () => {
         collectDebounceMs: 500,
         collectMaxEntries: 20,
         responseGate: 'routing',
-        toolOnlyReplies: false,
         maxPostsPerTurn: 3,
         maxCanvasOpsPerTurn: 3,
         repo: {
@@ -515,7 +514,6 @@ describe('USER_CONFIG_DEFAULTS', () => {
         collectDebounceMs: 500,
         collectMaxEntries: 20,
         responseGate: 'routing',
-        toolOnlyReplies: false,
         maxPostsPerTurn: 3,
         maxCanvasOpsPerTurn: 3,
         repo: {

@@ -45,6 +45,7 @@ import {
   settleUntil,
   type RecordedTurn,
   type ScriptedTurnRunner,
+  roomVoice,
 } from './room-test-harness.js';
 
 const agents = agentLookupFor({
@@ -78,7 +79,10 @@ interface GatedRunner extends ScriptedTurnRunner {
 function gatedRunner(): GatedRunner {
   const turns: RecordedTurn[] = [];
   const interrupted: ScriptedTurnRunner['interrupted'] = [];
+  const voice = roomVoice();
   const held = new Map<string, Array<(result: RoomTurnResult | Error) => void>>();
+  /** Each held turn's request, so releasing it can say its words in the room. */
+  const requests = new Map<string, RoomTurnRequest[]>();
   let minted = 0;
   /** The oldest held turn for one agent, or a failure naming what was wanted. */
   const oldest = (authorId: string, verb: string): ((r: RoomTurnResult | Error) => void) => {
@@ -90,6 +94,7 @@ function gatedRunner(): GatedRunner {
   return {
     turns,
     interrupted,
+    ...voice,
     interrupt(request): Promise<InterruptReceipt> {
       interrupted.push(request);
       // A real interrupt ENDS the turn: the runtime stops and the stream closes.
@@ -115,6 +120,9 @@ function gatedRunner(): GatedRunner {
         attachmentProjection: request.attachmentProjection,
       });
       const sessionId = request.sessionId ?? `session-${(minted += 1)}`;
+      const pending = requests.get(request.authorId) ?? [];
+      pending.push(request);
+      requests.set(request.authorId, pending);
       return new Promise<RoomTurnResult>((resolve, reject) => {
         const queued = held.get(request.authorId) ?? [];
         queued.push((result) => {
@@ -128,6 +136,11 @@ function gatedRunner(): GatedRunner {
       return held.get(authorId)?.length ?? 0;
     },
     release(authorId, text = 'on it'): void {
+      // **A released turn SPEAKS through the tool**, because nothing posts a
+      // turn's words for it. An interrupt settles through the same queue with
+      // no text, so a halted turn still leaves the room with nothing.
+      const request = requests.get(authorId)?.shift();
+      if (request && text !== null && text.trim() !== '') voice.sayInRoom(request, text);
       oldest(authorId, 'answer')({ sessionId: '', text });
     },
     failOldest(authorId): void {

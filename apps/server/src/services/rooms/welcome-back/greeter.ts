@@ -52,6 +52,13 @@
  * posts when it lands. The status lines are posted first and are never withheld
  * waiting for an offer, so the worst an offer can do is not arrive.
  *
+ * **The offer is the agent's own message, posted by the agent** (spec
+ * `tool-only-room-replies` §A2). It was briefly the one path in the product
+ * where a turn's narration was still the room's message — this module posted
+ * whatever the turn wrote back — and that came with an exemption that had to be
+ * argued for. There is one path now: the offer turn calls `post_to_room` or it
+ * says nothing, exactly as every other room turn does.
+ *
  * @module server/services/rooms/welcome-back/greeter
  */
 import { eq, max, readCursors, roomEntries, type Db } from '@dorkos/db';
@@ -117,19 +124,23 @@ export interface WelcomeBackWorkSource {
 /**
  * Where a greeting learns whether an agent has a next step worth your decision.
  *
- * A port, and a deliberately small one: it runs ONE turn for ONE agent and hands
- * back what it said. The production implementation is `RoomService.askAside`,
- * which puts the turn through the room's own machinery — the `(room, agent)`
- * session, both busy ceilings, the automatic-turn budget and the working
- * indicator. A test supplies its own and can therefore prove the thing that
- * matters most here: that a disabled feature never reaches a runtime at all.
+ * A port, and a deliberately small one: it runs ONE turn for ONE agent. The
+ * production implementation is `RoomService.askAside`, which puts the turn
+ * through the room's own machinery — the `(room, agent)` session, both busy
+ * ceilings, the automatic-turn budget and the working indicator. A test supplies
+ * its own and can therefore prove the thing that matters most here: that a
+ * disabled feature never reaches a runtime at all.
  *
- * **Implementations must never throw and must never post.** Every kind of
- * silence — a busy agent, an exhausted budget, a failed turn, an agent with
- * nothing to offer — is `null`. An answer that outran the room's wait is NOT
- * silence: it is late, so it resolves late and gets posted then, which is the
- * rule every other slow turn in this domain follows. The greeter posts what
- * comes back, through the same guarded path it posts the status lines through.
+ * **It hands nothing back, because the agent does its own speaking** (spec
+ * `tool-only-room-replies` §A2). The turn posts through `post_to_room` while it
+ * runs, or it posts nothing; there is no answer for this seam to carry and no
+ * second write for the greeter to make. Every kind of silence — a busy agent, an
+ * exhausted budget, a failed turn, an agent with nothing to offer — simply
+ * resolves. An answer that outran the room's wait is NOT silence: it is late, so
+ * the turn is waited out and its post lands then, which is the rule every other
+ * slow turn in this domain follows.
+ *
+ * **Implementations must never throw.**
  */
 export interface WelcomeBackOfferSource {
   /**
@@ -140,14 +151,13 @@ export interface WelcomeBackOfferSource {
    * @param input.aboutEntryId - The status line that agent just posted, which is
    *   what the turn is framed around.
    * @param input.prompt - The question, as the model will see it.
-   * @returns What it said, or `null` for silence of any kind.
    */
   ask(input: {
     roomId: string;
     authorId: string;
     aboutEntryId: string;
     prompt: string;
-  }): Promise<string | null>;
+  }): Promise<void>;
 }
 
 /** One line one agent will post. */
@@ -277,19 +287,33 @@ export function welcomeBackLine(work: AgentAbsenceWork, now: number): string {
  * nothing at all. Silence is a first-class answer and is named as one, because
  * an agent that thinks it owes a reply will write one.
  *
+ * **It spells the CALL, and that is the whole of what DOR-1643 measured.** A
+ * turn's own words never reach the room, so an offer written back to the session
+ * is an offer nobody got. Live DM probes found that naming the obligation, and
+ * even naming the tool, did not close the gap: a model that has decided what to
+ * say still has to assemble a call to send it, and every step between deciding
+ * and calling is a step at which it stops. Writing the call out, with the room's
+ * id already in it, moved it on the first attempt. The tool is named WITHOUT a
+ * prefix on purpose — each runtime exposes it under its own (`mcp__dorkos__` on
+ * two, `dorkos_` on the third), this prompt is runtime-neutral, and a guessed
+ * prefix is uncallable on all three (DOR-1292). The `<room_tools>` block this
+ * turn is handed names it under the right one.
+ *
  * A prompt is not a bound and is not treated as one: what stops this costing
  * more than one turn per agent is the loop in {@link WelcomeBackGreeter.greet},
  * and what stops the answer starting a conversation is the cascade ceiling the
- * post is stamped with. This only decides what is asked.
+ * turn's claim carries. This only decides what is asked.
  *
  * @param work - What this agent did while the person was away.
  * @param ret - The absence that just ended.
  * @param now - Epoch ms, so the copy is deterministic in a test.
+ * @param roomId - The room to post into, written into the call the prompt spells.
  */
 export function welcomeBackOfferPrompt(
   work: AgentAbsenceWork,
   ret: PersonReturn,
-  now: number
+  now: number,
+  roomId: string
 ): string {
   const away = describeSpan(ret.awayMs);
   const ago = describeAgo(now - Date.parse(work.lastActiveAt));
@@ -304,7 +328,9 @@ export function welcomeBackOfferPrompt(
   return [
     `The person you work with has just come back after being away for ${away}. While they were away, ${moved}.`,
     'You have already posted that summary to the team channel, so do not repeat it and do not describe your work again.',
-    'If you have exactly one genuine next step that needs the person’s decision, state it in one short line. If you do not, output nothing.',
+    'If you have exactly one genuine next step that needs the person’s decision, post it in one short line: ' +
+      `post_to_room(roomId: "${roomId}", text: <that one line>). ` +
+      'Nothing you write back to this session reaches them. If you have no such next step, call nothing and say nothing.',
   ].join('\n\n');
 }
 
@@ -599,12 +625,15 @@ export class WelcomeBackGreeter {
         });
       }
     }
-    return [...written, ...(await this.offer({ settings, roomId, ret, greeted }))];
+    // The offers are awaited but contribute nothing to this list: each agent
+    // posts its own, from inside its own turn. What this returns is what the
+    // GREETER wrote.
+    await this.offer({ settings, roomId, ret, greeted });
+    return written;
   }
 
   /**
-   * Ask the agents that just spoke whether any of them has a next step, and post
-   * the ones that do.
+   * Ask the agents that just spoke whether any of them has a next step.
    *
    * **Additive, never a replacement.** It runs after every status line is on the
    * log, so a person who came back has already been told what happened whatever
@@ -619,89 +648,62 @@ export class WelcomeBackGreeter {
    *
    * @param opts.greeted - The agents that got a line in, and the entries those
    *   lines became.
-   * @returns The offers that were posted, in the order they landed.
    */
   private async offer(opts: {
     settings: WelcomeBackSettings;
     roomId: string;
     ret: PersonReturn;
     greeted: ReadonlyArray<{ post: WelcomeBackPost; entryId: string; work: AgentAbsenceWork }>;
-  }): Promise<WelcomeBackPost[]> {
+  }): Promise<void> {
     const { offers } = this.deps;
     // Read from the settings this return already resolved, so the switch is
     // answered once per greeting rather than once per agent — and checked
     // BEFORE anything else, so `offersEnabled: false` reaches no runtime, mints
     // no prompt, and asks nothing.
-    if (!opts.settings.offersEnabled || offers === undefined) return [];
-    const offered = await Promise.all(
+    if (!opts.settings.offersEnabled || offers === undefined) return;
+    await Promise.all(
       opts.greeted.map((candidate) => this.offerOne({ ...opts, candidate, offers }))
     );
-    return offered.filter((post): post is WelcomeBackPost => post !== null);
   }
 
   /**
-   * One agent's offer: ask, and post whatever comes back if anything does.
+   * One agent's offer: ask, and let the agent say whatever it decides to say.
    *
-   * Every failure is this agent's alone — a throw out of the seam, or a post the
-   * room refuses — because the whole point of a welcome is that it survives one
-   * agent having a bad morning.
+   * **Nothing is posted here** (spec `tool-only-room-replies` §A2). The turn
+   * calls `post_to_room` while it runs or it calls nothing, so an offer worth
+   * making is already in the room by the time this resolves and an offer not
+   * worth making left no trace — which is the outcome the feature is TUNED for,
+   * not a failure of it. The post is stamped through the aside claim, which sits
+   * at the cascade ceiling with no root, so an offer still cannot start a
+   * conversation.
+   *
+   * Every failure is this agent's alone, because the whole point of a welcome is
+   * that it survives one agent having a bad morning.
    *
    * @param opts.candidate - The agent, its news, and the line it just posted.
-   * @returns The offer that was posted, or `null` for silence.
    */
   private async offerOne(opts: {
     roomId: string;
     ret: PersonReturn;
     offers: WelcomeBackOfferSource;
     candidate: { post: WelcomeBackPost; entryId: string; work: AgentAbsenceWork };
-  }): Promise<WelcomeBackPost | null> {
+  }): Promise<void> {
     const { roomId, candidate } = opts;
     try {
-      const said = await opts.offers.ask({
+      await opts.offers.ask({
         roomId,
         authorId: candidate.post.authorId,
         aboutEntryId: candidate.entryId,
-        prompt: welcomeBackOfferPrompt(candidate.work, opts.ret, this.now()),
+        prompt: welcomeBackOfferPrompt(candidate.work, opts.ret, this.now(), roomId),
       });
-      const text = said?.trim();
-      // An agent with no next step says nothing, and nothing is what the room
-      // gets. This is the outcome the feature is TUNED for, not a failure of it.
-      if (text === undefined || text === '') return null;
-      const post = { authorId: candidate.post.authorId, text };
-      // The same guarded path the status line took, and un-provenanced for the
-      // same reason: `deriveCascade` stamps it at the ceiling, so an offer
-      // cannot start a conversation and the fallback seat stands down for it.
-      //
-      // **The tool-only flip does not reach here, and that is a decision rather
-      // than an oversight** (spec `tool-only-room-replies` §D12). Everywhere else
-      // in the product, `rooms.toolOnlyReplies` stops a turn's text being the
-      // room's message; this is the one path where it still is, because this turn
-      // is not the agent choosing to speak. Three reasons, and they hold together:
-      //
-      // - A welcome-back offer is the ROOM asking a closed question on the
-      //   person's behalf — "is there a next step worth a decision?" — so the
-      //   answer is the room's to post, not the agent's to volunteer.
-      // - Four of `askAside`'s outcomes are already silent by design, which makes
-      //   this the one refusal nobody is told about (`.claude/rules/room-conduct.md`).
-      //   Routing it through a tool would give it a FIFTH way to produce nothing,
-      //   while the person is owed exactly one line.
-      // - The agent is still free to call `post_to_room` mid-offer-turn if it
-      //   wants to say something else; nothing here takes that away.
-      this.deps.post(roomId, post);
-      return post;
     } catch (err) {
-      // Covers both halves: a seam that threw, and a POST the room refused
-      // after the offer turn had already released its claim (the agent left the
-      // room in between). The second is the one release in this feature that can
-      // land with nothing durable beside it, so this line is the whole record of
-      // it — deliberately, and written down in `.claude/rules/room-conduct.md`
-      // rather than left for somebody to re-derive.
+      // A seam that threw. Logged rather than raised, because one agent's bad
+      // morning must not cost the rest of the greeting.
       logger.warn('[rooms] a welcome-back offer was not made', {
         roomId,
         authorId: candidate.post.authorId,
         error: err instanceof Error ? err.message : String(err),
       });
-      return null;
     }
   }
 

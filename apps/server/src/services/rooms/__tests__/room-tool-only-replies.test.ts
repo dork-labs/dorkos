@@ -1,20 +1,17 @@
 /**
- * The flip: under `rooms.toolOnlyReplies`, a turn's text is never the room's
- * message (spec `tool-only-room-replies`, acceptance criteria 1–10 and 13–14).
+ * How a room turn is delivered: its text is never the room's message, so it
+ * posts through the tool, reacts, or is silent (spec `tool-only-room-replies`,
+ * acceptance criteria 1–10 and 13–14; graduated by DOR-2099).
  *
  * Driven through the real service and the real dispatcher, like every other
  * behaviour test in this suite: only the runner stands in, because the
- * alternative is a model call. The runner reports the mode onto the claim
- * exactly as the production one does (`outcomeRunner`), so a `post_to_room` made
- * mid-turn reads the same value it would in the product — without that, a test
- * could assert the flip while the mechanism the flip depends on was never
- * exercised.
+ * alternative is a model call. A scripted turn speaks the way a real one does —
+ * by calling `post_to_room` mid-flight — so a test here cannot assert a
+ * behaviour while the mechanism it rests on goes unexercised.
  *
- * **The mode is passed on the reply rather than read from config here.** That is
- * not a shortcut around the flag: `resolveReplyMode` in `room-turn-runner.ts` is
- * what reads the config, and it is tested there. What THIS file is about is
- * everything downstream of the answer — which is reached identically whether the
- * mode came from a flag, a runtime, or a script.
+ * There was briefly a second delivery, chosen per turn by a config flag and a
+ * runtime's own answer about tool capability. Both are gone; the cases that
+ * measured the other side went with them, and what is left is the one path.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type {
@@ -26,12 +23,11 @@ import type {
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomStore } from '../room-store.js';
-import { RoomError } from '../room-errors.js';
+import type { RoomError } from '../room-errors.js';
 import {
   agentLookupFor,
   createRoomHarness,
   outcomeRunner,
-  toolOnlyRunner,
   type ScriptedTurnRunner,
 } from './room-test-harness.js';
 
@@ -111,16 +107,10 @@ describe('a room turn that speaks only through the tool', () => {
    * works, and whatever it writes back to its session lands at the end.
    *
    * @param narration - What the turn says back to its own session, or `null`.
-   * @param mode - The reply mode to report.
    * @param posts - How many times the turn posts through the tool.
    */
-  function toolPosting(
-    narration: string | null,
-    mode: 'text' | 'tool-only',
-    posts = 1
-  ): ScriptedTurnRunner {
-    const build = mode === 'tool-only' ? toolOnlyRunner : outcomeRunner;
-    return build((request) => {
+  function toolPosting(narration: string | null, posts = 1): ScriptedTurnRunner {
+    return outcomeRunner((request) => {
       for (let i = 0; i < posts; i += 1) {
         service.postFromTool(request.room.id, {
           authorId: request.authorId,
@@ -133,7 +123,7 @@ describe('a room turn that speaks only through the tool', () => {
 
   describe('AC 2 — it posted through the tool AND narrated', () => {
     it('lands exactly one entry, and it is the tool’s text', async () => {
-      open(toolPosting('I posted the answer.', 'tool-only'));
+      open(toolPosting('I posted the answer.'));
       await seedAndSettle();
 
       const said = postsBy(ana);
@@ -143,7 +133,7 @@ describe('a room turn that speaks only through the tool', () => {
     });
 
     it('writes no `agent_declined`, because the room heard from it', async () => {
-      open(toolPosting('I posted the answer.', 'tool-only'));
+      open(toolPosting('I posted the answer.'));
       await seedAndSettle();
 
       expect(notices()).toHaveLength(0);
@@ -152,7 +142,7 @@ describe('a room turn that speaks only through the tool', () => {
 
   describe('AC 3 — it narrated without calling the tool', () => {
     it('lands no entry at all', async () => {
-      open(toolOnlyRunner(() => ({ text: 'here is what I think' })));
+      open(outcomeRunner(() => ({ text: 'here is what I think' })));
       await seedAndSettle();
 
       expect(postsBy(ana)).toHaveLength(0);
@@ -161,7 +151,7 @@ describe('a room turn that speaks only through the tool', () => {
 
   describe('AC 4 — a person asked and got nothing', () => {
     it('writes exactly one `agent_declined`, in the room’s own voice', async () => {
-      open(toolOnlyRunner(() => ({ text: null })));
+      open(outcomeRunner(() => ({ text: null })));
       await seedAndSettle();
 
       expect(notices()).toHaveLength(1);
@@ -182,7 +172,7 @@ describe('a room turn that speaks only through the tool', () => {
       // Every message a person types starts its own cascade, so the count is
       // bounded by their own typing: one line per question they wrote, and
       // nothing an agent does can inflate it.
-      open(toolOnlyRunner(() => ({ text: null })));
+      open(outcomeRunner(() => ({ text: null })));
 
       await seedAndSettle('@ana are you there?');
       expect(notices()).toHaveLength(1);
@@ -200,7 +190,7 @@ describe('a room turn that speaks only through the tool', () => {
       // once per turn — so this asserts the OUTCOME rather than the mechanism:
       // one message naming the agent three times is one exchange and earns one
       // line, whether that comes from the key or from there being one turn.
-      open(toolOnlyRunner(() => ({ text: null })));
+      open(outcomeRunner(() => ({ text: null })));
 
       await seedAndSettle('@ana @ana @ana are you there?');
       expect(notices()).toHaveLength(1);
@@ -216,9 +206,7 @@ describe('a room turn that speaks only through the tool', () => {
       // re-armed inside its own cascade.
       let refuse = false;
       open(
-        toolOnlyRunner(() =>
-          refuse ? { text: null, unanswered: 'busy' as const } : { text: null }
-        )
+        outcomeRunner(() => (refuse ? { text: null, unanswered: 'busy' as const } : { text: null }))
       );
 
       await seedAndSettle('@ana are you there?');
@@ -232,7 +220,7 @@ describe('a room turn that speaks only through the tool', () => {
 
   describe('AC 5 — nobody asked, and the turn produced nothing', () => {
     it('writes zero entries and zero notices', async () => {
-      open(toolOnlyRunner(() => ({ text: null })));
+      open(outcomeRunner(() => ({ text: null })));
       // Ambient: a person's message that does NOT name Ana. She answers because
       // her mode is `always`, which is exactly the case E7 says must stay free.
       await seedAndSettle('the deploy finished');
@@ -242,7 +230,7 @@ describe('a room turn that speaks only through the tool', () => {
     });
 
     it('and the claim is released, so the room shows nobody working', async () => {
-      open(toolOnlyRunner(() => ({ text: null })));
+      open(outcomeRunner(() => ({ text: null })));
       await seedAndSettle('the deploy finished');
 
       expect(service.getRoom(room.id, human)?.workingAgents ?? []).toHaveLength(0);
@@ -272,7 +260,7 @@ describe('a room turn that speaks only through the tool', () => {
       // it is written after the reaction lands rather than before.
       let seedId = '';
       open(
-        toolOnlyRunner((request) => {
+        outcomeRunner((request) => {
           try {
             service.toggleReaction(request.room.id, seedId, request.authorId, '✅');
           } catch {
@@ -309,7 +297,7 @@ describe('a room turn that speaks only through the tool', () => {
       let seedId = '';
       let turn = 0;
       open(
-        toolOnlyRunner((request) => {
+        outcomeRunner((request) => {
           turn += 1;
           // First turn adds, second turn removes.
           service.toggleReaction(request.room.id, seedId, request.authorId, '✅', turn === 1);
@@ -327,7 +315,7 @@ describe('a room turn that speaks only through the tool', () => {
     });
   });
 
-  describe('AC 8 — the DM refusal is conditioned, not removed', () => {
+  describe('AC 8 — a direct message is an ordinary room for the posting tool', () => {
     /** Open a DM between the owner and Ana. */
     function openDm(scripted: ScriptedTurnRunner): RoomWithRoster {
       ({ service, authors, store, runner, human } = createRoomHarness({
@@ -341,8 +329,8 @@ describe('a room turn that speaks only through the tool', () => {
       );
     }
 
-    it('a tool-only turn may post in a DM', async () => {
-      const scripted = toolOnlyRunner((request) => {
+    it('a turn may post in a DM', async () => {
+      const scripted = outcomeRunner((request) => {
         service.postFromTool(request.room.id, {
           authorId: request.authorId,
           text: 'answering in the DM',
@@ -360,48 +348,23 @@ describe('a room turn that speaks only through the tool', () => {
       expect(said[0].body.text).toBe('answering in the DM');
     });
 
-    it('a text-mode turn is still refused there, with the mode-conditional message', async () => {
-      let refused: RoomError | undefined;
-      const scripted = outcomeRunner((request) => {
-        try {
-          service.postFromTool(request.room.id, {
-            authorId: request.authorId,
-            text: 'answering in the DM',
-          });
-        } catch (err) {
-          refused = err as RoomError;
-        }
-        return { text: 'the reply itself' };
-      });
-      const dm = openDm(scripted);
-      service.post(dm.id, { authorId: human, text: 'are you there?' });
-      await service.triggersIdle();
-
-      expect(refused?.code).toBe('TOOL_POST_NOT_IN_DM');
-      expect(refused?.message).toContain('being posted for you');
-      // And the turn's own text is what landed, exactly as it always did.
-      const said = service
-        .listEntries(dm.id, human, { limit: 50 })
-        .filter((entry) => entry.kind === 'post' && entry.authorId === ana);
-      expect(said).toHaveLength(1);
-      expect(said[0].body.text).toBe('the reply itself');
-    });
-
-    it('a post with no turn behind it is refused in a DM, whatever the flag says', () => {
-      // The mode lives on the CLAIM, so a hand post with nothing in flight reads
-      // `undefined` — which falls open to the refusal that shipped, rather than
-      // to whatever the last turn happened to be running under.
+    it('a post with no turn behind it lands in a DM too', () => {
+      // **The reversal is complete, and the refusal is not conditioned on
+      // anything** (spec §A2, completing D3). It used to depend on the reply
+      // mode carried by the live claim, so a hand post with nothing in flight
+      // read `undefined` and fell back to refusing. There is no mode to read and
+      // nothing to fall back to: an agent writing into a DM it is a member of is
+      // an agent saying something to the person who wrote to it.
       const dm = openDm(outcomeRunner(() => ({ text: null })));
-      expect(() => service.postFromTool(dm.id, { authorId: ana, text: 'unbidden' })).toThrowError(
-        /direct message/
-      );
+      const entry = service.postFromTool(dm.id, { authorId: ana, text: 'unbidden' });
+      expect(entry.body.text).toBe('unbidden');
     });
   });
 
   describe('AC 9 — an agent’s tool post into a DM triggers nobody', () => {
     it('selects no targets, so no second turn runs', async () => {
       let turns = 0;
-      const scripted = toolOnlyRunner((request) => {
+      const scripted = outcomeRunner((request) => {
         turns += 1;
         service.postFromTool(request.room.id, {
           authorId: request.authorId,
@@ -430,7 +393,7 @@ describe('a room turn that speaks only through the tool', () => {
 
   describe('AC 10 — a mid-turn tool post carries the turn’s own cascade stamp', () => {
     it('stamps the same depth the turn’s own answer would have', async () => {
-      open(toolPosting(null, 'tool-only'));
+      open(toolPosting(null));
       const seed = await seedAndSettle();
 
       const said = postsBy(ana);
@@ -442,7 +405,7 @@ describe('a room turn that speaks only through the tool', () => {
 
   describe('AC 13 — a tool post carries its answer pointer and its session', () => {
     it('fills both from the live claim', async () => {
-      open(toolPosting(null, 'tool-only'));
+      open(toolPosting(null));
       const seed = await seedAndSettle();
 
       const said = postsBy(ana)[0];
@@ -470,7 +433,7 @@ describe('a room turn that speaks only through the tool', () => {
     it('refuses the fourth post at the shipped default', async () => {
       let refused: RoomError | undefined;
       open(
-        toolOnlyRunner((request) => {
+        outcomeRunner((request) => {
           for (let i = 0; i < 4; i += 1) {
             try {
               service.postFromTool(request.room.id, {
@@ -501,7 +464,7 @@ describe('a room turn that speaks only through the tool', () => {
       // expect.
       let refusal: RoomError | undefined;
       open(
-        toolOnlyRunner((request) => {
+        outcomeRunner((request) => {
           for (let i = 0; i < 6; i += 1) {
             try {
               service.postFromTool(request.room.id, {
@@ -527,7 +490,7 @@ describe('a room turn that speaks only through the tool', () => {
 
     it('starts over on the next turn', async () => {
       open(
-        toolOnlyRunner((request) => {
+        outcomeRunner((request) => {
           for (let i = 0; i < 3; i += 1) {
             service.postFromTool(request.room.id, {
               authorId: request.authorId,
@@ -578,7 +541,7 @@ describe('a room turn that speaks only through the tool', () => {
         text: 'here is what I think, at length',
         waitedMs: 12 * 60_000,
       });
-      open(toolOnlyRunner(() => ({ text: null, late: landed })));
+      open(outcomeRunner(() => ({ text: null, late: landed })));
       await seedAndSettle();
       await service.triggersIdle();
 
@@ -603,7 +566,7 @@ describe('a room turn that speaks only through the tool', () => {
       // The two cases either side of it are the ones that go red.
       let turn = 0;
       open(
-        toolOnlyRunner((request) => {
+        outcomeRunner((request) => {
           turn += 1;
           if (turn === 1) {
             service.postFromTool(request.room.id, {
@@ -637,7 +600,7 @@ describe('a room turn that speaks only through the tool', () => {
 
     it('writes one `agent_declined` for a late turn that produced nothing', async () => {
       open(
-        toolOnlyRunner(() => ({
+        outcomeRunner(() => ({
           text: null,
           late: Promise.resolve({ text: null, waitedMs: 12 * 60_000 }),
         }))
@@ -656,80 +619,32 @@ describe('a room turn that speaks only through the tool', () => {
       .filter((event) => event.authorId === authorId && event.state === 'done');
   }
 
-  describe('AC 1 — the `done` frame carries an outcome only in tool-only mode', () => {
-    it('says `silent` when a tool-only turn had nothing to add', async () => {
+  describe('AC 1 — the `done` frame says how the turn finished', () => {
+    it('says `silent` when a turn had nothing to add', async () => {
       // The ephemeral half of D7: a working pill that appears and vanishes with
-      // nothing to show reads as a crash, and under the flip that stops being
-      // rare.
-      open(toolOnlyRunner(() => ({ text: null })));
+      // nothing to show reads as a crash, and a turn that decides nothing needs
+      // saying is an ordinary outcome rather than a rare one.
+      open(outcomeRunner(() => ({ text: null })));
       await seedAndSettle('the deploy finished');
 
       expect(releases(ana).map((frame) => frame.outcome)).toEqual(['silent']);
     });
 
-    it('says `answered` when a tool-only turn posted', async () => {
-      open(toolPosting(null, 'tool-only'));
+    it('says `answered` when a turn posted', async () => {
+      open(toolPosting(null));
       await seedAndSettle();
 
       expect(releases(ana).map((frame) => frame.outcome)).toEqual(['answered']);
     });
 
-    it('carries NO outcome in text mode — criterion 1 is about the wire too', async () => {
-      // **The gate, and why it is one.** With the flag off, room behaviour is
-      // byte-identical to before this feature, and a new field on every release
-      // frame is not byte-identical. It would buy nothing there either: a
-      // text-mode turn that finishes has posted its words or written a notice,
-      // so the indicator already releases into something a reader can see.
-      //
-      // Asserted with `toHaveProperty` rather than against `undefined`, because
-      // the claim is that the key is ABSENT from the payload — which is what a
-      // client one release behind actually parses.
-      open(outcomeRunner(() => ({ text: 'the build is green' })));
-      await seedAndSettle();
-
-      const done = releases(ana);
-      expect(done).toHaveLength(1);
-      expect(done[0]).not.toHaveProperty('outcome');
-    });
-
-    it('carries none for a text-mode turn that said nothing either', async () => {
-      // The shape the gate is most likely to be dropped against: a quiet turn
-      // looks like the case D7 was written for, and in text mode it is not.
-      open(outcomeRunner(() => ({ text: null })));
-      await seedAndSettle('the deploy finished');
-
-      const done = releases(ana);
-      expect(done).toHaveLength(1);
-      expect(done[0]).not.toHaveProperty('outcome');
-    });
-  });
-
-  describe('the flag-OFF path is untouched', () => {
-    it('AC 1 — a text-mode turn still posts its own words', async () => {
-      open(outcomeRunner(() => ({ text: 'the build is green' })));
-      await seedAndSettle();
-
-      const said = postsBy(ana);
-      expect(said).toHaveLength(1);
-      expect(said[0].body.text).toBe('the build is green');
-      expect(notices()).toHaveLength(0);
-    });
-
-    it('an ABSENT mode behaves exactly as `text` — the fail-open direction', async () => {
-      open(outcomeRunner(() => ({ text: 'the build is green' })));
-      await seedAndSettle();
-
-      expect(postsBy(ana)[0].body.text).toBe('the build is green');
-    });
-
-    it('a text-mode turn that reacted and said nothing is still quiet, with no notice', async () => {
-      // The reaction mark is only READ in the tool-only path. In text mode a
-      // reaction-only turn produces no entry and reads as `'quiet'`, exactly as
-      // it does today.
+    it('says `answered` for a turn whose only act was a reaction', async () => {
+      // A reaction puts something in front of the reader, so the indicator
+      // releases into something the person can see — and the frame has to agree
+      // with the notice log, which writes nothing for this turn.
       let seedId = '';
       open(
         outcomeRunner((request) => {
-          service.toggleReaction(request.room.id, seedId, request.authorId, '✅');
+          service.toggleReaction(request.room.id, seedId, request.authorId, '\u2705');
           return { text: null };
         })
       );
@@ -737,12 +652,11 @@ describe('a room turn that speaks only through the tool', () => {
       seedId = seed.id;
       await service.triggersIdle();
 
-      expect(postsBy(ana)).toHaveLength(0);
-      expect(notices()).toHaveLength(0);
+      expect(releases(ana).map((frame) => frame.outcome)).toEqual(['answered']);
     });
   });
 
-  describe('AC 12 — the turn holder\u2019s own tool call is refused, and the room still speaks', () => {
+  describe('AC 12 — the turn holder’s own tool call is refused, and the room still speaks', () => {
     it('writes the declined line when the claim holder\u2019s only post is refused', async () => {
       // **The half of criterion 12 the route tests cannot reach.** An expired or
       // unresolvable agent token is a hard `AGENT_IDENTITY_UNVERIFIED` refusal
@@ -764,7 +678,7 @@ describe('a room turn that speaks only through the tool', () => {
       let refusal: RoomError | undefined;
       let elsewhere = '';
       open(
-        toolOnlyRunner((request) => {
+        outcomeRunner((request) => {
           try {
             service.postFromTool(elsewhere, { authorId: request.authorId, text: 'over here' });
           } catch (err) {
@@ -790,90 +704,108 @@ describe('a room turn that speaks only through the tool', () => {
       // And the room she was asked in still said something. That is the property.
       expect(notices().map((entry) => entry.body.notice)).toEqual(['agent_declined']);
     });
-
-    it('and the same turn in TEXT mode falls back to posting its words', async () => {
-      // The other half of "the same fallback, not a silent mute": with the flip
-      // off — or resolved off, which is what an unwired session gets — a turn
-      // whose tool call was refused still has its narration, and the narration
-      // still posts. Nothing about a refused tool call can mute an agent that
-      // was never going to speak through the tool.
-      let elsewhere = '';
-      open(
-        outcomeRunner((request) => {
-          try {
-            service.postFromTool(elsewhere, { authorId: request.authorId, text: 'over here' });
-          } catch {
-            // Refused, exactly as above.
-          }
-          return { text: 'the build is green' };
-        })
-      );
-      elsewhere = service.createRoom(
-        { kind: 'channel', title: 'Ops2', members: [], agentPaths: [] },
-        human
-      ).id;
-      await seedAndSettle();
-
-      expect(postsBy(ana).map((entry) => entry.body.text)).toEqual(['the build is green']);
-      expect(notices()).toHaveLength(0);
-    });
   });
 
-  describe('the welcome-back offer keeps text-as-reply, deliberately (D12)', () => {
-    it('is told its words ARE the message, even with the flip on', async () => {
-      // **The one turn in the product that is pinned to text mode, and being
-      // told the opposite of what happens is exactly the drift this feature is
-      // most exposed to.** The greeter posts an aside turn's answer itself,
-      // outside `deliver` — so a resolved `'tool-only'` would hand the agent a
-      // context block saying "nothing you write back this turn is posted", and
-      // then post precisely what it wrote. It was reachable in one line: the
-      // shared runner overwrites the context with whatever mode it resolved.
-      //
-      // Asserted on the CONTEXT the turn was handed rather than on the outcome,
-      // because the outcome is the same either way and would not catch it.
-      let asideMode: string | undefined = 'unset';
+  describe('the welcome-back offer runs as an ordinary turn (D12, reversed)', () => {
+    it('posts through the tool, and the seam hands nothing back', async () => {
+      // **The reversal** (spec §A2). The greeter used to post an aside turn's
+      // narration itself, which made this the one path in the product where a
+      // turn's words were still the room's message — and it needed a pinned
+      // reply mode to stop the agent being told the opposite of what happened.
+      // One path now: the offer turn calls the tool or it says nothing.
       open(
-        toolOnlyRunner((request) => {
-          asideMode = request.roomContext.replyMode ?? 'absent';
-          return { text: 'want me to open the PR?' };
+        outcomeRunner((request) => {
+          service.postFromTool(request.room.id, {
+            authorId: request.authorId,
+            text: 'want me to open the PR?',
+          });
+          return { text: 'I offered.' };
         })
       );
       const about = service.post(room.id, { authorId: human, text: 'back at my desk' });
 
-      const offer = await service.askAside({
-        roomId: room.id,
-        authorId: ana,
-        aboutEntryId: about.id,
-        prompt: 'anything worth offering?',
-      });
+      await expect(
+        service.askAside({
+          roomId: room.id,
+          authorId: ana,
+          aboutEntryId: about.id,
+          prompt: 'anything worth offering?',
+        })
+      ).resolves.toBeUndefined();
 
-      expect(asideMode).toBe('text');
-      expect(offer, 'the greeter is still handed the words to post').toBe(
-        'want me to open the PR?'
-      );
+      // The offer is in the room, once, and the narration is not.
+      expect(postsBy(ana).map((entry) => entry.body.text)).toEqual(['want me to open the PR?']);
     });
 
-    it('and an ordinary trigger in the same room is still tool-only', async () => {
-      // The half that says the pin is scoped to the aside rather than to the
-      // room: a pin that leaked would turn the flip off wherever a greeter had
-      // ever run, silently.
-      const modes: (string | undefined)[] = [];
-      open(
-        toolOnlyRunner((request) => {
-          modes.push(request.roomContext.replyMode ?? 'absent');
-          return { text: null };
-        })
-      );
+    it('an offer that posts nothing produces nothing, and no notice', async () => {
+      // The property the D12 argument rested on, kept on the other side of the
+      // reversal: four of `askAside`'s outcomes are already silent by design, so
+      // a fifth must not start announcing itself. Nobody asked for this turn,
+      // and `agent_declined` is owed only to somebody who did.
+      open(outcomeRunner(() => ({ text: 'nothing worth saying' })));
       const about = service.post(room.id, { authorId: human, text: 'back at my desk' });
+
       await service.askAside({
         roomId: room.id,
         authorId: ana,
         aboutEntryId: about.id,
         prompt: 'anything worth offering?',
       });
-      await seedAndSettle('@ana and now a real question');
 
-      expect(modes).toEqual(['text', 'tool-only']);
+      expect(postsBy(ana)).toHaveLength(0);
+      expect(notices()).toHaveLength(0);
+    });
+
+    it('cannot start a conversation with what it posts', async () => {
+      // The cascade property the reversal had to preserve. An aside claim hands
+      // out no provenance, so the post is stamped under its OWN root at the
+      // ceiling — spent on arrival. Bo is `always` here, so a post at depth 0
+      // would have woken it.
+      ({ service, authors, store, runner, human } = createRoomHarness({
+        agents,
+        runner: outcomeRunner((request) => {
+          service.postFromTool(request.room.id, {
+            authorId: request.authorId,
+            text: 'want me to open the PR?',
+          });
+          return { text: null };
+        }),
+      }));
+      room = service.createRoom(
+        {
+          kind: 'channel',
+          title: 'Backend',
+          members: [],
+          agentPaths: ['/agents/ana', '/agents/bo'],
+        },
+        human
+      );
+      ana = authors.resolveAgent('/agents/ana', 'Ana').id;
+      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+      service.updateMembership(room.id, human, ana, 'always');
+      service.updateMembership(room.id, human, bo, 'always');
+      // The greeter's own status line, posted BY Ana and un-provenanced, exactly
+      // as the greeter posts it — stamped at the ceiling, so it starts nothing
+      // and the only turn this test can count is the offer's own.
+      const about = service.post(room.id, { authorId: ana, text: 'while you were away…' });
+
+      await service.askAside({
+        roomId: room.id,
+        authorId: ana,
+        aboutEntryId: about.id,
+        prompt: 'anything worth offering?',
+      });
+      await service.triggersIdle();
+
+      const offer = service
+        .listEntries(room.id, human, { limit: 200 })
+        .find((entry) => entry.body.text === 'want me to open the PR?');
+      expect(offer?.cascadeRoot).toBe(offer?.id);
+      // Exactly one turn ran — the offer's own — and Bo said nothing about it.
+      expect(runner.turns).toHaveLength(1);
+      expect(
+        service.listEntries(room.id, human, { limit: 200 }).filter((e) => e.authorId === bo)
+      ).toEqual([]);
     });
   });
 

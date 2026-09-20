@@ -15,21 +15,13 @@
  *
  * @module server/services/rooms/room-turn-port
  */
-import type { RoomContextData, RoomReplyMode } from '@dorkos/shared/additional-context';
+import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import type { ProjectableAttachment } from './room-context.js';
 import type { RoomTurnUnanswered } from './notices/notice-log.js';
 import type { WaitingKind } from './notices/notice-copy.js';
-
-// Re-exported rather than redefined: the vocabulary is runtime-neutral (both the
-// room and every runtime adapter's prompt need it), so it is declared once in
-// `@dorkos/shared` and reaches the rooms domain from here like the rest of the
-// turn contract. **The flag is never read as "suppress the text"** — see
-// `resolveReplyMode` in `room-turn-runner.ts`, the only thing holding both the
-// flag and the runtime's own answer.
-export type { RoomReplyMode };
 
 /**
  * The runner's refusal when a room's session is bound to a runtime this server
@@ -194,24 +186,6 @@ export interface RoomTurnRequest {
    */
   onActivity(activity: SessionActivity | null): void;
   /**
-   * Say how this turn's words will reach the room, as soon as it is known (spec
-   * `tool-only-room-replies` §D2).
-   *
-   * Reported rather than asked for, and for the reason `onActivity` is: the
-   * ROOM cannot answer it. Resolving the mode needs the runtime's own claim
-   * about whether the session carries the posting tool, which is knowledge the
-   * dispatcher deliberately does not hold.
-   *
-   * Called exactly once, before the turn starts, so a `post_to_room` made from
-   * inside it can read the mode off the live claim — that is what conditions the
-   * DM refusal (§D3). It is carried on the reply as well
-   * ({@link RoomTurnReply.replyMode}); this is the same fact reaching the other
-   * consumer at the other end of the turn.
-   *
-   * @param mode - How this turn's words reach the room.
-   */
-  onReplyMode(mode: RoomReplyMode): void;
-  /**
    * Say which session this turn is actually running on, once the runtime has
    * named it.
    *
@@ -228,28 +202,6 @@ export interface RoomTurnRequest {
    * @param sessionId - The canonical session this turn is running on.
    */
   onSessionBound(sessionId: string): void;
-  /**
-   * Force this turn's reply mode instead of letting the runner resolve one
-   * (spec `tool-only-room-replies` §D12).
-   *
-   * **One caller, and it is a decision rather than an escape hatch**: the
-   * welcome-back offer (`RoomTriggerDispatcher.askAside`). That turn's text IS
-   * still the room's message under the flip — the greeter posts it itself,
-   * outside `deliver` — so a resolved `'tool-only'` would tell the agent
-   * "nothing you write back this turn is posted" and then post exactly what it
-   * wrote. Being told the opposite of what happens is the drift this whole
-   * feature is most exposed to, and here it is reachable in one line.
-   *
-   * Why the greeter keeps text-as-reply at all is §D12: a welcome-back offer is
-   * the ROOM asking a closed question on the person's behalf rather than the
-   * agent choosing to speak, four of `askAside`'s outcomes are already silent by
-   * design, and routing it through a tool would give it a fifth way to produce
-   * nothing while the person is owed exactly one line.
-   *
-   * Absent — every ordinary trigger — means the runner resolves it, which is the
-   * only path that reads the flag at all.
-   */
-  replyMode?: RoomReplyMode;
 }
 
 /** One reason a turn has stopped and can make no progress without a person. */
@@ -265,27 +217,20 @@ export interface RoomTurnWaiting {
 
 /** What a turn produced, however long it took to produce it. */
 export interface RoomTurnReply {
-  /** What the agent said, or `null` when it said nothing worth posting. */
+  /**
+   * What the turn wrote back to its OWN session, or `null` when it wrote
+   * nothing.
+   *
+   * **The room never posts it, and since DOR-2099 there is no mode in which it
+   * would.** A turn speaks by calling `post_to_room`, by reacting, or not at
+   * all; this is the agent's thinking, which belongs to whoever is reading that
+   * session. It is carried because two things still want it — the halted-turn
+   * log line, which records whether there was anything to drop, and a runner
+   * that hands a turn's words back to a caller that asked for them.
+   */
   text: string | null;
   /** Set when the room got no answer for a reason a member should see. */
   unanswered?: RoomTurnUnanswered;
-  /**
-   * How this turn's words reach the room — resolved by the runner, which is the
-   * only thing that knows both the flag and the runtime's own answer about tool
-   * capability (spec `tool-only-room-replies` §D2).
-   *
-   * Carried here rather than re-derived in `deliver` for two reasons. A LATE
-   * answer is delivered minutes after its turn started, and re-reading the flag
-   * then would apply a setting the turn never ran under. And the derivation
-   * needs the runtime, which the dispatcher deliberately does not hold.
-   *
-   * **Absent means `'text'`**, so every path that produces a reply without one —
-   * a busy refusal, a `FakeAgentRuntime`, a scenario harness that predates the
-   * field — behaves exactly as it does today. That is the fail-open direction,
-   * and it is chosen: silence is the worse failure
-   * (`.claude/rules/room-conduct.md`, constraint 6).
-   */
-  replyMode?: RoomReplyMode;
 }
 
 /** An answer that arrived after the room stopped waiting for it. */

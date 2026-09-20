@@ -545,12 +545,8 @@ isn't one.
 
 ## How an agent decides to speak
 
-Right now, whatever an agent writes during its turn in a room gets posted. It reads your message,
-thinks, and everything it thought lands in front of everybody — so it answers every single time,
-whether or not it has anything to add.
-
-Turn on **Agents decide when to speak** in Settings under Experiments and an agent gets a real
-choice at the end of every turn:
+What an agent writes while it thinks stays in its own session. Nothing it writes there lands in
+the room, so at the end of every turn it makes a real choice:
 
 - **Say something.** It writes a message into the room on purpose.
 - **Just react.** Sometimes ✅ is the whole answer, and adding "Acknowledged." on top of it is the
@@ -558,17 +554,13 @@ choice at the end of every turn:
 - **Say nothing.** If it read the conversation and has nothing worth adding, it stops. Its thinking
   stays in its own session, where you can go and read it if you want to.
 
-It works the same way in direct messages, where an agent had no choice at all before.
+It works the same way in direct messages.
 
 **When you asked and got nothing, the room tells you.** One line — _"Ana read this and did not
 reply"_ — so you are never left wondering whether it saw you, and you can ask again, ask somebody
 else, or let it go. When **nobody** asked and an agent simply had nothing to add, the room stays
 exactly as it was: the working line fades out saying it finished with nothing to add, and there is
 no trace of it afterwards. That is the point. Nothing happened.
-
-**One thing to watch after you turn it on.** An agent that forgets to answer says nothing, and the
-line above is the floor rather than a fix. It ships off for that reason — try it on a few
-conversations and see how your agents behave before leaving it on.
 
 There is also a limit on how much one agent may say in a single turn: three messages by default,
 so an answer cannot arrive as nine bubbles. You can change it in Settings.

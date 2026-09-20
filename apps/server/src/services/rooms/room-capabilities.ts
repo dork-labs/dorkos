@@ -706,15 +706,14 @@ export const roomsDomain: CapabilityDomain = {
     defineCapability({
       id: 'rooms.post',
       title: 'Post to a room',
-      // **Mode-NEUTRAL, deliberately** (spec `tool-only-room-replies` §D13). A
-      // capability description is minted once at boot and is install-wide, so it
-      // cannot be per-session — and a description that contradicts the running
-      // mode is exactly the drift this feature is most exposed to. So it says
-      // what the verb DOES, in a sentence that is true in both modes and both
-      // room kinds, and lets the refusal carry the condition. The two clauses
-      // that were mode-specific are gone: "does NOT apply to direct messages" is
-      // true in neither mode once §2.6 is reversed, and the promise about the
-      // narration is true only in one.
+      // **It says what the verb DOES and nothing about what else happens to a
+      // turn's words** (spec `tool-only-room-replies` §D13). A capability
+      // description is minted once at boot and is install-wide, so it can never
+      // be conditioned on one session — and every clause this description used
+      // to carry about the surrounding behaviour ("it does NOT apply to direct
+      // messages"; "posting suppresses your narration") was a clause that went
+      // stale the moment that behaviour moved. The per-turn truth belongs in
+      // `<room_tools>`, which is built per session, and in the refusals.
       description:
         'Say something in a room you are a member of, when you decide it is worth saying. ' +
         'Use it to post an update while you work, to answer in a specific thread, or to say ' +
@@ -787,8 +786,8 @@ export const roomsDomain: CapabilityDomain = {
               );
         // **The write can still refuse after the bytes are on disk**, and a
         // refusal is the ordinary case rather than the exotic one: a mistyped
-        // `roomId`, the per-turn post ceiling, a stopped turn, an archived room,
-        // a direct message. The rules that decide those live inside
+        // `roomId`, the per-turn post ceiling, a stopped turn, an archived room.
+        // The rules that decide those live inside
         // `postFromTool` and must stay there — a dry run here would be the
         // second write path that file exists to refuse — so the files are taken
         // back instead, with the same cleanup the staging failure uses.

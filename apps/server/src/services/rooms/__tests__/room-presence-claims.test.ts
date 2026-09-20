@@ -54,6 +54,7 @@ import {
   settleUntil,
   type RecordedTurn,
   type ScriptedTurnRunner,
+  roomVoice,
 } from './room-test-harness.js';
 
 /** The agents these rooms are built from. */
@@ -107,6 +108,8 @@ interface DrivenRunner extends ScriptedTurnRunner {
 interface HeldTurn {
   land(reply: LateRoomReply): void;
   fail(err: Error): void;
+  /** The turn itself, so landing it can say its words in the room. */
+  request: RoomTurnRequest;
 }
 
 /**
@@ -132,6 +135,7 @@ function drivenRunner(opts: {
   say?(request: RoomTurnRequest): string | null;
 }): DrivenRunner {
   const turns: RecordedTurn[] = [];
+  const voice = roomVoice();
   const held = new Map<string, HeldTurn[]>();
   const gates = new Map<string, () => void>();
   /** Each live turn's activity callback, by the agent running it. */
@@ -148,12 +152,33 @@ function drivenRunner(opts: {
     if (!turn) throw new Error(`no turn is being held for ${authorId}, so it cannot ${verb}`);
     return turn;
   }
+  /**
+   * Say a turn's words in the room, the way a real one does.
+   *
+   * **Nothing posts a turn's text for it** (spec `tool-only-room-replies`), so a
+   * scripted turn that means to be heard has to call the tool — and these tests
+   * are almost all about what the room shows while a turn runs and when it
+   * releases, which only means anything if something lands.
+   *
+   * @param request - The turn saying it.
+   * @param said - Its words, or `null`/blank for a turn that says nothing.
+   * @param unanswered - Set when the turn was refused rather than run, in which
+   *   case there is nothing to say.
+   */
+  function speak(request: RoomTurnRequest, said: string | null, unanswered?: unknown): void {
+    if (unanswered !== undefined) return;
+    if (said === null || said.trim() === '') return;
+    voice.sayInRoom(request, said);
+  }
   return {
     turns,
     interrupted: [],
+    ...voice,
     interrupt: () => Promise.resolve(mockInterruptReceipt('not-running')),
     land(authorId, reply) {
-      takeHeld(authorId, 'land').land(reply);
+      const turn = takeHeld(authorId, 'land');
+      speak(turn.request, reply.text, reply.unanswered);
+      turn.land(reply);
     },
     fail(authorId, err) {
       takeHeld(authorId, 'fail').fail(err);
@@ -194,7 +219,7 @@ function drivenRunner(opts: {
         case 'hold': {
           const late = new Promise<LateRoomReply>((resolve, reject) => {
             const queue = held.get(request.authorId) ?? [];
-            queue.push({ land: resolve, fail: reject });
+            queue.push({ land: resolve, fail: reject, request });
             held.set(request.authorId, queue);
           });
           // Exactly what `room-turn-runner.ts` returns at the wait deadline: the
@@ -213,10 +238,17 @@ function drivenRunner(opts: {
           return Promise.reject(new Error('the runtime went away'));
         case 'gated':
           return new Promise<RoomTurnResult>((resolve) => {
-            gates.set(request.authorId, () => resolve({ sessionId, text: say(request) }));
+            gates.set(request.authorId, () => {
+              const said = say(request);
+              speak(request, said);
+              resolve({ sessionId, text: said });
+            });
           });
-        default:
-          return Promise.resolve({ sessionId, text: say(request) });
+        default: {
+          const said = say(request);
+          speak(request, said);
+          return Promise.resolve({ sessionId, text: said });
+        }
       }
     },
   };
@@ -402,9 +434,11 @@ describe('a claim lives until its turn is done', () => {
       runner.land(ana, { text: 'green', waitedMs: 12 * 60_000 });
       await service.triggersIdle();
 
-      // The answer is on the log, saying how long it took.
+      // The answer is on the log, in the agent's own words. The room used to
+      // prefix a late answer with how long it took, because the room was posting
+      // it; a late turn posts through the tool now, carrying its own timestamp.
       expect(postsBy(ana)).toHaveLength(1);
-      expect(postsBy(ana)[0].body.text).toContain('This answers the message from 12 minutes ago');
+      expect(postsBy(ana)[0].body.text).toBe('green');
 
       // And the room no longer claims Ana is on anything.
       service.post(room.id, { authorId: human, text: '@bo anything else?' });
@@ -493,13 +527,16 @@ describe('a claim lives until its turn is done', () => {
       expect(workingSeenBy(turnsBy(cy)[0])).toEqual(['Ana']);
 
       // Ana's turn ends the way this scenario is named for: with nothing to say.
-      // That is judgment, not a fault, so the room adds nothing — and the claim
-      // is released all the same, which is what lets Bo's question through.
+      // That is judgment, not a fault, so nothing of Ana's is posted — and the
+      // claim is released all the same, which is what lets Bo's question
+      // through. The person DID ask her, though, so the room says once that she
+      // read it and did not reply (spec §D6), which is the whole point of that
+      // line: an unanswered question does not simply vanish.
       runner.land(ana, { text: null, waitedMs: 30 * 60_000 });
       await settleUntil(() => turnsBy(ana).length === 2, 'the held question to become a turn');
       expect(turnsBy(ana)[1].prompt).toBe('no idea — what do you think, @ana?');
       expect(postsBy(ana)).toHaveLength(0);
-      expect(notices()).toHaveLength(0);
+      expect(notices().map((entry) => entry.body.notice)).toEqual(['agent_declined']);
       runner.land(ana, { text: null, waitedMs: 0 });
       await service.triggersIdle();
     });
@@ -1018,20 +1055,25 @@ describe('a claim lives until its turn is done', () => {
       expect(releaseIndex(ana)).toBe(entryIndex((entry) => entry.kind === 'notice') + 1);
     });
 
-    it('releases with nothing on the log when the agent chose to say nothing', async () => {
+    it('releases with nothing on the log when nobody asked and the agent chose to say nothing', async () => {
       // The one indicator-then-nothing this design ACCEPTS (spec §4.3), pinned
       // here as a choice so that closing it is a decision somebody makes rather
       // than a test nobody wrote. A turn that runs and decides there is nothing
       // worth adding is exercising judgment; forcing a durable "had nothing to
       // say" entry on every ambient turn would be the over-participation this
       // whole programme exists to prevent.
-      open(drivenRunner({ plan: () => 'answer', say: () => null }));
+      //
+      // **Ambient, deliberately.** The obligation attaches to being ASKED, never
+      // to running a turn (spec §D6), so a message that named Ana would earn one
+      // `agent_declined` line and this would no longer be an
+      // indicator-then-nothing at all. Nobody is named here.
+      open(drivenRunner({ plan: () => 'answer', say: () => null }), 'always');
 
-      service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+      service.post(room.id, { authorId: human, text: 'the deploy is stuck' });
       await service.triggersIdle();
 
       expect(statesFor(ana)).toEqual(['working', 'done']);
-      // The question is the entire log, and the entire durable half of the
+      // The message is the entire log, and the entire durable half of the
       // stream: nothing was written between the indicator appearing and going.
       expect(log()).toHaveLength(1);
       expect(roomStream().filter((event) => event.type === 'entry')).toHaveLength(1);

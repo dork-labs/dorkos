@@ -744,7 +744,7 @@ export function agentPostCount(slug: string, expected: number, label?: string): 
  * or the room saying there was not one.
  *
  * **The only disjunctive oracle in the rooms package, and the disjunction is the
- * claim rather than a weakening of it.** Under `rooms.toolOnlyReplies` a turn has
+ * claim rather than a weakening of it.** A turn has
  * three honest endings when it is asked something it cannot answer: post a brief
  * decline (`meta/agent-etiquette.md` E21, the good one), react, or say nothing
  * and let the room write its one `agent_declined` line (the floor). All three

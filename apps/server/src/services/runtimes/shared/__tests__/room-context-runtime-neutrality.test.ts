@@ -124,8 +124,8 @@ describe('every runtime fences a room message the same way', () => {
 });
 
 /**
- * The tool-only closing directive names the posting tool, and every runtime
- * spells it differently (DOR-1643, DOR-1292).
+ * The closing directive names the posting tool, and every runtime spells it
+ * differently (DOR-1643, DOR-1292).
  *
  * This is what `room-context-block.ts` is exempted from the source scan in
  * `claude-code/messaging/__tests__/context-tool-names.test.ts` in exchange for,
@@ -133,28 +133,27 @@ describe('every runtime fences a room message the same way', () => {
  * an adapter that forgot to pass its prefix fails here even though the shared
  * writer is blameless.
  */
-const DM_UNDER_THE_FLIP: AdditionalContextEntry = {
+const DM_CONTEXT: AdditionalContextEntry = {
   ...ENTRY,
   data: {
     ...ENTRY.data,
     room: { id: 'room-1', kind: 'dm', name: 'Dorian', bridged: false },
-    replyMode: 'tool-only',
   },
 };
 
-describe('a tool-only turn is told the posting tool by its own runtime name', () => {
+describe('a turn is told the posting tool by its own runtime name', () => {
   it('claude-code', () => {
-    const rendered = renderContextEntry(DM_UNDER_THE_FLIP);
+    const rendered = renderContextEntry(DM_CONTEXT);
     expect(rendered).toContain('mcp__dorkos__post_to_room(roomId: "room-1", text: <your answer>)');
   });
 
   it('codex', () => {
-    const prompt = buildCodexPrompt(USER_TEXT, { additionalContext: [DM_UNDER_THE_FLIP] });
+    const prompt = buildCodexPrompt(USER_TEXT, { additionalContext: [DM_CONTEXT] });
     expect(prompt).toContain('mcp__dorkos__post_to_room(roomId: "room-1", text: <your answer>)');
   });
 
   it('opencode, which spells the same tool differently', () => {
-    const parts = buildOpenCodeParts(USER_TEXT, { additionalContext: [DM_UNDER_THE_FLIP] });
+    const parts = buildOpenCodeParts(USER_TEXT, { additionalContext: [DM_CONTEXT] });
     const rendered = parts.map((part) => part.text).join('\n\n');
     expect(rendered).toContain('dorkos_post_to_room(roomId: "room-1", text: <your answer>)');
     // The wrong prefix here is uncallable and silent, which is the DOR-1292
@@ -166,9 +165,9 @@ describe('a tool-only turn is told the posting tool by its own runtime name', ()
     // The undefined-prefix fallback is honest, but an adapter falling into it is
     // a regression: every production call site knows its own prefix.
     for (const rendered of [
-      renderContextEntry(DM_UNDER_THE_FLIP),
-      buildCodexPrompt(USER_TEXT, { additionalContext: [DM_UNDER_THE_FLIP] }),
-      buildOpenCodeParts(USER_TEXT, { additionalContext: [DM_UNDER_THE_FLIP] })
+      renderContextEntry(DM_CONTEXT),
+      buildCodexPrompt(USER_TEXT, { additionalContext: [DM_CONTEXT] }),
+      buildOpenCodeParts(USER_TEXT, { additionalContext: [DM_CONTEXT] })
         .map((part) => part.text)
         .join('\n\n'),
     ]) {

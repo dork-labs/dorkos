@@ -578,9 +578,8 @@ export function createRoomSubsystem(opts: {
     // bind the very next message.
     maxAttachmentsPerEntry: readMaxAttachmentsPerEntry,
     // Read per post, for the same reason and one more: posting is the agent's
-    // only voice once `rooms.toolOnlyReplies` is on, so an operator who feels
-    // this number is wrong must be able to move it without waiting for anything
-    // to restart.
+    // only voice in a room, so an operator who feels this number is wrong must
+    // be able to move it without waiting for anything to restart.
     maxPostsPerTurn: readMaxPostsPerTurn,
     // Read per operation, for the same reason and one more: a room's canvas is
     // a shared surface, so an operator who feels one agent is taking too much of

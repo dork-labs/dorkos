@@ -48,7 +48,6 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // `post_to_room` is an MCP verb with no HTTP route, so this code reaches a
   // response only if one is ever added; it is mapped because the table is total
   // by type, and 400 because a DM is the wrong room to ask this of.
-  TOOL_POST_NOT_IN_DM: 400,
   // The `leave_room` twin, and the same story again: an MCP-only verb, mapped
   // because the table is total by type. 400 for the same reason — a direct
   // message is the wrong kind of room to ask this of, and no retry fixes it.

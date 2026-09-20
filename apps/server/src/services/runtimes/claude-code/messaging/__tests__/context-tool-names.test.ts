@@ -130,7 +130,7 @@ import { OPERATING_SKILLS_PACK, TOOL_NAME_NOTE } from '@dorkos/operating-skills'
 import { GEN_UI_CONTEXT } from '../../../shared/gen-ui-context.js';
 import { buildRoomToolsBlock } from '../../../shared/room-tools-context.js';
 import { formatRoomContext } from '../../../shared/room-context-block.js';
-import type { RoomContextData, RoomReplyMode } from '@dorkos/shared/additional-context';
+import type { RoomContextData } from '@dorkos/shared/additional-context';
 import {
   CODEX_DORKOS_TOOL_PREFIX,
   OPENCODE_DORKOS_TOOL_PREFIX,
@@ -327,17 +327,12 @@ function identifierTokens(text: string): string[] {
  * both room kinds reachable so each half of the closing directive is covered.
  *
  * @param kind - Channel or direct message.
- * @param replyMode - Whether the turn's own words are posted.
  * @param addressedNow - Whether the triggering message named this agent. The
  *   channel closing directive branches on it, and the UNADDRESSED branch is the
  *   one a matrix pinned to `true` never renders.
  * @returns The fixture.
  */
-function roomContextFixture(
-  kind: 'dm' | 'channel',
-  replyMode: RoomReplyMode,
-  addressedNow = true
-): RoomContextData {
+function roomContextFixture(kind: 'dm' | 'channel', addressedNow = true): RoomContextData {
   return {
     room: {
       id: '01M0ROOM0000000000000000BD',
@@ -389,7 +384,6 @@ function roomContextFixture(
       automaticRepliesLeftInTotalThisHour: 187,
       repliesLeftInThisChain: 2,
     },
-    replyMode,
   };
 }
 
@@ -523,7 +517,14 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // `post_to_room` where it says what to do with the file that comes back.
     // The third is the interesting one — it is the whole point of recording
     // something, and naming it prefixed is what keeps it callable.
-    expect(prefixed.length).toBe(96);
+    //
+    // 96 -> 97 for the graduation (DOR-2099): `<room_tools>` had two variants,
+    // one for a turn whose words were posted for it and one for a turn that had
+    // to call the tool, and only one rendered per session. The second is now the
+    // only one, and it names `post_to_room` once more than the first did — in
+    // the sentence that says the answer you worked out is the thing you post,
+    // which is the line DOR-1643 measured as the one that closes the gap.
+    expect(prefixed.length).toBe(97);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {
@@ -850,24 +851,20 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
 
     // Every shape the block branches on, because the closing directive and the
     // D11 line are each rendered by only one of them. A fixture that covered
-    // only the DM would leave the channel directive unscanned, and a fixture
-    // that covered only `'tool-only'` would leave the text-mode preamble
-    // unscanned — and text mode is where most turns still are.
-    // The fifth tuple is not symmetry for its own sake. The channel directive
+    // only the DM would leave the channel directive unscanned.
+    // The third tuple is not symmetry for its own sake. The channel directive
     // branches on `addressing.addressedNow`, so a matrix pinned to `true` never
     // renders the UNADDRESSED quiet branch at all — and a mutation of that
     // branch passed this scan silently until it was added.
     const shapes = [
-      ['dm, tool-only', 'dm', 'tool-only', true],
-      ['channel, tool-only, addressed', 'channel', 'tool-only', true],
-      ['channel, tool-only, unaddressed', 'channel', 'tool-only', false],
-      ['dm, text', 'dm', 'text', true],
-      ['channel, text', 'channel', 'text', true],
+      ['dm', 'dm', true],
+      ['channel, addressed', 'channel', true],
+      ['channel, unaddressed', 'channel', false],
     ] as const;
 
     for (const [runtime, prefix] of prefixes) {
-      for (const [shape, kind, replyMode, addressedNow] of shapes) {
-        const rendered = formatRoomContext(roomContextFixture(kind, replyMode, addressedNow), {
+      for (const [shape, kind, addressedNow] of shapes) {
+        const rendered = formatRoomContext(roomContextFixture(kind, addressedNow), {
           nonce: 'aaaa1111',
           toolPrefix: prefix,
         });
@@ -897,13 +894,13 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
         ).toEqual([]);
       }
 
-      // 3. And the tool-only shapes actually NAME the posting tool under this
+      // 3. And the rendered directives actually NAME the posting tool under this
       //    prefix — without this, the two checks above are satisfied by a block
       //    that names nothing, which is how this kind of guard goes vacuous.
       //    That is exactly what the fallback phrasing would do, silently, if an
       //    adapter ever stopped passing its prefix.
       for (const kind of ['dm', 'channel'] as const) {
-        const rendered = formatRoomContext(roomContextFixture(kind, 'tool-only'), {
+        const rendered = formatRoomContext(roomContextFixture(kind), {
           nonce: 'aaaa1111',
           toolPrefix: prefix,
         });

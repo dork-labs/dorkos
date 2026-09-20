@@ -221,7 +221,7 @@ export class RoomService {
     authorId: string;
     aboutEntryId: string;
     prompt: string;
-  }): Promise<string | null> {
+  }): Promise<void> {
     return this.parts.turnControl.askAside(input);
   }
   /** Open a channel or a DM. See {@link RoomLifecycle.createRoom}. */

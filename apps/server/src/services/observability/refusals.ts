@@ -100,10 +100,10 @@ export const REFUSAL_REASONS = {
    *
    * **The one reason here that is not a fault.** Every other member of this union
    * is something the room could not do; this is something an agent decided, and
-   * it is the outcome `rooms.toolOnlyReplies` exists to make possible. It is
-   * recorded anyway because each one is a measured near-miss during the flag's
-   * dogfood week — a `group_by(.reason)` over it is exactly the count that
-   * decides whether the flip graduates.
+   * it is the outcome tool-only replies exist to make possible. It is recorded
+   * anyway because each one is a measured near-miss: a `group_by(.reason)` over
+   * it is how an operator sees whether their agents are declining more than they
+   * should.
    */
   agent_declined: 'the agent read the question and chose not to reply',
   /** The `(room, agent)` session row could not be written, so no turn started. */

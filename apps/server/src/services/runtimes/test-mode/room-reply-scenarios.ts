@@ -1,37 +1,31 @@
 /**
- * The two scripted turns that make tool-only room replies testable (spec
- * `tool-only-room-replies` §D14).
+ * The scripted room turns, and the one helper that lets any scripted turn speak
+ * in a room (spec `tool-only-room-replies` §D14, §A2).
  *
- * ## Why test-mode is not tool-capable by default, and these two are
+ * ## A scripted turn speaks by calling the tool, because every turn does
  *
- * Under `rooms.toolOnlyReplies` a turn's own words are never posted for it, so a
- * scenario that only narrates would answer nothing. Six e2e specs across
- * `room-autonomy.spec.ts` and `team-room.spec.ts`, plus the free structural eval
- * cases, all reach the room through exactly that path — so if the flag alone
- * decided suppression, turning it on would redden every one of them at once.
+ * A room turn's own words are never posted for it, so a scenario that only
+ * narrates answers nothing at all. That is no longer a mode to opt into: since
+ * DOR-2099 it is the only behaviour, {@link TestModeRuntime.carriesRoomTools}
+ * answers `true` for every session, and a scenario that means to say something
+ * in a room says it through {@link sayInRoom} — the real `rooms.post`
+ * capability, invoked in-process with the turn's own agent identity, exactly
+ * where an injected `dorkos` MCP server's call would land.
  *
- * {@link TestModeRuntime.carriesRoomTools} therefore answers `false` unless the
- * session's selected scenario is one of {@link TOOL_CAPABLE_SCENARIOS}. Flag-ON
- * changes nothing for any existing scenario, by construction rather than by
- * editing tests, and coverage of the flip comes from new specs that opt in.
+ * It can, because a room turn is handed `MessageOpts.roomTurn` — the room, the
+ * member and the turn id, all server-derived (spec `room-canvas` §5.3) — so
+ * nothing about which room it is in has to be invented. A turn with no
+ * `roomTurn` is not in a room, and {@link sayInRoom} is a no-op there, which is
+ * what keeps a scenario usable on an ordinary session.
  *
- * ## How a scripted turn "calls the tool"
+ * ## The two scenarios that deliberately do NOT post
  *
- * For the two tool-only scenarios it does not, and deliberately: a turn that
- * posted would have to be told which room to post into, so both HOLD the turn
- * open until `POST /api/test/finish-turn` and the DRIVER does the posting — it
- * mints a real agent token (`POST /api/test/agent-token`) and calls the real
- * `post_to_room` capability with it, mid-turn, exactly as an injected `dorkos`
- * MCP server would.
- *
- * {@link roomReadsCanvas} is the one scenario that does call a capability
- * itself, and it has to: what it exists to prove is that a face appears on a
- * canvas tab **only while a claim is held**, and the claim is held for exactly
- * as long as the turn runs. A driver calling from outside would be calling after
- * the turn, which is the case that must show nothing. It can, because a room
- * turn is now handed `MessageOpts.roomTurn` — the room, the member and the turn
- * id, all server-derived (spec `room-canvas` §5.3) — so nothing about which room
- * it is in has to be invented.
+ * {@link roomReplyScenarios}'s `rooms-hold-then-narrate` writes a line and calls
+ * nothing, which is the shape a person's agent takes when it forms an answer and
+ * fails to send it: the room must show no message and one `agent_declined`
+ * notice. `rooms-hold-then-quiet` produces nothing at all. Both hold the turn
+ * open until `POST /api/test/finish-turn` so a driver can look at the room while
+ * the claim is still held.
  *
  * @module services/runtimes/test-mode/room-reply-scenarios
  */
@@ -80,15 +74,71 @@ function heldRoomTurn(say: string | null, finishRequested: FinishRequested): Sce
     for (let tick = 0; tick < HOLD_TICKS && !finishRequested() && !ctx.signal.aborted; tick += 1) {
       await ctx.delay(HOLD_TICK_MS);
     }
-    // Emitted at the END rather than at the start, and that ordering is what the
-    // flip is measured against: in tool-only mode this text must never reach the
-    // room, and in text mode it must. A turn that narrated before the driver
-    // posted would leave the two orders indistinguishable in a transcript.
+    // Emitted at the END rather than at the start, and the ordering is what the
+    // behaviour is measured against: this text must never reach the room, and a
+    // turn that narrated before a driver had looked would leave "not posted" and
+    // "not posted yet" indistinguishable in a transcript.
     if (say !== null) {
       yield { type: 'text_delta', data: { text: say } } as StreamEvent;
     }
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
   };
+}
+
+/**
+ * Say something in the room this turn was triggered from, through the real
+ * posting capability.
+ *
+ * **This is the whole of how a scripted turn speaks.** It invokes
+ * `rooms.post` — the same capability `post_to_room` is the MCP name of — with
+ * the turn's own agent identity, resolved from `MessageOpts.roomTurn.authorId`
+ * rather than guessed: an identity naming the wrong agent would be refused by
+ * the membership check and the message would simply never appear, so this fails
+ * closed and says so in what it returns.
+ *
+ * Every bound the product applies applies here: the per-turn post ceiling, the
+ * stopped-turn refusal, the cascade stamp the live claim carries, and the
+ * `answersEntryId`/`sessionId` pointers the claim fills in. That is the point of
+ * calling the real thing.
+ *
+ * @param opts - The message options the runtime was called with.
+ * @param text - What to say.
+ * @param attachments - Files to show with it, by path, relative to the turn's
+ *   own working directory.
+ * @returns `true` when the message was posted; `false` when this turn is not in
+ *   a room at all; the refusal's message when the room refused it.
+ */
+export async function sayInRoom(
+  opts: Parameters<ScenarioFn>[2],
+  text: string,
+  attachments?: readonly string[]
+): Promise<true | false | string> {
+  const roomTurn = opts?.roomTurn;
+  if (!roomTurn) return false;
+  const rooms = getRoomService();
+  const author = rooms.authorRegistry.getById(roomTurn.authorId);
+  const registry = composeRegistry([roomsDomain], {
+    logger: { debug() {}, info() {}, warn() {}, error() {} },
+    roomDeps: { rooms },
+  });
+  try {
+    await registry.invoke(
+      'rooms.post',
+      { roomId: roomTurn.roomId, text, ...(attachments ? { attachments } : {}) },
+      {
+        identity: {
+          agentPath: author?.naturalKey ?? '',
+          displayName: author?.displayName ?? '',
+          tierCeiling: 'act',
+          createdAt: new Date().toISOString(),
+        },
+        ...(opts?.cwd ? { cwd: opts.cwd } : {}),
+      }
+    );
+    return true;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
 }
 
 /**
@@ -158,7 +208,9 @@ function roomReadsCanvas(finishRequested: FinishRequested): ScenarioFn {
     }
     // Said before the barrier: a scenario that parked in silence looks exactly
     // like a send that was dropped, and a test waiting on the face would have no
-    // way to tell a failed read from a slow one.
+    // way to tell a failed read from a slow one. Posted as well as narrated,
+    // because the narration reaches nobody in the room.
+    await sayInRoom(opts, read);
     yield { type: 'text_delta', data: { text: read } } as StreamEvent;
 
     for (let tick = 0; tick < HOLD_TICKS && !finishRequested() && !ctx.signal.aborted; tick += 1) {
@@ -216,35 +268,12 @@ function roomPostsAttachment(finishRequested: FinishRequested): ScenarioFn {
       data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
     } as StreamEvent;
 
-    const roomTurn = opts?.roomTurn;
     const cwd = opts?.cwd;
     let said = 'NO-ROOM-TURN';
-    if (roomTurn && cwd) {
-      const rooms = getRoomService();
-      const author = rooms.authorRegistry.getById(roomTurn.authorId);
-      const registry = composeRegistry([roomsDomain], {
-        logger: { debug() {}, info() {}, warn() {}, error() {} },
-        roomDeps: { rooms },
-      });
-      try {
-        await fs.writeFile(path.join(cwd, 'shot.png'), STRIPED_PNG);
-        await registry.invoke(
-          'rooms.post',
-          { roomId: roomTurn.roomId, text: 'Here is what I saw.', attachments: ['shot.png'] },
-          {
-            identity: {
-              agentPath: author?.naturalKey ?? '',
-              displayName: author?.displayName ?? '',
-              tierCeiling: 'act',
-              createdAt: new Date().toISOString(),
-            },
-            cwd,
-          }
-        );
-        said = 'POSTED-ATTACHMENT';
-      } catch (err) {
-        said = `POST-ATTACHMENT-FAILED: ${err instanceof Error ? err.message : String(err)}`;
-      }
+    if (opts?.roomTurn && cwd) {
+      await fs.writeFile(path.join(cwd, 'shot.png'), STRIPED_PNG);
+      const posted = await sayInRoom(opts, 'Here is what I saw.', ['shot.png']);
+      said = posted === true ? 'POSTED-ATTACHMENT' : `POST-ATTACHMENT-FAILED: ${posted}`;
     }
     yield { type: 'text_delta', data: { text: said } } as StreamEvent;
 
@@ -284,18 +313,15 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
         type: 'session_status',
         data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
       } as StreamEvent;
-      yield {
-        type: 'text_delta',
-        data: {
-          text:
-            titles.length === 0
-              ? 'CANVAS-IN-MY-CONTEXT: nothing'
-              : `CANVAS-IN-MY-CONTEXT: ${titles.join(' | ')}`,
-        },
-      } as StreamEvent;
+      const said =
+        titles.length === 0
+          ? 'CANVAS-IN-MY-CONTEXT: nothing'
+          : `CANVAS-IN-MY-CONTEXT: ${titles.join(' | ')}`;
+      await sayInRoom(opts, said);
+      yield { type: 'text_delta', data: { text: said } } as StreamEvent;
       yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
     },
-    'rooms-open-canvas': async function* () {
+    'rooms-open-canvas': async function* (_content, _ctx, opts) {
       yield {
         type: 'session_status',
         data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
@@ -313,6 +339,7 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
           },
         },
       } as StreamEvent;
+      await sayInRoom(opts, 'Put the plan on the canvas.');
       yield { type: 'text_delta', data: { text: 'Put the plan on the canvas.' } } as StreamEvent;
       yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
     },
@@ -321,7 +348,7 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
     // a project room is the agent's own working copy. It is the only way a
     // browser test can produce the one document a room's table treats as work
     // waiting for a decision (spec `canvas-agent-seat` §8).
-    'rooms-open-diff': async function* () {
+    'rooms-open-diff': async function* (_content, _ctx, opts) {
       yield {
         type: 'session_status',
         data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
@@ -330,17 +357,19 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
         type: 'ui_command',
         data: { command: { action: 'open_diff', sourcePath: ROOM_DIFF_PATH } },
       } as StreamEvent;
+      await sayInRoom(opts, 'Put the diff on the canvas.');
       yield { type: 'text_delta', data: { text: 'Put the diff on the canvas.' } } as StreamEvent;
       yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
     },
-    // Holds, then narrates. With the flip on, this text is the thing that must
-    // NOT appear in the room; with it off, it is the answer.
+    // Holds, then narrates and calls nothing. This text is the thing that must
+    // NOT appear in the room: it is an agent that formed an answer and never
+    // sent it, which is a silent turn and earns the `agent_declined` notice.
     'rooms-hold-then-narrate': heldRoomTurn(
       'I looked at it and here is what I think.',
       finishRequested
     ),
-    // Holds, then ends having produced nothing at all — the turn shape that is
-    // silence in both modes, and the one `agent_declined` is measured on.
+    // Holds, then ends having produced nothing at all — silence with nothing
+    // even written down.
     'rooms-hold-then-quiet': heldRoomTurn(null, finishRequested),
     // Reads the canvas from inside a live turn and holds, so a browser can see
     // the face that read put on the tab while the claim is still held.
@@ -351,18 +380,3 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
     'rooms-post-attachment': roomPostsAttachment(finishRequested),
   };
 }
-
-/**
- * Scenario names whose sessions report as carrying the DorkOS room tools.
- *
- * Every other scenario — every one that predates this feature — reports `false`,
- * which is what keeps the existing e2e and eval suites green with the flag on
- * (spec `tool-only-room-replies` §D14, acceptance criterion 19).
- */
-export const TOOL_CAPABLE_SCENARIOS: ReadonlySet<string> = new Set([
-  'rooms-hold-then-narrate',
-  'rooms-hold-then-quiet',
-  // It posts through the real capability, so its session genuinely carries the
-  // room tools; reporting otherwise would make the room post its narration too.
-  'rooms-post-attachment',
-]);

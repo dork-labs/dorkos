@@ -91,17 +91,13 @@ export {
   roomsUnaddressedIsFreeCase,
   roomsBurstCollectsCase,
   roomsHaltStopsCase,
-  roomsStructuralCases,
-} from './rooms.js';
-export {
   roomsToolPostIsTheOnlyReplyCase,
   roomsAddressedSilenceWritesOneNoticeCase,
   roomsAmbientSilenceWritesNothingCase,
   roomsReactionDischargesTheAnswerCase,
   roomsDmToolPostLandsAndTriggersNobodyCase,
-  roomsTextFallbackWhenNotWiredCase,
-  roomsToolOnlyCases,
-} from './rooms-tool-only.js';
+  roomsStructuralCases,
+} from './rooms.js';
 export {
   roomsRecallMemberSaidCase,
   roomsRecallRosterCase,

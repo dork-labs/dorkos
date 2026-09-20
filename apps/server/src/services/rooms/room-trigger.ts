@@ -208,12 +208,11 @@ import {
   type RoomNoticeWriter,
   type RoomTurnUnanswered,
 } from './notices/notice-log.js';
-import { buildCascadeNotice, withLateAnswerNote, type BusyContext } from './notices/notice-copy.js';
+import { buildCascadeNotice, type BusyContext } from './notices/notice-copy.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import {
   RoomTurnRuntimeGoneError,
   type LateRoomReply,
-  type RoomReplyMode,
   type RoomTurnReply,
   type RoomTurnRunner,
 } from './room-turn-port.js';
@@ -229,7 +228,6 @@ export type {
   RoomTurnRequest,
   RoomTurnWaiting,
   RoomTurnReply,
-  RoomReplyMode,
   LateRoomReply,
   RoomTurnResult,
   RoomTurnRunner,
@@ -1998,9 +1996,9 @@ export class RoomTriggerDispatcher {
    *
    * One read for four questions, all of them about the SAME live claim, so they
    * cannot disagree with each other: which message the turn is answering, which
-   * session it is running on, how many posts it has already spent, and how its
-   * words reach the room. Asking them one at a time would be four map lookups
-   * that a release between any two of them could split.
+   * session it is running on, and how many posts it has already spent. Asking
+   * them one at a time would be three map lookups that a release between any two
+   * of them could split.
    *
    * `undefined` is not "a turn with nothing in it" — it means no turn is running
    * here, which is a real and supported state: an agent may post by hand with
@@ -2014,35 +2012,14 @@ export class RoomTriggerDispatcher {
   activeTurnHere(
     roomId: string,
     authorId: string
-  ):
-    | {
-        entryId: string;
-        sessionId: string | undefined;
-        postsThisTurn: number;
-        replyMode: RoomReplyMode | undefined;
-      }
-    | undefined {
+  ): { entryId: string; sessionId: string | undefined; postsThisTurn: number } | undefined {
     const claim = this.claimed.get(agentKey(roomId, authorId));
     if (claim === undefined) return undefined;
     return {
       entryId: claim.entryId,
       sessionId: claim.sessionId,
       postsThisTurn: claim.postsThisTurn,
-      replyMode: claim.replyMode,
     };
-  }
-
-  /**
-   * Record how a live turn's words will reach the room, as its runner resolved
-   * it (spec `tool-only-room-replies` §D2).
-   *
-   * @param roomId - The room the turn is running in.
-   * @param authorId - The agent taking it.
-   * @param mode - What the runner resolved.
-   */
-  private noteReplyMode(roomId: string, authorId: string, mode: RoomReplyMode): void {
-    const claim = this.claimed.get(agentKey(roomId, authorId));
-    if (claim) claim.replyMode = mode;
   }
 
   /**
@@ -2270,11 +2247,9 @@ export class RoomTriggerDispatcher {
         // the claim rather than the frame, so a reading that arrives after this
         // scope is gone reaches nothing rather than a stale object.
         onActivity: (activity) => this.noteActivity(agentKey(room.id, target.authorId), activity),
-        // Both onto the live claim, where a mid-turn `post_to_room` reads them:
-        // the mode conditions the DM refusal, and the session id stamps the
-        // entry with the turn that wrote it (spec `tool-only-room-replies` §D2,
-        // §D8).
-        onReplyMode: (mode) => this.noteReplyMode(room.id, target.authorId, mode),
+        // Onto the live claim, where a mid-turn `post_to_room` reads it: the
+        // session id stamps the entry with the turn that wrote it (spec
+        // `tool-only-room-replies` §D8).
         onSessionBound: (id) => this.noteSessionBound(room.id, target.authorId, id),
       });
 
@@ -2321,13 +2296,7 @@ export class RoomTriggerDispatcher {
         // its own session, where a person can still read what it was saying.
         result.late?.catch(() => undefined);
       } else if (result.late) {
-        this.deliverLate({
-          room,
-          entry,
-          target,
-          sessionId: result.sessionId,
-          late: result.late,
-        });
+        this.deliverLate({ room, entry, target, late: result.late });
         // Marked only AFTER the release above is armed, and the order is the
         // whole safety of it: the `finally` below reads this flag to decide
         // whether the turn is still running, so a claim marked before
@@ -2344,7 +2313,7 @@ export class RoomTriggerDispatcher {
           this.publishPresence(claim, 'working_late');
         }
       } else {
-        outcome = this.deliver({ room, entry, target, reply: result, sessionId: result.sessionId });
+        outcome = this.deliver({ room, entry, target, reply: result });
       }
     } catch (err) {
       outcome = 'failed';
@@ -2423,17 +2392,42 @@ export class RoomTriggerDispatcher {
   }
 
   /**
-   * Put one turn's outcome into the room: the answer, or why there is none.
+   * Put one turn's outcome into the room: what it chose to say, or why there is
+   * nothing.
    *
    * Only ever called with a SETTLED turn — never with the `{ text: null, late }`
    * a runner returns at the wait deadline, which carries no outcome at all and
    * whose recovery-clearing branch would then fire for an agent that has not
    * answered anything (see {@link RoomTriggerDispatcher.runOne}).
    *
+   * ## Nothing here posts the turn's text, and nothing ever will
+   *
+   * A turn speaks by calling `post_to_room` while it runs, or by reacting, or
+   * not at all (spec `tool-only-room-replies`, graduated by DOR-2099). What is
+   * left in `reply.text` when this runs is the agent's thinking, written back to
+   * its own session, and it belongs to whoever is reading that session. So this
+   * function reads MARKS rather than words, and its three terminals, in this
+   * order, are the whole design:
+   *
+   * 1. **The agent posted through the tool** → `'answered'`. Its words are
+   *    already in front of the reader, carrying their own timestamp — which is
+   *    also why a late answer gets no "how long it took" prefix here: the answer
+   *    landed when the agent posted it, and a note about the wait would be
+   *    attached to nothing.
+   * 2. **The agent reacted** → `'answered'`. A thumbs-up can BE the answer, so
+   *    the room shows something and nothing is owed (§D10). Only a reaction that
+   *    LANDED sets the mark.
+   * 3. **Neither** → `'quiet'`, plus one `agent_declined` line if a person
+   *    asked. That split is room-participation §10.2.2's and is not re-derived:
+   *    the obligation attaches to being asked, never to running a turn, so an
+   *    ambient turn writes nothing durable, ever.
+   *
+   * **Both marks are TAKEN, not read** — a claim outlives its answer under RP8's
+   * park-and-resume, and a standing mark would swallow the next delivery. See
+   * {@link RoomTriggerDispatcher.takeSpokeViaTool}.
+   *
    * @param opts.reply - What the turn produced, from the runner.
-   * @param opts.sessionId - The session it ran on, carried onto the post.
-   * @param opts.late - Set on a late answer, so the post can say which message
-   *   it is answering and how long it took.
+   * @param opts.late - Set on a late answer, for the log line that records one.
    * @returns What happened, for the claim release to report.
    */
   private deliver(opts: {
@@ -2441,7 +2435,6 @@ export class RoomTriggerDispatcher {
     entry: RoomEntry;
     target: TriggerTarget;
     reply: RoomTurnReply;
-    sessionId: string;
     late?: { waitedMs: number };
   }): ClaimOutcome {
     const { room, entry, target, reply } = opts;
@@ -2490,137 +2483,21 @@ export class RoomTriggerDispatcher {
     // cleared by the very turn that set it.
     this.notices.recovered(room.id, target.authorId);
 
-    // **The flip, and its whole surface is the branch below** (spec
-    // `tool-only-room-replies` §D1). Resolved by the runner and carried on the
-    // reply, never re-derived here: a late answer is delivered minutes after its
-    // turn started, and re-reading the flag then would apply a setting the turn
-    // never ran under.
-    //
-    // Absent means `'text'`, which is what makes every existing path — a busy
-    // refusal, a fake runtime, a scenario harness — byte-identical.
-    if (reply.replyMode === 'tool-only') {
-      return this.deliverToolOnly(opts);
-    }
-
-    const said = reply.text?.trim();
-    // An agent with nothing to say is exercising judgment, not failing. Only a
-    // named `unanswered` above earns a notice.
-    //
-    // This is the ONE release with nothing durable beside it, and it is a choice
-    // rather than an oversight (room-presence spec §4.3): the person saw an
-    // indicator appear and vanish with no line to show for it. The alternatives
-    // are both worse — a "had nothing to say" entry on every ambient turn is the
-    // over-participation this whole file damps, and suppressing the indicator for
-    // turns that MIGHT end silent would mean knowing the future. `room-presence-
-    // claims.test.ts` pins it as chosen behaviour so it cannot be closed by
-    // accident.
-    if (!said) return 'quiet';
-    // **The agent already spoke here, on purpose.** `post_to_room` put its words
-    // in front of the reader mid-turn; what is left in `said` is the narration it
-    // wrote back to its own session, which belongs to whoever is watching THAT.
-    // Posting it as well gives the room two messages for one thought — the
-    // "I posted the deploy note" that follows the deploy note. The obligation to
-    // be visible is discharged either way, which is what makes this a suppression
-    // rather than a silence: there is a durable entry beside this release.
-    // Taken rather than read, so it covers this delivery and no other — see
-    // {@link RoomTriggerDispatcher.takeSpokeViaTool}.
-    if (this.takeSpokeViaTool(room.id, target.authorId)) return 'answered';
-    if (opts.late !== undefined) {
-      logger.info('[rooms] a late answer landed and was posted', {
-        roomId: room.id,
-        authorId: target.authorId,
-        entryId: entry.id,
-        waitedMs: opts.late.waitedMs,
-      });
-    }
-    const text =
-      opts.late === undefined
-        ? said
-        : withLateAnswerNote(said, { waitedMs: opts.late.waitedMs, question: entry.body.text });
-    // **A late answer is posted like any other, and it addresses people like any
-    // other.** It was briefly written with the dispatch suppressed, on the theory
-    // that a reply to an already-dispatched question must not open a second hop.
-    // That over-corrected: the spam it was aimed at came from the QUOTE in the
-    // prefix re-resolving the original question's handles, which
-    // `withLateAnswerNote` now neutralizes at the source. What suppression also
-    // dropped was the agent's own words — a genuine "@bo can you take this?"
-    // reached nobody, silently, which is the one thing this file is not allowed
-    // to do. The cascade guard bounds what follows, the way it bounds every
-    // other hop.
-    this.deps.writer.post(room.id, {
-      authorId: target.authorId,
-      text,
-      sessionId: opts.sessionId,
-      // The dispatch is passed rather than looked up, as defence in depth. The
-      // worry is a late answer, whose claim has been held for minutes: if this
-      // `(room, agent)` key could be handed to another turn while it waited,
-      // reading the key here would stamp this answer with somebody else's turn.
-      // Traced, and today it cannot — a halt marks the turn and `releaseOwnClaim`
-      // refuses a release from a dispatch that is not the holder, so nothing
-      // re-keys under a live claim. Passing the id keeps the stamp right if that
-      // guard ever moves, and costs one field to do it.
-      trigger: { root: entry.cascadeRoot, depth: target.depth, dispatchId: target.dispatchId },
-      // Answer where you were asked. `threadRootEntryId` is already a validated
-      // top-level entry — every reply carries the root, never another reply —
-      // so re-resolving it in `post` cannot refuse this write.
-      replyTo: entry.threadRootEntryId ?? undefined,
-      // **Unconditionally, in-frame answers included.** A room posts in arrival
-      // order, so an answer is not always next to its question — and holding a
-      // message behind another room's turn makes that common rather than rare.
-      // The client decides whether to DRAW the pointer (it does not, when the
-      // answered entry is the one immediately above); the server just records
-      // which message this is about, because it is the only thing that knows.
-      answersEntryId: entry.id,
-    });
-    return 'answered';
-  }
-
-  /**
-   * Settle a turn whose words are NOT the room's message (spec
-   * `tool-only-room-replies` §D1, the flag-ON half of {@link deliver}).
-   *
-   * Three terminals, in this order, and the order is the whole design:
-   *
-   * 1. **The agent posted through the tool** → `'answered'`. Taken BEFORE the
-   *    quiet branch, which is the reorder D1 is about. Flag-OFF the mark is read
-   *    after `!said` and that is harmless, because an agent that tool-posts
-   *    almost always narrates as well, so `said` is truthy and control reaches
-   *    it. Flag-ON the well-behaved case is exactly "posted via the tool,
-   *    narrated nothing" — which the old order would classify as `'quiet'`, leave
-   *    the mark standing on a claim about to be deleted, and punish with the very
-   *    notice the agent earned its way out of.
-   * 2. **The agent reacted** → `'answered'`. A thumbs-up can BE the answer, so
-   *    the room shows something and nothing is owed (§D10). Only a reaction that
-   *    LANDED sets the mark.
-   * 3. **Neither** → `'quiet'`, plus one `agent_declined` line if a person asked.
-   *    That split is §10.2.2's and is not re-derived: the obligation attaches to
-   *    being asked, never to running a turn, so an ambient turn writes nothing
-   *    durable, ever.
-   *
-   * What does NOT happen here is the post. There is no late prefix either, and
-   * there is nothing for one to prefix: the answer landed when the agent posted
-   * it, carrying its own timestamp, so a note saying how long the turn took would
-   * be attached to nothing.
-   *
-   * @param opts - The same delivery the caller assembled; see {@link deliver}.
-   * @returns What happened, for the claim release to report.
-   */
-  private deliverToolOnly(opts: {
-    room: Room;
-    entry: RoomEntry;
-    target: TriggerTarget;
-    reply: RoomTurnReply;
-    sessionId: string;
-    late?: { waitedMs: number };
-  }): ClaimOutcome {
-    const { room, entry, target } = opts;
-    // Taken rather than read, both of them, so each covers this delivery and no
-    // other — see {@link RoomTriggerDispatcher.takeSpokeViaTool}.
     if (this.takeSpokeViaTool(room.id, target.authorId)) {
-      // Taken as well, and discarded: a turn that posted AND reacted has
-      // answered once, and leaving the reaction mark standing would let it
-      // discharge the next turn's obligation.
+      // Taken as well, and discarded. Both marks live on the claim, and under
+      // park-and-resume a claim outlives its first answer (spec D1: marks are
+      // TAKEN, not read), so a reaction left standing here would count as the
+      // answer to that claim's next delivery. No test drives that second
+      // delivery today; this line is what keeps it honest when one does.
       this.takeReactedViaTool(room.id, target.authorId);
+      if (opts.late !== undefined) {
+        logger.info('[rooms] a late turn had already posted its answer', {
+          roomId: room.id,
+          authorId: target.authorId,
+          entryId: entry.id,
+          waitedMs: opts.late.waitedMs,
+        });
+      }
       return 'answered';
     }
     if (this.takeReactedViaTool(room.id, target.authorId)) return 'answered';
@@ -2638,12 +2515,12 @@ export class RoomTriggerDispatcher {
    * Post an answer the room stopped waiting for, once it lands — and release
    * the claim that has been saying, all along, that the agent is still on it.
    *
-   * The turn was never cancelled, so this is the answer to a real question that
-   * a real person asked — it goes in, saying how long it took. The claim on
-   * `(room, agent)` is still held when this runs (see
+   * The turn was never cancelled, so it is still the agent's own to settle: if
+   * it posted through the tool while it ran, the answer is already in the room
+   * carrying its own timestamp, and if it posted nothing this is where the room
+   * says so. The claim on `(room, agent)` is still held when this runs (see
    * {@link RoomTriggerDispatcher.runOne}'s `finally`), which is what makes the
-   * late window honest rather than a hole; the cascade stamp is passed
-   * explicitly regardless, so the guard sees the hop either way.
+   * late window honest rather than a hole.
    *
    * **The release is in `finally`, and it is deliberately the last thing.** It
    * has to run on both settlements — the answer landing and the delivery
@@ -2661,7 +2538,6 @@ export class RoomTriggerDispatcher {
     room: Room;
     entry: RoomEntry;
     target: TriggerTarget;
-    sessionId: string;
     late: Promise<LateRoomReply>;
   }): void {
     const key = agentKey(opts.room.id, opts.target.authorId);
@@ -2674,7 +2550,6 @@ export class RoomTriggerDispatcher {
           entry: opts.entry,
           target: opts.target,
           reply,
-          sessionId: opts.sessionId,
           late: { waitedMs: reply.waitedMs },
         });
       })
@@ -2712,8 +2587,8 @@ export class RoomTriggerDispatcher {
   }
 
   /**
-   * Ask one agent something the room never posted, and hand back what it said —
-   * the welcome-back offer's only way in (DOR-1046, spec `team-room-home` D5.2).
+   * Ask one agent something the room never posted — the welcome-back offer's
+   * only way in (DOR-1046, spec `team-room-home` D5.2).
    *
    * **Everything that bounds a triggered turn bounds this one**, which is the
    * whole reason it lives here rather than beside the greeter: the `(room,
@@ -2745,40 +2620,45 @@ export class RoomTriggerDispatcher {
    * back then. Dropping it would contradict the busy notice's own promise that
    * the answer lands here, and would release the working indicator into nothing.
    *
-   * **The answer is not posted here.** It is handed back so the greeter can post
-   * it the way it posts a status line — un-provenanced, which is what makes
-   * `deriveCascade` stamp it AT the ceiling and the fallback seat stand down for
-   * it. Posting it from inside this method would give it THIS turn's cascade
-   * root instead, and a stamp at the ceiling under a root that is not its own
-   * entry is the exact shape that sprays a `cascade_depth` notice at every
-   * room-mate. The residual cost is one line wide and is documented with the
-   * rule: the claim releases a tick before the greeter's post, so a post the
-   * room then refuses leaves a release with nothing durable beside it.
+   * **The agent posts the offer itself, and nothing here hands text back**
+   * (spec `tool-only-room-replies` §A2, reversing D12). An offer turn is an
+   * ordinary room turn: it calls `post_to_room` or it does not, and one that
+   * does not produces nothing and no notice — which is consistent with the four
+   * silences below and with ambient silence everywhere else. The greeter used to
+   * post whatever this returned, which made the offer the one path in the
+   * product where a turn's narration was still the room's message; a second
+   * delivery is exactly the drift the graduation removes.
+   *
+   * **The cascade stamp still stands the offer down**, and it does so through
+   * the claim rather than through the greeter's un-provenanced write: the claim
+   * below is taken with `aside: true` and at the ceiling, so a post made from
+   * inside this turn inherits no root and is stamped spent on arrival. An offer
+   * cannot start a conversation, which is the property this reversal had to
+   * preserve and is pinned by a test.
    *
    * @param input.room - The room the offer would be made in.
    * @param input.entry - The entry it is ABOUT — the status line this agent just
    *   posted. It frames the turn's context and names the working indicator.
    * @param input.authorId - The agent being asked.
    * @param input.prompt - The question, as the model will see it.
-   * @returns What the agent said, or `null` for every kind of silence.
    */
   async askAside(input: {
     room: Room;
     entry: RoomEntry;
     authorId: string;
     prompt: string;
-  }): Promise<string | null> {
+  }): Promise<void> {
     const { room, entry, authorId } = input;
     const record = this.deps.authors.getMany([authorId]).get(authorId);
     // Only an agent takes a turn, and only a live one: a directory that no
     // longer holds this agent has nothing to offer and no session to offer it
     // on (ADR 260801-003051).
-    if (!record || record.kind !== 'agent') return null;
-    if (!isLiveAuthor(record, this.deps.agents)) return null;
+    if (!record || record.kind !== 'agent') return;
+    if (!isLiveAuthor(record, this.deps.agents)) return;
     // It posted its status line a moment ago, so this is all but guaranteed —
     // and it costs one indexed read to not spend a model turn on the case where
     // it left the room in between.
-    if (!this.deps.store.getMember(room.id, authorId)) return null;
+    if (!this.deps.store.getMember(room.id, authorId)) return;
     const agentPath = record.naturalKey;
 
     const busyWith = this.busyWith(room.id, authorId, agentPath);
@@ -2790,7 +2670,7 @@ export class RoomTriggerDispatcher {
         // `agentPath`, and a filesystem path does not belong in a log context.
         busyWith: busyWith.where,
       });
-      return null;
+      return;
     }
     // Charged through the same seam `claimCollected` uses, which is what keeps
     // an offer from being the one path that spends without counting: with every
@@ -2802,7 +2682,7 @@ export class RoomTriggerDispatcher {
         roomId: room.id,
         authorId,
       });
-      return null;
+      return;
     }
     // **The re-arm, exactly as `claimCollected` does it, and it is not optional
     // here.** Spending again means the hourly window moved, so the next
@@ -2830,7 +2710,7 @@ export class RoomTriggerDispatcher {
         authorId,
         error: err instanceof Error ? err.message : String(err),
       });
-      return null;
+      return;
     }
 
     const dispatchId = newDispatchId();
@@ -2885,7 +2765,7 @@ export class RoomTriggerDispatcher {
     key: string;
     dispatchId: string;
     prompt: string;
-  }): Promise<string | null> {
+  }): Promise<void> {
     const { room, entry, authorId, key } = input;
     const displayName =
       this.deps.authors.getMany([authorId]).get(authorId)?.displayName ?? 'An agent';
@@ -2947,21 +2827,6 @@ export class RoomTriggerDispatcher {
         // An aside turn holds a real claim in a real checkout, so it reports
         // what it is doing like any other turn.
         onActivity: (activity) => this.noteActivity(key, activity),
-        // **PINNED to text, and this is the one turn in the product that is**
-        // (spec `tool-only-room-replies` §D12). A welcome-back offer's text IS
-        // still the room's message under the flip — the greeter posts it itself,
-        // outside `deliver` — so letting the runner resolve `'tool-only'` here
-        // would tell the agent "nothing you write back this turn is posted" and
-        // then post exactly what it wrote. An agent told the opposite of what
-        // happens is the drift this feature is most exposed to, and it was
-        // reachable in one line: the shared runner overwrites the context with
-        // whatever mode it resolved.
-        replyMode: 'text',
-        // An aside turn can still post through the tool — the greeter's question
-        // is answered back to the greeter, but nothing stops the agent saying
-        // something in the room while it thinks. The mode reaching the claim is
-        // what keeps `postFromTool`'s DM refusal correct for it.
-        onReplyMode: (mode) => this.noteReplyMode(room.id, authorId, mode),
         onSessionBound: (id) => this.noteSessionBound(room.id, authorId, id),
       });
       if (result.sessionId !== input.sessionId) {
@@ -2979,7 +2844,7 @@ export class RoomTriggerDispatcher {
         // Resolve-or-reject is the runner's contract; the room has simply
         // stopped listening. Same treatment as `runOne`'s halted branch.
         result.late?.catch(() => undefined);
-        return null;
+        return;
       }
       // **A slow turn is late, never lost** (`.claude/rules/room-conduct.md`).
       // The room's wait bounds the WAIT; the turn keeps running, and
@@ -2997,26 +2862,22 @@ export class RoomTriggerDispatcher {
       // rather than into the room.
       if (this.wasHalted(input.dispatchId)) {
         outcome = 'halted';
-        return null;
+        return;
       }
       if (settled.unanswered) {
         outcome = settled.unanswered;
-        return null;
+        return;
       }
-      const said = settled.text?.trim();
-      if (!said) return null;
-      // The same suppression the triggered path applies, for the same reason: an
-      // aside turn that reached for `post_to_room` has already put its words in
-      // front of the reader, and handing `said` back would have the greeter post
-      // the narration of that post a tick later. The claim is still held here —
-      // the `finally` below is what releases it — so the mark is still readable,
-      // and taking it keeps it bound to this one delivery.
-      if (this.takeSpokeViaTool(room.id, authorId)) {
-        outcome = 'answered';
-        return null;
-      }
-      outcome = 'answered';
-      return said;
+      // **The same three terminals `deliver` reads, minus the notice.** An offer
+      // that posted or reacted has put something in front of the person and
+      // releases as `'answered'`; one that did neither is `'quiet'` and says so
+      // to nobody, because nobody asked for this turn. Both marks are TAKEN, for
+      // the reason `deliver` takes them: the claim is still held here — the
+      // `finally` below is what releases it — and a mark left standing would
+      // discharge the next turn's obligation.
+      const spoke = this.takeSpokeViaTool(room.id, authorId);
+      const reacted = this.takeReactedViaTool(room.id, authorId);
+      outcome = spoke || reacted ? 'answered' : 'quiet';
     } catch (err) {
       outcome = 'failed';
       logger.warn('[rooms] a welcome-back offer turn failed', {
@@ -3024,15 +2885,13 @@ export class RoomTriggerDispatcher {
         authorId,
         error: err instanceof Error ? err.message : String(err),
       });
-      return null;
     } finally {
-      // Always, and last. An aside turn releases into the offer the greeter
-      // posts a tick later, or into the named exception every turn has — an
-      // agent that ran and chose to say nothing. The one hole left is a greeter
-      // post that THROWS after this release; it is logged there
-      // (`welcome-back/greeter.ts`) and written down as an exception in
-      // `.claude/rules/room-conduct.md`, because a rule with an undocumented
-      // exception is a rule somebody re-derives from scratch.
+      // Always, and last. An aside turn releases into the offer the agent
+      // posted while it ran, or into the named exception every turn has — an
+      // agent that ran and chose to say nothing. Since the offer is now posted
+      // from inside the turn, the release genuinely comes after the durable
+      // write rather than a tick before it, which is what closes the one hole
+      // this path used to carry.
       //
       // Guarded by dispatch like both triggered releases: an aside waits out its
       // own late answer, so a Stop and a fresh message can hand this key to a
@@ -3356,29 +3215,23 @@ export class RoomTriggerDispatcher {
     claim.activity = undefined;
     // **How the turn finished, on the lane that drops it** (spec
     // `tool-only-room-replies` §D7). A working pill that appears and vanishes
-    // with nothing to show reads as a crash, and under `rooms.toolOnlyReplies`
-    // that stops being rare. Only the two outcomes a person can act on are said:
-    // `answered` and `silent`. Every other one — halted, busy, failed, gone —
-    // already has a durable line of its own explaining it, and a second,
-    // ephemeral statement beside it would be the room saying the same thing
-    // twice.
+    // with nothing to show reads as a crash, and a turn that decides nothing
+    // needs saying is now an ordinary outcome rather than a rare one. Only the
+    // two outcomes a person can act on are said: `answered` and `silent`. Every
+    // other one — halted, busy, failed, gone — already has a durable line of its
+    // own explaining it, and a second, ephemeral statement beside it would be
+    // the room saying the same thing twice.
     //
-    // **And only for a turn that actually ran TOOL-ONLY**, which is acceptance
-    // criterion 1 winning an argument it should win: with the flag off, room
-    // behaviour is byte-identical to before this feature, and a new field on
-    // every release frame is not byte-identical. It buys nothing there either —
-    // a text-mode turn that finishes has posted its words or written a notice,
-    // so the indicator already releases into something the reader can see. The
-    // absence is what makes it honest rather than decorative.
+    // **On every room turn**, since every room turn now speaks by calling the
+    // tool or not at all (spec §A2, D7). It was once published only for a turn
+    // that had resolved `'tool-only'`, so that a flag-off install stayed
+    // byte-identical to the release before the experiment; there is no flag and
+    // no other mode to be identical to.
     //
     // Past tense, and deliberately not durable: E16a exempts a mechanical
     // presence signal from every speaking rule, and a restart forgetting this
     // costs nothing because the fact was already over.
-    this.publishPresence(
-      claim,
-      'done',
-      claim.replyMode === 'tool-only' ? PRESENCE_OUTCOMES[outcome] : undefined
-    );
+    this.publishPresence(claim, 'done', PRESENCE_OUTCOMES[outcome]);
     this.publishWorkingCount(claim.roomId, before);
     if (this.republishing !== null && this.claimed.size === 0) {
       clearInterval(this.republishing);

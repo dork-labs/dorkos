@@ -32,6 +32,7 @@ import {
   createRoomHarness,
   settleUntil,
   type ScriptedTurnRunner,
+  roomVoice,
 } from '../../../rooms/__tests__/room-test-harness.js';
 import { mockInterruptReceipt } from '@dorkos/test-utils';
 import { ChatBridgePresence } from '../presence.js';
@@ -60,6 +61,7 @@ function gatedTurn(): { runner: ScriptedTurnRunner; handed(): boolean; release()
   const runner: ScriptedTurnRunner = {
     turns: [],
     interrupted: [],
+    ...roomVoice(),
     interrupt: () => Promise.resolve(mockInterruptReceipt('not-running')),
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       handedFlag = true;
