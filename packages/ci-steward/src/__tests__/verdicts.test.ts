@@ -278,3 +278,91 @@ describe('verdict rules on synthetic data', () => {
     ).toBeNull();
   });
 });
+
+describe('tracked.time-to-detect: what the main canary buys', () => {
+  const ANCHOR = '2026-09-01T00:00:00Z';
+  const canaryEntry: LedgerEntry = {
+    id: '260901-000000',
+    title: 'the main canary',
+    kind: 'experiment',
+    status: 'active',
+    actor: 'agent',
+    gates: [],
+    prs: [900],
+    hypothesis: {
+      metric: 'tracked.time-to-detect',
+      baseline: 3964,
+      target: 720,
+      after_days: 7,
+    },
+    'ratchet-release': [],
+    'floor-release': [],
+    'field-changes': [],
+  };
+  const anchored = new Map([[900, ANCHOR]]);
+
+  /**
+   * Seven days of canary results, `perDay` rounds a day of each workflow,
+   * evenly spaced. The gap between rounds is 24/perDay hours.
+   */
+  function canaryDays(perDay: number, workflows = ['test.yml', 'browser-test.yml']): Snapshot[] {
+    return Array.from({ length: 8 }, (_, i) => {
+      const date = addDays('2026-09-01', i);
+      const s = emptySnapshot(date, `${date}T23:00:00Z`, 700);
+      s.complete = true;
+      s.healthy = true;
+      s.health.ok = true;
+      for (const workflow of workflows)
+        for (let k = 0; k < perDay; k += 1) {
+          const hour = String(Math.floor((24 / perDay) * k)).padStart(2, '0');
+          s.canary.push({
+            workflow,
+            sha: `${date}-${k}`.slice(0, 12),
+            event: 'schedule',
+            started: `${date}T${hour}:00:00Z`,
+            done: `${date}T${hour}:30:00Z`,
+            red: false,
+          });
+        }
+      return s;
+    });
+  }
+
+  const verdictOn = (snapshots: Snapshot[]) =>
+    computeVerdict({
+      entry: canaryEntry,
+      mergedAt: anchored,
+      ledger: [canaryEntry],
+      files: files!,
+      series: seriesFrom(
+        (days) => snapshots.filter((s) => days.includes(s.date)),
+        () => []
+      ),
+      now: new Date('2026-09-20T05:00:00Z'),
+    })!;
+
+  it('reads the gap between one workflow s consecutive canary results, not across workflows', () => {
+    // Four rounds a day of each of two workflows: the gap per workflow is 6 h
+    // (360 min), and it stays 360 whatever the second workflow does — an
+    // interleaved gap of 3 h would be a lie about either one s blind spot.
+    const v = verdictOn(canaryDays(4));
+    expect(v.after.value).toBe(360);
+    expect(v.verdict).toBe('verified');
+  });
+
+  it('does not read green when the schedule thins out, which is the whole risk being tested', () => {
+    // One round a day: a break can hide 24 h. Better than the 66 h baseline and
+    // nowhere near the 12 h target, so `partial` — the honest answer, and the
+    // one that says the crons were throttled rather than that the canary works.
+    const v = verdictOn(canaryDays(1));
+    expect(v.after.value).toBe(1440);
+    expect(v.verdict).toBe('partial');
+  });
+
+  it('is inconclusive rather than green when the canary stopped running', () => {
+    // No results at all reads as no data, never as "nothing was detected late".
+    const v = verdictOn(canaryDays(0));
+    expect(v.after.value).toBeNull();
+    expect(v.verdict).toBe('inconclusive');
+  });
+});

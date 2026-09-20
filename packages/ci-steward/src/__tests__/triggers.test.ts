@@ -474,6 +474,130 @@ describe('trigger rules', () => {
     const fresh = entry({ id: '260917-120000', status: 'proposed' });
     expect(ids(triage(input({ ledger: [fresh] })))).toEqual([]);
   });
+
+  describe('rule 11: the main canary', () => {
+    /** A canary result of `workflow` on `date`, finishing at `hour`:30 UTC. */
+    const run = (date: string, workflow: string, hour: number, red = false) => ({
+      workflow,
+      sha: `abc123def456${hour}`.slice(0, 12),
+      event: 'schedule',
+      started: `${date}T${String(hour).padStart(2, '0')}:00:00Z`,
+      done: `${date}T${String(hour).padStart(2, '0')}:30:00Z`,
+      red,
+    });
+
+    /** Four green canary rounds of one workflow, six hours apart. */
+    const round = (date: string, workflow = 'test.yml') =>
+      [0, 6, 12, 18].map((h) => run(date, workflow, h));
+
+    /** A day both configured canary workflows reported four green rounds on. */
+    const greenDay = (date: string) =>
+      snap(date, { canary: [...round(date), ...round(date, 'nightly.yml')] });
+
+    /** A day whose test.yml canary ran `runs` and whose nightly.yml was green. */
+    const dayOf = (date: string, runs: ReturnType<typeof run>[]) =>
+      snap(date, { canary: [...runs, ...round(date, 'nightly.yml')] });
+
+    it('says nothing until the canary has produced a result', () => {
+      // The days between this landing and the first cron are not an outage.
+      expect(ids(triage(input({ snapshots: [snap(TODAY)] })))).toEqual([]);
+    });
+
+    it('fires red on the first red run, names the commit and the time, and clears on the next green', () => {
+      const red = run(TODAY, 'test.yml', 18, true);
+      const { first, second } = fireThenClear(
+        { snapshots: [dayOf(TODAY, [run(TODAY, 'test.yml', 12), red])] },
+        { snapshots: [greenDay(TODAY)] }
+      );
+      expect(ids(first)).toEqual([`main-canary:${red.sha}`]);
+      const t = first.open[0]!;
+      expect(t.severity).toBe('red');
+      expect(t.rule).toBe('main-canary');
+      expect(t.what).toBe(
+        `main canary red on ${red.sha.slice(0, 7)} since ${TODAY} 18:30Z: test.yml ×1.`
+      );
+      expect(ids(second)).toEqual([]);
+      expect(second.cleared.map((x) => x.id)).toEqual([`main-canary:${red.sha}`]);
+    });
+
+    it('is one episode however many workflows are in it, anchored on the oldest red', () => {
+      const first = run(TODAY, 'nightly.yml', 6, true);
+      const t = triage(
+        input({
+          snapshots: [
+            snap(TODAY, {
+              canary: [first, run(TODAY, 'test.yml', 12, true), run(TODAY, 'test.yml', 18, true)],
+            }),
+          ],
+        })
+      );
+      expect(ids(t)).toEqual([`main-canary:${first.sha}`]);
+      expect(t.open[0]!.what).toContain('nightly.yml ×1, test.yml ×2');
+    });
+
+    it('keeps its first-fired day while the break stays open, so it does not nag', () => {
+      const red = run(addDays(TODAY, -3), 'test.yml', 6, true);
+      const day = dayOf(addDays(TODAY, -3), [red]);
+      const shared = repo();
+      const yesterday = triage(
+        input({
+          ...shared,
+          snapshots: [day],
+          latest: latest({ date: addDays(TODAY, -3) }),
+        })
+      );
+      const today = triage(input({ ...shared, snapshots: [day], prior: yesterday }));
+      expect(openDays(today.open[0]!, TODAY)).toBe(3);
+    });
+
+    it('fires amber when a configured canary workflow has gone quiet, and only then', () => {
+      // Four rounds a day on both configured workflows: the newest is 18:30,
+      // 5.5 h before the reported day's end, inside the 18 h threshold.
+      expect(ids(triage(input({ snapshots: [greenDay(TODAY)] })))).toEqual([]);
+
+      // A configured workflow that produced nothing at all is silent, even
+      // while its sibling is healthy — the whole point of the arm is that a
+      // canary which stopped running reads exactly like a green one.
+      const onlyTest = triage(input({ snapshots: [snap(TODAY, { canary: round(TODAY) })] }));
+      expect(ids(onlyTest)).toEqual(['main-canary-silent']);
+      expect(onlyTest.open[0]!.severity).toBe('amber');
+      expect(onlyTest.open[0]!.what).toBe('main canary silent over 18h: nightly.yml.');
+
+      // A last result 19.5 h before the reported day's end is an outage too.
+      const stale = snap(TODAY, {
+        canary: [run(addDays(TODAY, -1), 'test.yml', 4), run(addDays(TODAY, -1), 'nightly.yml', 4)],
+      });
+      expect(triage(input({ snapshots: [stale] })).open[0]!.what).toBe(
+        'main canary silent over 18h: nightly.yml, test.yml.'
+      );
+    });
+
+    it('never counts a canary run as a failure of the gate it shares', () => {
+      // The canary reuses the queue's jobs, so its runs carry the same gate
+      // ids. A gate failing every canary round and never in the queue must not
+      // read as a failing gate: that is `gate-failure-spike`'s population, and
+      // it describes what merging costs.
+      const canaryGate = (date: string): Snapshot =>
+        snap(date, {
+          gates: {
+            [gateKey('wf.test.test-shard', 'schedule')]: {
+              durations: [[3600, 600]],
+              conclusions: { failure: 40 },
+              retried: 0,
+              runs: 40,
+            },
+            [gateKey('wf.test.test-shard', 'merge_group')]: {
+              durations: [[3600, 600]],
+              conclusions: { success: 40 },
+              retried: 0,
+              runs: 40,
+            },
+          },
+        });
+      const days = Array.from({ length: 14 }, (_, i) => canaryGate(addDays(TODAY, -13 + i)));
+      expect(ids(triage(input({ snapshots: days })))).toEqual([]);
+    });
+  });
 });
 
 describe('trigger state', () => {

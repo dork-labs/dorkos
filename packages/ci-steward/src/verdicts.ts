@@ -35,7 +35,7 @@ import { gateDays, type LocalDay, type Snapshot, type TimedSample, type Verdict 
 import type { HandFiles } from './load.ts';
 import { computeSlos } from './slo.ts';
 import type { LedgerFrontmatter } from './schemas.ts';
-import { addDays, dayOf, dayRange, daysBetween, quantile, round } from './time.ts';
+import { addDays, dayOf, dayRange, daysBetween, minutesBetween, quantile, round } from './time.ts';
 
 /** A parsed ledger entry. */
 export type LedgerEntry = LedgerFrontmatter;
@@ -103,6 +103,39 @@ function within<T extends { date: string }>(
       return t >= from && t < to ? [v] : [];
     });
   });
+}
+
+/**
+ * `tracked.time-to-detect`: how long a break on `main` can go unseen.
+ *
+ * A break lands between two canary results, so the longest it can hide is the
+ * gap from the previous result of that workflow to the moment this one
+ * finished. That is what is measured here, per result, and reported as p90 —
+ * an upper bound on time-to-detect that can be computed every day, from days
+ * on which nothing broke at all. Measuring the real thing instead (merge →
+ * first red canary) would need a break to measure, and `main` is usually
+ * green: an honest metric has to be readable when the pipeline is healthy.
+ *
+ * Per workflow, because the four canary legs are throttled independently and a
+ * gap in one is a blind spot whatever the others did. The first result of each
+ * workflow in the window has no predecessor and is skipped rather than
+ * measured against midnight.
+ *
+ * @param snaps - The window's whole days.
+ */
+function canaryDetect(snaps: readonly Snapshot[]): MetricReading {
+  const byWorkflow = new Map<string, string[]>();
+  for (const r of snaps.flatMap((s) => s.canary)) {
+    const list = byWorkflow.get(r.workflow) ?? [];
+    list.push(r.done);
+    byWorkflow.set(r.workflow, list);
+  }
+  const gaps: number[] = [];
+  for (const dones of byWorkflow.values()) {
+    dones.sort();
+    for (let i = 1; i < dones.length; i += 1) gaps.push(minutesBetween(dones[i - 1]!, dones[i]!));
+  }
+  return { n: gaps.length, value: round1(quantile(gaps, 0.9)) };
 }
 
 /**
@@ -187,6 +220,7 @@ function readMetric(id: string, files: HandFiles, series: Series, w: Window): Me
         : null,
     };
   }
+  if (id === 'tracked.time-to-detect') return canaryDetect(wholeSnaps);
   if (id === 'tracked.job-minutes-per-merged-pr' || id === 'tracked.review-runs-per-merged-pr') {
     const merged = sum(wholeSnaps.map((s) => s.counts.merged_prs));
     const top = sum(

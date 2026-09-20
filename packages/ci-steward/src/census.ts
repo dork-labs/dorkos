@@ -172,6 +172,46 @@ function checkCrossFile(root: string, files: HandFiles): Finding[] {
   return out;
 }
 
+/**
+ * The main canary's list and the workflows it names must agree (DOR-2150).
+ *
+ * `ci/config.yaml`'s `canary.workflows` is what the collector reads a run's
+ * event against; the `schedule:` and `workflow_dispatch:` triggers are what
+ * make the runs happen. Nothing joins the two at runtime, so either half can be
+ * removed without the other noticing — and a canary that stopped running reads
+ * exactly like a healthy `main` in every number on the report. This is the
+ * registry that makes the pair conform, rather than opting in by name twice.
+ *
+ * @param files - The hand files.
+ * @param workflows - The parsed workflows.
+ */
+function checkCanary(files: HandFiles, workflows: readonly WorkflowModel[]): Finding[] {
+  const out: Finding[] = [];
+  const byFile = new Map(workflows.map((w) => [w.file, w]));
+  for (const file of files.config.canary.workflows) {
+    const wf = byFile.get(file);
+    if (!wf) {
+      out.push({
+        code: 'canary/missing-workflow',
+        file: files.config.hand_files.gates,
+        where: file,
+        message: `canary.workflows names ${file}, which is not in ${files.config.workflows_dir}.`,
+        fix: `Remove it from canary.workflows in ci/config.yaml, or restore the workflow.`,
+      });
+      continue;
+    }
+    const missing = ['schedule', 'workflow_dispatch'].filter((t) => !wf.triggers.has(t));
+    if (missing.length)
+      out.push({
+        code: 'canary/missing-trigger',
+        file: wf.path,
+        message: `${file} is a main-canary workflow but has no ${missing.join(' and no ')} trigger, so it never runs against main.`,
+        fix: `Add the missing trigger(s) to ${wf.path}, or drop ${file} from canary.workflows in ci/config.yaml.`,
+      });
+  }
+  return out;
+}
+
 function checkDocBlocks(root: string, files: HandFiles, fix: boolean, fixed: string[]): Finding[] {
   const out: Finding[] = [];
   const { config, requiredChecks } = files;
@@ -250,6 +290,7 @@ export function runCensus(opts: CensusOptions): CensusResult {
   }
   if (files.allowlist) findings.push(...allow.leftovers());
   findings.push(...checkCrossFile(opts.root, files));
+  findings.push(...checkCanary(files, workflows));
   findings.push(...checkDocBlocks(opts.root, files, opts.fix === true, fixed));
   return { findings, fixed };
 }

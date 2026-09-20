@@ -101,6 +101,12 @@ function headroom(inp: SloInputs, minN: number): Raw {
   for (const s of inp.snapshots) {
     for (const [gate, timeout] of Object.entries(s.timeouts)) {
       const list = ratios.get(gate) ?? [];
+      // Unqualified, so a gate that runs on the merge path is read over that
+      // population only and not over the main canary's runs of the same job
+      // (`gateDays` → `onMergePath`). A gate that runs on nothing but a
+      // schedule — merge-tail's arm, evals, CodeQL, the collector itself —
+      // keeps every sample, because otherwise this tripwire would stop
+      // watching the four jobs whose timeouts nothing else looks at.
       for (const g of gateDays(s.gates, gate))
         for (const [, sec] of g.durations) list.push(sec / 60 / timeout);
       ratios.set(gate, list);

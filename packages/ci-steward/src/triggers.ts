@@ -5,7 +5,7 @@
  * step, surfaced in the daily report, in `/ci-status` and at SessionStart.
  * Phase 3's `ci-improve` is what will consume them.
  *
- * Ten rules, each with its threshold in `ci/config.yaml`'s `triage:` block.
+ * Eleven rules, each with its threshold in `ci/config.yaml`'s `triage:` block.
  * That file is inside the fence (`ci/steward-owned-paths.json`), so an
  * unattended tick cannot move its own goalposts by widening a threshold.
  *
@@ -23,14 +23,22 @@
  * and never from a date or a count.
  */
 import { z } from 'zod';
-import { gateDays, type Latest, type Snapshot, type SloReading, type Verdict } from './data.ts';
+import {
+  gateDays,
+  onMergePath,
+  type Latest,
+  type Snapshot,
+  type SloReading,
+  type Verdict,
+} from './data.ts';
 import type { HandFiles } from './load.ts';
 import { addDays, quantile, round } from './time.ts';
 import { ejectionLegs, legName } from './ejections.ts';
 import type { LedgerEntry } from './verdicts.ts';
 import type { WorkflowModel } from './workflows.ts';
+import { mainCanary } from './canary.ts';
 
-/** The ten rules, in the order `ci/config.yaml` documents them. */
+/** The eleven rules, in the order `ci/config.yaml` documents them. */
 export const TRIGGER_RULES = [
   'slo-floor',
   'constraint-changed',
@@ -42,6 +50,7 @@ export const TRIGGER_RULES = [
   'headroom',
   'collector-health',
   'stale-ledger',
+  'main-canary',
 ] as const;
 
 /** One trigger rule. */
@@ -54,15 +63,16 @@ export type TriggerRule = (typeof TRIGGER_RULES)[number];
  */
 const RANK: Record<TriggerRule, number> = {
   'collector-health': 1,
-  'main-red': 2,
-  headroom: 3,
-  'slo-floor': 4,
-  verdict: 5,
-  'gate-failure-spike': 6,
-  'repeat-ejection': 7,
-  'gate-cost': 8,
-  'constraint-changed': 9,
-  'stale-ledger': 10,
+  'main-canary': 2,
+  'main-red': 3,
+  headroom: 4,
+  'slo-floor': 5,
+  verdict: 6,
+  'gate-failure-spike': 7,
+  'repeat-ejection': 8,
+  'gate-cost': 9,
+  'constraint-changed': 10,
+  'stale-ledger': 11,
 };
 
 /**
@@ -110,7 +120,7 @@ export const TriggersSchema = z.object({
 export type Triggers = z.infer<typeof TriggersSchema>;
 
 /** A trigger before its first-fired date is known. */
-type NewTrigger = Omit<Trigger, 'first_fired' | 'last_fired'>;
+export type NewTrigger = Omit<Trigger, 'first_fired' | 'last_fired'>;
 
 /** Everything one triage run reads. */
 export interface TriageInput {
@@ -155,6 +165,13 @@ function gateWindow(snaps: readonly Snapshot[]): GateWindows {
   for (const s of snaps) {
     for (const [key, g] of Object.entries(s.gates)) {
       const gate = key.slice(0, key.lastIndexOf('@'));
+      // The main canary runs the same jobs under the same gate ids against
+      // `main`, on a schedule. Counting it here would make the cost and
+      // failure-rate rules describe something other than what merging costs —
+      // and would fire `gate-failure-spike` on the canary doing its job. A gate
+      // that runs on nothing but a schedule keeps its own runs; see
+      // `onMergePath`.
+      if (!onMergePath(s.gates, key)) continue;
       const w = get(gate);
       const c = (k: string) => g.conclusions[k] ?? 0;
       w.runs += g.runs;
@@ -554,6 +571,7 @@ export function triage(inp: TriageInput): Triggers {
     ...headroom(inp, curGates),
     ...collectorHealth(inp, cur),
     ...staleLedger(inp),
+    ...mainCanary(inp, inp.snapshots),
   ];
   const before = new Map((inp.prior?.open ?? []).map((t) => [t.id, t]));
   const open: Trigger[] = [];

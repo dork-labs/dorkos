@@ -56,6 +56,41 @@ const QueueBuildSchema = z
 /** A merge-queue build. */
 export type QueueBuild = z.infer<typeof QueueBuildSchema>;
 
+/**
+ * The events a main-canary run arrives on.
+ *
+ * The canary is the required suites run against `main` HEAD on a schedule
+ * (`.github/workflows/test.yml` and its three siblings). It reuses the existing
+ * workflows, so its jobs carry the SAME gate ids as the PR and queue legs and
+ * are told apart only by the run's event — which is why every reader that
+ * aggregates a gate across events has to skip these two. A canary run is a
+ * diagnostic on a tree nobody is trying to merge: counting it as a failure of
+ * `wf.test.test-shard` would move a number that is supposed to describe what
+ * merging costs.
+ */
+export const CANARY_EVENTS: ReadonlySet<string> = new Set(['schedule', 'workflow_dispatch']);
+
+/** The events a change rides to `main`: what a gate costs is measured over these. */
+const MERGE_EVENTS: ReadonlySet<string> = new Set(['pull_request', 'merge_group']);
+
+/** One main-canary run: one required workflow, once, against `main` HEAD. */
+const CanaryRunSchema = z
+  .object({
+    /** The workflow file name, e.g. `test.yml`. */
+    workflow: z.string(),
+    /** The `main` commit it ran against, short. */
+    sha: z.string(),
+    /** `schedule` or `workflow_dispatch`. */
+    event: z.string(),
+    started: z.string(),
+    done: z.string(),
+    /** The run failed or timed out. Cancelled and skipped runs are not recorded at all. */
+    red: z.boolean(),
+  })
+  .strict();
+/** One main-canary run. */
+export type CanaryRun = z.infer<typeof CanaryRunSchema>;
+
 /** One commit on the default branch and whether its push checks went red. */
 const MainCommitSchema = z
   .object({ sha: z.string(), at: z.string(), done: z.string(), red: z.boolean() })
@@ -201,6 +236,11 @@ export const SnapshotSchema = z
     ejections_caused: Counts,
     queue_builds: z.array(QueueBuildSchema),
     main: z.array(MainCommitSchema),
+    /**
+     * Completed main-canary runs of the day, oldest first. Defaulted, because
+     * every snapshot written before the canary existed has no such key.
+     */
+    canary: z.array(CanaryRunSchema).default([]),
     releases: z.array(z.object({ tag: z.string(), published_at: z.string() }).strict()),
     cache: z.object({ bytes: z.number(), count: z.number() }).strict().nullable(),
     /** Each gate's timeout-minutes when the day was collected; empty for a backfilled day. */
@@ -222,18 +262,54 @@ export function gateKey(gate: string, event: string): string {
 }
 
 /**
+ * Whether a snapshot gate key belongs in its gate's merge-path population.
+ *
+ * The main canary runs the required workflows against `main` HEAD, so its runs
+ * carry the SAME gate ids as the PR and queue legs and are told apart only by
+ * the event. For a gate that also runs on the merge path, those canary samples
+ * are a different population — a diagnostic on a tree nobody is trying to merge
+ * — and counting them would move numbers that are supposed to describe what
+ * merging costs.
+ *
+ * For a gate that runs on NOTHING BUT a schedule, the canary events are its
+ * whole population. `wf.merge-tail.arm`, `wf.evals.structural`,
+ * `wf.codeql.analyze` and `wf.ci-steward.collect` are all of that shape, and
+ * dropping them outright would make `headroom` — the tripwire that catches a
+ * job about to be killed by its own timeout — blind to every one of them. So
+ * the test is per gate, not per event.
+ *
+ * @param gates - A snapshot's `gates`.
+ * @param key - A `<gate-id>@<event>` key from it.
+ */
+export function onMergePath(gates: Snapshot['gates'], key: string): boolean {
+  const at = key.lastIndexOf('@');
+  if (at < 0 || !CANARY_EVENTS.has(key.slice(at + 1))) return true;
+  const prefix = `${key.slice(0, at)}@`;
+  return !Object.keys(gates).some(
+    (k) => k.startsWith(prefix) && MERGE_EVENTS.has(k.slice(prefix.length))
+  );
+}
+
+/**
  * Every day-record of a gate in a snapshot, for one event or for all of them.
+ *
+ * "All of them" is every event in the gate's merge-path population, which for a
+ * gate that also runs on a PR or in the queue excludes the main canary's own
+ * runs of it (`onMergePath`). Asking for a canary event by name still returns
+ * it, so a hypothesis written `…@schedule` reads the canary leg on purpose.
  *
  * @param gates - A snapshot's `gates`.
  * @param gate - The gate id.
- * @param event - One event, or undefined for every event.
+ * @param event - One event, or undefined for the gate's merge-path population.
  */
 export function gateDays(gates: Snapshot['gates'], gate: string, event?: string): GateDay[] {
   if (event) {
     const g = gates[gateKey(gate, event)];
     return g ? [g] : [];
   }
-  return Object.entries(gates).flatMap(([k, v]) => (k.startsWith(`${gate}@`) ? [v] : []));
+  return Object.entries(gates).flatMap(([k, v]) =>
+    k.startsWith(`${gate}@`) && onMergePath(gates, k) ? [v] : []
+  );
 }
 
 /** One SLO's reading over a window. */
@@ -620,6 +696,7 @@ export function emptySnapshot(day: string, collectedAt: string, budget: number):
     ejections_caused: {},
     queue_builds: [],
     main: [],
+    canary: [],
     releases: [],
     cache: null,
     timeouts: {},

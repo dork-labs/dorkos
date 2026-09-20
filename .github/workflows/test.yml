@@ -171,9 +171,61 @@ name: test
 # post-merge re-run was a third full-price copy per merged PR on a runner pool
 # that was 88 runs deep on 2026-08-23. A direct push to main bypasses this,
 # but it bypasses the queue and every other gate too.
+# THE MAIN CANARY (DOR-2150, plan §4.9): `schedule` and `workflow_dispatch`.
+#
+# Nothing watched `main`. This workflow and browser-test gate on `merge_group`
+# only, so a break that LANDS is invisible until the next PR is ejected by it.
+# On 2026-09-17 a fixture pinned the page clock past Today's 04:00 boundary
+# (#1916). It was green in every queue build outside 00:00-02:00 UTC, hid for
+# three days, then ejected #1930, #1932 and #1933 about nine times in one
+# evening before a person diagnosed it. #1934 fixed it. Nothing in the pipeline
+# was ever going to find that on its own.
+#
+# The canary is THIS workflow, unchanged, run against `main` HEAD on a
+# schedule. Not a second workflow that re-states the suite: there is exactly
+# one definition of `turbo test`, and a canary that could drift from what the
+# queue runs would be worse than none. The four steps below that used to read
+# `github.event_name == 'merge_group'` now read `!= 'pull_request'`, which is
+# the same two-way split it always was — full sweep everywhere but a PR — with
+# the canary on the full side where it belongs.
+#
+# IT CAN NEVER TOUCH A PR OR THE QUEUE. A required context is required on the
+# `pull_request` and `merge_group` events; a `schedule` run reports on neither,
+# is attached to no PR and to no queue build, and opens and arms nothing. The
+# worst a red canary can do is print a red run and a line in the daily report.
+#
+# WHAT FOUR CRONS A DAY ACTUALLY BUY, given GitHub's throttling.
+#
+# Measured on this repo, 2026-09-19, over 200+ runs of merge-tail's `*/10`
+# cron: GitHub delivered about 7 runs a day, a median 2.7 h late, p90 5 h, max
+# 12 h. So a cron here is a request, not an appointment, and NO cron schedule
+# on this repo can promise a run inside a named two-hour window. What these
+# four buy is honest but smaller:
+#
+#   * a break on `main` is found in hours rather than days — nominal 6 h
+#     spacing, plus skew, plus the run itself;
+#   * the 00:00-02:00 UTC window is hit on perhaps one day in three, and so
+#     near-certainly within a week. The 00:37 slot lands inside it when the
+#     schedule is close to on time, and the 18:37 slot lands inside it when it
+#     is 5-6 h late — which is why the slots are 6 h apart rather than clustered
+#     around midnight. Throttling only ever DELAYS a run, never advances it, so
+#     an earlier slot is also a later one.
+#
+# That is the coverage claim, and it is deliberately weaker than "we watch the
+# dark window". A real time-of-day bug is caught here by repetition over days,
+# not by one appointment.
+#
+# `workflow_dispatch` is the on-demand leg: run this suite against `main` now,
+# from the Actions tab or `gh workflow run test.yml --ref main`. Plan §4.9's
+# targeted canary dispatches the same leg on the first failed-checks ejection.
 on:
   pull_request:
   merge_group:
+  schedule:
+    # Staggered by minute against its three sibling canaries, so four workflows
+    # do not ask GitHub for runners in the same second.
+    - cron: '37 0,6,12,18 * * *'
+  workflow_dispatch:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for the Node 20 runtime (matches the other workflows here).
@@ -242,22 +294,23 @@ jobs:
             apps/community/test-results/
           if-no-files-found: ignore
 
-  # The real packaged local-agent journey runs on the queue's combined tree.
-  # PRs report an explicit pass-through, as the shared browser suite does.
+  # The real packaged local-agent journey runs on the queue's combined tree,
+  # and on the main canary's scheduled run against `main` HEAD. PRs report an
+  # explicit pass-through, as the shared browser suite does.
   community-packaged:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Packaged proof runs on the merge queue
-        if: github.event_name != 'merge_group'
-        run: echo "The merge queue runs the sealed packaged community proof."
+        if: github.event_name == 'pull_request'
+        run: echo "The merge queue and the main canary run the sealed packaged community proof."
       - uses: actions/checkout@v7
-        if: github.event_name == 'merge_group'
+        if: github.event_name != 'pull_request'
       - name: Build and test without public network access
-        if: github.event_name == 'merge_group'
+        if: github.event_name != 'pull_request'
         run: bash apps/community/acceptance/run.sh
       - name: Preserve packaged community reports
-        if: always() && github.event_name == 'merge_group'
+        if: always() && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: community-packaged-evidence
@@ -360,7 +413,7 @@ jobs:
       # writes an empty list and says so, and an empty list means every test
       # blocks as it always did.
       - name: Read the quarantine lane
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         run: |
           node packages/ci-steward/src/cli.ts quarantine-list \
             --runner vitest \
@@ -373,7 +426,7 @@ jobs:
 
       - name: Run every package's test suite (shard ${{ matrix.shard }}/4)
         id: sweep
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         run: |
           set +e
           pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/4 --retry=1 --passWithNoTests --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
@@ -393,7 +446,7 @@ jobs:
       # still collected, every test still runs, and the union in the fan-in is
       # the union it would be with an empty lane.
       - name: Refuse any failure the quarantine lane does not cover
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         run: |
           args=()
           while IFS= read -r report; do args+=(--reports "$report"); done < <(
@@ -487,7 +540,7 @@ jobs:
       # is exactly the weakening its header refuses. The PR leg gets no
       # execution proof because it never had one.
       - name: Prove the suite actually executed
-        if: ${{ success() && github.event_name == 'merge_group' }}
+        if: ${{ success() && github.event_name != 'pull_request' }}
         run: bash scripts/assert-tests-executed.sh
 
       # The price of the retry on the suite line above: every test it absorbed
@@ -522,7 +575,7 @@ jobs:
       # reporter loaded, so this step would fail on a missing report — which is
       # correct behaviour for the queue and meaningless noise for a PR.
       - name: Name the tests that only passed on a retry
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         run: |
           # pipefail, because every read below is the LAST stage of a pipe and
           # bash otherwise reports the exit status of that last stage only. A
@@ -571,7 +624,7 @@ jobs:
       # The lane this shard read, handed to the fan-in, which has no install and
       # cannot read the data branch itself.
       - name: Hand this shard's quarantine lane to the fan-in
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
           name: quarantine-lane-shard-${{ matrix.shard }}-vitest
@@ -583,7 +636,7 @@ jobs:
           retention-days: 7
 
       - name: Record the test files this shard collected
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         run: |
           reports=$(find apps packages -mindepth 2 -maxdepth 2 -name vitest-shard-report.json)
           [ -n "$reports" ] || { echo 'no vitest-shard-report.json found in any package — the json reporter passthrough is broken' >&2; exit 1; }
@@ -591,7 +644,7 @@ jobs:
           wc -l shard-files-${{ matrix.shard }}.txt
 
       - uses: actions/upload-artifact@v7
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         with:
           name: shard-files-${{ matrix.shard }}
           path: shard-files-${{ matrix.shard }}.txt
@@ -609,7 +662,7 @@ jobs:
       # `!cancelled()` so a red shard uploads too: flaky-test-runs sampled from
       # green shards only would never see a test that failed twice.
       - name: Upload this shard's vitest reports for CI Steward
-        if: ${{ !cancelled() && github.event_name == 'merge_group' }}
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
@@ -730,11 +783,11 @@ jobs:
       # that needs history or tags. (The DOR-884/DOR-339 tag reasoning lives on
       # the shard job's checkout, which is where the suites run.)
       - uses: actions/checkout@v7
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
 
       # ---- merge_group leg: the union check ----
       - uses: actions/download-artifact@v8
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         with:
           pattern: shard-files-*
           merge-multiple: true
@@ -762,14 +815,14 @@ jobs:
       # exactly backwards. Each copy carries its own `i/N`, so a missing,
       # duplicated or stale one is refused by name.
       - name: Collect every shard's quarantine lane
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/download-artifact@v8
         with:
           pattern: quarantine-lane-shard-*-vitest
           path: lane
 
       - name: Agree on the lane this build ran under
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         run: |
           shopt -s nullglob
           lanes=(lane/*/quarantine.txt)
@@ -811,7 +864,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Prove the shards' union covers every package
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         run: |
           bash scripts/assert-shard-union.sh \
             --quarantined "$RUNNER_TEMP/quarantine.txt" shard-files

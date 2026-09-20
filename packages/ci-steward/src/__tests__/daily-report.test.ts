@@ -221,7 +221,30 @@ describe('the daily report', () => {
     expect(html).toContain('<svg class="spark"');
     expect(html).toContain('<strong>6</strong> pull requests merged');
     expect(html).toContain('<strong>420</strong> job minutes');
+    // A day with no canary result says so, rather than leaving the line out:
+    // a canary that stopped running reads exactly like a healthy main.
+    expect(html).toContain('<strong>0</strong> main-canary runs');
     expectOffline(html);
+  });
+
+  it('names the main canary s red workflows on a day it caught something', () => {
+    const inp = recorded();
+    const at = (m: string, red: boolean, workflow: string) => ({
+      workflow,
+      sha: 'abc123def456',
+      event: 'schedule',
+      started: `${DAY}T00:${m}:00Z`,
+      done: `${DAY}T01:${m}:00Z`,
+      red,
+    });
+    writeData(inp.dataDir, `snapshots/${DAY}.json`, {
+      ...snapshot(DAY),
+      canary: [at('37', false, 'test.yml'), at('41', true, 'browser-test.yml')],
+    });
+    const { html } = renderDailyReport(inp);
+    expect(html).toContain(
+      '<strong>2</strong> main-canary runs against main, 1 red (browser-test.yml)'
+    );
   });
 
   it('says everything is healthy, in plain words, when nothing fired', () => {

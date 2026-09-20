@@ -148,6 +148,33 @@ quarantine:
   # The daily triage flags an entry expiring within this many hours.
   near_expiry_hours: 48
 
+# The main canary: the required suites run against `main` HEAD on a schedule,
+# so a break that lands on `main` is found by something other than the next PR
+# being ejected by it (plan §4.9, DOR-2150).
+#
+# There is no canary workflow. Each of these files runs its own suite on
+# `schedule` and `workflow_dispatch` as well as on `pull_request` and
+# `merge_group`, so there is exactly one definition of each suite and the
+# canary cannot drift from what the queue runs. A run is a canary result when
+# its file is named here, its event is `schedule` or `workflow_dispatch`
+# (`CANARY_EVENTS` in packages/ci-steward/src/data.ts) and its branch is
+# `default_branch`.
+#
+# The list is exhaustive on purpose. `ci-steward.yml`, `evals.yml` and
+# `codeql.yml` also run on `schedule` against `main`; without this list the
+# collector's own daily tick would report the pipeline healthy on the strength
+# of the run that said so. `credential-free-build` is deliberately NOT here:
+# it is an affected-only build that reads a base SHA no scheduled run carries,
+# and at a 21% failure rate it would cry wolf every day. The PR-diff checks
+# (fragment-present, no-fragment-under-skip-label, version-outranks-base,
+# db-check) are not here either; they measure a diff, and `main` has none.
+canary:
+  workflows:
+    - test.yml
+    - browser-test.yml
+    - typecheck.yml
+    - lint.yml
+
 # The verdict engine (ci-steward verdicts, plan §4.4).
 verdicts:
   before_days: 7
@@ -189,6 +216,22 @@ triage:
   #     and days a `proposed` entry may sit before nobody is going to do it.
   stale_verdict_days: 7
   stale_proposed_days: 30
+  # 11. Consecutive red main-canary runs of ONE workflow before `main canary
+  #     red` fires, and hours without any canary result before the schedule is
+  #     reported as stopped.
+  #
+  #     One run, not two. The 2026-09-20 fixture-clock break was deterministic
+  #     inside its window and ejected three unrelated PRs nine times before a
+  #     person diagnosed it; waiting for a second canary costs another six hours
+  #     of cron for a signal the first run already gave. A canary red costs one
+  #     line in a report and never a merge, so the cheap error to make is the
+  #     false alarm — and the trigger clears itself on the next green run.
+  #
+  #     18 hours of silence, against a nominal 6-hour gap: GitHub delivered a
+  #     median 2.7 h late and p90 5 h late on this repo's `*/10` cron, so a
+  #     tighter number would fire on throttling rather than on breakage.
+  canary_red_min_runs: 1
+  canary_silent_hours: 18
   # The report says how long a trigger has been open once it reaches this.
   open_days_warning: 14
   # Days of history each sparkline in the daily report draws.

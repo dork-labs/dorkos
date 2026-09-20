@@ -76,6 +76,10 @@ const TriageConfigSchema = z
     stale_verdict_days: z.number().int().positive(),
     /** Rule 10: days a `proposed` entry may sit untouched. */
     stale_proposed_days: z.number().int().positive(),
+    /** Rule 11: consecutive red main-canary runs of one workflow before the trigger fires. */
+    canary_red_min_runs: z.number().int().positive(),
+    /** Rule 11's second arm: hours without a canary result before the schedule is treated as stopped. */
+    canary_silent_hours: z.number().int().positive(),
     /** The report calls out a trigger that has been open this many days or more. */
     open_days_warning: z.number().int().positive(),
     /** Days of history the daily report's sparklines draw. */
@@ -110,6 +114,23 @@ const QuarantineConfigSchema = z
     cooling_min_clean_builds: z.number().int().min(1),
     /** The daily triage flags an entry expiring within this many hours. */
     near_expiry_hours: z.number().int().min(1),
+  })
+  .strict();
+
+/**
+ * The `canary:` block of `ci/config.yaml`: which workflow runs count as the
+ * main canary.
+ *
+ * A canary leg is not a separate workflow — it is the same required workflow,
+ * on a `schedule` or `workflow_dispatch` event, against the default branch — so
+ * nothing in a run identifies it except its file name and its event. This list
+ * is what stops `ci-steward.yml`'s own daily tick, `evals.yml` and `codeql.yml`
+ * from being read as canary results.
+ */
+const CanaryConfigSchema = z
+  .object({
+    /** Workflow file names whose scheduled runs on the default branch are the canary. */
+    workflows: z.array(z.string().regex(/^[\w.-]+\.ya?ml$/, 'a workflow file name')).min(1),
   })
   .strict();
 
@@ -155,6 +176,7 @@ export const ConfigSchema = z
     commands: z.object({ ledger_new: z.string().min(1), census_fix: z.string().min(1) }).strict(),
     collect: CollectConfigSchema,
     quarantine: QuarantineConfigSchema,
+    canary: CanaryConfigSchema,
     verdicts: z
       .object({
         /** Length of the before-window, anchored on the merge time. */

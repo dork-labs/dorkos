@@ -89,7 +89,7 @@ slos:
     definition:
       event_source: push-to-main workflow runs
       population: runs on main after each merge
-      exclusions: [workflow_dispatch runs, cancelled runs]
+      exclusions: [workflow_dispatch runs, schedule runs (the main canary), cancelled runs]
       aggregation: count of red episodes (first red run to next all-green run), plus p90 time to restore
       window: 28-day rolling
       min_n: 1

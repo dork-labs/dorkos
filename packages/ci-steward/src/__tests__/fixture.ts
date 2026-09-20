@@ -96,6 +96,11 @@ export function baseSpec(): FixtureSpec {
         cooling_min_clean_builds: 2,
         near_expiry_hours: 48,
       },
+      // The two fixture workflows that carry the canary's schedule and
+      // workflow_dispatch triggers; the census holds the pair together.
+      // Deliberately not lint.yml: the deadlock cases rewrite its `on:` block
+      // wholesale, and a canary finding there would be noise in every one.
+      canary: { workflows: ['test.yml', 'nightly.yml'] },
       verdicts: { before_days: 7, min_n: 5 },
       triage: {
         failure_spike_ratio: 1.5,
@@ -110,6 +115,8 @@ export function baseSpec(): FixtureSpec {
         collector_health_days: 3,
         stale_verdict_days: 7,
         stale_proposed_days: 30,
+        canary_red_min_runs: 1,
+        canary_silent_hours: 18,
         open_days_warning: 14,
         sparkline_days: 14,
       },
@@ -221,7 +228,12 @@ export function baseSpec(): FixtureSpec {
         },
       },
       'test.yml': {
-        on: { pull_request: null, merge_group: null },
+        on: {
+          pull_request: null,
+          merge_group: null,
+          schedule: [{ cron: '37 0,6,12,18 * * *' }],
+          workflow_dispatch: null,
+        },
         jobs: {
           'test-shard': {
             name: 'test-shard (${{ matrix.shard }}/2)',
@@ -245,7 +257,7 @@ export function baseSpec(): FixtureSpec {
         },
       },
       'nightly.yml': {
-        on: { schedule: [{ cron: '0 5 * * *' }] },
+        on: { schedule: [{ cron: '0 5 * * *' }], workflow_dispatch: null },
         jobs: {
           report: { 'runs-on': 'ubuntu-latest', 'timeout-minutes': 10, steps: [{ run: 'true' }] },
         },

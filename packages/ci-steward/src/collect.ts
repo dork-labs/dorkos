@@ -41,7 +41,7 @@ import { sampleFlaky } from './artifacts.ts';
 import { BudgetExhausted, type Gh } from './gh.ts';
 import type { HandFiles } from './load.ts';
 import { fetchMergedPrs, type PrFacts } from './prs.ts';
-import { FAILED, mainCommits, prFeedback, queueBuilds, reviews } from './series.ts';
+import { canaryRuns, FAILED, mainCommits, prFeedback, queueBuilds, reviews } from './series.ts';
 import { globalChecks, type GlobalChecks } from './rulesets.ts';
 import { addDays, dayOf, dayRange, daysBetween, round, secondOfDay } from './time.ts';
 import type { WorkflowModel } from './workflows.ts';
@@ -389,6 +389,7 @@ function collectDay(
     (b) => b.outcome === 'cancelled'
   ).length;
   snap.main = mainCommits(runs, config.default_branch);
+  snap.canary = canaryRuns(runs, config.default_branch, config.canary.workflows);
   reviews(runs, config.collect.review_workflow, snap);
 
   // PRs merged this day.

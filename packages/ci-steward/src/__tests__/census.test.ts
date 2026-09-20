@@ -104,6 +104,31 @@ describe('census: timeouts', () => {
   });
 });
 
+describe('census: the main canary is a registry, not a convention', () => {
+  it('fails when a canary workflow lost the trigger that makes it run', () => {
+    // The config list and the workflow trigger are two halves of one thing and
+    // nothing joins them at runtime. A canary that stopped running reads
+    // exactly like a healthy main in every number on the report, so the census
+    // is what holds the pair together.
+    const spec = baseSpec();
+    spec.workflows['nightly.yml']!.on = { schedule: [{ cron: '0 5 * * *' }] };
+    const { findings } = census(spec);
+    expect(findings.map((f) => f.code)).toEqual(['canary/missing-trigger']);
+    expect(findings[0]!.message).toContain('no workflow_dispatch trigger');
+
+    spec.workflows['nightly.yml']!.on = { workflow_dispatch: null };
+    expect(codes(spec)).toEqual(['canary/missing-trigger']);
+  });
+
+  it('fails when canary.workflows names a workflow that is not there', () => {
+    const spec = baseSpec();
+    spec.config.canary = { workflows: ['test.yml', 'gone.yml'] };
+    const { findings } = census(spec);
+    expect(findings.map((f) => f.code)).toEqual(['canary/missing-workflow']);
+    expect(findings[0]!.where).toBe('gone.yml');
+  });
+});
+
 describe('census: the deadlock invariant', () => {
   it('fails on a paths: filter on a required workflow', () => {
     const spec = baseSpec();
