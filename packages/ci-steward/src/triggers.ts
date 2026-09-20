@@ -216,7 +216,7 @@ function sloFloor(readings: readonly SloReading[]): NewTrigger[] {
         severity: r.kind === 'speed' ? ('amber' as const) : ('red' as const),
         scope: r.id,
         what: `${r.id} under floor: ${stats || 'no value'} (n=${r.n}, ${r.from} to ${r.to}).`,
-        action: `Take its path from ci/slos.yaml. Propose the narrowest change on it.`,
+        action: `Take its path from ci/slos.yaml.`,
         ledger_entry: null,
       };
     });

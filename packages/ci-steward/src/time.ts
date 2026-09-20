@@ -130,3 +130,30 @@ export function secondOfDay(isoTime: string): number {
   const ms = Date.parse(isoTime);
   return Math.floor((ms - dayStart(dayOf(new Date(ms))).getTime()) / 1000);
 }
+
+/**
+ * "1 day", "13 days". English has no "day(s)".
+ *
+ * @param n - How many.
+ * @param singular - The word.
+ * @param plural - Its plural, when adding an `s` is wrong.
+ */
+export function count(n: number, singular: string, plural = `${singular}s`): string {
+  return `${n} ${n === 1 ? singular : plural}`;
+}
+
+/**
+ * A list of days as a range: "2026-08-30 to 09-11". A list of 20 dates carries
+ * no more meaning than its ends and eats a whole line of the report.
+ *
+ * @param days - The days, in any order.
+ */
+export function dayRange(days: readonly string[]): string {
+  const sorted = [...days].sort();
+  const first = sorted[0];
+  const last = sorted.at(-1);
+  if (!first || !last) return 'none';
+  if (first === last) return first;
+  // The year is almost always the same; print it once.
+  return `${first} to ${first.slice(0, 4) === last.slice(0, 4) ? last.slice(5) : last}`;
+}

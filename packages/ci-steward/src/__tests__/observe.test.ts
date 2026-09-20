@@ -254,7 +254,7 @@ describe('the daily workflow sequence, end to end against a bare origin', () => 
       '--now',
       '2026-09-19T04:30:00Z',
     ]).out;
-    expect(out).toContain('clone clone-x: 0 finished day(s)');
+    expect(out).toContain('clone clone-x: 0 finished days');
     expect(
       JSON.parse(w.g(w.origin, 'show', 'ci-steward-data:local/clone-x/exported.json'))
     ).toEqual({

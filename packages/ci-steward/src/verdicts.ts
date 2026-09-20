@@ -35,7 +35,7 @@ import { gateDays, type LocalDay, type Snapshot, type TimedSample, type Verdict 
 import type { HandFiles } from './load.ts';
 import { computeSlos } from './slo.ts';
 import type { LedgerFrontmatter } from './schemas.ts';
-import { addDays, dayOf, daysBetween, quantile, round } from './time.ts';
+import { addDays, dayOf, dayRange, daysBetween, quantile, round } from './time.ts';
 
 /** A parsed ledger entry. */
 export type LedgerEntry = LedgerFrontmatter;
@@ -367,10 +367,10 @@ export function computeVerdict(inp: VerdictInput): Verdict | null {
     reason = `Confounded: ${confounders.join(', ')} changed the same gate inside the after-window (${after.from} to ${after.to}), so the movement cannot be attributed to this change alone.`;
   } else if (afterMissing.some((d) => d >= collectableFrom)) {
     verdict = 'pending';
-    reason = `Waiting for data: ${afterMissing.length} day(s) of the after-window have no complete snapshot yet (${afterMissing.join(', ')}); the collector's backfill reaches them first.`;
+    reason = `Waiting: ${afterMissing.length} of ${windowDays(after).touched.length} after-window days not collected (${dayRange(afterMissing)}); backfill reaches them first.`;
   } else if (afterMissing.length) {
     verdict = 'inconclusive';
-    reason = `Missing data: ${afterMissing.length} day(s) of the after-window were never collected and Actions no longer keeps them (${afterMissing.join(', ')}).`;
+    reason = `Missing: ${afterMissing.length} of ${windowDays(after).touched.length} after-window days never collected, and Actions no longer keeps them (${dayRange(afterMissing)}).`;
   } else if (a.n < minN || a.value === null) {
     verdict = 'inconclusive';
     reason = `Too little data: n=${a.n} in the after-window (${after.from} to ${after.to}), below the minimum of ${minN}.`;

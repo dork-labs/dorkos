@@ -60,7 +60,7 @@ import {
   writeLatest,
   type StewardContext,
 } from './steward.ts';
-import { addDays, dayOf, daysBetween, isoWeek } from './time.ts';
+import { addDays, count, dayOf, daysBetween, isoWeek } from './time.ts';
 import type { WorkflowModel } from './workflows.ts';
 
 /** Where a command writes. */
@@ -147,7 +147,7 @@ export function cmdCollect(
       );
     }
     if (r.planned.length > 0 && r.days.length === 0) {
-      const why = `Collected nothing: ${r.planned.length} day(s) were due but the request budget (${gh.budget}) did not cover even one. The token is probably spent for this hour; re-run the workflow after it resets.`;
+      const why = `Collected nothing: ${count(r.planned.length, 'day')} due, but the request budget (${gh.budget}) did not cover even one. The token is probably spent for this hour; re-run the workflow after it resets.`;
       env.io.err(`${why}\n`);
       summary(env, `### CI Steward collector: nothing collected\n\n${why}`);
       return 1;
@@ -523,7 +523,7 @@ export function cmdLocalExport(env: Env, opts: { clone?: string; push: boolean }
     env.io.err('local-export must run inside a git checkout\n');
     return 2;
   }
-  env.io.out(`clone ${l.name}: ${l.days.length} finished day(s) in ${l.file}\n`);
+  env.io.out(`clone ${l.name}: ${count(l.days.length, 'finished day')} in ${l.file}\n`);
   if (opts.push) {
     const r = ref(env);
     const dir = mkdtempSync(path.join(tmpdir(), 'ci-steward-local-'));
@@ -562,7 +562,7 @@ export function cmdLocalExport(env: Env, opts: { clone?: string; push: boolean }
     env.files.config.local.max_bytes
   );
   if (rot.dropped)
-    env.io.out(`rotated ${l.file}: dropped ${rot.dropped} old line(s), kept ${rot.kept}\n`);
+    env.io.out(`rotated ${l.file}: dropped ${count(rot.dropped, 'old line')}, kept ${rot.kept}\n`);
   return 0;
 }
 

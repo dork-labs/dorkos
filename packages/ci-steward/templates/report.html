@@ -50,7 +50,7 @@
         --radius: 10px;
         --prose: 960px;
         --wide: 1440px;
-        --gutter: 1rem;
+        --gutter: 1.5rem;
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -91,8 +91,11 @@
         max-width: var(--prose);
         margin: 0 auto;
       }
-      /* Break out of the prose column, stay centred, never wider than the
-         viewport less its gutters. */
+      /* Break out of the prose column, stay centred, and keep the SAME gutter
+         as the narrow column: a wide block flush to the window edge while the
+         prose above it starts 240px in reads as two different pages. Each
+         section's heading sits inside its own .wide block, so a heading always
+         lines up with the panel it belongs to. */
       .wide {
         width: min(var(--wide), calc(100vw - var(--gutter) * 2));
         margin-left: 50%;
@@ -317,7 +320,7 @@
       /* A phone gets cards, not a table. CSS only. */
       @media (max-width: 720px) {
         :root {
-          --gutter: 1rem;
+          --gutter: 1.5rem;
         }
         body {
           padding: 20px var(--gutter) 56px;

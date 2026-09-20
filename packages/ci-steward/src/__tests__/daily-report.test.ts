@@ -18,6 +18,7 @@ import {
   renderDailyReport,
   renderIndex,
   reportPath,
+  shorten,
   updateIndex,
   type DailyReportInput,
   type ReportIndex,
@@ -483,17 +484,95 @@ describe('the copy rule', () => {
     return renderDailyReport({ ...inp, triggers }).html;
   }
 
-  it('keeps every value cell under 40 characters, so prose cannot creep back in', () => {
-    const html = busy();
+  /** The same page, with an experiment whose reason is the long, date-listing kind. */
+  function withVerdict(): string {
+    const inp = recorded();
+    const days = Array.from({ length: 13 }, (_, i) => addDays('2026-08-30', i));
+    return renderDailyReport({
+      ...inp,
+      ledger: [
+        {
+          id: '260830-213616',
+          title: 'Queue test sweep split across four shards',
+          kind: 'experiment',
+          status: 'active',
+          actor: 'agent',
+          gates: [],
+          prs: [1391],
+          'ratchet-release': [],
+          'floor-release': [],
+          'field-changes': [],
+        },
+      ],
+      verdicts: [
+        {
+          schema: 1,
+          id: '260830-213616',
+          verdict: 'pending',
+          reason: `Waiting for data: 13 day(s) of the after-window have no complete snapshot yet (${days.join(', ')}); the collector's backfill reaches them first.`,
+          computed_at: `${DAY}T05:00:00Z`,
+          hypothesis_hash: 'abc',
+          metric: 'gate.wf.test.test-shard.duration_p50',
+          anchor: `${DAY}T00:00:00Z`,
+          prs: [1391],
+          baseline: { value: 26, source: 'ledger' },
+          target: 10,
+          min_n: 10,
+          before: { from: '', to: '', n: 10, value: 26 },
+          after: { from: '', to: '', n: 10, value: 12.2 },
+          confounders: [],
+          // The movement line shares the cell with the reason, so the cap
+          // has to hold for both together.
+          slo: {
+            id: 'queue-build',
+            before: 41.6,
+            after: 33,
+            stat: 'p90',
+            movement: 'better',
+          },
+        },
+      ],
+    }).html;
+  }
+
+  it('keeps every cell short: values under 40, names under 80, anything under 120', () => {
+    // Every table on the page, not only the SLO one: the experiments table was
+    // where a 313-character cell listing 13 dates one by one survived.
+    const html = withVerdict();
     const long = cells(html, /<td class="num[^"]*"[^>]*>([\s\S]*?)<\/td>/g).filter(
       (c) => c.length > 40
     );
     expect(long).toEqual([]);
-    // The name column is allowed more, but not prose either.
+    // A measure's own name is ours to keep short; a ledger entry's title is
+    // its name and is never truncated, so it lives under the 120 cap instead.
     const names = cells(html, /<td class="measure"[^>]*>([\s\S]*?)<\/td>/g).filter(
       (c) => c.length > 80
     );
     expect(names).toEqual([]);
+    const all = cells(html, /<td[^>]*>([\s\S]*?)<\/td>/g).filter((c) => c.length > 120);
+    expect(all).toEqual([]);
+    // The selector really found both tables' cells, so the check means something.
+    expect(cells(html, /<td[^>]*>([\s\S]*?)<\/td>/g).length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('compresses a list of dates into a range, and writes days in English', () => {
+    expect(
+      shorten('Waiting for data: 13 day(s) (2026-08-30, 2026-08-31, 2026-09-01, 2026-09-11).')
+    ).toBe('Waiting for data: 13 days (2026-08-30 to 09-11).');
+    expect(shorten('1 day(s) left')).toBe('1 day left');
+    expect(shorten('no day(s) here')).toBe('no days here');
+    // Two dates are already a range; they are left alone.
+    expect(shorten('between 2026-08-30, 2026-09-11')).toBe('between 2026-08-30, 2026-09-11');
+    // Still too long: the trailing clause goes, every number stays.
+    const long = shorten(
+      'Waiting for data: 13 day(s) of the after-window have no complete snapshot yet (2026-08-30, 2026-08-31, 2026-09-11); the backfill reaches them first.'
+    );
+    expect(long).toBe(
+      'Waiting for data: 13 days of the after-window have no complete snapshot yet (2026-08-30 to 09-11).'
+    );
+    expect(long.length).toBeLessThanOrEqual(120);
+    // One clause and no way to shorten it: cut at a word, and say so.
+    expect(shorten('x'.repeat(200))).toMatch(/…$/);
   });
 
   it('keeps the headline and every trigger line under 120 characters', () => {

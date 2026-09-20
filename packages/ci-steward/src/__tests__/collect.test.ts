@@ -273,7 +273,7 @@ describe('collect on a recorded day', () => {
       }
     );
     expect(code).toBe(1);
-    expect(err).toContain('Collected nothing: 1 day(s) were due');
+    expect(err).toContain('Collected nothing: 1 day due,');
   });
 
   it('turns red when the merge-queue ruleset drifts or a data-branch safeguard is gone', () => {

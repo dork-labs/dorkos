@@ -43,7 +43,7 @@ import type { HandFiles } from './load.ts';
 import { fetchMergedPrs, type PrFacts } from './prs.ts';
 import { FAILED, mainCommits, prFeedback, queueBuilds, reviews } from './series.ts';
 import { globalChecks, type GlobalChecks } from './rulesets.ts';
-import { addDays, dayOf, daysBetween, round, secondOfDay } from './time.ts';
+import { addDays, dayOf, dayRange, daysBetween, round, secondOfDay } from './time.ts';
 import type { WorkflowModel } from './workflows.ts';
 
 /** One workflow run, trimmed to what the collector reads. */
@@ -570,7 +570,7 @@ export function collect(opts: CollectOptions): CollectResult {
     snap.health.warnings = snap.health.warnings.filter((w) => !w.startsWith('No snapshot for '));
     if (gaps.length)
       snap.health.warnings.push(
-        `No snapshot for ${gaps.length} day(s) in the 28 days to ${newest}: ${gaps.join(', ')}.`
+        `${gaps.length} of 28 days missing to ${newest} (${dayRange(gaps)}).`
       );
     writeData(dataDir, snapshotPath(newest), snap);
   }

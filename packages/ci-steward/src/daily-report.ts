@@ -36,7 +36,7 @@ import { fill, h, raw, sparkline, type Html } from './html.ts';
 import type { HandFiles } from './load.ts';
 import type { Slos } from './schemas.ts';
 import { computeSlos } from './slo.ts';
-import { addDays, daysBetween, round } from './time.ts';
+import { addDays, dayRange, daysBetween, round } from './time.ts';
 import { ejectionLegs, legName } from './ejections.ts';
 import { openDays, type Trigger, type Triggers } from './triggers.ts';
 import type { LedgerEntry } from './verdicts.ts';
@@ -105,6 +105,43 @@ function template(): string {
  * The same rule is in `templates/report.html`, `contributing/ci.md` and the
  * `stewarding-ci-pipeline` skill. Keep the three in step.
  */
+
+/** No cell on the page holds more than this; a value cell holds far less. */
+export const CELL_MAX = 120;
+
+/**
+ * Squeeze text the engine wrote elsewhere into something a cell can hold: a
+ * run of dates becomes a range, "day(s)" becomes English, and a sentence still
+ * over the cap loses its trailing explanatory clauses — never its numbers. The
+ * strings this reaches (verdict reasons, collector warnings) are written short
+ * at source now, but a snapshot or a final verdict recorded before that keeps
+ * its old wording forever, and the page still has to fit.
+ *
+ * @param text - The sentence to shorten.
+ * @param max - The cap, in characters.
+ */
+export function shorten(text: string, max = CELL_MAX): string {
+  const squeezed = text
+    .replace(/(\d{4}-\d{2}-\d{2})(?:,\s*\d{4}-\d{2}-\d{2}){2,}/g, (all, first: string) => {
+      const days = all.split(/,\s*/);
+      return dayRange([first, days.at(-1)!]);
+    })
+    .replace(
+      /(\d+)\s+([a-z]+)\(s\)/gi,
+      (_all, n: string, word: string) => `${n} ${Number(n) === 1 ? word : `${word}s`}`
+    )
+    .replace(/\b([a-z]+)\(s\)/gi, '$1s');
+  if (squeezed.length <= max) return squeezed;
+  // Still long: drop trailing explanatory clauses, never the numbers in front
+  // of them. Clauses are separated by "; ", and the first one carries the fact.
+  const clauses = squeezed.split('; ');
+  while (clauses.length > 1 && clauses.join('; ').length > max) clauses.pop();
+  const kept = clauses.join('; ').replace(/[;,]\s*$/, '');
+  const ended = /[.!?]$/.test(kept) ? kept : `${kept}.`;
+  if (ended.length <= max) return ended;
+  // One clause and still too long: cut at a word, and say that it was cut.
+  return `${ended.slice(0, max - 1).replace(/\s+\S*$/, '')}…`;
+}
 
 /** A statistic's short label in a cell. Empty when the value speaks for itself. */
 const STAT_LABEL: Record<string, string> = {
@@ -334,7 +371,7 @@ function triggerBlock(inp: DailyReportInput): Html {
         </div>`;
   });
   return h`<div class="panel">${items}
-      <p class="note">Computed from the data, never written by a model. Nothing here opens a pull request or changes anything; a person or an agent decides.</p>${cleared}</div>`;
+      <p class="note">Computed from the data, never written by a model. Nothing here opens a pull request or changes anything; a person or an agent decides, and proposes the narrowest change that could move the number.</p>${cleared}</div>`;
 }
 
 function yesterdayBlock(inp: DailyReportInput, snap: Snapshot | null): Html {
@@ -378,14 +415,20 @@ function experimentsBlock(inp: DailyReportInput): Html {
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((e) => {
       const v = verdicts.get(e.id);
-      const slo =
-        v?.slo && (v.slo.before !== null || v.slo.after !== null)
-          ? h`<div class="note">${v.slo.id} went ${v.slo.movement}: ${v.slo.before ?? '-'} → ${v.slo.after ?? '-'}.</div>`
-          : raw('');
+      // "went unknown" says nothing; a movement with no numbers is left out.
+      const moved =
+        v?.slo && v.slo.movement !== 'unknown' && (v.slo.before !== null || v.slo.after !== null)
+          ? `${v.slo.id} ${v.slo.movement}: ${v.slo.before ?? '-'} → ${v.slo.after ?? '-'}.`
+          : '';
+      const slo = moved ? h`<div class="note">${moved}</div>` : raw('');
+      // The cap is on the CELL, so the reason gets what the movement line leaves.
+      const why = v
+        ? shorten(v.reason, CELL_MAX - (moved ? moved.length + 1 : 0))
+        : 'No hypothesis, or its PR has not merged.';
       return h`<tr>
-            <td class="measure"><div>${e.title}</div><div class="note mono">${e.id} · ${e.status}</div></td>
+            <td class="measure name"><div>${e.title}</div><div class="note mono">${e.id} · ${e.status}</div></td>
             <td data-label="Result"><span class="tag ${v?.verdict ?? 'pending'}">${v?.verdict ?? 'no verdict'}</span></td>
-            <td data-label="Why">${v ? v.reason : 'No hypothesis, or its PR has not merged.'}${slo}</td>
+            <td data-label="Why">${why}${slo}</td>
           </tr>`;
     });
   return h`<div class="panel">
@@ -412,8 +455,8 @@ function healthBlock(inp: DailyReportInput, snap: Snapshot | null): Html {
         <ul class="plain">
           <li><strong>${inp.latest.api_calls}</strong> of ${budget} GitHub requests used (GitHub allows 1,000 an hour).</li>
           <li><strong>${have.length}</strong> of 7 days recorded${
-            missing.length ? h`; missing ${missing.join(', ')}` : raw('')
-          }${late.length ? h`; still finishing ${late.join(', ')}` : raw('')}.</li>
+            missing.length ? h`; missing ${dayRange(missing)}` : raw('')
+          }${late.length ? h`; still finishing ${dayRange(late)}` : raw('')}.</li>
           <li>Machines sending hook timings: ${
             exports.length
               ? exports.map(([clone, e], i) => h`${i ? ', ' : ''}${clone} (${e.state}, ${e.last})`)
@@ -421,8 +464,8 @@ function healthBlock(inp: DailyReportInput, snap: Snapshot | null): Html {
           }.</li>
           <li>Data-branch protections: ${inp.latest.safeguards_ok ? 'in place' : 'NOT in place'}.</li>
         </ul>
-        ${inp.latest.failures.length ? h`<p><strong>Problems:</strong></p><ul class="plain">${inp.latest.failures.map((f) => h`<li>${f}</li>`)}</ul>` : raw('')}
-        ${inp.latest.warnings.length ? h`<p class="note">Also: ${inp.latest.warnings.map((w, i) => h`${i ? ' ' : ''}${w}`)}</p>` : raw('')}
+        ${inp.latest.failures.length ? h`<p><strong>Problems:</strong></p><ul class="plain">${inp.latest.failures.map((f) => h`<li>${shorten(f)}</li>`)}</ul>` : raw('')}
+        ${inp.latest.warnings.length ? h`<p class="note">Also: ${inp.latest.warnings.map((w, i) => h`${i ? ' ' : ''}${shorten(w)}`)}</p>` : raw('')}
         <p class="note">Blind spot: <span class="mono">--no-verify</span> commits and pushes skip the local timer, so they never show up here.</p>
       </div>`;
 }

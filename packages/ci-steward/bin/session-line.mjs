@@ -96,11 +96,14 @@ export function sessionLine(inp) {
             : `the local copy of ci-steward-data (${l.date ?? 'unknown'}) was not fetched in over 2 days; run git fetch origin ci-steward-data`
         );
       }
-      if (l.healthy === false)
-        problems.push(`collector health failed (${(l.failures ?? []).length} problem(s))`);
-      else if (l.triggers && l.triggers.red > 0) {
+      if (l.healthy === false) {
+        const n = (l.failures ?? []).length;
+        problems.push(`collector health failed (${n} problem${n === 1 ? '' : 's'})`);
+      } else if (l.triggers && l.triggers.red > 0) {
         const top = String(l.triggers.top ?? '').slice(0, 120);
-        problems.push(`${l.triggers.red} red CI trigger(s) open${top ? `: ${top}` : ''}`);
+        problems.push(
+          `${l.triggers.red} red CI trigger${l.triggers.red === 1 ? '' : 's'} open${top ? `: ${top}` : ''}`
+        );
       }
       if (l.safeguards_ok === false)
         problems.push('a ci-steward-data safeguard ruleset is missing or changed');
