@@ -128,8 +128,14 @@ verdicts:
 triage:
   # 4. A gate whose failure rate is at least this much of the week before's,
   #    with at least this many completed runs in each week.
+  #    Its second arm fires on the absolute rate alone, so a gate going from
+  #    no failures at all to half of them is not silent (no ratio against zero
+  #    can say that). Both arms need spike_min_days days of data in EACH week:
+  #    7 days against 1 backfilled day is not a week-over-week comparison.
   failure_spike_ratio: 1.5
   failure_spike_min_n: 20
+  failure_spike_absolute: 0.1
+  spike_min_days: 5
   # 5. A gate whose p90 duration grew by this fraction week over week, and the
   #    same for job minutes per merged pull request.
   duration_growth: 0.25

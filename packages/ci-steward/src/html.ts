@@ -84,20 +84,26 @@ function render(v: unknown): string {
  * unknown slot is left in place: a typo in the template should be visible on
  * the page, not silently blank.
  *
+ * **One pass, deliberately.** Two `replace` calls would let the second one
+ * scan what the first one inserted, so a trigger whose text happened to read
+ * `{{title}}` or `{{{slos}}}` — and trigger text carries GitHub's words —
+ * would splice another section into itself. The alternation below matches both
+ * forms in a single scan, and nothing a slot inserts is ever looked at again.
+ *
  * @param template - The template's text.
  * @param slots - Values by slot name.
  */
 export function fill(template: string, slots: Readonly<Record<string, unknown>>): string {
-  return template
-    .replace(/\{\{\{(\w+)\}\}\}/g, (all, name: string) => {
+  return template.replace(
+    /\{\{\{(\w+)\}\}\}|\{\{(\w+)\}\}/g,
+    (all, markupName: string | undefined, textName: string | undefined) => {
+      const name = markupName ?? textName!;
       const v = slots[name];
       if (v === undefined) return all;
-      return v instanceof Html ? v.value : esc(v);
-    })
-    .replace(/\{\{(\w+)\}\}/g, (all, name: string) => {
-      const v = slots[name];
-      return v === undefined ? all : esc(v);
-    });
+      // Only the triple-brace form may carry markup, and only markup the engine built.
+      return markupName !== undefined && v instanceof Html ? v.value : esc(v);
+    }
+  );
 }
 
 /**

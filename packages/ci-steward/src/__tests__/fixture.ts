@@ -90,6 +90,8 @@ export function baseSpec(): FixtureSpec {
       triage: {
         failure_spike_ratio: 1.5,
         failure_spike_min_n: 20,
+        failure_spike_absolute: 0.1,
+        spike_min_days: 5,
         duration_growth: 0.25,
         minutes_growth: 0.2,
         repeat_ejection_min: 3,

@@ -34,6 +34,12 @@ floors still tighten after 4 consecutive met windows, and verdicts still wait
 for their after-window. Daily is the cadence of _reporting and triage_, not of
 measurement.
 
+**A checkout older than this change must pull.** `latest.json` gained a
+`triggers` summary, and the schema on `main` before this change was `strict`,
+so an old worktree's `collect` or `ci:pulse` throws "needs a migration" on the
+first file the new collector writes. The schema is tolerant from here on (and
+so is `triggers.json`), which fixes the next addition, not this one.
+
 `kind: hygiene` because nothing measurable about the pipeline should move: this
 adds about a second to a job that runs once a day, and changes no gate. If the
 daily job's own runtime grows noticeably, or a trigger rule turns out to nag

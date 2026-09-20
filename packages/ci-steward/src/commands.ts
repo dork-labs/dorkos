@@ -6,7 +6,14 @@
  * temporary bare repositories.
  */
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { collect } from './collect.ts';
@@ -200,6 +207,7 @@ export function cmdTriage(env: Env, dataDir: string): number {
     ledger: readLedger(env.root, env.files),
     verdicts: loadVerdicts(dataDir),
     latest,
+    workflows: env.workflows,
     snapshots: loadSnapshots(dataDir, daysBetween(addDays(latest.date, -27), latest.date)),
     prior: readTriggers(dataDir),
     now: env.now,
@@ -232,6 +240,16 @@ function writeDailyReport(env: Env, dataDir: string, day?: string, local = false
     return null;
   }
   const on = day ?? latest.date;
+  if (on !== latest.date) {
+    // latest.json and triggers.json hold ONE day's readings: the newest. A page
+    // for any other day would carry today's headline, constraint, SLO table and
+    // trigger list under yesterday's date, and the index would file it as that
+    // day. Refuse rather than publish a page that is wrong about its own date.
+    env.io.err(
+      `--day ${on} cannot be rebuilt: the data branch carries one set of readings, for ${latest.date}, so a page for ${on} would show ${latest.date}'s numbers under ${on}'s name. The page written on ${on} is at ${reportPath(on)} on the branch.\n`
+    );
+    return null;
+  }
   const { html, index } = renderDailyReport({
     files: env.files,
     dataDir,
@@ -240,6 +258,7 @@ function writeDailyReport(env: Env, dataDir: string, day?: string, local = false
     triggers: readTriggers(dataDir),
     verdicts: loadVerdicts(dataDir),
     ledger: readLedger(env.root, env.files),
+    workflows: env.workflows,
     now: env.now,
     local,
   });
@@ -252,12 +271,19 @@ function writeDailyReport(env: Env, dataDir: string, day?: string, local = false
 }
 
 /**
- * `daily-report` (`pnpm ci:report`): build the day's HTML report from a data
- * directory, or from a throwaway copy of the data branch, and print where it
- * landed. It never writes to the data branch and never pushes.
+ * `daily-report` (`pnpm ci:report`): build the day's HTML report and print
+ * where it landed.
+ *
+ * Without `--data` it works on a throwaway copy of the data branch, so it
+ * touches nothing. With `--data <dir>` it writes the page and the index into
+ * that working tree, exactly as the daily job does; it never commits and never
+ * pushes, so nothing reaches the branch until `data-publish` runs.
+ *
+ * A `--day` other than the newest is served from the page already on the
+ * branch, because only the newest day's readings exist to rebuild from.
  *
  * @param env - The environment.
- * @param opts - The day; a data directory to read; whether to open the page.
+ * @param opts - The day; a data directory to write into; whether to open the page.
  */
 export function cmdDailyReport(
   env: Env,
@@ -281,19 +307,47 @@ export function cmdDailyReport(
       return 1;
     }
   }
+  const latest = readData(dir, 'latest.json', LatestSchema);
+  // An older day is not rebuilt, but the page written that day is right there.
+  if (opts.day && latest && opts.day !== latest.date) {
+    const already = path.join(dir, reportPath(opts.day));
+    if (!existsSync(already)) {
+      env.io.err(
+        `No report for ${opts.day} on the data branch, and it cannot be rebuilt: the branch carries one set of readings, for ${latest.date}. Days with a page: ${reportDays(dir).join(', ') || 'none'}.\n`
+      );
+      return 1;
+    }
+    env.io.out(`${already}\n`);
+    openPage(env, already, opts.open === true);
+    return 0;
+  }
   const rel = writeDailyReport(env, dir, opts.day, true);
   if (!rel) return 1;
   const abs = path.join(dir, rel);
   env.io.out(`${abs}\n`);
-  if (opts.open) {
-    const opener = process.platform === 'darwin' ? 'open' : 'xdg-open';
-    try {
-      execFileSync(opener, [abs], { stdio: 'ignore' });
-    } catch {
-      env.io.err(`could not open the page with ${opener}; it is at ${abs}\n`);
-    }
-  }
+  openPage(env, abs, opts.open === true);
   return 0;
+}
+
+/** Every day with a report page in a data directory, newest first. */
+function reportDays(dataDir: string): string[] {
+  const dir = path.join(dataDir, 'reports');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .flatMap((n) => (/^\d{4}-\d{2}-\d{2}\.html$/.test(n) ? [n.slice(0, 10)] : []))
+    .sort()
+    .reverse();
+}
+
+/** Hand a page to the desktop, when asked. A failure to open is not a failure to build. */
+function openPage(env: Env, abs: string, open: boolean): void {
+  if (!open) return;
+  const opener = process.platform === 'darwin' ? 'open' : 'xdg-open';
+  try {
+    execFileSync(opener, [abs], { stdio: 'ignore' });
+  } catch {
+    env.io.err(`could not open the page with ${opener}; it is at ${abs}\n`);
+  }
 }
 
 /**
@@ -336,9 +390,13 @@ export function cmdDaily(env: Env, dataDir: string): number {
   }
   const verdicts = runVerdicts(ctx(env, dataDir), ledger, merged);
   env.io.out(`verdicts: ${verdicts.map((v) => `${v.id} ${v.verdict}`).join(', ') || 'none'}\n`);
-  cmdTriage(env, dataDir);
+  // Triage and the page are reported on their own. A crash in either must not
+  // read as a collector-health failure, which is what the exit code means here.
+  const triaged = cmdTriage(env, dataDir);
+  if (triaged !== 0) env.io.err('triage failed; the page below has no triggers on it\n');
   const page = writeDailyReport(env, dataDir);
   if (page) env.io.out(`wrote ${page}\n`);
+  else env.io.err('the daily report was not written\n');
   // Monday's deep summary: week over week, the verdicts closed, the floors moved.
   if (env.now.getUTCDay() === 1) {
     const r = runReport(ctx(env, dataDir), ledger, verdicts);

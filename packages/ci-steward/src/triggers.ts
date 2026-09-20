@@ -9,6 +9,13 @@
  * That file is inside the fence (`ci/steward-owned-paths.json`), so an
  * unattended tick cannot move its own goalposts by widening a threshold.
  *
+ * **Trigger copy is terse by rule** (the same rule as the report's, in
+ * `daily-report.ts`, `templates/report.html`, `contributing/ci.md` and the
+ * `stewarding-ci-pipeline` skill): shortest words that keep the meaning, no
+ * filler, lead with the number, never trade away a number, unit, name or
+ * caveat to save words. `what` is one line under 120 characters, because it
+ * becomes the page's headline; `action` is the next step, also one line.
+ *
  * Triggers are stateful so they do not nag: each carries the day it first
  * fired and the day it last fired, and stays open until its condition clears.
  * The id is what carries that state across days, so every id is derived from
@@ -18,8 +25,10 @@
 import { z } from 'zod';
 import { gateDays, type Latest, type Snapshot, type SloReading, type Verdict } from './data.ts';
 import type { HandFiles } from './load.ts';
-import { addDays, dayOf, quantile, round } from './time.ts';
+import { addDays, quantile, round } from './time.ts';
+import { ejectionLegs, legName } from './ejections.ts';
 import type { LedgerEntry } from './verdicts.ts';
+import type { WorkflowModel } from './workflows.ts';
 
 /** The ten rules, in the order `ci/config.yaml` documents them. */
 export const TRIGGER_RULES = [
@@ -76,20 +85,23 @@ const TriggerSchema = z
 /** One open trigger. */
 export type Trigger = z.infer<typeof TriggerSchema>;
 
-/** `triggers.json` on the data branch. */
-export const TriggersSchema = z
-  .object({
-    schema: z.literal(1),
-    date: z.string(),
-    computed_at: z.string(),
-    /** The constraint this run saw, so tomorrow's run can tell whether it changed. */
-    constraint: z.string().nullable(),
-    /** Open triggers, most important first. */
-    open: z.array(TriggerSchema),
-    /** Triggers that were open yesterday and whose condition has cleared. */
-    cleared: z.array(TriggerSchema),
-  })
-  .strict();
+/**
+ * `triggers.json` on the data branch. Not `strict`, for the same reason
+ * `LatestSchema` is not: a checkout behind the collector must be able to read
+ * it, and a field added here is additive.
+ */
+export const TriggersSchema = z.object({
+  schema: z.literal(1),
+  date: z.string(),
+  computed_at: z.string(),
+  /** The constraint this run saw, so tomorrow's run can tell whether it changed. */
+  constraint: z.string().nullable(),
+  /** Open triggers, most important first. */
+  open: z.array(TriggerSchema),
+  /** Triggers that were open yesterday and whose condition has cleared. */
+  cleared: z.array(TriggerSchema),
+});
+
 /** `triggers.json`. */
 export type Triggers = z.infer<typeof TriggersSchema>;
 
@@ -103,7 +115,9 @@ export interface TriageInput {
   verdicts: readonly Verdict[];
   /** The newest `latest.json`: its readings and its constraint. */
   latest: Latest;
-  /** Snapshots covering at least the 14 days ending on `latest.date`. */
+  /** The parsed workflows, so a fan-in job and the shards it needs collapse into one row. */
+  workflows: readonly WorkflowModel[];
+  /** Snapshots covering at least the 28 days ending on `latest.date`. */
   snapshots: readonly Snapshot[];
   /** Yesterday's `triggers.json`, or null on the first run. */
   prior: Triggers | null;
@@ -161,23 +175,27 @@ export function ledgerDay(id: string): string | null {
 }
 
 /**
- * The `proposed` ledger entry that already covers a trigger, if there is one:
- * an entry naming the same gate, or whose hypothesis names the same metric or
- * SLO id. Nothing is created here; the report just says "already proposed".
+ * The `proposed` ledger entry that already covers a trigger, if there is one.
+ *
+ * Both halves have to match, never just one. An entry that happens to list six
+ * gates would otherwise be offered as the answer to every trigger on any of
+ * them: for a gate the entry must name that gate **and** its hypothesis must
+ * measure that gate; for an SLO the hypothesis must name that SLO or read it
+ * as its metric. Nothing is created here; the report just says "already
+ * proposed".
  *
  * @param scope - The trigger's gate, SLO or metric id.
  * @param ledger - Every ledger entry.
  */
 function proposedFor(scope: string, ledger: readonly LedgerEntry[]): string | null {
   if (!scope) return null;
-  const match = ledger.find(
-    (e) =>
-      e.status === 'proposed' &&
-      (e.gates.includes(scope) ||
-        e.hypothesis?.slo === scope ||
-        e.hypothesis?.metric === scope ||
-        e.hypothesis?.metric.startsWith(`gate.${scope}.`))
-  );
+  const isGate = /^(?:wf|lefthook|claude|ruleset)\./.test(scope);
+  const match = ledger.find((e) => {
+    if (e.status !== 'proposed') return false;
+    const h = e.hypothesis;
+    if (isGate) return e.gates.includes(scope) && h?.metric.startsWith(`gate.${scope}.`) === true;
+    return h?.slo === scope || h?.metric === scope;
+  });
   return match?.id ?? null;
 }
 
@@ -186,16 +204,19 @@ function sloFloor(readings: readonly SloReading[]): NewTrigger[] {
   return readings
     .filter((r) => r.status === 'breach')
     .map((r) => {
+      // A share is a percentage here too: "74.8%" reads, "share 0.7481" does not.
       const stats = Object.entries(r.stats)
-        .map(([k, v]) => `${k} ${v}`)
+        .map(([k, v]) =>
+          k.endsWith('share') || k.startsWith('p95_over') ? `${round(v * 100, 1)}%` : `${k} ${v}`
+        )
         .join(', ');
       return {
         id: `slo-floor:${r.id}`,
         rule: 'slo-floor' as const,
         severity: r.kind === 'speed' ? ('amber' as const) : ('red' as const),
         scope: r.id,
-        what: `The SLO ${r.id} is under its floor over ${r.from} to ${r.to}: ${stats || 'no value'} (n=${r.n}).`,
-        action: `Read what ci/slos.yaml lists as this SLO's path, and propose the narrowest change on it.`,
+        what: `${r.id} under floor: ${stats || 'no value'} (n=${r.n}, ${r.from} to ${r.to}).`,
+        action: `Take its path from ci/slos.yaml. Propose the narrowest change on it.`,
         ledger_entry: null,
       };
     });
@@ -212,8 +233,8 @@ function constraintChanged(inp: TriageInput): NewTrigger[] {
       rule: 'constraint-changed',
       severity: 'amber',
       scope: now ?? '',
-      what: `The one thing to work on changed from ${before ?? 'nothing'} to ${now ?? 'nothing'}: ${inp.latest.constraint.reason}`,
-      action: `Stop work aimed at ${before ?? 'the old constraint'} unless it is nearly done, and pick up ${now ?? 'whatever is next'}.`,
+      what: `Constraint moved: ${before ?? 'none'} → ${now ?? 'none'}.`,
+      action: `Drop ${before ?? 'the old one'} unless it is nearly done. Pick up ${now ?? 'what is next'}.`,
       ledger_entry: null,
     },
   ];
@@ -234,18 +255,42 @@ function verdictTriggers(inp: TriageInput): NewTrigger[] {
       rule: 'verdict' as const,
       severity: v.verdict === 'failed' ? ('red' as const) : ('amber' as const),
       scope: v.id,
-      what: `The change ${v.id} came back ${v.verdict}: ${v.reason}`,
+      // The full reason is on the page beside the experiment; this is the gist.
+      what: `${v.id} ${v.verdict}: ${v.metric} ${v.after.value ?? 'no data'} vs target ${v.target}.`,
       action:
         v.verdict === 'failed'
-          ? `Revert it (set status: reverted and name the revert PR), or write a new entry saying what you now believe.`
-          : `Decide whether the rest of the gap is worth another change; if not, close it out with a follow-up entry.`,
+          ? `Revert it (status: reverted, name the PR), or re-state the hypothesis.`
+          : `Worth another change? If not, close it with a follow-up entry.`,
       ledger_entry: null,
     }));
 }
 
+/**
+ * How much of each window actually has data. A window with two days in it is
+ * not "the week before", and comparing seven days against one produced three
+ * spike triggers on the live branch that meant nothing. Both windows need
+ * `spike_min_days` days present before any week-over-week rule may speak, and
+ * the count goes in the text so the reader can see what was compared.
+ */
+interface Windows {
+  curDays: number;
+  prevDays: number;
+}
+
+const comparable = (t: TriageInput['files']['config']['triage'], w: Windows) =>
+  w.curDays >= t.spike_min_days && w.prevDays >= t.spike_min_days;
+
+const over = (w: Windows) => `${w.curDays}d vs ${w.prevDays}d`;
+
 /** A gate failing far more often than it did the week before (rule 4). */
-function failureSpike(inp: TriageInput, cur: GateWindows, prev: GateWindows): NewTrigger[] {
+function failureSpike(
+  inp: TriageInput,
+  cur: GateWindows,
+  prev: GateWindows,
+  w: Windows
+): NewTrigger[] {
   const t = inp.files.config.triage;
+  if (!comparable(t, w)) return [];
   const out: NewTrigger[] = [];
   for (const [gate, c] of [...cur].sort(([a], [b]) => a.localeCompare(b))) {
     const p = prev.get(gate);
@@ -253,14 +298,23 @@ function failureSpike(inp: TriageInput, cur: GateWindows, prev: GateWindows): Ne
     if (c.done < t.failure_spike_min_n || p.done < t.failure_spike_min_n) continue;
     const now = c.failed / c.done;
     const before = p.failed / p.done;
-    if (now === 0 || before === 0 || now < before * t.failure_spike_ratio) continue;
+    // Two arms. The ratio catches a gate getting worse; the absolute rate
+    // catches the biggest jump of all, nothing to something, which no ratio
+    // against zero can express.
+    const jumped = before > 0 && now >= before * t.failure_spike_ratio;
+    const loud = now >= t.failure_spike_absolute;
+    if (now === 0 || !(jumped || loud)) continue;
+    const against =
+      before > 0
+        ? `was ${pct(before)} (${round(now / before, 2)}x)`
+        : 'against none at all the week before';
     out.push({
       id: `gate-failure-spike:${gate}`,
       rule: 'gate-failure-spike',
       severity: 'amber',
       scope: gate,
-      what: `The job ${gate} failed ${pct(now)} of the time this week against ${pct(before)} the week before (${round(now / before, 2)}x, n=${c.done} and ${p.done}).`,
-      action: `Look at what changed for that job in the last 7 days; a spike is usually one new flaky test or one new step.`,
+      what: `${gate} failed ${pct(now)}, ${against}. ${over(w)}, n=${c.done}/${p.done}.`,
+      action: `What changed for it in 7 days? Usually one flaky test or one new step.`,
       ledger_entry: null,
     });
   }
@@ -268,9 +322,10 @@ function failureSpike(inp: TriageInput, cur: GateWindows, prev: GateWindows): Ne
 }
 
 /** A gate that got slower, and the whole pipeline's minutes per merged PR (rule 5). */
-function newCost(inp: TriageInput, cur: GateWindows, prev: GateWindows): NewTrigger[] {
+function newCost(inp: TriageInput, cur: GateWindows, prev: GateWindows, w: Windows): NewTrigger[] {
   const t = inp.files.config.triage;
   const minN = inp.files.config.verdicts.min_n;
+  if (!comparable(t, w)) return [];
   const out: NewTrigger[] = [];
   for (const [gate, c] of [...cur].sort(([a], [b]) => a.localeCompare(b))) {
     const p = prev.get(gate);
@@ -283,8 +338,8 @@ function newCost(inp: TriageInput, cur: GateWindows, prev: GateWindows): NewTrig
       rule: 'gate-cost',
       severity: 'amber',
       scope: gate,
-      what: `The job ${gate} takes ${round(now, 1)} minutes at its slow end, against ${round(before, 1)} the week before (up ${pct(now / before - 1)}).`,
-      action: `Find what was added to that job in the last 7 days; a step that grew is cheaper to fix now than a timeout raise later.`,
+      what: `${gate} p90 ${round(now, 1)} min, was ${round(before, 1)} (+${pct(now / before - 1)}). ${over(w)}.`,
+      action: `Find the step that grew. Cheaper now than a timeout raise later.`,
       ledger_entry: null,
     });
   }
@@ -302,78 +357,79 @@ function newCost(inp: TriageInput, cur: GateWindows, prev: GateWindows): NewTrig
       rule: 'gate-cost',
       severity: 'amber',
       scope: 'tracked.job-minutes-per-merged-pr',
-      what: `Every merged pull request now costs ${round(now, 1)} job minutes, against ${round(before, 1)} the week before (up ${pct(now / before - 1)}).`,
-      action: `Check whether a job was added to a required path, or whether more runs are being thrown away; both show up here.`,
+      what: `Job minutes per merged PR ${round(now, 1)}, was ${round(before, 1)} (+${pct(now / before - 1)}). ${over(w)}.`,
+      action: `A job added to a required path, or more runs thrown away. Both land here.`,
       ledger_entry: null,
     });
   }
   return out;
 }
 
-/** The same job ejecting pull requests from the queue again and again (rule 6). */
+/** The same job among the failing checks of ejection after ejection (rule 6). */
 function repeatEjection(inp: TriageInput, all: readonly Snapshot[]): NewTrigger[] {
   const t = inp.files.config.triage;
   const from = addDays(inp.latest.date, -(t.repeat_ejection_days - 1));
   const snaps = all.filter((s) => s.date >= from);
-  const counts: Record<string, number> = {};
-  for (const s of snaps)
-    for (const [gate, n] of Object.entries(s.ejections_caused))
-      counts[gate] = (counts[gate] ?? 0) + n;
-  const real: Record<string, number> = {};
-  for (const s of snaps)
-    for (const [gate, n] of Object.entries(s.real_catches)) real[gate] = (real[gate] ?? 0) + n;
-  return Object.entries(counts)
-    .filter(([, n]) => n >= t.repeat_ejection_min)
-    .sort(([a, x], [b, y]) => y - x || a.localeCompare(b))
-    .map(([gate, n]) => {
-      const caught = real[gate] ?? 0;
-      // `unattributed` is the collector's bucket for an ejection whose failing
-      // job could not be identified, so it is not a job and must not read as one.
-      const who = gate === 'unattributed' ? 'Ejections with no job to blame' : `The job ${gate}`;
-      return {
-        id: `repeat-ejection:${gate}`,
-        rule: 'repeat-ejection' as const,
-        severity: 'amber' as const,
-        scope: gate === 'unattributed' ? '' : gate,
-        what: `${who} threw ${n} pull requests out of the merge queue in ${t.repeat_ejection_days} days, and only ${caught} of them ${caught === 1 ? 'was' : 'were'} a real problem in the code.`,
-        action:
-          gate === 'unattributed'
-            ? `Find out which job is failing these: an ejection nothing can be attributed to cannot be fixed.`
-            : `Quarantine or fix whatever in that job fails without the code being wrong; every other ejection is a wasted queue build.`,
-        ledger_entry: null,
-      };
-    });
+  const total = sum(snaps.map((s) => s.counts.ejections_failed_checks));
+  return ejectionLegs(snaps, inp.workflows)
+    .filter((leg) => leg.count >= t.repeat_ejection_min)
+    .map((leg) => ({
+      id: `repeat-ejection:${leg.gate}`,
+      rule: 'repeat-ejection' as const,
+      severity: 'amber' as const,
+      scope: leg.gate === 'unattributed' ? '' : leg.gate,
+      what: `${legName(leg)} failed on ${leg.count} of ${total} queue ejections in ${t.repeat_ejection_days}d; ${leg.real} real.`,
+      action:
+        leg.gate === 'unattributed'
+          ? `Find which job fails these. An ejection with nothing to blame cannot be fixed.`
+          : `Quarantine or fix what fails without the code being wrong. The rest are wasted builds.`,
+      ledger_entry: null,
+    }));
 }
 
-/** Every red episode on the default branch in the window (rule 7). */
-function mainRed(snaps: readonly Snapshot[]): NewTrigger[] {
-  const commits = snaps.flatMap((s) => s.main).sort((a, b) => a.at.localeCompare(b.at));
+/**
+ * Red spells on the default branch (rule 7).
+ *
+ * Red severity is for "main is red **now**", which is read off the newest
+ * commit in the whole 28 days rather than off the 7-day window, so an episode
+ * that is still open never quietly ages out and reads as fixed. A spell that
+ * already recovered is amber: it is worth knowing and the `main-green` SLO
+ * counts it, but it is not something to drop everything for, and it must not
+ * drive the page's traffic light for a week after it healed.
+ *
+ * @param all - Every snapshot loaded (28 days).
+ * @param from - The first day of the 7-day window closed spells are listed over.
+ */
+function mainRed(all: readonly Snapshot[], from: string): NewTrigger[] {
+  const commits = all.flatMap((s) => s.main).sort((a, b) => a.at.localeCompare(b.at));
   const out: NewTrigger[] = [];
   let open: { sha: string; done: string } | null = null;
   for (const c of commits) {
     if (c.red && open === null) open = { sha: c.sha, done: c.done };
     else if (!c.red && open !== null) {
       const minutes = round((Date.parse(c.done) - Date.parse(open.done)) / 60_000, 1);
-      out.push({
-        id: `main-red:${open.sha}`,
-        rule: 'main-red',
-        severity: 'red',
-        scope: 'main-green',
-        what: `main went red at commit ${open.sha} and stayed red for ${minutes} minutes.`,
-        action: `Read that run, and if the same check can go red on main but not in the queue, that gap is the fix.`,
-        ledger_entry: null,
-      });
+      // Only spells inside the window are listed; older ones are history.
+      if (open.done.slice(0, 10) >= from)
+        out.push({
+          id: `main-red:${open.sha}`,
+          rule: 'main-red',
+          severity: 'amber',
+          scope: 'main-green',
+          what: `main red ${round(minutes, 0)} min (${open.sha.slice(0, 7)}).`,
+          action: `Why did the queue miss it? If nothing did, this one is history.`,
+          ledger_entry: null,
+        });
       open = null;
     }
   }
   if (open)
     out.push({
-      id: `main-red:${open.sha}`,
+      id: `main-red-open:${open.sha}`,
       rule: 'main-red',
       severity: 'red',
       scope: 'main-green',
-      what: `main went red at commit ${open.sha} and has not gone green since.`,
-      action: `Fix main first: everything merging behind it inherits the red.`,
+      what: `main red since ${open.sha.slice(0, 7)}, still red.`,
+      action: `Fix main first. Everything merging behind it inherits the red.`,
       ledger_entry: null,
     });
   return out;
@@ -393,8 +449,8 @@ function headroom(inp: TriageInput, cur: GateWindows): NewTrigger[] {
       rule: 'headroom',
       severity: 'red',
       scope: gate,
-      what: `The job ${gate} uses ${pct(ratio)} of the time it is allowed before it is killed, on its slowest runs (n=${w.ratios.length}).`,
-      action: `Make the job faster. Raising its time limit hides the problem and the next green run still gets killed.`,
+      what: `${gate} p95 uses ${pct(ratio)} of its time limit (n=${w.ratios.length}).`,
+      action: `Make it faster. Raising the limit hides it; the next green run still gets killed.`,
       ledger_entry: null,
     });
   }
@@ -414,8 +470,8 @@ function collectorHealth(inp: TriageInput, snaps: readonly Snapshot[]): NewTrigg
       rule: 'collector-health',
       severity: 'red',
       scope: '',
-      what: `The collector's own checks failed on ${bad.length} of the last ${recent.length} days (${bad.map((s) => s.date).join(', ')}). First problem: ${failures[0] ?? 'unnamed'}`,
-      action: `Fix this before reading any other number on this page: they all come from the same run.`,
+      what: `Collector unhealthy ${bad.length} of ${recent.length} days (${bad.map((s) => s.date).join(', ')}): ${failures[0] ?? 'unnamed'}`,
+      action: `Fix this first. Every other number comes from the same run.`,
       ledger_entry: null,
     },
   ];
@@ -424,7 +480,9 @@ function collectorHealth(inp: TriageInput, snaps: readonly Snapshot[]): NewTrigg
 /** Ledger entries nothing has come back to (rule 10). */
 function staleLedger(inp: TriageInput): NewTrigger[] {
   const t = inp.files.config.triage;
-  const today = dayOf(inp.now);
+  // The day being reported, like every other rule, never the wall clock: a run
+  // that started late, or a page rebuilt by hand, must reach the same answer.
+  const today = inp.latest.date;
   const final = new Set(inp.verdicts.filter((v) => v.verdict !== 'pending').map((v) => v.id));
   const out: NewTrigger[] = [];
   for (const e of inp.ledger) {
@@ -438,8 +496,8 @@ function staleLedger(inp: TriageInput): NewTrigger[] {
           rule: 'stale-ledger',
           severity: 'amber',
           scope: e.hypothesis.slo ?? e.hypothesis.metric,
-          what: `The experiment ${e.id} ("${e.title}") should have been judged on ${closed} and still has no verdict.`,
-          action: `Check that its pull request numbers are in the entry and that the days it needs were collected; without both, it can never be judged.`,
+          what: `${e.id} due ${closed}, no verdict: ${e.title}`,
+          action: `Check its PR numbers are in the entry and its days were collected.`,
           ledger_entry: null,
         });
       }
@@ -455,8 +513,8 @@ function staleLedger(inp: TriageInput): NewTrigger[] {
         rule: 'stale-ledger',
         severity: 'amber',
         scope: e.hypothesis?.slo ?? e.hypothesis?.metric ?? '',
-        what: `The proposal ${e.id} ("${e.title}") has been waiting ${t.stale_proposed_days}+ days and nobody has picked it up.`,
-        action: `Do it, or drop it (status: withdrawn). A proposal nobody will do is noise in every report from here on.`,
+        what: `${e.id} proposed ${t.stale_proposed_days}+ days ago, untouched: ${e.title}`,
+        action: `Do it, or withdraw it. A proposal nobody will do is noise in every report.`,
         ledger_entry: null,
       });
     }
@@ -480,14 +538,15 @@ export function triage(inp: TriageInput): Triggers {
   const prev = inp.snapshots.filter((s) => s.date >= prevFrom(inp) && s.date < windowFrom(inp));
   const curGates = gateWindow(cur);
   const prevGates = gateWindow(prev);
+  const windows: Windows = { curDays: cur.length, prevDays: prev.length };
   const found: NewTrigger[] = [
     ...sloFloor(inp.latest.slos),
     ...constraintChanged(inp),
     ...verdictTriggers(inp),
-    ...failureSpike(inp, curGates, prevGates),
-    ...newCost(inp, curGates, prevGates),
+    ...failureSpike(inp, curGates, prevGates, windows),
+    ...newCost(inp, curGates, prevGates, windows),
     ...repeatEjection(inp, cur),
-    ...mainRed(cur),
+    ...mainRed(inp.snapshots, windowFrom(inp)),
     ...headroom(inp, curGates),
     ...collectorHealth(inp, cur),
     ...staleLedger(inp),

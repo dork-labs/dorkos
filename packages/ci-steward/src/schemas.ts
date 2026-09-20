@@ -52,6 +52,14 @@ const TriageConfigSchema = z
     failure_spike_ratio: z.number().gt(1),
     /** Rule 4: completed runs a gate needs in each week before the ratio means anything. */
     failure_spike_min_n: z.number().int().positive(),
+    /** Rule 4's second arm: a failure rate this high fires on its own, so 0% to 50% is not silent. */
+    failure_spike_absolute: z.number().gt(0).lte(1),
+    /**
+     * Rules 4 and 5: days that must have a snapshot in EACH of the two weeks
+     * before they may be compared. Without it, 7 days against 1 backfilled day
+     * reads as a week-over-week spike.
+     */
+    spike_min_days: z.number().int().positive(),
     /** Rule 5: fractional growth in a gate's p90 duration week over week, e.g. 0.25. */
     duration_growth: z.number().positive(),
     /** Rule 5: fractional growth in job minutes per merged pull request, e.g. 0.2. */
