@@ -140,8 +140,8 @@ export interface VerifyRequestAuthOptions {
    * before returning `{ valid: false }` — it does not throw, so the debug-level
    * catch below never gets the chance to quiet it. Every JSON-RPC round trip to
    * `/mcp` is a separate POST (`initialize`, `tools/list`, each `tools/call`),
-   * so on a default install with `runtimes.dorkosTools` on, that was roughly
-   * four bogus error lines per agent turn drowning real failures in the log.
+   * so on a default install that was roughly four bogus error lines per agent
+   * turn drowning real failures in the log.
    *
    * The session-cookie leg still runs, so identity attribution is unchanged.
    */

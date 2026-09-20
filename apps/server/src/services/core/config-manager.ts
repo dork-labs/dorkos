@@ -2907,44 +2907,35 @@ export function seedRoomRepoDefaults(store: {
 }
 
 /**
- * Seed `runtimes.dorkosTools` — whether Codex and OpenCode agents get the DorkOS
- * tools Claude Code agents already have (spec `tool-only-room-replies` §D5;
- * DOR-1613).
+ * Migration body: delete the retired `runtimes.dorkosTools` leaf (spec
+ * `tool-only-room-replies` §A1, DOR-2099).
  *
- * **This body is the mechanism, not an anchor.** `runtimes.dorkosTools` is a
- * nested leaf inside a section every stored config already carries, and conf's
- * pre-migration `Object.assign({}, defaults, fileStore)` is SHALLOW: a stored
- * `runtimes` object wins wholesale and never gains a member. Ajv's `useDefaults`
- * does fill it — but only into the copy conf's `store` getter just built and is
- * about to discard. So nothing else writes this leaf to the file, and deleting
- * this body leaves `runtimes.dorkosTools` absent from disk on every upgraded
- * install. See "Which of these bodies is a real no-op, and which only looks like
- * one" above {@link CONFIG_MIGRATIONS}.
+ * The experiment graduated on 2026-09-19 and was removed rather than flipped:
+ * every agent-bound Codex and OpenCode session carries the DorkOS tools, so
+ * there is nothing left for a stored `true` or `false` to decide. This is the
+ * migration half of the retired-key mechanism {@link tolerateRetiredSidebarKeys}
+ * documents for `ui.sidebar`; the declaration half, which converges an install
+ * this key never reaches, is {@link tolerateRetiredRuntimeKeys}.
  *
- * Safety-neutral: it seeds `false`, which is the behaviour every existing
- * install already has. Nothing an agent could not already reach becomes
- * reachable, and the switch stays where the operator finds it (Experiments).
+ * Idempotent, and quiet when there is nothing to do: the `set` happens only when
+ * the key is really present, so a re-run after corrupt recovery writes nothing.
  *
- * Additive + idempotent: the leaf is written only when absent, so a re-run after
- * corrupt recovery leaves an operator's own choice alone. Reads
- * {@link USER_CONFIG_DEFAULTS} rather than a literal, so it cannot drift from
- * the schema.
+ * Data loss on purpose, and it loses nothing that means anything: the value
+ * chose between two behaviours, only one of which the code still has.
  *
  * @internal Exported for testing only.
  * @param store - The `conf` store instance (provides `get`/`set`).
  */
-export function seedDorkosToolsDefault(store: {
+export function dropRetiredDorkosTools(store: {
   get: (key: string) => unknown;
   set: (key: string, value: unknown) => void;
 }): void {
   const runtimes = store.get('runtimes');
   if (runtimes == null || typeof runtimes !== 'object') return;
   const current = runtimes as Record<string, unknown>;
-  if (current.dorkosTools != null) return;
-  store.set('runtimes', {
-    ...current,
-    dorkosTools: USER_CONFIG_DEFAULTS.runtimes.dorkosTools,
-  });
+  if (!('dorkosTools' in current)) return;
+  const { dorkosTools: _retired, ...rest } = current;
+  store.set('runtimes', rest);
 }
 
 /**
@@ -3824,25 +3815,39 @@ export const CONFIG_MIGRATIONS = {
     // only thing that writes it; see `seedRoomRepoDefaults`.
     seedRoomRepoDefaults(store);
   },
-  // 0.70.0 has merged (the room repo), so 0.71.0 is the next key. Frozen from
-  // merge, not from the release bump, for the reason `'0.60.0'` above states;
-  // anything further opens `'0.72.0'`.
+  // **`'0.71.0'` was REMOVED here (DOR-2099, spec `tool-only-room-replies`
+  // §A1), and it is the only key ever removed from this table.** It seeded
+  // `runtimes.dorkosTools: false` — the experiment that decided whether Codex
+  // and OpenCode agents carry the DorkOS tools. That experiment graduated on
+  // 2026-09-19: every agent-bound session on every runtime carries them, and the
+  // leaf no longer exists in `UserConfigSchema`, in the Experiments registry, or
+  // in any code path.
   //
-  // Disjoint from every other key here: it writes one nested leaf under
-  // `runtimes` that no other key names. `'0.65.0'` and `'0.67.0'` also touch
-  // that section, but the first rewrites `claudeCode.defaultAccount` and the
-  // second `claudeCode.persistentSession` — different members, so sequencing
-  // them any way round lands the same config.
-  '0.71.0': (store: {
-    get: (key: string) => unknown;
-    set: (key: string, value: unknown) => void;
-  }) => {
-    // `runtimes.dorkosTools` — whether Codex and OpenCode agents get the DorkOS
-    // tools (spec `tool-only-room-replies` §D5). A nested leaf, so this body is
-    // the only thing that writes it; see `seedDorkosToolsDefault`.
-    seedDorkosToolsDefault(store);
-  },
-  // 0.71.0 has merged (the DorkOS tools on codex/opencode), so 0.72.0 is the
+  // Removing a shipped key is normally wrong, because an install still upgrading
+  // through it silently skips the state change it was owed. Nothing is owed
+  // here: there is no behaviour left for a stored value to select, so the state
+  // change is empty by construction rather than by argument. Keeping it would be
+  // actively WORSE — the next release is below `'0.80.0'`, so an upgrader would
+  // run `'0.71.0'` and NOT `'0.80.0'`, and gain a dead key this build's schema
+  // does not declare.
+  //
+  // **That judgement is recorded, not asserted.** Until DOR-2099 nothing in this
+  // repository could see a deletion at all: `checkMigrationSafety` walks the
+  // WORKING table, so a key present in the release and absent here was reached
+  // by no loop, and the pins next door only report a pin left WITHOUT its key —
+  // which the same commit removes. Deleting a shipped migration and its pin
+  // together passed both guards in silence. The rule now compares the released
+  // table against this one and refuses any key that has vanished, unless it is
+  // listed in `REMOVED_SHIPPED_KEYS` (`__tests__/migration-safety.ts`) with its
+  // reason. `'0.71.0'` is listed there; emptying that list turns this file red.
+  //
+  // What the removal costs, stated plainly: an install that has already run the
+  // key carries `runtimes.dorkosTools` on disk. `'0.80.0'` below deletes it, and
+  // on an install that key never reaches — a dev tree resolves SERVER_VERSION to
+  // `0.0.0` and runs nothing — `tolerateRetiredRuntimeKeys` makes the first
+  // write drop it. Both halves are tested.
+  //
+  // 0.70.0 has merged (the room repo), and 0.71.0 is spent, so 0.72.0 is the
   // next key. Frozen from merge, not from the release bump, for the reason
   // `'0.60.0'` above states; anything further opens `'0.73.0'`.
   //
@@ -3970,6 +3975,25 @@ export const CONFIG_MIGRATIONS = {
     // shared canvas inside one turn (spec `room-canvas` §3.4). A nested leaf, so
     // this body is the only thing that writes it; see `seedRoomCanvasOps`.
     seedRoomCanvasOps(store);
+  },
+  // 0.79.0 has merged (the canvas op ceiling), so 0.80.0 is the next key. Frozen
+  // from merge, not from the release bump, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.81.0'`.
+  //
+  // Disjoint from every other key here: it deletes one nested leaf under
+  // `runtimes` that only the removed `'0.71.0'` ever named, so nothing left in
+  // this table writes it and no ordering question arises. `'0.65.0'` and
+  // `'0.67.0'` also touch that section, rewriting `claudeCode.defaultAccount`
+  // and `claudeCode.persistentSession`, which this body preserves along with
+  // every other member.
+  '0.80.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `runtimes.dorkosTools` — the graduated experiment (spec
+    // `tool-only-room-replies` §A1). Retired rather than re-seeded; see
+    // `dropRetiredDorkosTools`.
+    dropRetiredDorkosTools(store);
   },
 } as const;
 
@@ -4133,6 +4157,65 @@ function tolerateLegacyClaudeAccountEncoding(ctx: {
   }
 }
 
+/**
+ * Declare the retired `runtimes.dorkosTools` key, so that **a write whose parse
+ * output drops it genuinely removes it** rather than having it carried straight
+ * back from disk.
+ *
+ * The same mechanism {@link tolerateRetiredSidebarKeys} explains at length, and
+ * the same two halves: `'0.80.0'` moves what the key MEANT (nothing — the
+ * experiment graduated and every runtime carries the tools now), and this is
+ * what makes the husk go away on an install that key never reaches. A dev tree
+ * resolves `SERVER_VERSION` to `0.0.0` and runs no migration at all, so without
+ * this the leaf could never leave: `ConfigManager.write` carries keys the schema
+ * does not declare across from disk on purpose, so an older build saving a theme
+ * cannot delete a newer build's settings. Naming it here puts it back inside
+ * "what this build knows about", so `preserveUnknownKeys` stops re-attaching it.
+ *
+ * ## What that does and does not promise
+ *
+ * Not "the first write", which is what this said before it was measured. This
+ * removes the FLOOR under the key; it does not reach a write that re-supplies it
+ * by hand. `ConfigManager.write` writes the value its caller passed, so:
+ *
+ * - A write whose value came through Zod drops it — `PATCH /api/config` and the
+ *   `config_patch` operator tool both go through `applyConfigPatch`, which
+ *   re-parses the whole config, and Zod strips what it does not declare. Tested.
+ * - A write that spreads the STORED object back over itself keeps it, because
+ *   the caller put it in `next` itself and nothing here overrules a caller.
+ *   `persist-provider-credential.ts` is the live example — `config.set(
+ *   'runtimes', { ...config.get('runtimes'), opencode })`, where `get` hands
+ *   back conf's stored object rather than a parse. Also tested, so the limit is
+ *   pinned rather than discovered again.
+ * - `setDot('ui.theme')` does not touch `runtimes` at all, so of course it keeps
+ *   it.
+ *
+ * That is the honest shape, and it is enough: `'0.80.0'` is what covers every
+ * install a release at or past `'0.80.0'` reaches, and this covers the ones it
+ * does not.
+ *
+ * It is written by PATH rather than by schema identity, which is the one way it
+ * differs from its sidebar sibling: `runtimes` is an inline object inside
+ * `UserConfigSchema` with no exported symbol to compare against, and inventing
+ * one to be able to match it would be a larger change than the thing it enables.
+ *
+ * Deliberately no `default`: conf builds Ajv with `useDefaults`, so a declared
+ * default would WRITE this retired key into every config on earth — the trap
+ * {@link tolerateLegacyClaudeAccountEncoding} names for `activeAccount`.
+ *
+ * Declared with its real type rather than as an open catchall: "let yesterday's
+ * key through" must not quietly become "validate nothing".
+ *
+ * @param schema - The generated JSON Schema for the whole config, mutated in place.
+ */
+function tolerateRetiredRuntimeKeys(schema: { properties?: Record<string, unknown> }): void {
+  const runtimes = schema.properties?.['runtimes'];
+  if (runtimes == null || typeof runtimes !== 'object') return;
+  const properties = (runtimes as { properties?: Record<string, unknown> }).properties;
+  if (properties == null || typeof properties !== 'object') return;
+  properties['dorkosTools'] = { type: 'boolean' };
+}
+
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
   // Two tolerances, composed. `z.toJSONSchema` takes ONE override, so a second
@@ -4150,6 +4233,12 @@ const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
 // See `config/version-skew.ts` — this call is what keeps an unrecognized-key
 // violation from ever reaching the recovery path below.
 tolerateUnknownKeys(jsonSchemaFull);
+
+// The retired `runtimes.dorkosTools`, DECLARED. It runs after the generation
+// above rather than inside its `override` because `runtimes` is an inline object
+// with no schema symbol to match on; see the function for why that is the
+// smaller change.
+tolerateRetiredRuntimeKeys(jsonSchemaFull);
 
 /**
  * The per-top-level-key JSON Schema conf validates against, tolerances included.

@@ -16,10 +16,8 @@ export interface ConnectorRuntimeMcpListenerOptions {
   readonly principals: ConnectorRuntimePrincipalPort;
   /** Broker-owned factory exposing only connector execution capabilities. */
   readonly serverFactory: ConnectorRuntimeMcpServerFactory;
-  /** Agent-safe DorkOS capability projection, when runtime tools are enabled. */
+  /** Agent-safe DorkOS capability projection served on the agent route. */
   readonly agentServerFactory: ConnectorRuntimeMcpServerFactory;
-  /** Live experiment gate checked on every direct request to the agent route. */
-  readonly agentToolsEnabled: () => boolean;
   /** Loopback port; zero asks the OS for an unused port. */
   readonly port?: number;
   /** Test-only rate ceiling override. */
@@ -70,17 +68,6 @@ export async function startConnectorRuntimeMcpListener(
   app.use(createConnectorRuntimeAuth(options.principals));
   app.use(express.json({ limit: '1mb' }));
   app.use('/mcp', createConnectorRuntimeMcpRouter(options.serverFactory));
-  app.use('/agent-mcp', (req, res, next) => {
-    if (options.agentToolsEnabled()) {
-      next();
-      return;
-    }
-    res.status(404).json({
-      jsonrpc: '2.0',
-      error: { code: -32004, message: 'Not found' },
-      id: null,
-    });
-  });
   app.use('/agent-mcp', createConnectorRuntimeMcpRouter(options.agentServerFactory));
   app.use(
     (

@@ -12,7 +12,11 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
+import {
+  checkMigrationSafety,
+  extractMigrationBodies,
+  REMOVED_SHIPPED_KEYS,
+} from './migration-safety.js';
 
 /**
  * Build a `config-manager.ts`-shaped source carrying the given migration entries.
@@ -59,7 +63,17 @@ function helper(name: string, body: string, doc = 'documented'): string {
 }
 
 const SHIPPED = entry('0.57.0', 'backfillApprovals(store);', 'shipped in v0.57.0');
-const RELEASED_SOURCE = sourceWith([entry('1.0.0', "store.set('version', 1);"), SHIPPED]);
+/**
+ * The oldest key, carried by every fixture whose working tree is meant to be
+ * WELL-FORMED.
+ *
+ * Naming it is not tidiness. Since DOR-2099 the rule reports a key the release
+ * carries and the working tree does not, so a fixture that quietly omitted this
+ * one was asserting "no problems" about a tree that had silently dropped a
+ * shipped migration. Three did.
+ */
+const BASE = entry('1.0.0', "store.set('version', 1);");
+const RELEASED_SOURCE = sourceWith([BASE, SHIPPED]);
 
 /** A reader that answers with `RELEASED_SOURCE` for v0.58.0 and nothing else. */
 const readAtTag = (version: string) => (version === '0.58.0' ? RELEASED_SOURCE : null);
@@ -94,7 +108,11 @@ describe('extractMigrationBodies', () => {
 describe('checkMigrationSafety', () => {
   it('passes a new key above the latest release', () => {
     const res = checkMigrationSafety({
-      workingSource: sourceWith([SHIPPED, entry('0.59.0', 'backfillNewThing(store);', 'new work')]),
+      workingSource: sourceWith([
+        BASE,
+        SHIPPED,
+        entry('0.59.0', 'backfillNewThing(store);', 'new work'),
+      ]),
       tags: TAGS,
       readAtTag,
     });
@@ -110,6 +128,7 @@ describe('checkMigrationSafety', () => {
     // opening 0.60.0 and leaving the two a release apart.
     const res = checkMigrationSafety({
       workingSource: sourceWith([
+        BASE,
         SHIPPED,
         [
           "  '0.59.0': (store) => {",
@@ -158,7 +177,7 @@ describe('checkMigrationSafety', () => {
   // The original DOR-339 case: a key authored at a version that already shipped.
   it('fails a new key that is not above the latest release', () => {
     const res = checkMigrationSafety({
-      workingSource: sourceWith([SHIPPED, entry('0.58.0', 'backfillNewThing(store);')]),
+      workingSource: sourceWith([BASE, SHIPPED, entry('0.58.0', 'backfillNewThing(store);')]),
       tags: TAGS,
       readAtTag,
     });
@@ -171,13 +190,67 @@ describe('checkMigrationSafety', () => {
     // 0.57.0 is at or below the latest tag but absent from v0.58.0's file, so it
     // was authored after 0.57.0 shipped: nobody on 0.57.0 or later runs it.
     const res = checkMigrationSafety({
-      workingSource: sourceWith([SHIPPED]),
+      workingSource: sourceWith([BASE, SHIPPED]),
       tags: TAGS,
       readAtTag: (v) => (v === '0.58.0' ? sourceWith([entry('1.0.0', 'noop();')]) : null),
     });
 
     expect(res.ok).toBe(false);
     expect(res.problems.join('\n')).toMatch(/"0\.57\.0" is new here/);
+  });
+
+  // ## A shipped key that VANISHES
+  //
+  // The hole DOR-2099's review found. Every loop above iterates the WORKING
+  // tree, so a key present in the release and simply deleted here was invisible
+  // to this rule — and `checkAppendOnly` next door only catches a pin left
+  // behind, which the same commit removes. Deleting a shipped migration and its
+  // pin together passed both guards in silence.
+  it('fails when a shipped key is deleted from the table', () => {
+    const res = checkMigrationSafety({
+      workingSource: sourceWith([BASE]),
+      tags: TAGS,
+      readAtTag,
+      removedShippedKeys: {},
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.problems.join('\n')).toMatch(/"0\.57\.0" shipped in v0\.58\.0 but is GONE/);
+  });
+
+  it('passes a deleted key that is listed as removed, with its reason', () => {
+    const res = checkMigrationSafety({
+      workingSource: sourceWith([BASE]),
+      tags: TAGS,
+      readAtTag,
+      removedShippedKeys: { '0.57.0': 'the leaf it seeded no longer exists' },
+    });
+
+    expect(res).toMatchObject({ ok: true, problems: [] });
+  });
+
+  it('fails an entry that claims a removal which did not happen', () => {
+    // Keeps the list from rotting: an entry whose key is still in the table
+    // asserts something untrue, and would silently excuse a LATER deletion of
+    // that key which nobody reviewed.
+    const res = checkMigrationSafety({
+      workingSource: RELEASED_SOURCE,
+      tags: TAGS,
+      readAtTag,
+      removedShippedKeys: { '0.57.0': 'not actually removed' },
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.problems.join('\n')).toMatch(/"0\.57\.0" is listed as removed but is still/);
+  });
+
+  it("defaults to the repository's own removal list when none is passed", () => {
+    // The real call site passes nothing, so the default is what production uses.
+    // `0.71.0` is the one key this repository has ever removed.
+    expect(Object.keys(REMOVED_SHIPPED_KEYS)).toEqual(['0.71.0']);
+    for (const reason of Object.values(REMOVED_SHIPPED_KEYS)) {
+      expect(reason.trim()).not.toBe('');
+    }
   });
 
   it('fails loudly, naming the cause, when the checkout has no tags', () => {
@@ -233,7 +306,7 @@ describe('checkMigrationSafety', () => {
     // A `v0.59.0-rc.1` tag must not make a plain `0.59.0` key look released: the
     // release everyone is upgrading from is still 0.58.0.
     const res = checkMigrationSafety({
-      workingSource: sourceWith([SHIPPED, entry('0.59.0', 'backfillNewThing(store);')]),
+      workingSource: sourceWith([BASE, SHIPPED, entry('0.59.0', 'backfillNewThing(store);')]),
       tags: [...TAGS, '0.59.0-rc.1', '0.60.0-beta.2'],
       readAtTag,
     });
@@ -243,7 +316,7 @@ describe('checkMigrationSafety', () => {
 
   it('rejects a migration key that is not a version at all', () => {
     const res = checkMigrationSafety({
-      workingSource: sourceWith([SHIPPED, entry('next', 'backfillNewThing(store);')]),
+      workingSource: sourceWith([BASE, SHIPPED, entry('next', 'backfillNewThing(store);')]),
       tags: TAGS,
       readAtTag,
     });

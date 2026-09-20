@@ -100,20 +100,16 @@ export const EXPERIMENTS: readonly ExperimentEntry[] = [
     envOverride: 'DORKOS_A2A_ENABLED',
     graduationIssue: 'DOR-1304',
   },
-  {
-    path: 'runtimes.dorkosTools',
-    title: 'DorkOS tools in every runtime',
-    description:
-      'Codex and OpenCode agents get the same DorkOS tools your Claude Code agents already have — posting in rooms, reacting, reading room history, remembering things between sessions, and using the canvas and the Browser tab: putting a document up, opening a file or a diff, pointing the browser somewhere, reading its console, taking a screenshot, and using the page. Takes effect on their next turn.',
-    costNote:
-      'Every turn those agents take carries a longer tool list, which costs a little more of each turn.',
-    graduationIssue: 'DOR-1613',
-  },
+  // `runtimes.dorkosTools` GRADUATED here (DOR-2099, spec
+  // `tool-only-room-replies` §A1) on 2026-09-19: Codex and OpenCode agents carry
+  // the DorkOS tools on every agent-bound session, so there is no switch left to
+  // offer. The setting went with it — unlike warm agents above, nothing about it
+  // was worth keeping as a control.
   {
     path: 'rooms.toolOnlyReplies',
     title: 'Agents decide when to speak',
     description:
-      'Right now, whatever your agent writes during a room turn gets posted. With this on, it chooses: it can answer, it can just react with an emoji, or it can decide nothing needs saying and stay quiet — and its thinking stays in its own session instead of landing in the room. For Codex and OpenCode agents, turn on DorkOS tools in every runtime first.',
+      'Right now, whatever your agent writes during a room turn gets posted. With this on, it chooses: it can answer, it can just react with an emoji, or it can decide nothing needs saying and stay quiet — and its thinking stays in its own session instead of landing in the room.',
     costNote:
       'An agent that forgets to answer says nothing. The room tells you when that happens, but it is a new way for a reply to go missing, so watch a few conversations after you turn it on.',
     graduationIssue: 'DOR-1613',

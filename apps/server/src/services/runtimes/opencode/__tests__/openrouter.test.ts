@@ -41,7 +41,6 @@ function fakeConfig(): ConfigReadWrite & { state: Partial<UserConfig> } {
       environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
       default: 'claude-code',
       defaultTrustStop: null,
-      dorkosTools: false,
       claudeCode: {
         defaultAccount: null,
         accounts: [],

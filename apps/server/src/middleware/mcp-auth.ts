@@ -86,7 +86,7 @@ export function createMcpAuth({
     // `apikey` table, so it provably cannot verify as a per-user Better Auth
     // key. Saying so skips a lookup that could only fail — and whose failure the
     // apiKey plugin logs as its own untagged `error` line, roughly four per
-    // agent turn once `runtimes.dorkosTools` wires `/mcp` into a session. The
+    // agent turn on a runtime that reaches `/mcp` over a wire. The
     // cookie half of the verifier still runs, so the identity recorded below is
     // unchanged. The legacy `config.mcp.apiKey` gets no such hint on purpose:
     // `seedLegacyMcpApiKey` stores that exact value AS a Better Auth key, so

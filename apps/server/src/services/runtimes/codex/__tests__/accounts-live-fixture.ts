@@ -49,8 +49,7 @@ try {
   );
   const load = (p: string) => import(pathToFileURL(wt + '/' + p).href);
   const { initConfigManager } = await load('apps/server/src/services/core/config-manager.ts');
-  const config = initConfigManager(process.env.DORK_HOME!);
-  config.set('runtimes', { ...config.get('runtimes'), dorkosTools: true });
+  initConfigManager(process.env.DORK_HOME!);
   const { createTestDb } = await load('packages/test-utils/src/db.ts');
   const db = createTestDb();
   const { initAgentIdentityService } = await load(

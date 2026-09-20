@@ -100,7 +100,15 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   '0.68.0': '8fa4a4507a93cf79',
   '0.69.0': 'c2b66c51497db12d',
   '0.70.0': '18abfc95231af8cf',
-  '0.71.0': '1f1a8322960a6645',
+  // `'0.71.0'` was UNPINNED here (DOR-2099) because the key itself was removed
+  // from `CONFIG_MIGRATIONS` — the only removal this table has ever seen, and
+  // the reasoning is written where the key used to sit in `config-manager.ts`.
+  // In one line: it seeded `runtimes.dorkosTools: false`, the experiment
+  // graduated on 2026-09-19, and the leaf no longer exists in the schema, the
+  // Experiments registry, or any code path, so the state change it was owed is
+  // empty. A pin cannot outlive its key — `checkAppendOnly` reports a pin with
+  // no key as loudly as a key with no pin — so unpinning is part of the removal
+  // rather than a separate judgement.
   '0.72.0': '006d72696c6ef26d',
   '0.73.0': 'a8975be23d86d5d2',
   '0.75.0': 'a890d6cad524a714',
@@ -115,4 +123,5 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   '0.77.0': '49742f4b2d0c4a24',
   '0.78.0': 'acc5c682defa7a55',
   '0.79.0': '1944a8d45a438c6c',
+  '0.80.0': '35d415b132e1a80b',
 };

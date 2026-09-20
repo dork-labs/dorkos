@@ -29,9 +29,10 @@
  * ## And why it is gated rather than always rendered
  *
  * The block is rendered only for a session that actually carries the tools —
- * claude-code always, codex and opencode when `runtimes.dorkosTools` wired the
- * `dorkos` server into them. An agent told it can react, that then discovers it
- * cannot, spends a turn finding out.
+ * claude-code always, codex and opencode whenever the `dorkos` server was wired
+ * into them, which is every agent-bound session the runtime boundary reached. An
+ * agent told it can react, that then discovers it cannot, spends a turn finding
+ * out.
  *
  * @module services/runtimes/shared/room-tools-context
  */

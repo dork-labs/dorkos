@@ -197,7 +197,7 @@
       "title": "Room replies go through tool calls only — silence, reactions and DMs become real choices",
       "created": "2026-08-28",
       "status": "specified",
-      "linearIssue": "DOR-1613"
+      "linearIssue": "DOR-2099"
     },
     {
       "id": "260828-002928",

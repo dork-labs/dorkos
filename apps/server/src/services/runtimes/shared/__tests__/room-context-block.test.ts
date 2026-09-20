@@ -458,8 +458,8 @@ describe('what the block tells an agent', () => {
     // Re-aimed, not relaxed (DOR-1613). The original premise was that codex and
     // opencode carry no room tools at all, so a tool nudge here would tell a
     // runtime with no `react_to_room_entry` to react anyway. That premise is
-    // gone: `runtimes.dorkosTools` gives both runtimes the same `dorkos` server
-    // claude-code runs in-process.
+    // gone: both runtimes get the same `dorkos` server claude-code runs
+    // in-process.
     //
     // What replaces it is the invariant underneath it, which never depended on
     // the premise: this function is handed a room and a nonce and NOTHING about

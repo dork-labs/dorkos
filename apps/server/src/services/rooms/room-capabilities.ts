@@ -135,9 +135,9 @@
  *
  * It used to be that only claude-code declared `supportsMcp: true`, so only a
  * claude-code agent got these in-session and the other two kept text-as-reply.
- * DOR-1613's wiring removed the premise: behind `runtimes.dorkosTools`, Codex and
- * OpenCode sessions reach the same fifteen verbs over this server's own `/mcp`,
- * with per-agent identity. Whether a given session actually carries them is now a
+ * DOR-1613's wiring removed the premise, and DOR-2099 removed the switch in
+ * front of it: Codex and OpenCode sessions reach the same fifteen verbs over
+ * this server's own `/mcp`, with per-agent identity. Whether a given session actually carries them is now a
  * property of that SESSION rather than of its runtime, which is what the reply
  * mode reads (spec `tool-only-room-replies` §D2) — and a session that does not is
  * never muted: its turn's text posts, exactly as it always did.

@@ -1,0 +1,45 @@
+{
+  "slug": "tool-only-room-replies",
+  "spec": "specs/tool-only-room-replies/02-specification.md#amendment-2026-09-19--graduation-and-removal-dor-2099",
+  "mode": "stacked-prs",
+  "generatedAt": "2026-09-19",
+  "lastDecomposeDate": "2026-09-19",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "PR1 — runtimes.dorkosTools graduates",
+      "subject": "[server,shared] Remove the runtimes.dorkosTools experiment; DorkOS tools are always injected for agent-bound Codex/OpenCode sessions",
+      "description": "Spec A1. Delete the `runtimes.dorkosTools` leaf from `packages/shared/src/config-schema.ts` (both the nested declaration and the `runtimes` section default literal). Delete the Experiments-registry entry. `dorkosToolsPosture` loses the `'experiment-off'` branch and its union member; `'no-agent'` and `'runtime-boundary-unavailable'` stay. Remove `agentToolsEnabled` in `apps/server/src/index.ts` and every consumer that only existed to read it (or make the capability unconditional if a consumer is load-bearing; say which in the PR). Drop the path from `config-disclosure.ts`, `config-write-policy.ts`, `default-verdicts.ts` and their tests. Add migration `'0.80.0'` in `config-manager.ts` that retires the leaf through the existing retired-keys mechanism (the `ui.sidebar` precedent in the same file) so a stored value converges on first write; pin it in `__tests__/merged-migration-hashes.ts`; keep the `'0.71.0'` body as frozen history but make it a no-op-safe read of a leaf the schema no longer declares (follow the file's own guidance on retired leaves). Update every test fixture that sets `dorkosTools` (codex/opencode injection tests, openrouter.test.ts, credentials.test.ts, accounts-live-fixture.ts, config-manager.test.ts, config-schema.test.ts) so the ON behaviour is the tested behaviour and the OFF tests are deleted, not skipped. Comments in mcp-auth.ts and session-gate.ts stop naming the flag. Write a changelog fragment for a person (`writing-changelogs`): Codex and OpenCode agents now always have the DorkOS tools. Acceptance: `grep -rn dorkosTools apps packages` returns only the two migration bodies and the fragment; `pnpm --filter @dorkos/server typecheck`, `pnpm --filter @dorkos/shared typecheck`, and every test file touched pass; `pnpm vitest run apps/server/src/services/runtimes` green; experiments-registry contract test green with one fewer entry.",
+      "activeForm": "Graduating runtimes.dorkosTools",
+      "size": "md",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": []
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "PR2 — tool-only becomes the only reply path",
+      "subject": "[server,shared,client,evals,e2e] Remove rooms.toolOnlyReplies and the text-as-reply path; every room turn posts through the tool or stays silent",
+      "description": "Spec A2, in full. Server: delete `RoomReplyMode`, `resolveReplyMode`, `roomReplyModeForToolCapableSession`, the caller-pinned `request.replyMode` seam, the `replyMode` field on turn result / room context / presence claim, and every `=== 'tool-only'` branch; `deliver` keeps only the tool-only half (spokeViaTool / reactedViaTool marks → 'answered', else `agent_declined` → 'quiet'); publish `done.outcome` on every room turn. D2: a session whose runtime reports `carriesRoomTools() === false` still runs; if it ends with no post the silence notice fires and the runner logs one warn naming the posture reason — test both. D3: delete `TOOL_POST_NOT_IN_DM` everywhere (code, error copy, TSDoc, tool description caveat) and its tests; add a test that a tool post in a DM lands. D11: delete `buildTextReplyBlock` and the text-mode sentences in `room-context-block.ts`; the tool-only strings become the only strings; keep the DOR-1643 literal-call DM directive. D12 reversal: the welcome-back offer (`greeter.ts offerOne`, `askAside`, `welcomeBackOfferPrompt`) runs as an ordinary tool-only turn; delete the greeter's own `deps.post` and pinned mode; the prompt carries the literal `post_to_room` directive; an offer with no post produces nothing and no notice; test that an offer post cannot start a conversation (cascade ceiling) — read `.claude/rules/room-conduct.md` first and amend its greeter and flag sentences. Test-mode: delete `TOOL_CAPABLE_SCENARIOS`; `TestModeRuntime.carriesRoomTools()` returns true; rewrite every scenario whose narration was relied on as the room post so it posts through the real `post_to_room` capability the way `rooms-post-attachment` does (read room-reply-scenarios.ts header first). Config: remove `rooms.toolOnlyReplies` from the schema and both default literals; keep `rooms.maxPostsPerTurn`; migration `'0.81.0'` retires the leaf via the retired-keys mechanism; hash pin; delete the Experiments entry; drop the path from the three policy tables and their tests; `room-test-harness.ts` loses its flag helpers. Client: `use-room-presence.ts`, `LiveLaneShowcases.tsx`, `lane-state.test.ts`, `RoomLiveLane.test.tsx` comments stop naming a flag; behaviour unchanged. Evals: fold `rooms-tool-only.ts` into `rooms.ts` with the toggling removed; delete `setRoomsToolOnlyReplies` from `room-drive.ts`; `rooms-ack-only-reacts-under-the-flip` stops flipping; un-quarantine `rooms-ack-only-reacts-not-replies` in `rooms-recall.ts` and drop its `experimental` tag; `pnpm vitest run packages/evals` green. E2E: `room-tool-only-replies.spec.ts` stops toggling any flag; `room-autonomy.spec.ts`, `team-room.spec.ts` and every other rooms spec pass unedited or with only the scenario-name edits the test-mode rewrite forces. Tests: delete OFF-branch tests (`reply-mode.test.ts` OFF cases, text-mode deliver matrix, DM refusal), un-gate ON-branch tests, keep `room-tool-only-replies.test.ts` as the delivery spec. Changelog fragment for a person: \"your agents now always decide whether to answer\". Verification before the PR opens (browser-test is a PR pass-through, so this is the only place it runs): `pnpm --filter @dorkos/server typecheck && lint`, `pnpm vitest run apps/server/src/services/rooms`, `pnpm vitest run apps/server/src/services/runtimes`, `pnpm vitest run packages/evals`, `pnpm vitest run packages/shared`, the rooms conformance and communityConformance suites, and `pnpm --filter @dorkos/e2e exec playwright test tests/rooms` locally on the worktree's ports. Acceptance: `grep -rn toolOnlyReplies apps packages` returns only the two migration bodies and the fragment; a room turn that writes text and calls no tool produces the silence notice, not a post; a config file with the leaf set either way loads and behaves identically.",
+      "activeForm": "Removing the text-as-reply path",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": []
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "PR3 — docs, ADR, meta",
+      "subject": "[docs,decisions,meta] Record graduation: docs drop the toggle, ADR amended, new ADR for the D2/D12 reversals, spec marked implemented",
+      "description": "Spec A3. `docs/concepts/rooms.mdx` describes the one behaviour (agents post through the tool, react, or stay quiet; a person who asked always sees an answer, a reaction, or a notice) and drops the \"turn on DorkOS tools first\" caveat. `docs/getting-started/configuration.mdx` and `contributing/configuration.md` drop both rows. `meta/chat-capabilities.md` rows M-04, A-06, A-08 record graduation with the date. `.claude/rules/room-conduct.md` loses any remaining flag reference (PR2 amends the greeter sentence; check nothing is left). Amend ADR `decisions/260829-025020-a-room-turn-speaks-by-calling-a-tool.md` status to graduated, flag removed 2026-09-19. Create a new ADR with `/adr:create` (timestamp id from `.claude/scripts/id.ts`) recording the D2 reversal (no fail-open text path) and the D12 reversal (welcome-back offer through the tool), citing DOR-2099. Update `specs/manifest.json` status for `tool-only-room-replies` to `implemented`. All prose follows `writing-for-humans`; never say \"integration\"/\"provider\"; the docs build is checked with `pnpm --filter @dorkos/site typecheck` and the vocab gates `scripts/check-banned-words.sh` and `scripts/check-vocab-gate.ts`. PR labels: `skip-changelog`, `review:light`. Acceptance: `grep -rn \"toolOnlyReplies\\|dorkosTools\" docs contributing meta .claude/rules decisions` returns only history sentences that name the date the flag was removed.",
+      "activeForm": "Recording graduation in docs and ADRs",
+      "size": "sm",
+      "priority": "medium",
+      "dependencies": ["2.1"],
+      "parallelWith": []
+    }
+  ]
+}

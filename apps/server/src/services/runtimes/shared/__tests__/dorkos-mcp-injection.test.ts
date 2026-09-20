@@ -3,29 +3,13 @@
  *
  * @vitest-environment node
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { ConnectorRuntimeMcpInjection } from '../../connector-tools.js';
-
-const configState = vi.hoisted(() => ({
-  value: {
-    runtimes: { dorkosTools: true },
-    mcp: { enabled: false },
-    auth: { enabled: true },
-  } as Record<string, unknown>,
-}));
-
-vi.mock('../../../core/config-manager.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../core/config-manager.js')>();
-  return {
-    ...actual,
-    configManager: {
-      get: (key: string) => configState.value[key],
-    },
-  };
-});
-
-const { dorkosToolsPosture, resolveDorkosMcpInjection, DORKOS_MCP_HEADER_ENV_VARS } =
-  await import('../dorkos-mcp-injection.js');
+import {
+  dorkosToolsPosture,
+  resolveDorkosMcpInjection,
+  DORKOS_MCP_HEADER_ENV_VARS,
+} from '../dorkos-mcp-injection.js';
 
 const runtimeTools: ConnectorRuntimeMcpInjection = {
   url: 'http://127.0.0.1:43123/mcp',
@@ -38,14 +22,6 @@ const runtimeTools: ConnectorRuntimeMcpInjection = {
 };
 
 describe('DorkOS runtime tool injection', () => {
-  beforeEach(() => {
-    configState.value = {
-      runtimes: { dorkosTools: true },
-      mcp: { enabled: false },
-      auth: { enabled: true },
-    };
-  });
-
   it('reuses the authenticated turn headers on the agent-only route', async () => {
     expect(await resolveDorkosMcpInjection('/agents/researcher', runtimeTools)).toEqual({
       url: 'http://127.0.0.1:43123/agent-mcp',
@@ -61,18 +37,12 @@ describe('DorkOS runtime tool injection', () => {
     });
   });
 
-  it('does not depend on public MCP enablement or login credentials', async () => {
+  it('wires an agent-bound turn with nothing switched on (DOR-2099)', async () => {
+    // The graduation, stated as a test: there is no setting left to read. This
+    // file mocks NOTHING — if the posture ever starts consulting configuration
+    // again, the missing `configManager` stub is what fails here.
     expect(dorkosToolsPosture('/agents/researcher', true)).toEqual({ wired: true });
     expect(await resolveDorkosMcpInjection('/agents/researcher', runtimeTools)).not.toBeNull();
-  });
-
-  it('withholds while the experiment is off', async () => {
-    configState.value = { runtimes: { dorkosTools: false } };
-    expect(dorkosToolsPosture('/agents/researcher', true)).toEqual({
-      wired: false,
-      why: 'experiment-off',
-    });
-    expect(await resolveDorkosMcpInjection('/agents/researcher', runtimeTools)).toBeNull();
   });
 
   it('withholds for a plain session with no registered agent', async () => {

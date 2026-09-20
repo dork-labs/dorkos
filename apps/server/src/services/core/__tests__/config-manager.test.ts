@@ -56,7 +56,7 @@ import {
   warmClaudeCodeSessionsByDefault,
   seedMemoryProviderDefault,
   seedRoomRepoDefaults,
-  seedDorkosToolsDefault,
+  dropRetiredDorkosTools,
   seedDisplayNameSourceDefault,
   seedHarnessAutoAdopt,
   seedHarnessGlobal,
@@ -84,7 +84,6 @@ const RUNTIMES_DEFAULTS = {
   environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
   default: 'claude-code',
   defaultTrustStop: null,
-  dorkosTools: false,
   claudeCode: {
     defaultAccount: null,
     accounts: [],
@@ -134,11 +133,15 @@ function wasBackedUp(dir: string): boolean {
 /** Minimal stand-in for the `conf` store used by migration bodies. */
 function createMockStore(initial: Record<string, unknown>) {
   const data: Record<string, unknown> = { ...initial };
+  /** Every key a body wrote, so "it made no write at all" is assertable. */
+  const writes: string[] = [];
   return {
     data,
+    writes,
     get: (key: string) => data[key],
     has: (key: string) => data[key] !== undefined,
     set: (key: string, value: unknown) => {
+      writes.push(key);
       data[key] = value;
     },
     delete: (key: string) => {
@@ -843,50 +846,40 @@ describe('seedRoomRepoDefaults migration (project-rooms §3.12, DOR-1591)', () =
   });
 });
 
-describe('seedDorkosToolsDefault migration (tool-only-room-replies §D5, DOR-1613)', () => {
-  it('reserves runtimes.dorkosTools on a `runtimes` block that predates it', () => {
-    // What this catches: conf merges top-level defaults SHALLOWLY, so an
-    // upgrading install with a stored `runtimes` block never inherits the new
-    // leaf on its own. Drop the body and this reads `undefined`.
-    const store = createMockStore({ runtimes: { default: 'codex', defaultTrustStop: 'act' } });
-    seedDorkosToolsDefault(store);
-    expect(store.data.runtimes).toEqual({
-      default: 'codex',
-      defaultTrustStop: 'act',
-      dorkosTools: false,
+describe('dropRetiredDorkosTools migration (tool-only-room-replies §A1, DOR-2099)', () => {
+  it('deletes the retired leaf from a `runtimes` block that carries it', () => {
+    const store = createMockStore({
+      runtimes: { default: 'codex', defaultTrustStop: 'act', dorkosTools: true },
     });
+    dropRetiredDorkosTools(store);
+    expect(store.data.runtimes).toEqual({ default: 'codex', defaultTrustStop: 'act' });
   });
 
-  it('never overwrites a choice somebody made (idempotent)', () => {
-    // What this catches: a re-run — corrupt-recovery instantiates conf twice —
-    // switching the tools back OFF under an operator who turned them on. The
-    // stored value is `true`, which is NOT the seeded value, so a body that
-    // wrote unconditionally would be caught here rather than passing on a
-    // coincidence.
-    const store = createMockStore({ runtimes: { default: 'claude-code', dorkosTools: true } });
-    seedDorkosToolsDefault(store);
-    expect((store.data.runtimes as Record<string, unknown>).dorkosTools).toBe(true);
+  it('writes nothing when the leaf is already gone (idempotent)', () => {
+    // A re-run — corrupt recovery instantiates conf twice — must not rewrite a
+    // section it has nothing to change in. `writes` counts `set` calls, so a
+    // body that wrote unconditionally is caught here rather than passing on the
+    // deep-equality coincidence that the result looks the same either way.
+    const store = createMockStore({ runtimes: { default: 'codex' } });
+    dropRetiredDorkosTools(store);
+    expect(store.writes).toEqual([]);
+    expect(store.data.runtimes).toEqual({ default: 'codex' });
   });
 
-  it('does nothing when there is no `runtimes` block to extend', () => {
-    // The schema default supplies the whole section on read in that case, and
-    // writing a partial `runtimes` here would drop every other default in it.
+  it('does nothing when there is no `runtimes` block at all', () => {
     const store = createMockStore({ server: { port: 4242 } });
-    seedDorkosToolsDefault(store);
+    dropRetiredDorkosTools(store);
     expect(store.data.runtimes).toBeUndefined();
   });
 
-  it('a real pre-0.71.0 config file gains runtimes.dorkosTools on disk (full conf path)', () => {
+  it('a real config file carrying the retired leaf loses it on disk (full conf path)', () => {
     // The half neither the mock store nor a `getDot` assertion can reach (see
     // `seedRoomRepoDefaults` above for the DOR-1496 measurement this shape comes
-    // from). `runtimes.dorkosTools` is a nested-leaf case, so this body is the
-    // ONLY thing that puts the leaf on the file: suppress it and this goes red
-    // while `store.get('runtimes').dorkosTools` still answers `false` from
-    // Ajv's discarded copy.
+    // from). Suppress the body and this goes red.
     //
     // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
     // `0.0.0` in a dev tree, which runs no migration at all.
-    const dir = path.join(os.tmpdir(), 'test-dork-dorkos-tools-mig-' + Date.now());
+    const dir = path.join(os.tmpdir(), 'test-dork-dorkos-tools-retire-' + Date.now());
     const cfgPath = path.join(dir, 'config.json');
     fs.mkdirSync(dir, { recursive: true });
     try {
@@ -894,8 +887,8 @@ describe('seedDorkosToolsDefault migration (tool-only-room-replies §D5, DOR-161
         cfgPath,
         JSON.stringify({
           version: 1,
-          runtimes: { default: 'codex', defaultTrustStop: 'act' },
-          __internal__: { migrations: { version: '0.70.0' } },
+          runtimes: { default: 'codex', defaultTrustStop: 'act', dorkosTools: true },
+          __internal__: { migrations: { version: '0.79.0' } },
         }),
         'utf-8'
       );
@@ -907,18 +900,95 @@ describe('seedDorkosToolsDefault migration (tool-only-room-replies §D5, DOR-161
         schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
         defaults: USER_CONFIG_DEFAULTS,
         clearInvalidConfig: false,
-        projectVersion: '0.71.0',
+        projectVersion: '0.80.0',
         migrations: CONFIG_MIGRATIONS,
       });
 
       const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
         runtimes: Record<string, unknown>;
       };
-      expect(onDisk.runtimes.dorkosTools).toBe(false);
-      // The upgrade adds a leaf; it changes nothing the person had set.
+      expect('dorkosTools' in onDisk.runtimes).toBe(false);
+      // The upgrade removes one leaf; it changes nothing the person had set.
       expect(onDisk.runtimes.default).toBe('codex');
       expect(onDisk.runtimes.defaultTrustStop).toBe('act');
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /** A config file stamped past `'0.80.0'` but still carrying the retired leaf. */
+  function seedUnmigratedLeaf(label: string): { dir: string; cfgPath: string } {
+    const dir = path.join(os.tmpdir(), `test-dork-dorkos-tools-${label}-` + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({
+        version: 1,
+        runtimes: { ...RUNTIMES_DEFAULTS, default: 'codex', dorkosTools: true },
+        __internal__: { migrations: { version: '0.80.0' } },
+      }),
+      'utf-8'
+    );
+    return { dir, cfgPath };
+  }
+
+  it('an install the migration never reached loses the leaf on a Zod-parsed write', () => {
+    // The other half of the retired-keys mechanism, and the reason the leaf is
+    // still DECLARED to Ajv after the schema stopped carrying it. A dev tree
+    // resolves SERVER_VERSION to `0.0.0` and runs no migration at all, so
+    // convergence has to come from the write path: `preserveUnknownKeys` carries
+    // a key the schema does not declare back onto every write, for ever. Delete
+    // the declaration in `tolerateRetiredRuntimeKeys` and this goes red while
+    // every other test here stays green.
+    //
+    // `applyConfigPatch` re-parses the whole config, so Zod's strip is what
+    // actually drops the key; the declaration is what stops it being re-attached
+    // afterwards. The sibling test below pins the write shape this does NOT
+    // reach, so the pair says exactly what the mechanism promises.
+    const { dir, cfgPath } = seedUnmigratedLeaf('patch');
+    try {
+      initConfigManager(dir);
+      expect(applyConfigPatch({ runtimes: { default: 'opencode' } }).ok).toBe(true);
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        runtimes: Record<string, unknown>;
+      };
+      expect('dorkosTools' in onDisk.runtimes).toBe(false);
+      expect(onDisk.runtimes.default).toBe('opencode');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a caller that spreads the STORED section back over itself keeps the leaf', () => {
+    // The limit of the declaration half, pinned rather than left to be
+    // rediscovered. `ConfigManager.write` writes the value its caller passed, and
+    // `get('runtimes')` hands back conf's stored object rather than a Zod parse —
+    // so a caller spreading it re-supplies the retired key itself, and nothing
+    // here overrules a caller. This is the live shape from
+    // `connect/persist-provider-credential.ts`, copied deliberately so that
+    // changing it there and not here is visible.
+    //
+    // It is not a defect: `'0.80.0'` covers every install a release reaches, and
+    // the Zod-parsed write above covers the rest. It is asserted so the TSDoc on
+    // `tolerateRetiredRuntimeKeys`, this test and the code agree on what the
+    // mechanism promises.
+    const { dir, cfgPath } = seedUnmigratedLeaf('spread');
+    try {
+      const config = initConfigManager(dir);
+      const runtimes = config.get('runtimes');
+      config.set('runtimes', {
+        ...runtimes,
+        opencode: { ...runtimes.opencode, provider: 'openrouter' },
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        runtimes: Record<string, unknown>;
+      };
+      expect('dorkosTools' in onDisk.runtimes).toBe(true);
+      expect((onDisk.runtimes.opencode as Record<string, unknown>).provider).toBe('openrouter');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
