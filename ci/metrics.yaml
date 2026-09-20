@@ -40,7 +40,12 @@ gate_templates:
 # A sharded suite runs affected-only on a PR and in full in the queue, so an
 # unqualified duration mixes two different jobs. Name the leg the change is
 # about.
-event_qualifiers: [merge_group, pull_request]
+#
+# `schedule` and `workflow_dispatch` are the main canary's legs: the same jobs,
+# under the same gate ids, run against `main` HEAD. An UNQUALIFIED gate metric
+# never includes them (`gateDays` in packages/ci-steward/src/data.ts), so a
+# hypothesis about the canary itself has to say `@schedule` out loud.
+event_qualifiers: [merge_group, pull_request, schedule, workflow_dispatch]
 
 hook_templates:
   - metric: duration_p90
@@ -62,12 +67,32 @@ tracked:
   - id: tracked.escaped
     unit: count
     definition: Fix PRs citing a regression from a PR merged at most 7 days earlier (a prose match, too gameable to score).
+  - id: tracked.time-to-detect
+    unit: minutes
+    definition: >-
+      How long a break on main can go unseen: per main-canary result, the
+      minutes from the PREVIOUS result's start to this one's finish, for the
+      same canary workflow; p90. A run tests the tree it checked out, so a
+      break landing just after run i-1 started hides until run i finishes —
+      done(i) minus started(i-1), which is the real upper bound; done(i) minus
+      done(i-1) would leave out the earlier run's own duration. Measured this
+      way rather than as merge-to-first-red because main is usually green, and
+      a metric with no value on a healthy week cannot say whether the canary is
+      still running.
   - id: tracked.merged-to-released
     unit: hours
     definition: Time from a PR's merge to the first release tag that contains it; p50.
   - id: tracked.job-minutes-per-merged-pr
     unit: minutes
-    definition: Runner minutes of every workflow run attributable to a merged PR (its PR runs and its queue builds), per merged PR.
+    definition: >-
+      Runner minutes of every workflow run attributable to a merged PR (its PR
+      runs and its queue builds), per merged PR. The main canary's minutes are
+      NOT in it: it spends a fixed amount a day on a tree nobody is merging, so
+      counting it would make this figure move with how busy the week was. They
+      are carried beside, as tracked.canary-minutes.
+  - id: tracked.canary-minutes
+    unit: minutes
+    definition: Runner minutes the main canary's own runs spent, per day. Reported, never charged to a merged PR.
   - id: tracked.cache-hit-rate
     unit: ratio
     definition: Share of cache restore steps (pnpm store, Playwright, turbo) that hit an existing entry.

@@ -67,65 +67,65 @@ entries:
     job: test
     step: actions/checkout
     kind: step-if
-    reason: The fan-in checks out code only for the merge_group shard-union proof; on pull_request the shards run affected-only and there is no full union to prove.
+    reason: The fan-in checks out code only for the shard-union proof, which the queue and the main canary both run; on pull_request the shards run affected-only and there is no full union to prove.
   - workflow: test.yml
     job: test
     step: actions/download-artifact
     kind: step-if
-    reason: Collects the shards' collected-file lists, which only the merge_group full sweep uploads.
+    reason: Collects the shards' collected-file lists, which only a full sweep uploads — the queue's and the main canary's, never a pull request's affected-only run.
   - workflow: test.yml
     job: test
     step: Prove the shards' union covers every package
     kind: step-if
-    reason: The union is only complete on the merge_group full sweep; on pull_request each shard is affected-only by design.
+    reason: The union is only complete on a full sweep (queue or main canary); on pull_request each shard is affected-only by design.
 
   - workflow: test.yml
     job: test
     step: Collect every shard's quarantine lane
     kind: step-if
-    reason: Collects the lane the merge_group shards ran under; on pull_request the shards run affected-only, no lane applies and no shard uploads one.
+    reason: Collects the lane the full-sweep shards ran under — the queue's and the main canary's; on pull_request the shards run affected-only, no lane applies and no shard uploads one.
   - workflow: test.yml
     job: test
     step: Agree on the lane this build ran under
     kind: step-if
-    reason: Intersects the merge_group shards' copies of the lane for the union proof; there is no lane and no full union on a pull request.
+    reason: Intersects the full-sweep shards' copies of the lane for the union proof, on the queue and on the main canary alike; there is no lane and no full union on a pull request.
 
   # --- browser-test.yml ---
   - workflow: browser-test.yml
     job: browser-test
     step: Defer to the merge queue on pull_request events
     kind: step-if
-    reason: The browser suite runs in the merge queue only (ADR 260728-112203, #1246); on pull_request the fan-in reports a named pass-through.
+    reason: The browser suite skips pull requests (ADR 260728-112203, #1246) and runs in the merge queue and on the main canary; on pull_request the fan-in reports a named pass-through.
   - workflow: browser-test.yml
     job: browser-test
     step: Refuse a run whose shards did not all pass
     kind: step-if
-    reason: The shards run only on merge_group, so their result is only meaningful there; this is the step that fails the queue build on a red shard.
+    reason: The shards do not run on pull_request, so their result is only meaningful off it; this is the step that fails the queue build, or the canary run, on a red shard.
   - workflow: browser-test.yml
     job: browser-test
     step: actions/checkout
     kind: step-if
-    reason: Checks out code for the merge_group executed-count proof only; the PR leg is a pass-through.
+    reason: Checks out code for the executed-count proof the queue and the main canary run; the PR leg is a pass-through.
   - workflow: browser-test.yml
     job: browser-test
     step: Collect every shard's quarantine lane
     kind: step-if
-    reason: Collects the lane the merge_group shards ran under; on pull_request the shards are skipped and none uploads one.
+    reason: Collects the lane the shards ran under, in the queue and on the main canary; on pull_request the shards are skipped and none uploads one.
   - workflow: browser-test.yml
     job: browser-test
     step: Agree on the lane this build ran under
     kind: step-if
-    reason: Intersects the merge_group shards' copies of the lane, so the execution proof can name what it absorbed and refuse a quarantined test that stopped running; the PR leg runs no suite.
+    reason: Intersects the shards' copies of the lane, in the queue and on the main canary, so the execution proof can name what it absorbed and refuse a quarantined test that stopped running; the PR leg runs no suite.
   - workflow: browser-test.yml
     job: browser-test
     step: Collect every shard's JSON report
     kind: step-if
-    reason: Only merge_group shards produce JSON reports to collect.
+    reason: Only the shards that actually run — the queue's and the main canary's — produce JSON reports to collect.
   - workflow: browser-test.yml
     job: browser-test
     step: Prove the browser suite actually executed
     kind: step-if
-    reason: Proves the queue's shards really ran the suite; there is no PR run to prove.
+    reason: Proves the queue's and the canary's shards really ran the suite; there is no PR run to prove.
 
   # --- credential-free-build.yml ---
   - workflow: credential-free-build.yml
@@ -139,7 +139,7 @@ entries:
     job: test-shard
     step: Run every package's test suite (shard ${{ matrix.shard }}/4)
     kind: step-if
-    reason: The full sweep runs in the merge queue; its pull_request twin below runs the affected packages. Exactly one of the pair runs on each event.
+    reason: The full sweep runs in the merge queue and on the main canary; its pull_request twin below runs the affected packages. Exactly one of the pair runs on each event.
   - workflow: test.yml
     job: test-shard
     step: Run the affected packages' test suites (shard ${{ matrix.shard }}/4)
@@ -149,42 +149,42 @@ entries:
     job: test-shard
     step: Hand this shard's quarantine lane to the fan-in
     kind: step-if
-    reason: Uploads the lane this merge_group shard ran under, for the fan-in's union proof; on pull_request no lane is read and none is uploaded.
+    reason: Uploads the lane this full-sweep shard ran under, for the fan-in's union proof; on pull_request no lane is read and none is uploaded.
   - workflow: test.yml
     job: test-shard
     step: Read the quarantine lane
     kind: step-if
-    reason: The quarantine lane applies to the merge_group full sweep, the only leg that retries and the only one whose failures can eject a queue build; the affected-only PR leg blocks on every failure as it always did.
+    reason: The quarantine lane applies to the full sweep — the queue's, whose failures eject a build, and the main canary's, which runs the identical suite against main; the affected-only PR leg blocks on every failure as it always did.
   - workflow: test.yml
     job: test-shard
     step: Refuse any failure the quarantine lane does not cover
     kind: step-if
-    reason: The gate for the merge_group sweep's exit code; the PR leg's own sweep step still fails the shard directly, so nothing is ungated on either event.
+    reason: The gate for the full sweep's exit code, on the queue and on the main canary; the PR leg's own sweep step still fails the shard directly, so nothing is ungated on any event.
   - workflow: test.yml
     job: test-shard
     step: Prove the suite actually executed
     kind: step-if
-    reason: Asserts every package executed with no cache replay, which only the merge_group full sweep can prove; an affected-only PR run legitimately skips packages.
+    reason: Asserts every package executed with no cache replay, which only a full sweep can prove; an affected-only PR run legitimately skips packages.
   - workflow: test.yml
     job: test-shard
     step: Name the tests that only passed on a retry
     kind: step-if
-    reason: Reports retried tests from the merge_group run, the only leg that retries; it prints, it does not gate.
+    reason: Reports retried tests from the full-sweep legs, the only ones that retry; it prints, it does not gate.
   - workflow: test.yml
     job: test-shard
     step: Record the test files this shard collected
     kind: step-if
-    reason: Feeds the fan-in's merge_group shard-union proof; there is no full union on a PR.
+    reason: Feeds the fan-in's shard-union proof; there is no full union on a PR.
   - workflow: test.yml
     job: test-shard
     step: actions/upload-artifact
     kind: step-if
-    reason: Uploads the collected-file list for the merge_group shard-union proof.
+    reason: Uploads the collected-file list for the shard-union proof.
   - workflow: test.yml
     job: test-shard
     step: Upload this shard's vitest reports for CI Steward
     kind: step-if
-    reason: Only the merge_group full sweep writes the vitest shard and flake reports; on a PR there is nothing to upload.
+    reason: Only a full sweep writes the vitest shard and flake reports; on a PR there is nothing to upload.
   - workflow: test.yml
     job: test-shard
     step: Upload this shard's vitest reports for CI Steward
@@ -194,22 +194,22 @@ entries:
     job: community-packaged
     step: Packaged proof runs on the merge queue
     kind: step-if
-    reason: An echo that names where the packaged proof runs; it checks nothing.
+    reason: An echo on pull requests that names where the packaged proof runs; it checks nothing.
   - workflow: test.yml
     job: community-packaged
     step: actions/checkout
     kind: step-if
-    reason: The packaged community proof runs on the merge queue's combined tree only; on a PR this job is a named pass-through.
+    reason: The packaged community proof runs on the merge queue's combined tree and on the main canary's `main` HEAD; on a PR this job is a named pass-through.
   - workflow: test.yml
     job: community-packaged
     step: Build and test without public network access
     kind: step-if
-    reason: The packaged community proof itself, merge_group only by design (too slow for every PR push); the fan-in fails the queue build when it fails.
+    reason: The packaged community proof itself, off the PR leg by design (too slow for every push); the fan-in fails the queue build when it fails.
   - workflow: test.yml
     job: community-packaged
     step: Preserve packaged community reports
     kind: step-if
-    reason: Uploads evidence from the merge_group proof; asserts nothing.
+    reason: Uploads evidence from the packaged proof; asserts nothing.
   - workflow: browser-test.yml
     job: browser-shard
     step: Upload this shard's JSON report

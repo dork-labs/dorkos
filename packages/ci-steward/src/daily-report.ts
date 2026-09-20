@@ -31,6 +31,7 @@ import {
   type SloReading,
   type Verdict,
 } from './data.ts';
+import { canaryRow } from './canary.ts';
 import { floorValues } from './floors.ts';
 import { fill, h, raw, sparkline, type Html } from './html.ts';
 import type { HandFiles } from './load.ts';
@@ -415,6 +416,7 @@ function yesterdayBlock(inp: DailyReportInput, snap: Snapshot | null): Html {
     h`<li><strong>${red.length}</strong> red commits on main${
       red.length ? h` (${red.map((m) => m.sha).join(', ')})` : raw('')
     }.</li>`,
+    canaryRow(snap),
   ];
   // One ejection usually fails several checks, so these rows overlap and are
   // never a total. A fan-in job carries the shards it waits on, folded in.
