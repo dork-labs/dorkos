@@ -109,10 +109,22 @@ jobs:
           # Enumerating them BEFORE the grant lands does not degrade gracefully:
           # requesting a permission the installation does not have fails the
           # mint, and this job stops arming entirely. So the order is grant
-          # first, enumerate second, and each of the four has to be verified
-          # against what the job actually calls — in particular, check whether
-          # labelling a pull request needs `issues: write` as well before
-          # trusting this list.
+          # first, enumerate second.
+          #
+          # `issues: write` is NOT in that list, and the question was asked
+          # rather than assumed. `gh pr edit --add-label` / `--remove-label`
+          # reach the issue-labels endpoints
+          # (`POST`/`DELETE /repos/{owner}/{repo}/issues/{n}/labels`), which
+          # sounds like the Issues permission — but GitHub's "Permissions
+          # required for GitHub Apps" reference lists those endpoints under BOTH
+          # the Issues and the Pull requests permission, each at write, and an
+          # endpoint listed under several permissions is reachable with any ONE
+          # of them. This job only ever labels PULL REQUESTS, never a plain
+          # issue, so `pull-requests: write` covers it. The reference marks that
+          # row as possibly needing additional permissions, so the thing that
+          # actually settles it is the first successful label write after the
+          # enumeration lands: if it 403s, add `permission-issues: write` and
+          # nothing else.
 
       # THE LADDER'S ONE PREREQUISITE, checked once per tick instead of being
       # discovered per PR. Listing a workflow's runs needs Actions: read, which
@@ -251,7 +263,7 @@ jobs:
               # ceiling of 4 could ever need.
               if gh api \
                    "repos/$REPO/actions/workflows/claude-code-review.yml/runs?head_sha=$head_sha&per_page=50" \
-                   --jq '[.workflow_runs[]? | {id, status, conclusion, updated_at}]' \
+                   --jq '[.workflow_runs[]? | {id, status, conclusion, run_attempt, updated_at}]' \
                    > "$work/runs.json" 2>/dev/null \
                  && jq -e 'type == "array"' "$work/runs.json" >/dev/null 2>&1; then
 

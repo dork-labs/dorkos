@@ -272,6 +272,46 @@ if [[ -n "$check_name" && "$jobs" == "$check_name" ]]; then pass=$(( pass + 1 ))
   fail=$(( fail + 1 )); printf 'FAIL  %-36s expected %-28s got %s\n' "check name is the workflow's one job" "${check_name:-<empty>}" "${jobs:-<empty>}"
 fi
 
+# EVERY FIELD THE GATE READS OFF A RUN HAS TO BE A FIELD THE WORKFLOW SENDS, and
+# nothing else checks that wire. merge-tail projects the runs API down to a few
+# keys before handing them over, so a field the gate reads but the projection
+# omits is not an error anywhere: jq returns null, the gate's `// default` takes
+# over, and the branch quietly stops doing its job. That is exactly how
+# `run_attempt` shipped dead — nine cases above hand-write the field, so they
+# stayed green while the workflow never sent it and the ladder went on counting
+# rows, with the gate comment and contributing/ci.md both asserting the property
+# as fact.
+#
+# Both ends are asserted, like the verdict-phrase wire in
+# scripts/test-review-classifier.sh: the field is in the projection AND the gate
+# still reads it. Pinning one end only lets the pair drift apart silently in
+# whichever direction is not pinned.
+#
+# A plain comparison, not the `check` above — that one feeds a jq mutation to the
+# gate, and these are assertions about two files.
+expect() {
+  local name=$1 expected=$2 actual=$3
+  if [[ "$expected" == "$actual" ]]; then
+    pass=$(( pass + 1 ))
+  else
+    fail=$(( fail + 1 ))
+    printf 'FAIL  %-36s expected %-28s got %s\n' "$name" "$expected" "${actual:-<empty>}"
+  fi
+}
+# A function rather than an inline `case`: a case pattern's `)` inside `$( )` is
+# a parse error.
+presence() { case "$2" in *"$1"*) echo present ;; *) echo absent ;; esac; }
+
+mt=$repo_root/.github/workflows/merge-tail.yml
+projection=$(sed -n 's/.*workflow_runs\[\]? | {\(.*\)}\].*/\1/p' "$mt")
+gate_src=$(cat "$gate")
+expect "the runs projection was found" yes \
+  "$([[ -n "$projection" ]] && echo yes || echo no)"
+for field in status conclusion run_attempt updated_at; do
+  expect "merge-tail sends .$field" present "$(presence "$field" "$projection")"
+  expect "the gate still reads .$field" present "$(presence ".$field" "$gate_src")"
+done
+
 echo
 echo "should-redispatch-review fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]] || exit 1
