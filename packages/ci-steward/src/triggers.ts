@@ -582,10 +582,19 @@ export function triage(inp: TriageInput): Triggers {
     ...collectorHealth(inp, cur),
     ...staleLedger(inp),
   ];
-  // The ledger entry that introduced the canary, read from `main`: the floor
-  // under `canary_since` that a data-branch rewrite cannot erase.
+  // The ledger entry that introduced the canary: the floor under
+  // `canary_since` that a rewrite of the data branch cannot erase, because it
+  // is a tracked file in this repository rather than a file on that branch.
+  //
+  // `active` ONLY, and the narrowness is the point. A `proposed` entry would
+  // arm the red before anything had landed — nothing is running yet, so the
+  // absence of results is not an outage. A `reverted` one is worse: reverting
+  // is the documented rollback, and leaving the red standing afterwards would
+  // mean a canary that has been deliberately removed keeps reporting an
+  // incident until somebody hand-edits the data branch. Both were driven
+  // against real triage and both fired. Same idiom as the verdict rule above.
   const landed = inp.ledger.find(
-    (e) => e.status !== 'withdrawn' && e.hypothesis?.metric === 'tracked.time-to-detect'
+    (e) => e.status === 'active' && e.hypothesis?.metric === 'tracked.time-to-detect'
   );
   const landedDay = landed ? ledgerDay(landed.id) : null;
   const canary = mainCanary(

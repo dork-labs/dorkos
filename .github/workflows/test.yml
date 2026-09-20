@@ -331,7 +331,7 @@ jobs:
       # which is why "Prove the browser suite actually executed" carries a
       # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
       # than 150 job minutes. Byte-identical in all eight canary jobs and
-      # pinned that way by scripts/__tests__/canary-ref-guard.test.ts, which
+      # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
       # extracts this very block and runs it.
       #
       # No `if:`: the body is a no-op on the gating events, which keeps it out
@@ -405,7 +405,7 @@ jobs:
       # which is why "Prove the browser suite actually executed" carries a
       # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
       # than 150 job minutes. Byte-identical in all eight canary jobs and
-      # pinned that way by scripts/__tests__/canary-ref-guard.test.ts, which
+      # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
       # extracts this very block and runs it.
       #
       # No `if:`: the body is a no-op on the gating events, which keeps it out
@@ -497,7 +497,7 @@ jobs:
       # which is why "Prove the browser suite actually executed" carries a
       # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
       # than 150 job minutes. Byte-identical in all eight canary jobs and
-      # pinned that way by scripts/__tests__/canary-ref-guard.test.ts, which
+      # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
       # extracts this very block and runs it.
       #
       # No `if:`: the body is a no-op on the gating events, which keeps it out
@@ -936,7 +936,7 @@ jobs:
       # which is why "Prove the browser suite actually executed" carries a
       # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
       # than 150 job minutes. Byte-identical in all eight canary jobs and
-      # pinned that way by scripts/__tests__/canary-ref-guard.test.ts, which
+      # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
       # extracts this very block and runs it.
       #
       # No `if:`: the body is a no-op on the gating events, which keeps it out

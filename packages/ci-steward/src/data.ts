@@ -290,9 +290,17 @@ export function gateKey(gate: string, event: string): string {
  * appears, and there is no zero-run merge-event key in any snapshot at all. A
  * `runs > 0` test therefore passes, the gate joins the merge-path set on the
  * strength of 32 jobs that never ran, and every one of its scheduled durations
- * is dropped — which is exactly the 8 headroom samples that went missing. A
- * job GitHub skipped is not evidence that a gate runs on the merge path; it is
- * evidence that it does not.
+ * is dropped. A job GitHub skipped is not evidence that a gate runs on the
+ * merge path; it is evidence that it does not.
+ *
+ * WHERE THAT ACTUALLY SHOWS. Not in `headroom`: the label- and dispatch-gated
+ * gates this rescues sit below that SLO's `min_n`, so its reading is identical
+ * under either predicate and quoting a headroom delta here would be quoting a
+ * number that never moved. It shows one layer down, where nothing filters by
+ * sample count — the per-gate durations a `gate-cost` comparison and a
+ * `gate.<id>.duration_p90` hypothesis read, and the failure rates
+ * `gate-failure-spike` reads. A gate whose only real runs are scheduled would
+ * otherwise have had no duration population at all.
  *
  * @param snaps - Every snapshot in the window being read.
  */

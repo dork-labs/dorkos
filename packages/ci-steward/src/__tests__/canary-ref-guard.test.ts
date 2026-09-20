@@ -20,22 +20,35 @@
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { loadHandFiles } from '../load.ts';
 import { loadWorkflows } from '../workflows.ts';
 
 const REPO = path.resolve(import.meta.dirname, '..', '..', '..', '..');
 const GUARD = 'A canary run is against main';
 
-/** Every canary job, by the workflow that holds it. */
-const CANARY_JOBS: Record<string, string[]> = {
-  'test.yml': ['community-pg', 'community-packaged', 'test-shard', 'test'],
-  'browser-test.yml': ['browser-shard', 'browser-test'],
-  'typecheck.yml': ['typecheck'],
-  'lint.yml': ['lint'],
+/**
+ * Jobs of a canary workflow that are NOT on the canary path, with the reason.
+ *
+ * DERIVED, NOT LISTED. An earlier version of this file named the eight guarded
+ * jobs, which meant a ninth job added to a canary workflow would have shipped
+ * with no guard and nothing would have said so — the opt-in-by-name shape the
+ * `stewarding-ci-pipeline` skill warns about, and the same one `canary.exempt`
+ * exists to close in `ci/config.yaml`. The sites are now every job of every
+ * workflow in `canary.workflows`, minus this table, so a new job is guarded or
+ * it is excused here in writing.
+ */
+const NOT_ON_THE_CANARY_PATH: Record<string, Record<string, string>> = {
+  'browser-test.yml': {
+    'copy-spec-drift':
+      'Diffs a change against its base SHA, which no scheduled run carries, so it does not run on a canary event at all.',
+  },
 };
 
 const workflows = loadWorkflows(REPO, '.github/workflows', (e) => {
   throw e;
 });
+
+const config = loadHandFiles(REPO).files!.config;
 
 function jobOf(file: string, id: string) {
   const wf = workflows.find((w) => w.file === file);
@@ -45,9 +58,12 @@ function jobOf(file: string, id: string) {
   return job!;
 }
 
-const sites = Object.entries(CANARY_JOBS).flatMap(([file, jobs]) =>
-  jobs.map((job) => [file, job] as const)
-);
+const sites = config.canary.workflows.flatMap((file) => {
+  const wf = workflows.find((w) => w.file === file);
+  if (!wf) throw new Error(`canary.workflows names ${file}, which does not exist`);
+  const excused = NOT_ON_THE_CANARY_PATH[file] ?? {};
+  return wf.jobs.filter((j) => !(j.id in excused)).map((j) => [file, j.id] as const);
+});
 
 /** Run the shipped block under a given event and ref. */
 function runGuard(body: string, env: Record<string, string>): { code: number; out: string } {
@@ -90,7 +106,9 @@ describe('the ref guard is present, first, and self-contained', () => {
     expect(steps[0]!.if).toBeUndefined();
   });
 
-  it('is byte-identical in all eight jobs, so one cannot rot alone', () => {
+  it('is byte-identical in every job, so one cannot rot alone', () => {
+    // The count is asserted so a workflow silently losing its jobs, or the
+    // canary list losing a workflow, does not turn this suite into a no-op.
     expect(sites).toHaveLength(8);
     expect(new Set(sites.map(([f, j]) => jobOf(f, j).steps[0]!.run)).size).toBe(1);
     // The env block carries EVENT and REF; the body reads nothing else.

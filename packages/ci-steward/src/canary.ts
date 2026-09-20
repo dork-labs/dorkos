@@ -76,11 +76,22 @@ export interface CanaryTriage {
  * it does for a fresh one — so a data-branch rewrite, or a prepare step that
  * starts from an empty tree, would hand this function `since: null` while the
  * canary was dead and its last result had aged out, returning the arm to the
- * silence it exists to break. `landed` is the floor under that: the day the
- * main-canary ledger entry was allocated, which lives on `main` where no
- * rewrite of the data branch can reach it. From one silence threshold after
- * that day, "no result in the whole window" is a red whatever the data branch
- * says.
+ * silence it exists to break.
+ *
+ * `landed` is the floor under that, and it survives because it comes from a
+ * different kind of file: the main-canary ledger entry is a TRACKED FILE IN
+ * THIS REPOSITORY, read from the collector's own checkout along with every
+ * other hand file, so nothing done to the data branch can reach it. (Not read
+ * through `git show main:…` — triage never shells out; it is simply part of
+ * the working tree the run already has.) From one silence threshold after that
+ * day, "no result in the whole window" is red whatever the data branch says.
+ *
+ * The date itself is the entry's `id:` FRONTMATTER, not its filename.
+ * `ledger-check` holds the two together, but only on the `pull_request` leg —
+ * the daily collector never re-checks it — so an entry whose `id:` was edited
+ * after merge would move this floor. That is a narrower hole than the one it
+ * closes, and it is the reason the arm reports "due since <date>" rather than
+ * claiming an observation.
  *
  * @param inp - The inputs.
  * @param all - Every snapshot loaded (28 days).

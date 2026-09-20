@@ -617,6 +617,29 @@ describe('trigger rules', () => {
       expect(ids(triage(input({ snapshots: [snap(TODAY)], prior: null })))).toEqual([]);
     });
 
+    it.each([
+      ['active', true],
+      ['proposed', false],
+      ['reverted', false],
+      ['withdrawn', false],
+    ] as const)('only an %s ledger entry arms the stopped arm (%s)', (status, fires) => {
+      // `proposed` would arm the red before anything landed; `reverted` is the
+      // documented rollback, and a red left standing after it could only be
+      // cleared by hand. Both fired before this was narrowed to `active`.
+      const e = entry({
+        id: '260910-120000',
+        status,
+        hypothesis: {
+          metric: 'tracked.time-to-detect',
+          baseline: 20160,
+          target: 720,
+          after_days: 14,
+        },
+      });
+      const t = triage(input({ snapshots: [snap(TODAY)], prior: null, ledger: [e] }));
+      expect(ids(t)).toEqual(fires ? ['main-canary-stopped'] : []);
+    });
+
     it('gives the change one silence threshold of grace before the first cron', () => {
       // The entry landed on the day being reported, so no cron has had time to
       // fire. That is not an outage.
