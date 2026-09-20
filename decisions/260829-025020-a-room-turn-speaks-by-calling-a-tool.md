@@ -12,7 +12,19 @@ amends: null
 
 ## Status
 
-Accepted, behind `rooms.toolOnlyReplies`, which ships OFF and graduates on evidence.
+Accepted. **It GRADUATED on 2026-09-19 (DOR-2099, spec §A0/§A2) and `rooms.toolOnlyReplies` was
+DELETED rather than flipped**: this is how every room turn speaks, on every runtime, with nothing
+switched on. It shipped behind that flag on 2026-08-29 and the flag lived three weeks.
+
+**Two clauses are retired by**
+[260920-043933](260920-043933-there-is-no-second-delivery.md) (There is no second delivery, so a
+room turn that posts nothing is silence), and both are about the other side of the flag rather than
+about this decision: "Reply mode resolves per turn and fails OPEN" (with the section "Why
+fail-open, and why the polarity is the opposite of DOR-1611's" and the rejected alternative
+"Failing closed on unknown tool-capability"), and the Neutral consequence "The welcome-back offer
+keeps text-as-reply, deliberately." Read those passages as history; everything else below still
+governs. **That is why this ADR stays `accepted` rather than `superseded`:** what the flag gated is
+now the product, and the argument for it is the one still in force.
 
 It reverses one section of a frozen spec — `specs/room-participation/02-specification.md` **§2.6**,
 "posting is channels and threads only" — and reverses nothing else in it. §10.2 designed this flip

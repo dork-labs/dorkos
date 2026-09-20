@@ -5784,6 +5784,24 @@
         ".claude/rules/ci-pipeline.md",
         "contributing/ci.md"
       ]
+    },
+    {
+      "id": "260920-043933",
+      "slug": "there-is-no-second-delivery",
+      "title": "There is no second delivery, so a room turn that posts nothing is silence",
+      "status": "accepted",
+      "created": "2026-09-19",
+      "specSlug": "tool-only-room-replies",
+      "amends": ["260829-025020"],
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/rooms/room-turn-runner.ts",
+        "apps/server/src/services/rooms/room-trigger.ts",
+        "apps/server/src/services/rooms/welcome-back/greeter.ts",
+        "apps/server/src/services/rooms/room-turn-port.ts",
+        "packages/shared/src/agent-runtime.ts",
+        "packages/shared/src/room-schemas.ts"
+      ]
     }
   ]
 }
