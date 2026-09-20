@@ -155,6 +155,39 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
     );
   }
 
+  /**
+   * The most recent "just past 04:00" — never a moment that has not happened yet.
+   *
+   * The cases below pin the page clock to the far side of Today's 04:00
+   * overnight boundary, because that is the edge where a one-minute fixture
+   * offset used to fall out of Today. The boundary they want is the LAST one,
+   * not today's calendar 04:00: before 04:00 local, `setHours(4, …)` on today's
+   * date names a time in the future, and a page whose clock runs ahead of the
+   * server that minted its data throws that data away.
+   *
+   * That is not hypothetical, and it is not a race. An approval expires two
+   * hours after the server creates it (`APPROVAL_TTL_MS`), and
+   * `usePendingApprovals` drops every card whose `expiresAt` is behind the
+   * BROWSER's clock — correctly, because the server applies the same rule when
+   * the token is presented. So a run starting between midnight and 02:00 local
+   * seeded two live approvals into a page that already believed it was 04:00,
+   * both were pruned on mount, the Now zone never appeared, and AC-1 failed on
+   * every attempt. It reddened the merge queue for three unrelated PRs from
+   * 2026-09-20T00:00Z and would have healed itself at 02:00Z with nothing
+   * learned. Walking the clock BACKWARDS is always safe: every timestamp the
+   * server minted is then in the page's future, which is the arrangement every
+   * green run of these cases has had all along.
+   *
+   * @param secondsPastFour - How far past the boundary to sit.
+   * @returns The most recent 04:00 plus that many seconds, always in the past.
+   */
+  function justPastFourAM(secondsPastFour: number): Date {
+    const fourOClock = new Date();
+    fourOClock.setHours(4, 0, secondsPastFour, 0);
+    if (fourOClock.getTime() > Date.now()) fourOClock.setDate(fourOClock.getDate() - 1);
+    return fourOClock;
+  }
+
   test('there is no drawer to open — no sheet, no hamburger', async ({ page, basePage }) => {
     await basePage.goto();
     await basePage.waitForAppReady();
@@ -360,8 +393,7 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
     // At 04:00, one-minute fixture offsets used to put eight of these rooms
     // before Today's overnight boundary. Keep this case on that edge so the
     // scroll precondition proves the fixture is still preparing the stated UI.
-    const fourOClock = new Date();
-    fourOClock.setHours(4, 0, 5, 0);
+    const fourOClock = justPastFourAM(5);
     await page.clock.setFixedTime(fourOClock);
 
     // **Seeded until Home genuinely overflows, and it takes both halves.** A
@@ -507,8 +539,7 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
     roomsApi,
   }) => {
     // The smaller three-room seed caught the same boundary bug at 04:02.
-    const fourOClock = new Date();
-    fourOClock.setHours(4, 0, 2, 0);
+    const fourOClock = justPastFourAM(2);
     await page.clock.setFixedTime(fourOClock);
 
     const rooms: SeededRoom[] = [];
