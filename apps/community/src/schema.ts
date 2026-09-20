@@ -23,9 +23,18 @@ export const communities = pgTable(
     singleton: boolean('singleton').notNull().default(true).unique(),
     name: text('name').notNull(),
     description: text('description'),
+    lifecycle: text('lifecycle').notNull().default('active'),
+    lifecycleVersion: integer('lifecycle_version').notNull().default(1),
     createdAt: time('created_at'),
   },
-  (table) => [check('community_singleton', sql`${table.singleton}`)]
+  (table) => [
+    check('community_singleton', sql`${table.singleton}`),
+    check(
+      'communities_lifecycle',
+      sql`${table.lifecycle} IN ('pending_owner','active','suspended')`
+    ),
+    check('communities_lifecycle_version', sql`${table.lifecycleVersion} > 0`),
+  ]
 );
 
 /** Better Auth core user table, using its native camelCase PostgreSQL columns. */
@@ -87,6 +96,15 @@ export const verifications = pgTable('verification', {
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 });
 
+/** Host operations authority, deliberately separate from community membership. */
+export const hostOperators = pgTable('host_operators', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => users.id),
+  createdAt: time('created_at'),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+});
+
 /** Human admissions and their authority. */
 export const members = pgTable(
   'members',
@@ -107,41 +125,60 @@ export const members = pgTable(
     removedAt: timestamp('removed_at', { withTimezone: true }),
   },
   (table) => [
+    uniqueIndex('members_community_id_unique').on(table.communityId, table.id),
+    uniqueIndex('members_community_user_unique').on(table.communityId, table.userId),
     uniqueIndex('members_handle_unique').on(table.communityId, table.handle),
     index('members_community_active_idx').on(table.communityId, table.active),
   ]
 );
 
 /** One-use owner setup grants. */
-export const bootstrapGrants = pgTable('bootstrap_grants', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  tokenHash: text('token_hash').notNull().unique(),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  consumedAt: timestamp('consumed_at', { withTimezone: true }),
-  createdAt: time('created_at'),
-});
+export const bootstrapGrants = pgTable(
+  'bootstrap_grants',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tokenHash: text('token_hash').notNull().unique(),
+    purpose: text('purpose').notNull().default('first_install'),
+    communityId: uuid('community_id').references(() => communities.id),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    check(
+      'bootstrap_grants_purpose_tenant',
+      sql`(${table.purpose} = 'first_install' AND ${table.communityId} IS NULL) OR (${table.purpose} = 'owner_claim' AND ${table.communityId} IS NOT NULL)`
+    ),
+    index('bootstrap_grants_community_idx').on(table.communityId),
+  ]
+);
 
 /** Human admission invitations, scoped optionally to one channel. */
-export const invites = pgTable('invites', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  communityId: uuid('community_id')
-    .notNull()
-    .references(() => communities.id),
-  issuerMemberId: uuid('issuer_member_id')
-    .notNull()
-    .references(() => members.id),
-  channelId: uuid('channel_id'),
-  tokenHash: text('token_hash').notNull().unique(),
-  seatLimit: integer('seat_limit').notNull(),
-  useCount: integer('use_count').notNull().default(0),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  revokedAt: timestamp('revoked_at', { withTimezone: true }),
-  createdAt: time('created_at'),
-});
+export const invites = pgTable(
+  'invites',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    issuerMemberId: uuid('issuer_member_id')
+      .notNull()
+      .references(() => members.id),
+    channelId: uuid('channel_id'),
+    tokenHash: text('token_hash').notNull().unique(),
+    seatLimit: integer('seat_limit').notNull(),
+    useCount: integer('use_count').notNull().default(0),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: time('created_at'),
+  },
+  (table) => [uniqueIndex('invites_community_id_unique').on(table.communityId, table.id)]
+);
 /** One seat per invitation and account. */
 export const inviteUses = pgTable(
   'invite_uses',
   {
+    communityId: uuid('community_id').references(() => communities.id),
     inviteId: uuid('invite_id')
       .notNull()
       .references(() => invites.id),
@@ -150,46 +187,64 @@ export const inviteUses = pgTable(
       .references(() => users.id),
     createdAt: time('created_at'),
   },
-  (table) => [primaryKey({ columns: [table.inviteId, table.userId] })]
+  (table) => [
+    primaryKey({ columns: [table.inviteId, table.userId] }),
+    index('invite_uses_community_idx').on(table.communityId),
+  ]
 );
 /** Short-lived signup approval rows. */
-export const pendingAdmissions = pgTable('pending_admissions', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  inviteId: uuid('invite_id')
-    .notNull()
-    .references(() => invites.id),
-  tokenHash: text('token_hash').notNull().unique(),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  createdAt: time('created_at'),
-});
+export const pendingAdmissions = pgTable(
+  'pending_admissions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id').references(() => communities.id),
+    inviteId: uuid('invite_id')
+      .notNull()
+      .references(() => invites.id),
+    tokenHash: text('token_hash').notNull().unique(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: time('created_at'),
+  },
+  (table) => [index('pending_admissions_community_idx').on(table.communityId)]
+);
 /** Browser approval pairing requests. */
-export const connectionPairings = pgTable('connection_pairings', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  verifierHash: text('verifier_hash').notNull(),
-  installName: text('install_name').notNull(),
-  scopes: text('scopes').array().notNull(),
-  memberId: uuid('member_id').references(() => members.id),
-  codeHash: text('code_hash'),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  consumedAt: timestamp('consumed_at', { withTimezone: true }),
-  approvedAt: timestamp('approved_at', { withTimezone: true }),
-  polledAt: timestamp('polled_at', { withTimezone: true }),
-  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
-  createdAt: time('created_at'),
-});
+export const connectionPairings = pgTable(
+  'connection_pairings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id').references(() => communities.id),
+    verifierHash: text('verifier_hash').notNull(),
+    installName: text('install_name').notNull(),
+    scopes: text('scopes').array().notNull(),
+    memberId: uuid('member_id').references(() => members.id),
+    codeHash: text('code_hash'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    polledAt: timestamp('polled_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    createdAt: time('created_at'),
+  },
+  (table) => [index('connection_pairings_community_idx').on(table.communityId)]
+);
 /** Revocable server-to-server personal grants, stored as hashes. */
-export const connectionGrants = pgTable('connection_grants', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  memberId: uuid('member_id')
-    .notNull()
-    .references(() => members.id),
-  tokenHash: text('token_hash').notNull().unique(),
-  installName: text('install_name').notNull(),
-  scopes: text('scopes').array().notNull(),
-  createdAt: time('created_at'),
-  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-  revokedAt: timestamp('revoked_at', { withTimezone: true }),
-});
+export const connectionGrants = pgTable(
+  'connection_grants',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id').references(() => communities.id),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => members.id),
+    tokenHash: text('token_hash').notNull().unique(),
+    installName: text('install_name').notNull(),
+    scopes: text('scopes').array().notNull(),
+    createdAt: time('created_at'),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [index('connection_grants_community_idx').on(table.communityId)]
+);
 
 /** Durable channel identity and commit-serialized sequence counter. */
 export const channels = pgTable(
@@ -207,12 +262,16 @@ export const channels = pgTable(
     epoch: integer('epoch').notNull().default(1),
     createdAt: time('created_at'),
   },
-  (table) => [index('channels_community_idx').on(table.communityId)]
+  (table) => [
+    uniqueIndex('channels_community_id_unique').on(table.communityId, table.id),
+    index('channels_community_idx').on(table.communityId),
+  ]
 );
 /** Explicit human channel membership. */
 export const channelMembers = pgTable(
   'channel_members',
   {
+    communityId: uuid('community_id').references(() => communities.id),
     channelId: uuid('channel_id')
       .notNull()
       .references(() => channels.id),
@@ -224,6 +283,7 @@ export const channelMembers = pgTable(
   (table) => [
     primaryKey({ columns: [table.channelId, table.memberId] }),
     index('channel_members_member_idx').on(table.memberId),
+    index('channel_members_community_idx').on(table.communityId),
   ]
 );
 
@@ -246,25 +306,32 @@ export const agents = pgTable(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
   (table) => [
+    uniqueIndex('agents_community_id_unique').on(table.communityId, table.id),
     uniqueIndex('agents_handle_unique').on(table.communityId, table.handle),
     uniqueIndex('agents_owner_local_id_unique').on(table.ownerMemberId, table.localAgentId),
     index('agents_owner_active_idx').on(table.ownerMemberId, table.active),
   ]
 );
 /** Agent bearer records contain only token hashes. */
-export const agentCredentials = pgTable('agent_credentials', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  agentId: uuid('agent_id')
-    .notNull()
-    .references(() => agents.id),
-  tokenHash: text('token_hash').notNull().unique(),
-  createdAt: time('created_at'),
-  revokedAt: timestamp('revoked_at', { withTimezone: true }),
-});
+export const agentCredentials = pgTable(
+  'agent_credentials',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id').references(() => communities.id),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id),
+    tokenHash: text('token_hash').notNull().unique(),
+    createdAt: time('created_at'),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [index('agent_credentials_community_idx').on(table.communityId)]
+);
 /** Explicit agent channel membership. */
 export const agentChannelMembers = pgTable(
   'agent_channel_members',
   {
+    communityId: uuid('community_id').references(() => communities.id),
     channelId: uuid('channel_id')
       .notNull()
       .references(() => channels.id),
@@ -273,7 +340,10 @@ export const agentChannelMembers = pgTable(
       .references(() => agents.id),
     joinedAt: time('joined_at'),
   },
-  (table) => [primaryKey({ columns: [table.channelId, table.agentId] })]
+  (table) => [
+    primaryKey({ columns: [table.channelId, table.agentId] }),
+    index('agent_channel_members_community_idx').on(table.communityId),
+  ]
 );
 /** One handle namespace shared by humans and agents. */
 export const communityHandles = pgTable(
@@ -298,6 +368,7 @@ export const entries = pgTable(
   'entries',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id').references(() => communities.id),
     channelId: uuid('channel_id')
       .notNull()
       .references(() => channels.id),
@@ -317,6 +388,7 @@ export const entries = pgTable(
     createdAt: time('created_at'),
   },
   (table) => [
+    uniqueIndex('entries_community_id_unique').on(table.communityId, table.id),
     uniqueIndex('entries_channel_seq_unique').on(table.channelId, table.seq),
     uniqueIndex('entries_author_key_unique').on(
       table.authorMemberId,
@@ -333,6 +405,7 @@ export const entries = pgTable(
       sql`(${table.authorMemberId} IS NULL) <> (${table.authorAgentId} IS NULL)`
     ),
     index('entries_thread_idx').on(table.channelId, table.threadRootEntryId, table.seq),
+    index('entries_community_idx').on(table.communityId),
   ]
 );
 /** Unbound or entry-bound blob metadata. */
@@ -340,6 +413,7 @@ export const attachments = pgTable(
   'attachments',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id').references(() => communities.id),
     channelId: uuid('channel_id')
       .notNull()
       .references(() => channels.id),
@@ -360,7 +434,9 @@ export const attachments = pgTable(
       .defaultNow(),
   },
   (table) => [
+    uniqueIndex('attachments_community_id_unique').on(table.communityId, table.id),
     index('attachments_entry_idx').on(table.entryId),
+    index('attachments_community_idx').on(table.communityId),
     uniqueIndex('attachments_human_retry_idx')
       .on(table.uploaderMemberId, table.channelId, table.idempotencyKey)
       .where(sql`${table.uploaderMemberId} IS NOT NULL`),
@@ -381,6 +457,7 @@ export const exportArchives = pgTable(
   'export_archives',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id').references(() => communities.id),
     requesterMemberId: uuid('requester_member_id')
       .notNull()
       .references(() => members.id),
@@ -397,7 +474,9 @@ export const exportArchives = pgTable(
       .defaultNow(),
   },
   (table) => [
+    uniqueIndex('export_archives_community_id_unique').on(table.communityId, table.id),
     check('export_archives_scope', sql`${table.scope} IN ('personal','owner')`),
+    index('export_archives_community_idx').on(table.communityId),
     index('export_archives_expiry_idx')
       .on(table.cleanupNextAttemptAt, table.expiresAt, table.id)
       .where(sql`${table.deletedAt} IS NULL`),
@@ -417,10 +496,48 @@ export const pendingBlobDeletions = pgTable(
     index('pending_blob_deletions_due_idx').on(table.nextAttemptAt, table.createdAt, table.blobKey),
   ]
 );
+/** Tenant ownership and lifecycle for every managed attachment or export object. */
+export const managedBlobs = pgTable(
+  'managed_blobs',
+  {
+    blobKey: text('blob_key').primaryKey(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    purpose: text('purpose').notNull(),
+    communityLifecycleVersion: integer('community_lifecycle_version').notNull(),
+    state: text('state').notNull().default('reserved'),
+    byteSize: bigint('byte_size', { mode: 'number' }),
+    checksum: text('checksum'),
+    createdAt: time('created_at'),
+    storedAt: timestamp('stored_at', { withTimezone: true }),
+    committedAt: timestamp('committed_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('managed_blobs_community_key_unique').on(table.communityId, table.blobKey),
+    index('managed_blobs_community_state_idx').on(table.communityId, table.state, table.createdAt),
+    check('managed_blobs_purpose', sql`${table.purpose} IN ('attachment','export')`),
+    check('managed_blobs_key', sql`${table.blobKey} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'managed_blobs_state',
+      sql`${table.state} IN ('reserved','stored','committed','pending_delete')`
+    ),
+    check('managed_blobs_lifecycle_version', sql`${table.communityLifecycleVersion} > 0`),
+    check(
+      'managed_blobs_stored_metadata',
+      sql`(${table.state} = 'reserved' AND ${table.byteSize} IS NULL AND ${table.checksum} IS NULL AND ${table.storedAt} IS NULL) OR (${table.state} IN ('stored','committed') AND ${table.byteSize} IS NOT NULL AND ${table.byteSize} > 0 AND ${table.checksum} IS NOT NULL AND ${table.storedAt} IS NOT NULL) OR (${table.state} = 'pending_delete' AND ((${table.byteSize} IS NULL AND ${table.checksum} IS NULL AND ${table.storedAt} IS NULL) OR (${table.byteSize} IS NOT NULL AND ${table.byteSize} > 0 AND ${table.checksum} IS NOT NULL AND ${table.storedAt} IS NOT NULL)))`
+    ),
+    check(
+      'managed_blobs_commit_timestamp',
+      sql`(${table.state} <> 'committed' OR ${table.committedAt} IS NOT NULL) AND (${table.committedAt} IS NULL OR ${table.state} IN ('committed','pending_delete'))`
+    ),
+  ]
+);
 /** Monotonic per-human read positions. */
 export const readCursors = pgTable(
   'read_cursors',
   {
+    communityId: uuid('community_id').references(() => communities.id),
     channelId: uuid('channel_id')
       .notNull()
       .references(() => channels.id),
@@ -430,12 +547,16 @@ export const readCursors = pgTable(
     seq: bigint('seq', { mode: 'number' }).notNull().default(0),
     updatedAt: time('updated_at'),
   },
-  (table) => [primaryKey({ columns: [table.channelId, table.memberId] })]
+  (table) => [
+    primaryKey({ columns: [table.channelId, table.memberId] }),
+    index('read_cursors_community_idx').on(table.communityId),
+  ]
 );
 /** Atomic owner quota bucket. */
 export const ownerQuotaWindows = pgTable(
   'owner_quota_windows',
   {
+    communityId: uuid('community_id').references(() => communities.id),
     ownerMemberId: uuid('owner_member_id')
       .notNull()
       .references(() => members.id),
@@ -443,7 +564,10 @@ export const ownerQuotaWindows = pgTable(
     postCount: integer('post_count').notNull().default(0),
     uploadBytes: bigint('upload_bytes', { mode: 'number' }).notNull().default(0),
   },
-  (table) => [primaryKey({ columns: [table.ownerMemberId, table.windowStart] })]
+  (table) => [
+    primaryKey({ columns: [table.ownerMemberId, table.windowStart] }),
+    index('owner_quota_windows_community_idx').on(table.communityId),
+  ]
 );
 /** Security-relevant membership and channel actions. */
 export const auditEvents = pgTable(
