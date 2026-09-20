@@ -30,11 +30,25 @@ if [ -z "$REPO_ROOT" ]; then
 fi
 
 # Convert absolute path to repo-relative
-if [[ "$FILE_PATH" == "$REPO_ROOT/"* ]]; then
-  RELATIVE="${FILE_PATH#$REPO_ROOT/}"
-else
-  RELATIVE="$FILE_PATH"
+# A file outside this repo is not ours to lint. The scratchpad is the common
+# case: the session directory holds throwaway .mjs helpers with no eslint
+# config anywhere above them, so eslint exits non-zero with "couldn't find an
+# eslint.config.* file" and this hook's exit 2 then BLOCKS the write. The hook
+# runs from the repo the session started in, so the cwd check above passes
+# while the written file lives somewhere else entirely.
+# Compare RESOLVED paths. `git rev-parse` reports the physical root, while the
+# write tool reports the path as typed, so on macOS a repo under /tmp or /var
+# (both symlinks to /private/...) would otherwise look like a different tree
+# and every lint would be skipped silently — the opposite failure to the one
+# below, and harder to notice.
+FILE_DIR_REAL=$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && pwd -P) || FILE_DIR_REAL=""
+FILE_REAL="${FILE_DIR_REAL:+$FILE_DIR_REAL/$(basename "$FILE_PATH")}"
+REPO_REAL=$(cd "$REPO_ROOT" && pwd -P)
+
+if [ -z "$FILE_REAL" ] || [[ "$FILE_REAL" != "$REPO_REAL/"* ]]; then
+  exit 0
 fi
+RELATIVE="${FILE_REAL#$REPO_REAL/}"
 
 # Detect the file's workspace (same detection as typecheck-changed.sh,
 # generalized: every apps/* and packages/* workspace ships its own

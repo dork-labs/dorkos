@@ -285,6 +285,13 @@ jobs:
       - name: In-project hook wrapper fixtures
         run: bash scripts/test-in-project-hook.sh
 
+      # lint-changed.sh BLOCKS a write when eslint errors, so its scope is
+      # load-bearing: it used to lint files outside the repo (the session
+      # scratchpad), where there is no eslint config, and refuse the write with
+      # a message that read like a real lint error.
+      - name: Lint-changed hook fixtures
+        run: bash scripts/test-lint-changed-hook.sh
+
       # run-node-hook.sh is what makes the three guards above fail CLOSED when
       # node cannot be resolved. Without it a nvm-managed node off a stripped
       # PATH made each guard exit 127, which Claude Code treats as a
