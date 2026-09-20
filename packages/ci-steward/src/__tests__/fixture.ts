@@ -86,6 +86,16 @@ export function baseSpec(): FixtureSpec {
           { workflow: 'test.yml', pattern: 'vitest-shard-report-*', format: 'vitest' },
         ],
       },
+      quarantine: {
+        file: 'quarantine.json',
+        max_entries: 3,
+        default_expiry_days: 7,
+        max_expiry_days: 14,
+        window_days: 14,
+        min_occurrences: 2,
+        cooling_min_clean_builds: 2,
+        near_expiry_hours: 48,
+      },
       verdicts: { before_days: 7, min_n: 5 },
       triage: {
         failure_spike_ratio: 1.5,

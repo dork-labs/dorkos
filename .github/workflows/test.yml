@@ -354,9 +354,62 @@ jobs:
       # scripts/__tests__/vitest-flake-reporter.test.ts, which also pins the
       # two flags on this line; a workspace glob at another depth would make
       # vitest fail to load the reporter rather than quietly skip it.
-      - name: Run every package's test suite (shard ${{ matrix.shard }}/4)
+      # THE QUARANTINE LANE, READ BEFORE THE SWEEP (plan §4.9 L1). The list
+      # lives on the ci-steward-data branch, so a known flake leaves the
+      # blocking path without a PR. This step ALWAYS exits 0: a failed fetch
+      # writes an empty list and says so, and an empty list means every test
+      # blocks as it always did.
+      - name: Read the quarantine lane
         if: ${{ github.event_name == 'merge_group' }}
-        run: pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/4 --retry=1 --passWithNoTests --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
+        run: |
+          node packages/ci-steward/src/cli.ts quarantine-list \
+            --runner vitest \
+            --out "$RUNNER_TEMP/quarantine.json" \
+            --lines "$RUNNER_TEMP/quarantine.txt" \
+            --title "Quarantine lane — test shard ${{ matrix.shard }}/4"
+          # Its own shard identity beside it, so the fan-in can prove it has a
+          # COMPLETE set of copies before intersecting them.
+          printf '%s/4\n' '${{ matrix.shard }}' > "$RUNNER_TEMP/shard.txt"
+
+      - name: Run every package's test suite (shard ${{ matrix.shard }}/4)
+        id: sweep
+        if: ${{ github.event_name == 'merge_group' }}
+        run: |
+          set +e
+          pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/4 --retry=1 --passWithNoTests --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
+          code=$?
+          echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -ne 0 ]; then
+            echo "::notice::the sweep exited $code; the quarantine gate below decides whether that fails this shard."
+          fi
+          exit 0
+
+      # The gate, immediately after the sweep so that a failure the lane does
+      # not cover skips everything below exactly as a failed sweep always did.
+      #
+      # Quarantine here is per TEST, read out of the shard reports — NOT vitest
+      # `exclude`, which can only drop a whole file and would empty a package's
+      # suite behind the union check's back. Nothing is excluded: every file is
+      # still collected, every test still runs, and the union in the fan-in is
+      # the union it would be with an empty lane.
+      - name: Refuse any failure the quarantine lane does not cover
+        if: ${{ github.event_name == 'merge_group' }}
+        run: |
+          args=()
+          while IFS= read -r report; do args+=(--reports "$report"); done < <(
+            find apps packages -mindepth 2 -maxdepth 2 \
+              \( -name vitest-shard-report.json -o -name vitest-flake-report.json \) | sort
+          )
+          if [ ${#args[@]} -eq 0 ]; then
+            echo '::error::no vitest-shard-report.json in any package — the json reporter passthrough is broken, so nothing can be read and nothing can be excused.' >&2
+            exit 1
+          fi
+          node packages/ci-steward/src/cli.ts quarantine-gate \
+            --runner vitest \
+            --suite-exit "${{ steps.sweep.outputs.exit-code }}" \
+            --list "$RUNNER_TEMP/quarantine.json" \
+            "${args[@]}" \
+            --title "Quarantine gate — test shard ${{ matrix.shard }}/4"
 
       # The PR leg's quarter. Same split, same `--concurrency=1`, narrower
       # scope — and deliberately NOT the queue leg's line with one flag
@@ -515,6 +568,20 @@ jobs:
       # declaring a `test` script contributed a file, which an affected subset
       # cannot satisfy. The json reporter that writes these records is on the
       # queue line alone, so on a PR this would fail on a missing report.
+      # The lane this shard read, handed to the fan-in, which has no install and
+      # cannot read the data branch itself.
+      - name: Hand this shard's quarantine lane to the fan-in
+        if: ${{ github.event_name == 'merge_group' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: quarantine-lane-shard-${{ matrix.shard }}-vitest
+          path: |
+            ${{ runner.temp }}/quarantine.txt
+            ${{ runner.temp }}/shard.txt
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
       - name: Record the test files this shard collected
         if: ${{ github.event_name == 'merge_group' }}
         run: |
@@ -678,6 +745,73 @@ jobs:
       # the zero-collected-files net --passWithNoTests removed, rebuilt at the
       # only level that can tell "empty because sharded" from "empty because
       # broken". Fixtures: scripts/test-assert-shard-union.sh.
+      # The fan-in has no `pnpm install` — it is a jq-and-bash job that costs
+      # seconds — so it cannot run the engine to read the lane itself. The
+      # shards already did, so each hands its copy over as an artifact and this
+      # job INTERSECTS them.
+      #
+      # Intersection, not union, and not "take the first": a list edited while
+      # the build was in flight is the only way the copies can differ, and the
+      # intersection is the reading that absorbs LESS and blocks MORE. The one
+      # thing this must never do is invent a lane entry that no shard actually
+      # ran under.
+      #
+      # THE SET OF COPIES MUST BE COMPLETE, for the same reason
+      # assert-browser-tests-executed.sh checks its shard set: intersecting over
+      # whatever arrived means one lost artifact WIDENS the lane, which is
+      # exactly backwards. Each copy carries its own `i/N`, so a missing,
+      # duplicated or stale one is refused by name.
+      - name: Collect every shard's quarantine lane
+        if: ${{ github.event_name == 'merge_group' }}
+        uses: actions/download-artifact@v8
+        with:
+          pattern: quarantine-lane-shard-*-vitest
+          path: lane
+
+      - name: Agree on the lane this build ran under
+        if: ${{ github.event_name == 'merge_group' }}
+        run: |
+          shopt -s nullglob
+          lanes=(lane/*/quarantine.txt)
+          shards=(lane/*/shard.txt)
+          if [ ${#lanes[@]} -eq 0 ] || [ ${#shards[@]} -ne ${#lanes[@]} ]; then
+            echo "::error::not every shard handed over its quarantine lane, so this job cannot tell a quarantined test's file from a file that stopped being collected. Every shard writes one; a short set means the lane step did not run."
+            exit 1
+          fi
+          total=$(cut -d/ -f2 "${shards[@]}" | sort -u)
+          if [ "$(printf '%s\n' "$total" | wc -l | tr -d ' ')" -ne 1 ]; then
+            echo "::error::the shards disagree about how many of them there are ($(printf '%s' "$total" | tr '\n' ' ')). These copies are not from one run, so their intersection is not one lane."
+            exit 1
+          fi
+          if [ "${#lanes[@]}" -ne "$total" ]; then
+            echo "::error::the run had $total shard(s) but only ${#lanes[@]} handed over a quarantine lane. Intersecting over the ones that arrived would WIDEN the lane, so this refuses instead."
+            exit 1
+          fi
+          seen=$(cut -d/ -f1 "${shards[@]}" | sort -n | tr '\n' ' ')
+          wanted=$(seq 1 "$total" | tr '\n' ' ')
+          if [ "$seen" != "$wanted" ]; then
+            echo "::error::the quarantine lanes are not shards 1..$total exactly: got [ $seen], wanted [ $wanted]. A repeated shard would let one copy vote twice."
+            exit 1
+          fi
+          cat "${lanes[@]}" | grep -v '^[[:space:]]*$' | sort | uniq -c |
+            awk -v n="$total" '$1 == n { sub(/^ *[0-9]+ /, ""); print }' \
+            > "$RUNNER_TEMP/quarantine.txt"
+          count=$(grep -c '' "$RUNNER_TEMP/quarantine.txt" || true)
+          {
+            printf '### Quarantine lane — this queue build (vitest)\n\n'
+            if [ "$count" -eq 0 ]; then
+              printf 'Nothing is quarantined. Every test blocks as normal.\n\n'
+            else
+              printf '%s test(s) all %s shard(s) agreed were quarantined. Each ran and was reported; none could fail this build:\n\n' "$count" "$total"
+              while IFS= read -r quarantined; do
+                printf -- '- %s\n' "$quarantined"
+              done < "$RUNNER_TEMP/quarantine.txt"
+              printf '\nEach shard job above prints the same set with its evidence and expiry.\n\n'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Prove the shards' union covers every package
         if: ${{ github.event_name == 'merge_group' }}
-        run: bash scripts/assert-shard-union.sh shard-files
+        run: |
+          bash scripts/assert-shard-union.sh \
+            --quarantined "$RUNNER_TEMP/quarantine.txt" shard-files

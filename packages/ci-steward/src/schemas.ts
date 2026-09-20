@@ -83,6 +83,36 @@ const TriageConfigSchema = z
   })
   .strict();
 
+/**
+ * The `quarantine:` block of `ci/config.yaml`: every threshold the quarantine
+ * lane is fenced by (plan §4.9 L1).
+ */
+const QuarantineConfigSchema = z
+  .object({
+    /** Path on the data branch, so quarantining needs no PR. */
+    file: RepoPath,
+    /** A list longer than this is ignored whole, never trimmed. */
+    max_entries: z.number().int().min(1),
+    /** Lifetime of an entry when `quarantine add` is not told otherwise. */
+    default_expiry_days: z.number().int().min(1),
+    /**
+     * The longest life any entry may have, enforced at READ time like every
+     * other guard. Without it "every entry expires after 7 days" is one
+     * `--expiry-days 365` away from false, and the add path is not the fence:
+     * the list is editable by anything that can write the data branch.
+     */
+    max_expiry_days: z.number().int().min(1),
+    /** The evidence window `ci-steward flaky` reads. */
+    window_days: z.number().int().min(1),
+    /** Distinct merge-group SHAs a test must have flaked on to qualify. */
+    min_occurrences: z.number().int().min(2),
+    /** Clean builds below which a candidate is never called `cooling`. */
+    cooling_min_clean_builds: z.number().int().min(1),
+    /** The daily triage flags an entry expiring within this many hours. */
+    near_expiry_hours: z.number().int().min(1),
+  })
+  .strict();
+
 /** `ci/config.yaml`: everything repo-specific the engine needs. */
 export const ConfigSchema = z
   .object({
@@ -124,6 +154,7 @@ export const ConfigSchema = z
     generated_blocks: z.object({ required_checks: z.array(RepoPath) }).strict(),
     commands: z.object({ ledger_new: z.string().min(1), census_fix: z.string().min(1) }).strict(),
     collect: CollectConfigSchema,
+    quarantine: QuarantineConfigSchema,
     verdicts: z
       .object({
         /** Length of the before-window, anchored on the merge time. */
@@ -153,6 +184,8 @@ export const ConfigSchema = z
   .strict();
 /** Parsed `ci/config.yaml`. */
 export type Config = z.infer<typeof ConfigSchema>;
+/** The `quarantine:` block of `ci/config.yaml`. */
+export type QuarantineConfig = z.infer<typeof QuarantineConfigSchema>;
 
 /** `ci/required-checks.json`: the required contexts, mirrored from the live ruleset. */
 export const RequiredChecksSchema = z

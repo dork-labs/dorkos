@@ -79,6 +79,17 @@ entries:
     kind: step-if
     reason: The union is only complete on the merge_group full sweep; on pull_request each shard is affected-only by design.
 
+  - workflow: test.yml
+    job: test
+    step: Collect every shard's quarantine lane
+    kind: step-if
+    reason: Collects the lane the merge_group shards ran under; on pull_request the shards run affected-only, no lane applies and no shard uploads one.
+  - workflow: test.yml
+    job: test
+    step: Agree on the lane this build ran under
+    kind: step-if
+    reason: Intersects the merge_group shards' copies of the lane for the union proof; there is no lane and no full union on a pull request.
+
   # --- browser-test.yml ---
   - workflow: browser-test.yml
     job: browser-test
@@ -95,6 +106,16 @@ entries:
     step: actions/checkout
     kind: step-if
     reason: Checks out code for the merge_group executed-count proof only; the PR leg is a pass-through.
+  - workflow: browser-test.yml
+    job: browser-test
+    step: Collect every shard's quarantine lane
+    kind: step-if
+    reason: Collects the lane the merge_group shards ran under; on pull_request the shards are skipped and none uploads one.
+  - workflow: browser-test.yml
+    job: browser-test
+    step: Agree on the lane this build ran under
+    kind: step-if
+    reason: Intersects the merge_group shards' copies of the lane, so the execution proof can name what it absorbed and refuse a quarantined test that stopped running; the PR leg runs no suite.
   - workflow: browser-test.yml
     job: browser-test
     step: Collect every shard's JSON report
@@ -124,6 +145,21 @@ entries:
     step: Run the affected packages' test suites (shard ${{ matrix.shard }}/4)
     kind: step-if
     reason: The affected-only pull_request leg; the merge_group twin above runs the full sweep. Exactly one of the pair runs on each event.
+  - workflow: test.yml
+    job: test-shard
+    step: Hand this shard's quarantine lane to the fan-in
+    kind: step-if
+    reason: Uploads the lane this merge_group shard ran under, for the fan-in's union proof; on pull_request no lane is read and none is uploaded.
+  - workflow: test.yml
+    job: test-shard
+    step: Read the quarantine lane
+    kind: step-if
+    reason: The quarantine lane applies to the merge_group full sweep, the only leg that retries and the only one whose failures can eject a queue build; the affected-only PR leg blocks on every failure as it always did.
+  - workflow: test.yml
+    job: test-shard
+    step: Refuse any failure the quarantine lane does not cover
+    kind: step-if
+    reason: The gate for the merge_group sweep's exit code; the PR leg's own sweep step still fails the shard directly, so nothing is ungated on either event.
   - workflow: test.yml
     job: test-shard
     step: Prove the suite actually executed

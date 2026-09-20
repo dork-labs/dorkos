@@ -409,9 +409,69 @@ jobs:
       # this STEP rather than cancelling the JOB — the difference being that a
       # failed step still lets the uploads below run, and a cancelled job does
       # not.
+      # THE QUARANTINE LANE, READ BEFORE THE SUITE RUNS (plan §4.9 L1).
+      #
+      # The list lives on the ci-steward-data branch, not in this tree, so a
+      # known flake can be taken out of the blocking path without a PR and
+      # without a merge. This step fetches it shallowly and writes it where the
+      # gate below and the fan-in's assert script read it.
+      #
+      # It ALWAYS exits 0. It is the only step between the network and the
+      # lane, and a job that died because a fetch failed would turn "we could
+      # not read the list" into a red queue build — exactly the wasted build
+      # the lane exists to prevent. On any problem it writes an EMPTY list and
+      # says why, and an empty list means every test blocks as it always did.
+      - name: Read the quarantine lane
+        run: |
+          node packages/ci-steward/src/cli.ts quarantine-list \
+            --runner playwright \
+            --out "$RUNNER_TEMP/quarantine.json" \
+            --lines "$RUNNER_TEMP/quarantine.txt" \
+            --title "Quarantine lane — browser shard ${{ matrix.shard }}/${{ strategy.job-total }}"
+          # Its own shard identity beside it, so the fan-in can prove it has a
+          # COMPLETE set of copies before intersecting them.
+          printf '%s/%s\n' '${{ matrix.shard }}' '${{ strategy.job-total }}' \
+            > "$RUNNER_TEMP/shard.txt"
+
+      # No `--reporter` flag, deliberately: see the note above the old command.
+      #
+      # THE EXIT CODE IS CAPTURED RATHER THAN ALLOWED TO FAIL THE STEP, and the
+      # next step is what decides. That is the whole mechanism of the lane: the
+      # suite still RUNS every test, still retries, and still writes a report
+      # naming every failure — nothing is skipped, ignored or grep-filtered —
+      # and then one gate reads that report and asks whether every failure in it
+      # is a test data has classified flaky. If any failure is not, the gate
+      # fails and this shard is red exactly as before.
+      #
+      # `continue-on-error` would have been the shorter way to write this and
+      # the wrong one: it hides the step's result from the job, while this
+      # leaves the suite's own exit code visible, printed, and handed to the
+      # gate as an input.
       - name: Run the browser suite
+        id: suite
         timeout-minutes: 35
-        run: pnpm --filter @dorkos/e2e run e2e --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+        run: |
+          set +e
+          pnpm --filter @dorkos/e2e run e2e --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+          code=$?
+          echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -ne 0 ]; then
+            echo "::notice::the browser suite exited $code; the quarantine gate below decides whether that fails this shard."
+          fi
+          exit 0
+
+      # The gate. It passes only when every failure the report names is
+      # quarantined, and it refuses a non-zero suite whose report names no
+      # failure at all — a crashed runner, a dead webServer leg or a timeout is
+      # not a flake, and the lane must never excuse one.
+      - name: Refuse any failure the quarantine lane does not cover
+        run: |
+          node packages/ci-steward/src/cli.ts quarantine-gate \
+            --runner playwright \
+            --suite-exit "${{ steps.suite.outputs.exit-code }}" \
+            --list "$RUNNER_TEMP/quarantine.json" \
+            --reports apps/e2e/test-results \
+            --title "Quarantine gate — browser shard ${{ matrix.shard }}/${{ strategy.job-total }}"
 
       # The machine-readable half of this shard's result, handed to the gate job
       # below — which is the only place the "did the suite really run" assertion
@@ -439,6 +499,21 @@ jobs:
       # first attempt may fail without failing the job; the second runs only
       # when it did, with the same inputs, so a real problem — a missing
       # results.json above all — still fails the shard on the retry.
+      # The lane this shard read, handed to the fan-in, which has no install and
+      # cannot read the data branch itself. Its own artifact rather than a
+      # second path on the report upload, so `if-no-files-found: error` there
+      # keeps meaning "results.json is missing".
+      - name: Hand this shard's quarantine lane to the fan-in
+        uses: actions/upload-artifact@v7
+        with:
+          name: quarantine-lane-shard-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/quarantine.txt
+            ${{ runner.temp }}/shard.txt
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
       - name: Upload this shard's JSON report
         id: upload-json-report
         continue-on-error: true
@@ -555,6 +630,71 @@ jobs:
       - uses: actions/checkout@v7
         if: ${{ github.event_name == 'merge_group' }}
 
+      # The fan-in has no `pnpm install` — it is a jq-and-bash job that costs
+      # seconds — so it cannot run the engine to read the lane itself. The
+      # shards already did, so each hands its copy over as an artifact and this
+      # job INTERSECTS them.
+      #
+      # Intersection, not union, and not "take the first": a list edited while
+      # the build was in flight is the only way the copies can differ, and the
+      # intersection is the reading that absorbs LESS and blocks MORE. The one
+      # thing this must never do is invent a lane entry that no shard actually
+      # ran under.
+      #
+      # THE SET OF COPIES MUST BE COMPLETE, for the same reason
+      # assert-browser-tests-executed.sh checks its shard set: intersecting over
+      # whatever arrived means one lost artifact WIDENS the lane, which is
+      # exactly backwards. Each copy carries its own `i/N`, so a missing,
+      # duplicated or stale one is refused by name.
+      - name: Collect every shard's quarantine lane
+        if: ${{ github.event_name == 'merge_group' }}
+        uses: actions/download-artifact@v8
+        with:
+          pattern: quarantine-lane-shard-*
+          path: lane
+
+      - name: Agree on the lane this build ran under
+        if: ${{ github.event_name == 'merge_group' }}
+        run: |
+          shopt -s nullglob
+          lanes=(lane/*/quarantine.txt)
+          shards=(lane/*/shard.txt)
+          if [ ${#lanes[@]} -eq 0 ] || [ ${#shards[@]} -ne ${#lanes[@]} ]; then
+            echo "::error::not every shard handed over its quarantine lane, so this job cannot tell an absorbed failure from a real one. Every shard writes one; a short set means the lane step did not run."
+            exit 1
+          fi
+          total=$(cut -d/ -f2 "${shards[@]}" | sort -u)
+          if [ "$(printf '%s\n' "$total" | wc -l | tr -d ' ')" -ne 1 ]; then
+            echo "::error::the shards disagree about how many of them there are ($(printf '%s' "$total" | tr '\n' ' ')). These copies are not from one run, so their intersection is not one lane."
+            exit 1
+          fi
+          if [ "${#lanes[@]}" -ne "$total" ]; then
+            echo "::error::the run had $total shard(s) but only ${#lanes[@]} handed over a quarantine lane. Intersecting over the ones that arrived would WIDEN the lane, so this refuses instead."
+            exit 1
+          fi
+          seen=$(cut -d/ -f1 "${shards[@]}" | sort -n | tr '\n' ' ')
+          wanted=$(seq 1 "$total" | tr '\n' ' ')
+          if [ "$seen" != "$wanted" ]; then
+            echo "::error::the quarantine lanes are not shards 1..$total exactly: got [ $seen], wanted [ $wanted]. A repeated shard would let one copy vote twice."
+            exit 1
+          fi
+          cat "${lanes[@]}" | grep -v '^[[:space:]]*$' | sort | uniq -c |
+            awk -v n="$total" '$1 == n { sub(/^ *[0-9]+ /, ""); print }' \
+            > "$RUNNER_TEMP/quarantine.txt"
+          count=$(grep -c '' "$RUNNER_TEMP/quarantine.txt" || true)
+          {
+            printf '### Quarantine lane — this queue build (browser)\n\n'
+            if [ "$count" -eq 0 ]; then
+              printf 'Nothing is quarantined. Every test blocks as normal.\n\n'
+            else
+              printf '%s test(s) all %s shard(s) agreed were quarantined. Each ran and was reported; none could fail this build:\n\n' "$count" "$total"
+              while IFS= read -r quarantined; do
+                printf -- '- %s\n' "$quarantined"
+              done < "$RUNNER_TEMP/quarantine.txt"
+              printf '\nEach shard job above prints the same set with its evidence and expiry.\n\n'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Collect every shard's JSON report
         if: ${{ github.event_name == 'merge_group' }}
         uses: actions/download-artifact@v8
@@ -598,7 +738,8 @@ jobs:
             echo "::error::every shard reported success but not one of them uploaded a results.json. Nothing proves the suite ran, so this fails rather than certifying it."
             exit 1
           fi
-          bash scripts/assert-browser-tests-executed.sh "${reports[@]}"
+          bash scripts/assert-browser-tests-executed.sh \
+            --quarantined "$RUNNER_TEMP/quarantine.txt" "${reports[@]}"
 
   # THE PR-TIME SIGNAL (DOR-1647). See the header: the suite above defers to the
   # queue on a PR, and the one regression class that costs is a copy rewrite

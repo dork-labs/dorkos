@@ -38,6 +38,7 @@ import {
 } from './daily-report.ts';
 import { triage, TriggersSchema, triggerSummary, type Triggers } from './triggers.ts';
 import {
+  realGit,
   DataBranchMissing,
   prepareDataDir,
   publish,
@@ -46,7 +47,7 @@ import {
   type DataBranchRef,
   type Git,
 } from './data-branch.ts';
-import type { Gh } from './gh.ts';
+import { createGh, type Gh } from './gh.ts';
 import { readLedger } from './ledger.ts';
 import type { HandFiles } from './load.ts';
 import { aggregateDays, defaultCloneName, rotateTimings } from './local.ts';
@@ -61,7 +62,7 @@ import {
   type StewardContext,
 } from './steward.ts';
 import { addDays, count, dayOf, daysBetween, isoWeek } from './time.ts';
-import type { WorkflowModel } from './workflows.ts';
+import { loadWorkflows, type WorkflowModel } from './workflows.ts';
 
 /** Where a command writes. */
 interface Out {
@@ -83,6 +84,33 @@ export interface Env {
   stepSummary?: string;
   /** A clone export name from the environment (`CI_STEWARD_CLONE`). */
   cloneName?: string;
+}
+
+/** What the phase-1 and quarantine commands reach outside the process through; tests replace it. */
+export type Deps = Partial<Pick<Env, 'gh' | 'git' | 'stepSummary' | 'cloneName'>>;
+
+/**
+ * The environment every command shares: the hand files, the workflows, the
+ * clock, and the two things that leave the process (GitHub and git).
+ *
+ * @param root - Repo root.
+ * @param files - The loaded hand files.
+ * @param now - The clock.
+ * @param io - Where the command writes.
+ * @param deps - Injected GitHub and git access; tests pass fakes.
+ */
+export function buildEnv(root: string, files: HandFiles, now: Date, io: Out, deps: Deps): Env {
+  return {
+    root,
+    files,
+    workflows: loadWorkflows(root, files.config.workflows_dir, () => undefined),
+    now,
+    io,
+    gh: deps.gh ?? ((budget) => createGh({ budget })),
+    git: deps.git ?? realGit,
+    stepSummary: deps.stepSummary,
+    cloneName: deps.cloneName,
+  };
 }
 
 function ref(env: Env): DataBranchRef {
@@ -494,7 +522,9 @@ export function cmdStatus(env: Env, opts: { ref?: string; data?: string }): numb
   const reader = opts.data
     ? dirReader(opts.data)
     : gitReader(env.root, opts.ref ?? `origin/${env.files.config.data_branch}`);
-  env.io.out(renderStatus(reader, readLedger(env.root, env.files), env.now));
+  env.io.out(
+    renderStatus(reader, readLedger(env.root, env.files), env.now, env.files.config.quarantine)
+  );
   return 0;
 }
 

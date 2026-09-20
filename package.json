@@ -42,6 +42,8 @@
     "ci:pulse": "node packages/ci-steward/src/cli.ts pulse",
     "ci:report": "node packages/ci-steward/src/cli.ts daily-report",
     "ci:local-export": "node packages/ci-steward/src/cli.ts local-export",
+    "ci:flaky": "node packages/ci-steward/src/cli.ts flaky",
+    "ci:quarantine": "node packages/ci-steward/src/cli.ts quarantine",
     "measure:agent-hours": "tsx scripts/measure-agent-hours.ts",
     "search:bench": "DORKOS_SEARCH_BENCH=1 tsx scripts/search-corpus-bench.ts",
     "search:latency": "DORKOS_SEARCH_BENCH=1 tsx scripts/search-latency-bench.ts",

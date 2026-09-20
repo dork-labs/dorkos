@@ -38,7 +38,34 @@
 #      honest with nobody remembering to update a number.
 #   3. Every collected spec ran at least one test that was not skipped — except
 #      the specs in OPT_IN_SPECS, which must have run NONE.
-#   4. At least one test executed overall, and none failed.
+#   4. At least one test executed overall, and none failed — except the tests
+#      named in --quarantined, whose failures are absorbed by the quarantine
+#      lane (see QUARANTINE below).
+#
+# QUARANTINE (plan §4.9 L1). `--quarantined <file>` names the tests the CI
+# Steward quarantine lane is currently absorbing, one `<spec> › <title>` per
+# line, as `ci-steward quarantine-list --runner playwright --lines` writes them.
+#
+# `--runner playwright` on that command is load-bearing, not tidiness. These
+# lines carry no runner, so a vitest entry reaching this file would read as a
+# spec that must appear in the Playwright reports, and the "still runs" check
+# below would fail every queue build from the first vitest quarantine onwards.
+# The workflow knows which runner it is; the list is filtered there.
+#
+# It changes exactly two things and nothing else:
+#
+#   * a failure of a named test does not fail assertion 4 — it is printed, and
+#     raised as an annotation, so an absorbed failure costs visibility, not
+#     nothing. A failure of any OTHER test fails exactly as it always did;
+#   * a named test that does not appear in the run AT ALL fails the gate. That
+#     is the interlock that stops quarantine from becoming the reason a test
+#     silently stopped running: the lane's whole claim is that a quarantined
+#     test still runs and is still reported, and this is where that claim is
+#     checked against the reports rather than trusted.
+#
+# Quarantine never removes a spec from the run, so assertions 0-3 are untouched
+# by it: nothing is skipped, ignored or grep-filtered, and the union is exactly
+# the union it would be with an empty lane.
 #
 # A SPEC FILE IS NOT THE ONLY THING THAT DECLARES TESTS. apps/e2e has a second
 # sanctioned shape, documented in its README under "Adding a mock-server suite":
@@ -92,7 +119,7 @@
 # calls them and however many shards it grows to.
 #
 # Usage:
-#   scripts/assert-browser-tests-executed.sh [<results.json>...]
+#   scripts/assert-browser-tests-executed.sh [--quarantined <file>] [<results.json>...]
 #
 # With no argument it reads apps/e2e/test-results/results.json, where the `json`
 # reporter in apps/e2e/playwright.config.ts writes.
@@ -244,6 +271,35 @@ fail() {
 }
 
 command -v jq >/dev/null 2>&1 || fail 'jq is required but was not found on PATH.'
+
+quarantined_file=''
+while [ $# -gt 0 ]; do
+  case "$1" in
+  --quarantined)
+    quarantined_file=${2:-}
+    [ -n "$quarantined_file" ] || fail '--quarantined needs a file.'
+    [ -f "$quarantined_file" ] || fail "no quarantine list at $quarantined_file.
+The workflow writes it with \`ci-steward quarantine-list --lines\`, which always
+succeeds and writes an empty file when nothing is quarantined. A MISSING file
+means that step did not run, and this gate will not guess which it was."
+    shift 2
+    ;;
+  --*) fail "unknown option: $1" ;;
+  *) break ;;
+  esac
+done
+
+# One `<spec> › <title>` per line; blank lines and blanks are ignored, so an
+# empty lane is an empty file rather than a special case.
+quarantined=''
+if [ -n "$quarantined_file" ]; then
+  quarantined=$(grep -v '^[[:space:]]*$' "$quarantined_file" || true)
+fi
+
+is_quarantined() {
+  [ -n "$quarantined" ] || return 1
+  printf '%s\n' "$quarantined" | grep -Fxq -- "$1"
+}
 
 # One path per shard, or none for the single default report. See SHARDING above.
 reports=("$@")
@@ -540,8 +596,105 @@ read -r stat_expected stat_unexpected stat_flaky stat_skipped < <(
 
 [ "$total_ran" -gt 0 ] || fail "the run executed zero tests."
 
-if [ "$stat_unexpected" -ne 0 ]; then
-  fail "$stat_unexpected test(s) failed. The suite ran; it did not pass."
+# Every test the run mentions, and every one that failed, by the same
+# `<spec> › <title>` identity the quarantine list uses. Read per test rather
+# than from .stats, because the lane has to name what it absorbed and .stats
+# only counts.
+# NOT-SKIPPED on purpose. A quarantined test that Playwright collected and then
+# skipped — a `test.skip`, a guard whose condition inverted, a `beforeAll` that
+# gave up — is a test the lane claims to be watching and nothing is running. It
+# must read as absent, or quarantine becomes a way to park a test out of the
+# suite while the list says it is fine.
+all_ids=$(
+  for report in "${reports[@]}"; do
+    jq -r '[ .suites[] | recurse(.suites[]?) | .specs[]? ][]
+           | . as $s | .tests[]? | select(.status != "skipped")
+           | "\($s.file) › \($s.title)"' "$report"
+  done | sort -u
+)
+# Two readings of the same failures, and the difference matters.
+#
+# `failed_rows` is one line per failing TEST RUN — a spec that fails under two
+# projects is two — which is what `.stats.unexpected` counts, so the two are
+# comparable. `failed_ids` is the unique set of `<spec> › <title>`, which is what
+# the quarantine list names. Comparing the deduplicated set against .stats would
+# red a healthy run the first time one spec failed under two projects.
+failed_rows=$(
+  for report in "${reports[@]}"; do
+    jq -r '[ .suites[] | recurse(.suites[]?) | .specs[]? ][]
+           | . as $s | .tests[]? | select(.status == "unexpected")
+           | "\($s.file) › \($s.title)"' "$report"
+  done
+)
+failed_count=$(printf '%s' "$failed_rows" | grep -c '' || true)
+failed_ids=$(printf '%s' "$failed_rows" | sort -u)
+
+# A quarantined test must still RUN and still be REPORTED. Absent from the run
+# means the lane stopped watching it, which is the one thing quarantine must
+# never quietly buy.
+if [ -n "$quarantined" ]; then
+  absent=''
+  while IFS= read -r q; do
+    [ -n "$q" ] || continue
+    printf '%s\n' "$all_ids" | grep -Fxq -- "$q" || absent="$absent  $q"$'\n'
+  done <<<"$quarantined"
+  if [ -n "$absent" ]; then
+    fail "these tests are QUARANTINED but did not RUN in this suite:
+${absent%$'\n'}
+A quarantined test still runs and is still reported; it just cannot fail the
+build. Missing — or collected and then skipped — means it was renamed, deleted,
+filtered out or guarded away, and the lane is now watching nothing. Release it
+(pnpm ci:quarantine remove) or restore the test."
+  fi
+fi
+
+# Assertion 4, with the lane applied: a failure that is not quarantined fails,
+# exactly as before.
+# Partitioned over ROWS, not over the unique set, so the counts printed below
+# are the counts Playwright itself reported. The lists are deduplicated only for
+# display, where a name repeated per project reads as noise.
+absorbed=''
+unexcused=''
+if [ -n "$failed_rows" ]; then
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    if is_quarantined "$f"; then
+      absorbed="$absorbed  $f"$'\n'
+    else
+      unexcused="$unexcused  $f"$'\n'
+    fi
+  done <<<"$failed_rows"
+fi
+
+if [ -n "$unexcused" ]; then
+  fail "$stat_unexpected test(s) failed. The suite ran; it did not pass.
+Not excused by the quarantine lane:
+$(printf '%s' "$unexcused" | sort -u)"
+fi
+
+# Playwright's own tally against the walk, ALWAYS — never "unless the lane
+# absorbed something". Gating this on an empty `$absorbed` made the refusal
+# inert in exactly the runs the lane is active for, which is the one place it
+# had to keep working: a report that counts three failures while naming one
+# would have had two of them silently disappear.
+if [ "$stat_unexpected" -ne "$failed_count" ]; then
+  fail "Playwright counted $stat_unexpected failure(s) and the per-test walk of the same
+report(s) named $failed_count. The report disagrees with itself, so this gate refuses
+to certify it — and refuses to excuse anything from it, quarantined or not."
+fi
+
+# Global failures with no test behind them: a config error, a worker crash, a
+# spec file that would not load. A quarantine entry names a TEST, so none of
+# these is excusable, whatever else the run did.
+top_errors=$(
+  for report in "${reports[@]}"; do
+    jq -r '(.errors // []) | length' "$report"
+  done | awk '{ n += $1 } END { print n + 0 }'
+)
+if [ "$top_errors" -ne 0 ]; then
+  fail "Playwright reported $top_errors error(s) that belong to no test — a spec that did
+not load, a worker that died, a config error. The lane can only excuse a named
+test, so this fails whatever the shards said."
 fi
 
 expected_count=$(printf '%s\n' "$expected_specs" | wc -l | tr -d ' ')
@@ -553,6 +706,20 @@ fi
 printf 'assert-browser-tests-executed: %s test(s) executed across %s test file(s), %s of them registered module(s), over %s (%s expected, %s flaky, %s skipped across %s opt-in spec(s); %s @integration spec(s) confirmed absent).\n' \
   "$total_ran" "$expected_count" "${#REGISTERED_MODULES[@]}" "$run_shape" \
   "$stat_expected" "$stat_flaky" "$stat_skipped" "${#OPT_IN_SPECS[@]}" "${#FILTERED_SPECS[@]}"
+
+# Failures the quarantine lane absorbed. Named and annotated for the same
+# reason retried passes are: an absorbed failure must cost visibility rather
+# than nothing, and a test that keeps appearing here is debt to close, not a
+# lane to widen.
+if [ -n "$absorbed" ]; then
+  printf 'assert-browser-tests-executed: WARNING — the quarantine lane absorbed %s failure(s):\n' \
+    "$(printf '%s' "$absorbed" | grep -c '')"
+  printf '%s' "$absorbed" | sort -u
+  if [ -n "${GITHUB_ACTIONS:-}" ]; then
+    printf '::warning title=quarantine lane absorbed a browser failure::%s quarantined test(s) failed and did not fail this build — see the assert step log for names, and ci/ledger for the entry that says to fix or delete each one.\n' \
+      "$(printf '%s' "$absorbed" | grep -c '')"
+  fi
+fi
 
 # Flaky tests passed on a retry, so they do not fail this gate — but a retry
 # budget is exactly what quietly turns a real intermittent failure into a green

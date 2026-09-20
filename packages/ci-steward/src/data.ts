@@ -111,6 +111,27 @@ const HealthSchema = z
 /** The health block. */
 export type Health = z.infer<typeof HealthSchema>;
 
+/**
+ * One test that failed and then passed on one queue build's tree.
+ *
+ * Named, not merely counted: `counts.test_flaky` says how much flake there is,
+ * and only these say WHICH tests, which is the whole input to the quarantine
+ * classifier (`ci-steward flaky`). Deduplicated per (test, SHA) by the
+ * collector, so three shards of one build are one occurrence.
+ */
+const FlakyTestSchema = z
+  .object({
+    runner: z.enum(['playwright', 'vitest']),
+    /** Playwright: relative to apps/e2e/tests. Vitest: relative to the repo root. */
+    file: z.string(),
+    title: z.string(),
+    /** The merge-group build's head SHA, short. */
+    sha: z.string(),
+  })
+  .strict();
+/** One test that failed and then passed on one queue build's tree. */
+export type FlakyTest = z.infer<typeof FlakyTestSchema>;
+
 /** One UTC day of observations. */
 export const SnapshotSchema = z
   .object({
@@ -162,6 +183,18 @@ export const SnapshotSchema = z
         job_minutes: z.number(),
       })
       .strict(),
+    /** Which tests flaked, on which build. Defaulted, so snapshots written before it read fine. */
+    flaky_tests: z.array(FlakyTestSchema).default([]),
+    /**
+     * The queue builds whose reports were read, per runner: the denominator for
+     * a flake rate, and the order `clean_builds_since` is measured in. Kept per
+     * runner because the two suites sample different builds, and counting one
+     * runner's builds against the other's flake would make a quiet browser test
+     * look fixed every time vitest ran.
+     */
+    flaky_builds: z
+      .array(z.object({ sha: z.string(), runner: z.enum(['playwright', 'vitest']) }).strict())
+      .default([]),
     /** Ejections followed by a new commit before re-queue, by the gate that failed (plan §4.2). */
     real_catches: Counts,
     /** Failed-check ejections, by the gate that failed. */
@@ -581,6 +614,8 @@ export function emptySnapshot(day: string, collectedAt: string, budget: number):
       flaky_builds_sampled: 0,
       job_minutes: 0,
     },
+    flaky_tests: [],
+    flaky_builds: [],
     real_catches: {},
     ejections_caused: {},
     queue_builds: [],

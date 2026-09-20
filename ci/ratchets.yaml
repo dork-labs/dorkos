@@ -9,11 +9,19 @@
 # A drop passes only with a valid `ratchet-release` in a ledger entry (that
 # ratchet, that package, that value, id at most 14 days old, unconsumed).
 # Schema: RatchetsSchema in packages/ci-steward/src/schemas.ts.
+#
+# QUARANTINE AND THE COUNTS (plan §4.9 L1). A quarantined test still runs and is
+# still reported, so it is still counted — but it is counted SEPARATELY, in
+# `quarantine-size`, and excluded from the pass-count ratchets on BOTH sides of
+# every comparison. That is the interlock: without it, quarantining a test would
+# move a high-water mark down by one with no release and no record, which is
+# exactly the silent lowering these ratchets exist to prevent. With it, the only
+# thing quarantine can move is its own ceiling, and that ceiling is small.
 ratchets:
   - id: vitest-passed
     kind: floor
     scope: per-package
-    description: Vitest tests passed in the full queue sweep may not fall below the package's high-water mark.
+    description: Vitest tests passed in the full queue sweep may not fall below the package's high-water mark. Quarantined tests are excluded from both the mark and the reading, so quarantining one can never lower it.
     measured_from: the queue test shards' vitest JSON reports, unioned in the test fan-in
     enforced_by: ratchet-assert in wf.test.test on merge_group
     enforced_from_phase: 2
@@ -27,7 +35,7 @@ ratchets:
   - id: playwright-passed
     kind: floor
     scope: per-spec-file
-    description: Playwright tests passed per spec file may not fall below that file's mark.
+    description: Playwright tests passed per spec file may not fall below that file's mark. Quarantined tests are excluded from both the mark and the reading, so quarantining one can never lower it.
     measured_from: the browser shards' Playwright JSON reports, unioned in the browser-test fan-in
     enforced_by: ratchet-assert in wf.browser-test.browser-test on merge_group
     enforced_from_phase: 2
@@ -69,3 +77,24 @@ ratchets:
     file: lefthook.yml
     must_contain:
       - time-wrap
+  # --- the quarantine lane (plan §4.9 L1) ---
+  #
+  # The lane's own ceilings. Quarantine buys time; these are what stop it
+  # becoming the way this repo stores broken tests. Both read the list on the
+  # data branch, which is also where the readers enforce the same numbers at
+  # read time (`ci/config.yaml`, `quarantine:`) — the ratchet is the record that
+  # a change to them is a deliberate, released act rather than a config edit.
+  - id: quarantine-size
+    kind: ceiling
+    scope: repo
+    description: Tests in the quarantine lane may not exceed quarantine.max_entries in ci/config.yaml (10). A list over the cap is ignored entirely by every reader, so this ratchet fails the build rather than letting the lane silently close.
+    measured_from: quarantine.json on the ci-steward-data branch, read by ci-steward quarantine-list in each queue leg
+    enforced_by: ratchet-assert in wf.test.test on merge_group
+    enforced_from_phase: 2
+  - id: quarantine-days
+    kind: ceiling
+    scope: repo
+    description: No entry may be honoured past its expiry (default 7 days), and re-quarantining the same test after an expiry needs a ledger entry with a ratchet-release. Expiry is already enforced at read time; this is what makes a renewal visible.
+    measured_from: each entry's expires_at on the ci-steward-data branch
+    enforced_by: ratchet-assert in wf.test.test on merge_group
+    enforced_from_phase: 2

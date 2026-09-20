@@ -273,6 +273,33 @@ The other order leaves a window where live protection differs from declared inte
 
 The steward may change gates, never the steward or the judge. When the unattended `ci-improve-tick` exists (phase 3), the coverage step fails a `ci-improve/*` PR that touches any path in `ci/steward-owned-paths.json`: `packages/ci-steward/src/**`, `ci/slos.yaml`, `ci/metrics.yaml`, `ci/ratchets.yaml`, `ci/required-checks.json`, `ci/steward-owned-paths.json`, `ci/config.yaml`, `.claude/rules/ci-pipeline.md`, this guide, `claude-code-review.yml`, `REVIEW.md`, `scripts/should-arm-automerge.sh` and `merge-tail.yml`. `typecheck.yml` and `lefthook.yml` are fenced by content instead (the census steps and the time-wrap must stay present), checked by a different runner, because the census cannot guard its own removal.
 
+### The quarantine lane
+
+A test the data has classified flaky can be taken out of the blocking path without a PR, while somebody fixes it. It keeps running, keeps retrying and is still reported; it only loses the power to fail the queue. The list lives on the data branch as `quarantine.json`, so it takes effect on the next queue build.
+
+```bash
+pnpm ci:flaky                     # which tests failed and then passed on the same tree
+pnpm ci:flaky --fetch             # the same, read live from Actions (artifacts expire after 7 days)
+pnpm ci:quarantine list
+pnpm ci:quarantine add --runner playwright --file '<spec>' --title '<test>' --reason '<why>'
+pnpm ci:quarantine remove --runner playwright --file '<spec>' --title '<test>' --publish
+pnpm ci:quarantine reset --publish   # empty the list when no reader will honour it
+```
+
+The full walkthrough is the `ci-quarantine` skill. The rules worth knowing here:
+
+- **Evidence, never assertion.** An occurrence is one merge-group SHA on which the test failed and then passed. Two distinct SHAs in 14 days qualify; a test quiet for longer than its own average gap between flakes is `cooling` and is refused, because that is what a fixed test looks like. **A test that fails deterministically is a real bug and may not be quarantined.**
+- **Nothing is skipped.** Quarantine is per test, decided by a gate that reads the shard reports — not `grepInvert`, not vitest `exclude`. Every file is still collected and the shard union is unchanged.
+- **A failure the list does not name fails as before.** That is the whole gate.
+- **An exit code with nothing behind it is not excused.** The gate reads three numbers out of the same reports: the runner's own failed-test tally, its own per-test walk, and the failures it attributes to no test at all (`numFailedTestSuites`, Playwright's top-level `errors[]` — a file that throws on import fails to _collect_, so it never appears as a failed test). It refuses the first two when they disagree, refuses the third outright, and excuses a non-zero exit only when the tally is exactly the set the lane absorbed.
+- **One hole is open and named.** A package whose process dies before writing any report — an OOM kill, a segfault in the worker — appears in none of those three numbers, so in a run where a quarantined test also failed it is excused, and **nothing downstream catches it**: `assert-tests-executed.sh` counts turbo tasks and a failed task still ran, and the union check unions the files the other shards collected. Closing it means reading the turbo summary's per-task exit codes in the gate and requiring a named failure from every task that failed. It is not built.
+- **The whole lane is printed** in the job summary of every queue build that read it, with its evidence and expiry.
+- **The union checks take the list.** `assert-browser-tests-executed.sh` fails when a quarantined browser test did not run — missing, or collected and then skipped. `assert-shard-union.sh` fails when a quarantined vitest test's FILE contributed nothing to any shard. The vitest side is file-level, not per-test: the fan-in has no install and reads no per-test reports, so a quarantined vitest test that stopped running while its file still collects something is not caught there.
+- **The ratchets are phase 2, and the exclusion is a requirement on them, not a fact about today.** When `ratchet-assert` is built, the pass-count ratchets must exclude quarantined tests on both sides of every comparison, or quarantining one lowers a high-water mark with no release and no record. `ci/ratchets.yaml` says so in each ratchet's description and `packages/ci-steward/src/__tests__/quarantine.test.ts` fails if that sentence is ever removed.
+- **It expires.** 7 days by default, 10 entries at most, and adding one writes a `proposed` "fix or delete this test" ledger entry. `pnpm ci:status` and the weekly report flag a full lane or an entry near expiry. Every threshold is in `ci/config.yaml` under `quarantine:`, with `quarantine-size` and `quarantine-days` in `ci/ratchets.yaml` behind them.
+- **It fails safe.** A list that is missing, unreadable, invalid, over the cap, expired, dated in the future, or outliving `max_expiry_days` measured against the reader's own clock is ignored entirely, and then every test blocks as normal. The step that reads it always exits 0: "we could not read the list" must never be a red queue build.
+- **You are never locked out of it.** A refused list still parses, so `remove` edits it to repair it, and `reset --publish` replaces it with an empty one. Hand-editing the data branch is never the answer.
+
 ### What exists now
 
 | Piece                                                                                                                                            | Phase | Status      |
@@ -284,6 +311,18 @@ The steward may change gates, never the steward or the judge. When the unattende
 | Local hook timings (time-wrap) and the `ci-local-export` scheduled skill                                                                         | 1     | this change |
 | `/ci-record` (writes an entry with its baseline read from `latest.json`)                                                                         | 1     | not built   |
 | Incident mode: sentinel, freeze, quarantine, `/ci-incident`, `/ci-break-glass`, `ci-steward arm`                                                 | 1b    | not built   |
+| Ratchet assertions, the blocking `review-gate`                                                                                                   | 2     | not built   |
+| `/ci-improve`, `ci-improve-tick`, fence enforcement                                                                                              | 3     | not built   |
+| Piece                                                                                                                                            | Phase | Status      |
+| ----------------------------------------------------------------------------------------                                                         | ----- | ----------- |
+| `ci/` hand files, `census`, `ledger-check`, `ledger-new`, typecheck steps                                                                        | 0     | on `main`   |
+| Merge guard, de-staled `creating-pull-requests` skill and watcher                                                                                | 0     | on `main`   |
+| `MERGE_TAIL_TOKEN` replaced by the `dorkos-merge-tail` app                                                                                       | 0     | on `main`   |
+| Daily collector, data branch, verdicts, floors, weekly report, `/ci-status`, `/ci-pulse`                                                         | 1     | this change |
+| Local hook timings (time-wrap) and the `ci-local-export` scheduled skill                                                                         | 1     | this change |
+| `/ci-record` (writes an entry with its baseline read from `latest.json`)                                                                         | 1     | not built   |
+| Quarantine lane from data: `flaky`, `quarantine`, the queue gates, `/ci-quarantine`                                                              | 1b    | this change |
+| Incident mode: sentinel, freeze, `/ci-incident`, `/ci-break-glass`, `ci-steward arm`                                                             | 1b    | not built   |
 | Ratchet assertions, the blocking `review-gate`                                                                                                   | 2     | not built   |
 | `/ci-improve`, `ci-improve-tick`, fence enforcement                                                                                              | 3     | not built   |
 
