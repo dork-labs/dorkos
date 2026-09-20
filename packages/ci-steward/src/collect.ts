@@ -321,6 +321,8 @@ function collectDay(
     snap.counts.test_executions = resume.counts.test_executions;
     snap.counts.test_flaky = resume.counts.test_flaky;
     snap.counts.flaky_builds_sampled = resume.counts.flaky_builds_sampled;
+    snap.flaky_tests = resume.flaky_tests;
+    snap.flaky_builds = resume.flaky_builds;
   }
   const failures: string[] = [...global.failures];
   // Problems with this day's own data: any one keeps the day incomplete, so

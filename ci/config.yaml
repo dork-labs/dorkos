@@ -112,6 +112,42 @@ collect:
     - { workflow: browser-test.yml, pattern: browser-results-shard-*, format: playwright }
     - { workflow: test.yml, pattern: vitest-shard-report-*, format: vitest }
 
+# The quarantine lane (plan §4.9 L1): a test data has classified flaky runs and
+# reports as usual, but does not fail the blocking queue job.
+#
+# The list itself lives on the data branch, as `file` below, so quarantining
+# takes effect on the next queue build with no PR. Every number here is the
+# fence around that: the classifier refuses evidence thinner than
+# `min_occurrences`, the readers drop an entry past its expiry, and a list
+# longer than `max_entries` is ignored whole. Schema: QuarantineConfigSchema in
+# packages/ci-steward/src/schemas.ts.
+quarantine:
+  # Path on the data branch. Read by `ci-steward quarantine-list` in the queue.
+  file: quarantine.json
+  # Hard cap. A longer list is ignored ENTIRELY (fail safe: everything blocks
+  # as normal), because a lane wide enough to hide a break is worse than none.
+  max_entries: 10
+  # How long an entry lives unless `quarantine add` is told otherwise.
+  default_expiry_days: 7
+  # The ceiling on that, enforced at READ time: a list holding an entry with a
+  # longer life is ignored whole. The add path checking it would not be enough —
+  # anything that can write the data branch can write a longer one.
+  max_expiry_days: 14
+  # The evidence window `ci-steward flaky` reads. Actions keeps artifacts for 7
+  # days, so a 14-day window is only fully covered once the collector has been
+  # recording per-test flakes for that long.
+  window_days: 14
+  # N: distinct merge-group SHAs on which the test failed and then passed. Two
+  # is the plan's floor; one is a single bad runner, not a classification.
+  min_occurrences: 2
+  # A frequent flake that has gone quiet was probably FIXED, and quarantining it
+  # spends a slot on nothing. A candidate is `cooling` — and refused — once the
+  # clean queue builds since its last flake exceed its own average gap between
+  # flakes (builds_sampled / occurrences), never on fewer than this many.
+  cooling_min_clean_builds: 2
+  # The daily triage flags an entry expiring within this many hours.
+  near_expiry_hours: 48
+
 # The verdict engine (ci-steward verdicts, plan §4.4).
 verdicts:
   before_days: 7
