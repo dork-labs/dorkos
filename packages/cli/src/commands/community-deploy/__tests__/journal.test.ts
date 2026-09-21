@@ -12,6 +12,7 @@ import {
   launchJournalPath,
   LaunchJournalConflictError,
   LaunchJournalLockedError,
+  LaunchSafeErrorCodeSchema,
   LaunchJournalStaleLockError,
   readLaunchJournal,
   recoverStaleLaunchJournalLock,
@@ -50,6 +51,24 @@ afterEach(async () => {
 });
 
 describe('Community launch journal', () => {
+  it('accepts every safe Fly GraphQL classification without provider response text', () => {
+    expect(
+      [
+        'TERMS_VIEWER_MISSING',
+        'ADD_ON_MISSING',
+        'INVALID_EXPECTED_BINDING',
+        'BINDING_MISMATCH',
+        'PUBLIC_BUCKET',
+      ].map((code) => LaunchSafeErrorCodeSchema.parse(code))
+    ).toEqual([
+      'TERMS_VIEWER_MISSING',
+      'ADD_ON_MISSING',
+      'INVALID_EXPECTED_BINDING',
+      'BINDING_MISMATCH',
+      'PUBLIC_BUCKET',
+    ]);
+  });
+
   it('writes atomically with private permissions and round-trips validated state', async () => {
     const dorkHome = await root();
     const runId = randomUUID();
