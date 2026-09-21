@@ -51,6 +51,7 @@ const mockListRemoteCommunityRooms = vi.fn();
 const mockMoveCommunityNavigation = vi.fn();
 const mockSetGlobalPaletteOpen = vi.fn();
 let mockSearch: { community?: string } = {};
+let mockPathname = '/';
 let mockConnections: Array<{
   ref: string;
   remoteCommunityId: string;
@@ -100,7 +101,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
     ...actual,
     useNavigate: () => mockNavigate,
     useRouterState: ({ select }: { select: (state: unknown) => unknown }) =>
-      select({ location: { search: mockSearch } }),
+      select({ location: { pathname: mockPathname, search: mockSearch } }),
   };
 });
 vi.mock('@/layers/entities/community', () => ({
@@ -142,6 +143,7 @@ beforeEach(() => {
   mockMenuNodes = null;
   mockRosterPending = false;
   mockIsMobile = false;
+  mockPathname = '/';
   mockSearch = {};
   mockConnections = [];
   mockCommunityOrder = [];
@@ -546,7 +548,7 @@ describe('SidebarHeaderBlock', () => {
     await waitFor(() => expect(selected).toHaveFocus());
   });
 
-  it('commits the qualified target before an offline destination read', async () => {
+  it('returns to the prior route when the target destination read fails', async () => {
     mockConnections = [
       {
         ref: 'a',
@@ -563,7 +565,17 @@ describe('SidebarHeaderBlock', () => {
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
     fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
     await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/channels', search: { community: 'a' } });
+    expect(mockNavigate).toHaveBeenNthCalledWith(1, {
+      to: '/channels',
+      search: { community: 'a' },
+    });
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenNthCalledWith(2, {
+        to: '/',
+        search: {},
+        replace: true,
+      })
+    );
     expect(toast.error).not.toHaveBeenCalled();
   });
 

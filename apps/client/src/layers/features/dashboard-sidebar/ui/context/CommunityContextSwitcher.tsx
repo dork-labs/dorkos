@@ -123,9 +123,12 @@ export function CommunityContextSwitcher({
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const openConnections = useOpenConnections();
-  const search = useRouterState({ select: (state) => state.location.search }) as {
+  const location = useRouterState({ select: (state) => state.location }) as {
+    pathname: string;
     community?: string;
+    search: { community?: string; id?: string; thread?: string };
   };
+  const search = location.search;
   const selectedRef = search.community;
   const navigation = useCommunityNavigation();
   const moveNavigation = useMoveCommunityNavigation();
@@ -179,11 +182,15 @@ export function CommunityContextSwitcher({
     const owner = getCommunityAuthority();
     if (owner.ownerKey === null) return;
     const capturedOwner = { epoch: owner.epoch, ownerKey: owner.ownerKey };
+    const previousLocation = { pathname: location.pathname, search: location.search };
     pendingSelection.current = true;
     setPendingRef(connection.ref);
+    let targetCommitted = false;
+    let capturedRoute: ReturnType<typeof getCommunityRouteEpoch> | null = null;
     try {
       await navigate({ to: '/channels', search: { community: connection.ref } });
-      const capturedRoute = getCommunityRouteEpoch();
+      targetCommitted = true;
+      capturedRoute = getCommunityRouteEpoch();
       if (isMobile) focusPageHeading();
       const remembered = await transport.resolveCommunityNavigation(connection.ref);
       const fallback = remembered
@@ -203,7 +210,19 @@ export function CommunityContextSwitcher({
           },
         });
     } catch {
-      // The qualified skeleton and any owner-scoped cache remain usable offline.
+      // A target may render its labelled skeleton before its remote destination
+      // resolves, but a failed read cannot leave it selected. Restore only while
+      // this exact route and owner remain current; a newer choice always wins.
+      if (
+        targetCommitted &&
+        capturedRoute?.isCurrent() &&
+        isCommunityAuthorityCurrent(capturedOwner)
+      )
+        await navigate({
+          to: previousLocation.pathname,
+          search: previousLocation.search,
+          replace: true,
+        } as never).catch(() => {});
     } finally {
       pendingSelection.current = false;
       setPendingRef(null);
