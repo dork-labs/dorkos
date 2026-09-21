@@ -26,7 +26,7 @@ const RecordSchema = z.strictObject({
   label: z.string().min(1),
   pinnedOrigin: z.url(),
   connectedHumanMemberId: z.string().min(1).nullable(),
-  status: z.enum(['pending', 'connected']),
+  status: z.enum(['pending', 'connected', 'reconnect-required']),
   pairingId: z.string().min(1).nullable(),
   expiresAt: z.iso.datetime().nullable(),
   agentIds: z.array(z.string().min(1)),
@@ -41,6 +41,14 @@ export class RemoteConnectionNotFoundError extends Error {
   constructor() {
     super('Community connection not found');
     this.name = 'RemoteConnectionNotFoundError';
+  }
+}
+
+/** A stored personal grant that the remote community no longer accepts. */
+export class RemoteConnectionAuthorizationError extends Error {
+  constructor() {
+    super('Community connection must be reconnected');
+    this.name = 'RemoteConnectionAuthorizationError';
   }
 }
 
@@ -227,10 +235,29 @@ export class RemoteConnectionStore {
   /** Resolve a personal bearer inside the local server; never return it to a route DTO. */
   async personalToken(ref: CommunityRef, ownerKey: string): Promise<string> {
     const record = await this.get(ref, ownerKey);
+    if (record.status === 'reconnect-required') throw new RemoteConnectionAuthorizationError();
     if (record.status !== 'connected') throw new RemoteConnectionNotFoundError();
     const token = await this.credentials.get(`community:${ref}:personal`);
     if (!token) throw new RemoteConnectionNotFoundError();
     return token;
+  }
+
+  /** Persist a rejected personal grant so every later read fails closed with a useful status. */
+  async requireReconnect(ref: CommunityRef, ownerKey: string): Promise<void> {
+    return this.exclusive(async () => {
+      const records = await this.read();
+      const index = records.findIndex((item) => item.ref === ref && item.ownerKey === ownerKey);
+      if (index < 0 || records[index]!.status === 'pending')
+        throw new RemoteConnectionNotFoundError();
+      const record = records[index]!;
+      if (record.status !== 'reconnect-required') {
+        records[index] = RecordSchema.parse({ ...record, status: 'reconnect-required' });
+        await this.write(records);
+      }
+      await this.credentials.delete(`community:${ref}:personal`);
+      for (const agentId of record.agentIds)
+        await this.credentials.delete(`community:${ref}:agent:${agentId}`);
+    });
   }
 
   /** Protect a newly enrolled agent's one-time bearer under this connection. */

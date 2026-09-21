@@ -18,7 +18,10 @@ import { readOwnerAccount } from '../services/core/auth/index.js';
 import { getRoomService } from '../services/rooms/index.js';
 import { resolveCaller } from './room-caller.js';
 import { isLocalCaller, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
-import { RemoteConnectionNotFoundError } from '../services/communities/remote/connection-store.js';
+import {
+  RemoteConnectionAuthorizationError,
+  RemoteConnectionNotFoundError,
+} from '../services/communities/remote/connection-store.js';
 import {
   RemoteCommunityPairingService,
   RemotePairingBusyError,
@@ -54,6 +57,11 @@ export function resolveCommunityOwner(req: Request, res: Response): string | nul
 function failure(res: Response, error: unknown): void {
   if (error instanceof RemotePairingBusyError) {
     res.status(409).json({ error: 'This pairing is still finishing. Try again in a moment.' });
+  } else if (error instanceof RemoteConnectionAuthorizationError) {
+    res.status(409).json({
+      error: 'Reconnect this community to continue.',
+      code: 'COMMUNITY_RECONNECT_REQUIRED',
+    });
   } else if (error instanceof RemoteConnectionNotFoundError) {
     res.status(404).json({ error: 'Community connection not found.' });
   } else if (error instanceof PinnedOriginError) {

@@ -106,6 +106,21 @@ describe('community pairing controls', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not confirm disconnection');
     expect(screen.getByText('Community A')).toBeInTheDocument();
   });
+  it('explains how to replace a rejected grant and removes its local connection', async () => {
+    const user = userEvent.setup();
+    const reconnectRequired = {
+      ...a,
+      status: 'reconnect-required' as CommunityConnectionDescriptor['status'],
+    };
+    const transport = createMockTransport({
+      listCommunityConnections: vi.fn().mockResolvedValue([reconnectRequired]),
+    });
+    mount(transport);
+    expect(await screen.findByText('Reconnect required')).toBeInTheDocument();
+    expect(screen.getByText('Disconnect here, then connect again.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Disconnect Community A' }));
+    await waitFor(() => expect(transport.disconnectCommunity).toHaveBeenCalledWith(a.ref));
+  });
   it('handles expired approval and removes the pending row after a refreshed list', async () => {
     const pending = { ...a, status: 'pending' as const };
     mount(

@@ -8,14 +8,14 @@
 import { z } from 'zod';
 import { CommunityRefSchema } from './community-adapter.js';
 
-/** A connected or pending community visible to its local install owner. */
+/** A community connection visible to its local install owner. */
 export const CommunityConnectionDescriptorSchema = z.strictObject({
   ref: CommunityRefSchema,
   remoteCommunityId: z.string().min(1),
   label: z.string().min(1),
   pinnedOrigin: z.url(),
   connectedHumanMemberId: z.string().min(1).nullable(),
-  status: z.enum(['pending', 'connected']),
+  status: z.enum(['pending', 'connected', 'reconnect-required']),
   expiresAt: z.iso.datetime().nullable(),
 });
 /** Browser-safe connection descriptor. */
@@ -56,7 +56,7 @@ export type CommunityConnectionPollResponse = z.infer<typeof CommunityConnection
 
 /** Owner-scoped community connection operations over the local server only. */
 export interface CommunityConnectionTransport {
-  /** List this install owner's pending and connected communities. */
+  /** List this install owner's pending, connected and reconnect-required communities. */
   listCommunityConnections(): Promise<CommunityConnectionDescriptor[]>;
   /** Begin browser approval without returning the installation's verifier or bearer. */
   startCommunityConnection(

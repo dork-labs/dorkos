@@ -874,6 +874,73 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     ]);
   });
 
+  it('revokes every derived local authority before a rejected owner grant returns', async () => {
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
+    });
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF,
+      localAgentId: 'mesh-manifest-ana',
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);
+    const bridge = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      enrollments,
+      () => agent.id
+    );
+    const room = testRoom();
+    let streamClosed = false;
+    const adapter: RemoteRoomSubscriptionAdapter = {
+      async listRooms() {
+        return [room];
+      },
+      subscribeNativeRoom(_roomId, _cursor, signal): AsyncIterable<RemoteNativeRoomEvent> {
+        return (async function* () {
+          try {
+            yield snapshot(room, [entry(1)], 1);
+            yield { type: 'replay_complete' as const, capturedSeq: 1 };
+            await new Promise<void>((resolve) => {
+              if (signal?.aborted) resolve();
+              else signal?.addEventListener('abort', () => resolve(), { once: true });
+            });
+          } finally {
+            streamClosed = true;
+          }
+        })();
+      },
+    };
+    const runtime = new RemoteRoomSubscriptionRuntime({
+      bridge,
+      enrollments,
+      adapters: () => adapter,
+      resolveLocalAgentAuthor: () => agent.id,
+      isRoomJoined: () => true,
+      toLiveEntry: (value) => live(value, Number(value.id.slice('entry-'.length))),
+      retryMs: 1,
+    });
+
+    runtime.start();
+    await settleUntil(
+      () => runtime.observation(REF, ROOM_ID, harness.human)?.replayComplete === true,
+      'the connection stream is ready'
+    );
+    const localRoomId = mirrors.localRoomIdForOwner(REF, ROOM_ID, harness.human);
+    expect(localRoomId).not.toBeNull();
+
+    await runtime.revokeConnection(REF, harness.human);
+    await settleUntil(() => streamClosed, 'the rejected connection stream closes');
+
+    expect(enrollments.activeForOwner(REF, harness.human)).toEqual([]);
+    expect(mirrors.canRead(localRoomId!, agent.id)).toBe(false);
+    expect(mirrors.cachedEntriesForOwner(REF, ROOM_ID, harness.human, { limit: 10 })).toEqual([]);
+    runtime.stop();
+  });
+
   it('fences an ejected agent before a parked native stream can dispatch its next mention', async () => {
     const harness = createRoomHarness({
       agents: agentLookupFor({
