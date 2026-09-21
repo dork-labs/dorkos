@@ -5868,6 +5868,22 @@
         "apps/server/src/services/communities/remote/pairing-service.ts",
         "packages/shared/src/community-connections.ts"
       ]
+    },
+    {
+      "id": "260920-205153",
+      "slug": "route-owned-community-context",
+      "title": "Route-owned Community context with keyed privacy boundaries",
+      "status": "draft",
+      "created": "2026-09-20",
+      "supersedes": null,
+      "affects": [
+        "apps/client/src/AppShell.tsx",
+        "apps/client/src/layers/entities/community/**",
+        "apps/client/src/layers/features/dashboard-sidebar/**",
+        "apps/client/src/layers/widgets/mobile-tabs/**",
+        "apps/client/src/layers/widgets/room-view/**",
+        "packages/shared/src/community-connections.ts"
+      ]
     }
   ]
 }

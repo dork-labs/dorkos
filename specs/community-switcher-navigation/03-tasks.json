@@ -1,0 +1,216 @@
+{
+  "spec": "specs/community-switcher-navigation/02-specification.md",
+  "slug": "community-switcher-navigation",
+  "generatedAt": "2026-09-20T20:51:53Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Context Foundation",
+      "subject": "[community-switcher-navigation] [P1] Define authorized navigation descriptors and attention summaries",
+      "description": "Extend the browser-safe local contract with installation/community navigation descriptors, independent lifecycle/connection/availability fields, presentation identity, and tenant-authorized unread/mention aggregates. Preserve local ref plus remote immutable UUID and expose no directory or message content.\n\nAcceptance criteria:\n- Descriptors are visible only to the authenticated local owner and memberships are visible only to the authenticated host account.\n- Same-host tenants and independent hosts have stable distinct keys.\n- Revoked/disconnected, offline, archived, suspended, deletion-pending, and pending states are not conflated.\n- Mention count is a subset of unread count; aggregates expose no author, private channel title, or message text.\n- Contract schemas, transport conformance, and negative cross-owner/tenant tests pass.",
+      "activeForm": "Defining Community navigation descriptors",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.2"
+      ],
+      "issue": "DOR-2184",
+      "parentIssue": "DOR-2183"
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Context Foundation",
+      "subject": "[community-switcher-navigation] [P1] Persist owner-scoped order and qualified view state",
+      "description": "Add versioned local configuration for manual connection-ref order and bounded remembered destinations. Namespace room/thread/scroll/draft state by local owner, community ref, and room ID; keep draft bodies and staged files out of shared config.\n\nAcceptance criteria:\n- Installation is fixed first; unknown refs append deterministically and removed refs prune after authoritative refresh.\n- Concurrent windows do not lose unrelated ordering writes.\n- Owner changes cannot render or restore another owner's order, draft, anchor, or destination.\n- A stale/private/removed remembered room is reauthorized and falls back without disclosing it.\n- Config migration, cleanup, and same-named-room isolation tests pass.",
+      "activeForm": "Persisting qualified Community view state",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1"
+      ],
+      "issue": "DOR-2184",
+      "parentIssue": "DOR-2183"
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Context Foundation",
+      "subject": "[community-switcher-navigation] [P1] Make qualified routes own context switching",
+      "description": "Derive the active installation/Community only from the route and implement the route-commit switch transaction: keyed target boundary, context epoch, owner/session/connection authorization generation, old-query cancellation, old-stream teardown, and target-qualified startup.\n\nAcceptance criteria:\n- Deep link, reload, copied URL, back/forward, and two windows agree without a selected-community store.\n- The old body remains correctly labelled until navigation commits, then the next paint is a target skeleton/empty frame with no old DOM content.\n- Late reads and events are discarded after either an epoch mismatch or invalid authorization generation; an ordinary switch may retain only data committed before the switch under its source-qualified key.\n- Sign-out, owner change, removal, and revocation invalidate the affected generation before cleanup; ordinary context switching does not.\n- A failed navigation leaves the old committed context intact and announces failure.\n- A→B→A race tests prove old-epoch reads/events cannot update the returned A cache and an invalidated generation cannot repopulate a cleared cache.",
+      "activeForm": "Making routes own Community context",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "1.2"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-2184",
+      "parentIssue": "DOR-2183"
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "Context Foundation",
+      "subject": "[community-switcher-navigation] [P1] Bind drafts, sends, uploads, receipts, and cursors to their source",
+      "description": "Capture full destination identity, context epoch, authorization generation, and client mutation ID when a send/upload/retry starts. Preserve per-community drafts and restore authorized scroll anchors while preventing late receipts, optimistic rows, errors, and mark-read updates from crossing contexts or surviving revoked authority.\n\nAcceptance criteria:\n- Switching cannot retarget an in-flight mutation.\n- A mutation completed after switching may settle only its exact source-bound idempotent record while its captured authorization generation remains valid; it cannot insert or replace room/history cache data for a newer epoch or clear a newer draft.\n- A delayed response after sign-out, owner change, membership removal, or revocation is discarded and cannot recreate cleared state, including after A→B→A.\n- Same IDs on different tenants never share optimistic rows, attachments, drafts, unread cursors, or scroll state.\n- Switching alone never marks a room read.\n- Removal/disconnect cleanup invalidates authority before erasing affected sensitive state and navigation.",
+      "activeForm": "Binding Community work to its source",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.2",
+        "1.3"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-2184",
+      "parentIssue": "DOR-2183"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Responsive Switcher",
+      "subject": "[community-switcher-navigation] [P2] Build the shared switcher model and desktop popover",
+      "description": "Build one presentation-neutral destination/action model and mount its desktop trigger in persistent sidebar header chrome. Implement selected focus, arrow/Home/End/typeahead navigation, Escape restore, manual move controls, state labels, mention/activity signals, and Cmd/Ctrl+Shift+K.\n\nAcceptance criteria:\n- Installation is first and connected communities follow manual order.\n- Current destination is conveyed by semantics and text/shape, not color alone.\n- Mention and other activity remain distinguishable to visual and screen-reader users.\n- Reordering works without pointer drag and preserves focus.\n- Opening from the global shortcut works on every routed screen without stealing text-entry keystrokes.",
+      "activeForm": "Building the desktop Community switcher",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "1.2",
+        "1.3"
+      ],
+      "parallelWith": [
+        "2.2",
+        "2.3"
+      ],
+      "issue": "DOR-2184",
+      "parentIssue": "DOR-2183"
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Responsive Switcher",
+      "subject": "[community-switcher-navigation] [P2] Render installation and Community contextual navigation",
+      "description": "Keep the existing Now/Today/Library body for the installation and replace the unbounded appended Community groups with one selected Community channel/settings body. Implement saved/offline content, per-row attention, contextual empty/error states, and authorized last-destination fallback.\n\nAcceptance criteria:\n- Local agents, sessions, and rooms remain complete under the installation destination.\n- Only one Community channel tree and detailed query/stream set is active.\n- Offline remains selected and labels saved data honestly; retry does not change identity.\n- Descriptor failure never falls back to another cached Community.\n- Fifty descriptors do not trigger fifty room-history fetches or streams.",
+      "activeForm": "Rendering contextual Community navigation",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "1.3",
+        "1.4"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.3"
+      ],
+      "issue": "DOR-2184",
+      "parentIssue": "DOR-2183"
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Responsive Switcher",
+      "subject": "[community-switcher-navigation] [P2] Build the narrow-width Community sheet",
+      "description": "Mount the shared context trigger in persistent phone top chrome and present destinations/actions in a safe-area-aware bottom sheet. Preserve the existing four bottom destinations and use explicit reorder controls instead of touch drag.\n\nAcceptance criteria:\n- Rows meet 44px targets, work at 390px and 200% zoom, and search appears after eight communities.\n- Selection closes the sheet and focuses the target page heading; dismissal changes nothing and restores trigger focus.\n- The phone mounts one contextual body, never hidden duplicate content.\n- State and badges have accessible names and are not color-only.\n- Software keyboard, safe areas, reduced motion, and long labels do not hide actions.",
+      "activeForm": "Building the mobile Community sheet",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "1.2",
+        "1.3"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.2"
+      ],
+      "issue": "DOR-2184",
+      "parentIssue": "DOR-2183"
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Lifecycle Actions",
+      "subject": "[community-switcher-navigation] [P3] Route add and membership actions through accepted journeys",
+      "description": "Connect Add community, Connect existing, Join with invitation, Create community, Deploy a new host, Invite, Leave, Disconnect, and Sign out to DOR-2179's distinct routes. Gate host/tenant actions by current server-authorized role without deriving content authority.\n\nAcceptance criteria:\n- Add is a menu of distinct authority transitions, never one ambiguous flow.\n- Create cannot provision a host; Deploy cannot create a tenant on the current host.\n- Join/membership and installation pairing remain separate.\n- Hidden controls provide no authorization; every destination rechecks server-side.\n- Independent hosts and same-host tenants remain switchable after each completed action.",
+      "activeForm": "Connecting Community journey actions",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1",
+        "2.2",
+        "2.3"
+      ],
+      "parallelWith": [
+        "3.2"
+      ],
+      "issue": "DOR-2185",
+      "parentIssue": "DOR-2183"
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "Lifecycle Actions",
+      "subject": "[community-switcher-navigation] [P3] Route administration and enforce lifecycle cleanup",
+      "description": "Connect tenant settings, transfer, archive/restore, suspend, delete, and owner controls to DOR-2175. Handle authoritative membership removal, connection revocation, sign-out, and local-owner change by invalidating the affected authorization generation before ending streams and erasing sensitive state.\n\nAcceptance criteria:\n- Archived authorized history and restore/export controls remain reachable read-only.\n- Suspended and deletion-pending states expose only allowed paths and honest labels.\n- Removed membership, revoked connection, sign-out, or owner change first tombstones the affected generation, then closes access, clears affected caches/drafts/anchors, and routes away.\n- Delayed queries, events, mutation receipts, and retries from the old generation are discarded; an owner switch cannot repopulate cleared state even if the route later returns to the same ref.\n- Host-operator status alone never reveals tenant content or settings.\n- Cleanup for A never touches B or the installation.",
+      "activeForm": "Enforcing Community lifecycle navigation",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1",
+        "2.2",
+        "2.3"
+      ],
+      "parallelWith": [
+        "3.1"
+      ],
+      "issue": "DOR-2185",
+      "parentIssue": "DOR-2183"
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "Isolation Proof",
+      "subject": "[community-switcher-navigation] [P4] Prove rapid-switch and cross-community isolation",
+      "description": "Run browser and integration proof with two owners, same-host tenants, an independent host, same-named rooms, delayed reads/events, in-flight sends/uploads, offline/revoked states, reload, deep links, and history navigation.\n\nAcceptance criteria:\n- Frame-by-frame evidence shows no A content after B's identity commits.\n- A→B→A proves old-epoch SSE/query results are discarded even while authority remains valid; a late mutation receipt may settle only its exact source-bound idempotent record and cannot replace final-epoch cache data.\n- A non-abortable response delayed past membership removal, connection revocation, sign-out, or owner switch is discarded and cannot repopulate state after returning to A.\n- Drafts, anchors, threads, unread/mention cursors, attachments, and optimistic receipts never cross owner/tenant boundaries.\n- Removed/revoked access clears before routing and cannot be recovered from back/forward or cache.\n- All behavior works with DorkOS Cloud blocked.",
+      "activeForm": "Proving cross-Community isolation",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.1",
+        "3.2"
+      ],
+      "parallelWith": [
+        "4.2"
+      ],
+      "issue": "DOR-2186",
+      "parentIssue": "DOR-2183"
+    },
+    {
+      "id": "4.2",
+      "phase": 4,
+      "phaseName": "Isolation Proof",
+      "subject": "[community-switcher-navigation] [P4] Prove accessibility, responsive behavior, and scale",
+      "description": "Verify the desktop popover, phone sheet, contextual navigation, order controls, attention signals, and lifecycle states with keyboard, screen reader, pointer, touch, reduced motion, 200% zoom, long labels, and fifty descriptors.\n\nAcceptance criteria:\n- Focus entry/restore, arrow/typeahead selection, global shortcut, announcements, and semantic current/state labels pass.\n- 390px layout, safe areas, software keyboard, and long labels keep all actions usable.\n- Mention and general activity are distinguishable without color and mark-read remains tenant-qualified.\n- Initial shell loads no detailed data or stream for unselected communities.\n- Target skeleton appears in the next paint without waiting for the remote host.",
+      "activeForm": "Proving responsive accessible switching",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.1",
+        "3.2"
+      ],
+      "parallelWith": [
+        "4.1"
+      ],
+      "issue": "DOR-2186",
+      "parentIssue": "DOR-2183"
+    }
+  ]
+}
