@@ -20,6 +20,13 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const SOURCE_RUNNER = join(REPO_ROOT, 'apps/community/acceptance/run.sh');
+/**
+ * The runner sweeps Docker objects left by killed predecessors before it creates
+ * anything, so the fixture repo needs the real sweep script too. Omitting it
+ * makes `run.sh` exit 127 before its first docker call, which reads here as a
+ * readiness failure and hides whatever this suite was actually testing.
+ */
+const SOURCE_SWEEP = join(REPO_ROOT, 'scripts/sweep-ephemeral-docker.sh');
 
 type Readiness = 'eventual-tcp' | 'never-tcp';
 
@@ -39,8 +46,17 @@ log() { printf '%s\\n' "$*" >> "$state/calls"; }
 log "$*"
 case "$1" in
   pull) exit 0 ;;
+  # The sweep runs first and must find nothing here: a fresh fixture repo has no
+  # leftovers, so every listing is empty and nothing is removed. Answering it for
+  # real (rather than letting \`docker info\` fail) keeps this suite honest about
+  # run.sh and the sweep composing.
+  info) exit 0 ;;
+  container)
+    case "\${2:-}" in ls) exit 0 ;; esac ;;
+  volume)
+    case "\${2:-}" in ls) exit 0 ;; create) printf 'fake-volume\\n'; exit 0 ;; rm) exit 0 ;; esac ;;
   network)
-    case "\${2:-}" in create|rm) exit 0 ;; inspect) printf 'true\\n'; exit 0 ;; esac ;;
+    case "\${2:-}" in ls|create|rm) exit 0 ;; inspect) printf 'true\\n'; exit 0 ;; esac ;;
   run) printf 'fake-postgres\\n'; exit 0 ;;
   exec)
     if [[ " $* " == *' pg_isready '* ]]; then
@@ -97,6 +113,11 @@ function fixtureRunner(dir: string): string {
   mkdirSync(dirname(runner), { recursive: true });
   copyFileSync(SOURCE_RUNNER, runner);
   chmodSync(runner, 0o755);
+
+  const sweep = join(dir, 'scripts/sweep-ephemeral-docker.sh');
+  mkdirSync(dirname(sweep), { recursive: true });
+  copyFileSync(SOURCE_SWEEP, sweep);
+  chmodSync(sweep, 0o755);
   return runner;
 }
 
