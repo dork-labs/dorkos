@@ -807,6 +807,24 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     const finalArchive = observerPage.getByRole('dialog', { name: 'Archive Gathering Place?' });
     await finalArchive.getByLabel('Type Gathering Place').fill('Gathering Place');
     await finalArchive.getByLabel('Password').fill('password1234');
+    await observerPage.route(
+      '**/owner/lifecycle',
+      (route) =>
+        route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'STATE_CONFLICT',
+            message: 'Review the latest state and try again.',
+          }),
+        }),
+      { times: 1 }
+    );
+    await finalArchive.getByRole('button', { name: 'Archive community' }).click();
+    await expect(finalArchive.getByRole('alert')).toContainText(
+      'Review the latest state and try again.'
+    );
+    await expect(finalArchive.getByLabel('Password')).toHaveValue('password1234');
     await finalArchive.getByRole('button', { name: 'Archive community' }).click();
     await expect(observerPage.getByRole('heading', { name: 'Archived' })).toBeVisible();
     await expect(observerPage.getByText('Fresh read-only connections are available')).toBeVisible();
@@ -826,6 +844,24 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       .getByLabel(`Type the final eight characters: ${ids.communityId.slice(-8)}`)
       .fill(ids.communityId.slice(-8));
     await finalDeletion.getByLabel('Password').fill('password1234');
+    await observerPage.route(
+      '**/owner/deletion',
+      (route) =>
+        route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'STATE_CONFLICT',
+            message: 'Review the latest state and try again.',
+          }),
+        }),
+      { times: 1 }
+    );
+    await finalDeletion.getByRole('button', { name: 'Schedule permanent deletion' }).click();
+    await expect(finalDeletion.getByRole('alert')).toContainText(
+      'Review the latest state and try again.'
+    );
+    await expect(finalDeletion.getByLabel('Password')).toHaveValue('password1234');
     await finalDeletion.getByRole('button', { name: 'Schedule permanent deletion' }).click();
     await expect(observerPage.getByRole('heading', { name: 'Deletion scheduled' })).toBeVisible();
     await expect(observerPage.getByRole('timer')).toContainText('remaining');
@@ -837,8 +873,33 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       name: 'Cancel community deletion?',
     });
     await cancelDeletion.getByLabel('Password').fill('password1234');
+    await observerPage.route(
+      '**/owner/deletion/cancel',
+      (route) =>
+        route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'STATE_CONFLICT',
+            message: 'Review the latest state and try again.',
+          }),
+        }),
+      { times: 1 }
+    );
+    await cancelDeletion.getByRole('button', { name: 'Cancel deletion' }).click();
+    await expect(cancelDeletion.getByRole('alert')).toContainText(
+      'Review the latest state and try again.'
+    );
+    await expect(cancelDeletion.getByLabel('Password')).toHaveValue('password1234');
     await cancelDeletion.getByRole('button', { name: 'Cancel deletion' }).click();
     await expect(observerPage.getByRole('heading', { name: 'Archived' })).toBeVisible();
+
+    await memberPage.goto(`${baseUrl}/c/${ids.communityId}/deletion`);
+    await expect(memberPage.getByRole('alert')).toContainText(
+      'only available to this community’s owner'
+    );
+    await expect(memberPage.getByRole('button', { name: 'Schedule deletion' })).toHaveCount(0);
+    await expect(memberPage.getByRole('button', { name: 'Cancel deletion' })).toHaveCount(0);
 
     await pool.query(
       "INSERT INTO communities(name,lifecycle) VALUES('Unclaimed Place','pending_owner')"

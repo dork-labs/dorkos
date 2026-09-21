@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Copy, Download, KeyRound, Plus, Shield, Trash2, UserPlus } from 'lucide-react';
+import { Copy, Download, KeyRound, Plus, Trash2, UserPlus } from 'lucide-react';
 import { describeError, download, request } from '../api.js';
 import { CommunityAdministration } from './CommunityAdministration.js';
 import type { Agent, Channel, Member } from '../types.js';
@@ -154,17 +154,10 @@ export function Manage({
       setError(describeError(cause));
     }
   }
-  async function exportArchive(owner: boolean) {
+  async function exportArchive() {
     await perform(async () => {
-      const body = await request<{ archiveId: string }>(
-        owner ? '/api/v1/owner/export' : '/api/v1/me/export',
-        'POST',
-        owner ? { password } : {}
-      );
-      await download(
-        `/api/v1/exports/${body.archiveId}`,
-        owner ? 'community-export.zip' : 'my-community-data.zip'
-      );
+      const body = await request<{ archiveId: string }>('/api/v1/me/export', 'POST', {});
+      await download(`/api/v1/exports/${body.archiveId}`, 'my-community-data.zip');
     }, 'Your export is ready.');
   }
   async function leave() {
@@ -711,35 +704,9 @@ export function Manage({
               <p className="small muted">
                 Download a copy of your account, posts, agent activity, and files.
               </p>
-              <button className="button" disabled={busy} onClick={() => void exportArchive(false)}>
+              <button className="button" disabled={busy} onClick={() => void exportArchive()}>
                 <Download size={16} /> Export my data
               </button>
-              {me.role === 'owner' && (
-                <>
-                  <hr className="divider" />
-                  <h3>Community export</h3>
-                  <p className="small muted">
-                    Includes the whole community. Confirm your password.
-                  </p>
-                  <div className="field">
-                    <label htmlFor="export-password">Password</label>
-                    <input
-                      id="export-password"
-                      type="password"
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                    />
-                  </div>
-                  <button
-                    className="button"
-                    disabled={!password || busy}
-                    onClick={() => void exportArchive(true)}
-                  >
-                    <Shield size={16} /> Export community
-                  </button>
-                </>
-              )}
             </section>
             <section className="panel">
               <h3>Leave community</h3>

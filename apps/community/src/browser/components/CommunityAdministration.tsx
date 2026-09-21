@@ -73,8 +73,10 @@ export function FocusDialog({
   title,
   children,
   onClose,
+  error,
 }: {
   title: string;
+  error?: string;
   children: React.ReactNode;
   onClose: () => void;
 }) {
@@ -124,6 +126,11 @@ export function FocusDialog({
         aria-labelledby={titleId}
       >
         <h3 id={titleId}>{title}</h3>
+        {error && (
+          <p role="alert" className="notice error">
+            {error}
+          </p>
+        )}
         {children}
       </div>
     </div>
@@ -393,7 +400,7 @@ export function CommunityAdministration({
   if (deletion)
     return (
       <div className="settings-grid" aria-label="Community administration">
-        {error && (
+        {error && !dialog && (
           <div role="alert" className="notice error admin-full-width">
             {error}
           </div>
@@ -422,7 +429,7 @@ export function CommunityAdministration({
           </button>
         </section>
         {dialog === 'cancel-delete' && (
-          <FocusDialog title="Cancel community deletion?" onClose={resetDialog}>
+          <FocusDialog title="Cancel community deletion?" onClose={resetDialog} error={error}>
             <p>
               The community will return as an archive. People can read history after reconnecting.
             </p>
@@ -457,7 +464,7 @@ export function CommunityAdministration({
   const editable = editor && current.lifecycle === 'active';
   return (
     <div className="settings-grid" aria-label="Community administration">
-      {error && (
+      {error && !dialog && (
         <div role="alert" className="notice error admin-full-width">
           {error}
         </div>
@@ -630,6 +637,7 @@ export function CommunityAdministration({
         <FocusDialog
           title={dialog === 'archive' ? `Archive ${current.name}?` : `Restore ${current.name}?`}
           onClose={resetDialog}
+          error={error}
         >
           <p>
             {dialog === 'archive'
@@ -671,7 +679,11 @@ export function CommunityAdministration({
         </FocusDialog>
       )}
       {dialog === 'delete' && (
-        <FocusDialog title={`Permanently delete ${current.name}?`} onClose={resetDialog}>
+        <FocusDialog
+          title={`Permanently delete ${current.name}?`}
+          onClose={resetDialog}
+          error={error}
+        >
           <p>
             Access ends immediately. After seven days, the community and its files are permanently
             removed.

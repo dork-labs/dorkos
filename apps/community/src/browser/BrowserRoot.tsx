@@ -1,6 +1,6 @@
 import { CommunityApp } from './CommunityApp.js';
 import { CommunityChooser } from './components/CommunityChooser.js';
-import { CommunityAdministration } from './components/CommunityAdministration.js';
+import { DeletionRecovery } from './components/DeletionRecovery.js';
 import { HostAdministration } from './components/HostAdministration.js';
 import { Pairing } from './components/Pairing.js';
 
@@ -15,18 +15,8 @@ export function BrowserRoot({
   const pairing = pathname === '/pairing' || /^\/c\/[^/]+\/pairing$/.test(pathname);
   if (pairing) return <Pairing search={search} />;
   if (pathname === '/host') return <HostAdministration />;
-  if (/^\/c\/[^/]+\/deletion$/u.test(pathname))
-    return (
-      <main className="settings" aria-labelledby="deletion-recovery-title">
-        <p className="eyebrow">Community settings</p>
-        <h1 id="deletion-recovery-title">Deletion status</h1>
-        <CommunityAdministration
-          memberRole="owner"
-          onChanged={() => undefined}
-          onOpenPeople={() => undefined}
-        />
-      </main>
-    );
+  const deletion = /^\/c\/([^/]+)\/deletion$/u.exec(pathname);
+  if (deletion) return <DeletionRecovery communityId={deletion[1]} />;
   if (pathname === '/') return <CommunityChooser signedOut={() => <CommunityApp />} />;
   return <CommunityApp />;
 }
