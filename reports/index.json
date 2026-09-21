@@ -1,11 +1,11 @@
 {
  "schema": 1,
- "updated_at": "2026-09-21T10:13:19.123Z",
+ "updated_at": "2026-09-21T10:35:20.639Z",
  "days": [
   {
    "date": "2026-09-20",
    "light": "red",
-   "headline": "queue-green under floor: 67.4% (n=184, 2026-09-14 to 2026-09-20)."
+   "headline": "main-green under floor: red_episodes 7, restore_p90 87.2 (n=246, 2026-08-24 to 2026-09-20)."
   }
  ]
 }

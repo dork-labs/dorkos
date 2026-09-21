@@ -1,0 +1,1564 @@
+{
+ "schema": 1,
+ "date": "2026-08-27",
+ "collected_at": "2026-09-21T10:35:20.639Z",
+ "complete": true,
+ "partial_day": false,
+ "truncated": false,
+ "healthy": true,
+ "health": {
+  "ok": true,
+  "failures": [],
+  "warnings": [],
+  "api_calls": 34,
+  "api_budget": 700,
+  "runs": {
+   "windows": [
+    {
+     "created": "2026-08-27T00:00:00Z..2026-08-27T23:59:59Z",
+     "total_count": 220,
+     "fetched": 220
+    }
+   ],
+   "total_count": 220,
+   "fetched": 220
+  },
+  "shas": {
+   "total": 18,
+   "done": 18
+  },
+  "min_n": {},
+  "series_gaps": [],
+  "local_exports": {
+   "clone-71ebf1f648": {
+    "last": "2026-09-21",
+    "age_days": 0,
+    "state": "fresh"
+   }
+  },
+  "ruleset": {
+   "id": 19893973,
+   "ok": true,
+   "problems": []
+  },
+  "data_rulesets": [
+   {
+    "id": 23704437,
+    "ok": true,
+    "problems": []
+   },
+   {
+    "id": 23705388,
+    "ok": true,
+    "problems": []
+   }
+  ]
+ },
+ "shas_done": [
+  "0461f6fe61b4",
+  "dc033559eaf7",
+  "6648a8311959",
+  "54134a4d7991",
+  "20aceb830eee",
+  "7369e443dd5b",
+  "775680cfdfab",
+  "b6a65bb9b4eb",
+  "cc572c081069",
+  "a45718e2843d",
+  "fa5693ef3d1a",
+  "5548c744476b",
+  "1b4160c58fc1",
+  "74597aacdaeb",
+  "9edbe93e35f8",
+  "8f4b99b8fcfa",
+  "2593d3108c37",
+  "ffd3e31fdb22"
+ ],
+ "gates": {
+  "wf.claude.claude@issue_comment": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 20
+   },
+   "retried": 0,
+   "runs": 20
+  },
+  "wf.merge-tail.arm@schedule": {
+   "durations": [
+    [
+     34519,
+     14
+    ],
+    [
+     302,
+     16
+    ],
+    [
+     71936,
+     16
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.claude-code-review.review@pull_request": {
+   "durations": [
+    [
+     44868,
+     173
+    ],
+    [
+     69141,
+     123
+    ],
+    [
+     73595,
+     74
+    ],
+    [
+     79247,
+     156
+    ],
+    [
+     84266,
+     269
+    ],
+    [
+     84948,
+     164
+    ],
+    [
+     86258,
+     252
+    ]
+   ],
+   "conclusions": {
+    "skipped": 8,
+    "success": 7
+   },
+   "retried": 0,
+   "runs": 15
+  },
+  "wf.claude.claude@pull_request_review": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.claude.claude@pull_request_review_comment": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.evals.credentialed@pull_request": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 22
+   },
+   "retried": 0,
+   "runs": 22
+  },
+  "wf.evals.structural@pull_request": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 22
+   },
+   "retried": 0,
+   "runs": 22
+  },
+  "wf.browser-test.browser-shard@pull_request": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 11
+   },
+   "retried": 0,
+   "runs": 11
+  },
+  "wf.changelog-fragment-check.no-fragment-under-skip-label@pull_request": {
+   "durations": [
+    [
+     69034,
+     15
+    ],
+    [
+     69045,
+     27
+    ],
+    [
+     69035,
+     17
+    ],
+    [
+     73534,
+     13
+    ],
+    [
+     73537,
+     16
+    ],
+    [
+     73534,
+     14
+    ],
+    [
+     74441,
+     15
+    ],
+    [
+     74937,
+     14
+    ],
+    [
+     79105,
+     13
+    ],
+    [
+     79108,
+     16
+    ],
+    [
+     84011,
+     13
+    ],
+    [
+     84013,
+     16
+    ],
+    [
+     84800,
+     16
+    ],
+    [
+     84796,
+     13
+    ],
+    [
+     84801,
+     17
+    ],
+    [
+     86021,
+     15
+    ],
+    [
+     86021,
+     16
+    ],
+    [
+     86100,
+     13
+    ]
+   ],
+   "conclusions": {
+    "skipped": 7,
+    "success": 18
+   },
+   "retried": 0,
+   "runs": 25
+  },
+  "wf.changelog-fragment-check.fragment-present@pull_request": {
+   "durations": [
+    [
+     44721,
+     22
+    ],
+    [
+     44722,
+     27
+    ],
+    [
+     55168,
+     27
+    ],
+    [
+     55149,
+     28
+    ],
+    [
+     69040,
+     22
+    ],
+    [
+     69051,
+     32
+    ],
+    [
+     69073,
+     55
+    ],
+    [
+     73555,
+     34
+    ],
+    [
+     73563,
+     41
+    ],
+    [
+     73558,
+     37
+    ],
+    [
+     74450,
+     25
+    ],
+    [
+     74947,
+     24
+    ],
+    [
+     79115,
+     24
+    ],
+    [
+     79120,
+     28
+    ],
+    [
+     79119,
+     28
+    ],
+    [
+     84020,
+     23
+    ],
+    [
+     84021,
+     24
+    ],
+    [
+     84018,
+     22
+    ],
+    [
+     84809,
+     25
+    ],
+    [
+     84808,
+     25
+    ],
+    [
+     84808,
+     25
+    ],
+    [
+     86029,
+     24
+    ],
+    [
+     86041,
+     36
+    ],
+    [
+     86033,
+     27
+    ],
+    [
+     86110,
+     23
+    ]
+   ],
+   "conclusions": {
+    "success": 23,
+    "failure": 2
+   },
+   "retried": 0,
+   "runs": 25
+  },
+  "wf.browser-test.browser-test@pull_request": {
+   "durations": [
+    [
+     44699,
+     4
+    ],
+    [
+     55126,
+     4
+    ],
+    [
+     69024,
+     5
+    ],
+    [
+     73526,
+     5
+    ],
+    [
+     74430,
+     4
+    ],
+    [
+     74925,
+     2
+    ],
+    [
+     79094,
+     2
+    ],
+    [
+     83998,
+     2
+    ],
+    [
+     84785,
+     2
+    ],
+    [
+     86006,
+     2
+    ],
+    [
+     86091,
+     4
+    ]
+   ],
+   "conclusions": {
+    "success": 11
+   },
+   "retried": 0,
+   "runs": 11
+  },
+  "wf.test.test@pull_request": {
+   "durations": [
+    [
+     44750,
+     56
+    ],
+    [
+     55163,
+     41
+    ],
+    [
+     71016,
+     1998
+    ],
+    [
+     73574,
+     53
+    ],
+    [
+     74465,
+     40
+    ],
+    [
+     74978,
+     54
+    ],
+    [
+     81172,
+     2079
+    ],
+    [
+     84692,
+     695
+    ],
+    [
+     86850,
+     2066
+    ],
+    [
+     86043,
+     39
+    ],
+    [
+     86131,
+     44
+    ]
+   ],
+   "conclusions": {
+    "success": 11
+   },
+   "retried": 0,
+   "runs": 11
+  },
+  "wf.typecheck.typecheck@pull_request": {
+   "durations": [
+    [
+     45197,
+     502
+    ],
+    [
+     55495,
+     373
+    ],
+    [
+     69485,
+     466
+    ],
+    [
+     73969,
+     448
+    ],
+    [
+     74841,
+     416
+    ],
+    [
+     75350,
+     427
+    ],
+    [
+     79531,
+     440
+    ],
+    [
+     84443,
+     446
+    ],
+    [
+     85209,
+     425
+    ],
+    [
+     86451,
+     349
+    ]
+   ],
+   "conclusions": {
+    "success": 9,
+    "failure": 1,
+    "cancelled": 1
+   },
+   "retried": 0,
+   "runs": 11
+  },
+  "wf.db-check.db-check@pull_request": {
+   "durations": [
+    [
+     44736,
+     42
+    ],
+    [
+     55164,
+     42
+    ],
+    [
+     69077,
+     58
+    ],
+    [
+     73564,
+     43
+    ],
+    [
+     74465,
+     40
+    ],
+    [
+     74957,
+     34
+    ],
+    [
+     79134,
+     37
+    ],
+    [
+     84041,
+     44
+    ],
+    [
+     84819,
+     36
+    ],
+    [
+     86043,
+     39
+    ],
+    [
+     86126,
+     39
+    ]
+   ],
+   "conclusions": {
+    "success": 11
+   },
+   "retried": 0,
+   "runs": 11
+  },
+  "wf.operating-skills-version-check.version-outranks-base@pull_request": {
+   "durations": [
+    [
+     44716,
+     21
+    ],
+    [
+     55136,
+     14
+    ],
+    [
+     69049,
+     31
+    ],
+    [
+     73534,
+     14
+    ],
+    [
+     74440,
+     15
+    ],
+    [
+     74935,
+     13
+    ],
+    [
+     79104,
+     13
+    ],
+    [
+     84009,
+     13
+    ],
+    [
+     84799,
+     16
+    ],
+    [
+     86018,
+     14
+    ],
+    [
+     86101,
+     14
+    ]
+   ],
+   "conclusions": {
+    "success": 11
+   },
+   "retried": 0,
+   "runs": 11
+  },
+  "wf.evals.credentialed@schedule": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.evals.structural@schedule": {
+   "durations": [
+    [
+     67915,
+     132
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.cli-smoke-test.smoke-test-docker@push": {
+   "durations": [
+    [
+     57859,
+     59
+    ],
+    [
+     73361,
+     59
+    ],
+    [
+     83845,
+     52
+    ],
+    [
+     84022,
+     58
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.cli-smoke-test.integration-test@push": {
+   "durations": [
+    [
+     57859,
+     60
+    ],
+    [
+     73365,
+     63
+    ],
+    [
+     83860,
+     67
+    ],
+    [
+     84028,
+     64
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.cli-smoke-test.smoke-test-bare@push": {
+   "durations": [
+    [
+     57846,
+     45
+    ],
+    [
+     57867,
+     68
+    ],
+    [
+     73356,
+     53
+    ],
+    [
+     73346,
+     44
+    ],
+    [
+     83842,
+     49
+    ],
+    [
+     83835,
+     42
+    ],
+    [
+     84017,
+     52
+    ],
+    [
+     83999,
+     35
+    ]
+   ],
+   "conclusions": {
+    "success": 8
+   },
+   "retried": 0,
+   "runs": 8
+  },
+  "wf.cli-smoke-test.build-tarball@push": {
+   "durations": [
+    [
+     57797,
+     112
+    ],
+    [
+     73300,
+     130
+    ],
+    [
+     83791,
+     95
+    ],
+    [
+     83962,
+     100
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.typecheck.typecheck@push": {
+   "durations": [
+    [
+     58157,
+     475
+    ],
+    [
+     73640,
+     468
+    ],
+    [
+     84096,
+     400
+    ],
+    [
+     84228,
+     429
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.db-check.db-check@push": {
+   "durations": [
+    [
+     57721,
+     39
+    ],
+    [
+     73236,
+     66
+    ],
+    [
+     83736,
+     40
+    ],
+    [
+     83838,
+     39
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.browser-test.browser-test@merge_group": {
+   "durations": [
+    [
+     56875,
+     22
+    ],
+    [
+     72107,
+     12
+    ],
+    [
+     80742,
+     14
+    ],
+    [
+     82935,
+     12
+    ],
+    [
+     82969,
+     14
+    ],
+    [
+     85994,
+     11
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.typecheck.typecheck@merge_group": {
+   "durations": [
+    [
+     55959,
+     374
+    ],
+    [
+     71525,
+     467
+    ],
+    [
+     79996,
+     453
+    ],
+    [
+     82133,
+     436
+    ],
+    [
+     82121,
+     423
+    ],
+    [
+     85145,
+     410
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.browser-test.browser-shard@merge_group": {
+   "durations": [
+    [
+     56673,
+     1086
+    ],
+    [
+     56851,
+     1265
+    ],
+    [
+     56787,
+     1201
+    ],
+    [
+     72093,
+     1035
+    ],
+    [
+     72062,
+     1004
+    ],
+    [
+     71894,
+     836
+    ],
+    [
+     80609,
+     1066
+    ],
+    [
+     80720,
+     1177
+    ],
+    [
+     80530,
+     987
+    ],
+    [
+     82739,
+     1042
+    ],
+    [
+     82696,
+     999
+    ],
+    [
+     82921,
+     1224
+    ],
+    [
+     82951,
+     1253
+    ],
+    [
+     82862,
+     1164
+    ],
+    [
+     82640,
+     942
+    ],
+    [
+     85776,
+     1041
+    ],
+    [
+     85981,
+     1246
+    ],
+    [
+     85655,
+     921
+    ]
+   ],
+   "conclusions": {
+    "success": 18
+   },
+   "retried": 0,
+   "runs": 18
+  },
+  "wf.changelog-fragment-check.no-fragment-under-skip-label@merge_group": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.operating-skills-version-check.version-outranks-base@merge_group": {
+   "durations": [
+    [
+     55601,
+     15
+    ],
+    [
+     71085,
+     27
+    ],
+    [
+     79558,
+     15
+    ],
+    [
+     81712,
+     15
+    ],
+    [
+     81715,
+     17
+    ],
+    [
+     84748,
+     13
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.db-check.db-check@merge_group": {
+   "durations": [
+    [
+     55621,
+     36
+    ],
+    [
+     71132,
+     74
+    ],
+    [
+     79588,
+     45
+    ],
+    [
+     81730,
+     33
+    ],
+    [
+     81742,
+     44
+    ],
+    [
+     84770,
+     35
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.changelog-fragment-check.fragment-present@merge_group": {
+   "durations": [
+    [
+     55623,
+     38
+    ],
+    [
+     71085,
+     26
+    ],
+    [
+     79569,
+     26
+    ],
+    [
+     81720,
+     24
+    ],
+    [
+     81720,
+     23
+    ],
+    [
+     84762,
+     27
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.test.test@merge_group": {
+   "durations": [
+    [
+     57645,
+     2060
+    ],
+    [
+     73134,
+     2074
+    ],
+    [
+     81183,
+     1640
+    ],
+    [
+     83659,
+     1962
+    ],
+    [
+     83761,
+     2063
+    ],
+    [
+     86815,
+     2080
+    ]
+   ],
+   "conclusions": {
+    "success": 5,
+    "failure": 1
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.cli-smoke-test.smoke-test-bare@pull_request": {
+   "durations": [
+    [
+     69187,
+     44
+    ],
+    [
+     69188,
+     45
+    ],
+    [
+     79246,
+     54
+    ],
+    [
+     79264,
+     73
+    ],
+    [
+     84140,
+     39
+    ],
+    [
+     84138,
+     37
+    ],
+    [
+     84918,
+     43
+    ],
+    [
+     84918,
+     44
+    ]
+   ],
+   "conclusions": {
+    "success": 8
+   },
+   "retried": 0,
+   "runs": 8
+  },
+  "wf.cli-smoke-test.integration-test@pull_request": {
+   "durations": [
+    [
+     69214,
+     71
+    ],
+    [
+     79271,
+     79
+    ],
+    [
+     84157,
+     56
+    ],
+    [
+     84934,
+     59
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.cli-smoke-test.smoke-test-docker@pull_request": {
+   "durations": [
+    [
+     69195,
+     48
+    ],
+    [
+     79259,
+     68
+    ],
+    [
+     84149,
+     48
+    ],
+    [
+     84919,
+     45
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.docs-openapi-check.openapi-fresh@pull_request": {
+   "durations": [
+    [
+     69182,
+     164
+    ],
+    [
+     79229,
+     138
+    ],
+    [
+     84130,
+     134
+    ],
+    [
+     84918,
+     135
+    ]
+   ],
+   "conclusions": {
+    "success": 3,
+    "failure": 1
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.scripts-test.harness@pull_request": {
+   "durations": [
+    [
+     69138,
+     120
+    ],
+    [
+     79218,
+     126
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.scripts-test.fixtures@pull_request": {
+   "durations": [
+    [
+     69046,
+     28
+    ],
+    [
+     79123,
+     31
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.cli-smoke-test.build-tarball@pull_request": {
+   "durations": [
+    [
+     69140,
+     122
+    ],
+    [
+     79189,
+     97
+    ],
+    [
+     84099,
+     103
+    ],
+    [
+     84872,
+     89
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.desktop-smoke.packaged-runtime@pull_request": {
+   "durations": [
+    [
+     69437,
+     419
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.scripts-test.fixtures@push": {
+   "durations": [
+    [
+     73204,
+     33
+    ],
+    [
+     83724,
+     28
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.scripts-test.harness@push": {
+   "durations": [
+    [
+     73298,
+     128
+    ],
+    [
+     83805,
+     109
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.desktop-smoke.packaged-runtime@push": {
+   "durations": [
+    [
+     73598,
+     428
+    ],
+    [
+     83930,
+     234
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.docs-openapi-check.openapi-fresh@push": {
+   "durations": [
+    [
+     73322,
+     153
+    ],
+    [
+     83834,
+     138
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  }
+ },
+ "series": {
+  "pr_feedback_min": [
+   [
+    44692,
+    8.4
+   ],
+   [
+    55119,
+    6.3
+   ],
+   [
+    69016,
+    33.4
+   ],
+   [
+    74423,
+    7
+   ],
+   [
+    74920,
+    7.2
+   ],
+   [
+    84781,
+    34.5
+   ],
+   [
+    86084,
+    6.1
+   ]
+  ],
+  "queue_build_min": [
+   [
+    83691,
+    33.6
+   ],
+   [
+    73165,
+    35.5
+   ],
+   [
+    57678,
+    35.2
+   ]
+  ],
+  "queue_wait_min": [
+   [
+    83691,
+    33.6
+   ],
+   [
+    83795,
+    71.2
+   ],
+   [
+    73165,
+    35.5
+   ],
+   [
+    57678,
+    35.2
+   ]
+  ],
+  "queue_wait_ejected_min": [
+   [
+    83795,
+    71.2
+   ]
+  ],
+  "lead_time_min": [
+   [
+    83691,
+    76.8
+   ],
+   [
+    83795,
+    171.3
+   ],
+   [
+    73165,
+    69.2
+   ],
+   [
+    57678,
+    216.5
+   ]
+  ],
+  "review_recovery_min": []
+ },
+ "counts": {
+  "merged_prs": 4,
+  "queue_builds": 6,
+  "queue_builds_green": 5,
+  "queue_builds_cancelled": 0,
+  "ejections_failed_checks": 1,
+  "wasted_ejections": 1,
+  "review_shas": 6,
+  "review_first_ok": 6,
+  "review_cancelled": 1,
+  "review_runs": 12,
+  "test_executions": 0,
+  "test_flaky": 0,
+  "flaky_builds_sampled": 0,
+  "job_minutes": 937.2,
+  "canary_minutes": 0
+ },
+ "flaky_tests": [],
+ "flaky_builds": [],
+ "real_catches": {},
+ "ejections_caused": {
+  "wf.test.test": 1
+ },
+ "queue_builds": [
+  {
+   "sha": "54134a4d7991",
+   "pr": 1340,
+   "created_at": "2026-08-27T15:26:23Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "7369e443dd5b",
+   "pr": 1341,
+   "created_at": "2026-08-27T19:44:16Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "fa5693ef3d1a",
+   "pr": 1342,
+   "created_at": "2026-08-27T22:05:41Z",
+   "outcome": "red",
+   "failed_gates": [
+    "wf.test.test"
+   ]
+  },
+  {
+   "sha": "5548c744476b",
+   "pr": 1343,
+   "created_at": "2026-08-27T22:41:34Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "1b4160c58fc1",
+   "pr": 1342,
+   "created_at": "2026-08-27T22:41:35Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "9edbe93e35f8",
+   "pr": 1344,
+   "created_at": "2026-08-27T23:32:12Z",
+   "outcome": "green",
+   "failed_gates": []
+  }
+ ],
+ "main": [
+  {
+   "sha": "54134a4d7991",
+   "at": "2026-08-27T16:01:20Z",
+   "done": "2026-08-27T16:09:17Z",
+   "red": false
+  },
+  {
+   "sha": "7369e443dd5b",
+   "at": "2026-08-27T20:19:27Z",
+   "done": "2026-08-27T20:27:21Z",
+   "red": false
+  },
+  {
+   "sha": "5548c744476b",
+   "at": "2026-08-27T23:14:53Z",
+   "done": "2026-08-27T23:21:37Z",
+   "red": false
+  },
+  {
+   "sha": "1b4160c58fc1",
+   "at": "2026-08-27T23:16:36Z",
+   "done": "2026-08-27T23:23:49Z",
+   "red": false
+  }
+ ],
+ "canary": [],
+ "releases": [],
+ "cache": {
+  "bytes": 11334623671,
+  "count": 19
+ },
+ "timeouts": {}
+}

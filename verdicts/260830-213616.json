@@ -3,7 +3,7 @@
  "id": "260830-213616",
  "verdict": "pending",
  "reason": "Waiting: 13 of 15 after-window days not collected (2026-08-30 to 09-11); backfill reaches them first.",
- "computed_at": "2026-09-21T10:13:19.123Z",
+ "computed_at": "2026-09-21T10:35:20.639Z",
  "hypothesis_hash": "0e69182f26258fb5",
  "metric": "gate.wf.test.test-shard.duration_p50@merge_group",
  "anchor": "2026-08-30T21:36:16Z",
@@ -32,8 +32,8 @@
  "slo": {
   "id": "queue-build",
   "stat": "p50",
-  "before": null,
+  "before": 34.7,
   "after": 27,
-  "movement": "unknown"
+  "movement": "better"
  }
 }

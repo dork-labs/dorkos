@@ -1,10 +1,21 @@
 {
  "schema": 1,
  "date": "2026-09-20",
- "computed_at": "2026-09-21T10:13:19.123Z",
+ "computed_at": "2026-09-21T10:35:20.639Z",
  "constraint": "queue-green",
  "canary_since": null,
  "open": [
+  {
+   "id": "slo-floor:main-green",
+   "rule": "slo-floor",
+   "severity": "red",
+   "scope": "main-green",
+   "what": "main-green under floor: red_episodes 7, restore_p90 87.2 (n=246, 2026-08-24 to 2026-09-20).",
+   "action": "Take its path from ci/slos.yaml.",
+   "ledger_entry": "260919-175509",
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-20"
+  },
   {
    "id": "slo-floor:queue-green",
    "rule": "slo-floor",
@@ -46,6 +57,28 @@
    "what": "lead-time under floor: p50 69.1, p90 184.1 (n=105, 2026-09-14 to 2026-09-20).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260919-204500",
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-20"
+  },
+  {
+   "id": "slo-floor:local-commit",
+   "rule": "slo-floor",
+   "severity": "amber",
+   "scope": "local-commit",
+   "what": "local-commit under floor: p90 313.2, 0% (n=72, 2026-09-14 to 2026-09-20).",
+   "action": "Take its path from ci/slos.yaml.",
+   "ledger_entry": "260919-175506",
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-20"
+  },
+  {
+   "id": "slo-floor:local-push",
+   "rule": "slo-floor",
+   "severity": "amber",
+   "scope": "local-push",
+   "what": "local-push under floor: p90 1410, 3.9% (n=52, 2026-09-14 to 2026-09-20).",
+   "action": "Take its path from ci/slos.yaml.",
+   "ledger_entry": null,
    "first_fired": "2026-09-20",
    "last_fired": "2026-09-20"
   },

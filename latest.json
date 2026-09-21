@@ -7,7 +7,8 @@
  "healthy": true,
  "failures": [],
  "warnings": [
-  "19 of 28 days missing to 2026-09-20 (2026-08-24 to 09-11)."
+  "19 of 28 days missing to 2026-09-20 (2026-08-24 to 09-11).",
+  "14 of 28 days missing to 2026-09-20 (2026-08-29 to 09-11)."
  ],
  "api_calls": 700,
  "slos": [
@@ -70,13 +71,13 @@
    "kind": "quality",
    "from": "2026-08-24",
    "to": "2026-09-20",
-   "n": 136,
+   "n": 246,
    "min_n": 1,
    "stats": {
-    "red_episodes": 2,
-    "restore_p90": 26.3
+    "red_episodes": 7,
+    "restore_p90": 87.2
    },
-   "status": "ok",
+   "status": "breach",
    "excess_hours": null
   },
   {
@@ -152,24 +153,28 @@
    "kind": "speed",
    "from": "2026-09-14",
    "to": "2026-09-20",
-   "n": 0,
+   "n": 72,
    "min_n": 20,
-   "stats": {},
-   "status": "unmeasured",
-   "excess_hours": null,
-   "note": "no local export in the window yet"
+   "stats": {
+    "p90": 313.2,
+    "killed_share": 0
+   },
+   "status": "breach",
+   "excess_hours": 1.39
   },
   {
    "id": "local-push",
    "kind": "speed",
    "from": "2026-09-14",
    "to": "2026-09-20",
-   "n": 0,
+   "n": 52,
    "min_n": 20,
-   "stats": {},
-   "status": "unmeasured",
-   "excess_hours": null,
-   "note": "no local export in the window yet"
+   "stats": {
+    "p90": 1410,
+    "killed_share": 0.0385
+   },
+   "status": "breach",
+   "excess_hours": 4.5
   }
  ],
  "constraint": {
@@ -177,18 +182,21 @@
   "id": "queue-green",
   "reason": "Merge-queue builds come back green: share 0.6739 breaches its floor."
  },
- "local_breaches": [],
+ "local_breaches": [
+  "local-commit",
+  "local-push"
+ ],
  "machine": {
-  "n": 0,
-  "clones": 0,
-  "load_per_core_p90": null,
+  "n": 9,
+  "clones": 1,
+  "load_per_core_p90": 34.71,
   "mem_available_mb_p10": null,
   "swap_used_mb_p50": null
  },
  "safeguards_ok": true,
  "triggers": {
-  "red": 1,
-  "amber": 9,
-  "top": "queue-green under floor: 67.4% (n=184, 2026-09-14 to 2026-09-20)."
+  "red": 2,
+  "amber": 11,
+  "top": "main-green under floor: red_episodes 7, restore_p90 87.2 (n=246, 2026-08-24 to 2026-09-20)."
  }
 }

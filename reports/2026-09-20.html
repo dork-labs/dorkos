@@ -367,12 +367,12 @@
   <body>
     <main>
       <h1>CI report for 2026-09-20</h1>
-      <p class="sub">Computed by ci-steward from real runs. Daily run. 1 red, 9 amber open. Collected 2026-09-21T10:13:19.123Z.</p>
+      <p class="sub">Computed by ci-steward from real runs. Daily run. 2 red, 11 amber open. Collected 2026-09-21T10:13:19.123Z.</p>
 
       <div class="panel headline red">
         <span class="lamp"></span>
         <div>
-          <div class="headline-text">queue-green under floor: 67.4% (n=184, 2026-09-14 to 2026-09-20).</div>
+          <div class="headline-text">main-green under floor: red_episodes 7, restore_p90 87.2 (n=246, 2026-08-24 to 2026-09-20).</div>
           <div class="headline-why">Take its path from ci/slos.yaml.</div>
         </div>
       </div>
@@ -440,11 +440,11 @@
             <div>main stays green</div>
             <div class="note mono">main-green · count per 28d</div>
           </td>
-          <td class="num" data-label="Now">spells 2 · fix p90 26.3</td>
-          <td data-label="Standing"><span class="tag ok" title="ok, short of goal">ok</span></td>
+          <td class="num" data-label="Now">spells 7 · fix p90 87.2</td>
+          <td data-label="Standing"><span class="tag breach" title="under floor">breach</span></td>
           <td class="num" data-label="Floor">spells ≤ 3</td>
           <td class="num" data-label="Goal">spells ≤ 1 · fix p90 &lt; 30</td>
-          <td class="num trend better" data-label="Trend" title="better than a week ago">better: 14 → 2</td>
+          <td class="num trend better" data-label="Trend" title="better than a week ago">better: 19 → 7</td>
           <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="main stays green, last 14 days"><path d="M1.0 1.0 L8.2 1.0 L15.5 4.6 L22.7 4.6 L29.9 5.5 L37.2 6.5 L44.4 10.1 L51.6 11.0 L58.8 11.9 L66.1 14.6 L73.3 15.5 L80.5 15.5 L87.8 17.4 L95.0 21.0" /></svg></td>
         </tr><tr>
           <td class="measure">
@@ -506,29 +506,33 @@
             <div>git commit is quick</div>
             <div class="note mono">local-commit · seconds</div>
           </td>
-          <td class="num" data-label="Now">-</td>
-          <td data-label="Standing"><span class="tag unmeasured" title="not measured">unmeasured</span></td>
+          <td class="num" data-label="Now">p90 313.2 · killed 0%</td>
+          <td data-label="Standing"><span class="tag breach" title="under floor">breach</span></td>
           <td class="num" data-label="Floor">p90 ≤ 210</td>
           <td class="num" data-label="Goal">p90 ≤ 20</td>
-          <td class="num trend flat" data-label="Trend" title="nothing measured yet">no data</td>
+          <td class="num trend flat" data-label="Trend" title="nothing to compare with yet">no prior week</td>
           <td data-label="14 days"><span class="note">not enough days yet</span></td>
         </tr><tr>
           <td class="measure">
             <div>git push is quick and never killed</div>
             <div class="note mono">local-push · seconds</div>
           </td>
-          <td class="num" data-label="Now">-</td>
-          <td data-label="Standing"><span class="tag unmeasured" title="not measured">unmeasured</span></td>
+          <td class="num" data-label="Now">p90 1410 · killed 3.9%</td>
+          <td data-label="Standing"><span class="tag breach" title="under floor">breach</span></td>
           <td class="num" data-label="Floor">p90 ≤ 600 · killed ≤ 15%</td>
           <td class="num" data-label="Goal">p90 ≤ 120 · killed ≤ 0%</td>
-          <td class="num trend flat" data-label="Trend" title="nothing measured yet">no data</td>
+          <td class="num trend flat" data-label="Trend" title="nothing to compare with yet">no prior week</td>
           <td data-label="14 days"><span class="note">not enough days yet</span></td>
         </tr></tbody>
       </table></div>
-      <p class="note">7 days to 2026-09-20. p50 is the middle run, p90 the slow end: 9 in 10 are faster. The floor is the line we promise not to fall below; it tightens after four good weeks. Too few runs judges nothing.</p></div>
+      <p class="note">7 days to 2026-09-20. p50 is the middle run, p90 the slow end: 9 in 10 are faster. The floor is the line we promise not to fall below; it tightens after four good weeks. Too few runs judges nothing.</p><p class="note">The machine running these hooks: 34.71 runnable processes per core at the slow end. A slow gate here is mostly a fact about the box, not about the pipeline. Of 125 hook runs, 2 were killed by the operating system and 0 ran without waiting for a free slot.</p></div>
 
         <h2>Open triggers</h2>
         <div class="panel"><div class="trigger red">
+          <div class="trigger-head">main-green under floor: red_episodes 7, restore_p90 87.2 (n=246, 2026-08-24 to 2026-09-20).</div>
+          <div>Fix: Take its path from ci/slos.yaml.</div>
+          <div class="trigger-meta mono">slo-floor:main-green · main-green · since 2026-09-20 · proposed: 260919-175509</div>
+        </div><div class="trigger red">
           <div class="trigger-head">queue-green under floor: 67.4% (n=184, 2026-09-14 to 2026-09-20).</div>
           <div>Fix: Take its path from ci/slos.yaml.</div>
           <div class="trigger-meta mono">slo-floor:queue-green · queue-green · since 2026-09-20 · proposed: 260919-175500</div>
@@ -544,6 +548,14 @@
           <div class="trigger-head">lead-time under floor: p50 69.1, p90 184.1 (n=105, 2026-09-14 to 2026-09-20).</div>
           <div>Fix: Take its path from ci/slos.yaml.</div>
           <div class="trigger-meta mono">slo-floor:lead-time · lead-time · since 2026-09-20 · proposed: 260919-204500</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">local-commit under floor: p90 313.2, 0% (n=72, 2026-09-14 to 2026-09-20).</div>
+          <div>Fix: Take its path from ci/slos.yaml.</div>
+          <div class="trigger-meta mono">slo-floor:local-commit · local-commit · since 2026-09-20 · proposed: 260919-175506</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">local-push under floor: p90 1410, 3.9% (n=52, 2026-09-14 to 2026-09-20).</div>
+          <div>Fix: Take its path from ci/slos.yaml.</div>
+          <div class="trigger-meta mono">slo-floor:local-push · local-push · since 2026-09-20</div>
         </div><div class="trigger amber">
           <div class="trigger-head">pr-feedback under floor: p50 7.7, p90 44.5 (n=92, 2026-09-14 to 2026-09-20).</div>
           <div>Fix: Take its path from ci/slos.yaml.</div>
@@ -592,7 +604,7 @@
           </tr><tr>
             <td class="measure name"><div>Queue test sweep split across four shards (#1391)</div><div class="note mono">260830-213616 · active</div></td>
             <td data-label="Result"><span class="tag pending">pending</span></td>
-            <td data-label="Why">Waiting: 13 of 15 after-window days not collected (2026-08-30 to 09-11); backfill reaches them first.</td>
+            <td data-label="Why">Waiting: 13 of 15 after-window days not collected (2026-08-30 to 09-11); backfill…<div class="note">queue-build better: 34.7 → 27.</div></td>
           </tr><tr>
             <td class="measure name"><div>The test gate leaves pre-push</div><div class="note mono">260919-175505 · active</div></td>
             <td data-label="Result"><span class="tag pending">pending</span></td>
@@ -619,11 +631,11 @@
           <li>Data-branch protections: in place.</li>
         </ul>
         
-        <p class="note">Also: 19 of 28 days missing to 2026-09-20 (2026-08-24 to 09-11).</p>
+        <p class="note">Also: 19 of 28 days missing to 2026-09-20 (2026-08-24 to 09-11). 14 of 28 days missing to 2026-09-20 (2026-08-29 to 09-11).</p>
         <p class="note">Blind spot: <span class="mono">--no-verify</span> commits and pushes skip the local timer, so they never show up here.</p>
       </div>
 
-      <footer>Rendered 2026-09-21T10:13:19.123Z by ci-steward from the ci-steward-data branch. Machine-readable: latest.json, triggers.json, verdicts/*.json, and the Monday deep summary reports/YYYY-Www.md.</footer>
+      <footer>Rendered 2026-09-21T10:35:20.639Z by ci-steward from the ci-steward-data branch. Machine-readable: latest.json, triggers.json, verdicts/*.json, and the Monday deep summary reports/YYYY-Www.md.</footer>
     </main>
   </body>
 </html>
