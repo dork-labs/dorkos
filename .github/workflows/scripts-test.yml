@@ -432,6 +432,21 @@ jobs:
       - name: Heavy-run lock fixtures
         run: bash scripts/test-heavy-run-lock.sh
 
+      # sweep-ephemeral-docker.sh reclaims the containers, volumes and networks a
+      # SIGKILLed run leaves behind, and it is the one gate script whose failure
+      # mode is DELETING something rather than missing something. Its fixtures
+      # therefore pin both directions: a dead owner's objects go however young,
+      # a live owner's stay however old (the case an age-only sweep gets wrong by
+      # shooting a slow suite mid-test), a recycled pid does not inherit a dead
+      # run's containers, and anything Docker will not describe is KEPT. The stub
+      # daemon models the label path per object kind on purpose — containers keep
+      # theirs under .Config.Labels, volumes and networks at the top level, and
+      # reading the wrong one makes every object look unstamped, which the age
+      # fallback then turns into "delete everything". Hermetic: a stub `docker`
+      # on PATH, no daemon, about a second.
+      - name: Ephemeral Docker sweep fixtures
+        run: bash scripts/test-sweep-ephemeral-docker.sh
+
       # run-credential-free.sh (DOR-2081) is the environment scrub behind the
       # `credential-free-build` check, and it is the only thing standing behind
       # this repo's promise that it clones, builds, tests and runs with no
