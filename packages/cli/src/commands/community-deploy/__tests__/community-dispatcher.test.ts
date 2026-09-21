@@ -1,8 +1,16 @@
+import { randomUUID } from 'node:crypto';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runCommunityDispatcher } from '../community-dispatcher.js';
+import {
+  formatCommunityCompletion,
+  formatCommunityRecovery,
+  runCommunityDispatcher,
+} from '../community-dispatcher.js';
+import { createInitialCommunityLaunchJournal } from '../resume.js';
+import { initializeLaunchJournal, launchJournalPath } from '../journal.js';
+import { createLaunchPlan } from '../plan.js';
 import type { CompatibleCommunityRelease } from '../release-resolver.js';
 
 const roots: string[] = [];
@@ -106,5 +114,101 @@ describe('Community command dispatcher', () => {
         },
       })
     ).rejects.toThrow('Unknown option');
+  });
+
+  it('lists incomplete journals without requiring provider choices', async () => {
+    const dorkHome = await mkdtemp(join(tmpdir(), 'dorkos-community-home-'));
+    roots.push(dorkHome);
+    const runId = randomUUID();
+    const plan = createLaunchPlan({
+      dorkosVersion: '0.76.0',
+      imageDigest: `sha256:${'a'.repeat(64)}`,
+      fly: {
+        organizationId: 'dork-labs',
+        organizationName: 'Dork Labs',
+        appName: 'dorkos-community-test',
+        region: 'ord',
+        machineSize: 'shared-cpu-1x',
+      },
+      neon: {
+        organizationId: 'org-dorian',
+        organizationName: 'Dorian',
+        projectName: 'dorkos-community-test',
+        region: 'aws-us-east-2',
+      },
+      tigris: { bucketName: 'dorkos-community-test', private: true },
+    });
+    await initializeLaunchJournal(
+      launchJournalPath(dorkHome, runId),
+      createInitialCommunityLaunchJournal(runId, plan, '2026-09-21T00:00:00.000Z')
+    );
+    const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    expect(
+      await runCommunityDispatcher(['deploy', '--list-incomplete'], {
+        cliVersion: '0.76.0',
+        dorkHome,
+        processEnv: { PATH: '' },
+        parseRelease: () => {
+          throw new Error('unused');
+        },
+      })
+    ).toBe(0);
+    expect(output.mock.calls.map(([value]) => String(value)).join('')).toContain(runId);
+  });
+
+  it('states retained ownership, possible costs/data, and recovery limits', () => {
+    const plan = createLaunchPlan({
+      dorkosVersion: '0.76.0',
+      imageDigest: `sha256:${'a'.repeat(64)}`,
+      fly: {
+        organizationId: 'dork-labs',
+        organizationName: 'Dork Labs',
+        appName: 'dorkos-community-test',
+        region: 'ord',
+        machineSize: 'shared-cpu-1x',
+      },
+      neon: {
+        organizationId: 'org-dorian',
+        organizationName: 'Dorian',
+        projectName: 'dorkos-community-test',
+        region: 'aws-us-east-2',
+      },
+      tigris: { bucketName: 'dorkos-community-test', private: true },
+    });
+    const runId = randomUUID();
+    const base = createInitialCommunityLaunchJournal(runId, plan, '2026-09-21T00:00:00.000Z');
+    const journal = {
+      ...base,
+      resources: {
+        flyAppId: 'app-id',
+        neonProjectId: 'project-id',
+        tigrisBucketId: 'bucket-id',
+      },
+    };
+    const selection = {
+      version: '0.76.0',
+      flyOrganization: 'dork-labs',
+      flyRegion: 'ord',
+      appName: 'dorkos-community-test',
+      machineSize: 'shared-cpu-1x',
+      neonOrganization: 'org-dorian',
+      neonRegion: 'aws-us-east-2',
+      neonProjectName: 'dorkos-community-test',
+      bucketName: 'dorkos-community-test',
+    };
+
+    const recovery = formatCommunityRecovery(journal, selection);
+    expect(recovery).toContain('owner dork-labs');
+    expect(recovery).toContain('may incur charges');
+    expect(recovery).toContain('database data may exist');
+    expect(recovery).toContain('private files may exist');
+    expect(recovery).toContain(`--resume ${runId}`);
+    expect(recovery).not.toContain('delete');
+
+    const completion = formatCommunityCompletion('https://dorkos-community-test.fly.dev');
+    expect(completion).toContain('Deployment health:');
+    expect(completion).toContain('Recovery readiness: not verified');
+    expect(completion).toContain('Tigris snapshots are a separate operator choice');
   });
 });

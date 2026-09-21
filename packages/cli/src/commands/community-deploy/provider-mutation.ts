@@ -29,6 +29,8 @@ export interface ProviderMutationOptions<T> {
   env: Readonly<Record<string, string>>;
   /** Deadline in milliseconds. */
   timeoutMs: number;
+  /** Operator cancellation shared by the complete guided launch. */
+  signal?: AbortSignal;
   /** Optional secret document passed only over stdin. */
   stdin?: string;
   /** Sanitizing parser for machine-readable output, or a constant receipt. */

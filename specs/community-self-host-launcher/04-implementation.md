@@ -17,13 +17,14 @@
 - The executor creates and re-reads the Fly app, separate Neon project topology, and private Tigris binding. Tigris terms require their own interactive acknowledgement. Database credentials, Fly session credentials, object-store credentials, and generated Community secrets remain in bounded memory and secret stdin paths.
 - Secret import uses a durable pre-write baseline. Resume can prove a complete staged set after an import-before-journal interruption without regenerating authentication or invitation secrets. Deployment uses the immutable image digest, one always-on Machine, Fly check readback, applied secret digests, and an independently bounded HTTPS health check.
 - Owner creation stays in Community's browser flow. A lost Setup secret is replaced and applied before handoff; successful claim rotates it again and proves the same pinned one-Machine deployment before completion. The operator must confirm one post and one private attachment round trip.
-- The Fly guide leads with guided setup and keeps the source-based manual path for recovery and audit. A built CLI was exercised from outside the checkout for its packaged help path; the fake-service suite covers exact release resolution and write-free planning.
+- Incomplete journals can be listed without provider calls. Control-C aborts the exact active provider process or prompt, records a safe cancellation or uncertain checkpoint, and prints every confirmed resource with its owner, possible charges and data, provider page, read-only inspection command, and exact resume command.
+- The Fly guide leads with guided setup and keeps the source-based manual path for recovery and audit. A package-level proof builds and installs the npm tarball outside the checkout, then exercises exact manifest resolution, dry run, fake Fly/Neon/Tigris provisioning, owner-pending output, pinned config rendering, and a second resume run that proves each resource was created once.
 
 ## Verification
 
-- 137 focused launcher and shared release-contract tests pass.
+- 142 focused launcher and shared release-contract tests pass.
 - The CLI package typecheck and lint pass with no new lint errors.
-- The production CLI bundle builds and runs `dorkos community deploy --help` without a repository working directory.
+- `pnpm --filter dorkos test:community-package` builds and installs the production npm tarball in a temporary directory, then passes the complete checkout-independent fake-service flow and removes its temporary package, provider state, journals, and fake credentials.
 - Service mutation tests use fake executables and local HTTP fixtures. Ordinary verification never contacts or mutates Fly, Neon, Tigris, GitHub, or another paid service.
 
 ## Remaining Work

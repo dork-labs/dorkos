@@ -77,6 +77,10 @@ export function createDefaultCommunityDeployDependencies(input: {
       verifyFlyDeployment(inventory, previous, COMMUNITY_IMAGE_REPOSITORY, input.plan.imageDigest),
     verifyExistingRuntime: (inventory) =>
       verifyExistingFlyDeployment(inventory, COMMUNITY_IMAGE_REPOSITORY, input.plan.imageDigest),
-    verifyHealth: (origin) => verifyCommunityHealth(origin, { timeoutMs: 120_000 }),
+    verifyHealth: (origin) =>
+      verifyCommunityHealth(origin, {
+        timeoutMs: 120_000,
+        signal: input.options.fly.signal,
+      }),
   };
 }

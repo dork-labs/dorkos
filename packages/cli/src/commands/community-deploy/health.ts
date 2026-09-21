@@ -46,7 +46,7 @@ export class CommunityHealthError extends Error {
 /** Verify one HTTPS `/health` response within a fixed deadline. */
 export async function verifyCommunityHealth(
   origin: string,
-  options: { timeoutMs: number; fetch?: typeof fetch }
+  options: { timeoutMs: number; fetch?: typeof fetch; signal?: AbortSignal }
 ): Promise<void> {
   const parsed = new URL(origin);
   if (
@@ -62,6 +62,9 @@ export async function verifyCommunityHealth(
     throw new CommunityHealthError();
   }
   const controller = new AbortController();
+  const cancel = () => controller.abort();
+  options.signal?.addEventListener('abort', cancel, { once: true });
+  if (options.signal?.aborted) cancel();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs);
   try {
     const response = await (options.fetch ?? fetch)(new URL('/health', parsed), {
@@ -75,5 +78,6 @@ export async function verifyCommunityHealth(
     throw new CommunityHealthError();
   } finally {
     clearTimeout(timer);
+    options.signal?.removeEventListener('abort', cancel);
   }
 }

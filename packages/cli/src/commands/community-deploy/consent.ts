@@ -25,6 +25,8 @@ export interface CommunityConsentStreams {
   input: Readable & { isTTY?: boolean };
   /** Terminal output. */
   output: Writable & { isTTY?: boolean };
+  /** Operator cancellation shared by the complete guided launch. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -42,7 +44,9 @@ export async function requireCommunityLaunchConsent(
   }
   const prompt = createInterface({ input: streams.input, output: streams.output });
   try {
-    const answer = await prompt.question(`Type ${expectedAppName} to create these resources: `);
+    const answer = await prompt.question(`Type ${expectedAppName} to create these resources: `, {
+      signal: streams.signal,
+    });
     if (answer !== expectedAppName) throw new CommunityConsentError('CONSENT_MISMATCH');
   } finally {
     prompt.close();
@@ -59,7 +63,8 @@ export async function requireTigrisTermsAcceptance(
   const prompt = createInterface({ input: streams.input, output: streams.output });
   try {
     const answer = await prompt.question(
-      'Fly requires separate Tigris terms acceptance. Accept them in Fly, then type accept: '
+      'Fly requires separate Tigris terms acceptance. Accept them in Fly, then type accept: ',
+      { signal: streams.signal }
     );
     if (answer !== 'accept') throw new CommunityConsentError('CONSENT_MISMATCH');
   } finally {

@@ -43,6 +43,8 @@ interface FlyGraphqlClientOptions {
   accessToken: string;
   /** Request deadline for each bounded operation. */
   timeoutMs?: number;
+  /** Operator cancellation shared by the complete guided launch. */
+  signal?: AbortSignal;
   /** Maximum accepted response body size. */
   maxResponseBytes?: number;
   /** Test-only fetch implementation. */
@@ -121,6 +123,7 @@ export class FlyTigrisGraphqlClient {
   private readonly timeoutMs: number;
   private readonly maxResponseBytes: number;
   private readonly fetch: FetchLike;
+  private readonly signal?: AbortSignal;
 
   /**
    * Create a bounded client around an already authenticated local Fly session token.
@@ -153,6 +156,7 @@ export class FlyTigrisGraphqlClient {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
     this.fetch = options.fetch ?? fetch;
+    this.signal = options.signal;
   }
 
   /** Read whether the signed-in Fly user has accepted the Tigris provider terms. */
@@ -214,6 +218,9 @@ export class FlyTigrisGraphqlClient {
     mutating: boolean
   ): Promise<T> {
     const controller = new AbortController();
+    const cancel = () => controller.abort();
+    this.signal?.addEventListener('abort', cancel, { once: true });
+    if (this.signal?.aborted) cancel();
     let timer: NodeJS.Timeout | undefined;
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
@@ -278,6 +285,7 @@ export class FlyTigrisGraphqlClient {
       return await Promise.race([operation, deadline]);
     } finally {
       clearTimeout(timer);
+      this.signal?.removeEventListener('abort', cancel);
     }
   }
 }

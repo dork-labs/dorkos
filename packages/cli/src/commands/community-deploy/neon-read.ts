@@ -79,6 +79,8 @@ export interface NeonReadOptions {
   env: Readonly<Record<string, string>>;
   /** Command deadline in milliseconds. */
   timeoutMs: number;
+  /** Operator cancellation shared by the complete guided launch. */
+  signal?: AbortSignal;
 }
 
 /** Stable Neon organization selection candidate. */

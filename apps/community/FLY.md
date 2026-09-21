@@ -31,11 +31,13 @@ dorkos community deploy \
   --dry-run
 ```
 
-Remove `--dry-run` to start setup. The command creates a recovery journal under your DorkOS data directory and prints its path. If setup stops, it keeps every confirmed resource and prints a complete command with `--resume <run-id>`. It never deletes paid resources automatically.
+Remove `--dry-run` to start setup. The command creates a recovery journal under your DorkOS data directory and prints its path. If setup stops, it keeps every confirmed resource and prints its owner, possible charges and stored data, read-only inspection commands, provider pages, and a complete command with `--resume <run-id>`. It never deletes paid resources automatically. Pressing Control-C stops the current bounded operation before returning and saves the last confirmed state. List saved work with `dorkos community deploy --list-incomplete`.
 
 Fly may require you to accept the Tigris terms separately. The command checks the current terms state and pauses for an explicit second confirmation before creating the bucket. Owner signup remains in Community's own browser page. After signup, the command applies a replacement Setup secret and asks you to confirm one post and one private attachment round trip.
 
 An exact DorkOS release is available to this command only after its Community image and signed release manifest finish publishing. A not-ready version stops before the resource consent step. Use `--version X.Y.Z` to request an exact version; there is no mutable-tag fallback.
+
+The final screen distinguishes a healthy deployment from recovery readiness. The launcher checks the pinned image, one Machine, applied secrets, and `/health`. It does not rehearse a restore. Tigris snapshots are a separate operator choice; configure and rehearse matching Neon database and Tigris file restores before relying on recovery.
 
 The manual recipe below remains available for recovery and audit.
 

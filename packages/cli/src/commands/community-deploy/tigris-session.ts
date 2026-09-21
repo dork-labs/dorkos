@@ -106,6 +106,8 @@ export interface FlySessionReadOptions {
   env: Readonly<Record<string, string>>;
   /** Command deadline in milliseconds. */
   timeoutMs: number;
+  /** Operator cancellation shared by the complete guided launch. */
+  signal?: AbortSignal;
 }
 
 /**

@@ -24,6 +24,7 @@ import type { CommunityPreflightSelection } from './preflight.js';
 import {
   initializeLaunchJournal,
   launchJournalPath,
+  listIncompleteLaunchJournals,
   readLaunchJournal,
   writeLaunchJournal,
   type LaunchJournal,
@@ -54,6 +55,7 @@ Options:
   --bucket-name <name>   Private Tigris bucket name (defaults to app name)
   --dry-run              Resolve and inspect the same plan without service writes
   --resume <run-id>      Resume an incomplete journal using the same plan choices
+  --list-incomplete      List saved launches that can be inspected or resumed
   -h, --help             Show this help
 
 There is no --yes mode. Before the first write, type the generated app name in an interactive terminal.
@@ -96,11 +98,51 @@ function resumeCommand(plan: LaunchJournal, selection: CommunityResumeSelection)
   ].join(' ');
 }
 
-function formatRetainedResources(journal: LaunchJournal): string {
-  const retained = Object.entries(journal.resources)
-    .map(([name, id]) => (id ? `  ${name}: ${id}` : null))
-    .filter((line): line is string => line !== null);
-  return retained.length === 0 ? '  No resource identity has been confirmed.' : retained.join('\n');
+/** Render validated incomplete journals without exposing provider credentials. */
+export function formatIncompleteLaunches(journals: readonly LaunchJournal[]): string {
+  if (journals.length === 0) return 'No incomplete Community launches were found.\n';
+  return `${journals
+    .map(
+      (journal) =>
+        `${journal.runId}  ${journal.state}  updated ${journal.updatedAt}  confirmed ${Object.keys(journal.resources).length}`
+    )
+    .join('\n')}\n`;
+}
+
+/** Render resource ownership, possible charges/data, read-only inspection, and exact resume. */
+export function formatCommunityRecovery(
+  journal: LaunchJournal,
+  selection: CommunityResumeSelection
+): string {
+  const rows = [
+    journal.resources.flyAppId
+      ? `  Fly app ${journal.resources.flyAppId} — owner ${selection.flyOrganization}; may incur charges; Machine filesystem is disposable.\n    Inspect: fly machine list --app ${selection.appName} --json\n    Console: https://fly.io/apps/${selection.appName}`
+      : null,
+    journal.resources.neonProjectId
+      ? `  Neon project ${journal.resources.neonProjectId} — owner ${selection.neonOrganization}; may incur charges; database data may exist.\n    Inspect: neonctl projects get ${journal.resources.neonProjectId} --output json\n    Console: https://console.neon.tech`
+      : null,
+    journal.resources.tigrisBucketId
+      ? `  Tigris bucket ${journal.resources.tigrisBucketId} — owner ${selection.flyOrganization}; may incur charges; private files may exist.\n    Inspect: fly storage status ${selection.bucketName} --app ${selection.appName}\n    Console: https://fly.io/apps/${selection.appName}`
+      : null,
+  ].filter((row): row is string => row !== null);
+  return [
+    'Confirmed retained resources:',
+    rows.length ? rows.join('\n') : '  No resource identity has been confirmed.',
+    `Journal state: ${journal.state}`,
+    'Automatic cleanup was not attempted.',
+    'Resume with:',
+    `  ${resumeCommand(journal, selection)}`,
+  ].join('\n');
+}
+
+/** Distinguish live deployment health from operator-owned recovery preparation. */
+export function formatCommunityCompletion(origin: string): string {
+  return [
+    `Community setup is complete at ${origin}`,
+    'Deployment health: the pinned image, one Machine, applied secrets, and /health were verified.',
+    'Recovery readiness: not verified. Configure and rehearse a matching Neon database and Tigris file restore before relying on recovery.',
+    'Tigris snapshots are a separate operator choice and are not enabled by this launcher.',
+  ].join('\n');
 }
 
 /** Parse and run the Community command without initializing the local DorkOS server. */
@@ -129,11 +171,18 @@ export async function runCommunityDispatcher(
       'project-name': { type: 'string' },
       'bucket-name': { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
+      'list-incomplete': { type: 'boolean', default: false },
       resume: { type: 'string' },
     },
   });
   if (parsed.values.help) {
     process.stdout.write(COMMUNITY_DEPLOY_HELP);
+    return 0;
+  }
+  if (parsed.values['list-incomplete']) {
+    process.stdout.write(
+      formatIncompleteLaunches(await listIncompleteLaunchJournals(context.dorkHome))
+    );
     return 0;
   }
   const appName = required(parsed.values['app-name'], '--app-name');
@@ -156,10 +205,20 @@ export async function runCommunityDispatcher(
     bucketName: parsed.values['bucket-name'] ?? appName,
   };
   const childEnv = context.processEnv;
+  const cancellation = new AbortController();
+  const cancel = () => cancellation.abort();
+  process.once('SIGINT', cancel);
+  process.once('SIGTERM', cancel);
   const serviceOptions = {
-    fly: { executable: 'fly', env: childEnv, timeoutMs: 30_000 },
-    neon: { executable: 'neonctl', env: childEnv, timeoutMs: 30_000 },
+    fly: { executable: 'fly', env: childEnv, timeoutMs: 30_000, signal: cancellation.signal },
+    neon: {
+      executable: 'neonctl',
+      env: childEnv,
+      timeoutMs: 30_000,
+      signal: cancellation.signal,
+    },
     graphqlTimeoutMs: 30_000,
+    signal: cancellation.signal,
   };
   const trusted: TrustedReleaseIdentity = {
     repository: 'dork-labs/dorkos',
@@ -173,104 +232,134 @@ export async function runCommunityDispatcher(
     repository: trusted.repository,
   });
 
-  await runCommunityDeploy(
-    {
-      version,
-      selection,
-      dryRun: parsed.values['dry-run'],
-      resume: resumeJournal
-        ? {
-            flyAppId: resumeJournal.resources.flyAppId,
-            neonProjectId: resumeJournal.resources.neonProjectId,
-          }
-        : undefined,
-    },
-    {
-      resolveRelease: (requested) =>
-        resolveExactCommunityRelease(requested, trusted, releaseSource, context.parseRelease).then(
-          async (release) => {
+  try {
+    await runCommunityDeploy(
+      {
+        version,
+        selection,
+        dryRun: parsed.values['dry-run'],
+        resume: resumeJournal
+          ? {
+              flyAppId: resumeJournal.resources.flyAppId,
+              neonProjectId: resumeJournal.resources.neonProjectId,
+            }
+          : undefined,
+      },
+      {
+        resolveRelease: (requested) =>
+          resolveExactCommunityRelease(
+            requested,
+            trusted,
+            releaseSource,
+            context.parseRelease
+          ).then(async (release) => {
             await assertCommunityCliVersions(serviceOptions.fly, serviceOptions.neon, {
               fly: release.minimumFlyctlVersion,
               neon: release.minimumNeonCliVersion,
             });
             return release;
+          }),
+        readPreflight: (requested) => readDefaultCommunityPreflight(serviceOptions, requested),
+        renderPreflight: (result) => {
+          process.stdout.write(`${formatCommunityPreflight(result)}\nJournal: ${journalPath}\n`);
+        },
+        consent: (name) =>
+          requireCommunityLaunchConsent(name, {
+            input: process.stdin,
+            output: process.stdout,
+            signal: cancellation.signal,
+          }),
+        execute: async (result) => {
+          let latest: LaunchJournal;
+          if (parsed.values.resume) {
+            const existing = resumeJournal!;
+            assertCommunityLaunchPlanUnchanged(existing, result.plan);
+            latest = existing;
+          } else {
+            latest = createInitialCommunityLaunchJournal(
+              runId,
+              result.plan,
+              new Date().toISOString()
+            );
+            await initializeLaunchJournal(journalPath, latest);
           }
-        ),
-      readPreflight: (requested) => readDefaultCommunityPreflight(serviceOptions, requested),
-      renderPreflight: (result) => {
-        process.stdout.write(`${formatCommunityPreflight(result)}\nJournal: ${journalPath}\n`);
-      },
-      consent: (name) =>
-        requireCommunityLaunchConsent(name, { input: process.stdin, output: process.stdout }),
-      execute: async (result) => {
-        let latest: LaunchJournal;
-        if (parsed.values.resume) {
-          const existing = resumeJournal!;
-          assertCommunityLaunchPlanUnchanged(existing, result.plan);
-          latest = existing;
-        } else {
-          latest = createInitialCommunityLaunchJournal(
-            runId,
-            result.plan,
-            new Date().toISOString()
+          const persist = async (next: LaunchJournal, expectedRevision: number) => {
+            await writeLaunchJournal(journalPath, next, expectedRevision);
+            latest = next;
+          };
+          try {
+            latest = await executeCommunityCreationPhase(
+              result.plan,
+              latest,
+              createDefaultCommunityCreationDependencies({
+                options: serviceOptions,
+                plan: result.plan,
+                latestJournal: () => latest,
+                persist,
+                now: () => new Date().toISOString(),
+                confirmTigrisTerms: () =>
+                  requireTigrisTermsAcceptance({
+                    input: process.stdin,
+                    output: process.stdout,
+                    signal: cancellation.signal,
+                  }),
+              })
+            );
+            const deployed = await executeCommunityDeployPhase(
+              result.plan,
+              latest,
+              createDefaultCommunityDeployDependencies({
+                options: serviceOptions,
+                plan: result.plan,
+                latestJournal: () => latest,
+                persist,
+                now: () => new Date().toISOString(),
+              })
+            );
+            latest = deployed.journal;
+            latest = await executeCommunityOwnerHandoff(
+              result.plan,
+              latest,
+              deployed.bootstrapSecret,
+              createDefaultCommunityOwnerDependencies({
+                options: serviceOptions,
+                plan: result.plan,
+                path: childEnv.PATH ?? '',
+                persist,
+                now: () => new Date().toISOString(),
+                signal: cancellation.signal,
+              })
+            );
+          } catch (error) {
+            if (cancellation.signal.aborted) {
+              const uncertain = latest.pendingIntent !== null || latest.state === 'uncertain';
+              const cancelled: LaunchJournal = {
+                ...latest,
+                revision: latest.revision + 1,
+                state: uncertain ? 'uncertain' : latest.state,
+                lastSafeError: uncertain
+                  ? { category: 'uncertain', code: 'CREATION_OUTCOME_UNCERTAIN' }
+                  : { category: 'transient', code: 'CANCELLED' },
+                updatedAt: new Date().toISOString(),
+              };
+              await persist(cancelled, latest.revision).catch(() => undefined);
+            }
+            process.stderr.write(
+              `Community setup stopped.\n${formatCommunityRecovery(latest, selection)}\n`
+            );
+            throw error;
+          }
+          process.stdout.write(
+            latest.state === 'complete'
+              ? `${formatCommunityCompletion(`https://${result.plan.fly.appName}.fly.dev`)}\n`
+              : `Community setup is waiting for owner completion.\n${formatCommunityRecovery(latest, selection)}\n`
           );
-          await initializeLaunchJournal(journalPath, latest);
-        }
-        const persist = async (next: LaunchJournal, expectedRevision: number) => {
-          await writeLaunchJournal(journalPath, next, expectedRevision);
-          latest = next;
-        };
-        try {
-          latest = await executeCommunityCreationPhase(
-            result.plan,
-            latest,
-            createDefaultCommunityCreationDependencies({
-              options: serviceOptions,
-              plan: result.plan,
-              latestJournal: () => latest,
-              persist,
-              now: () => new Date().toISOString(),
-              confirmTigrisTerms: () =>
-                requireTigrisTermsAcceptance({ input: process.stdin, output: process.stdout }),
-            })
-          );
-          const deployed = await executeCommunityDeployPhase(
-            result.plan,
-            latest,
-            createDefaultCommunityDeployDependencies({
-              options: serviceOptions,
-              plan: result.plan,
-              latestJournal: () => latest,
-              persist,
-              now: () => new Date().toISOString(),
-            })
-          );
-          latest = deployed.journal;
-          latest = await executeCommunityOwnerHandoff(
-            result.plan,
-            latest,
-            deployed.bootstrapSecret,
-            createDefaultCommunityOwnerDependencies({
-              options: serviceOptions,
-              plan: result.plan,
-              path: childEnv.PATH ?? '',
-              persist,
-              now: () => new Date().toISOString(),
-            })
-          );
-        } catch (error) {
-          process.stderr.write(
-            `Community setup stopped. Confirmed retained resources:\n${formatRetainedResources(latest)}\nResume with:\n  ${resumeCommand(latest, selection)}\nNo resources were removed.\n`
-          );
-          throw error;
-        }
-        process.stdout.write(
-          latest.state === 'complete'
-            ? `Community setup is complete at https://${result.plan.fly.appName}.fly.dev\n`
-            : `Community setup is saved. Resume with --resume ${latest.runId}.\n`
-        );
-      },
-    }
-  );
-  return 0;
+        },
+      }
+    );
+    return 0;
+  } finally {
+    process.removeListener('SIGINT', cancel);
+    process.removeListener('SIGTERM', cancel);
+  }
 }

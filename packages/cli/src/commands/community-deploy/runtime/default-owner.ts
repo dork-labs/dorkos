@@ -18,11 +18,11 @@ import type { LaunchPlan } from '../plan.js';
 
 const COMMUNITY_IMAGE_REPOSITORY = 'ghcr.io/dork-labs/dorkos-community';
 
-async function ask(question: string): Promise<string> {
+async function ask(question: string, signal?: AbortSignal): Promise<string> {
   if (!stdin.isTTY || !stdout.isTTY) throw new Error('An interactive terminal is required');
   const prompt = createInterface({ input: stdin, output: stdout });
   try {
-    return await prompt.question(question);
+    return await prompt.question(question, { signal });
   } finally {
     prompt.close();
   }
@@ -83,6 +83,7 @@ export function createDefaultCommunityOwnerDependencies(input: {
   path: string;
   persist(journal: LaunchJournal, expectedRevision: number): Promise<void>;
   now(): string;
+  signal?: AbortSignal;
 }): CommunityOwnerDependencies {
   return {
     persist: input.persist,
@@ -104,11 +105,15 @@ export function createDefaultCommunityOwnerDependencies(input: {
       );
       await verifyCommunityHealth(`https://${input.plan.fly.appName}.fly.dev`, {
         timeoutMs: 120_000,
+        signal: input.signal,
       });
     },
     handoffSecret: async (origin, secret) => {
       if (
-        (await ask(`Open ${origin} and copy the one-time setup secret? Type copy: `)) !== 'copy'
+        (await ask(
+          `Open ${origin} and copy the one-time setup secret? Type copy: `,
+          input.signal
+        )) !== 'copy'
       ) {
         throw new Error('Setup-secret handoff was cancelled');
       }
@@ -122,12 +127,13 @@ export function createDefaultCommunityOwnerDependencies(input: {
     },
     ownerExists,
     waitForOwnerClaim: async (origin) => {
-      await ask(`Finish owner setup at ${origin}, then press Enter to verify it. `);
+      await ask(`Finish owner setup at ${origin}, then press Enter to verify it. `, input.signal);
       return ownerExists(origin);
     },
     confirmAcceptance: async (origin) =>
       (await ask(
-        `Post one message and upload then download one private attachment at ${origin}. Type complete when both work: `
+        `Post one message and upload then download one private attachment at ${origin}. Type complete when both work: `,
+        input.signal
       )) === 'complete',
   };
 }

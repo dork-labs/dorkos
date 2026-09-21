@@ -5,7 +5,18 @@
  */
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { chmod, link, lstat, mkdir, open, readFile, rename, rm, unlink } from 'node:fs/promises';
+import {
+  chmod,
+  link,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  unlink,
+} from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { withFileLock } from '@dorkos/shared/atomic-write';
 import { z } from 'zod';
@@ -81,6 +92,7 @@ export const LaunchSafeErrorCodeSchema = z.enum([
   'COMMUNITY_RELEASE_VERSION_MISMATCH',
   'COMMUNITY_RELEASE_PROVENANCE_MISMATCH',
   'JOURNAL_LOCKED',
+  'CANCELLED',
 ]);
 
 /** Canonical schema for a launch recovery journal. */
@@ -394,6 +406,28 @@ export async function readLaunchJournal(filePath: string): Promise<LaunchJournal
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
   }
+}
+
+/** List validated incomplete launch journals without following directory or file symlinks. */
+export async function listIncompleteLaunchJournals(dorkHome: string): Promise<LaunchJournal[]> {
+  const directory = join(dorkHome, 'launches', 'community');
+  await rejectSymlink(dirname(directory));
+  await rejectSymlink(directory);
+  let filenames: string[];
+  try {
+    filenames = await readdir(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+  const journals: LaunchJournal[] = [];
+  for (const filename of filenames.filter((name) => name.endsWith('.json')).sort()) {
+    const runId = filename.slice(0, -'.json'.length);
+    const filePath = launchJournalPath(dorkHome, runId);
+    const journal = await readLaunchJournal(filePath);
+    if (journal && journal.state !== 'complete') journals.push(journal);
+  }
+  return journals.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 /**

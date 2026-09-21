@@ -3,6 +3,7 @@ covers:
   - 'feat(cli): add guided Community deployment'
   - 'feat(cli): wire guided Community setup'
   - 'fix(cli): retain Community creation identity'
+  - 'fix(cli): complete Community launch recovery'
 ---
 
 ### Added

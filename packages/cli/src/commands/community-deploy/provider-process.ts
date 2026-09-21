@@ -24,6 +24,8 @@ export interface ProviderCommandOptions<T> {
   env: Readonly<Record<string, string>>;
   /** Maximum wall time in milliseconds. */
   timeoutMs: number;
+  /** Operator cancellation shared by the complete guided launch. */
+  signal?: AbortSignal;
   /** Maximum bytes accepted on either output stream. */
   maxBytes?: number;
   /** Optional secret document streamed to stdin. */
@@ -35,7 +37,7 @@ export interface ProviderCommandOptions<T> {
 /** Generic safe provider error that never includes raw command output. */
 export class ProviderCommandError extends Error {
   /** Stable failure category safe for logs and journals. */
-  readonly code: 'SPAWN' | 'TIMEOUT' | 'OUTPUT_LIMIT' | 'EXIT' | 'INVALID_RESPONSE';
+  readonly code: 'SPAWN' | 'TIMEOUT' | 'OUTPUT_LIMIT' | 'EXIT' | 'INVALID_RESPONSE' | 'CANCELLED';
 
   /**
    * Create a provider command error without raw stdout or stderr.
@@ -93,6 +95,9 @@ export function runProviderCommand<T>(
       () => failAfterClose(new ProviderCommandError('TIMEOUT')),
       options.timeoutMs
     );
+    const cancel = () => failAfterClose(new ProviderCommandError('CANCELLED'));
+    options.signal?.addEventListener('abort', cancel, { once: true });
+    if (options.signal?.aborted) cancel();
     child.once('error', () => failAfterClose(new ProviderCommandError('SPAWN')));
     child.stdout.on('data', (chunk: Buffer) => {
       if (settled || pendingError) return;
@@ -113,6 +118,7 @@ export function runProviderCommand<T>(
       settled = true;
       clearTimeout(timer);
       clearTimeout(terminationTimer);
+      options.signal?.removeEventListener('abort', cancel);
       if (pendingError) {
         scrubStdout();
         return reject(pendingError);

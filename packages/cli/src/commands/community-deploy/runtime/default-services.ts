@@ -42,6 +42,8 @@ export interface CommunityServiceOptions {
   neon: NeonReadOptions;
   /** Deadline for each Fly GraphQL operation. */
   graphqlTimeoutMs: number;
+  /** Operator cancellation shared by the complete guided launch. */
+  signal?: AbortSignal;
 }
 
 /** Read every inventory used by preflight from the explicitly selected accounts. */
@@ -125,7 +127,11 @@ async function useTigrisClient<T>(
   try {
     return await credential.use((token) =>
       consumer(
-        new FlyTigrisGraphqlClient({ accessToken: token, timeoutMs: options.graphqlTimeoutMs })
+        new FlyTigrisGraphqlClient({
+          accessToken: token,
+          timeoutMs: options.graphqlTimeoutMs,
+          signal: options.signal,
+        })
       )
     );
   } finally {

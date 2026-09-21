@@ -82,4 +82,17 @@ describe('Community Fly configuration and health', () => {
     ).rejects.toBeInstanceOf(CommunityHealthError);
     expect(cancel).toHaveBeenCalledOnce();
   });
+
+  it('cancels the exact health response when the operator interrupts setup', async () => {
+    const cancel = vi.fn();
+    const controller = new AbortController();
+    const check = verifyCommunityHealth('https://dorkos-community-test.fly.dev', {
+      timeoutMs: 1_000,
+      signal: controller.signal,
+      fetch: vi.fn().mockResolvedValue(new Response(new ReadableStream({ cancel }))),
+    });
+    controller.abort();
+    await expect(check).rejects.toBeInstanceOf(CommunityHealthError);
+    expect(cancel).toHaveBeenCalledOnce();
+  });
 });
