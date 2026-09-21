@@ -113,6 +113,7 @@ export { Feed } from './feed';
 export type { FeedProps } from './feed';
 export {
   Field,
+  fieldVariants,
   FieldContent,
   FieldDescription,
   FieldError,
@@ -335,7 +336,7 @@ export type {
 export type { TabsListProps } from './tabs';
 export { DirectoryPicker } from './DirectoryPicker';
 export type { DirectoryPickerProps } from './DirectoryPicker';
-export { PageContainer } from './page-container';
+export { PageContainer, pageContainerVariants } from './page-container';
 export type { PageContainerProps } from './page-container';
 export { PathInput } from './path-input';
 export type { PathInputProps } from './path-input';
@@ -399,6 +400,7 @@ export {
   SidebarMenuAction,
   SidebarMenuBadge,
   SidebarMenuButton,
+  sidebarMenuButtonVariants,
   SidebarMenuItem,
   SidebarMenuSkeleton,
   SidebarMenuSub,
