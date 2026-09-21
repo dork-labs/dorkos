@@ -7,6 +7,7 @@ import { afterAll, beforeEach, afterEach, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { migrate } from '../migrate.js';
 import { transaction } from '../data.js';
+import { prepareCommunityDeletionInventory, sweepCommunityDeletions } from '../deletion-worker.js';
 import {
   BlobStoreError,
   FileSystemBlobStore,
@@ -487,6 +488,80 @@ it('rejects a stale listing when the readiness generation advances', async () =>
     issues: [{ code: 'active_writes' }],
   });
   expect(gate.state).toBe('dirty');
+});
+
+it('adopts and deletes populated singleton legacy blobs before tenant finalization', async () => {
+  if (!pool) throw new Error('test database is unavailable');
+  const fixture = await seedAttachment();
+  expect((await pool.query('SELECT count(*)::int AS count FROM managed_blobs')).rows[0]).toEqual({
+    count: 0,
+  });
+
+  await expect(prepareCommunityDeletionInventory(pool, store, fixture.community)).resolves.toBe(
+    true
+  );
+  expect(
+    (
+      await pool.query(
+        `SELECT purpose,state,count(*)::int AS count FROM managed_blobs
+         WHERE community_id=$1 GROUP BY purpose,state ORDER BY purpose`,
+        [fixture.community]
+      )
+    ).rows
+  ).toEqual([
+    { purpose: 'attachment', state: 'committed', count: 1 },
+    { purpose: 'export', state: 'committed', count: 1 },
+  ]);
+
+  const lifecycle = await pool.query<{ lifecycle_version: number }>(
+    `UPDATE communities SET lifecycle='deletion_pending',
+       delete_requested_at=now()-interval '8 days',delete_after=now()-interval '1 day',
+       delete_requested_by=$2,lifecycle_version=lifecycle_version+1
+     WHERE id=$1 RETURNING lifecycle_version`,
+    [fixture.community, fixture.member]
+  );
+  await pool.query(
+    `INSERT INTO community_deletion_jobs(
+       community_id,requested_by_member_id,lifecycle_version,delete_after,next_attempt_at
+     ) VALUES($1,$2,$3,now()-interval '1 day',now())`,
+    [fixture.community, fixture.member, lifecycle.rows[0].lifecycle_version]
+  );
+
+  await expect(sweepCommunityDeletions(pool, store, 10)).resolves.toEqual({
+    claimed: 1,
+    deletedBlobs: 2,
+    completed: 1,
+    failed: 0,
+  });
+  expect(
+    (await pool.query('SELECT 1 FROM communities WHERE id=$1', [fixture.community])).rowCount
+  ).toBe(0);
+  expect((await store.listNamespace()).keys).toEqual([]);
+  expect(
+    (
+      await pool.query('SELECT outcome FROM community_deletion_tombstones WHERE community_id=$1', [
+        fixture.community,
+      ])
+    ).rows[0]
+  ).toEqual({ outcome: 'deleted' });
+});
+
+it('blocks singleton deletion readiness on an unexplained legacy object without references', async () => {
+  if (!pool) throw new Error('test database is unavailable');
+  const fixture = await seedCommunity();
+  const unknownKey = 'f'.repeat(64);
+  await writeFile(join(directory, unknownKey), 'unclassified legacy bytes');
+
+  await expect(prepareCommunityDeletionInventory(pool, store, fixture.community)).resolves.toBe(
+    false
+  );
+  expect((await store.listNamespace()).keys).toContain(unknownKey);
+  expect((await pool.query('SELECT state,reason_code FROM tenant_reconciliation')).rows[0]).toEqual(
+    {
+      state: 'dirty',
+      reason_code: 'unexplained_objects',
+    }
+  );
 });
 
 it('rejects a legacy write that removes explicit tenant ownership', async () => {
