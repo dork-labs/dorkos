@@ -23,7 +23,7 @@ The canonical graph is [03-tasks.json](./03-tasks.json). Implementation begins a
 - [ ] **2.1** Build host sign-in, chooser, and returning-member entry.
 - [ ] **2.2** Build clean-URL invitation review and account/OAuth continuation.
 - [ ] **2.3** Separate installation, session, channel, and membership controls.
-- [ ] **2.4** Distinguish deploying a host from creating and claiming a community.
+- [ ] **2.4** Atomically set up the first host, then distinguish deployment from later community creation and claim.
 
 ## Phase 3 — Journey Proof (DOR-2182)
 

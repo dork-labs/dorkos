@@ -94,23 +94,26 @@ test.beforeAll(async () => {
   const grant = await post('/api/v1/bootstrap/preflight', { secret: config.bootstrapSecret });
   const bootstrap = cookies(grant);
   const bootstrapHeader = bootstrap.map((item) => `${item.name}=${item.value}`).join('; ');
-  const signup = await post(
-    '/api/auth/sign-up/email',
-    { name: 'Owner', email: 'owner@browser.test', password: 'password1234' },
+  const completed = await post(
+    '/api/v1/bootstrap/complete',
+    {
+      secret: config.bootstrapSecret,
+      accountName: 'Owner',
+      email: 'owner@browser.test',
+      password: 'password1234',
+      communityName: 'Browser test',
+      channelName: 'general',
+    },
     bootstrapHeader
   );
-  expect(signup.status).toBe(200);
-  ownerCookies = cookies(signup);
-  const allCookies = [...bootstrap, ...ownerCookies]
-    .map((item) => `${item.name}=${item.value}`)
-    .join('; ');
-  const claim = await post(
-    '/api/v1/bootstrap/claim',
-    { secret: config.bootstrapSecret, name: 'Browser test' },
-    allCookies
-  );
-  expect(claim.status).toBe(200);
-  communityId = (await claim.json()).community.id;
+  expect(completed.status).toBe(201);
+  communityId = (await completed.json()).community.id;
+  const signIn = await post('/api/auth/sign-in/email', {
+    email: 'owner@browser.test',
+    password: 'password1234',
+  });
+  expect(signIn.status).toBe(200);
+  ownerCookies = cookies(signIn);
 });
 
 test.afterAll(async () => {

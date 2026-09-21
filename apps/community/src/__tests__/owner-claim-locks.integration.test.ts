@@ -8,6 +8,7 @@ import { Pool } from 'pg';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { migrate } from '../migrate.js';
+import { bootstrapFirstHost } from './bootstrap-test-helper.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for owner claim tests');
@@ -147,22 +148,14 @@ beforeAll(async () => {
   if (!address || typeof address === 'string') throw new Error('Missing HTTP address');
   baseUrl = `http://localhost:${address.port}`;
 
-  const preflight = await jsonRequest(
-    '/api/v1/bootstrap/preflight',
-    { secret: config.bootstrapSecret },
-    ''
-  );
-  const grant = cookieOf(preflight);
-  operatorCookie = await signup('Operator', 'operator@locks.test', grant);
-  expect(
-    (
-      await jsonRequest(
-        '/api/v1/bootstrap/claim',
-        { secret: config.bootstrapSecret, name: 'First Community' },
-        operatorCookie
-      )
-    ).status
-  ).toBe(200);
+  const setup = await bootstrapFirstHost((path, body, cookie) => jsonRequest(path, body, cookie), {
+    secret: config.bootstrapSecret,
+    accountName: 'Operator',
+    email: 'operator@locks.test',
+    password: 'password1234',
+    communityName: 'First Community',
+  });
+  operatorCookie = setup.cookie;
 });
 
 afterAll(async () => {

@@ -106,15 +106,24 @@ export function Admission({
     setError('');
     try {
       const path = mode === 'signup' ? '/api/auth/sign-up/email' : '/api/auth/sign-in/email';
-      await request(
-        path,
-        'POST',
-        mode === 'signup' ? { name, email, password } : { email, password }
-      );
       if (isOwner) {
-        await request('/api/v1/bootstrap/claim', 'POST', { secret, name: communityName });
-        await request('/api/v1/channels', 'POST', { name: channelName, visibility: 'public' });
-      } else if (pendingAdmission) {
+        await request('/api/v1/bootstrap/complete', 'POST', {
+          secret,
+          accountName: name,
+          email,
+          password,
+          communityName,
+          channelName,
+        });
+        await request('/api/auth/sign-in/email', 'POST', { email, password });
+      } else {
+        await request(
+          path,
+          'POST',
+          mode === 'signup' ? { name, email, password } : { email, password }
+        );
+      }
+      if (!isOwner && pendingAdmission) {
         await request('/api/v1/invites/bind', 'POST', {});
         await request('/api/v1/invites/redeem', 'POST', {});
       }
@@ -228,13 +237,15 @@ export function Admission({
                   Create account
                 </button>
               )}
-              <button
-                type="button"
-                className={`button ${mode === 'signin' ? 'primary' : ''}`}
-                onClick={() => setMode('signin')}
-              >
-                Sign in
-              </button>
+              {!isOwner && (
+                <button
+                  type="button"
+                  className={`button ${mode === 'signin' ? 'primary' : ''}`}
+                  onClick={() => setMode('signin')}
+                >
+                  Sign in
+                </button>
+              )}
             </div>
             {mode === 'signup' && (
               <div className="field">

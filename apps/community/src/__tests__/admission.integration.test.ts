@@ -6,6 +6,7 @@ import { migrate } from '../migrate.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { sweepExpiredAdmissions } from '../routes/invites.js';
+import { bootstrapFirstHost } from './bootstrap-test-helper.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for admission HTTP tests');
@@ -160,29 +161,18 @@ beforeAll(async () => {
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Missing HTTP address');
   baseUrl = `http://localhost:${address.port}`;
-  const preflight = await call('/api/v1/bootstrap/preflight', 'POST', {
+  const setup = await bootstrapFirstHost((path, body, cookie) => call(path, 'POST', body, cookie), {
     secret: config.bootstrapSecret,
+    accountName: 'Owner',
+    email: 'owner@admission.test',
+    password: 'password1234',
+    communityName: 'Admission test',
+    channelName: 'General',
   });
-  const grant = cookieOf(preflight);
-  ownerCookie = await signup('Owner', 'owner@admission.test', grant);
-  expect(
-    (
-      await call(
-        '/api/v1/bootstrap/claim',
-        'POST',
-        {
-          secret: config.bootstrapSecret,
-          name: 'Admission test',
-        },
-        ownerCookie
-      )
-    ).status
-  ).toBe(200);
-  communityId = (await pool.query('SELECT id FROM communities')).rows[0].id;
-  ownerId = (await pool.query("SELECT id FROM members WHERE role='owner'")).rows[0].id;
-  const channel = await call('/api/v1/channels', 'POST', { name: 'General' }, ownerCookie);
-  expect(channel.status).toBe(201);
-  channelId = (await channel.json()).channel.id;
+  ownerCookie = setup.cookie;
+  communityId = setup.communityId;
+  ownerId = setup.memberId;
+  channelId = setup.channelId;
 });
 
 afterAll(async () => {

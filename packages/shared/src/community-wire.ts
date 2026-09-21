@@ -33,7 +33,7 @@ export const CommunityWireHandleSchema = z.string().regex(HANDLE_PATTERN);
 export const COMMUNITY_API_V1_ROUTES = {
   community: '/api/v1/community',
   bootstrapPreflight: '/api/v1/bootstrap/preflight',
-  bootstrapClaim: '/api/v1/bootstrap/claim',
+  bootstrapComplete: '/api/v1/bootstrap/complete',
   ownerClaimPreflight: '/api/v1/owner-claims/preflight',
   ownerClaim: '/api/v1/owner-claims/claim',
   hostCommunities: '/api/v1/host/communities',
@@ -90,10 +90,20 @@ export const CommunityWireBootstrapPreflightResponseSchema = z.strictObject({
   granted: z.boolean(),
   expiresAt: timestamp,
 });
-/** Owner claim requires the secret again; grant identity stays in an HTTP-only cookie. */
-export const CommunityWireBootstrapClaimRequestSchema = z.strictObject({
+/** First-install setup creates the host account and initial tenant in one transaction. */
+export const CommunityWireBootstrapCompleteRequestSchema = z.strictObject({
   secret: id,
-  name: z.string().min(1),
+  accountName: z.string().trim().min(1).max(128),
+  email: z.email(),
+  password: z.string().min(8).max(128),
+  communityName: z.string().trim().min(1).max(120),
+  channelName: z.string().trim().min(1).max(80),
+});
+/** First-install setup returns only public tenant identities; sign-in remains a separate step. */
+export const CommunityWireBootstrapCompleteResponseSchema = z.strictObject({
+  community: CommunityWireCommunitySchema,
+  memberId: id,
+  channelId: id,
 });
 /** Owner claim yields public community and member identity. */
 export const CommunityWireBootstrapClaimResponseSchema = z.strictObject({
