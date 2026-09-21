@@ -266,6 +266,15 @@ export const pendingAdmissions = pgTable(
   (table) => [
     index('pending_admissions_community_idx').on(table.communityId),
     uniqueIndex('pending_admissions_community_id_unique').on(table.communityId, table.id),
+    uniqueIndex('pending_admissions_account_binding_unique').on(
+      table.communityId,
+      table.id,
+      table.accountId
+    ),
+    check(
+      'pending_admissions_binding_shape',
+      sql`(${table.accountId} IS NULL AND ${table.boundAt} IS NULL AND ${table.consumedAt} IS NULL) OR (${table.accountId} IS NOT NULL AND ${table.boundAt} IS NOT NULL)`
+    ),
     foreignKey({
       name: 'pending_admissions_invite_tenant_fk',
       columns: [table.communityId, table.inviteId],
@@ -299,6 +308,15 @@ export const admissionReceipts = pgTable(
       name: 'admission_receipts_admission_tenant_fk',
       columns: [table.communityId, table.admissionId],
       foreignColumns: [pendingAdmissions.communityId, pendingAdmissions.id],
+    }),
+    foreignKey({
+      name: 'admission_receipts_admission_account_fk',
+      columns: [table.communityId, table.admissionId, table.accountId],
+      foreignColumns: [
+        pendingAdmissions.communityId,
+        pendingAdmissions.id,
+        pendingAdmissions.accountId,
+      ],
     }),
     foreignKey({
       name: 'admission_receipts_invite_tenant_fk',

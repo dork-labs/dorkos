@@ -4,11 +4,13 @@ ALTER TABLE pending_admissions
   ADD COLUMN consumed_at timestamptz;
 
 ALTER TABLE pending_admissions ADD CONSTRAINT pending_admissions_binding_shape CHECK (
-  (account_id IS NULL AND bound_at IS NULL) OR
+  (account_id IS NULL AND bound_at IS NULL AND consumed_at IS NULL) OR
   (account_id IS NOT NULL AND bound_at IS NOT NULL)
 );
 CREATE UNIQUE INDEX pending_admissions_community_id_unique
   ON pending_admissions(community_id, id);
+CREATE UNIQUE INDEX pending_admissions_account_binding_unique
+  ON pending_admissions(community_id, id, account_id);
 
 CREATE TABLE admission_receipts (
   admission_id uuid PRIMARY KEY REFERENCES pending_admissions(id) ON DELETE CASCADE,
@@ -21,6 +23,9 @@ CREATE TABLE admission_receipts (
   CONSTRAINT admission_receipts_admission_tenant_fk
     FOREIGN KEY (community_id, admission_id)
     REFERENCES pending_admissions(community_id, id),
+  CONSTRAINT admission_receipts_admission_account_fk
+    FOREIGN KEY (community_id, admission_id, account_id)
+    REFERENCES pending_admissions(community_id, id, account_id),
   CONSTRAINT admission_receipts_invite_tenant_fk
     FOREIGN KEY (community_id, invite_id)
     REFERENCES invites(community_id, id),
