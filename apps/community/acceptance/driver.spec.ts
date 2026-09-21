@@ -1499,10 +1499,14 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         localOwnerAttachmentResponse,
         localOwnerAttachmentDownload,
       ]);
+      expect(ownerAttachmentDownloadResponse.ok()).toBe(true);
       expect(ownerAttachmentDownload.suggestedFilename()).toBe(ownerAttachmentName);
-      expect(Buffer.from(await ownerAttachmentDownloadResponse.body())).toEqual(
-        ownerAttachmentBytes
-      );
+      const ownerAttachmentDownloadedPath = await ownerAttachmentDownload.path();
+      expect(
+        ownerAttachmentDownloadedPath,
+        'The owner attachment download did not produce a readable file'
+      ).not.toBeNull();
+      expect(await readFile(ownerAttachmentDownloadedPath!)).toEqual(ownerAttachmentBytes);
       expect(await agentEntries()).toHaveLength(heldEjection.beforeEntryCount);
 
       // Leave Community A, receive a human post, then navigate back with the
