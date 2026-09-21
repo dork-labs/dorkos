@@ -7,20 +7,11 @@ import { useSessionListStore } from '../stream/session-list-store';
 // re-exports React components, and this module is imported by every agent row.
 import { humanOriginSessionIds } from '../../lib/partition-sessions-by-origin';
 import {
+  BORDER_COLORS,
   borderKindFromLifecycle,
   type SessionBorderKind,
   type SessionBorderState,
 } from './use-session-border-state';
-
-const BORDER_COLORS = {
-  green: 'rgb(34, 197, 94)',
-  greenDim: 'rgba(34, 197, 94, 0.15)',
-  amber: 'rgb(245, 158, 11)',
-  amberDim: 'rgba(245, 158, 11, 0.15)',
-  transparent: 'transparent',
-  /** Barely-visible resting color so idle borders aren't fully invisible. */
-  idle: 'rgba(128, 128, 128, 0.08)',
-} as const;
 
 const LABELS: Record<SessionBorderKind, string> = {
   idle: 'Idle',
