@@ -1313,6 +1313,16 @@ describe('signed admission over real HTTP and Postgres', () => {
     );
     expect(joinedFirst.status).toBe(200);
     const claimantFirstMember = (await joinedFirst.json()).memberId;
+    const visibleMemberships = await call('/api/v1/memberships', 'GET', undefined, claimantCookie);
+    expect(visibleMemberships.status).toBe(200);
+    const visibleMembershipRows = (await visibleMemberships.json()).memberships;
+    expect(visibleMembershipRows).toHaveLength(2);
+    expect(visibleMembershipRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ communityId: firstId, role: 'member', lifecycle: 'active' }),
+        expect.objectContaining({ communityId: secondId, role: 'owner', lifecycle: 'active' }),
+      ])
+    );
     expect(
       (
         await call(
@@ -1326,6 +1336,12 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect(
       (await call(`/api/v1/communities/${secondId}/me`, 'GET', undefined, claimantCookie)).status
     ).toBe(200);
+    expect(
+      (await (await call('/api/v1/memberships', 'GET', undefined, claimantCookie)).json())
+        .memberships
+    ).toEqual([
+      expect.objectContaining({ communityId: secondId, role: 'owner', lifecycle: 'active' }),
+    ]);
     expect(
       (await call('/api/v1/owner-claims/preflight', 'POST', { token: claimToken })).status
     ).toBe(403);
@@ -1387,6 +1403,12 @@ describe('signed admission over real HTTP and Postgres', () => {
       (await call(`/api/v1/communities/${secondId}/channels`, 'GET', undefined, claimantCookie))
         .status
     ).toBe(409);
+    expect(
+      (await (await call('/api/v1/memberships', 'GET', undefined, claimantCookie)).json())
+        .memberships
+    ).toEqual([
+      expect.objectContaining({ communityId: secondId, role: 'owner', lifecycle: 'suspended' }),
+    ]);
     expect((await nextSse(secondReader)).type).toBe('closed');
     expect(
       (

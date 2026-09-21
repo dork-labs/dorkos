@@ -16,7 +16,14 @@ import {
   CommunityPairingExchangeSecretResponseSchema,
 } from '@dorkos/shared/community-private-wire';
 import { RemoteConnectionStore, type RemoteConnectionDescriptor } from './connection-store.js';
-import { parseCommunityOrigin, pinnedJson, PinnedOriginError } from './pinned-origin.js';
+import {
+  communityApiPath,
+  parseCommunityLink,
+  parseCommunityOrigin,
+  pinnedJson,
+  PinnedHttpError,
+  PinnedOriginError,
+} from './pinned-origin.js';
 
 /** A pending pairing with an approval page on the accepted community origin. */
 export interface RemotePairingStart {
@@ -39,6 +46,22 @@ export class RemotePairingBusyError extends Error {
   constructor() {
     super('Pairing state is changing');
     this.name = 'RemotePairingBusyError';
+  }
+}
+
+/** An origin-only link cannot choose among multiple private communities. */
+export class RemoteCommunitySelectionRequiredError extends Error {
+  constructor() {
+    super('A canonical community link is required');
+    this.name = 'RemoteCommunitySelectionRequiredError';
+  }
+}
+
+/** A singleton host answered discovery but does not implement qualified tenant routes. */
+export class RemoteCommunityUpgradeRequiredError extends Error {
+  constructor() {
+    super('The Community server does not support tenant-qualified connections');
+    this.name = 'RemoteCommunityUpgradeRequiredError';
   }
 }
 
@@ -72,24 +95,46 @@ export class RemoteCommunityPairingService {
 
   /** Begin a ten-minute verifier-bound request at the checked deployment origin. */
   async start(ownerKey: string, url: string, installName: string): Promise<RemotePairingStart> {
-    const origin = parseCommunityOrigin(url);
-    const community = CommunityWireCommunitySchema.parse(
-      await pinnedJson(origin, COMMUNITY_API_V1_ROUTES.community)
-    );
+    const target = parseCommunityLink(url);
+    const discoveryPath = target.communityId
+      ? communityApiPath(target.communityId, COMMUNITY_API_V1_ROUTES.community)
+      : COMMUNITY_API_V1_ROUTES.community;
+    let discovered: unknown;
+    try {
+      discovered = await pinnedJson(target.origin, discoveryPath);
+    } catch (error) {
+      if (!target.communityId && error instanceof PinnedHttpError && error.status === 409)
+        throw new RemoteCommunitySelectionRequiredError();
+      throw error;
+    }
+    const community = CommunityWireCommunitySchema.parse(discovered);
+    if (target.communityId && community.id !== target.communityId)
+      throw new PinnedOriginError('REMOTE_RESPONSE');
     const verifier = randomBytes(32).toString('base64url');
     const challenge = createHash('sha256').update(verifier).digest('base64url');
-    const start = CommunityWirePairingStartResponseSchema.parse(
-      await pinnedJson(origin, COMMUNITY_API_V1_ROUTES.pairingStart, {
-        installName,
-        challenge,
-        scopes: ['read', 'post', 'enroll-agent'],
-      })
-    );
+    let pairingStart: unknown;
+    try {
+      pairingStart = await pinnedJson(
+        target.origin,
+        communityApiPath(community.id, COMMUNITY_API_V1_ROUTES.pairingStart),
+        {
+          installName,
+          challenge,
+          scopes: ['read', 'post', 'enroll-agent'],
+        }
+      );
+    } catch (error) {
+      if (!target.communityId && error instanceof PinnedHttpError && error.status === 404)
+        throw new RemoteCommunityUpgradeRequiredError();
+      throw error;
+    }
+    const start = CommunityWirePairingStartResponseSchema.parse(pairingStart);
     const approval = new URL(start.approvalUrl);
     if (
-      approval.origin !== origin.origin ||
-      approval.pathname !== '/pairing' ||
+      approval.origin !== target.origin.origin ||
+      approval.pathname !== `/c/${community.id}/pairing` ||
       approval.searchParams.get('pairingId') !== start.pairingId ||
+      approval.searchParams.size !== 1 ||
       approval.hash
     )
       throw new PinnedOriginError('REMOTE_RESPONSE');
@@ -103,7 +148,7 @@ export class RemoteCommunityPairingService {
         ownerKey,
         remoteCommunityId: community.id,
         label: community.name,
-        pinnedOrigin: origin.origin,
+        pinnedOrigin: target.origin.origin,
         pairingId: start.pairingId,
         expiresAt: start.expiresAt,
       },
@@ -128,10 +173,14 @@ export class RemoteCommunityPairingService {
       const verifier = await this.store.verifier(ref, ownerKey);
       const origin = parseCommunityOrigin(connection.pinnedOrigin);
       const result = CommunityPairingPollPrivateResponseSchema.parse(
-        await pinnedJson(origin, COMMUNITY_API_V1_ROUTES.pairingPoll, {
-          pairingId: connection.pairingId,
-          verifier,
-        })
+        await pinnedJson(
+          origin,
+          communityApiPath(connection.remoteCommunityId, COMMUNITY_API_V1_ROUTES.pairingPoll),
+          {
+            pairingId: connection.pairingId,
+            verifier,
+          }
+        )
       );
       if (result.status === 'pending')
         return { status: 'pending', connection: this.store.project(connection) };
@@ -147,11 +196,15 @@ export class RemoteCommunityPairingService {
         throw new PinnedOriginError('REMOTE_RESPONSE');
       }
       const exchanged = CommunityPairingExchangeSecretResponseSchema.parse(
-        await pinnedJson(origin, COMMUNITY_API_V1_ROUTES.pairingExchange, {
-          pairingId: connection.pairingId,
-          code: result.code,
-          verifier,
-        })
+        await pinnedJson(
+          origin,
+          communityApiPath(connection.remoteCommunityId, COMMUNITY_API_V1_ROUTES.pairingExchange),
+          {
+            pairingId: connection.pairingId,
+            code: result.code,
+            verifier,
+          }
+        )
       );
       if (
         !(['read', 'post', 'enroll-agent'] as const).every((scope) =>
@@ -181,7 +234,7 @@ export class RemoteCommunityPairingService {
       try {
         await pinnedJson(
           parseCommunityOrigin(connection.pinnedOrigin),
-          COMMUNITY_API_V1_ROUTES.pairingCancel,
+          communityApiPath(connection.remoteCommunityId, COMMUNITY_API_V1_ROUTES.pairingCancel),
           { pairingId: connection.pairingId, verifier }
         );
       } finally {

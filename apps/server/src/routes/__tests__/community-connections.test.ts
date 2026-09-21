@@ -27,7 +27,11 @@ vi.mock('../../lib/caller-authority.js', () => ({
 
 import { createCommunityConnectionsRouter } from '../community-connections.js';
 import { RemoteConnectionStore } from '../../services/communities/remote/connection-store.js';
-import { RemoteCommunityPairingService } from '../../services/communities/remote/pairing-service.js';
+import {
+  RemoteCommunityPairingService,
+  RemoteCommunitySelectionRequiredError,
+  RemoteCommunityUpgradeRequiredError,
+} from '../../services/communities/remote/pairing-service.js';
 
 let directory: string;
 let app: ReturnType<typeof express>;
@@ -65,6 +69,64 @@ afterAll(async () => {
 });
 
 describe('local connection route authority and public projection', () => {
+  it('returns a typed selection refusal for an ambiguous origin-only link', async () => {
+    const selectionDirectory = await mkdtemp(join(tmpdir(), 'selection-'));
+    const selectionStore = new RemoteConnectionStore(selectionDirectory);
+    const selectionService = new RemoteCommunityPairingService(selectionStore);
+    vi.spyOn(selectionService, 'start').mockRejectedValue(
+      new RemoteCommunitySelectionRequiredError()
+    );
+    const selectionApp = express();
+    selectionApp.use(express.json());
+    selectionApp.use(
+      '/api/community-connections',
+      createCommunityConnectionsRouter(selectionService)
+    );
+    const selectionServer = selectionApp.listen(0, '127.0.0.1');
+    await once(selectionServer, 'listening');
+    try {
+      const response = await request(selectionServer)
+        .post('/api/community-connections')
+        .set('x-test-author', 'author-a')
+        .send({ url: 'https://community.example', installName: 'Desktop' });
+      expect(response.status).toBe(409);
+      expect(response.body).toEqual({
+        code: 'COMMUNITY_SELECTION_REQUIRED',
+        error: 'Choose a specific community from this host and use its community link.',
+      });
+    } finally {
+      await new Promise<void>((resolve) => selectionServer.close(() => resolve()));
+      await rm(selectionDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it('returns a typed upgrade requirement for a discovered legacy singleton', async () => {
+    const upgradeDirectory = await mkdtemp(join(tmpdir(), 'upgrade-'));
+    const upgradeService = new RemoteCommunityPairingService(
+      new RemoteConnectionStore(upgradeDirectory)
+    );
+    vi.spyOn(upgradeService, 'start').mockRejectedValue(new RemoteCommunityUpgradeRequiredError());
+    const upgradeApp = express();
+    upgradeApp.use(express.json());
+    upgradeApp.use('/api/community-connections', createCommunityConnectionsRouter(upgradeService));
+    const upgradeServer = upgradeApp.listen(0, '127.0.0.1');
+    await once(upgradeServer, 'listening');
+    try {
+      const response = await request(upgradeServer)
+        .post('/api/community-connections')
+        .set('x-test-author', 'author-a')
+        .send({ url: 'https://community.example', installName: 'Desktop' });
+      expect(response.status).toBe(426);
+      expect(response.body).toEqual({
+        code: 'COMMUNITY_UPGRADE_REQUIRED',
+        error: 'Upgrade this Community server before connecting it to DorkOS.',
+      });
+    } finally {
+      await new Promise<void>((resolve) => upgradeServer.close(() => resolve()));
+      await rm(upgradeDirectory, { recursive: true, force: true });
+    }
+  });
+
   it('shows only the trusted owner and excludes pairing proof', async () => {
     const response = await request(server)
       .get('/api/community-connections')

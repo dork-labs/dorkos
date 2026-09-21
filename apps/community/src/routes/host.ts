@@ -8,6 +8,7 @@ import {
   CommunityWireHostCommunityLifecycleRequestSchema,
   CommunityWireHostCommunityListResponseSchema,
   CommunityWireHostCommunitySchema,
+  CommunityWireMembershipListResponseSchema,
   CommunityWireOwnerClaimPreflightRequestSchema,
   CommunityWireOwnerClaimPreflightResponseSchema,
   CommunityWireOwnerClaimRequestSchema,
@@ -85,6 +86,37 @@ export function registerHostRoutes(
     );
     return json(c, CommunityWireHostCommunityListResponseSchema, {
       communities: communities.rows.map(projectCommunity),
+    });
+  });
+
+  app.get('/memberships', async (c) => {
+    const user = await requireSessionUser(c, auth);
+    const memberships = await pool.query<{
+      community_id: string;
+      name: string;
+      description: string | null;
+      lifecycle: 'pending_owner' | 'active' | 'suspended';
+      member_id: string;
+      display_name: string;
+      role: 'owner' | 'admin' | 'member';
+    }>(
+      `SELECT c.id AS community_id,c.name,c.description,c.lifecycle,
+              m.id AS member_id,m.display_name,m.role
+       FROM members m JOIN communities c ON c.id=m.community_id
+       WHERE m.user_id=$1 AND m.active
+       ORDER BY lower(c.name),c.id`,
+      [user.id]
+    );
+    return json(c, CommunityWireMembershipListResponseSchema, {
+      memberships: memberships.rows.map((row) => ({
+        communityId: row.community_id,
+        name: row.name,
+        description: row.description,
+        lifecycle: row.lifecycle,
+        memberId: row.member_id,
+        displayName: row.display_name,
+        role: row.role,
+      })),
     });
   });
 
