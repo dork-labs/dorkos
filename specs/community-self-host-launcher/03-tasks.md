@@ -12,8 +12,8 @@ This plan implements the frozen launcher contract in four ordered phases. The ca
 
 ## Phase 1 — Release Artifact and Local Foundation
 
-- [ ] **1.1 Publish an immutable Community image and signed release manifest.** Add a Community-specific multi-platform release lane and fail-closed version-to-digest contract.
-- [ ] **1.2 Add deploy command dispatch and verified release resolution.** Resolve only an attested immutable image from the packaged CLI.
+- [ ] **1.1 Publish an immutable Community image and signed release manifest.** Add a Community-specific multi-platform release lane, bind migration compatibility to the tagged SQL corpus, and attach the manifest only after attestations and anonymous digest readback pass.
+- [ ] **1.2 Add deploy command dispatch and verified release resolution.** Resolve only the exact requested attested version from the packaged CLI; an absent or not-ready manifest stops before consent without any fallback.
 - [ ] **1.3 Build read-only preflight, launch planning and consent.** Check accounts and capabilities, render one exact plan, and require typed approval before writes.
 - [ ] **1.4 Add the secure journal, subprocess boundary and secret sink.** Persist only non-secret state and confine every credential-bearing provider response.
 

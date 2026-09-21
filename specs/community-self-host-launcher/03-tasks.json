@@ -10,12 +10,15 @@
       "phase": 1,
       "phaseName": "Release Artifact and Local Foundation",
       "subject": "[community-self-host-launcher] [P1] Publish an immutable Community image and signed release manifest",
-      "description": "Add a Community-specific release lane that builds `apps/community/Dockerfile` for the supported Linux architectures, publishes it under a dedicated GHCR image name, and attests the pushed digest. Generate a signed, machine-readable release manifest that maps one DorkOS version to the immutable multi-platform digest, configuration schema version, migration compatibility, minimum supported `flyctl` version, minimum supported Neon CLI version, and the manifest format version. Keep the existing main DorkOS image lane intact. Follow the CI stewardship change protocol for workflow edits and record the intended SLO impact before changing `.github/workflows`.\n\nAcceptance criteria:\n- A release fixture resolves a DorkOS version to exactly one `sha256:` Community digest; mutable tags are metadata only and can never be selected for deployment.\n- The manifest signature or GitHub artifact attestation is verified against the expected repository and workflow identity before any provider write.\n- The image runs as the existing non-root Community user, includes no source credentials, and supports both declared Linux architectures.\n- A manifest/image mismatch, missing attestation, unsupported architecture, or incompatible schema/migration tuple fails closed before preflight reaches consent.\n- Tests cover a valid manifest plus tampered digest, wrong repository identity, unknown format version, and incompatible configuration fixtures.",
+      "description": "Add a Community-specific release lane that builds `apps/community/Dockerfile` for the supported Linux architectures, publishes it under a dedicated GHCR image name, and attests the pushed digest. Generate a signed, machine-readable release manifest that maps one DorkOS version to the immutable multi-platform digest, configuration schema version, a SHA-256 compatibility fingerprint of the tagged SQL migration corpus, minimum supported `flyctl` version, minimum supported Neon CLI version, and the manifest format version. Keep the existing main DorkOS image lane intact. Follow the CI stewardship change protocol for workflow edits and record the intended SLO impact before changing `.github/workflows`.\n\nAcceptance criteria:\n- The workflow attaches a release manifest only after image publication, both attestations, and anonymous digest readback pass; mutable tags are metadata only and can never be selected for deployment.\n- The manifest signature or GitHub artifact attestation is verified against the expected repository and workflow identity before any provider write.\n- The image runs as the existing non-root Community user, includes no source credentials, and supports both declared Linux architectures.\n- A manifest/image mismatch, missing attestation, unsupported architecture, migration-corpus drift, or incompatible schema/migration tuple fails closed before preflight reaches consent.\n- Tests cover a valid manifest plus tampered digest, wrong repository identity, unknown format version, and incompatible configuration fixtures.",
       "activeForm": "Publishing the immutable Community release artifact",
       "size": "large",
       "priority": "high",
       "dependencies": [],
-      "parallelWith": ["1.3", "1.4"],
+      "parallelWith": [
+        "1.3",
+        "1.4"
+      ],
       "issue": null,
       "parentIssue": null
     },
@@ -24,12 +27,17 @@
       "phase": 1,
       "phaseName": "Release Artifact and Local Foundation",
       "subject": "[community-self-host-launcher] [P1] Add deploy command dispatch and verified release resolution",
-      "description": "Add `dorkos community deploy` to the CLI command dispatcher and implement release resolution under `packages/cli/src/commands/community-deploy/`. Resolve the requested or current DorkOS version through the signed manifest, verify its provenance, select the target Fly Machine's supported Linux architecture independently of the operator's local macOS or Linux architecture, and expose only the immutable digest and declared compatibility fields to later steps. Provide an explicit `--dry-run` path that can resolve the release and continue through read-only planning without writing to a provider.\n\nAcceptance criteria:\n- `dorkos community deploy --help` documents guided setup, dry run, resume, and the absence of automatic cleanup.\n- The command refuses tags, bare image names, unverifiable manifests, unsupported CLI versions, and release/configuration incompatibility.\n- A macOS operator can resolve the Linux image required by the planned Fly Machine without requiring a Darwin container variant.\n- Resolution tests use local fixtures and never contact or mutate a provider.\n- The packaged CLI can locate its manifest contract without a repository checkout.\n- Command output contains the DorkOS version and shortened digest but no provider credentials or secret-bearing URL.",
+      "description": "Add `dorkos community deploy` to the CLI command dispatcher and implement release resolution under `packages/cli/src/commands/community-deploy/`. Resolve only the exact requested or current DorkOS version through its signed manifest, verify its provenance, select the target Fly Machine's supported Linux architecture independently of the operator's local macOS or Linux architecture, and expose only the immutable digest and declared compatibility fields to later steps. Provide an explicit `--dry-run` path that can resolve the release and continue through read-only planning without writing to a provider.\n\nAcceptance criteria:\n- `dorkos community deploy --help` documents guided setup, dry run, resume, and the absence of automatic cleanup.\n- The command refuses tags, bare image names, unverifiable manifests, unsupported CLI versions, and release/configuration incompatibility. A missing or not-ready exact-version manifest returns `COMMUNITY_RELEASE_NOT_READY` before consent, with no prior-version or mutable-tag fallback.\n- A macOS operator can resolve the Linux image required by the planned Fly Machine without requiring a Darwin container variant.\n- Resolution tests use local fixtures, including an absent/not-ready exact version, and never contact or mutate a provider.\n- The packaged CLI can locate its manifest contract without a repository checkout.\n- Command output contains the DorkOS version and shortened digest but no provider credentials or secret-bearing URL.",
       "activeForm": "Adding verified Community release resolution",
       "size": "medium",
       "priority": "high",
-      "dependencies": ["1.1"],
-      "parallelWith": ["1.3", "1.4"],
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.3",
+        "1.4"
+      ],
       "issue": null,
       "parentIssue": null
     },
@@ -43,7 +51,10 @@
       "size": "large",
       "priority": "high",
       "dependencies": [],
-      "parallelWith": ["1.1", "1.4"],
+      "parallelWith": [
+        "1.1",
+        "1.4"
+      ],
       "issue": null,
       "parentIssue": null
     },
@@ -57,7 +68,10 @@
       "size": "large",
       "priority": "high",
       "dependencies": [],
-      "parallelWith": ["1.1", "1.3"],
+      "parallelWith": [
+        "1.1",
+        "1.3"
+      ],
       "issue": null,
       "parentIssue": null
     },
@@ -70,7 +84,9 @@
       "activeForm": "Building provider contract fixtures and mutation tests",
       "size": "large",
       "priority": "high",
-      "dependencies": ["1.4"],
+      "dependencies": [
+        "1.4"
+      ],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -84,8 +100,13 @@
       "activeForm": "Implementing the typed Fly provider wrapper",
       "size": "large",
       "priority": "high",
-      "dependencies": ["2.1"],
-      "parallelWith": ["2.3", "2.4"],
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [
+        "2.3",
+        "2.4"
+      ],
       "issue": null,
       "parentIssue": null
     },
@@ -98,8 +119,13 @@
       "activeForm": "Implementing the typed Neon provider wrapper",
       "size": "large",
       "priority": "high",
-      "dependencies": ["2.1"],
-      "parallelWith": ["2.2", "2.4"],
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [
+        "2.2",
+        "2.4"
+      ],
       "issue": null,
       "parentIssue": null
     },
@@ -112,8 +138,13 @@
       "activeForm": "Implementing private Tigris creation and binding",
       "size": "large",
       "priority": "high",
-      "dependencies": ["2.1"],
-      "parallelWith": ["2.2", "2.3"],
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [
+        "2.2",
+        "2.3"
+      ],
       "issue": null,
       "parentIssue": null
     },
@@ -126,8 +157,14 @@
       "activeForm": "Creating and proving the Fly app and private bucket",
       "size": "large",
       "priority": "high",
-      "dependencies": ["1.3", "2.2", "2.4"],
-      "parallelWith": ["3.2"],
+      "dependencies": [
+        "1.3",
+        "2.2",
+        "2.4"
+      ],
+      "parallelWith": [
+        "3.2"
+      ],
       "issue": null,
       "parentIssue": null
     },
@@ -140,8 +177,13 @@
       "activeForm": "Creating and proving the Neon database topology",
       "size": "large",
       "priority": "high",
-      "dependencies": ["1.3", "2.3"],
-      "parallelWith": ["3.1"],
+      "dependencies": [
+        "1.3",
+        "2.3"
+      ],
+      "parallelWith": [
+        "3.1"
+      ],
       "issue": null,
       "parentIssue": null
     },
@@ -154,7 +196,11 @@
       "activeForm": "Importing secrets and deploying the pinned Community image",
       "size": "large",
       "priority": "high",
-      "dependencies": ["1.2", "3.1", "3.2"],
+      "dependencies": [
+        "1.2",
+        "3.1",
+        "3.2"
+      ],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -168,7 +214,9 @@
       "activeForm": "Completing safe resume and uncertain reconciliation",
       "size": "large",
       "priority": "high",
-      "dependencies": ["3.3"],
+      "dependencies": [
+        "3.3"
+      ],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -182,7 +230,9 @@
       "activeForm": "Adding owner handoff and verified bootstrap rotation",
       "size": "large",
       "priority": "high",
-      "dependencies": ["3.4"],
+      "dependencies": [
+        "3.4"
+      ],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -196,7 +246,9 @@
       "activeForm": "Packaging and documenting the guided launcher",
       "size": "medium",
       "priority": "high",
-      "dependencies": ["4.1"],
+      "dependencies": [
+        "4.1"
+      ],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -210,7 +262,9 @@
       "activeForm": "Adding the armed end-to-end release gate",
       "size": "large",
       "priority": "high",
-      "dependencies": ["4.2"],
+      "dependencies": [
+        "4.2"
+      ],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
