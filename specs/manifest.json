@@ -3054,6 +3054,15 @@
       "status": "specified",
       "project": "Community Administration",
       "linearIssue": "DOR-2175"
+    },
+    {
+      "id": "260920-203200",
+      "slug": "community-membership-journeys",
+      "title": "Community membership journey and handoff contract",
+      "created": "2026-09-20",
+      "status": "specified",
+      "project": "Community Membership Journeys",
+      "linearIssue": "DOR-2179"
     }
   ]
 }
