@@ -7,6 +7,7 @@
  * outbox, native adapter, and remote server do the work.
  */
 import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   acceptanceEnvironment,
@@ -419,11 +420,9 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       ]);
       expect(attachmentResponse.ok()).toBe(true);
       expect(attachmentDownload.suggestedFilename()).toBe('shot.png');
-      expect(
-        Buffer.from(await attachmentResponse.body())
-          .subarray(1, 4)
-          .toString('latin1')
-      ).toBe('PNG');
+      const downloadedPath = await attachmentDownload.path();
+      expect(downloadedPath, 'The browser download did not produce a readable file').not.toBeNull();
+      expect((await readFile(downloadedPath!)).subarray(1, 4).toString('latin1')).toBe('PNG');
       for (const viewport of [
         { name: 'desktop', width: 1440, height: 900, dark: false },
         { name: 'tablet', width: 820, height: 1180, dark: true },

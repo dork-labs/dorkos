@@ -312,3 +312,47 @@ describe('ChildProcessLauncher home isolation', () => {
     expect(env.OPENCODE_DB).toBeUndefined();
   });
 });
+
+/**
+ * The Codex leg's key, and the pin it has to survive (DOR-2207).
+ *
+ * A Codex eval reaches OpenAI through `CODEX_API_KEY` and nothing else: the
+ * launcher pins `CODEX_HOME` to an empty directory inside the sandbox, which is
+ * correct — an eval must never read or write the operator's real Codex store —
+ * and which is exactly why the operator's ChatGPT login is invisible to the run.
+ * So the key travels as a VALUE on `credential.env`, and these prove it arrives
+ * beside the pin rather than being cleared by it.
+ *
+ * The other half of the journey is the server's own doing: `CODEX_API_KEY` is in
+ * the codex auth profile
+ * (`services/runtimes/shared/runtime-environment-catalog.ts`), so the projected
+ * turn environment inherits it into the `codex` child process, where the SDK
+ * hands it to the CLI (`@openai/codex-sdk` 0.154.0, `dist/index.js:258`).
+ */
+describe('ChildProcessLauncher and the Codex leg credential', () => {
+  const CODEX_KEY = 'sk-codex-test-not-a-real-key';
+
+  it('forwards CODEX_API_KEY into the launched server', async () => {
+    const { env } = await envSeenByChild({ CODEX_API_KEY: CODEX_KEY });
+    expect(env.CODEX_API_KEY).toBe(CODEX_KEY);
+  });
+
+  it('keeps the key while still pinning CODEX_HOME away from the operator`s store', async () => {
+    // The pin and the key answer two different questions — WHERE Codex keeps its
+    // state, and WHO pays — so a run gets both. If the pin ever cleared the key,
+    // every Codex case would fail on authentication while the harness reported a
+    // forwarded credential.
+    vi.stubEnv('HOME', '/Users/someone');
+    vi.stubEnv('USERPROFILE', '/Users/someone');
+    vi.stubEnv('CODEX_HOME', '/Users/someone/.codex');
+
+    const { env, sandboxRoot } = await envSeenByChild(
+      { CODEX_API_KEY: CODEX_KEY },
+      { claudeConfigDir: '/private/var/folders/xy/dorkos-evals-AbC123/.claude' }
+    );
+
+    expect(env.CODEX_API_KEY).toBe(CODEX_KEY);
+    expect(env.CODEX_HOME).toBe(path.join(sandboxRoot, '.codex'));
+    expect(env.CODEX_HOME).not.toBe('/Users/someone/.codex');
+  });
+});

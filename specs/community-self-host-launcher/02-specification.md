@@ -54,6 +54,10 @@ The launcher may ship only after all of these are true:
 4. Provider commands and API calls used by the launcher have machine-readable output and narrow wrappers with fixture-based contract tests. Human console text is never parsed. Raw output from commands or API calls that can return credentials is treated wholly as secret material and never rendered or retained.
 5. The release's configuration schema and migration behavior match the rendered Fly config.
 
+The Community artifact is ready independently of the desktop and npm release paths. Before the first Community release, an operator must make the `ghcr.io/dork-labs/dorkos-community` package public; a newly created GHCR package may otherwise remain private. The release workflow attaches the manifest only after the immutable image, both attestations, and anonymous registry readback pass, so a missing public-package setup stops publication rather than producing a ready-looking private release. A launcher resolves only the exact requested or current DorkOS version. If that version's manifest is absent or not ready yet, it stops before consent with a clear `COMMUNITY_RELEASE_NOT_READY` result. It never substitutes a prior version, a mutable tag, or an unverified image. The accepted manifest's exact version and digest become part of the immutable `LaunchPlan`.
+
+`migrationCompatibilityId` is a SHA-256 fingerprint derived at release time from the tagged production SQL migration filenames and bytes in sorted order. It describes the exact image being published; it is not a launcher compatibility policy or a hand-maintained “through migration N” claim. The launcher keeps its supported fingerprints separately and refuses an unknown one before any provider write.
+
 ## Detailed design
 
 ### Command and process boundary
