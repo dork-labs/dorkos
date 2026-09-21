@@ -316,6 +316,17 @@ it('stores private raster icons with ETags and queues replaced bytes', async () 
       })
     ).status
   ).toBe(404);
+  const uncertain = (
+    await pool.query<{ blob_key: string; outcome_uncertain: boolean }>(
+      `SELECT m.blob_key,p.last_error_at IS NULL AS outcome_uncertain
+       FROM managed_blobs m JOIN pending_blob_deletions p USING(blob_key)
+       WHERE m.community_id=$1 AND m.purpose='icon' AND m.byte_size IS NULL`,
+      [communityId]
+    )
+  ).rows;
+  expect(uncertain).toEqual([{ blob_key: expect.any(String), outcome_uncertain: true }]);
+  await pool.query('DELETE FROM pending_blob_deletions WHERE blob_key=$1', [uncertain[0].blob_key]);
+  await pool.query('DELETE FROM managed_blobs WHERE blob_key=$1', [uncertain[0].blob_key]);
 });
 
 it('locks community before membership when committing an owner export', async () => {
