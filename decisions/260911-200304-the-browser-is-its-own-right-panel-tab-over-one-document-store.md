@@ -1,7 +1,7 @@
 ---
 id: 260911-200304
 title: The Browser is its own right-panel tab — two views over one document store
-status: proposed
+status: accepted
 created: 2026-09-11
 spec: room-canvas
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed (extracted from spec `room-canvas`).
+Accepted (extracted from spec `room-canvas`).
 
 ## Context
 

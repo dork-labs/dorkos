@@ -446,9 +446,11 @@ export function createRemoteCommunitiesRouter(): Router {
         idempotencyKey: idempotencyKey.data,
       });
       if (result === 'missing') return res.status(404).json({ error: 'Delivery not found.' });
-      if (result !== 'retried')
+      if (result === 'terminal')
         return res.status(409).json({ error: 'Delivery cannot be retried.' });
-      res.json(getRemoteCommunityDeliverySnapshot(ref.data, roomId.data, owner));
+      res
+        .status(result === 'in-flight' ? 202 : 200)
+        .json(getRemoteCommunityDeliverySnapshot(ref.data, roomId.data, owner));
     } catch (error) {
       fail(res, error);
     }

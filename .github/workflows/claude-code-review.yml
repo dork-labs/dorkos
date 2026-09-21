@@ -136,6 +136,27 @@ name: claude-code-review
 # result and posted verdict"), and `workflow_dispatch` exists so a review can be
 # forced by hand on a PR GitHub will not dispatch events for.
 #
+# WHO ASKS AGAIN WHEN A REVIEW IS LOST. Nobody, until 2026-09-20: a red review
+# sat red until a person noticed and applied `re-review`, which is why
+# `review-completes` reads 88.5% against a 90% floor and nothing ever moved.
+# merge-tail now re-requests one on a schedule, by applying `re-review` — the
+# same reusable button a person uses — at most three times per head SHA, and
+# never when the last attempt died against the subscription's own quota. The
+# decision is scripts/should-redispatch-review.sh, fixture-pinned like every
+# other decision merge-tail makes. Two consequences for this file: the run it
+# produces is a `labeled` event whose ACTOR is the merge-tail app, which is why
+# that app is in `allowed_bots` below; and the ladder reads the
+# `review-outcome-class` this job emits, which is what makes that annotation
+# load-bearing rather than decorative. The script's 10/20/40-minute backoff does
+# NOT bound anything today — GitHub throttles cron so hard (p50 2.7 h between
+# merge-tail ticks) that every rung has elapsed before anything asks.
+#
+# EVERY RUN SAYS WHAT KIND OF OUTCOME IT WAS, in one word, in the job summary
+# and as a `review-outcome-class` notice annotation: a real review, a spent
+# subscription window (session or weekly), a missing credential, a fork, an
+# exhausted turn budget, or an infrastructure failure. See "Report the outcome
+# class". It is a record, not a decision — it can never turn a red run green.
+#
 # WHAT GREEN MEANS (DOR-1665, DOR-1877), scoped exactly, because the scope is the
 # honest part. Green requires BOTH facts:
 #   1. the review's own result message says it finished cleanly; and
@@ -212,34 +233,101 @@ env:
   # how the classifier ended up running the PR's own copy on both paths (review
   # round 3, finding 1).
   DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-  # Turn budget for the review step (DOR-396). Large PRs need more read/grep/
-  # verify turns than small ones, or the action dies mid-review and leaves a
-  # red check that looks identical to one backed by real findings. Tune these
-  # here rather than inside claude_args below.
-  REVIEW_MAX_TURNS_DEFAULT: '50'
-  REVIEW_MAX_TURNS_LARGE: '100'
-  REVIEW_LARGE_PR_FILE_THRESHOLD: '30'
+  # Turn budget for the review step (DOR-396, re-sized 2026-09-20 from measured
+  # data). Large PRs need more read/grep/verify turns than small ones, or the
+  # action dies mid-review and leaves a red check that looks identical to one
+  # backed by real findings. Tune these here rather than inside claude_args.
+  #
+  # THE NUMBERS, AND WHERE THEY COME FROM
+  # (research/20260919_ci-pipeline-supporting/07-claude-review-effectiveness.md
+  # §6, 60 random successful runs plus 52 read failure logs over 30 days):
+  #   * turns used by a successful review: median 32.5, p90 49, max 74;
+  #   * the old default cap was 50, and 13 of those 60 runs used 45 or more —
+  #     so the distribution was CENSORED at the cap and its true p90 is at or
+  #     above 49, not equal to it;
+  #   * 24 of 52 failures were `error_max_turns` at turn 51, on a median of 20
+  #     changed files — i.e. the runs dying were mostly SMALL PRs on the 50
+  #     budget, not big ones on the 100 budget. In the last 7 days that was 11
+  #     of 123 started reviews (9%), up from 3% over 30 days.
+  # So the floor is set at 80: above the maximum turn count observed anywhere
+  # in that sample (74), which means every run in it would have finished. It is
+  # 2.5x the median, so a normal review is nowhere near it.
+  #
+  # The budget then scales with the diff, continuously rather than in one step
+  # at 30 files: BASE + PER_FILE x changed files, clamped to [MIN, MAX]. A
+  # 10-file PR gets 80, a 30-file PR 120, anything larger 120 (up from the old
+  # 100, whose own sample topped out at 74).
+  #
+  # The ceiling is what `timeout-minutes` below has to cover, which is why it is
+  # not simply large: successful runs take 3.7 min median and 6.8 min p90 for
+  # ~32-49 turns, so roughly 7-10 s a turn, and 120 turns is 14-20 min inside a
+  # 25-minute job. Raising MAX without raising that timeout just trades the turn
+  # cap for a wall-clock cap, which is a worse failure (no result message to
+  # classify). The cap's job is to bound a runaway loop; it was never meant to
+  # end a review that is still working.
+  REVIEW_MAX_TURNS_BASE: '60'
+  REVIEW_MAX_TURNS_PER_FILE: '2'
+  REVIEW_MAX_TURNS_MIN: '80'
+  REVIEW_MAX_TURNS_MAX: '120'
 
-# A newer review trigger for the same PR cancels an in-flight older one — but
-# only when this run will itself review. Without the condition, creating a PR
-# with a `review:*` label fires `opened` + `labeled` together: the `labeled`
-# run enters the group, cancels the legitimate `opened` review, then skips at
-# the job gate below — silently leaving the PR unreviewed (bit PRs #142, #161).
-# Verified still correct in DOR-457: PR #445 had `re-review` + `review:light`
-# applied in the same second and the `review:light` run skipped without touching
-# the `re-review` run beside it. Note also that a concurrency cancellation always
-# leaves a `cancelled` run in the list, so this block can never be the reason a
-# PR shows no run at all — that is the conflicted-PR blind spot in the header.
-# `github.event.pull_request.number` is null on workflow_dispatch, so fall back to
-# the input to keep manual runs in the same per-PR group. `github.event.action` is
-# also null there, so `cancel-in-progress` evaluates TRUE for a manual run: a
-# dispatch cancels an automatic review already in flight on the same PR, and the
-# next automatic trigger cancels a dispatched one. That is the behaviour we want —
-# the newer request is the one someone is waiting on — but it does mean a dispatch
-# replaces a running review rather than joining it.
+# ONE REVIEW PER HEAD SHA, AND A RUN THAT WILL NOT REVIEW CANNOT EVICT ONE THAT
+# WILL. Two things changed here on 2026-09-20; read both before touching it.
+#
+# WHAT WENT WRONG. The old key was the PR NUMBER and the old
+# `cancel-in-progress` expression was false for a non-`re-review` `labeled`
+# event, on the theory that a run which will skip cannot cancel anything. That
+# theory is wrong, and measuring it cost about 3% of all merged PRs their review
+# (research/20260919_ci-pipeline-supporting/07-claude-review-effectiveness.md §1:
+# 23 PRs in 30 days, #1251 through #1868, verified on #1865 — the cancelled runs
+# have zero jobs, so they were cancelled while still PENDING). A concurrency
+# group holds at most one RUNNING and one PENDING run: when a third run enters,
+# GitHub cancels the pending one **whatever the entrant's `cancel-in-progress`
+# says**, because that flag governs cancelling the RUNNING member, not the queue.
+# `gh pr create --label review:light --label skip-changelog` fires `opened` plus
+# two `labeled` events within the same second; the `opened` run is still pending;
+# the labeled runs evict it and then skip at the job gate. The comment this
+# replaces claimed PRs #142/#161 fixed that — they fixed the in-progress half
+# only, and the file then vouched for a fix it did not have.
+#
+# THE FIX, in two parts:
+#   1. A run that will not review gets its OWN group, named for the label that
+#      triggered it, so it can never be in the same queue as a real review.
+#      Anything that WILL review — `opened`, `ready_for_review`, `reopened`, a
+#      `re-review` label, a dispatch — lands in the `-review` group. The
+#      condition here is deliberately the same shape as the job `if:` below;
+#      they must agree, and if they ever disagree the safe direction is this one
+#      being too broad (a run that skips sits alone in the review group and
+#      cancels a PENDING sibling that would have reviewed — exactly the old bug),
+#      so keep them in step.
+#   2. The key is the HEAD SHA, not the PR number, because the head SHA is what
+#      a review is ABOUT and what `review-completes` is keyed by (ci/slos.yaml).
+#      Two triggers on one SHA still dedupe — `cancel-in-progress: true` means
+#      the newer one cancels the older, and the newer one reviews, so no verdict
+#      is lost and the PR is not reviewed twice for the same code.
+#
+# WHAT THIS DELIBERATELY CHANGES. Under the old per-PR key, a review of an older
+# SHA was cancelled when a newer trigger arrived. Under a per-SHA key it runs to
+# completion and posts its verdict, correctly attributed to the SHA it read. That
+# costs a little subscription budget in the rare case where two review triggers
+# straddle a push (reviews do not fire on `synchronize`, so this needs a push
+# BETWEEN two review triggers), and it buys a review that is never half-done.
+#
+# `workflow_dispatch` carries no head SHA in its payload, so a manual run is
+# keyed by PR number instead and therefore no longer shares a group with the
+# automatic run for that PR's head: a dispatch now runs BESIDE an in-flight
+# automatic review rather than replacing it. That is the right trade for the
+# escape hatch — it exists for PRs GitHub will not dispatch events for, where
+# there is nothing to replace.
+#
+# A cancellation always leaves a `cancelled` run in the list, so this block can
+# never be the reason a PR shows no run at all — that is the conflicted-PR blind
+# spot in the header.
 concurrency:
-  group: claude-review-${{ github.event.pull_request.number || github.event.inputs.pr }}
-  cancel-in-progress: ${{ github.event.action != 'labeled' || github.event.label.name == 're-review' }}
+  group: >-
+    claude-review-${{ github.event.pull_request.head.sha || format('pr{0}', github.event.inputs.pr) }}-${{
+    (github.event.action == 'labeled' && github.event.label.name != 're-review')
+    && format('noop-{0}', github.event.label.name) || 'review' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -266,9 +354,13 @@ jobs:
       )
     runs-on: ubuntu-latest
     # Guards against a runaway review if --max-turns is not honored (the action
-    # has no internal timeout). Sized for the large-PR turn budget above
-    # (REVIEW_MAX_TURNS_LARGE): raising max-turns without headroom here would
-    # just trade the turn cap for a wall-clock cap on big PRs.
+    # has no internal timeout). Sized for the ceiling of the turn budget above
+    # (REVIEW_MAX_TURNS_MAX): at the measured 7-10 s a turn, 120 turns is 14-20
+    # minutes, which fits here with room for checkout and setup. Raising
+    # REVIEW_MAX_TURNS_MAX without raising this would just trade the turn cap for
+    # a wall-clock cap, and a wall-clock kill is strictly worse — it leaves no
+    # result message for the classifier to read, so the failure comes out as
+    # `infra` with no cause named.
     timeout-minutes: 25
     steps:
       # Single answer to "which PR is this reviewing?", so every step below works
@@ -306,11 +398,69 @@ jobs:
             --json headRepositoryOwner,headRepository \
             --jq '"\(.headRepositoryOwner.login)/\(.headRepository.name)"')
           if [ "$head_repo" != "$REPO" ]; then
+            # Written BEFORE the exit, so "Report the outcome class" below can
+            # tell a fork refusal apart from an infrastructure failure. An
+            # output set by a step that then fails is still readable by later
+            # steps; only outputs of a SKIPPED step are lost.
+            echo "fork=yes" >> "$GITHUB_OUTPUT"
             echo "::error::PR #$DISPATCH_PR comes from a fork ($head_repo). Review fork PRs by mentioning @claude on them (claude.yml) or with /code-review locally."
             exit 1
           fi
 
           echo "number=$DISPATCH_PR" >> "$GITHUB_OUTPUT"
+
+      # DEPENDABOT, HONESTLY (report 07 §6: 5 of 52 failures in 30 days, every
+      # one of them a Dependabot PR). `allowed_bots` below lets the action start
+      # for a bot author, but that is only half the story, and shipping the half
+      # would have swapped one reliable failure for another.
+      #
+      # GitHub gives a workflow triggered by Dependabot through `pull_request` a
+      # READ-ONLY `GITHUB_TOKEN` and NO access to repository secrets at all,
+      # whatever `permissions:` this file declares — the same restriction
+      # dependabot-lockfile-repair.yml documents at length, with GitHub's own
+      # wording ("the only secrets available to the workflow are Dependabot
+      # secrets"). So on such a run `secrets.CLAUDE_CODE_OAUTH_TOKEN` is the
+      # EMPTY STRING, the action has nothing to authenticate with, and the review
+      # fails at turn 1 having spent nothing — which is the exact shape the
+      # classifier calls `no`, i.e. it would be announced as a usage limit or a
+      # stale token and send whoever reads it to rotate a token that is fine.
+      #
+      # `pull_request_target` is the documented escape and is NOT an option here:
+      # this job reads PR-authored text with a model, and the header's whole
+      # containment argument assumes the untrusted-trigger form. The supported
+      # routes are, in order: put CLAUDE_CODE_OAUTH_TOKEN in the repository's
+      # DEPENDABOT secrets as well as its Actions secrets (an operator action —
+      # nothing in this repo can set it), after which these runs simply work; or
+      # let merge-tail re-request the review by label, which runs under the
+      # merge-tail app rather than Dependabot and therefore holds normal secrets.
+      #
+      # Until one of those happens this step is what stands between a Dependabot
+      # PR and a misleading red check. It fails the job — a review that cannot
+      # run is not a review, and fail-closed is this file's rule everywhere —
+      # but it names the real cause, and "Report the outcome class" records the
+      # run as `no_credentials` rather than letting it be counted as a review
+      # that failed. Note it cannot post a PR comment saying so: on a Dependabot
+      # run the token is read-only, so the annotation and the job summary are the
+      # only channels there are.
+      - name: Check the reviewer has a credential
+        id: credential
+        env:
+          # An expression over a secret, never the secret: this prints `true` or
+          # `false` and cannot leak the value.
+          HAVE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if [ "$HAVE_TOKEN" = 'true' ]; then
+            echo "have=yes" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "have=no" >> "$GITHUB_OUTPUT"
+          if [ "$ACTOR" = 'dependabot[bot]' ]; then
+            echo "::error::No CLAUDE_CODE_OAUTH_TOKEN on a Dependabot-triggered run. GitHub withholds repository secrets from these runs by design. Add CLAUDE_CODE_OAUTH_TOKEN to the repository's Dependabot secrets, or let merge-tail re-request the review with the re-review label. Nothing in this pull request was looked at."
+          else
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN is empty, so the reviewer has nothing to authenticate with. Nothing in this pull request was looked at; this is not a finding about the code."
+          fi
+          exit 1
 
       - name: Checkout
         uses: actions/checkout@v7
@@ -514,6 +664,63 @@ jobs:
           chmod 0500 "$HELPER_DIR"
           echo "Materialized scripts/review-gh.sh from origin/$DEFAULT_BRANCH (read-only)"
 
+      # IS THIS PR EDITING THE REVIEWER'S OWN WORKFLOW? Asked structurally, here,
+      # so the job can say so instead of reporting a mystery.
+      #
+      # `anthropics/claude-code-action` refuses to start when the workflow file it
+      # is running from differs from the copy on the default branch — an
+      # anti-exfiltration guard, since a PR could otherwise rewrite this file to
+      # leak the OAuth token. It then exits SUCCESSFULLY, in about 1.7 seconds,
+      # having taken no turn and posted nothing (measured on PR #1945, run
+      # 35534353235: "Skipping action due to workflow validation ... must ... have
+      # identical content to the version on the repository's default branch").
+      # That is the KNOWN LIMITATION in the header, working as designed.
+      #
+      # WHY IT NEEDS NAMING. The classifier reads the action's execution log to
+      # say how a run ended, and there is no log: the action never got as far as
+      # writing one. So the run came out `unknown`, the comment told the author
+      # "the review did not finish and left no readable record of why ... add the
+      # `re-review` label to try again", and the outcome class was `infra`. All
+      # three are wrong in the same direction: this is not our infrastructure
+      # failing, `re-review` will do exactly this again forever (the retry ladder
+      # refuses these PRs for that reason — scripts/should-redispatch-review.sh),
+      # and a person reading it goes looking for a fault that does not exist.
+      #
+      # ASKED FROM THE TRUSTED SIDE, and it is the same question the action asks:
+      # does this checkout's copy of the workflow differ from the default
+      # branch's? `git diff` against `origin/$DEFAULT_BRANCH` reads the object
+      # database, so the answer does not depend on anything the PR wrote, and it
+      # needs no log parsing at all.
+      #
+      # `pull_request` ONLY, and that is not a detail. A `workflow_dispatch` run
+      # executes the DEFAULT BRANCH's copy of this workflow, so the action's
+      # validation passes and the review really does run — that is exactly why
+      # the dispatch hatch is the remedy for this case. Its checkout is still the
+      # PR's head, so this comparison would answer "yes" while the review was
+      # working perfectly.
+      - name: Detect a self-edit of the review workflow
+        id: self-edit
+        if: github.event_name == 'pull_request'
+        env:
+          WORKFLOW_PATH: .github/workflows/claude-code-review.yml
+        run: |
+          # No trusted branch means no comparison. `unknown` is not `yes`, so the
+          # wording below stays the cautious one rather than inventing a cause.
+          if [ -z "$DEFAULT_BRANCH" ] ||
+             ! git rev-parse --verify --quiet "refs/remotes/origin/$DEFAULT_BRANCH" >/dev/null; then
+            echo "edits=unknown" >> "$GITHUB_OUTPUT"
+            echo "could not compare this workflow against the default branch"
+            exit 0
+          fi
+
+          if git diff --quiet "origin/$DEFAULT_BRANCH" -- "$WORKFLOW_PATH"; then
+            echo "edits=no" >> "$GITHUB_OUTPUT"
+            echo "this PR does not change $WORKFLOW_PATH"
+          else
+            echo "edits=yes" >> "$GITHUB_OUTPUT"
+            echo "this PR changes $WORKFLOW_PATH, so the action will refuse to review it"
+          fi
+
       # Timestamp cutoff for the verdict probe below, so it only looks at comments
       # this run could plausibly have posted (not leftovers from an earlier review
       # or re-review pass on the same PR). Since DOR-1665 that probe decides the
@@ -526,25 +733,45 @@ jobs:
 
       # Scale the turn budget with PR size (DOR-396): a 5-file PR and a 45-file
       # PR need very different amounts of read/grep/verify work to finish a
-      # review, and one fixed cap starves the large ones.
+      # review, and one fixed cap starves the large ones. The numbers and the
+      # measurements behind them are in the env block at the top of this file.
       - name: Count changed files
         id: pr-size
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Degrade to the default budget rather than aborting the step: an
+          # Degrade to the floor budget rather than aborting the step: an
           # aborted step here would skip Claude Code review entirely. The final
-          # gate would correctly stay red, but degrading to the default budget
-          # lets the requested review run instead of turning metadata lookup into
-          # a setup failure.
+          # gate would correctly stay red, but degrading lets the requested
+          # review run instead of turning metadata lookup into a setup failure.
+          # The degraded value is the MINIMUM, not the smallest possible budget:
+          # a review whose size we could not measure is the last one that should
+          # be starved.
           file_count=$(gh pr view "${{ steps.target.outputs.number }}" --repo "${{ github.repository }}" --json changedFiles --jq '.changedFiles' 2>/dev/null || echo 0)
           case "$file_count" in ''|*[!0-9]*) file_count=0 ;; esac
-          if [ "$file_count" -gt "$REVIEW_LARGE_PR_FILE_THRESHOLD" ]; then
-            echo "max_turns=$REVIEW_MAX_TURNS_LARGE" >> "$GITHUB_OUTPUT"
-          else
-            echo "max_turns=$REVIEW_MAX_TURNS_DEFAULT" >> "$GITHUB_OUTPUT"
-          fi
-          echo "$file_count files changed"
+
+          # `if`, NOT `[ ... ] && assignment`: GitHub runs this with `bash -e`,
+          # and a `&&` chain whose test is false returns 1 — which fails the step
+          # when it is the last command in the block. merge-tail.yml has the long
+          # version of that lesson.
+          max_turns=$(( REVIEW_MAX_TURNS_BASE + REVIEW_MAX_TURNS_PER_FILE * file_count ))
+          if [ "$max_turns" -lt "$REVIEW_MAX_TURNS_MIN" ]; then max_turns=$REVIEW_MAX_TURNS_MIN; fi
+          if [ "$max_turns" -gt "$REVIEW_MAX_TURNS_MAX" ]; then max_turns=$REVIEW_MAX_TURNS_MAX; fi
+
+          echo "max_turns=$max_turns" >> "$GITHUB_OUTPUT"
+          echo "files=$file_count" >> "$GITHUB_OUTPUT"
+          echo "$file_count files changed; turn budget $max_turns"
+
+          # Recorded where the collector can read it without opening a log, so
+          # "did raising the budget stop the `error_max_turns` failures?" is a
+          # question the ledger can answer against the budget actually used
+          # rather than against the one this file happens to declare today.
+          {
+            echo "### automated review"
+            echo
+            echo "- changed files: $file_count"
+            echo "- turn budget: $max_turns"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # THE CHECK'S COLOUR IS NOT THIS STEP'S TO DECIDE (DOR-1665).
       #
@@ -610,6 +837,31 @@ jobs:
           GIT_CONFIG_SYSTEM: /dev/null
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # WHO MAY TRIGGER A REVIEW, beyond a human with write access. The
+          # action refuses a non-User actor unless it is named here
+          # (src/github/validation/actor.ts, `checkHumanActor`), which is why
+          # every Dependabot PR's review failed with "Workflow initiated by
+          # non-human actor" — 5 of 52 failures over 30 days, report 07 §6.
+          # Matching is case-insensitive and strips a trailing `[bot]` on both
+          # sides, so `dependabot` and `dependabot[bot]` are the same entry.
+          #
+          # Exactly two names, never `*`. The action's own warning is that `*`
+          # on a public repo lets any external App invoke it with a prompt it
+          # controls; naming two bots keeps that closed. Both are this repo's
+          # own automation:
+          #   * dependabot[bot] — the author of the dependency PRs. Note this
+          #     alone does not make those reviews work; see "Check the reviewer
+          #     has a credential" above for what GitHub withholds from them.
+          #   * dorkos-merge-tail[bot] — merge-tail re-requests a lost review by
+          #     applying the `re-review` label (merge-tail.yml), and on a
+          #     `labeled` event the ACTOR is whoever applied the label, not the
+          #     PR author. Without this entry every retry would fail on the
+          #     actor check. If the app's login is ever not this string, the
+          #     symptom is a retry failing with the action's own message naming
+          #     the login it actually saw, which is then a one-word fix here.
+          # The job `if:` above still requires a same-repo PR, so nothing here
+          # widens who can reach this job from a fork.
+          allowed_bots: 'dependabot[bot],dorkos-merge-tail[bot]'
           # Plain-prompt review following Anthropic's "Automatic PR Code Review"
           # recipe. The earlier code-review plugin variant ran but posted nothing:
           # it was never granted the comment-posting tools, so it hit a permission
@@ -888,6 +1140,7 @@ jobs:
           REVIEW_OUTCOME: ${{ steps.claude-review.outcome }}
           SINCE: ${{ steps.review-start.outputs.time }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SELF_EDIT: ${{ steps.self-edit.outputs.edits }}
         run: |
           # Prefer the action's own output; fall back to the path it logs, since a
           # composite action's outputs are not guaranteed to survive its failure.
@@ -911,6 +1164,7 @@ jobs:
           classifier="$RUNNER_TEMP/classify-review-failure.sh"
           why=unknown
           reported=
+          limit=
           have_classifier=
           if [ -z "$DEFAULT_BRANCH" ]; then
             echo "::warning::Could not resolve the default branch; skipping failure classification rather than running the PR's copy of the classifier."
@@ -920,8 +1174,29 @@ jobs:
             have_classifier=yes
             why=$(bash "$classifier" class "$exec_file") || why=unknown
             reported=$(bash "$classifier" reported "$exec_file") || reported=
+            limit=$(bash "$classifier" limit "$exec_file") || limit=
           fi
           echo "review result class: $why (from $exec_file)"
+
+          # The action refused to start because this PR edits its workflow, so it
+          # never wrote an execution log and `unknown` is the classifier being
+          # honest about having nothing to read. Name the actual reason. Narrow on
+          # purpose: only when the trusted comparison said yes AND the classifier
+          # found nothing, so a run that really did leave an unreadable log still
+          # reports `unknown`. It does NOT touch `stands`, which is computed from
+          # the classifier alone below and must stay `no` — a PR that edits the
+          # reviewer has not been reviewed, whatever the reason is called.
+          if [ "$SELF_EDIT" = yes ] && [ "$why" = unknown ]; then
+            why=workflow_edit
+          fi
+
+          # Handed to "Report the outcome class" below, which turns the pair
+          # into the single word the collector reads. Emitted here because this
+          # is the only step that holds the trusted classifier's answers, and
+          # asking for them twice is how two callers drift apart.
+          echo "class=$why" >> "$GITHUB_OUTPUT"
+          case "$limit" in session | weekly | unknown) ;; *) limit= ;; esac
+          echo "limit=$limit" >> "$GITHUB_OUTPUT"
 
           # Was a verdict already posted? Scoped to comments this run could have
           # made, so an earlier pass's summary is not mistaken for this one's.
@@ -1039,6 +1314,12 @@ jobs:
                 body="This check is red because the review reported success but never posted a verdict, so nothing here has actually been reviewed. That is a problem with the reviewer, not with this PR. The review run is in the [Actions log]($RUN_URL). Add the \`re-review\` label to try again."
               fi
               ;;
+            workflow_edit)
+              # No "try again": there is nothing to try. Every automatic run on
+              # this PR will end the same way until it merges, which is why the
+              # remedy named here is the trusted dispatch rather than the label.
+              body="This check is red because this pull request changes \`.github/workflows/claude-code-review.yml\`, and the reviewer refuses to run from a copy of its own workflow that differs from \`$DEFAULT_BRANCH\`. That is an anti-exfiltration guard inside the action — a pull request must not be able to rewrite the workflow that holds the reviewer's credentials — and it is not a finding about this code. Nothing here has been reviewed, so this check stays red on purpose. Re-running it or adding \`re-review\` will do exactly the same thing. To get a real review, ask for one by hand from the default branch, which is trusted: \`gh workflow run claude-code-review.yml -f pr=<number>\`. Once this merges, reviews on other pull requests are unaffected."
+              ;;
             *)
               body="This check is red because the review did not finish, not because it found blocking issues — and it left no readable record of why, so the reason is only in the [Actions log]($RUN_URL). Add the \`re-review\` label to try again."
               ;;
@@ -1050,6 +1331,97 @@ jobs:
           fi
 
           gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body"
+
+      # WHAT KIND OF FAILURE WAS THIS? One word, written where something other
+      # than a human reading Actions logs can find it.
+      #
+      # WHY IT EXISTS. `review-completes` is the SLO for "the automated review
+      # finishes the first time", and today it is computed purely from the run's
+      # conclusion (packages/ci-steward/src/series.ts, `reviews`): every red run
+      # counts against it equally. ci/slos.yaml already says the population
+      # should exclude subscription usage-limit stalls and says why it does not —
+      # "not yet separable in phase 1; counted as failures until the classifier
+      # exists". This is that classifier's output. A quota stall is a wait, not a
+      # defect; a fork is out of scope by design; a review that ran and posted a
+      # verdict is a success even when the action then threw. Scoring all four as
+      # one number measures the subscription's weather, not our pipeline.
+      #
+      # THE CLASSES, and what each one means for whoever reads it:
+      #   reviewed        the review ran and its verdict is on the PR (green)
+      #   no_verdict      it reported success and posted nothing (our bug)
+      #   turn_budget     it exhausted --max-turns (the budget is too small)
+      #   quota_session   the 5-hour subscription window is spent (wait)
+      #   quota_weekly    the weekly subscription window is spent (wait)
+      #   quota_unknown   a subscription limit that did not name its window
+      #   no_credentials  there was no usable token at all (our setup)
+      #   fork            refused because the PR comes from a fork (by design)
+      #   workflow_edit   the PR edits this workflow, so the action refused to
+      #                   start at all (by design; see "Detect a self-edit")
+      #   infra           everything else that failed (our bug, cause unknown)
+      #
+      # WHERE IT GOES, and why twice. The job summary is for a person opening the
+      # run. The `::notice::` annotation is for a machine: annotations are
+      # readable through the API (`check-runs/{job_id}/annotations`) without
+      # downloading a log, so the collector can join a class to a run when
+      # `review-completes` is re-based on it. Neither is wired into the
+      # collector by this change ON PURPOSE — changing the metric's population
+      # in the same window as the changes it is measuring would make the
+      # before/after comparison meaningless. Emit first, measure with it later.
+      #
+      # THE CLASS NEVER DECIDES THE CHECK. "Decide the check" below is unchanged
+      # and still reads only `stands`. This step cannot turn a red run green, and
+      # it must not grow that power: a class is produced partly from the run's
+      # own error text, and the whole verdict architecture rests on that text
+      # never being able to vouch for anything.
+      #
+      # WHAT IT CANNOT SEE, stated rather than left as a silent gap: a fork PR on
+      # `pull_request` never reaches this job at all (the job `if:` skips it), so
+      # only the dispatch path can report `fork`. Classifying the skipped ones
+      # needs the always-running `review-gate` job, which is phase 2 (DOR-2151,
+      # plans/ci-steward-plan.md §5.3) and deliberately not in this change.
+      - name: Report the outcome class
+        if: always()
+        env:
+          STANDS: ${{ steps.verdict.outputs.stands }}
+          CLASS: ${{ steps.verdict.outputs.class }}
+          LIMIT: ${{ steps.verdict.outputs.limit }}
+          HAVE_TOKEN: ${{ steps.credential.outputs.have }}
+          FORK: ${{ steps.target.outputs.fork }}
+        run: |
+          # Order is precedence, most specific first. Each arm answers a
+          # different question, and the earlier ones are facts this job
+          # established itself rather than readings of the run's own words.
+          if [ "$FORK" = yes ]; then
+            class=fork
+          elif [ "$HAVE_TOKEN" = no ]; then
+            class=no_credentials
+          elif [ "$STANDS" = yes ]; then
+            class=reviewed
+          elif [ -n "$LIMIT" ]; then
+            class="quota_$LIMIT"
+          else
+            case "$CLASS" in
+              max_turns) class=turn_budget ;;
+              # Neither our infrastructure nor our quota: the action declined to
+              # run on a PR that edits it. Separated so `review-completes` can
+              # stop counting a by-design refusal as a pipeline failure — about 3
+              # of 52 failures over 30 days (report 07 §6).
+              workflow_edit) class=workflow_edit ;;
+              # `no` without a limit string: the run never got a usable model
+              # response and named no cause. With the limit string it would
+              # have been caught by the arm above, so what is left is a token
+              # that is missing, invalid or revoked.
+              no) class=no_credentials ;;
+              completed) class=no_verdict ;;
+              *) class=infra ;;
+            esac
+          fi
+
+          echo "review outcome class: $class"
+          echo "::notice title=review-outcome-class::$class"
+          {
+            echo "- outcome class: \`$class\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # THE CHECK (DOR-1665, DOR-1877). This step always runs. A successful
       # action and a failed action take the same route: both pass only when the

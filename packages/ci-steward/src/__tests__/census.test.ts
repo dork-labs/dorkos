@@ -104,6 +104,73 @@ describe('census: timeouts', () => {
   });
 });
 
+describe('census: the main canary is a registry, not a convention', () => {
+  it('fails when a canary workflow lost the trigger that makes it run', () => {
+    // The config list and the workflow trigger are two halves of one thing and
+    // nothing joins them at runtime. A canary that stopped running reads
+    // exactly like a healthy main in every number on the report, so the census
+    // is what holds the pair together.
+    const spec = baseSpec();
+    spec.workflows['nightly.yml']!.on = { schedule: [{ cron: '0 5 * * *' }] };
+    const { findings } = census(spec);
+    expect(findings.map((f) => f.code)).toEqual(['canary/missing-trigger']);
+    expect(findings[0]!.message).toContain('no workflow_dispatch trigger');
+
+    spec.workflows['nightly.yml']!.on = { workflow_dispatch: null };
+    expect(codes(spec)).toEqual(['canary/missing-trigger']);
+  });
+
+  it('fails when canary.workflows names a workflow that is not there, and names ci/config.yaml', () => {
+    const spec = baseSpec();
+    const exempt = (spec.config.canary as { exempt: Record<string, string> }).exempt;
+    spec.config.canary = { workflows: ['test.yml', 'gone.yml'], exempt };
+    const { findings } = census(spec);
+    // nightly.yml left the list, but it owns no required context, so only the
+    // phantom file is a finding.
+    expect(findings.map((f) => f.code)).toEqual(['canary/missing-workflow']);
+    expect(findings[0]!.where).toBe('gone.yml');
+    // The finding names the file the reader has to edit, not gates.yaml.
+    expect(findings[0]!.file).toBe('ci/config.yaml');
+  });
+
+  it('fails when a required workflow is in neither list, so a deletion cannot go quiet', () => {
+    // The one-directional failure the exempt list exists for: drop test.yml
+    // from canary.workflows and, without this, the census stays green while
+    // collection and the silence arm both stop watching the `test` context.
+    const spec = baseSpec();
+    const exempt = (spec.config.canary as { exempt: Record<string, string> }).exempt;
+    spec.config.canary = { workflows: ['nightly.yml'], exempt };
+    const { findings } = census(spec);
+    expect(findings.map((f) => f.code)).toEqual(['canary/required-unwatched']);
+    expect(findings[0]!.where).toBe('test.yml');
+  });
+
+  it('fails a canary workflow that declares a schedule with no cron', () => {
+    // `schedule: []` reports green and fires nothing.
+    const spec = baseSpec();
+    spec.workflows['nightly.yml']!.on = { schedule: [], workflow_dispatch: null };
+    expect(codes(spec)).toEqual(['canary/no-cron']);
+  });
+
+  it('fails a canary workflow whose every job skips on a scheduled run', () => {
+    const spec = baseSpec();
+    job(spec, 'nightly.yml', 'report').if = "${{ github.event_name == 'merge_group' }}";
+    expect(codes(spec)).toEqual(['canary/no-job-runs']);
+  });
+
+  it('fails a workflow that is in both lists at once', () => {
+    const spec = baseSpec();
+    spec.config.canary = {
+      workflows: ['test.yml', 'nightly.yml'],
+      exempt: {
+        'lint.yml': 'The fixture keeps one required workflow out of the canary on purpose.',
+        'test.yml': 'Claiming both at once is the contradiction this catches.',
+      },
+    };
+    expect(codes(spec)).toEqual(['canary/exempt-and-listed']);
+  });
+});
+
 describe('census: the deadlock invariant', () => {
   it('fails on a paths: filter on a required workflow', () => {
     const spec = baseSpec();

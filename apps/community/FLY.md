@@ -8,7 +8,7 @@ This is a deployment recipe, not a claim that a production Fly deployment has be
 
 ## Prepare the app
 
-Install [flyctl](https://fly.io/docs/flyctl/install/), sign in with `fly auth login`, and choose the Fly organization that will own the resources. You need permission to create an app, database, and bucket. Fly bills that organization for its resources.
+Install [flyctl](https://fly.io/docs/flyctl/install/), sign in with `fly auth login`, and choose the Fly organization that will own the app and bucket. You also need access to the PostgreSQL account you choose below. Each service bills its owning account.
 
 Use a checkout of the DorkOS release you intend to deploy. Run every command below from the repository root. The Docker build needs the whole monorepo, not just `apps/community`. See Fly's [monorepo deployment guide](https://fly.io/docs/launch/monorepo/).
 
@@ -18,7 +18,7 @@ mkdir -p .temp
 cp apps/community/fly.toml.example .temp/community-fly.toml
 ```
 
-Edit the copied file. Replace the app name, public origin, bucket name, and region. Keep the origin exactly `https://<your-app-name>.fly.dev` for initial setup. Choose a region close to your members and database.
+Keep the copied file in `.temp`; its Dockerfile path is relative to that directory. Edit it there, then replace the app name, public origin, bucket name, and region. Keep the origin exactly `https://<your-app-name>.fly.dev` for initial setup. Choose a region close to your members and database.
 
 The template uses one shared CPU and 1 GiB of memory as a starting point, not a measured capacity promise. Watch resource use and adjust it for your community.
 
@@ -26,9 +26,18 @@ Keep one Machine. This is the verified application topology; multiple app proces
 
 Automatic stopping is disabled so live streams and cleanup work keep running. The proxy idle timeout allows long-lived connections. The app's heartbeat still needs to reach browsers through the public URL. See [Fly app configuration](https://fly.io/docs/reference/configuration/).
 
-## Create PostgreSQL and private file storage
+## Choose PostgreSQL and create private file storage
 
-Create a dedicated [Fly Managed Postgres database](https://fly.io/docs/mpg/create-and-connect/) in the same organization and region. In its Connect screen, copy the **direct** connection URL into your secret store. This recipe uses that URL for both startup migrations and runtime access. Fly recommends direct connections for migrations; its automatic attach flow supplies a pooled URL instead. See [client configuration](https://fly.io/docs/mpg/client-configuration/).
+Create a database and role used only by this Community. Keep its credentials separate from your other apps. Choose one of these options:
+
+| Database             | Setup                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fly Managed Postgres | Create a [Managed Postgres database](https://fly.io/docs/mpg/create-and-connect/) in the same Fly organization and region. In its Connect screen, copy the **direct** connection URL into your secret store. Do not use `fly mpg attach`: it supplies a pooled URL. See Fly's [client configuration](https://fly.io/docs/mpg/client-configuration/).                                                                                                                        |
+| Neon                 | Create a separate [Neon project](https://neon.com/docs/manage/projects) and database role. Choose a Neon region close to the Fly app region. The app reaches Neon over its public TLS address, not Fly's private network. In Neon's Connect dialog, turn **Connection pooling** off and copy the direct URL. Keep its TLS settings. See Neon's [Node.js guide](https://neon.com/docs/guides/node) and [connection guide](https://neon.com/docs/connect/connection-pooling). |
+
+Community applies migrations before startup. A direct URL is recommended for migrations. The current server uses the same URL at runtime. Save it as `COMMUNITY_DATABASE_URL` in the next section.
+
+Live channel streams query PostgreSQL often, and background cleanup also uses the database. Do not assume a database that can suspend when idle will stay suspended. Check its compute use and billing during the acceptance tests.
 
 Create a private file bucket:
 
@@ -101,11 +110,11 @@ Record the source revision, image, region, configuration, and results without se
 bash apps/community/acceptance/run.sh
 ```
 
-That test exercises the packaged apps without access to DorkOS hosts. It does not test Fly's proxy, Managed Postgres, or Tigris. The public-host checks above remain necessary.
+That test exercises the packaged apps without access to DorkOS hosts. It does not test Fly's proxy, your hosted PostgreSQL service, or Tigris. The public-host checks above remain necessary.
 
 ## Backups, upgrades, and troubleshooting
 
-Use the [operations guide](OPERATIONS.md) for coordinated database/file backups and recovery. Its Docker Compose commands are for Compose deployments; use Fly's database tools and your object-store backup tools here. Stop app writes while taking a matching backup pair. Do not assume a bucket created with `fly storage create` has Tigris snapshots enabled. Choose and rehearse a file backup method before storing irreplaceable data.
+Use the [operations guide](OPERATIONS.md) for coordinated database/file backups and recovery. Its Docker Compose commands are for Compose deployments. Use your database host's export or restore tools and your object-store backup tools here. Stop app writes while taking a matching backup pair. A Neon restore point covers PostgreSQL, not Tigris files. Do not assume a bucket created with `fly storage create` has Tigris snapshots enabled. Choose and rehearse a file backup method before storing irreplaceable data. See Neon's [backup guide](https://neon.com/docs/postgres/backup-restore/backups) if you use Neon.
 
 Database migrations only move forward. Before upgrading, save a tested backup and the running source/image revision. Roll back by restoring the matching database, files, and image together.
 
@@ -118,3 +127,22 @@ Database migrations only move forward. Before upgrading, save a tested backup an
 | Files disappear after redeploy       | Confirm `COMMUNITY_STORAGE_DRIVER=s3`; the Machine's ordinary filesystem is temporary.                                         |
 
 A Fly Volume is another possible storage choice, but it attaches to one Machine and is not replicated automatically. The bucket recipe avoids relying on that local disk. See [Fly Volumes](https://fly.io/docs/volumes/overview/).
+
+### Pause writes for a matching backup
+
+Stopping a Machine is not enough if Fly proxy autostart can start it again when a request arrives. For a single-Machine deployment, first disable autostart and stop the Machine:
+
+```bash
+fly machine update <machine-id> --app <app-name> --autostart=false --skip-start --yes
+fly machine list --app <app-name>
+```
+
+Confirm it stays stopped after a request to the public address. While it is stopped, export the database and copy the private file bucket. Keep both copies, their checksums, and the application image revision as one protected recovery set. Store the matching application secrets separately in protected storage, as described in the [operations guide](./OPERATIONS.md).
+
+When the matching pair is complete, restore autostart and start the service:
+
+```bash
+fly machine update <machine-id> --app <app-name> --autostart=true --yes
+```
+
+Check `/health` and sign-in afterward. This procedure causes a service interruption. If capture fails, treat that backup pair as incomplete; resuming service does not make a partial backup usable. Rehearse the restore in an isolated environment before relying on it.

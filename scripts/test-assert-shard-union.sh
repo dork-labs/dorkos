@@ -54,6 +54,13 @@ run_case() {
   echo $?
 }
 
+# The same, with a quarantine list in front of the directory argument.
+run_quarantined() {
+  local lists=$1 qfile=$2
+  WORKSPACE_ROOT="$ws" bash "$assert" --quarantined "$qfile" "$lists" >/dev/null 2>&1
+  echo $?
+}
+
 # Case 1: every test-script package appears in the union across shards → pass.
 # beta's only file sits on shard 2 while shard 1 has none of beta — exactly the
 # legitimate empty-shard shape the union must tolerate.
@@ -129,6 +136,43 @@ mkdir -p "$lists7"
   done
 } > "$lists7/shard-1.txt"
 check 'a large union with early matches passes' 0 "$(run_case "$lists7")"
+
+
+# ---- the quarantine lane (plan §4.9 L1) ----
+#
+# Quarantine is per TEST and excludes no file, so a lane changes nothing about
+# the union itself. What it adds is one interlock: a quarantined test whose file
+# stopped being collected must fail, because a lane entry watching a file no
+# shard collects is a blind spot that looks like coverage.
+qfile="$work_dir/quarantine.txt"
+printf 'apps/alpha/src/__tests__/a.test.ts › alpha does its thing\n' >"$qfile"
+check 'a quarantined test whose file is collected passes' 0 "$(run_quarantined "$lists1" "$qfile")"
+
+qgone="$work_dir/quarantine-gone.txt"
+printf 'apps/alpha/src/__tests__/vanished.test.ts › a test nothing collects\n' >"$qgone"
+check 'a quarantined test whose file vanished fails' 1 "$(run_quarantined "$lists1" "$qgone")"
+
+# A Playwright entry names a path relative to apps/e2e/tests and is the browser
+# gate's business; this one must not be read as a vitest file and must not fail.
+qpw="$work_dir/quarantine-playwright.txt"
+printf 'home-surface/team-room.spec.ts › a browser test\n' >"$qpw"
+check 'a Playwright entry is ignored here' 0 "$(run_quarantined "$lists1" "$qpw")"
+
+# Ignored, but SAID. A lane line this check cannot match is a quarantine entry
+# it does not watch, and counting it silently is how "the union check covers
+# quarantine" becomes untrue without anyone noticing.
+skipped_out=$(WORKSPACE_ROOT="$ws" bash "$assert" --quarantined "$qpw" "$lists1" 2>&1)
+case "$skipped_out" in
+*'1 lane line(s) not a workspace test file'*) check 'the skipped lane lines are counted out loud' 0 0 ;;
+*) check 'the skipped lane lines are counted out loud' 0 1
+   printf '        actual output: %s\n' "$skipped_out" >&2 ;;
+esac
+
+qempty="$work_dir/quarantine-empty.txt"
+: >"$qempty"
+check 'an empty lane changes nothing' 0 "$(run_quarantined "$lists1" "$qempty")"
+
+check 'a missing quarantine list is refused' 1 "$(run_quarantined "$lists1" "$work_dir/nope.txt")"
 
 printf 'test-assert-shard-union: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

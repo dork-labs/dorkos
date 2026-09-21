@@ -24,6 +24,7 @@ import { formatFindings, type Finding } from './finding.ts';
 import { allocateId } from './ids.ts';
 import { checkLedger, LEDGER_FILE_RE } from './ledger.ts';
 import {
+  buildEnv,
   cmdCollect,
   cmdDaily,
   cmdDailyReport,
@@ -35,10 +36,10 @@ import {
   cmdReport,
   cmdStatus,
   cmdVerdicts,
-  type Env,
+  type Deps,
 } from './commands.ts';
-import { realGit, tokenGit } from './data-branch.ts';
-import { createGh } from './gh.ts';
+import { quarantine } from './cli-quarantine.ts';
+import { tokenGit } from './data-branch.ts';
 import { CONFIG_PATH, loadHandFiles } from './load.ts';
 import { isDay } from './time.ts';
 import { loadWorkflows } from './workflows.ts';
@@ -99,6 +100,33 @@ observe (phase 1; GitHub through the gh CLI, git for the data branch):
   local-export [--clone <name>] [--no-push]
       Export this clone's lefthook timings to local/<clone>/ and rotate the file.
 
+quarantine (the lane for tests data has classified flaky; plan §4.9 L1):
+  flaky [--days N] [--fetch [--builds N]] [--data <dir>] [--json]
+      Tests that failed and then passed on the same merge-group tree, with
+      counts, dates and whether each one qualifies. Reads the data branch;
+      --fetch reads Actions artifacts live instead (they expire after 7 days).
+  quarantine list [--json]
+      The lane as the queue will read it, expiry applied.
+  quarantine add --runner playwright|vitest --file <f> --title <t> --reason <why>
+                 [--expiry-days N] [--by <who>] [--fetch | --evidence <json>]
+                 [--ledger <id>] [--publish]
+      Refuses a test with no flaky evidence: a deterministic failure is a real
+      bug and the lane must never hide one. Writes the 'fix or delete this test'
+      ledger entry. Publishes nothing without --publish.
+  quarantine remove --runner <r> --file <f> --title <t> [--publish]
+      Works even on a list no reader honours: that is the repair.
+  quarantine reset [--publish]
+      Replace the list with an empty one, for a file that does not parse.
+  quarantine-list --runner <r> [--out <json>] [--lines <txt>] [--title <t>]
+                  [--offline]   (--runner is REQUIRED: the lines carry none)
+      What a queue job reads the list with, filtered to its own runner. ALWAYS
+      exits 0: an unreadable list writes an empty one, and empty means every
+      test blocks as normal.
+  quarantine-gate --runner <r> --suite-exit <n> --reports <path>... [--list <f>]
+                  [--title <t>]
+      Passes only when the runner's own failure tally is exactly the set the
+      lane absorbed.
+
 every command:
   --root <dir>   repo root (default: the nearest directory up holding ci/config.yaml)
   --now <iso>    the clock (default: now); decides allowlist expiry and new ledger ids
@@ -106,6 +134,7 @@ every command:
 exit codes: 0 clean, 1 findings, 2 bad usage or an internal error
 root aliases: pnpm ci:census, ci:ledger-check, ci:ledger-new, ci:status, ci:pulse,
               ci:report (daily-report), ci:local-export
+              ci:local-export, ci:flaky, ci:quarantine
 `;
 
 function findRoot(start: string): string | null {
@@ -244,7 +273,7 @@ function ledgerNew(
 }
 
 /** What the phase-1 commands reach outside the process through; tests replace it. */
-export type Deps = Partial<Pick<Env, 'gh' | 'git' | 'stepSummary' | 'cloneName'>>;
+export type { Deps };
 
 const NEEDS_DATA = new Set([
   'collect',
@@ -288,17 +317,7 @@ function observe(
     io.err(`--day ${bad.join(', ')} is not a YYYY-MM-DD day.\n`);
     return 2;
   }
-  const env: Env = {
-    root,
-    files,
-    workflows: loadWorkflows(root, files.config.workflows_dir, () => undefined),
-    now,
-    io,
-    gh: deps.gh ?? ((budget) => createGh({ budget })),
-    git: deps.git ?? realGit,
-    stepSummary: deps.stepSummary,
-    cloneName: deps.cloneName,
-  };
+  const env = buildEnv(root, files, now, io, deps);
   const data = values.data ? path.resolve(values.data) : '';
   switch (command) {
     case 'collect':
@@ -372,6 +391,24 @@ export function main(
         'no-push': { type: 'boolean' },
         message: { type: 'string' },
         'tag-week': { type: 'boolean' },
+        days: { type: 'string' },
+        fetch: { type: 'boolean' },
+        builds: { type: 'string' },
+        json: { type: 'boolean' },
+        runner: { type: 'string' },
+        file: { type: 'string' },
+        reports: { type: 'string', multiple: true },
+        'suite-exit': { type: 'string' },
+        list: { type: 'string' },
+        offline: { type: 'boolean' },
+        out: { type: 'string' },
+        lines: { type: 'string' },
+        reason: { type: 'string' },
+        by: { type: 'string' },
+        'expiry-days': { type: 'string' },
+        evidence: { type: 'string' },
+        ledger: { type: 'string' },
+        publish: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
       },
     });
@@ -420,6 +457,11 @@ export function main(
     case 'pulse':
     case 'local-export':
       return observe(positionals[0], root, now, io, values, deps);
+    case 'flaky':
+    case 'quarantine':
+    case 'quarantine-list':
+    case 'quarantine-gate':
+      return quarantine(positionals[0], root, now, io, values, positionals, deps);
     default:
       io.err(USAGE);
       return 2;

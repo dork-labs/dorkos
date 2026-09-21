@@ -370,9 +370,134 @@ import json, sys
 p = sys.argv[1]
 d = json.load(open(p))
 d['stats']['unexpected'] = 1
+d['suites'][0]['specs'][0]['tests'][0]['status'] = 'unexpected'
 json.dump(d, open(p, 'w'))
 PY
 check 'a failed test fails the assertion' "$tmp/red" 1 'did not pass'
+
+# Playwright's own tally and the per-test walk must agree. A report that counts
+# a failure nothing can name is a report this gate refuses to certify, because
+# the lane below can only excuse failures it can see.
+make_workspace "$tmp/phantomRed"
+python3 - "$tmp/phantomRed/apps/e2e/test-results/results.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d['stats']['unexpected'] = 1
+json.dump(d, open(sys.argv[1], 'w'))
+PY
+check 'a failure nothing can name is refused' "$tmp/phantomRed" 1 'disagrees with itself'
+
+# ---- the quarantine lane (plan §4.9 L1) ----
+#
+# These cases are the whole contract: an absorbed failure passes and is named,
+# an unexcused failure still reds, a quarantined test that stopped running reds,
+# a missing list is refused rather than guessed at, and an empty lane changes
+# nothing at all.
+make_workspace "$tmp/qAbsorbed"
+python3 - "$tmp/qAbsorbed/apps/e2e/test-results/results.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d['stats']['unexpected'] = 1
+d['stats']['expected'] -= 1
+d['suites'][0]['specs'][0]['tests'][0]['status'] = 'unexpected'
+json.dump(d, open(sys.argv[1], 'w'))
+PY
+printf 'alpha.spec.ts \xe2\x80\xba alpha runs\n' >"$tmp/qAbsorbed/quarantine.txt"
+check 'a quarantined failure does not fail the build' "$tmp/qAbsorbed" 0 \
+  'quarantine lane absorbed 1 failure' --quarantined "$tmp/qAbsorbed/quarantine.txt"
+
+make_workspace "$tmp/qUnexcused"
+python3 - "$tmp/qUnexcused/apps/e2e/test-results/results.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d['stats']['unexpected'] = 1
+d['stats']['expected'] -= 1
+d['suites'][0]['specs'][0]['tests'][0]['status'] = 'unexpected'
+json.dump(d, open(sys.argv[1], 'w'))
+PY
+printf 'beta.spec.ts \xe2\x80\xba beta runs\n' >"$tmp/qUnexcused/quarantine.txt"
+check 'a failure the lane does not name still fails' "$tmp/qUnexcused" 1 \
+  'Not excused by the quarantine lane' --quarantined "$tmp/qUnexcused/quarantine.txt"
+
+make_workspace "$tmp/qAbsent"
+printf 'alpha.spec.ts \xe2\x80\xba a title nothing runs\n' >"$tmp/qAbsent/quarantine.txt"
+check 'a quarantined test that stopped running is named' "$tmp/qAbsent" 1 \
+  'QUARANTINED but did not RUN' --quarantined "$tmp/qAbsent/quarantine.txt"
+
+# A quarantined test that is COLLECTED and then skipped is the same hole wearing
+# a disguise: the lane says it is watching, and nothing is running.
+make_workspace "$tmp/qSkipped"
+python3 - "$tmp/qSkipped/apps/e2e/test-results/results.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+# A sibling test keeps the spec alive, so the "every test skipped" refusal does
+# not fire first and this case tests the thing it means to.
+d['suites'][0]['specs'].append({
+    'title': 'alpha also does something else',
+    'file': 'alpha.spec.ts',
+    'tests': [{'status': 'expected'}],
+})
+d['suites'][0]['specs'][0]['tests'][0]['status'] = 'skipped'
+d['stats']['skipped'] += 1
+json.dump(d, open(sys.argv[1], 'w'))
+PY
+printf 'alpha.spec.ts \xe2\x80\xba alpha runs\n' >"$tmp/qSkipped/quarantine.txt"
+check 'a quarantined test that was collected and skipped is named' "$tmp/qSkipped" 1 \
+  'QUARANTINED but did not RUN' --quarantined "$tmp/qSkipped/quarantine.txt"
+
+make_workspace "$tmp/qMissing"
+check 'a missing quarantine list is refused, never assumed empty' "$tmp/qMissing" 1 \
+  'no quarantine list at' --quarantined "$tmp/qMissing/nothing.txt"
+
+make_workspace "$tmp/qEmpty"
+: >"$tmp/qEmpty/quarantine.txt"
+check 'an empty lane changes nothing' "$tmp/qEmpty" 0 '15 test(s) executed' \
+  --quarantined "$tmp/qEmpty/quarantine.txt"
+
+# The tally check must keep working WHILE the lane is absorbing. It used to be
+# gated on nothing having been absorbed, which made it inert in exactly the runs
+# the lane is active for: two of these three failures would have vanished.
+make_workspace "$tmp/qTally"
+python3 - "$tmp/qTally/apps/e2e/test-results/results.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d['stats']['unexpected'] = 3          # Playwright counted three
+d['stats']['expected'] -= 1
+d['suites'][0]['specs'][0]['tests'][0]['status'] = 'unexpected'   # the walk names one
+json.dump(d, open(sys.argv[1], 'w'))
+PY
+printf 'alpha.spec.ts \xe2\x80\xba alpha runs\n' >"$tmp/qTally/quarantine.txt"
+check 'the tally check still fires while the lane is absorbing' "$tmp/qTally" 1 \
+  'disagrees with itself' --quarantined "$tmp/qTally/quarantine.txt"
+
+# A spec that fails under two projects is two rows against .stats.unexpected and
+# one quarantine id. Comparing the deduplicated set would red this healthy run.
+make_workspace "$tmp/qTwoProjects"
+python3 - "$tmp/qTwoProjects/apps/e2e/test-results/results.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+spec = d['suites'][0]['specs'][0]
+spec['tests'] = [{'status': 'unexpected'}, {'status': 'unexpected'}]
+d['stats']['unexpected'] = 2
+d['stats']['expected'] -= 1
+json.dump(d, open(sys.argv[1], 'w'))
+PY
+printf 'alpha.spec.ts \xe2\x80\xba alpha runs\n' >"$tmp/qTwoProjects/quarantine.txt"
+check 'one spec failing under two projects is two rows, not a disagreement' \
+  "$tmp/qTwoProjects" 0 'absorbed 2 failure' \
+  --quarantined "$tmp/qTwoProjects/quarantine.txt"
+
+# A failure that belongs to no test is never excusable.
+make_workspace "$tmp/qTopError"
+python3 - "$tmp/qTopError/apps/e2e/test-results/results.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d['errors'] = [{'message': 'chat.spec.ts: Cannot find module "./missing"'}]
+json.dump(d, open(sys.argv[1], 'w'))
+PY
+printf 'alpha.spec.ts \xe2\x80\xba alpha runs\n' >"$tmp/qTopError/quarantine.txt"
+check 'a global error the lane cannot name still reds the build' "$tmp/qTopError" 1 \
+  'belong to no test' --quarantined "$tmp/qTopError/quarantine.txt"
 
 # No report at all — the suite never started, or --reporter replaced the json one.
 make_workspace "$tmp/noreport"

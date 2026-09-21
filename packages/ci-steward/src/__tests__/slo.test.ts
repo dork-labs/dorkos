@@ -42,8 +42,13 @@ describe('SLOs over the recorded week 2026-09-12..18', () => {
     expect(readings.map((r) => r.id)).toEqual(slos.slos.map((s) => s.id));
   });
 
+  // headroom is 7772 and not 7773 because one recorded run of a gate that also
+  // runs on the merge path came in on a canary event; `onMergePath` keeps that
+  // gate's population to what merging costs. Gates that run on NOTHING but a
+  // schedule (merge-tail's arm, evals, CodeQL) keep every sample, which is why
+  // the number moved by one and not by the 56 canary-event samples in the week.
   it.each([
-    ['headroom', 'ok', 7773, { p95_over_timeout: 0.651 }],
+    ['headroom', 'ok', 7772, { p95_over_timeout: 0.651 }],
     ['queue-green', 'ok', 160, { share: 0.75 }],
     ['wasted-queue-builds', 'ok', 160, { share: 0.1625 }],
     ['flaky-test-runs', 'met', 20507, { share: 0.005 }],

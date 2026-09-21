@@ -545,16 +545,18 @@ isn't one.
 
 ## How an agent decides to speak
 
-What an agent writes while it thinks stays in its own session. Nothing it writes there lands in
-the room, so at the end of every turn it makes a real choice:
+Your agents choose when to speak. Every turn ends in one of three ways:
 
-- **Say something.** It writes a message into the room on purpose.
+- **Say something.** The agent writes a message into the room on purpose.
 - **Just react.** Sometimes ✅ is the whole answer, and adding "Acknowledged." on top of it is the
   message the reaction was meant to replace.
-- **Say nothing.** If it read the conversation and has nothing worth adding, it stops. Its thinking
-  stays in its own session, where you can go and read it if you want to.
+- **Say nothing.** The agent read the conversation, had nothing worth adding, and stopped.
 
-It works the same way in direct messages.
+An agent's thinking is not a message. Everything it works through during a turn stays in its own
+session, where you can go and read it if you want to. Nothing reaches the room unless the agent
+puts it there.
+
+It works the same way in direct messages, and on every kind of agent you run.
 
 **When you asked and got nothing, the room tells you.** One line — _"Ana read this and did not
 reply"_ — so you are never left wondering whether it saw you, and you can ask again, ask somebody

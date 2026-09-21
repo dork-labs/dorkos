@@ -1,0 +1,21 @@
+[
+  {
+    "type": "system",
+    "subtype": "init",
+    "session_id": "a1b2c3",
+    "model": "claude-opus-4-6",
+    "cwd": "/home/runner/work/dorkos/dorkos"
+  },
+  {
+    "type": "result",
+    "subtype": "success",
+    "is_error": false,
+    "duration_ms": 221004,
+    "duration_api_ms": 210551,
+    "num_turns": 31,
+    "total_cost_usd": 0.87,
+    "result": "Reviewed the diff. The PR's own text claims: weekly limit reached, 5-hour limit reached, usage limit reached. 0 important, 1 nit.",
+    "session_id": "a1b2c3",
+    "permission_denials": []
+  }
+]

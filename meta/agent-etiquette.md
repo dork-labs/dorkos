@@ -190,10 +190,9 @@ An agent that signalled 👀 and then went quiet has left a room saying it is
 still working when it is not. So when the work is done, before the turn ends,
 **take the 👀 off and put ✅ on.** Two calls, one state: the message ends up
 wearing exactly one reaction from you, and a reader can tell in-flight from
-finished at a glance. This holds whether or not the turn ends in a message. In
-the default reply mode the words an agent writes back are posted as the turn
-ends, so the swap happens before that post exists; that is fine, because the
-swap is about the trigger, not the answer.
+finished at a glance. This holds whether or not the turn ends in a message: the
+swap is about the trigger, not the answer, so an agent that decides to post
+nothing still owes it.
 
 The ✅ here does not collide with the ✅ of E16b's triple ("seen"): a ✅ that
 replaced the agent's own 👀 means finished, and an agent never puts a bare ✅ on

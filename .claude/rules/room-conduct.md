@@ -355,16 +355,23 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   - **`awaiting_approval` is NOT silent.** An aside turn holds a claim, so the
     room is showing the agent working; a turn parked on a person would leave that
     indicator standing with nothing to explain it. It writes the ordinary notice.
-  - **A slow aside is late, never lost**, like every other turn. The answer is
-    waited out to `rooms.lateReplyCeilingMinutes` and posted when it lands, so
-    the indicator releases into a post rather than into nothing.
-  - **The residual hole is one line wide and is logged, not hidden.** The answer
-    comes back to the greeter, which posts it un-provenanced a tick after the
-    claim releases — so a post the room then refuses (the agent left the room in
-    between) is a release with no durable sibling. It writes
-    `[rooms] a welcome-back offer was not made` and nothing else, deliberately:
-    the agent is gone, and a notice in its name would be the room speaking for
-    somebody who is not there.
+  - **A slow aside is late, never lost**, like every other turn. The room's wait
+    bounds the WAIT and never the turn, so a slow offer is waited out to
+    `rooms.lateReplyCeilingMinutes` and the agent's own post lands when it gets
+    there, rather than the indicator releasing into nothing.
+  - **The offer goes through the tool, like every other turn** (spec
+    `tool-only-room-replies` §A2, reversing ADR `260829-025020`'s one carve-out
+    on 2026-09-19 — DOR-2099). The agent calls `post_to_room` while the turn
+    runs or it calls nothing; an offer that calls nothing produces nothing and no
+    notice, which is the fourth silence above rather than a new hole. The post is
+    stamped through the aside claim, which sits at the cascade ceiling with no
+    root, so an offer still cannot start a conversation — and a test pins that.
+    The greeter used to post whatever the turn narrated, un-provenanced, a tick
+    after the claim released; that second delivery is gone, and with it the one
+    release-with-no-durable-sibling it could produce. The only line left in the
+    log is `[rooms] a welcome-back offer was not made`, written when the seam
+    itself throws and nothing else, deliberately: a notice in the agent's name
+    would be the room speaking for somebody who never got asked.
 - **Only a real wait is a refusal-shaped event.** `awaiting_approval` is the one
   notice that is not an outcome: a turn parked on a person produces nothing
   until they act, so it is reported WHILE it is true, off the turn's own event
@@ -386,11 +393,11 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   exception — a turn that ran and chose to say nothing. A release with no durable
   sibling, new or standing, is a defect.
   **A reaction is the fifth, and it was added rather than argued away**
-  (DOR-1613). Under `rooms.toolOnlyReplies` a turn that puts one emoji on a
-  message and says nothing else is a first-class outcome — a thumbs-up can BE the
-  answer — and a reaction is durable: it survives a reload and it is drawn on the
-  entry. What it is deliberately not is an ENTRY, which is what made the earlier
-  wording call such a release a defect. It plainly is not one.
+  (DOR-1613). A turn that puts one emoji on a message and says nothing else is a
+  first-class outcome — a thumbs-up can BE the answer — and a reaction is
+  durable: it survives a reload and it is drawn on the entry. What it is
+  deliberately not is an ENTRY, which is what made the earlier wording call such
+  a release a defect. It plainly is not one.
   **And the named exception now carries the common case, which is why it is
   re-argued here rather than leaned on.** Its wording has not changed and its
   scope has not widened. What changed is that the ADDRESSED half of it finally
@@ -541,22 +548,22 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   (`isOwnerAuthor`), never on `kind === 'human'` — an invited person is not the
   operator, for the same reason `seesEveryRoom` was narrowed. Do not tidy the
   exception away as an oversight: ADR `260815-205935` is why it is there. And
-  **posting is channels and threads only WHILE THE TURN'S TEXT STILL POSTS**
-  (spec §2.6, as reversed under `rooms.toolOnlyReplies` by ADR `260829-025020`).
-  In text mode the reply IS the message in a DM, so the tool refuses there — and
-  in a TOOL-ONLY turn nothing the turn writes is posted, so the same refusal
-  would leave the agent unable to answer a direct message at all. The condition
-  is on the resolved reply mode rather than on the room kind alone, and the kind
-  half is still spelled `kind !== 'channel'` like every other room-kind branch.
-  Do not re-tighten it to "channels only" and do not loosen it to "always": in
-  text mode §2.6's argument is exactly as right as it was, and a `post_to_room`
-  made with no turn behind it reads an ABSENT mode and takes the refusal, which
-  is the fail-open direction.
-  An agent that posts through the tool mid-turn does not ALSO get its
-  turn narration posted (`ActiveClaim.spokeViaTool`); provenance still follows the
-  turn, so speaking on purpose is not a way to reset the cascade guard — and the
-  mark is CONSUMED by the delivery it was set for (`takeSpokeViaTool`), because a
-  claim outlives its answer under RP8's park-and-resume and a standing mark would
+  **posting is the agent's only voice, in channels, threads and direct messages
+  alike** (spec §2.6 as reversed by ADR `260829-025020`, graduated and made
+  unconditional on 2026-09-19 — DOR-2099). §2.6 refused `post_to_room` outside a
+  channel on one true premise: in a direct message the turn's TEXT was the
+  message, so the tool would have been a second way to say the same thing.
+  Nothing a turn writes is posted now, in any room kind, so that refusal would
+  leave an agent unable to answer a direct message at all. `TOOL_POST_NOT_IN_DM`
+  is deleted and a tool post in a DM is ordinary. Do not re-tighten it to
+  "channels only": the premise that carved DMs out went when the second delivery
+  did, and what keeps a DM from looping is `selectTriggerTargets`, never this
+  refusal (ADR `260814-025326`).
+  A post an agent makes mid-turn is what MARKS the turn as answered
+  (`ActiveClaim.spokeViaTool`); provenance still follows the turn, so
+  speaking on purpose is not a way to reset the cascade guard — and the mark is
+  CONSUMED by the delivery it was set for (`takeSpokeViaTool`), because a claim
+  outlives its answer under RP8's park-and-resume and a standing mark would
   swallow the next one. `reactedViaTool` is its sibling, taken the same way for
   the same reason.
   **How many times it may post in ONE turn is a mechanism**
@@ -564,9 +571,9 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   Nothing counted an agent's posts before DOR-1613, deliberately — several posts
   inside one turn cost ONE turn against the cascade budget, because being legible
   is not a thing the room charges for. But etiquette E8's "one message, not
-  three" is a prompt, and under the flip posting stops being an extra an agent
-  rarely reaches for and becomes the only voice it has. Do not weaken the ceiling
-  because a prompt already says not to do the thing.
+  three" is a prompt, and posting is no longer an extra an agent rarely reaches
+  for: it is the only voice it has. Do not weaken the ceiling because a prompt
+  already says not to do the thing.
   **Who is calling is resolved, never assumed.** An agent token names an agent; a
   verified `userId` names a person; neither present means the surface could name
   nobody, and on a login-on install that is a refusal (`UNIDENTIFIED_CALLER`),

@@ -111,9 +111,36 @@ name: browser-test
 # blameless PRs were ejected from the queue. Both uploads now get a second
 # attempt; the gate and assert-browser-tests-executed.sh are untouched, because
 # a missing report is still a real failure and the retry still says so.
+# THE MAIN CANARY (DOR-2150, plan §4.9): `schedule` and `workflow_dispatch`.
+#
+# This workflow is the whole reason the canary exists. It runs on `merge_group`
+# only, so a browser break that lands on `main` is invisible until the next PR
+# is ejected by it — which is exactly how the 2026-09-17 fixture-clock bug
+# (#1916, fixed by #1934) hid for three days and then ejected three blameless
+# PRs about nine times in one evening. Nothing else in the pipeline drives a
+# browser at all.
+#
+# It is this workflow, unchanged, against `main` HEAD: the shards' `if:`
+# changed from `== 'merge_group'` to `!= 'pull_request'`, which is the same
+# two-way split — the suite runs everywhere but a PR, where it is deferred by
+# ADR 260728-112203 — with the canary on the side that runs it. There is no
+# second copy of the Playwright suite to drift.
+#
+# `copy-spec-drift` is the one job the canary does NOT run: it diffs changed
+# copy against the specs, and a scheduled run carries neither
+# `pull_request.base.sha` nor `merge_group.base_sha`, so it has nothing to diff.
+#
+# A scheduled run reports on no PR and no queue build, so it can neither block
+# nor eject anything. The full reasoning, the cron slots and what their
+# coverage is actually worth given GitHub's throttling are in test.yml's
+# matching header; the crons here are the same four hours, offset by minutes so
+# the four canary workflows do not ask for runners in the same second.
 on:
   pull_request:
   merge_group:
+  schedule:
+    - cron: '41 0,5,10,21 * * *'
+  workflow_dispatch:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for the Node 20 runtime (matches the other workflows here).
@@ -126,7 +153,13 @@ env:
 # dequeuing them. Deliberately IDENTICAL in form to test.yml (keep them in
 # step).
 concurrency:
-  group: browser-test-${{ github.ref }}
+  # EVENT-AWARE, because of the canary. A `schedule` run and a
+  # `workflow_dispatch --ref main` run share `github.ref`, so on one group the
+  # on-demand leg would queue behind a scheduled round for up to half an hour —
+  # and the two are correlated in time, because the reason to dispatch by hand
+  # is usually the reason a round is already running. The suffix is constant
+  # for `pull_request` and `merge_group`, so neither changes behaviour.
+  group: browser-test-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || 'gate' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -138,7 +171,7 @@ jobs:
     # Queue builds only — on pull_request the whole matrix is skipped and the
     # fan-in below answers instantly. See the header for why the PR still gets
     # a `browser-test` context at all.
-    if: ${{ github.event_name == 'merge_group' }}
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     # THREE SHARDS, AND HERE IS THE ARITHMETIC THAT PICKED THREE (DOR-1363).
     #
@@ -279,6 +312,45 @@ jobs:
       # gate job's flaky warning. A test that keeps appearing there gets
       # fixed, or the budget goes to zero.
     steps:
+      # A canary run is against `main` or it is nothing.
+      #
+      # `workflow_dispatch` is ref-free, so `--ref <a PR's branch>` would run
+      # this workflow against that branch and post the check run — under the
+      # name of a REQUIRED context — on that pull request's head. This refuses
+      # that, and refuses it by FAILING: a skipped job posts a skipped check
+      # run and GitHub counts skipped as passing, so a skip is how you hand a
+      # pull request a green required check that tested a different tree.
+      #
+      # INLINE, AND FIRST. Inline because this runs BEFORE `actions/checkout`,
+      # where the workspace is still empty: a `bash scripts/…` here would exit
+      # 127 on every event, reddening this required check on every PR and every
+      # queue build (the same 127 that killed a required check on 2026-07-29,
+      # which is why "Prove the browser suite actually executed" carries a
+      # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
+      # than 150 job minutes. Byte-identical in all eight canary jobs and
+      # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
+      # extracts this very block and runs it.
+      #
+      # No `if:`: the body is a no-op on the gating events, which keeps it out
+      # of the census allowlist while gating exactly the same thing.
+      - name: A canary run is against main
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ -z "$EVENT" ] || [ -z "$REF" ]; then
+            echo "::error title=The main canary runs against main only::EVENT or REF is empty, so this cannot be shown to be a safe run. Refusing rather than assuming it is not a canary."
+            exit 1
+          fi
+          if [ "$EVENT" != 'schedule' ] && [ "$EVENT" != 'workflow_dispatch' ]; then
+            echo "event '$EVENT' is not a canary event; nothing to check."
+            exit 0
+          fi
+          if [ "$REF" != 'refs/heads/main' ]; then
+            echo "::error title=The main canary runs against main only::this $EVENT run is on '$REF', not 'refs/heads/main'. Nothing was tested. Dispatch it with --ref main; a run on a branch would post this check on that branch's head, under the name of a required context."
+            exit 1
+          fi
+          echo "canary $EVENT run against $REF."
       - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
@@ -409,9 +481,69 @@ jobs:
       # this STEP rather than cancelling the JOB — the difference being that a
       # failed step still lets the uploads below run, and a cancelled job does
       # not.
+      # THE QUARANTINE LANE, READ BEFORE THE SUITE RUNS (plan §4.9 L1).
+      #
+      # The list lives on the ci-steward-data branch, not in this tree, so a
+      # known flake can be taken out of the blocking path without a PR and
+      # without a merge. This step fetches it shallowly and writes it where the
+      # gate below and the fan-in's assert script read it.
+      #
+      # It ALWAYS exits 0. It is the only step between the network and the
+      # lane, and a job that died because a fetch failed would turn "we could
+      # not read the list" into a red queue build — exactly the wasted build
+      # the lane exists to prevent. On any problem it writes an EMPTY list and
+      # says why, and an empty list means every test blocks as it always did.
+      - name: Read the quarantine lane
+        run: |
+          node packages/ci-steward/src/cli.ts quarantine-list \
+            --runner playwright \
+            --out "$RUNNER_TEMP/quarantine.json" \
+            --lines "$RUNNER_TEMP/quarantine.txt" \
+            --title "Quarantine lane — browser shard ${{ matrix.shard }}/${{ strategy.job-total }}"
+          # Its own shard identity beside it, so the fan-in can prove it has a
+          # COMPLETE set of copies before intersecting them.
+          printf '%s/%s\n' '${{ matrix.shard }}' '${{ strategy.job-total }}' \
+            > "$RUNNER_TEMP/shard.txt"
+
+      # No `--reporter` flag, deliberately: see the note above the old command.
+      #
+      # THE EXIT CODE IS CAPTURED RATHER THAN ALLOWED TO FAIL THE STEP, and the
+      # next step is what decides. That is the whole mechanism of the lane: the
+      # suite still RUNS every test, still retries, and still writes a report
+      # naming every failure — nothing is skipped, ignored or grep-filtered —
+      # and then one gate reads that report and asks whether every failure in it
+      # is a test data has classified flaky. If any failure is not, the gate
+      # fails and this shard is red exactly as before.
+      #
+      # `continue-on-error` would have been the shorter way to write this and
+      # the wrong one: it hides the step's result from the job, while this
+      # leaves the suite's own exit code visible, printed, and handed to the
+      # gate as an input.
       - name: Run the browser suite
+        id: suite
         timeout-minutes: 35
-        run: pnpm --filter @dorkos/e2e run e2e --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+        run: |
+          set +e
+          pnpm --filter @dorkos/e2e run e2e --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+          code=$?
+          echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -ne 0 ]; then
+            echo "::notice::the browser suite exited $code; the quarantine gate below decides whether that fails this shard."
+          fi
+          exit 0
+
+      # The gate. It passes only when every failure the report names is
+      # quarantined, and it refuses a non-zero suite whose report names no
+      # failure at all — a crashed runner, a dead webServer leg or a timeout is
+      # not a flake, and the lane must never excuse one.
+      - name: Refuse any failure the quarantine lane does not cover
+        run: |
+          node packages/ci-steward/src/cli.ts quarantine-gate \
+            --runner playwright \
+            --suite-exit "${{ steps.suite.outputs.exit-code }}" \
+            --list "$RUNNER_TEMP/quarantine.json" \
+            --reports apps/e2e/test-results \
+            --title "Quarantine gate — browser shard ${{ matrix.shard }}/${{ strategy.job-total }}"
 
       # The machine-readable half of this shard's result, handed to the gate job
       # below — which is the only place the "did the suite really run" assertion
@@ -439,6 +571,21 @@ jobs:
       # first attempt may fail without failing the job; the second runs only
       # when it did, with the same inputs, so a real problem — a missing
       # results.json above all — still fails the shard on the retry.
+      # The lane this shard read, handed to the fan-in, which has no install and
+      # cannot read the data branch itself. Its own artifact rather than a
+      # second path on the report upload, so `if-no-files-found: error` there
+      # keeps meaning "results.json is missing".
+      - name: Hand this shard's quarantine lane to the fan-in
+        uses: actions/upload-artifact@v7
+        with:
+          name: quarantine-lane-shard-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/quarantine.txt
+            ${{ runner.temp }}/shard.txt
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
       - name: Upload this shard's JSON report
         id: upload-json-report
         continue-on-error: true
@@ -535,6 +682,45 @@ jobs:
     # hung artifact download, not a budget anything is expected to approach.
     timeout-minutes: 10
     steps:
+      # A canary run is against `main` or it is nothing.
+      #
+      # `workflow_dispatch` is ref-free, so `--ref <a PR's branch>` would run
+      # this workflow against that branch and post the check run — under the
+      # name of a REQUIRED context — on that pull request's head. This refuses
+      # that, and refuses it by FAILING: a skipped job posts a skipped check
+      # run and GitHub counts skipped as passing, so a skip is how you hand a
+      # pull request a green required check that tested a different tree.
+      #
+      # INLINE, AND FIRST. Inline because this runs BEFORE `actions/checkout`,
+      # where the workspace is still empty: a `bash scripts/…` here would exit
+      # 127 on every event, reddening this required check on every PR and every
+      # queue build (the same 127 that killed a required check on 2026-07-29,
+      # which is why "Prove the browser suite actually executed" carries a
+      # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
+      # than 150 job minutes. Byte-identical in all eight canary jobs and
+      # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
+      # extracts this very block and runs it.
+      #
+      # No `if:`: the body is a no-op on the gating events, which keeps it out
+      # of the census allowlist while gating exactly the same thing.
+      - name: A canary run is against main
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ -z "$EVENT" ] || [ -z "$REF" ]; then
+            echo "::error title=The main canary runs against main only::EVENT or REF is empty, so this cannot be shown to be a safe run. Refusing rather than assuming it is not a canary."
+            exit 1
+          fi
+          if [ "$EVENT" != 'schedule' ] && [ "$EVENT" != 'workflow_dispatch' ]; then
+            echo "event '$EVENT' is not a canary event; nothing to check."
+            exit 0
+          fi
+          if [ "$REF" != 'refs/heads/main' ]; then
+            echo "::error title=The main canary runs against main only::this $EVENT run is on '$REF', not 'refs/heads/main'. Nothing was tested. Dispatch it with --ref main; a run on a branch would post this check on that branch's head, under the name of a required context."
+            exit 1
+          fi
+          echo "canary $EVENT run against $REF."
       # The pull_request pass-through. On a PR event the shard matrix was
       # skipped by design, so this succeeds loudly and every later step (all
       # gated on merge_group) is skipped. The real verdict on this code is
@@ -547,16 +733,81 @@ jobs:
       # the shard matrix is skipped and `skipped != success` would otherwise
       # turn every PR red here.
       - name: Refuse a run whose shards did not all pass
-        if: ${{ github.event_name == 'merge_group' && needs.browser-shard.result != 'success' }}
+        if: ${{ github.event_name != 'pull_request' && needs.browser-shard.result != 'success' }}
         run: |
           echo "::error::the browser suite did not pass — the browser-shard matrix reported '${{ needs.browser-shard.result }}'. Open the shard jobs above for the failing specs, and the playwright-report-shard-* artifacts for their traces, screenshots and videos."
           exit 1
 
       - uses: actions/checkout@v7
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
+
+      # The fan-in has no `pnpm install` — it is a jq-and-bash job that costs
+      # seconds — so it cannot run the engine to read the lane itself. The
+      # shards already did, so each hands its copy over as an artifact and this
+      # job INTERSECTS them.
+      #
+      # Intersection, not union, and not "take the first": a list edited while
+      # the build was in flight is the only way the copies can differ, and the
+      # intersection is the reading that absorbs LESS and blocks MORE. The one
+      # thing this must never do is invent a lane entry that no shard actually
+      # ran under.
+      #
+      # THE SET OF COPIES MUST BE COMPLETE, for the same reason
+      # assert-browser-tests-executed.sh checks its shard set: intersecting over
+      # whatever arrived means one lost artifact WIDENS the lane, which is
+      # exactly backwards. Each copy carries its own `i/N`, so a missing,
+      # duplicated or stale one is refused by name.
+      - name: Collect every shard's quarantine lane
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/download-artifact@v8
+        with:
+          pattern: quarantine-lane-shard-*
+          path: lane
+
+      - name: Agree on the lane this build ran under
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          shopt -s nullglob
+          lanes=(lane/*/quarantine.txt)
+          shards=(lane/*/shard.txt)
+          if [ ${#lanes[@]} -eq 0 ] || [ ${#shards[@]} -ne ${#lanes[@]} ]; then
+            echo "::error::not every shard handed over its quarantine lane, so this job cannot tell an absorbed failure from a real one. Every shard writes one; a short set means the lane step did not run."
+            exit 1
+          fi
+          total=$(cut -d/ -f2 "${shards[@]}" | sort -u)
+          if [ "$(printf '%s\n' "$total" | wc -l | tr -d ' ')" -ne 1 ]; then
+            echo "::error::the shards disagree about how many of them there are ($(printf '%s' "$total" | tr '\n' ' ')). These copies are not from one run, so their intersection is not one lane."
+            exit 1
+          fi
+          if [ "${#lanes[@]}" -ne "$total" ]; then
+            echo "::error::the run had $total shard(s) but only ${#lanes[@]} handed over a quarantine lane. Intersecting over the ones that arrived would WIDEN the lane, so this refuses instead."
+            exit 1
+          fi
+          seen=$(cut -d/ -f1 "${shards[@]}" | sort -n | tr '\n' ' ')
+          wanted=$(seq 1 "$total" | tr '\n' ' ')
+          if [ "$seen" != "$wanted" ]; then
+            echo "::error::the quarantine lanes are not shards 1..$total exactly: got [ $seen], wanted [ $wanted]. A repeated shard would let one copy vote twice."
+            exit 1
+          fi
+          cat "${lanes[@]}" | grep -v '^[[:space:]]*$' | sort | uniq -c |
+            awk -v n="$total" '$1 == n { sub(/^ *[0-9]+ /, ""); print }' \
+            > "$RUNNER_TEMP/quarantine.txt"
+          count=$(grep -c '' "$RUNNER_TEMP/quarantine.txt" || true)
+          {
+            printf '### Quarantine lane — this queue build (browser)\n\n'
+            if [ "$count" -eq 0 ]; then
+              printf 'Nothing is quarantined. Every test blocks as normal.\n\n'
+            else
+              printf '%s test(s) all %s shard(s) agreed were quarantined. Each ran and was reported; none could fail this build:\n\n' "$count" "$total"
+              while IFS= read -r quarantined; do
+                printf -- '- %s\n' "$quarantined"
+              done < "$RUNNER_TEMP/quarantine.txt"
+              printf '\nEach shard job above prints the same set with its evidence and expiry.\n\n'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Collect every shard's JSON report
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/download-artifact@v8
         with:
           pattern: browser-results-shard-*
@@ -586,7 +837,7 @@ jobs:
       # failed exactly that way on an unrelated PR (2026-07-29). The guard turns
       # that into a message naming the cause.
       - name: Prove the browser suite actually executed
-        if: ${{ github.event_name == 'merge_group' }}
+        if: ${{ github.event_name != 'pull_request' }}
         run: |
           if [ ! -f scripts/assert-browser-tests-executed.sh ]; then
             echo "::error::scripts/assert-browser-tests-executed.sh is not in this checkout — this tree predates the script the workflow calls. Update the branch from main (or merge main in) to pick it up."
@@ -598,7 +849,8 @@ jobs:
             echo "::error::every shard reported success but not one of them uploaded a results.json. Nothing proves the suite ran, so this fails rather than certifying it."
             exit 1
           fi
-          bash scripts/assert-browser-tests-executed.sh "${reports[@]}"
+          bash scripts/assert-browser-tests-executed.sh \
+            --quarantined "$RUNNER_TEMP/quarantine.txt" "${reports[@]}"
 
   # THE PR-TIME SIGNAL (DOR-1647). See the header: the suite above defers to the
   # queue on a PR, and the one regression class that costs is a copy rewrite
@@ -626,6 +878,20 @@ jobs:
   # `scripts/__tests__/check-copy-spec-drift.test.ts` holds them still.
   copy-spec-drift:
     runs-on: ubuntu-latest
+    # NOT part of the main canary. This job diffs a change against its base, and
+    # a scheduled run against `main` HEAD carries neither
+    # `pull_request.base.sha` nor `merge_group.base_sha` — the step below fails
+    # loudly rather than certifying an unchecked tree, which is right on a PR
+    # and pointless four times a day. It is not a required context, so skipping
+    # it here blocks nothing.
+    #
+    # ENUMERATED POSITIVELY, where its siblings above use `!= 'pull_request'`.
+    # Deliberate, and the asymmetry is the point: the shards run on every event
+    # that is not a PR, so a future event should run them too; this job needs a
+    # base SHA, so a future event should NOT reach it until someone has checked
+    # that the event carries one. A `!=` list here would fail that new event
+    # loudly on its first run instead.
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
     # Nothing here runs a browser or a build. Two minutes is the install; ten is
     # a backstop, not a budget.
     timeout-minutes: 10

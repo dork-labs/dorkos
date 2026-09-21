@@ -27,4 +27,20 @@ in the SDK's current subtype union (`error_during_execution`, `error_max_turns`,
 stands for a subtype added upstream later, and pins that any unrecognised
 `error_*` is treated as the run naming its own cause rather than as a guess.
 
+The three `limit-*.json` fixtures belong to the `limit` mode, which separates a
+spent Claude subscription from a broken reviewer. `limit-session.json` and
+`limit-weekly.json` are **synthetic** — the 30-day reliability read found no
+failure it could attribute to a usage limit
+(`research/20260919_ci-pipeline-supporting/07-claude-review-effectiveness.md` §6)
+— so they pin the parsing, not the wording, and the first real one to appear
+should replace them. The `unknown` case needs no synthetic fixture at all:
+`never-started.json` and `died-mid-run.json` are real logs and both carry
+`Claude AI usage limit reached|<epoch>`, which is the evidence that today's `no`
+and `died` classes already hide quota stalls inside them.
+
+`limit-model-prose.json` is the injection case and the reason the mode refuses to
+read a clean run's `result` field: it is a successful review whose own summary
+quotes every phrase the matcher looks for, because the PR it reviewed contained
+them. It must classify as no limit at all.
+
 Add a fixture here whenever the classifier grows a branch.

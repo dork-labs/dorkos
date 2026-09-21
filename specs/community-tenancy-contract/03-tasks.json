@@ -1,0 +1,218 @@
+{
+  "spec": "specs/community-tenancy-contract/02-specification.md",
+  "slug": "community-tenancy-contract",
+  "generatedAt": "2026-09-20T19:30:00Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Schema and Migration",
+      "subject": "[community-tenancy-contract] [P1] Add explicit tenant keys, host operators, and blob reservations",
+      "description": "Implement the expand portion of the tenancy schema: host_operators, community lifecycle state/version, composite membership uniqueness, nullable community_id columns on every tenant-owned relation named by the specification, and tenant-qualified blob inventory/reservations for attachment and export object writes. A reservation records immutable community ownership, a generated opaque key, purpose, and lifecycle before bytes are stored; reference commit re-locks the community and verifies its lifecycle version. Add candidate composite keys and indexes without removing the singleton constraints yet. Keep Better Auth accounts and sessions host-wide.\n\nAcceptance criteria:\n- The Drizzle schema and forward migration match the specification's complete table inventory.\n- Every new tenant column is indexed for its qualified lookup or cleanup path.\n- Attachment and export bytes cannot be stored without a durable tenant-qualified reservation, and a lifecycle change winning the race prevents reference commit while retaining cleanup ownership.\n- Host operators have no foreign key or role path that grants community content access.\n- Existing schema tests still pass before backfill/contract steps run.",
+      "activeForm": "Adding tenant keys, host operators, and blob reservations",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": "DOR-2172",
+      "parentIssue": "DOR-2171"
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Schema and Migration",
+      "subject": "[community-tenancy-contract] [P1] Backfill and validate singleton data and managed blobs",
+      "description": "Backfill the existing community UUID through every tenant-owned relation, promote the active owner account to host operator, and bind viable pairing rows. Support the zero-community pre-bootstrap database without inventing a tenant. Invalidate outstanding legacy bootstrap grants so the new purpose-bound flow reissues them safely. Reconcile the complete managed BlobStore namespace while the deployment still has zero or one community: assign referenced attachment/export objects to the singleton tenant, drain or convert legacy pending deletions and unreferenced objects, and drain unexplained objects on a zero-community host. Refuse ambiguous owners, orphans, cross-tenant relations, unexpected null keys, unavailable/incomplete object listing, unidentified objects, or row/hash drift. Preserve every existing domain ID.\n\nAcceptance criteria:\n- Both zero-community and populated one-community pre-change fixtures migrate successfully.\n- A populated fixture keeps unchanged community, member, channel, entry, attachment, and credential IDs plus attachment/export hashes.\n- Every managed object is represented by referenced tenant inventory, tenant-qualified cleanup work, or documented completed drainage before the reconciliation gate passes.\n- A BlobStore without authoritative listing, an ambiguous object, or incomplete cleanup keeps second-community creation disabled.\n- Row counts and file metadata checksums are unchanged apart from explicitly invalidated ephemeral bootstrap grants and deliberately drained unreferenced objects.\n- Ambiguous or corrupt fixtures fail before singleton constraints are dropped.\n- Logs and test output contain no credentials, raw blob keys, or personal data.",
+      "activeForm": "Backfilling singleton data and reconciling managed blobs",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-2172",
+      "parentIssue": "DOR-2171"
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Schema and Migration",
+      "subject": "[community-tenancy-contract] [P1] Enforce tenant-consistent relational constraints",
+      "description": "Make backfilled tenant columns non-null where the contract requires them, add composite foreign keys or equivalent validated constraints for every tenant-critical relation, replace members.user_id uniqueness with (community_id,user_id), and remove communities.singleton only after validation. Normalize entries.mentions into ordered tenant-qualified entry_mentions rows with nullable mentioned_member_id and mentioned_agent_id plus an exactly-one-target constraint; normalize export_archives.channel_ids into ordered tenant-qualified export_archive_channels rows. Backfill each mention UUID to exactly one human or agent in the entry community and reject missing or human/agent-ambiguous targets before dropping the arrays. Add lifecycle and ownership invariants: pending_owner has no owner and serves no member traffic; active and suspended communities have exactly one active owner. Bootstrap grants carry a purpose, and only host-first-install may omit community_id.\n\nAcceptance criteria:\n- The database rejects cross-community member/channel/agent/invite/entry/file/cursor/export relations without relying on application code.\n- Direct SQL cannot put a B human or agent in an A entry mention or a B channel in an A export archive.\n- Mention backfill preserves human and agent targets plus their order and rejects orphaned or ambiguous elements.\n- Export-channel backfill preserves element identity and order and rejects orphaned elements.\n- One account can hold memberships in two communities.\n- Lifecycle and owner-claim transitions preserve the ownership invariant under concurrency.\n- Both zero-community and one-community deployments remain valid.",
+      "activeForm": "Enforcing tenant-consistent constraints",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "1.4"
+      ],
+      "issue": "DOR-2172",
+      "parentIssue": "DOR-2171"
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "Schema and Migration",
+      "subject": "[community-tenancy-contract] [P1] Prove the single-community backout gate",
+      "description": "Implement and document the supported rollback boundary. Prove restore or reverse migration while exactly one community and one membership per account still exist. Add a guard that refuses automatic downgrade after a second community or multi-membership account appears.\n\nAcceptance criteria:\n- A coordinated pre-migration database and blob backup restores the original service.\n- The reverse path preserves IDs and row counts on an eligible fixture.\n- Ineligible multi-community data causes a clear refusal without deletion.\n- Operations documentation directs later recovery to forward-fix or export/split.",
+      "activeForm": "Proving the single-community backout gate",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "1.3"
+      ],
+      "issue": "DOR-2172",
+      "parentIssue": "DOR-2171"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Tenant Context and Authorization",
+      "subject": "[community-tenancy-contract] [P2] Resolve immutable tenant context at the HTTP boundary",
+      "description": "Add canonical /c/:communityId browser routes and /api/v1/communities/:communityId API routes. Introduce one tenant-context resolver used before membership or object lookup. Keep unqualified routes only under the zero/one/many compatibility rules, including typed COMMUNITY_SELECTION_REQUIRED behavior.\n\nAcceptance criteria:\n- No route selects the first community or a member by account alone.\n- Invalid or inaccessible tenant IDs fail before domain work begins.\n- One-community URLs remain compatible; two-community hosts fail closed on unqualified routes.\n- Discovery never exposes an unauthenticated private community directory.",
+      "activeForm": "Resolving tenant context at the HTTP boundary",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.3"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-2172",
+      "parentIssue": "DOR-2171"
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Tenant Context and Authorization",
+      "subject": "[community-tenancy-contract] [P2] Qualify member, channel, entry, file, and export authorization",
+      "description": "Thread tenant context through cookie, grant, and agent principals; qualify all content queries and transactional rechecks. Convert membership removal, ownership transfer, quotas, exports, attachments, cursors, cleanup candidates, and SSE to affect only the selected community. Return 404 for cross-tenant object IDs.\n\nAcceptance criteria:\n- Every member-facing endpoint proves object and credential tenancy in the same statement or transaction.\n- Removing or leaving community A preserves the host session and community B membership.\n- Cross-community IDs cause no mutation and do not reveal existence.\n- Tenant-owned jobs and quotas use community-aware keys and evidence.",
+      "activeForm": "Qualifying community content authorization",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [
+        "2.3"
+      ],
+      "issue": "DOR-2172",
+      "parentIssue": "DOR-2171"
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Tenant Context and Authorization",
+      "subject": "[community-tenancy-contract] [P2] Separate host operations from community ownership",
+      "description": "Implement host-operator authorization for community metadata, creation, lifecycle, first-install bootstrap, and host recovery. Preserve the lifecycle-specific owner invariant and ensure host authority alone cannot read community content or mint membership in an existing community. An ordinary owner claim can target and transition only pending_owner to active. Lost-owner repair has no online operator endpoint: it requires a stopped-service, audited offline restore or repair until a separately specified break-glass contract exists. Update password recovery to treat the credential as host-wide, revoke every affected membership-derived credential, and write an audit event per affected community.\n\nAcceptance criteria:\n- A host operator without membership cannot read channels, members, entries, files, exports, or content audit data.\n- A host operator cannot issue or redeem an owner claim, membership, or content credential for an active or suspended community.\n- First-install bootstrap creates the first operator, community, and owner atomically from an explicitly host-scoped grant.\n- Later community creation pre-creates the final UUID in pending_owner state and issues a tenant-bound owner claim; member traffic stays disabled until claim.\n- Corrupt lost-owner state fails closed and points to the offline recovery procedure.\n- Password recovery has deterministic cross-membership revocation and audit behavior.",
+      "activeForm": "Separating host and community authority",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [
+        "2.2"
+      ],
+      "issue": "DOR-2172",
+      "parentIssue": "DOR-2171"
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Admission and Connections",
+      "subject": "[community-tenancy-contract] [P3] Bind invites, pairings, grants, agents, and cursors to a tenant",
+      "description": "Qualify admission and machine credentials end to end. Invitations, pending admissions, pairing challenges and approval URLs, personal grants, agent credentials, idempotency keys, event cursors, and download/export handles must be created for and replayable only within one immutable community UUID.\n\nAcceptance criteria:\n- One account can redeem invitations and keep independent roles in communities A and B.\n- A token, pairing code, cursor, or idempotency key from A is rejected in B.\n- Concurrent approval, redemption, rotation, and revocation recheck the selected tenant after locks.\n- Existing one-community pairing and invitation flows remain compatible.",
+      "activeForm": "Binding admission and credentials to a tenant",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.2",
+        "2.3"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-2173",
+      "parentIssue": "DOR-2171"
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "Admission and Connections",
+      "subject": "[community-tenancy-contract] [P3] Qualify discovery and the remote Community adapter",
+      "description": "Return authenticated visible-community descriptors from discovery and make each RemoteCommunityAdapter instance pin one server-minted community UUID. Accept either a canonical /c/:communityId link or a root URL for the singleton compatibility path. Validate and extract the UUID while pinning only the origin for transport; never enumerate tenants, send the browser path as an API base, follow redirects, or weaken DNS rebinding defenses. Preserve the independent local CommunityRef, bind pairing and approval to the extracted tenant, and migrate stored origin-only connections only when singleton discovery is unambiguous.\n\nAcceptance criteria:\n- Two communities at one origin configure as two distinct adapter instances from two canonical links without unauthenticated enumeration.\n- An origin-only request fails with typed selection-required behavior when two communities exist.\n- Communities on different origins still pass the same transport and SSRF checks.\n- Redirects, DNS changes, encoded path variants, credentials, and unexpected path segments remain rejected.\n- Browser selection cannot retarget an existing grant or adapter.\n- Migrated one-community connections keep working without silent rebinding; ambiguous stored origins require a new canonical link.",
+      "activeForm": "Qualifying discovery and remote connections",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.1"
+      ],
+      "parallelWith": [
+        "3.3"
+      ],
+      "issue": "DOR-2173",
+      "parentIssue": "DOR-2171"
+    },
+    {
+      "id": "3.3",
+      "phase": 3,
+      "phaseName": "Admission and Connections",
+      "subject": "[community-tenancy-contract] [P3] Add the community chooser and safe cache switching",
+      "description": "Add the Slack-like active-community menu and canonical tenant routing. Enter a sole membership directly, show a chooser for several memberships, preserve the last authorized selection, and close streams plus clear tenant query state before switching. Handle removal, leave, and suspension without signing out the host account.\n\nAcceptance criteria:\n- Names and roles are legible while the URL and API use immutable UUIDs.\n- Switching cannot show stale A data in B or reuse an A reconnect cursor.\n- Losing one membership routes to another membership or the chooser.\n- The one-community browser journey remains unchanged apart from its canonical URL.",
+      "activeForm": "Adding the community chooser",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [
+        "3.2"
+      ],
+      "issue": "DOR-2173",
+      "parentIssue": "DOR-2171"
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "Isolation and Compatibility Proof",
+      "subject": "[community-tenancy-contract] [P4] Run the adversarial two-community isolation matrix",
+      "description": "Exercise the full matrix from the specification with overlapping accounts, isolated accounts, a host-only operator, agents, private channels, streams, files, exports, quotas, invitations, pairings, revocation, recovery, and concurrent membership changes. Tamper with every tenant/object pairing, including normalized human and agent mentions and export channels, and assert no read or write crosses the boundary. Exercise canonical-link connection selection for two private tenants at one origin without public enumeration.\n\nAcceptance criteria:\n- Every endpoint family has positive same-tenant and negative cross-tenant coverage.\n- Direct SQL and API attempts cannot cross-link human mentions, agent mentions, or export channels.\n- Migrated entries preserve ordered human and agent mentions.\n- Canonical tenant links select the intended tenant while origin-only, redirect, DNS-change, and malformed-path cases fail closed.\n- 404 non-disclosure and zero-side-effect assertions hold under races.\n- Stream switching and credential revocation are observed, not inferred.\n- Failures identify the exact tenant boundary without logging secrets or personal data.",
+      "activeForm": "Running the tenant isolation matrix",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.2",
+        "3.3"
+      ],
+      "parallelWith": [
+        "4.2"
+      ],
+      "issue": "DOR-2174",
+      "parentIssue": "DOR-2171"
+    },
+    {
+      "id": "4.2",
+      "phase": 4,
+      "phaseName": "Isolation and Compatibility Proof",
+      "subject": "[community-tenancy-contract] [P4] Prove populated upgrade and standalone compatibility",
+      "description": "Upgrade both a never-bootstrapped database and a populated single-community deployment through the migration and qualified-route release. Verify unchanged IDs, history order, files, credentials, public origin, bootstrap state, local-agent access, and no Cloud dependency. Then create a second pending_owner community and prove the compatibility alias fails closed before its owner claim.\n\nAcceptance criteria:\n- A zero-community database still completes first-install bootstrap after upgrade.\n- Before/after manifests for the populated fixture match stable IDs, counts, entry order, and file checksums.\n- Existing bookmarks and connections follow the documented one-community compatibility path.\n- The service works with Cloud egress unavailable.\n- Creating the second community row disables ambiguous routes immediately and irreversibly trips the downgrade guard.",
+      "activeForm": "Proving upgrade and standalone compatibility",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.1",
+        "1.4"
+      ],
+      "parallelWith": [
+        "4.1"
+      ],
+      "issue": "DOR-2174",
+      "parentIssue": "DOR-2171"
+    }
+  ]
+}

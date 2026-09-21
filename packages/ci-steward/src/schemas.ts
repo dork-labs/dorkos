@@ -76,10 +76,71 @@ const TriageConfigSchema = z
     stale_verdict_days: z.number().int().positive(),
     /** Rule 10: days a `proposed` entry may sit untouched. */
     stale_proposed_days: z.number().int().positive(),
+    /** Rule 11: consecutive red main-canary runs of one workflow before the trigger fires. */
+    canary_red_min_runs: z.number().int().positive(),
+    /** Rule 11's second arm: hours without a canary result before the schedule is treated as stopped. */
+    canary_silent_hours: z.number().int().positive(),
     /** The report calls out a trigger that has been open this many days or more. */
     open_days_warning: z.number().int().positive(),
     /** Days of history the daily report's sparklines draw. */
     sparkline_days: z.number().int().min(2),
+  })
+  .strict();
+
+/**
+ * The `quarantine:` block of `ci/config.yaml`: every threshold the quarantine
+ * lane is fenced by (plan §4.9 L1).
+ */
+const QuarantineConfigSchema = z
+  .object({
+    /** Path on the data branch, so quarantining needs no PR. */
+    file: RepoPath,
+    /** A list longer than this is ignored whole, never trimmed. */
+    max_entries: z.number().int().min(1),
+    /** Lifetime of an entry when `quarantine add` is not told otherwise. */
+    default_expiry_days: z.number().int().min(1),
+    /**
+     * The longest life any entry may have, enforced at READ time like every
+     * other guard. Without it "every entry expires after 7 days" is one
+     * `--expiry-days 365` away from false, and the add path is not the fence:
+     * the list is editable by anything that can write the data branch.
+     */
+    max_expiry_days: z.number().int().min(1),
+    /** The evidence window `ci-steward flaky` reads. */
+    window_days: z.number().int().min(1),
+    /** Distinct merge-group SHAs a test must have flaked on to qualify. */
+    min_occurrences: z.number().int().min(2),
+    /** Clean builds below which a candidate is never called `cooling`. */
+    cooling_min_clean_builds: z.number().int().min(1),
+    /** The daily triage flags an entry expiring within this many hours. */
+    near_expiry_hours: z.number().int().min(1),
+  })
+  .strict();
+
+/**
+ * The `canary:` block of `ci/config.yaml`: which workflow runs count as the
+ * main canary.
+ *
+ * A canary leg is not a separate workflow — it is the same required workflow,
+ * on a `schedule` or `workflow_dispatch` event, against the default branch — so
+ * nothing in a run identifies it except its file name and its event. This list
+ * is what stops `ci-steward.yml`'s own daily tick, `evals.yml` and `codeql.yml`
+ * from being read as canary results.
+ */
+const CanaryConfigSchema = z
+  .object({
+    /** Workflow file names whose scheduled runs on the default branch are the canary. */
+    workflows: z.array(z.string().regex(/^[\w.-]+\.ya?ml$/, 'a workflow file name')).min(1),
+    /**
+     * Workflows that own a required context and are deliberately NOT in the
+     * canary, each with the reason. Every required workflow must be in one list
+     * or the other, so dropping a name from `workflows` cannot quietly stop the
+     * canary watching it: the census fails until someone writes down why.
+     */
+    exempt: z.record(
+      z.string().regex(/^[\w.-]+\.ya?ml$/, 'a workflow file name'),
+      z.string().min(20)
+    ),
   })
   .strict();
 
@@ -124,6 +185,8 @@ export const ConfigSchema = z
     generated_blocks: z.object({ required_checks: z.array(RepoPath) }).strict(),
     commands: z.object({ ledger_new: z.string().min(1), census_fix: z.string().min(1) }).strict(),
     collect: CollectConfigSchema,
+    quarantine: QuarantineConfigSchema,
+    canary: CanaryConfigSchema,
     verdicts: z
       .object({
         /** Length of the before-window, anchored on the merge time. */
@@ -153,6 +216,8 @@ export const ConfigSchema = z
   .strict();
 /** Parsed `ci/config.yaml`. */
 export type Config = z.infer<typeof ConfigSchema>;
+/** The `quarantine:` block of `ci/config.yaml`. */
+export type QuarantineConfig = z.infer<typeof QuarantineConfigSchema>;
 
 /** `ci/required-checks.json`: the required contexts, mirrored from the live ruleset. */
 export const RequiredChecksSchema = z

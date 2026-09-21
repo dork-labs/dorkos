@@ -5,7 +5,7 @@
  * step, surfaced in the daily report, in `/ci-status` and at SessionStart.
  * Phase 3's `ci-improve` is what will consume them.
  *
- * Ten rules, each with its threshold in `ci/config.yaml`'s `triage:` block.
+ * Eleven rules, each with its threshold in `ci/config.yaml`'s `triage:` block.
  * That file is inside the fence (`ci/steward-owned-paths.json`), so an
  * unattended tick cannot move its own goalposts by widening a threshold.
  *
@@ -23,14 +23,23 @@
  * and never from a date or a count.
  */
 import { z } from 'zod';
-import { gateDays, type Latest, type Snapshot, type SloReading, type Verdict } from './data.ts';
+import {
+  gateDays,
+  mergePathGates,
+  onMergePath,
+  type Latest,
+  type Snapshot,
+  type SloReading,
+  type Verdict,
+} from './data.ts';
 import type { HandFiles } from './load.ts';
 import { addDays, quantile, round } from './time.ts';
 import { ejectionLegs, legName } from './ejections.ts';
 import type { LedgerEntry } from './verdicts.ts';
 import type { WorkflowModel } from './workflows.ts';
+import { mainCanary } from './canary.ts';
 
-/** The ten rules, in the order `ci/config.yaml` documents them. */
+/** The eleven rules, in the order `ci/config.yaml` documents them. */
 export const TRIGGER_RULES = [
   'slo-floor',
   'constraint-changed',
@@ -42,6 +51,7 @@ export const TRIGGER_RULES = [
   'headroom',
   'collector-health',
   'stale-ledger',
+  'main-canary',
 ] as const;
 
 /** One trigger rule. */
@@ -54,15 +64,16 @@ export type TriggerRule = (typeof TRIGGER_RULES)[number];
  */
 const RANK: Record<TriggerRule, number> = {
   'collector-health': 1,
-  'main-red': 2,
-  headroom: 3,
-  'slo-floor': 4,
-  verdict: 5,
-  'gate-failure-spike': 6,
-  'repeat-ejection': 7,
-  'gate-cost': 8,
-  'constraint-changed': 9,
-  'stale-ledger': 10,
+  'main-canary': 2,
+  'main-red': 3,
+  headroom: 4,
+  'slo-floor': 5,
+  verdict: 6,
+  'gate-failure-spike': 7,
+  'repeat-ejection': 8,
+  'gate-cost': 9,
+  'constraint-changed': 10,
+  'stale-ledger': 11,
 };
 
 /**
@@ -100,6 +111,13 @@ export const TriggersSchema = z.object({
   computed_at: z.string(),
   /** The constraint this run saw, so tomorrow's run can tell whether it changed. */
   constraint: z.string().nullable(),
+  /**
+   * The first main-canary result ever observed. Once set it never moves: it is
+   * what lets rule 11 tell "the canary has not started yet" apart from "the
+   * canary has stopped", after the last result has aged out of the window.
+   * Optional, because `triggers.json` files written before rule 11 have none.
+   */
+  canary_since: z.string().nullable().default(null),
   /** Open triggers, most important first. */
   open: z.array(TriggerSchema),
   /** Triggers that were open yesterday and whose condition has cleared. */
@@ -110,7 +128,7 @@ export const TriggersSchema = z.object({
 export type Triggers = z.infer<typeof TriggersSchema>;
 
 /** A trigger before its first-fired date is known. */
-type NewTrigger = Omit<Trigger, 'first_fired' | 'last_fired'>;
+export type NewTrigger = Omit<Trigger, 'first_fired' | 'last_fired'>;
 
 /** Everything one triage run reads. */
 export interface TriageInput {
@@ -147,6 +165,8 @@ type GateWindows = Map<string, GateWindow>;
 
 function gateWindow(snaps: readonly Snapshot[]): GateWindows {
   const out = new Map<string, GateWindow>();
+  // Decided once, over the whole window: see `mergePathGates`.
+  const onPath = mergePathGates(snaps);
   const get = (gate: string) => {
     const cur = out.get(gate) ?? { runs: 0, done: 0, failed: 0, minutes: [], ratios: [] };
     out.set(gate, cur);
@@ -155,6 +175,13 @@ function gateWindow(snaps: readonly Snapshot[]): GateWindows {
   for (const s of snaps) {
     for (const [key, g] of Object.entries(s.gates)) {
       const gate = key.slice(0, key.lastIndexOf('@'));
+      // The main canary runs the same jobs under the same gate ids against
+      // `main`, on a schedule. Counting it here would make the cost and
+      // failure-rate rules describe something other than what merging costs —
+      // and would fire `gate-failure-spike` on the canary doing its job. A gate
+      // that runs on nothing but a schedule keeps its own runs; see
+      // `onMergePath`.
+      if (!onMergePath(onPath, key)) continue;
       const w = get(gate);
       const c = (k: string) => g.conclusions[k] ?? 0;
       w.runs += g.runs;
@@ -165,7 +192,7 @@ function gateWindow(snaps: readonly Snapshot[]): GateWindows {
     for (const [gate, timeout] of Object.entries(s.timeouts)) {
       if (timeout <= 0) continue;
       const w = get(gate);
-      for (const g of gateDays(s.gates, gate))
+      for (const g of gateDays(s.gates, gate, undefined, onPath))
         for (const [, sec] of g.durations) w.ratios.push(sec / 60 / timeout);
     }
   }
@@ -555,6 +582,30 @@ export function triage(inp: TriageInput): Triggers {
     ...collectorHealth(inp, cur),
     ...staleLedger(inp),
   ];
+  // The ledger entry that introduced the canary: the floor under
+  // `canary_since` that a rewrite of the data branch cannot erase, because it
+  // is a tracked file in this repository rather than a file on that branch.
+  //
+  // `active` ONLY, and the narrowness is the point. A `proposed` entry would
+  // arm the red before anything had landed — nothing is running yet, so the
+  // absence of results is not an outage. A `reverted` one is worse: reverting
+  // is the documented rollback, and leaving the red standing afterwards would
+  // mean a canary that has been deliberately removed keeps reporting an
+  // incident until somebody hand-edits the data branch. Both were driven
+  // against real triage and both fired. Same idiom as the verdict rule above.
+  const landed = inp.ledger.find(
+    (e) => e.status === 'active' && e.hypothesis?.metric === 'tracked.time-to-detect'
+  );
+  const landedDay = landed ? ledgerDay(landed.id) : null;
+  const canary = mainCanary(
+    inp,
+    inp.snapshots,
+    inp.prior?.canary_since ?? null,
+    // End of the day it landed, not the start: the canary is due from when
+    // the change was in, and a threshold of grace runs from there.
+    landedDay ? `${landedDay}T23:59:59Z` : null
+  );
+  found.push(...canary.triggers);
   const before = new Map((inp.prior?.open ?? []).map((t) => [t.id, t]));
   const open: Trigger[] = [];
   const seen = new Set<string>();
@@ -580,6 +631,7 @@ export function triage(inp: TriageInput): Triggers {
     date: today,
     computed_at: inp.now.toISOString(),
     constraint: inp.latest.constraint.id,
+    canary_since: canary.since,
     open,
     cleared,
   };

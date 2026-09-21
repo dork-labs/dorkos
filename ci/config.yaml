@@ -112,6 +112,79 @@ collect:
     - { workflow: browser-test.yml, pattern: browser-results-shard-*, format: playwright }
     - { workflow: test.yml, pattern: vitest-shard-report-*, format: vitest }
 
+# The quarantine lane (plan §4.9 L1): a test data has classified flaky runs and
+# reports as usual, but does not fail the blocking queue job.
+#
+# The list itself lives on the data branch, as `file` below, so quarantining
+# takes effect on the next queue build with no PR. Every number here is the
+# fence around that: the classifier refuses evidence thinner than
+# `min_occurrences`, the readers drop an entry past its expiry, and a list
+# longer than `max_entries` is ignored whole. Schema: QuarantineConfigSchema in
+# packages/ci-steward/src/schemas.ts.
+quarantine:
+  # Path on the data branch. Read by `ci-steward quarantine-list` in the queue.
+  file: quarantine.json
+  # Hard cap. A longer list is ignored ENTIRELY (fail safe: everything blocks
+  # as normal), because a lane wide enough to hide a break is worse than none.
+  max_entries: 10
+  # How long an entry lives unless `quarantine add` is told otherwise.
+  default_expiry_days: 7
+  # The ceiling on that, enforced at READ time: a list holding an entry with a
+  # longer life is ignored whole. The add path checking it would not be enough —
+  # anything that can write the data branch can write a longer one.
+  max_expiry_days: 14
+  # The evidence window `ci-steward flaky` reads. Actions keeps artifacts for 7
+  # days, so a 14-day window is only fully covered once the collector has been
+  # recording per-test flakes for that long.
+  window_days: 14
+  # N: distinct merge-group SHAs on which the test failed and then passed. Two
+  # is the plan's floor; one is a single bad runner, not a classification.
+  min_occurrences: 2
+  # A frequent flake that has gone quiet was probably FIXED, and quarantining it
+  # spends a slot on nothing. A candidate is `cooling` — and refused — once the
+  # clean queue builds since its last flake exceed its own average gap between
+  # flakes (builds_sampled / occurrences), never on fewer than this many.
+  cooling_min_clean_builds: 2
+  # The daily triage flags an entry expiring within this many hours.
+  near_expiry_hours: 48
+
+# The main canary: the required suites run against `main` HEAD on a schedule,
+# so a break that lands on `main` is found by something other than the next PR
+# being ejected by it (plan §4.9, DOR-2150).
+#
+# There is no canary workflow. Each of these files runs its own suite on
+# `schedule` and `workflow_dispatch` as well as on `pull_request` and
+# `merge_group`, so there is exactly one definition of each suite and the
+# canary cannot drift from what the queue runs. A run is a canary result when
+# its file is named here, its event is `schedule` or `workflow_dispatch`
+# (`CANARY_EVENTS` in packages/ci-steward/src/data.ts) and its branch is
+# `default_branch`.
+#
+# The list is exhaustive on purpose. `ci-steward.yml`, `evals.yml` and
+# `codeql.yml` also run on `schedule` against `main`; without this list the
+# collector's own daily tick would report the pipeline healthy on the strength
+# of the run that said so. `credential-free-build` is deliberately NOT here:
+# it is an affected-only build that reads a base SHA no scheduled run carries,
+# and at a 21% failure rate it would cry wolf every day. The PR-diff checks
+# (fragment-present, no-fragment-under-skip-label, version-outranks-base,
+# db-check) are not here either; they measure a diff, and `main` has none.
+canary:
+  workflows:
+    - test.yml
+    - browser-test.yml
+    - typecheck.yml
+    - lint.yml
+  # Every workflow that owns a required context is in `workflows` or here, and
+  # the census fails until it is. Without both directions, deleting a name from
+  # the list above would leave the census green while the collector silently
+  # stopped reading that workflow's runs and the silence arm stopped watching
+  # for them — the canary would go quiet with nothing saying so.
+  exempt:
+    credential-free-build.yml: An affected-only build that reads a base SHA no scheduled run carries, and at a 21% failure rate it would cry wolf every day rather than report a break.
+    changelog-fragment-check.yml: Measures a pull request's diff and labels against its base; main has no diff and no labels, so there is nothing for it to check here.
+    operating-skills-version-check.yml: Compares the seeded skill pack's version against the base branch's; on main there is no base branch to outrank.
+    db-check.yml: Fails when a Drizzle schema change ships without its migration, which is a property of a diff and not of a tree.
+
 # The verdict engine (ci-steward verdicts, plan §4.4).
 verdicts:
   before_days: 7
@@ -153,6 +226,31 @@ triage:
   #     and days a `proposed` entry may sit before nobody is going to do it.
   stale_verdict_days: 7
   stale_proposed_days: 30
+  # 11. Consecutive red main-canary runs of ONE workflow before `main canary
+  #     red` fires, and hours without any canary result before the schedule is
+  #     reported as stopped.
+  #
+  #     One run, not two. The 2026-09-20 fixture-clock break was deterministic
+  #     inside its window and ejected three unrelated PRs nine times before a
+  #     person diagnosed it; waiting for a second canary costs another six hours
+  #     of cron for a signal the first run already gave. A canary red costs one
+  #     line in a report and never a merge, so the cheap error to make is the
+  #     false alarm — and the trigger clears itself on the next green run.
+  #
+  #     THE PRICE IS PRE-COMMITTED: at the measured 5.1% per-shard failure rate,
+  #     one red round out of four a day fires a rank-2 red on about 46% of days.
+  #     If that turns out to be noise rather than signal, raise this to 2 with a
+  #     ledger entry, accepting that it doubles detection latency.
+  #
+  #     18 hours of silence, against a nominal 6-hour gap: `evals.yml`'s daily
+  #     cron is delivered a median 2.60 h and p90 5.61 h late, so a tighter
+  #     number would fire on throttling rather than on breakage. NOTE that 18
+  #     here is not 18 hours of wall clock to detection: a day is collected the
+  #     morning after and the rule reads the reported day's end, so a stopped
+  #     canary is named in about 39 hours worst case. Collecting more often is
+  #     what would shorten that, not a smaller number here.
+  canary_red_min_runs: 1
+  canary_silent_hours: 18
   # The report says how long a trigger has been open once it reaches this.
   open_days_warning: 14
   # Days of history each sparkline in the daily report draws.
