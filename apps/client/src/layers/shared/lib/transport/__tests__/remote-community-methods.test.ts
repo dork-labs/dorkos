@@ -3,6 +3,16 @@ import { CommunityCursorSchema } from '@dorkos/shared/community-adapter';
 import { createRemoteCommunityMethods } from '../remote-community-methods';
 import { communityStubs } from '../../direct/community-stubs';
 
+const access = {
+  state: 'verified',
+  effective: { read: true, post: true, enrollAgent: true, stream: true },
+  lastKnown: {
+    lifecycle: 'active',
+    capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+    verifiedAt: '2026-09-16T10:00:00Z',
+  },
+} as const;
+
 const room = {
   community: 'community-a',
   roomId: 'same-id',
@@ -22,6 +32,7 @@ const room = {
   stale: false,
   cacheCursor: 'opaque-cursor',
   lastRemoteSeq: 1,
+  access,
 };
 const entry = {
   community: 'community-a',
