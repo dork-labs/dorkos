@@ -1,0 +1,33 @@
+{
+  "label": "v0.76.0",
+  "archivedAt": "2026-09-21T06:16:55.330Z",
+  "source": {
+    "schemaVersion": 2,
+    "generatedAt": "2026-09-21T02:35:19.777Z",
+    "runId": "20260920-211008"
+  },
+  "shots": [
+    {
+      "id": "control-center",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "changelog"]
+    }
+  ],
+  "count": 1,
+  "totalBytes": 130268,
+  "assets": [
+    {
+      "source": "auto",
+      "file": "control-center-light.png",
+      "surface": "control-center",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 130268,
+      "runId": "20260920-211008",
+      "capturedAt": "2026-09-21T02:16:39.494Z"
+    }
+  ]
+}
