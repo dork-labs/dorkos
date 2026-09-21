@@ -252,6 +252,21 @@ async function* failingRoomStream(error: Error): AsyncGenerator<never, void, unk
   throw error;
 }
 
+function connectionWithAccess(
+  access: CommunityConnectionDescriptor['access']
+): CommunityConnectionDescriptor {
+  return {
+    ref: fixture.ref,
+    remoteCommunityId: 'community-a',
+    label: 'Community A',
+    pinnedOrigin: 'https://community.example',
+    connectedHumanMemberId: 'human-a',
+    status: 'connected',
+    expiresAt: null,
+    access,
+  };
+}
+
 describe('qualified remote community writes and live projections', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -328,6 +343,97 @@ describe('qualified remote community writes and live projections', () => {
     expect(response.status).toBe(403);
     expect(response.body.code).toBe('COMMUNITY_ACCESS_DENIED');
     expect(fixture.adapter.subscribeRoom).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: 'temporarily unverified',
+      status: 502,
+      access: {
+        state: 'unverified' as const,
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: fixture.access.lastKnown,
+      },
+    },
+    {
+      label: 'verified archived read-only',
+      status: 403,
+      access: {
+        state: 'verified' as const,
+        effective: { read: true, post: false, enrollAgent: false, stream: false },
+        lastKnown: {
+          lifecycle: 'archived' as const,
+          capabilities: { read: true, post: false, enrollAgent: false, stream: false },
+          verifiedAt: '2026-09-21T00:00:00.000Z',
+        },
+      },
+    },
+  ])('blocks every disallowed live operation before adapter I/O when $label', async (gate) => {
+    const actions = [
+      () => request(testServer).post(`/api/communities/${fixture.ref}/rooms/room-a/membership`),
+      () => request(testServer).delete(`/api/communities/${fixture.ref}/rooms/room-a/membership`),
+      () =>
+        request(testServer)
+          .post(`/api/communities/${fixture.ref}/rooms/room-a/entries`)
+          .send({ text: 'blocked', idempotencyKey: 'blocked-post' }),
+      () =>
+        request(testServer)
+          .post(`/api/communities/${fixture.ref}/rooms/room-a/attachments`)
+          .set('content-type', 'application/octet-stream')
+          .set('x-file-name', 'blocked.txt')
+          .set('x-file-content-type', 'text/plain')
+          .set('x-file-size', '1')
+          .set('idempotency-key', 'blocked-upload')
+          .send(Buffer.from('x')),
+      () =>
+        request(testServer).post(
+          `/api/communities/${fixture.ref}/rooms/room-a/deliveries/blocked/retry`
+        ),
+      () => request(testServer).get(`/api/communities/${fixture.ref}/rooms/room-a/events`),
+      () => request(testServer).get(`/api/communities/${fixture.ref}/agents`),
+      () =>
+        request(testServer).post(`/api/communities/${fixture.ref}/agents/mesh-manifest-a/enroll`),
+      () => request(testServer).delete(`/api/communities/${fixture.ref}/agents/local-agent-a`),
+      () =>
+        request(testServer).post(
+          `/api/communities/${fixture.ref}/rooms/room-a/agents/local-agent-a/membership`
+        ),
+      () =>
+        request(testServer).delete(
+          `/api/communities/${fixture.ref}/rooms/room-a/agents/local-agent-a/membership`
+        ),
+    ];
+    if (gate.status === 502) {
+      actions.push(
+        () => request(testServer).get(`/api/communities/${fixture.ref}/rooms/room-a/entries`),
+        () => request(testServer).get(`/api/communities/${fixture.ref}/rooms/room-a/read-cursor`),
+        () =>
+          request(testServer)
+            .put(`/api/communities/${fixture.ref}/rooms/room-a/read-cursor`)
+            .send({ cursor: 'cursor-a' }),
+        () => request(testServer).get(`/api/communities/${fixture.ref}/rooms/room-a/members`),
+        () =>
+          request(testServer).get(
+            `/api/communities/${fixture.ref}/rooms/room-a/attachments/attachment-a`
+          )
+      );
+    }
+
+    for (const action of actions) {
+      vi.clearAllMocks();
+      fixture.retryCalls.length = 0;
+      fixture.connectionStatus.mockResolvedValueOnce(connectionWithAccess(gate.access));
+      const response = await action();
+      expect(response.status).toBe(gate.status);
+      expect(
+        Object.values(fixture.adapter).some(
+          (method) => vi.isMockFunction(method) && method.mock.calls.length > 0
+        )
+      ).toBe(false);
+      expect(fixture.retryCalls).toEqual([]);
+      expect(fixture.lifecycle.revokeEnrollment).not.toHaveBeenCalled();
+      expect(fixture.lifecycle.leaveRoom).not.toHaveBeenCalled();
+    }
   });
 
   it('posts only as the connected human and does not attach agent-only origin metadata', async () => {

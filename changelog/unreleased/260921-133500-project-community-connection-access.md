@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- Keep Community access accurate as permissions change. Temporary outages disable live actions while preserving visibly stale history, and a revoked connection clears protected access until you reconnect it.
+- Keep Community access accurate as permissions change. Temporary outages now disable protected actions, and a revoked connection clears protected access until you reconnect it.
