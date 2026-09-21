@@ -15,6 +15,15 @@ UPDATE communities
 SET activated_at = created_at
 WHERE lifecycle IN ('active','suspended') AND activated_at IS NULL;
 
+-- Version nine allowed suspended communities but did not retain the transition
+-- provenance.  The former state can only have been active; the suspension
+-- instant was not stored, so record this migration's observation rather than
+-- inventing a historical timestamp.
+UPDATE communities
+SET suspended_from_state = 'active',
+    suspended_at = now()
+WHERE lifecycle = 'suspended';
+
 ALTER TABLE communities DROP CONSTRAINT communities_lifecycle;
 ALTER TABLE communities ADD CONSTRAINT communities_lifecycle CHECK (
   lifecycle IN ('pending_owner','active','archived','suspended','deletion_pending')

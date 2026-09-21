@@ -181,6 +181,87 @@ it('uses community then member locks, avoiding the lifecycle-pairing deadlock cy
   }
 });
 
+it('uses community then deletion job locks across worker and cancellation', async () => {
+  const communityId = await createClaimedCommunity('Deletion lock order', 'deletion-lock-owner');
+  const memberId = (
+    await db.query<{ id: string }>(
+      "SELECT id FROM members WHERE community_id=$1 AND role='owner' AND active",
+      [communityId]
+    )
+  ).rows[0]!.id;
+  await db.query(
+    `UPDATE communities SET lifecycle='deletion_pending',delete_requested_at=now(),
+       delete_after=now()+interval '7 days',delete_requested_by=$2,lifecycle_version=3
+     WHERE id=$1`,
+    [communityId, memberId]
+  );
+  await db.query(
+    `INSERT INTO community_deletion_jobs(
+       community_id,requested_by_member_id,lifecycle_version,delete_after,next_attempt_at
+     ) SELECT id,$2,lifecycle_version,delete_after,now() FROM communities WHERE id=$1`,
+    [communityId, memberId]
+  );
+  const worker = await db.connect();
+  const cancellation = await db.connect();
+  try {
+    await worker.query('BEGIN');
+    await worker.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [communityId]);
+    const cancelledCommunity = cancellation
+      .query('BEGIN')
+      .then(() =>
+        cancellation.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [communityId])
+      );
+    await worker.query('SELECT 1 FROM community_deletion_jobs WHERE community_id=$1 FOR UPDATE', [
+      communityId,
+    ]);
+    await worker.query('COMMIT');
+    await cancelledCommunity;
+    await cancellation.query('SELECT 1 FROM members WHERE id=$1 FOR SHARE', [memberId]);
+    await cancellation.query(
+      'SELECT 1 FROM community_deletion_jobs WHERE community_id=$1 FOR UPDATE',
+      [communityId]
+    );
+    await cancellation.query('COMMIT');
+
+    await worker.query("SET deadlock_timeout='50ms'");
+    await cancellation.query("SET deadlock_timeout='50ms'");
+    await worker.query('BEGIN');
+    await cancellation.query('BEGIN');
+    await worker.query('SELECT 1 FROM community_deletion_jobs WHERE community_id=$1 FOR UPDATE', [
+      communityId,
+    ]);
+    await cancellation.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [communityId]);
+    await cancellation.query('SELECT 1 FROM members WHERE id=$1 FOR SHARE', [memberId]);
+    const reverseOrder = Promise.allSettled([
+      worker.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [communityId]),
+      cancellation.query('SELECT 1 FROM community_deletion_jobs WHERE community_id=$1 FOR UPDATE', [
+        communityId,
+      ]),
+    ]);
+    const outcome = await Promise.race([
+      reverseOrder,
+      new Promise<never>((_, reject) => {
+        setTimeout(
+          () => reject(new Error('Reverse deletion lock order did not resolve in time.')),
+          2_000
+        );
+      }),
+    ]);
+    expect(outcome.some((result) => result.status === 'rejected')).toBe(true);
+    expect(
+      outcome.some(
+        (result) =>
+          result.status === 'rejected' && (result.reason as { code?: string }).code === '40P01'
+      )
+    ).toBe(true);
+  } finally {
+    await worker.query('ROLLBACK').catch(() => undefined);
+    await cancellation.query('ROLLBACK').catch(() => undefined);
+    worker.release();
+    cancellation.release();
+  }
+});
+
 it('keeps completed deletion tombstones content-free by schema', async () => {
   const columns = (
     await db.query<{ column_name: string }>(

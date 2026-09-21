@@ -459,6 +459,16 @@ export const CommunityConnectionAccessSchema = z
     ) {
       context.addIssue({ code: 'custom', message: 'Archived access is history-only.' });
     }
+    if (
+      (access.lastKnown?.lifecycle === 'suspended' ||
+        access.lastKnown?.lifecycle === 'deletion_pending') &&
+      Object.values(access.lastKnown.capabilities).some(Boolean)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Suspended or deleting access has no effective capabilities.',
+      });
+    }
   });
 /** Current effective access and the most recently verified Community authority. */
 export type CommunityConnectionAccess = z.infer<typeof CommunityConnectionAccessSchema>;

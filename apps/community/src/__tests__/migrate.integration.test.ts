@@ -199,12 +199,22 @@ it('backfills legacy suspended communities before adding administration constrai
     await db.query(
       "INSERT INTO \"user\"(id,name,email) VALUES('legacy-suspended','Legacy','legacy-suspended@example.test')"
     );
-    await db.query(
-      `INSERT INTO members(community_id,user_id,display_name,handle,role)
-       VALUES($1,'legacy-suspended','Legacy','legacy-suspended','owner')`,
-      [community]
-    );
-    await db.query("UPDATE communities SET lifecycle='suspended' WHERE id=$1", [community]);
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO members(community_id,user_id,display_name,handle,role)
+         VALUES($1,'legacy-suspended','Legacy','legacy-suspended','owner')`,
+        [community]
+      );
+      await client.query("UPDATE communities SET lifecycle='suspended' WHERE id=$1", [community]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
 
     await migrate(upgradeUrl.toString());
 

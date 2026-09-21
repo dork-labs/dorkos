@@ -385,5 +385,25 @@ describe('community server port additions', () => {
         effective: { read: true, post: false, enrollAgent: false, stream: false },
       }).success
     ).toBe(false);
+    expect(
+      CommunityConnectionAccessSchema.safeParse({
+        ...access,
+        lastKnown: {
+          ...access.lastKnown,
+          lifecycle: 'suspended',
+          capabilities: { read: false, post: true, enrollAgent: false, stream: false },
+        },
+      }).success
+    ).toBe(false);
+    expect(
+      CommunityConnectionAccessSchema.safeParse({
+        ...access,
+        lastKnown: {
+          ...access.lastKnown,
+          lifecycle: 'deletion_pending',
+          capabilities: { read: false, post: false, enrollAgent: false, stream: true },
+        },
+      }).success
+    ).toBe(false);
   });
 });

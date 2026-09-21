@@ -17,7 +17,21 @@ export async function sweepCommunityDeletions(
   if (!Number.isInteger(blobBatchSize) || blobBatchSize < 1 || blobBatchSize > 100)
     throw new Error('Invalid community deletion batch size');
   const job = await transaction(pool, async (client) => {
-    const selected = await client.query<{
+    const selected = await client.query<{ community_id: string }>(
+      `SELECT community_id
+       FROM community_deletion_jobs
+       WHERE delete_after<=now() AND next_attempt_at<=now()
+       ORDER BY next_attempt_at,community_id
+       LIMIT 1`
+    );
+    const candidate = selected.rows[0];
+    if (!candidate) return null;
+    const community = await client.query<{ lifecycle: string; lifecycle_version: number }>(
+      'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR UPDATE SKIP LOCKED',
+      [candidate.community_id]
+    );
+    if (!community.rows[0]) return null;
+    const lockedJob = await client.query<{
       community_id: string;
       lifecycle_version: number;
       created_at: Date;
@@ -25,16 +39,12 @@ export async function sweepCommunityDeletions(
     }>(
       `SELECT community_id,lifecycle_version,created_at,attempts
        FROM community_deletion_jobs
-       WHERE delete_after<=now() AND next_attempt_at<=now()
-       ORDER BY next_attempt_at,community_id
-       FOR UPDATE SKIP LOCKED LIMIT 1`
+       WHERE community_id=$1 AND delete_after<=now() AND next_attempt_at<=now()
+       FOR UPDATE SKIP LOCKED`,
+      [candidate.community_id]
     );
-    const row = selected.rows[0];
+    const row = lockedJob.rows[0];
     if (!row) return null;
-    const community = await client.query<{ lifecycle: string; lifecycle_version: number }>(
-      'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR UPDATE',
-      [row.community_id]
-    );
     if (
       community.rows[0]?.lifecycle !== 'deletion_pending' ||
       community.rows[0].lifecycle_version !== row.lifecycle_version
@@ -51,7 +61,8 @@ export async function sweepCommunityDeletions(
       [row.community_id]
     );
     await client.query(
-      `UPDATE community_deletion_jobs SET state='deleting',updated_at=now(),last_error_class=NULL
+      `UPDATE community_deletion_jobs
+       SET state='deleting',next_attempt_at=now()+interval '5 minutes',updated_at=now(),last_error_class=NULL
        WHERE community_id=$1`,
       [row.community_id]
     );
@@ -80,6 +91,15 @@ export async function sweepCommunityDeletions(
     } catch (error) {
       failed++;
       await transaction(pool, async (client) => {
+        const community = await client.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [
+          job.community_id,
+        ]);
+        if (!community.rowCount) return;
+        const lockedJob = await client.query(
+          'SELECT 1 FROM community_deletion_jobs WHERE community_id=$1 FOR UPDATE',
+          [job.community_id]
+        );
+        if (!lockedJob.rowCount) return;
         await client.query(
           `UPDATE community_deletion_blob_progress
            SET state='retrying',attempts=attempts+1,last_error_class=$3,
@@ -100,6 +120,15 @@ export async function sweepCommunityDeletions(
   if (failed) return { claimed: 1, deletedBlobs, completed: 0, failed };
 
   const completed = await transaction(pool, async (client) => {
+    const community = await client.query<{ lifecycle: string; lifecycle_version: number }>(
+      'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR UPDATE',
+      [job.community_id]
+    );
+    if (
+      community.rows[0]?.lifecycle !== 'deletion_pending' ||
+      community.rows[0].lifecycle_version !== job.lifecycle_version
+    )
+      return false;
     const locked = await client.query<{ created_at: Date; attempts: number }>(
       `SELECT created_at,attempts FROM community_deletion_jobs
        WHERE community_id=$1 AND delete_after<=now() FOR UPDATE`,
