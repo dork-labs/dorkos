@@ -43,11 +43,14 @@
 - Composed `0010` then `0011` against reviewed administration/API and access-projection ancestry.
 - Node 24 targeted real-Postgres run: admission plus migration, **25/25 passed**.
 - Node 24 follow-up admission run after the repeated-transaction settlement fix: **22/22 passed**.
-- Merge commit normal pre-commit gate: **34/34 tasks passed** (format, lint, typecheck); only existing repository warnings.
+- First full Postgres pass found one stale administration fixture still sending a raw invite to redemption: **155 passed, 16 skipped, 1 fixture setup failure**. The fixture was corrected to bind then redeem; its isolated rerun passed **12/12**.
+- Final bounded full Community Postgres gate: **13/13 files, 167 passed, 4 declared skips**.
+- Community browser production build passed. The three browser cases could not start because this host lacks Playwright's pinned Chromium headless-shell revision `1234`; no browser behavior is claimed from that run.
+- Normal pre-commit gates passed **34/34 tasks** on both composition and correction commits (format, lint, typecheck); only existing repository warnings.
 - Access projection sibling review: exact `4b70c1997020ef0102087cee78efc3b31f47cc7c`, **0 Important / 0 Nit**.
 
 ## Remaining Work
 
 - DOR-2181 owns the broader entry experience. Its separately reviewed atomic first-host foundation is at `4f627449f7e1b8a3de64ba2eefdf4f0f0d88e5d3`; this branch does not duplicate that transaction.
 - DOR-2182 owns packaged Desktop and cross-device journey proof.
-- Before this DOR-2180 batch opens a PR: merge the freshly fetched current `main`, run the bounded full Community Postgres gate and browser admission proof, then obtain an independent full REVIEW.md verdict for the exact pushed head.
+- Before this DOR-2180 batch opens a PR: obtain an independent full REVIEW.md verdict for the exact pushed head. Browser execution remains a named verification gap until the pinned Playwright browser is available.
