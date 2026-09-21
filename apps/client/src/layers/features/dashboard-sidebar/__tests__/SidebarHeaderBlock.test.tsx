@@ -567,6 +567,59 @@ describe('SidebarHeaderBlock', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
+  it('reenables selection when the initial qualified navigation rejects', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockNavigate.mockRejectedValueOnce(new Error('navigation interrupted'));
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() =>
+      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
+    );
+    expect(mockResolveCommunityNavigation).not.toHaveBeenCalled();
+  });
+
+  it('opens the remembered room after the qualified target commits', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockNavigate.mockImplementation(async ({ search }: { search?: { community?: string } }) => {
+      if (search?.community === 'a') commitCommunityRouteEpoch('community:a');
+    });
+    mockResolveCommunityNavigation.mockResolvedValue({
+      ref: 'a',
+      roomId: 'general',
+      threadId: 'thread-1',
+      scrollAnchorEntryId: 'entry-4',
+    });
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(2));
+    expect(mockNavigate).toHaveBeenLastCalledWith({
+      to: '/channels',
+      search: { community: 'a', id: 'general', thread: 'thread-1' },
+    });
+  });
+
   it('opens from the global context shortcut without stealing text-entry keys', async () => {
     renderBlock();
     await act(async () => undefined);
