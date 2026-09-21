@@ -1392,6 +1392,9 @@ describe('signed admission over real HTTP and Postgres', () => {
       (await call(`/api/v1/communities/${secondId}/channels`, 'GET', undefined, claimantCookie))
         .status
     ).toBe(409);
+    // The post held behind the channel lock committed before the lifecycle
+    // transition, so its durable event precedes the suspension close.
+    expect((await nextSse(secondReader)).type).toBe('entry');
     expect((await nextSse(secondReader)).type).toBe('closed');
     expect(
       (
