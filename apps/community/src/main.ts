@@ -5,7 +5,7 @@ import { Pool } from 'pg';
 import { createCommunityApp } from './app.js';
 import { parseConfig } from './config.js';
 import { migrate } from './migrate.js';
-import { createBlobStore, reconcileTenantNamespace } from './storage/index.js';
+import { createBlobStore } from './storage/index.js';
 import { sweepExpiredAttachments } from './routes/attachments.js';
 import { sweepExpiredExports } from './routes/exports.js';
 import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
@@ -14,14 +14,6 @@ const config = parseConfig(process.env);
 await migrate(config.databaseUrl);
 const pool = new Pool({ connectionString: config.databaseUrl });
 const blobStore = createBlobStore(config);
-const reconciliation = await reconcileTenantNamespace(pool, blobStore);
-if (!reconciliation.ready) {
-  console.warn('Community tenant reconciliation remains blocked', {
-    generation: reconciliation.generation,
-    counts: reconciliation.counts,
-    issues: reconciliation.issues,
-  });
-}
 const app = createCommunityApp({ config, pool, blobStore });
 const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
 app.use('/assets/*', serveStatic({ root: staticRoot }));
