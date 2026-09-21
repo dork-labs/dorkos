@@ -216,7 +216,6 @@ try {
     ['gh', ghFixture],
     ['open', harmlessFixture],
     ['pbcopy', harmlessFixture],
-    ['pbpaste', harmlessFixture],
   ] as const) {
     const path = join(fakeBin, name);
     await writeFile(path, source);
@@ -227,7 +226,7 @@ try {
   const interactiveHelper = join(temporary, 'interactive.py');
   await writeFile(
     interactiveHelper,
-    `import os,pty,select,sys\napp=os.environ['COMMUNITY_PROOF_APP_NAME']\npid,fd=pty.fork()\nif pid==0: os.execve(sys.argv[1],sys.argv[1:],os.environ)\nout=b''; sent=set()\nwhile True:\n r,_,_=select.select([fd],[],[],1)\n if fd in r:\n  try: chunk=os.read(fd,4096)\n  except OSError: break\n  if not chunk: break\n  out+=chunk; os.write(1,chunk)\n  text=out.decode('utf8','replace')\n  if 'consent' not in sent and ('Type '+app+' to create these resources:') in text: os.write(fd,(app+'\\r').encode()); sent.add('consent')\n  if 'copy' not in sent and 'Type copy:' in text: os.write(fd,b'copy\\r'); sent.add('copy')\n  if 'continue' not in sent and 'then press Enter to verify it.' in text: os.write(fd,b'\\r'); sent.add('continue')\n_,status=os.waitpid(pid,0)\nsys.exit(os.waitstatus_to_exitcode(status))\n`
+    `import os,pty,select,sys\napp=os.environ['COMMUNITY_PROOF_APP_NAME']\npid,fd=pty.fork()\nif pid==0: os.execve(sys.argv[1],sys.argv[1:],os.environ)\nout=b''; sent=set()\nwhile True:\n r,_,_=select.select([fd],[],[],1)\n if fd in r:\n  try: chunk=os.read(fd,4096)\n  except OSError: break\n  if not chunk: break\n  out+=chunk; os.write(1,chunk)\n  text=out.decode('utf8','replace')\n  if 'consent' not in sent and ('Type '+app+' to create these resources:') in text: os.write(fd,(app+'\\r').encode()); sent.add('consent')\n  if 'clipboard-test' not in sent and 'Type COPY TEST to replace your current clipboard' in text: os.write(fd,b'COPY TEST\\r'); sent.add('clipboard-test')\n  if 'copy' not in sent and 'Type copy:' in text: os.write(fd,b'copy\\r'); sent.add('copy')\n  if 'continue' not in sent and 'then press Enter to verify it.' in text: os.write(fd,b'\\r'); sent.add('continue')\n_,status=os.waitpid(pid,0)\nsys.exit(os.waitstatus_to_exitcode(status))\n`
   );
 
   execFileSync('pnpm', ['--filter', 'dorkos', 'build'], { cwd: root, stdio: 'inherit' });

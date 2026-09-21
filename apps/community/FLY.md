@@ -19,7 +19,7 @@ neonctl auth
 dorkos community deploy --help
 ```
 
-The one-time owner handoff needs a working desktop clipboard session: `pbcopy` and `pbpaste` on macOS, `wl-copy` in an active Wayland session on Linux, or `clip.exe` and PowerShell on Windows. The launcher checks the clipboard session before consent so a headless machine cannot create paid resources and then fail to hand over the Setup secret. It offers to open the browser, but always prints the non-secret owner setup URL if no opener is available.
+The one-time owner handoff needs a working desktop clipboard session: `pbcopy` on macOS, `wl-copy` in an active Wayland session on Linux, or `clip.exe` on Windows. Before consent, the launcher checks that the local command and desktop session are available. After consent and before it creates any resources, it asks before replacing your current clipboard with harmless test text and runs the exact copy command. It offers to open the browser, but always prints the non-secret owner setup URL if no opener is available.
 
 Choose the organizations and nearby regions yourself. The command does not silently select an account or region. Run a read-only preview first:
 

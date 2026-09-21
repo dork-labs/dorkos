@@ -34,23 +34,17 @@ type HandoffPlatform = 'darwin' | 'linux' | 'win32';
 
 function handoffCommands(system: NodeJS.Platform): {
   clipboard: { executable: string; args: string[] };
-  probe?: { executable: string; args: string[] };
   browser: { executable: string; args(origin: string): string[] };
 } {
   if (system === 'darwin') {
     return {
       clipboard: { executable: 'pbcopy', args: [] },
-      probe: { executable: 'pbpaste', args: [] },
       browser: { executable: 'open', args: (origin) => [origin] },
     };
   }
   if (system === 'win32') {
     return {
       clipboard: { executable: 'clip.exe', args: [] },
-      probe: {
-        executable: 'powershell.exe',
-        args: ['-NoProfile', '-NonInteractive', '-Command', 'Get-Clipboard -Raw'],
-      },
       browser: { executable: 'cmd.exe', args: (origin) => ['/c', 'start', '', origin] },
     };
   }
@@ -86,12 +80,10 @@ export async function assertOwnerHandoffPrerequisites(
   const path = env.PATH ?? '';
   const missing = (
     await Promise.all(
-      [commands.clipboard.executable, ...(commands.probe ? [commands.probe.executable] : [])].map(
-        async (executable) => ({
-          executable,
-          found: await executableOnPath(executable, path),
-        })
-      )
+      [commands.clipboard.executable].map(async (executable) => ({
+        executable,
+        found: await executableOnPath(executable, path),
+      }))
     )
   ).filter(({ found }) => !found);
   if (missing.length > 0) {
@@ -118,18 +110,6 @@ export async function assertOwnerHandoffPrerequisites(
     }
     return;
   }
-  if (!commands.probe) return;
-  await runProviderCommand({
-    ...commands.probe,
-    env,
-    timeoutMs: 5_000,
-    maxBytes: 1024 * 1024,
-    parse: () => undefined,
-  }).catch(() => {
-    throw new Error(
-      'Owner handoff cannot access this desktop clipboard session. See https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md'
-    );
-  });
 }
 
 async function clipboard(
@@ -144,6 +124,32 @@ async function clipboard(
     timeoutMs: 5_000,
     stdin: value,
     parse: () => undefined,
+  });
+}
+
+/**
+ * Ask before replacing the current clipboard with harmless text, then exercise the exact write path.
+ *
+ * This runs after launch consent but before the first provider write. It deliberately does not read or
+ * preserve clipboard contents because doing so would expose private data and lose non-text formats.
+ */
+export async function confirmOwnerClipboardWrite(
+  env: Readonly<Record<string, string>>,
+  system: NodeJS.Platform = platform(),
+  confirm: (question: string, signal?: AbortSignal) => Promise<string> = ask,
+  signal?: AbortSignal
+): Promise<void> {
+  const answer = await confirm(
+    'Type COPY TEST to replace your current clipboard with harmless DorkOS test text: ',
+    signal
+  );
+  if (answer.trim() !== 'COPY TEST') {
+    throw new Error('Clipboard capability check was cancelled before any provider write.');
+  }
+  await clipboard('DorkOS clipboard capability check', env, system).catch(() => {
+    throw new Error(
+      'Owner handoff could not write to this clipboard session. No new provider write occurred. See https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md'
+    );
   });
 }
 

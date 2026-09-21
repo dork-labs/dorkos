@@ -3,7 +3,11 @@ import { createServer, type Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOwnerHandoffPrerequisites, tryOpenOwnerOrigin } from '../runtime/default-owner.js';
+import {
+  assertOwnerHandoffPrerequisites,
+  confirmOwnerClipboardWrite,
+  tryOpenOwnerOrigin,
+} from '../runtime/default-owner.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
@@ -40,25 +44,48 @@ afterEach(async () => {
 
 describe('Community owner handoff prerequisites', () => {
   it.each([
-    ['darwin', ['pbcopy', 'pbpaste']],
-    ['win32', ['clip.exe', 'powershell.exe']],
+    ['darwin', ['pbcopy']],
+    ['win32', ['clip.exe']],
   ] as const)('accepts a working, non-printing %s clipboard probe', async (system, commands) => {
     const path = await executableDirectory(commands);
     await expect(assertOwnerHandoffPrerequisites({ PATH: path }, system)).resolves.toBeUndefined();
   });
 
-  it('discards clipboard probe contents without printing them', async () => {
-    const path = await executableDirectory(['pbcopy', 'pbpaste']);
-    await writeFile(join(path, 'pbpaste'), '#!/bin/sh\nprintf PRIVATE_CLIPBOARD_CANARY\n');
-    await chmod(join(path, 'pbpaste'), 0o755);
-    const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    const errors = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  it('exercises the exact clipboard writer only after explicit local confirmation', async () => {
+    const path = await executableDirectory(['pbcopy']);
+    const confirm = vi.fn().mockResolvedValue('COPY TEST');
     await expect(
-      assertOwnerHandoffPrerequisites({ PATH: path }, 'darwin')
+      confirmOwnerClipboardWrite({ PATH: path }, 'darwin', confirm)
     ).resolves.toBeUndefined();
-    expect(JSON.stringify([...output.mock.calls, ...errors.mock.calls])).not.toContain(
-      'PRIVATE_CLIPBOARD_CANARY'
-    );
+    expect(confirm).toHaveBeenCalledOnce();
+  });
+
+  it('passes cancellation into the local confirmation before any clipboard write', async () => {
+    const path = await failingExecutableDirectory('pbcopy');
+    const controller = new AbortController();
+    const confirm = vi.fn(async (_question: string, signal?: AbortSignal) => {
+      expect(signal).toBe(controller.signal);
+      controller.abort();
+      throw signal?.reason;
+    });
+    await expect(
+      confirmOwnerClipboardWrite({ PATH: path }, 'darwin', confirm, controller.signal)
+    ).rejects.toBe(controller.signal.reason);
+    expect(confirm).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a broken clipboard writer before provider resources exist', async () => {
+    const path = await failingExecutableDirectory('pbcopy');
+    await expect(
+      confirmOwnerClipboardWrite({ PATH: path }, 'darwin', async () => 'COPY TEST')
+    ).rejects.toThrow('No new provider write occurred');
+  });
+
+  it('does not invoke the clipboard writer when local confirmation is refused', async () => {
+    const path = await failingExecutableDirectory('pbcopy');
+    await expect(
+      confirmOwnerClipboardWrite({ PATH: path }, 'darwin', async () => 'no')
+    ).rejects.toThrow('cancelled before any provider write');
   });
 
   it('accepts Linux only when the selected Wayland session socket is live', async () => {

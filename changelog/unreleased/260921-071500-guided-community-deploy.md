@@ -6,6 +6,7 @@ covers:
   - 'fix(cli): complete Community launch recovery'
   - 'fix(cli): make Community launch failures recoverable'
   - 'fix(cli): bind Community recovery to saved launch'
+  - 'fix(cli): prove Community owner clipboard writes'
 ---
 
 ### Added

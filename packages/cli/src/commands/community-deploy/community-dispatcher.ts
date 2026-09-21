@@ -17,6 +17,7 @@ import {
 import { createDefaultCommunityDeployDependencies } from './runtime/default-deploy.js';
 import {
   assertOwnerHandoffPrerequisites,
+  confirmOwnerClipboardWrite,
   createDefaultCommunityOwnerDependencies,
 } from './runtime/default-owner.js';
 import { executeCommunityCreationPhase } from './execute.js';
@@ -205,7 +206,6 @@ export async function runCommunityDispatcher(
     );
     return 0;
   }
-  const appName = required(parsed.values['app-name'], '--app-name');
   const version = parsed.values.version ?? context.cliVersion;
   const runId = parsed.values.resume ?? randomUUID();
   const journalPath = launchJournalPath(context.dorkHome, runId);
@@ -213,18 +213,27 @@ export async function runCommunityDispatcher(
   if (parsed.values.resume && !resumeJournal) {
     throw new Error('The selected Community launch journal was not found');
   }
-  const selection: CommunityResumeSelection = {
-    version,
-    flyOrganization: required(parsed.values['fly-org'], '--fly-org'),
-    flyRegion: required(parsed.values['fly-region'], '--fly-region'),
-    appName,
-    machineSize: parsed.values['machine-size']!,
-    neonOrganization: required(parsed.values['neon-org'], '--neon-org'),
-    neonRegion: required(parsed.values['neon-region'], '--neon-region'),
-    neonProjectName: parsed.values['project-name'] ?? appName,
-    bucketName: parsed.values['bucket-name'] ?? appName,
-  };
   let latest: LaunchJournal | null = resumeJournal;
+  let selection: CommunityResumeSelection;
+  try {
+    const appName = required(parsed.values['app-name'], '--app-name');
+    selection = {
+      version,
+      flyOrganization: required(parsed.values['fly-org'], '--fly-org'),
+      flyRegion: required(parsed.values['fly-region'], '--fly-region'),
+      appName,
+      machineSize: parsed.values['machine-size']!,
+      neonOrganization: required(parsed.values['neon-org'], '--neon-org'),
+      neonRegion: required(parsed.values['neon-region'], '--neon-region'),
+      neonProjectName: parsed.values['project-name'] ?? appName,
+      bucketName: parsed.values['bucket-name'] ?? appName,
+    };
+  } catch (error) {
+    if (latest) {
+      process.stderr.write(`Community setup stopped.\n${formatCommunityRecovery(latest)}\n`);
+    }
+    throw error;
+  }
   const childEnv = context.processEnv;
   const cancellation = new AbortController();
   const cancel = () => cancellation.abort();
@@ -296,7 +305,14 @@ export async function runCommunityDispatcher(
             const existing = resumeJournal!;
             assertCommunityLaunchPlanUnchanged(existing, result.plan);
             latest = existing;
-          } else {
+          }
+          await confirmOwnerClipboardWrite(
+            childEnv,
+            process.platform,
+            undefined,
+            cancellation.signal
+          );
+          if (!parsed.values.resume) {
             latest = createInitialCommunityLaunchJournal(
               runId,
               result.plan,
@@ -304,6 +320,7 @@ export async function runCommunityDispatcher(
             );
             await initializeLaunchJournal(journalPath, latest);
           }
+          if (!latest) throw new Error('Community launch journal was not initialized');
           const persist = async (next: LaunchJournal, expectedRevision: number) => {
             await writeLaunchJournal(journalPath, next, expectedRevision);
             latest = next;
