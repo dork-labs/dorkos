@@ -58,6 +58,29 @@ Check `/health`, sign-in, posting, live updates and one attachment after the upg
 
 There is no automatic reverse migration. Do not start an older image against an upgraded schema unless that release explicitly supports it. To return to a previous release, stop the app and restore its matching database, files and image together. Writes made after that backup will be lost; preserve a copy of the current deployment before restoring.
 
+### Returning to a release that supports one community
+
+You can rehearse this recovery only while the host has one community and has never created a second. Deleting a second community does not reopen this path. A host with multiple memberships also fails the check, including memberships that have ended.
+
+Stop every app process and background worker first. Keep them stopped through the check and recovery. Using the **current** image, run:
+
+```bash
+docker compose -f apps/community/compose.yml run --rm --no-deps -T \
+  --entrypoint node community dist-server/backout.js
+```
+
+The command reads recovery history and prints no account details or secrets. It changes nothing. An `eligible: false` result or a nonzero exit means stop. Missing history or an unreadable database also means stop. Never delete communities, memberships, or recovery history to make the check pass.
+
+An `eligible: true` result only allows the next recovery checks. It does not verify a backup or restore anything:
+
+1. Preserve the current database and files as another matching backup pair.
+2. Find the verified pair from **before** the schema upgrade, its exact image, and its protected deployment settings.
+3. Follow **Rehearse a restore** above on a separate private host with empty storage. Use the older image there. Never point it at the upgraded database.
+4. Compare community, member, channel, message and file IDs with the saved records. Check message order, exact file bytes, sign-in and removed-member access.
+5. Account for every write since the backup. Restoring that snapshot discards those writes; keep the current snapshot and resolve that loss before replacing the live service.
+
+After a second community has been created, recover with a compatible image or repair the current release. Do not restore an old single-community snapshot over that host. A member's downloaded export is not a complete server backup.
+
 ## Secrets and account recovery
 
 Use separate random values of at least 32 characters for authentication, invitation signing and bootstrap. A URL-safe database password avoids special-character parsing in the Compose connection URL. Never commit deployment secrets.

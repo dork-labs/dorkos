@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { migrate } from '../migrate.js';
+import { inspectBackout } from '../backout.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for real Postgres tests');
@@ -54,6 +55,7 @@ it('creates all owner, conversation, credential and auth tables in fresh Postgre
       'host_operators',
       'managed_blobs',
       'tenant_reconciliation',
+      'community_backout_fence',
       'entry_mentions',
       'export_archive_channels',
     ]) {
@@ -106,6 +108,7 @@ it('upgrades a populated foundation database without changing human authors', as
       )
     ).rows[0].id;
     await migrate(upgradeUrl.toString());
+    expect(await inspectBackout(db)).toEqual({ eligible: true, reason: 'single-community' });
     const row = (
       await db.query(
         'SELECT author_member_id,author_agent_id,community_id FROM entries WHERE id=$1',
@@ -148,7 +151,7 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();
@@ -279,7 +282,7 @@ it('expands a populated version-four database without changing files or cleanup 
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     expect(
       (
         await db.query(
