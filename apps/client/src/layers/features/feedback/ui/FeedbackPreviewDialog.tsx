@@ -44,13 +44,37 @@ interface FeedbackPreviewDialogProps {
   screenshotDataUrl?: string;
 }
 
-/** The privacy scope line, repeated at the foot of the preview (design §5). */
+/**
+ * The privacy scope line, repeated at the foot of the preview (design §5).
+ *
+ * `shrink-0` keeps this bar at its natural size no matter how the flex column
+ * above it is squeezed — the scroll area (the sibling with `min-h-0`) is the
+ * only thing allowed to shrink. `bg-background` plus the bleed to the panel's
+ * edges (cancelling the `Tabs` wrapper's own padding, then reapplying it here)
+ * makes this an opaque bar rather than a transparent line.
+ *
+ * `relative` is not decorative: CSS paints a stacking context in phases, not
+ * per DOM subtree — every in-flow box's background/border paints in one sweep
+ * (CSS 2.1 Appendix E, step 4), and only AFTER that do descendants' inline
+ * contents (text) paint, in step 7. If the scroll area's content ever sits
+ * right at its clipping edge, its overflowing *text* is still a later paint
+ * step than this footer's background, so an unpositioned footer can lose to
+ * it regardless of `bg-background`. Giving the footer its own position (even
+ * with no explicit `z-index`) starts a later phase — 8/9, "positioned
+ * descendants" — that paints after every in-flow box's phase 4-7, so the
+ * footer's background and text both land on top for good (DOR-1962).
+ */
 function PrivacyNote() {
   return (
-    <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-      <Lock className="size-3 shrink-0" aria-hidden />
-      Private. Only the DorkOS core team sees these. Never public.
-    </p>
+    <div
+      data-slot="feedback-preview-footer"
+      className="bg-background relative -mx-4 -mb-4 shrink-0 border-t px-4 py-3 sm:mx-0 sm:px-0"
+    >
+      <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+        <Lock className="size-3 shrink-0" aria-hidden />
+        Private. Only the DorkOS core team sees these. Never public.
+      </p>
+    </div>
   );
 }
 
@@ -255,7 +279,7 @@ export function FeedbackPreviewDialog({
         >
           <TabsList
             className={cn(
-              'grid',
+              'grid shrink-0',
               available.length === 3 && 'grid-cols-3',
               available.length === 2 && 'grid-cols-2',
               available.length === 1 && 'grid-cols-1'
