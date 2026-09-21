@@ -1,7 +1,7 @@
 ---
 id: 260911-200303
 title: A room turn's canvas commands are routed by turn context, at the session-event seam
-status: proposed
+status: accepted
 created: 2026-09-11
 spec: room-canvas
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed (extracted from spec `room-canvas`).
+Accepted (extracted from spec `room-canvas`).
 
 ## Context
 
