@@ -1,27 +1,28 @@
 /**
- * Drift guard: the pre-push formatting check must stay wired, and must stay
- * FIRST.
+ * Drift guard: the pre-push formatting check must stay wired.
  *
  * DOR-1839 is seven pull requests across five sessions going red on the required
  * `lint` check's `prettier --check .` in a single week — every one of them a
  * single `prettier --write` from green, one spec file twice from two different
  * sessions. `scripts/pre-push-format-check.sh` answers that, and
  * `scripts/test-pre-push-format-check.sh` tests the script thoroughly while
- * being entirely blind to whether anything CALLS it.
+ * being entirely blind to whether anything CALLS it. That gap — a working guard
+ * wired to nothing — is what this file closes, and the regression is invisible:
+ * drop the command and every push still passes, a little faster, and the
+ * seven-red week quietly resumes.
  *
- * That is the gap this file closes, and it is the same gap
- * `pre-push-gate-bounded.test.ts` beside it closes for the watchdog: a working
- * guard wired to nothing. Both of the ways this regresses are invisible —
+ * IT IS ALSO NOW THE WHOLE HOOK. DOR-2160 removed the `tests` command from
+ * `pre-push` after measuring that it either ran nothing (58 of 68 command runs
+ * finished under 50 s) or could not finish (the other 10 took over 579 s, the
+ * worst 2604, two killed), with nothing in between. So this check is the only
+ * thing standing between a push and CI, and the ordering machinery that used to
+ * keep it in front of the test sweep — `piped: true` and the two `priority`
+ * keys — went with the second command, because an ordering among one command is
+ * a claim about a file that no longer holds. The assertions below pin that it is
+ * still exactly one command; `local-gate-shape.test.ts` beside this one pins
+ * that no test command has come back without a ledger entry.
  *
- *   * Drop the `formatting` command and every push still passes, a little
- *     faster, and the seven-red week quietly resumes.
- *   * Drop `piped: true` (or reverse the priorities) and the check still runs
- *     and still refuses — but lefthook then runs the commands concurrently, so
- *     a two-second verdict no longer preempts a six-minute test sweep and you
- *     wait out the sweep to be told about a missing space. Nothing goes red for
- *     that; it just stops being worth having.
- *
- * WHY A VITEST TEST RATHER THAN A SHELL FIXTURE — the same reasoning its three
+ * WHY A VITEST TEST RATHER THAN A SHELL FIXTURE — the same reasoning its
  * neighbours give: `scripts/vitest.config.ts` globs every `*.test.ts` under a
  * `__tests__` directory, and that run is the last link of `test:scripts` (what
  * `pnpm verify` runs) and the final `harness` step of `scripts-test.yml`, so
@@ -94,13 +95,22 @@ function commandPriorities(block: string): Map<string, number | undefined> {
 const prePush = prePushBlock(lefthookText);
 const priorities = commandPriorities(prePush);
 
-describe('the pre-push formatting check is wired and runs first', () => {
-  it('finds the pre-push hook and both of its commands at all', () => {
+describe('the pre-push formatting check is wired, and is the whole hook', () => {
+  it('finds the pre-push hook and its one command at all', () => {
     // Without this, every assertion below passes vacuously the day the hook is
     // renamed or the scanner stops matching — the exact way a guard dies
     // quietly.
     expect(prePush).not.toBe('');
-    expect([...priorities.keys()].sort()).toEqual(['formatting', 'tests']);
+    expect([...priorities.keys()].sort()).toEqual(['formatting']);
+  });
+
+  it('declares no ordering, because there is nothing left to order', () => {
+    // `piped` and `priority` earned their lines when a two-second check had to
+    // preempt a six-minute sweep. With one command they assert an ordering
+    // among nothing. Whoever adds a second command has to decide ordering
+    // deliberately and put them back — this is the line that makes them.
+    expect(/^ {2}piped:/m.test(prePush)).toBe(false);
+    expect(priorities.get('formatting')).toBeUndefined();
   });
 
   it('runs the formatting check', () => {
@@ -120,41 +130,17 @@ describe('the pre-push formatting check is wired and runs first', () => {
     expect(existsSync(path.join(repoRoot, CHECK_REL))).toBe(true);
   });
 
-  it('stops at the first failure instead of running the commands concurrently', () => {
-    expect(
-      /^ {2}piped: true$/m.test(prePush),
-      "lefthook.yml's pre-push hook dropped `piped: true`. lefthook then runs " +
-        'its commands concurrently, so the formatting verdict no longer preempts ' +
-        'the test sweep and you wait out six minutes to hear about two seconds ' +
-        'of prettier (DOR-1839).'
-    ).toBe(true);
-  });
-
-  it('gives formatting a lower priority number than the test gate', () => {
-    const formatting = priorities.get('formatting');
-    const tests = priorities.get('tests');
-    expect(formatting, 'the `formatting` command declares no priority').toBeTypeOf('number');
-    expect(tests, 'the `tests` command declares no priority').toBeTypeOf('number');
-    expect(
-      (formatting as number) < (tests as number),
-      'lefthook runs a piped hook in priority order, so `formatting` must carry ' +
-        'the lower number or the cheap check ends up behind the expensive one.'
-    ).toBe(true);
-  });
-
-  it('does not take the stdin the test gate needs', () => {
-    // lefthook hands git's ref list to whichever command declares `use_stdin`,
-    // and the `tests` command needs it to recognise a delete-only push
-    // (DOR-116). Two commands asking for one pipe is a queue, and the loser
-    // reads EOF — which would make the delete-only skip silently stop firing.
-    const formattingBlock = /^ {4}formatting:\n([\s\S]*?)(?=^ {4}[A-Za-z0-9_-]+:\s*$)/m.exec(
-      prePush
-    );
-    expect(formattingBlock, 'could not isolate the `formatting` command block').not.toBeNull();
+  it('takes no stdin, so no command queues for the ref pipe', () => {
+    // lefthook hands git's pre-push ref list to whichever command declares
+    // `use_stdin`, and two commands asking for one pipe is a queue whose loser
+    // reads EOF. The `tests` command was the only consumer (DOR-116's
+    // delete-only skip) and it is gone; this one wants nothing from stdin and
+    // must not start.
+    //
     // The KEY at its own indent, not the word: the block's comment explains why
     // the key is absent, and a substring search would read that explanation as
     // the very thing it warns against.
-    expect(/^ {6}use_stdin:/m.test((formattingBlock as RegExpExecArray)[1] as string)).toBe(false);
+    expect(/^ {6}use_stdin:/m.test(prePush)).toBe(false);
   });
 });
 

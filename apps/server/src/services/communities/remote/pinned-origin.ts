@@ -58,8 +58,19 @@ export class PinnedHttpError extends Error {
   readonly code = 'REMOTE_RESPONSE' as const;
 }
 
-/** Accept HTTPS hosts, or literal localhost for disposable development servers. */
-export function parseCommunityOrigin(input: string): URL {
+const communityIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/** A checked Community link keeps tenant selection separate from its socket origin. */
+export interface ParsedCommunityLink {
+  /** Origin used for DNS validation and every network request. */
+  origin: URL;
+  /** Explicit immutable tenant, or null for the singleton compatibility path. */
+  communityId: string | null;
+}
+
+/** Parse either an origin root or the exact canonical `/c/:communityId` browser link. */
+export function parseCommunityLink(input: string): ParsedCommunityLink {
   let url: URL;
   try {
     url = new URL(input);
@@ -73,11 +84,30 @@ export function parseCommunityOrigin(input: string): URL {
     url.username ||
     url.password ||
     url.search ||
-    url.hash ||
-    (url.pathname !== '/' && url.pathname !== '')
+    url.hash
   )
     throw new PinnedOriginError('INVALID_ORIGIN');
-  return new URL(url.origin);
+  const match = /^\/c\/([^/]+)$/.exec(url.pathname);
+  if (url.pathname !== '/' && url.pathname !== '' && !match)
+    throw new PinnedOriginError('INVALID_ORIGIN');
+  const communityId = match?.[1] ?? null;
+  if (communityId !== null && !communityIdPattern.test(communityId))
+    throw new PinnedOriginError('INVALID_ORIGIN');
+  return { origin: new URL(url.origin), communityId };
+}
+
+/** Qualify one fixed v1 API path with the selected immutable tenant UUID. */
+export function communityApiPath(communityId: string, path: string): string {
+  if (!communityIdPattern.test(communityId) || !path.startsWith('/api/v1/'))
+    throw new PinnedOriginError('INVALID_ORIGIN');
+  return `/api/v1/communities/${communityId}${path.slice('/api/v1'.length)}`;
+}
+
+/** Accept HTTPS hosts, or literal localhost for disposable development servers. */
+export function parseCommunityOrigin(input: string): URL {
+  const parsed = parseCommunityLink(input);
+  if (parsed.communityId) throw new PinnedOriginError('INVALID_ORIGIN');
+  return parsed.origin;
 }
 
 /** Verify every DNS answer before any socket is opened. */

@@ -234,6 +234,7 @@ export function createCommunityApp({
       await resolveCommunityContext(c, pool, {
         allowPendingOwner: true,
         allowSuspended: true,
+        allowDeletionPending: true,
       });
     }
     await next();

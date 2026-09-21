@@ -65,6 +65,13 @@ export const CommunityAdminSettingsSchema = z.strictObject({
   lifecycle: CommunityAdminLifecycleSchema,
   lifecycleVersion: version,
 });
+/** Safe current settings returned when an administrative edit conflicts. */
+export const CommunityAdminSettingsConflictSchema = z.strictObject({
+  code: z.literal('STATE_CONFLICT'),
+  message: z.string(),
+  current: CommunityAdminSettingsSchema,
+});
+
 /** Versioned presentation and access mutation. */
 export const CommunityAdminSettingsUpdateRequestSchema = z
   .strictObject({

@@ -1,7 +1,7 @@
 {
   "name": "@dorkos/monorepo",
   "private": true,
-  "version": "0.75.1",
+  "version": "0.76.0",
   "type": "module",
   "packageManager": "pnpm@10.28.2",
   "scripts": {
@@ -11,10 +11,10 @@
     "dev:desktop": "dotenv -- turbo dev --filter=@dorkos/desktop",
     "dev:dogfood": "concurrently --names preview,cockpit --prefix-colors cyan,magenta --kill-others \"pnpm dev\" \"pnpm cli:dev\"",
     "build": "dotenv -- turbo build",
-    "test": "dotenv -- turbo test",
+    "test": "VITEST_MAX_WORKERS=$(test -n \"$CI\" || echo 4) dotenv -- turbo test",
     "typecheck": "dotenv -- turbo typecheck",
-    "verify": "pnpm test:scripts && pnpm lint:root && export TURBO_SCM_BASE=\"$(git rev-parse --verify --quiet origin/main || echo main)\" && turbo run typecheck lint --affected && turbo run test --affected --concurrency=1 -- --run",
-    "test:scripts": "pnpm typecheck:scripts && bash scripts/test-review-classifier.sh && bash scripts/test-git-guard.sh && bash scripts/test-process-guard.sh && bash scripts/test-merge-guard.sh && bash scripts/test-in-project-hook.sh && bash scripts/test-lint-changed-hook.sh && bash scripts/test-run-node-hook.sh && bash scripts/test-assert-tests-executed.sh && bash scripts/test-assert-shard-union.sh && bash scripts/test-assert-browser-tests-executed.sh && bash scripts/test-assert-migrations-current.sh && bash scripts/test-should-arm-automerge.sh && bash scripts/test-should-redispatch-review.sh && bash scripts/test-should-reap-worktree.sh && bash scripts/test-seeded-pack-changed.sh && bash scripts/test-check-dir-size.sh && bash scripts/test-homedir-guard.sh && bash scripts/test-supertest-import-guard.sh && bash scripts/test-format-changed.sh && bash scripts/test-pre-push-format-check.sh && bash scripts/test-check-banned-words.sh && bash scripts/test-check-dead-doc-paths.sh && bash scripts/test-check-nul-bytes.sh && bash scripts/test-wait-for-npm.sh && bash scripts/test-pre-push-watchdog.sh && bash scripts/test-run-credential-free.sh && bash .agents/skills/creating-pull-requests/scripts/test-watch-prs.sh && node --experimental-strip-types --disable-warning=ExperimentalWarning --test .claude/scripts/__tests__/*.test.ts && node .claude/scripts/docs-coverage-map.mjs --check && vitest run --config scripts/vitest.config.ts",
+    "verify": "pnpm test:scripts && pnpm lint:root && export TURBO_SCM_BASE=\"$(git rev-parse --verify --quiet origin/main || echo main)\" && export VITEST_MAX_WORKERS=$(test -n \"$CI\" || echo 4) && turbo run typecheck lint --affected && turbo run test --affected --concurrency=1 -- --run",
+    "test:scripts": "pnpm typecheck:scripts && bash scripts/test-review-classifier.sh && bash scripts/test-git-guard.sh && bash scripts/test-process-guard.sh && bash scripts/test-merge-guard.sh && bash scripts/test-in-project-hook.sh && bash scripts/test-lint-changed-hook.sh && bash scripts/test-run-node-hook.sh && bash scripts/test-assert-tests-executed.sh && bash scripts/test-assert-shard-union.sh && bash scripts/test-assert-browser-tests-executed.sh && bash scripts/test-assert-migrations-current.sh && bash scripts/test-should-arm-automerge.sh && bash scripts/test-should-redispatch-review.sh && bash scripts/test-should-reap-worktree.sh && bash scripts/test-seeded-pack-changed.sh && bash scripts/test-check-dir-size.sh && bash scripts/test-homedir-guard.sh && bash scripts/test-supertest-import-guard.sh && bash scripts/test-format-changed.sh && bash scripts/test-pre-push-format-check.sh && bash scripts/test-check-banned-words.sh && bash scripts/test-check-dead-doc-paths.sh && bash scripts/test-check-nul-bytes.sh && bash scripts/test-wait-for-npm.sh && bash scripts/test-heavy-run-lock.sh && bash scripts/test-run-credential-free.sh && bash .agents/skills/creating-pull-requests/scripts/test-watch-prs.sh && node --experimental-strip-types --disable-warning=ExperimentalWarning --test .claude/scripts/__tests__/*.test.ts && node .claude/scripts/docs-coverage-map.mjs --check && vitest run --config scripts/vitest.config.ts",
     "start": "dotenv -- pnpm --filter=@dorkos/server run start",
     "lint": "turbo lint",
     "lint:root": "eslint .",

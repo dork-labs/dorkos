@@ -1,10 +1,10 @@
 ---
 covers:
   - 'feat(community): qualify tenant authorization'
+  - 'fix(community): preserve singleton pairing approval'
 ---
 
 ### Added
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- Qualify tenant authorization
+- Community requests now stay within the selected community, including files, agents, exports, and live updates.
+- Existing single-community links can still approve new local connections after a Community server upgrade.

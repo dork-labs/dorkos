@@ -206,6 +206,14 @@ export class RemoteRoomSubscriptionRuntime {
     this.refresh();
   }
 
+  /** Fence all streams, cached grants, queued delivery, and turns derived from one owner grant. */
+  async revokeConnection(communityRef: CommunityRef, ownerAuthorId: string): Promise<void> {
+    this.membershipVersion += 1;
+    this.abortStreamsForConnection(communityRef, ownerAuthorId);
+    await this.deps.bridge.revokeConnection(communityRef, ownerAuthorId);
+    this.refresh();
+  }
+
   /** Reconcile immediately after enrollment, ejection, or membership changes. */
   refreshSubscriptions(): void {
     this.refresh();
@@ -514,6 +522,18 @@ export class RemoteRoomSubscriptionRuntime {
         subscription.communityRef === communityRef &&
         subscription.ownerAuthorId === ownerAuthorId &&
         subscription.localAgentId === localAgentId
+      ) {
+        subscription.abort.abort();
+        this.running.delete(key);
+      }
+    }
+  }
+
+  private abortStreamsForConnection(communityRef: CommunityRef, ownerAuthorId: string): void {
+    for (const [key, subscription] of this.running) {
+      if (
+        subscription.communityRef === communityRef &&
+        subscription.ownerAuthorId === ownerAuthorId
       ) {
         subscription.abort.abort();
         this.running.delete(key);

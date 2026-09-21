@@ -3,10 +3,11 @@ import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { HaltRoomResponseSchema } from '@dorkos/shared/room-schemas';
+import type { CommunityConnection, CommunityRef } from '@dorkos/shared/community-adapter';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => {
-  const ref = 'remote_owner_a';
+  const ref = 'remote_owner_a' as CommunityRef;
   const room = {
     community: ref,
     roomId: 'room-a',
@@ -35,6 +36,10 @@ const fixture = vi.hoisted(() => {
   };
   const uploadedBytes: Uint8Array[][] = [];
   const adapter = {
+    connect: vi.fn<() => Promise<CommunityConnection>>(async () => ({
+      status: 'connected' as const,
+      identity: { community: ref, memberId: 'human-a' },
+    })),
     postEntry: vi.fn(async () => entry),
     listEntriesWithThreadRoot: vi.fn(async () => ({ entries: [entry], nextCursor: null })),
     uploadAttachment: vi.fn(
@@ -103,6 +108,7 @@ const fixture = vi.hoisted(() => {
     haltRoomAgent: vi.fn(async () => 1),
     leaveRoom: vi.fn(async () => undefined),
     revokeEnrollment: vi.fn(async () => undefined),
+    revokeConnection: vi.fn(async () => undefined),
     refreshSubscriptions: vi.fn(),
   };
   return {
@@ -112,7 +118,7 @@ const fixture = vi.hoisted(() => {
     adapter,
     uploadedBytes,
     lifecycle,
-    retryResult: 'retried' as 'retried' | 'missing' | 'terminal' | 'in-flight',
+    retryResult: 'retried' as 'retried' | 'queued' | 'missing' | 'terminal' | 'in-flight',
     retryCalls: [] as Array<{
       communityRef: string;
       remoteRoomId: string;
@@ -149,7 +155,7 @@ vi.mock('../../services/communities/remote/state.js', () => ({
         attachments: [],
         state: 'pending',
         failure: null,
-        retryable: fixture.retryResult !== 'in-flight',
+        retryable: fixture.retryResult !== 'in-flight' && fixture.retryResult !== 'queued',
       },
     ],
   }),
@@ -206,6 +212,7 @@ vi.mock('../../services/rooms/index.js', () => ({
 }));
 
 import { createRemoteCommunitiesRouter } from '../remote-communities.js';
+import { RemoteConnectionAuthorizationError } from '../../services/communities/remote/connection-store.js';
 
 function app() {
   const instance = express();
@@ -216,12 +223,36 @@ function app() {
 
 const testServer = listeningServer(app());
 
+async function* failingRoomStream(error: Error): AsyncGenerator<never, void, unknown> {
+  throw error;
+}
+
 describe('qualified remote community writes and live projections', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fixture.uploadedBytes.length = 0;
     fixture.retryResult = 'retried';
     fixture.retryCalls.length = 0;
+  });
+
+  it('distinguishes a rejected remote grant from an unavailable community', async () => {
+    fixture.adapter.listRooms.mockRejectedValueOnce(new RemoteConnectionAuthorizationError());
+    const response = await request(testServer).get(`/api/communities/${fixture.ref}/rooms`);
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      code: 'COMMUNITY_RECONNECT_REQUIRED',
+      error: 'Reconnect this community to continue.',
+    });
+  });
+
+  it('keeps a temporary connection failure distinct from a rejected grant', async () => {
+    fixture.adapter.connect.mockResolvedValueOnce({
+      status: 'unreachable',
+      error: 'The community returned HTTP 503.',
+    });
+    const response = await request(testServer).get(`/api/communities/${fixture.ref}/rooms`);
+    expect(response.status).toBe(502);
+    expect(response.body).toEqual({ error: 'Community unavailable.' });
   });
 
   it('posts only as the connected human and does not attach agent-only origin metadata', async () => {
@@ -339,6 +370,34 @@ describe('qualified remote community writes and live projections', () => {
         active: true,
       }),
     ]);
+  });
+
+  it('closes a stream as revoked when its personal grant is authoritatively rejected', async () => {
+    fixture.adapter.subscribeRoom.mockImplementationOnce(() =>
+      failingRoomStream(new RemoteConnectionAuthorizationError())
+    );
+
+    const events = await request(testServer).get(
+      `/api/communities/${fixture.ref}/rooms/room-a/events`
+    );
+
+    expect(events.status).toBe(200);
+    expect(events.text).toContain('event: closed');
+    expect(events.text).toContain('"reason":"revoked"');
+  });
+
+  it('keeps a generic stream failure classified as unavailable', async () => {
+    fixture.adapter.subscribeRoom.mockImplementationOnce(() =>
+      failingRoomStream(new Error('temporary outage'))
+    );
+
+    const events = await request(testServer).get(
+      `/api/communities/${fixture.ref}/rooms/room-a/events`
+    );
+
+    expect(events.status).toBe(200);
+    expect(events.text).toContain('event: closed');
+    expect(events.text).toContain('"reason":"unavailable"');
   });
 
   it('projects the authenticated wire key in history and an opening snapshot before any receipt', async () => {
@@ -531,7 +590,7 @@ describe('qualified remote community writes and live projections', () => {
     expect(malformed.status).toBe(400);
   });
 
-  it('treats an already in-flight delivery as an idempotent accepted retry', async () => {
+  it('treats an already in-flight or queued delivery as an idempotent accepted retry', async () => {
     fixture.retryResult = 'in-flight';
     const response = await request(testServer).post(
       `/api/communities/${fixture.ref}/rooms/room-a/deliveries/delivery-retry-a/retry`
@@ -556,6 +615,17 @@ describe('qualified remote community writes and live projections', () => {
         idempotencyKey: 'delivery-retry-a',
       },
     ]);
+
+    fixture.retryResult = 'queued';
+    const queued = await request(testServer).post(
+      `/api/communities/${fixture.ref}/rooms/room-a/deliveries/delivery-retry-a/retry`
+    );
+    expect(queued.status).toBe(202);
+    expect(queued.body).toMatchObject({
+      community: fixture.ref,
+      roomId: 'room-a',
+      deliveries: [{ idempotencyKey: 'delivery-retry-a', state: 'pending', retryable: false }],
+    });
 
     fixture.retryResult = 'terminal';
     const terminal = await request(testServer).post(

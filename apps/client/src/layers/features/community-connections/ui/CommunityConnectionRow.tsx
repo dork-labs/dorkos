@@ -22,6 +22,7 @@ export function CommunityConnectionRow({ connection, approvalUrl, onOutcome, onR
   const approvalLink = useRef<HTMLAnchorElement>(null);
   const wasConfirming = useRef(false);
   const pending = connection.status === 'pending';
+  const reconnectRequired = connection.status === 'reconnect-required';
   const poll = useQuery({
     queryKey: communityKeys.approval(connection.ref),
     queryFn: () => transport.pollCommunityConnection(connection.ref),
@@ -67,7 +68,9 @@ export function CommunityConnectionRow({ connection, approvalUrl, onOutcome, onR
       onOutcome(
         pending
           ? `Approval for ${connection.label} was cancelled.`
-          : `${connection.label} is disconnected.`
+          : reconnectRequired
+            ? `${connection.label} is disconnected. Connect again to continue.`
+            : `${connection.label} is disconnected.`
       );
       onRemoved();
     },
@@ -82,7 +85,18 @@ export function CommunityConnectionRow({ connection, approvalUrl, onOutcome, onR
         <div className="min-w-0">
           <h4 className="text-sm font-medium">{connection.label}</h4>
           <p className="text-muted-foreground text-xs break-all">{connection.pinnedOrigin}</p>
-          <p className="mt-1 text-sm">{pending ? 'Waiting for your approval' : 'Connected'}</p>
+          <p className="mt-1 text-sm">
+            {pending
+              ? 'Waiting for your approval'
+              : reconnectRequired
+                ? 'Reconnect required'
+                : 'Connected'}
+          </p>
+          {reconnectRequired && (
+            <p className="text-muted-foreground mt-1 text-sm">
+              Disconnect here, then connect again.
+            </p>
+          )}
         </div>
         {!confirm && (
           <Button
@@ -90,7 +104,7 @@ export function CommunityConnectionRow({ connection, approvalUrl, onOutcome, onR
             size="sm"
             variant="outline"
             disabled={remove.isPending}
-            onClick={() => (pending ? remove.mutate() : setConfirm(true))}
+            onClick={() => (pending || reconnectRequired ? remove.mutate() : setConfirm(true))}
             aria-label={`${pending ? 'Cancel approval for' : 'Disconnect'} ${connection.label}`}
           >
             {pending ? 'Cancel approval' : 'Disconnect'}

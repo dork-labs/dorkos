@@ -31,6 +31,7 @@
  */
 import { statSync } from 'node:fs';
 import { chromium, request, type APIResponse, type FullConfig } from '@playwright/test';
+import { measureGlobalSetup } from './setup-timing';
 
 /**
  * Where a leg's `DORK_HOME` is allowed to be.
@@ -347,6 +348,8 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   );
   // Prompts first, and on every leg: the warm-up waits for the app shell, which
   // the first-run wizard renders instead of, and which the consent modal covers.
-  await Promise.all([...baseURLs].map(dismissOnboarding));
-  await Promise.all([...baseURLs].map(warmClient));
+  await measureGlobalSetup(config, async () => {
+    await Promise.all([...baseURLs].map(dismissOnboarding));
+    await Promise.all([...baseURLs].map(warmClient));
+  });
 }

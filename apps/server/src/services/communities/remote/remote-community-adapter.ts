@@ -54,8 +54,13 @@ import {
   parseCommunityOrigin,
   pinnedJson,
   pinnedSse,
+  communityApiPath,
 } from './pinned-origin.js';
-import { RemoteConnectionNotFoundError, RemoteConnectionStore } from './connection-store.js';
+import {
+  RemoteConnectionAuthorizationError,
+  RemoteConnectionNotFoundError,
+  RemoteConnectionStore,
+} from './connection-store.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 
 const capabilities: CommunityCapabilities = {
@@ -264,21 +269,71 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     readonly community: CommunityRef,
     private readonly ownerKey: string,
     private readonly store: RemoteConnectionStore,
-    private readonly enrollments?: CommunityAgentEnrollmentStore
+    private readonly enrollments?: CommunityAgentEnrollmentStore,
+    private readonly onReconnectRequired?: (
+      communityRef: CommunityRef,
+      ownerKey: string
+    ) => Promise<void>
   ) {}
 
   getCapabilities(): CommunityCapabilities {
     return structuredClone(capabilities);
   }
 
-  private async origin(): Promise<URL> {
-    return parseCommunityOrigin((await this.store.get(this.community, this.ownerKey)).pinnedOrigin);
+  private async endpoint(path: string): Promise<{ origin: URL; path: string }> {
+    const descriptor = await this.store.get(this.community, this.ownerKey);
+    return {
+      origin: parseCommunityOrigin(descriptor.pinnedOrigin),
+      path: communityApiPath(descriptor.remoteCommunityId, path),
+    };
   }
 
   private async credential(context?: CommunityReadContext): Promise<string> {
     if (context?.actingMemberId)
       return this.store.agentToken(this.community, this.ownerKey, context.actingMemberId);
     return this.store.personalToken(this.community, this.ownerKey);
+  }
+
+  private async rejectedPersonalGrant(
+    error: unknown,
+    context: CommunityReadContext | undefined,
+    path: string
+  ): Promise<never> {
+    if (
+      !context?.actingMemberId &&
+      error instanceof PinnedHttpError &&
+      (error.status === 401 || error.status === 403)
+    ) {
+      let rejected = error.status === 401 && path === COMMUNITY_API_V1_ROUTES.channels;
+      if (!rejected && path !== COMMUNITY_API_V1_ROUTES.channels) {
+        try {
+          const target = await this.endpoint(COMMUNITY_API_V1_ROUTES.channels);
+          await pinnedJson(target.origin, target.path, undefined, undefined, {
+            authorization: await this.credential(),
+          });
+        } catch (probeError) {
+          rejected = probeError instanceof PinnedHttpError && probeError.status === 401;
+        }
+      }
+      if (rejected) {
+        await this.requireReconnect();
+        throw new RemoteConnectionAuthorizationError();
+      }
+    }
+    throw error;
+  }
+
+  private async requireReconnect(): Promise<void> {
+    const results = await Promise.allSettled([
+      this.onReconnectRequired?.(this.community, this.ownerKey) ?? Promise.resolve(),
+      this.store.requireReconnect(this.community, this.ownerKey),
+    ]);
+    const failures = results.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason] : []
+    );
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(failures, 'Failed to revoke the rejected community connection');
   }
 
   private async request(
@@ -288,12 +343,17 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     signal?: AbortSignal
   ): Promise<unknown> {
-    return pinnedJson(await this.origin(), path, body, signal, {
-      method,
-      authorization: await this.credential(context),
-      maxBytes: 1024 * 1024,
-      accept: method === 'DELETE' ? [200, 201, 204] : [200, 201],
-    });
+    try {
+      const endpoint = await this.endpoint(path);
+      return await pinnedJson(endpoint.origin, endpoint.path, body, signal, {
+        method,
+        authorization: await this.credential(context),
+        maxBytes: 1024 * 1024,
+        accept: method === 'DELETE' ? [200, 201, 204] : [200, 201],
+      });
+    } catch (error) {
+      return this.rejectedPersonalGrant(error, context, path);
+    }
   }
 
   async connect(): Promise<CommunityConnection> {
@@ -302,7 +362,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       const token = await this.credential();
       await pinnedJson(
         parseCommunityOrigin(descriptor.pinnedOrigin),
-        COMMUNITY_API_V1_ROUTES.channels,
+        communityApiPath(descriptor.remoteCommunityId, COMMUNITY_API_V1_ROUTES.channels),
         undefined,
         undefined,
         { authorization: token }
@@ -312,8 +372,17 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
         identity: { community: this.community, memberId: descriptor.connectedHumanMemberId! },
       };
     } catch (error) {
-      if (error instanceof PinnedHttpError && (error.status === 401 || error.status === 403))
+      if (error instanceof PinnedHttpError && error.status === 401) {
+        await this.requireReconnect();
         return { status: 'unauthorized', error: 'The stored community grant was rejected.' };
+      }
+      if (error instanceof RemoteConnectionAuthorizationError)
+        return { status: 'unauthorized', error: 'Reconnect this community to continue.' };
+      if (error instanceof PinnedHttpError)
+        return {
+          status: 'unreachable',
+          error: `The community returned HTTP ${error.status}.`,
+        };
       if (error instanceof PinnedOriginError) return { status: 'unreachable', error: error.code };
       return { status: 'unauthorized', error: 'The stored community grant is unavailable.' };
     }
@@ -432,14 +501,16 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(roomId))
       throw new CommunityRoomNotFoundError(this.community, roomId);
     const community = this.community;
-    const origin = this.origin.bind(this);
+    const endpoint = this.endpoint.bind(this);
     const credential = this.credential.bind(this);
+    const rejectedPersonalGrant = this.rejectedPersonalGrant.bind(this);
     const cancelled = new AbortController();
     const stream: AsyncGenerator<RemoteNativeRoomEvent, void, unknown> = (async function* () {
       try {
+        const target = await endpoint(`/api/v1/channels/${encodeURIComponent(roomId)}/events`);
         for await (const raw of pinnedSse(
-          await origin(),
-          `/api/v1/channels/${encodeURIComponent(roomId)}/events`,
+          target.origin,
+          target.path,
           await credential(context),
           sinceCursor,
           signal ? AbortSignal.any([signal, cancelled.signal]) : cancelled.signal
@@ -473,7 +544,15 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
         }
       } catch (error) {
         if (cancelled.signal.aborted || signal?.aborted) return;
-        throw remoteRoomError(error, community, roomId);
+        try {
+          await rejectedPersonalGrant(
+            error,
+            context,
+            `/api/v1/channels/${encodeURIComponent(roomId)}/events`
+          );
+        } catch (reconciled) {
+          throw remoteRoomError(reconciled, community, roomId);
+        }
       }
     })();
     return {
@@ -631,25 +710,22 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       if (size > MAX_REMOTE_ATTACHMENT_BYTES) throw new PinnedOriginError('REMOTE_RESPONSE');
       chunks.push(Buffer.from(chunk));
     }
+    const target = await this.endpoint(
+      `/api/v1/channels/${encodeURIComponent(roomId)}/attachments`
+    );
     const data = CommunityWireAttachmentUploadResponseSchema.parse(
-      await pinnedJson(
-        await this.origin(),
-        `/api/v1/channels/${encodeURIComponent(roomId)}/attachments`,
-        undefined,
-        signal,
-        {
-          method: 'POST',
-          authorization: await this.credential({ actingMemberId: input.actingMemberId }),
-          rawBody: Buffer.concat(chunks),
-          contentType: input.contentType,
-          headers: {
-            'x-file-name': encodeURIComponent(input.name),
-            'x-file-size': String(input.byteSize),
-            'idempotency-key': input.idempotencyKey,
-          },
-          maxBytes: 128 * 1024,
-        }
-      )
+      await pinnedJson(target.origin, target.path, undefined, signal, {
+        method: 'POST',
+        authorization: await this.credential({ actingMemberId: input.actingMemberId }),
+        rawBody: Buffer.concat(chunks),
+        contentType: input.contentType,
+        headers: {
+          'x-file-name': encodeURIComponent(input.name),
+          'x-file-size': String(input.byteSize),
+          'idempotency-key': input.idempotencyKey,
+        },
+        maxBytes: 128 * 1024,
+      })
     );
     return portableAttachment(data.attachment);
   }
@@ -659,18 +735,22 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     attachmentId: string,
     context?: CommunityReadContext
   ): Promise<DownloadCommunityAttachment> {
-    const bytes = (await pinnedJson(
-      await this.origin(),
-      `/api/v1/attachments/${encodeURIComponent(attachmentId)}`,
-      undefined,
-      undefined,
-      {
+    const target = await this.endpoint(`/api/v1/attachments/${encodeURIComponent(attachmentId)}`);
+    let bytes: Buffer;
+    try {
+      bytes = (await pinnedJson(target.origin, target.path, undefined, undefined, {
         method: 'GET',
         authorization: await this.credential(context),
         response: 'buffer',
         maxBytes: MAX_REMOTE_ATTACHMENT_BYTES,
-      }
-    )) as Buffer;
+      })) as Buffer;
+    } catch (error) {
+      return this.rejectedPersonalGrant(
+        error,
+        context,
+        `/api/v1/attachments/${encodeURIComponent(attachmentId)}`
+      );
+    }
     return {
       attachment: {
         id: attachmentId,

@@ -100,6 +100,61 @@ test('unlinked Accounts opens the existing owner account settings @smoke', async
     .screenshot({ path: testInfo.outputPath('accounts-mobile.png') });
 });
 
+test('a revoked community grant gives a direct remove-and-reconnect path', async ({
+  page,
+}, testInfo) => {
+  let removed = false;
+  await page.route('**/api/community-connections**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path === '/api/community-connections') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          connections: removed
+            ? []
+            : [
+                {
+                  ref: 'remote_revoked',
+                  remoteCommunityId: 'community-revoked',
+                  label: 'Writers Space',
+                  pinnedOrigin: 'https://spaces.example',
+                  connectedHumanMemberId: 'member-revoked',
+                  status: 'reconnect-required',
+                  expiresAt: null,
+                },
+              ],
+        }),
+      });
+      return;
+    }
+    if (request.method() === 'DELETE' && path === '/api/community-connections/remote_revoked') {
+      removed = true;
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    await route.continue();
+  });
+
+  await gotoConnections(page);
+  const messaging = page.locator('[aria-labelledby="region-messaging"]');
+  const community = messaging.getByRole('listitem').filter({ hasText: 'Writers Space' });
+  await expect(community.getByText('Reconnect required')).toBeVisible();
+  await expect(community).toContainText('Disconnect here, then connect again.');
+  await testInfo.attach('community-reconnect-required.png', {
+    body: await community.screenshot(),
+    contentType: 'image/png',
+  });
+  await community.getByRole('button', { name: 'Disconnect Writers Space' }).click();
+  expect(removed).toBe(true);
+  await expect(community).toBeHidden();
+  await expect(
+    page.getByText('Writers Space is disconnected. Connect again to continue.', { exact: true })
+  ).toBeVisible();
+  await expect(page.getByLabel('Community address')).toBeFocused();
+});
+
 /**
  * Save the provider key through the real UI form and wait for the live
  * registration to land ("Ready" badge on the provider card).

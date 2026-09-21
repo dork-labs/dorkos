@@ -170,3 +170,37 @@ Tasks 2.1 through 2.3 reached VERIFY:
 - Review found that canonical pairing approval URLs reached the SPA but the browser entry selected Pairing only for the legacy `/pairing` path. The browser root now renders Pairing for the exact `/c/:communityId/pairing` shape, and the existing Playwright pairing flow uses the actual server-issued canonical URL. Both desktop and narrow-viewport cases pass 2/2.
 - Review also found that an already-open SSE stream rechecked credential, member, and channel state but not the selected community lifecycle. Human and agent access checks now require that same tenant to remain active. The real HTTP/PostgreSQL admission suite passes 17/17 and proves suspending B closes B's stream while A continues to deliver an entry.
 - Removing the lifecycle joins makes that same real-PostgreSQL test fail because B emits an entry after suspension; restoring the fix returns the suite to green. The red run is retained at `.temp/tenant-authorization-review/suspension-mutant.log`.
+
+### Session 7 - 2026-09-21
+
+**Workers:** _(none — implementation remains in this owning session)_
+
+- Task 3.1 is complete through the accepted tenant-authorization batch: invitations, pending admissions, pairings, personal grants, agent credentials, read cursors, and their transactional rechecks carry one immutable community UUID.
+- A local connection now accepts either the singleton-compatible origin root or an exact canonical `/c/:communityId` link. The parser keeps that UUID separate from the DNS-checked socket origin and rejects credentials, query strings, fragments, encoded or extra path segments, and malformed identifiers.
+- Discovery, pairing start/poll/exchange/cancel, ordinary JSON requests, event streams, attachment upload, and attachment download all use the stored immutable community UUID. Browser-selected input cannot rewrite an existing connection.
+- Two canonical links at one origin create distinct local refs without exposing a tenant directory. An ambiguous origin-only discovery returns local HTTP `409` with stable code `COMMUNITY_SELECTION_REQUIRED`; a canonical link to either tenant still succeeds.
+- Existing stored connections already persist both `pinnedOrigin` and `remoteCommunityId`, so the qualified adapter upgrades them without rebinding. Singleton origin input remains available only while remote discovery is unambiguous.
+- New clients intentionally use only tenant-qualified endpoints. After authoritative singleton discovery, a `404` from the qualified pairing endpoint becomes local HTTP `426` with stable code `COMMUNITY_UPGRADE_REQUIRED`; it never falls back to the legacy unqualified write path. The minimum compatible server is one that implements `/api/v1/communities/:communityId/*`. New servers retain unqualified aliases for existing one-community clients.
+- Singleton aliases also retain the legacy `/pairing` approval URL expected by old local clients. Qualified pairing starts return `/c/:communityId/pairing`; once a second community exists, the unqualified start is refused before any pairing or approval URL is created.
+- Community IDs in links must use the server's canonical lowercase UUID form. Uppercase, encoded, malformed, or mismatched IDs are rejected rather than being silently rebound.
+- Real pinned-HTTP and local-route coverage passes 31/31 with one opt-in live test skipped, including two same-origin tenants, strict SSRF/redirect/path refusal, qualified pairing, JSON, SSE, upload and download traffic, typed selection-required behavior, and the conservative legacy-server upgrade response. The real PostgreSQL admission suite passes 17/17 and proves distinct legacy and qualified approval URLs. Server typecheck passes; server lint reports no errors and only existing warnings.
+- Tasks 3.1 and 3.2 are complete. DOR-2184 separately owns the local DorkOS switcher; this issue still owns the Community host browser chooser in Task 3.3.
+
+### Session 8 - 2026-09-21
+
+**Workers:** _(none — implementation remains in this owning session)_
+
+- Task 3.3 adds a host-wide authenticated membership projection that returns only the current account's own active membership rows with community name, immutable UUID, role, display name, and lifecycle. It exposes neither an unauthenticated directory nor host-operator-wide tenant metadata.
+- The host root enters a sole membership through its canonical `/c/:communityId` route and presents a responsive chooser for several memberships. The remembered UUID is display preference only; every server request still derives authority from the session and selected tenant.
+- Community changes use a full document navigation. That closes the old event stream and discards the old React/query state before any new tenant request. A canonical page that loses membership or active lifecycle returns to the chooser without signing out the host account. Suspended memberships remain visible there but cannot be entered.
+- The Community browser acceptance passes 3/3 across both browser files. It creates a second same-host membership for the same account, switches A→B through the real chooser, proves every observed API request is qualified to B, and shows B as disabled after suspension. The real PostgreSQL admission suite passes 17/17; its own-membership proof lists only current memberships and tracks suspension without exposing another account's rows.
+- Native Community participation remains outbound pinned HTTP/SSE. It creates no new inbound A2A surface and does not change the shipped API-key A2A policy; DOR-2085 remains a separate compatibility-sensitive follow-up rather than a blocker for this feature.
+
+### Session 9 - 2026-09-21 — adversarial admission review
+
+- Independent review of c450 found two Important admission/recovery defects and a task ownership wording Nit. Root implemented the fixes after the original worker hit model capacity.
+- Signed-out multi-community hosts present host account sign-in without treating the host as a new community bootstrap. Successful sign-in returns to the authenticated own-membership chooser.
+- Social admission stores the canonical invite path and callbacks to it. Root callbacks resume a saved canonical invite before the empty membership chooser; legacy singleton pending invites still reach admission. New invitation links use the canonical community path.
+- Initial canonical member removal or community suspension returns to the chooser, matching the existing polling recovery. The task prose now explicitly separates this host chooser from DOR-2184's local app switcher.
+- Full community build/browser acceptance: 3/3. Added real signed-out host login, initial removed-member reload, suspended-community reload, and a pending-invite OAuth callback recovery. The external OAuth request alone is intercepted; invitation preflight, stored browser state, existing auth session, redemption, and qualified community entry use the real service. The first fixture omitted the required preflight cookie and failed; retained that red evidence, corrected the fixture, and reran successfully.
+- Independent delta review remains required before PR creation.

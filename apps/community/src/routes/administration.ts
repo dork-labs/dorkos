@@ -10,7 +10,7 @@ import {
 } from '@dorkos/shared/community-admin-wire';
 import type { CommunityAuth } from '../auth.js';
 import { requireMember, requireSessionUser, transaction, type Member } from '../data.js';
-import { ApiError, json, readJson } from '../http.js';
+import { AdminSettingsConflict, ApiError, json, readJson } from '../http.js';
 import {
   BlobStoreError,
   completeManagedBlobCommit,
@@ -49,9 +49,9 @@ function projectSettings(row: SettingsRow) {
   };
 }
 
-function parseIfMatch(value: string | undefined): number {
+function parseIfMatch(value: string | undefined): number | null {
   const match = value?.match(/^(?:W\/)?"?(\d+)"?$/);
-  if (!match) throw new ApiError(409, 'STATE_CONFLICT', 'A current settings ETag is required.');
+  if (!match) return null;
   return Number(match[1]);
 }
 
@@ -184,7 +184,7 @@ export function registerAdministrationRoutes(
         assertReadableLifecycle(current);
       }
       if (current.settings_version !== expectedVersion) {
-        throw new ApiError(409, 'STATE_CONFLICT', 'Community settings changed.');
+        throw new AdminSettingsConflict(projectSettings(current));
       }
       if (
         currentActor.role !== 'owner' &&
@@ -241,7 +241,7 @@ export function registerAdministrationRoutes(
         assertReadableLifecycle(current);
       }
       if (current.settings_version !== expectedVersion)
-        throw new ApiError(409, 'STATE_CONFLICT', 'Community settings changed.');
+        throw new AdminSettingsConflict(projectSettings(current));
       return reserveManagedBlob(client, current.id, 'icon');
     });
     let stored;
@@ -263,7 +263,7 @@ export function registerAdministrationRoutes(
         const current = await lockSettings(client, actor.community_id);
         const currentActor = await lockMember(client, actor, ['owner', 'admin']);
         if (current.lifecycle !== 'active' || current.settings_version !== expectedVersion)
-          throw new ApiError(409, 'STATE_CONFLICT', 'Community settings changed.');
+          throw new AdminSettingsConflict(projectSettings(current));
         await prepareManagedBlobCommit(client, reservation, stored);
         const updated = await client.query<SettingsRow>(
           `UPDATE communities SET icon_blob_key=$2,icon_content_type=$3,
@@ -297,7 +297,7 @@ export function registerAdministrationRoutes(
       const current = await lockSettings(client, actor.community_id);
       const currentActor = await lockMember(client, actor, ['owner', 'admin']);
       if (current.lifecycle !== 'active' || current.settings_version !== expectedVersion)
-        throw new ApiError(409, 'STATE_CONFLICT', 'Community settings changed.');
+        throw new AdminSettingsConflict(projectSettings(current));
       const updated = await client.query<SettingsRow>(
         `UPDATE communities SET icon_blob_key=NULL,icon_content_type=NULL,
            settings_version=settings_version+1 WHERE id=$1
@@ -376,7 +376,7 @@ export function registerAdministrationRoutes(
       const current = await lockSettings(client, actor.community_id);
       const currentActor = await lockMember(client, actor, ['owner']);
       if (current.lifecycle_version !== body.lifecycleVersion) {
-        throw new ApiError(409, 'STATE_CONFLICT', 'Community lifecycle changed.');
+        throw new AdminSettingsConflict(projectSettings(current));
       }
       if (body.action === 'archive') {
         if (current.lifecycle !== 'active') {
@@ -418,8 +418,32 @@ export function registerAdministrationRoutes(
     return json(c, CommunityAdminSettingsSchema, projectSettings(row));
   });
 
+  app.get('/owner/deletion', async (c) => {
+    const actor = await requireMember(c, auth, pool, { allowDeletionPending: true });
+    const result = await transaction(pool, async (client) => {
+      const current = await lockSettings(client, actor.community_id);
+      const currentActor = await lockMember(client, actor, ['owner']);
+      const status = await client.query(
+        `SELECT c.id AS community_id,c.lifecycle,c.lifecycle_version,c.delete_after,
+                c.delete_requested_by,j.state,j.attempts
+         FROM communities c LEFT JOIN community_deletion_jobs j ON j.community_id=c.id
+         WHERE c.id=$1`,
+        [current.id]
+      );
+      const row = status.rows[0];
+      if (current.lifecycle === 'deletion_pending' && row.delete_requested_by !== currentActor.id) {
+        throw new ApiError(403, 'FORBIDDEN', 'Only the requesting owner can view this deletion.');
+      }
+      if (!['active', 'archived', 'deletion_pending'].includes(current.lifecycle)) {
+        throw new ApiError(409, 'STATE_CONFLICT', 'Deletion status is unavailable.');
+      }
+      return row;
+    });
+    return json(c, CommunityAdminDeletionStatusSchema, deletionProjection(result));
+  });
+
   app.post('/owner/deletion', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const actor = await requireMember(c, auth, pool, { allowDeletionPending: true });
     const body = await readJson(c, CommunityAdminDeletionRequestSchema);
     await verifyPassword(auth, c.req.raw, body.password);
     const result = await transaction(pool, async (client) => {
@@ -439,7 +463,7 @@ export function registerAdministrationRoutes(
         throw new ApiError(409, 'STATE_CONFLICT', 'This community cannot be deleted now.');
       }
       if (current.lifecycle_version !== body.lifecycleVersion) {
-        throw new ApiError(409, 'STATE_CONFLICT', 'Community lifecycle changed.');
+        throw new AdminSettingsConflict(projectSettings(current));
       }
       if (body.confirmName !== current.name || body.confirmIdSuffix !== current.id.slice(-8)) {
         throw new ApiError(409, 'STATE_CONFLICT', 'Deletion confirmation did not match.');
@@ -480,7 +504,7 @@ export function registerAdministrationRoutes(
   });
 
   app.post('/owner/deletion/cancel', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const actor = await requireMember(c, auth, pool, { allowDeletionPending: true });
     const body = await readJson(
       c,
       z.strictObject({ lifecycleVersion: z.int().positive(), password: z.string().min(1) })

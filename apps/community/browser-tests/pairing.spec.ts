@@ -20,6 +20,7 @@ let pool: Pool;
 let server: ReturnType<typeof serve>;
 let baseUrl: string;
 let ownerCookies: { name: string; value: string; url: string }[];
+let communityId: string;
 
 async function freePort() {
   const socket = createServer();
@@ -46,10 +47,11 @@ async function post(path: string, body: unknown, cookie = '') {
   });
 }
 
-async function pairing(installName: string) {
+async function pairing(installName: string, selectedCommunityId?: string) {
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
-  const started = await fetch(`${baseUrl}/api/v1/pairings/start`, {
+  const prefix = selectedCommunityId ? `/api/v1/communities/${selectedCommunityId}` : '/api/v1';
+  const started = await fetch(`${baseUrl}${prefix}/pairings/start`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ installName, challenge, scopes: ['read', 'post', 'enroll-agent'] }),
@@ -102,15 +104,13 @@ test.beforeAll(async () => {
   const allCookies = [...bootstrap, ...ownerCookies]
     .map((item) => `${item.name}=${item.value}`)
     .join('; ');
-  expect(
-    (
-      await post(
-        '/api/v1/bootstrap/claim',
-        { secret: config.bootstrapSecret, name: 'Browser test' },
-        allCookies
-      )
-    ).status
-  ).toBe(200);
+  const claim = await post(
+    '/api/v1/bootstrap/claim',
+    { secret: config.bootstrapSecret, name: 'Browser test' },
+    allCookies
+  );
+  expect(claim.status).toBe(200);
+  communityId = (await claim.json()).community.id;
 });
 
 test.afterAll(async () => {
@@ -125,7 +125,7 @@ test.describe('Community pairing approval @smoke', () => {
     page,
     context,
   }) => {
-    const { pairingId, approvalUrl, verifier } = await pairing('Kai’s laptop');
+    const { pairingId, approvalUrl, verifier } = await pairing('Kai’s laptop', communityId);
     expect(new URL(approvalUrl).pathname).toMatch(/^\/c\/[0-9a-f-]+\/pairing$/);
     const browserResponses: string[] = [];
     page.on('response', (response) => {
@@ -193,6 +193,7 @@ test.describe('Community pairing approval @smoke', () => {
     await context.addCookies(ownerCookies);
     const hostileName = '<img src=x onerror=window.__pairingXss=1>';
     const { pairingId, approvalUrl, verifier } = await pairing(hostileName);
+    expect(new URL(approvalUrl).pathname).toBe('/pairing');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(approvalUrl);
     await expect(page.getByText(hostileName)).toBeVisible();

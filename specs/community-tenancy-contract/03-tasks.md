@@ -32,9 +32,11 @@ Owned by DOR-2172, **Implement tenant-scoped persistence and authorization**.
 
 Owned by DOR-2173, **Add tenant-qualified discovery, pairing and DorkOS connections**.
 
-- [ ] **3.1 Bind invites, pairings, grants, agents, and cursors to a tenant.** Prevent replay or approval across communities.
-- [ ] **3.2 Qualify discovery and the remote Community adapter.** Extract one immutable UUID from a canonical community link while retaining origin pinning and singleton compatibility.
-- [ ] **3.3 Add the community chooser and safe cache switching.** Provide the Slack-like journey while closing old streams and state.
+- [x] **3.1 Bind invites, pairings, grants, agents, and cursors to a tenant.** Prevent replay or approval across communities.
+- [x] **3.2 Qualify discovery and the remote Community adapter.** Extract one immutable UUID from a canonical community link while retaining origin pinning and singleton compatibility.
+- [x] **3.3 Add the community chooser and safe cache switching.** Provide the Slack-like journey while closing old streams and state.
+
+DOR-2173 owns the host website chooser in Task 3.3. DOR-2184 owns the separate local app switcher and its cache switching; this phase does not duplicate that client work.
 
 ## Phase 4 — Isolation and Compatibility Proof
 

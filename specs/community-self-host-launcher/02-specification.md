@@ -51,21 +51,25 @@ The launcher may ship only after all of these are true:
 1. The Community release pipeline publishes a multi-platform OCI image and a signed release manifest that maps the DorkOS version to an immutable digest. The launcher refuses an unpinned tag.
 2. DOR-2167 records a passing live Fly + Neon + Tigris acceptance run for the same topology.
 3. The tested `flyctl` and Neon CLI minimum versions are declared. Startup rejects older versions and links to official installation instructions.
-4. Provider commands used by the launcher have machine-readable output or a narrow wrapper with fixture-based contract tests. Human console text is never parsed. Raw output from commands that return credentials is treated wholly as secret material and never rendered or retained.
+4. Provider commands and API calls used by the launcher have machine-readable output and narrow wrappers with fixture-based contract tests. Human console text is never parsed. Raw output from commands or API calls that can return credentials is treated wholly as secret material and never rendered or retained.
 5. The release's configuration schema and migration behavior match the rendered Fly config.
+
+The Community artifact is ready independently of the desktop and npm release paths. Before the first Community release, an operator must make the `ghcr.io/dork-labs/dorkos-community` package public; a newly created GHCR package may otherwise remain private. The release workflow attaches the manifest only after the immutable image, both attestations, and anonymous registry readback pass, so a missing public-package setup stops publication rather than producing a ready-looking private release. A launcher resolves only the exact requested or current DorkOS version. If that version's manifest is absent or not ready yet, it stops before consent with a clear `COMMUNITY_RELEASE_NOT_READY` result. It never substitutes a prior version, a mutable tag, or an unverified image. The accepted manifest's exact version and digest become part of the immutable `LaunchPlan`.
+
+`migrationCompatibilityId` is a SHA-256 fingerprint derived at release time from the tagged production SQL migration filenames and bytes in sorted order. It describes the exact image being published; it is not a launcher compatibility policy or a hand-maintained “through migration N” claim. The launcher keeps its supported fingerprints separately and refuses an unknown one before any provider write.
 
 ## Detailed design
 
 ### Command and process boundary
 
-`dorkos community deploy` runs entirely on the operator's machine. It starts neither the DorkOS server nor DorkOS Cloud. Provider commands inherit a minimal environment and receive no Community secret through `argv`. The launcher captures structured stdout, redacts provider-defined sensitive fields before diagnostic output, and never enables verbose provider logging during secret-bearing steps. Neon project creation and Tigris bucket creation can return credentials; their raw stdout and stderr go to a bounded sensitive sink that is never printed, journaled, or attached to an error. The wrapper emits its own sanitized result.
+`dorkos community deploy` runs entirely on the operator's machine. It starts neither the DorkOS server nor DorkOS Cloud. Provider commands inherit a minimal environment and receive no Community secret through `argv`. The launcher captures structured stdout, redacts provider-defined sensitive fields before diagnostic output, and never enables verbose provider logging during secret-bearing steps. Neon project creation and the Fly GraphQL add-on response can return credentials or provider metadata; their raw responses go to a bounded sensitive sink that is never printed, journaled, or attached to an error. The wrapper emits its own sanitized result. The Fly session token is obtained from the authenticated local `flyctl` profile into memory, used only as the authorization header for bounded requests to Fly's official GraphQL endpoint, and never placed in `argv`, an environment variable, a file, telemetry, or an error.
 
 The implementation lives under `packages/cli/src/commands/community-deploy/` with these boundaries:
 
 - `preflight.ts`: binary versions, browser sign-in, organizations, billing-readiness errors, region availability, and app-name availability.
 - `plan.ts`: immutable `LaunchPlan` creation and presentation.
 - `journal.ts`: atomic, mode-`0600` persistence of non-secret state.
-- `fly.ts` and `neon.ts`: typed command invocations and response validation.
+- `fly.ts` and `neon.ts`: typed command/API invocations and response validation.
 - `secrets.ts`: cryptographic generation, in-memory handoff, staged Fly import through stdin, and explicit clipboard action.
 - `execute.ts`: the state machine and compensation guidance.
 - `verify.ts`: resource inventory, health, storage, database migration, and owner-handoff checks.
@@ -103,7 +107,7 @@ Before every create, the launcher atomically journals the intended provider, sel
 1. `planned`: record the consented plan.
 2. `fly_app_created`: create the named app in the selected Fly organization. Record the provider-issued app identity and verify its organization and network identity. After an interrupted create, accept an existing app only when provider-supported idempotency or provenance evidence ties that exact app to the journaled intent.
 3. `neon_project_created`: create a separate project in the selected Neon organization and chosen region. Record the provider-issued project, default branch, database, role, and endpoint identifiers; hold the direct TLS URL only in memory. Never recover by project name alone.
-4. `bucket_created`: create a deterministically named Tigris bucket bound to the verified Fly app, with no `--public` flag. Treat the command's full output as secret material. Confirm success through its exit status, exact app/bucket binding, and Fly's structured secret listing, which must contain both AWS credential names. A deterministic name and attached secret names do not by themselves prove that this run created the bucket. Do not capture or reproduce credential values in diagnostics.
+4. `bucket_created`: check Fly's Tigris provider terms through the official GraphQL API and require a separate explicit acceptance if the selected account has not agreed. After consent and terms acceptance, create a deterministically named private Tigris add-on bound to the verified Fly app through a minimal GraphQL mutation. Treat the full response as secret material. Confirm the returned add-on ID, provider, organization, app binding, and private option through a separate minimal GraphQL read, then confirm Fly's structured secret listing contains both AWS credential names. A deterministic name and attached secret names do not by themselves prove that this run created the bucket. Do not query or capture password, environment, SSO link, raw provider error, or whole metadata fields.
 5. `secrets_staged`: generate three independent 256-bit Community secrets, combine them with the direct database URL, and stream the secret document to `fly secrets import --stage` over stdin. Confirm their names and digests, plus the two AWS credential names, through Fly's non-secret listing.
 6. `deployed`: render a temporary Fly config from the release manifest, deploy the pinned image with `--ha=false`, and record the Fly release, Machine, and public-address identifiers from structured status output.
 7. `healthy`: wait with a bounded deadline for one Machine, passing Fly checks, and public `/health`.
@@ -155,7 +159,7 @@ At every exit, the last screen answers: what was created, who owns it, whether i
 ## Testing strategy
 
 - Unit tests cover plan hashing, consent refusal, state transitions, journal permissions and atomic replacement, redaction, timeout classification, secret regeneration rules, and cancellation at every step.
-- Provider contract tests run wrappers against checked-in sanitized JSON fixtures from the pinned CLI versions. Mutation fixtures remove or rename every field the launcher trusts so malformed success cannot pass.
+- Provider contract tests run wrappers against checked-in sanitized JSON fixtures from the pinned CLI versions and the pinned minimal Fly GraphQL operations. Mutation fixtures remove or rename every field the launcher trusts so malformed success cannot pass.
 - Integration tests use fake provider executables that simulate interrupted creates, duplicate names, lost stdout after success, a same-organization name collision, a duplicate Neon project name, expired auth, billing gates, transient reads, and secret-bearing error bodies. They prove that exact provider identity and provenance can resume a run, while an unprovable create enters manual reconciliation without adoption or another write. Assertions also prove no secret reaches argv, journal, stdout, stderr, or telemetry.
 - A packaged CLI test starts from no repository checkout and verifies that the rendered config uses the pinned image and exactly one Machine.
 - A credentialed release gate, separately armed and budgeted, provisions throwaway resources in designated organizations, runs owner signup and private attachment checks, resumes one induced interruption, and records cleanup. Ordinary tests and `pnpm verify` can never arm it.
@@ -200,6 +204,8 @@ Provisioning is network-bound. Progress should update after every provider opera
 - [Fly Apps API](https://fly.io/docs/machines/api/apps-resource/)
 - [Fly secrets](https://fly.io/docs/apps/secrets/)
 - [Fly Tigris](https://fly.io/docs/tigris/)
+- [Pinned Fly GraphQL operations](https://github.com/superfly/flyctl/blob/v0.4.104/gql/genqclient.graphql)
+- [Pinned Fly Tigris status implementation](https://github.com/superfly/flyctl/blob/v0.4.104/internal/command/extensions/tigris/status.go)
 - [Fly billing](https://fly.io/docs/about/billing/)
 - [Neon projects](https://neon.com/docs/manage/projects)
 - [Neon API keys](https://neon.com/docs/manage/api-keys)

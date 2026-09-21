@@ -3,6 +3,7 @@ import { Hash, Menu, Plus, Settings2, X } from 'lucide-react';
 import { Admission } from './components/Admission.js';
 import { ChannelView } from './components/Channel.js';
 import { Manage } from './components/Manage.js';
+import { rememberCommunity } from './components/CommunityChooser.js';
 import { describeError, RequestError, request } from './api.js';
 import type { Channel, Community, Me } from './types.js';
 
@@ -24,6 +25,7 @@ export function CommunityApp() {
   const [community, setCommunity] = useState<Community | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [unadmitted, setUnadmitted] = useState(false);
+  const [hostSignIn, setHostSignIn] = useState(false);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [settings, setSettings] = useState(false);
@@ -35,6 +37,9 @@ export function CommunityApp() {
     () => channels.find((channel) => channel.id === selectedId) ?? null,
     [channels, selectedId]
   );
+  const returnToChooser = useCallback(() => {
+    if (/^\/c\/[^/]+(?:\/|$)/u.test(window.location.pathname)) window.location.replace('/');
+  }, []);
   const refreshChannels = useCallback(async () => {
     try {
       const body = await request<{ channels: Channel[] }>('/api/v1/channels');
@@ -45,11 +50,15 @@ export function CommunityApp() {
           : ((body.channels.find((channel) => channel.joined) ?? body.channels[0])?.id ?? null)
       );
     } catch (cause) {
-      if (cause instanceof RequestError && (cause.status === 401 || cause.status === 403))
+      if (
+        cause instanceof RequestError &&
+        (cause.status === 401 || cause.status === 403 || cause.code === 'COMMUNITY_UNAVAILABLE')
+      ) {
+        returnToChooser();
         setMe(null);
-      else setError(describeError(cause));
+      } else setError(describeError(cause));
     }
-  }, []);
+  }, [returnToChooser]);
   const refreshCurrentMember = useCallback(async () => {
     const current = await request<Me>('/api/v1/me');
     setMe(current);
@@ -71,6 +80,9 @@ export function CommunityApp() {
         const metadata = await request<Community>('/api/v1/community');
         if (!active) return;
         setCommunity(metadata);
+        rememberCommunity(metadata.id);
+        if (window.location.pathname === '/' || window.location.pathname === '/join')
+          window.history.replaceState(null, '', `/c/${metadata.id}`);
         try {
           const current = await request<Me>('/api/v1/me');
           if (!active) return;
@@ -86,6 +98,7 @@ export function CommunityApp() {
                   token: sessionStorage.getItem('communityPendingInvite'),
                 });
                 sessionStorage.removeItem('communityPendingInvite');
+                sessionStorage.removeItem('communityPendingInvitePath');
                 setInviteToken(null);
                 setMe(await request<Me>('/api/v1/me'));
                 await refreshChannels();
@@ -93,15 +106,25 @@ export function CommunityApp() {
                 setMe(null);
               }
             } else {
+              if (cause.status === 403 && !inviteToken) returnToChooser();
               setMe(null);
               setUnadmitted(cause.status === 403);
             }
+          } else if (cause instanceof RequestError && cause.code === 'COMMUNITY_UNAVAILABLE') {
+            returnToChooser();
+            setMe(null);
           } else setError(describeError(cause));
         }
       } catch (cause) {
         if (!active) return;
         if (cause instanceof RequestError && cause.status === 404) {
           setCommunity(null);
+          setMe(null);
+        } else if (cause instanceof RequestError && cause.code === 'COMMUNITY_SELECTION_REQUIRED') {
+          setHostSignIn(true);
+          setMe(null);
+        } else if (cause instanceof RequestError && cause.code === 'COMMUNITY_UNAVAILABLE') {
+          returnToChooser();
           setMe(null);
         } else setError(describeError(cause));
       } finally {
@@ -111,7 +134,7 @@ export function CommunityApp() {
     return () => {
       active = false;
     };
-  }, [revision, refreshChannels]);
+  }, [revision, refreshChannels, returnToChooser, inviteToken]);
   const onChanged = useCallback(() => {
     void refreshChannels();
   }, [refreshChannels]);
@@ -142,9 +165,14 @@ export function CommunityApp() {
     return (
       <Admission
         community={community}
+        hostSignIn={hostSignIn}
         inviteToken={inviteToken}
         unadmitted={unadmitted}
         onAdmitted={() => {
+          if (hostSignIn) {
+            window.location.assign('/');
+            return;
+          }
           setInviteToken(null);
           setRevision((old) => old + 1);
         }}
@@ -162,6 +190,9 @@ export function CommunityApp() {
           <p className="eyebrow">DorkOS Community</p>
           <h1>{community?.name ?? 'Your community'}</h1>
           <p className="small muted mb-0">Signed in as {me.member.displayName}</p>
+          <button className="button mt-3 w-full" onClick={() => window.location.assign('/')}>
+            Switch community
+          </button>
         </div>
         <div className="sidebar-list">
           <p className="sidebar-section">Your channels</p>
@@ -279,9 +310,7 @@ export function CommunityApp() {
             onChanged={onChanged}
             onCurrentMemberChanged={refreshCurrentMember}
             onLeft={() => {
-              setError('');
-              setMe(null);
-              setRevision((old) => old + 1);
+              window.location.assign('/');
             }}
           />
         ) : selected ? (

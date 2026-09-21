@@ -5,7 +5,7 @@
  * step, surfaced in the daily report, in `/ci-status` and at SessionStart.
  * Phase 3's `ci-improve` is what will consume them.
  *
- * Eleven rules, each with its threshold in `ci/config.yaml`'s `triage:` block.
+ * Twelve rules, each with its threshold in `ci/config.yaml`'s `triage:` block.
  * That file is inside the fence (`ci/steward-owned-paths.json`), so an
  * unattended tick cannot move its own goalposts by widening a threshold.
  *
@@ -38,8 +38,9 @@ import { ejectionLegs, legName } from './ejections.ts';
 import type { LedgerEntry } from './verdicts.ts';
 import type { WorkflowModel } from './workflows.ts';
 import { mainCanary } from './canary.ts';
+import { machineSaturated } from './machine.ts';
 
-/** The eleven rules, in the order `ci/config.yaml` documents them. */
+/** The twelve rules, in the order `ci/config.yaml` documents them. */
 export const TRIGGER_RULES = [
   'slo-floor',
   'constraint-changed',
@@ -52,6 +53,7 @@ export const TRIGGER_RULES = [
   'collector-health',
   'stale-ledger',
   'main-canary',
+  'machine-saturated',
 ] as const;
 
 /** One trigger rule. */
@@ -67,13 +69,18 @@ const RANK: Record<TriggerRule, number> = {
   'main-canary': 2,
   'main-red': 3,
   headroom: 4,
-  'slo-floor': 5,
-  verdict: 6,
-  'gate-failure-spike': 7,
-  'repeat-ejection': 8,
-  'gate-cost': 9,
-  'constraint-changed': 10,
-  'stale-ledger': 11,
+  // Above the SLO floors it is usually the cause of: a saturated developer
+  // machine makes every local reading a fact about the box rather than about
+  // the pipeline, and it costs every agent on it minutes at a time. Below the
+  // three above it, which cost a merge.
+  'machine-saturated': 5,
+  'slo-floor': 6,
+  verdict: 7,
+  'gate-failure-spike': 8,
+  'repeat-ejection': 9,
+  'gate-cost': 10,
+  'constraint-changed': 11,
+  'stale-ledger': 12,
 };
 
 /**
@@ -581,6 +588,7 @@ export function triage(inp: TriageInput): Triggers {
     ...headroom(inp, curGates),
     ...collectorHealth(inp, cur),
     ...staleLedger(inp),
+    ...machineSaturated(inp),
   ];
   // The ledger entry that introduced the canary: the floor under
   // `canary_since` that a rewrite of the data branch cannot erase, because it

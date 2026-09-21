@@ -60,7 +60,7 @@ test.beforeAll(async () => {
   const app = createCommunityApp({ config, pool });
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
   app.use('/assets/*', serveStatic({ root: staticRoot }));
-  for (const path of ['/', '/join', '/pairing'])
+  for (const path of ['/', '/join', '/pairing', '/c/:communityId'])
     app.get(
       path,
       serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
@@ -109,7 +109,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await ownerPage.locator('#invite-channel').selectOption({ label: '#general' });
     await ownerPage.getByRole('button', { name: 'Create invite' }).click();
     const inviteLink = await ownerPage.getByLabel('One-time invite link').inputValue();
-    expect(inviteLink).toContain('/join#invite=');
+    expect(inviteLink).toMatch(/\/c\/[0-9a-f-]+#invite=/u);
     await memberPage.goto(inviteLink.replace('#invite=', '#token='));
     await expect(memberPage.getByRole('heading', { name: 'Come on in.' })).toBeVisible();
     await memberPage.screenshot({ path: '/tmp/community-join-mobile.png', fullPage: true });
@@ -331,7 +331,9 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       generalHistoryFulfilled = resolve;
     });
     const isGeneralHistory = (url: URL) =>
-      url.pathname === `/api/v1/channels/${generalChannelId}/entries` && url.search === '?limit=50';
+      new RegExp(`^/api/v1/communities/[0-9a-f-]+/channels/${generalChannelId}/entries$`, 'u').test(
+        url.pathname
+      ) && url.search === '?limit=50';
     const holdGeneralHistory = async (route: Route) => {
       const response = await route.fetch();
       generalHistoryRequest();
@@ -401,7 +403,8 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       historyFulfilled = resolve;
     });
     const isInitialHistory = (url: URL) =>
-      /^\/api\/v1\/channels\/[^/]+\/entries$/.test(url.pathname) && url.search === '?limit=50';
+      /^\/api\/v1\/communities\/[0-9a-f-]+\/channels\/[^/]+\/entries$/u.test(url.pathname) &&
+      url.search === '?limit=50';
     const holdHistory = async (route: Route) => {
       const response = await route.fetch();
       historyRequest();
@@ -459,10 +462,10 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       'INSERT INTO community_handles(community_id,handle,agent_id) VALUES($1,$2,$3)',
       [ids.communityId, 'browser-helper', seededAgent.rows[0].id]
     );
-    await pool.query('INSERT INTO agent_channel_members(channel_id,agent_id) VALUES($1,$2)', [
-      ids.channelId,
-      seededAgent.rows[0].id,
-    ]);
+    await pool.query(
+      'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3)',
+      [ids.communityId, ids.channelId, seededAgent.rows[0].id]
+    );
     await memberPage.getByRole('button', { name: 'Manage' }).click();
     await memberPage.getByRole('button', { name: 'Account' }).click();
     const exportDownload = memberPage.waitForEvent('download');
@@ -470,7 +473,10 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     expect((await exportDownload).suggestedFilename()).toBe('my-community-data.zip');
     memberPage.once('dialog', (dialog) => void dialog.accept());
     await memberPage.getByRole('button', { name: 'Leave community' }).click();
-    await expect(memberPage.getByRole('heading', { name: 'Come on in.' })).toBeVisible();
+    await expect(memberPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
+    await expect(
+      memberPage.getByText('This account does not have a community membership yet.')
+    ).toBeVisible();
     await ownerPage.getByRole('button', { name: 'Manage' }).click();
     await ownerPage.getByRole('button', { name: 'Members' }).click();
     const agentRow = ownerPage
@@ -487,7 +493,127 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await expect(ownerPage.getByText('Community export')).toHaveCount(0);
     ownerPage.once('dialog', (dialog) => void dialog.accept());
     await ownerPage.getByRole('button', { name: 'Leave community' }).click();
-    await expect(ownerPage.getByRole('heading', { name: 'Come on in.' })).toBeVisible();
+    await expect(ownerPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
+    await expect(
+      ownerPage.getByText('This account does not have a community membership yet.')
+    ).toBeVisible();
+
+    await observerPage.goto(`${baseUrl}/c/${ids.communityId}`);
+    await expect(observerPage.getByText('Gathering Place')).toBeVisible();
+    const nikoAccount = await pool.query<{ user_id: string }>(
+      'SELECT user_id FROM members WHERE id=$1',
+      [nikoId]
+    );
+    const secondCommunity = await pool.connect();
+    let secondCommunityId = '';
+    try {
+      await secondCommunity.query('BEGIN');
+      const created = await secondCommunity.query<{ id: string }>(
+        "INSERT INTO communities(name,lifecycle) VALUES('Second Place','pending_owner') RETURNING id"
+      );
+      secondCommunityId = created.rows[0].id;
+      const secondMember = await secondCommunity.query<{ id: string }>(
+        `INSERT INTO members(community_id,user_id,display_name,handle,role)
+         VALUES($1,$2,'Niko','niko','owner') RETURNING id`,
+        [secondCommunityId, nikoAccount.rows[0].user_id]
+      );
+      await secondCommunity.query(
+        'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',
+        [secondCommunityId, 'niko', secondMember.rows[0].id]
+      );
+      await secondCommunity.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [
+        secondCommunityId,
+      ]);
+      await secondCommunity.query('COMMIT');
+    } finally {
+      await secondCommunity.query('ROLLBACK');
+      secondCommunity.release();
+    }
+    // A signed-out visitor can authenticate without choosing or enumerating a tenant.
+    const signedOut = await browser.newContext();
+    try {
+      const login = await signedOut.newPage();
+      await login.goto(baseUrl);
+      await expect(login.getByLabel('Email')).toBeVisible();
+      await expect(login.getByLabel('Community name')).toHaveCount(0);
+      await login.getByLabel('Email').fill('niko@ui.test');
+      await login.getByLabel('Password').fill('password1234');
+      await login.getByRole('button', { name: 'Sign in', exact: true }).last().click();
+      await expect(login.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
+      await expect(login.getByRole('button', { name: /Second Place/ })).toBeVisible();
+    } finally {
+      await signedOut.close();
+    }
+    // A removed membership reload returns to the host's own-membership chooser.
+    await memberPage.goto(`${baseUrl}/c/${ids.communityId}`);
+    await expect(memberPage).toHaveURL(baseUrl + '/');
+    await expect(
+      memberPage.getByText('This account does not have a community membership yet.')
+    ).toBeVisible();
+
+    // Resume the stored invitation after an OAuth callback to the host root.
+    // The auth session is real; only the external OAuth exchange is represented by its saved state.
+    const createdInvite = await observerPage.evaluate(async (communityId) => {
+      const response = await fetch(`/api/v1/communities/${communityId}/invites`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (!response.ok) throw new Error(`invite creation: ${response.status}`);
+      return response.json() as Promise<{ token: string }>;
+    }, ids.communityId);
+    await ownerPage.route('**/auth-options', (route) =>
+      route.fulfill({
+        json: { google: true, github: false },
+      })
+    );
+    let callbackUrl = '';
+    await ownerPage.route('**/api/auth/sign-in/social', async (route) => {
+      callbackUrl = (route.request().postDataJSON() as { callbackURL: string }).callbackURL;
+      // No external OAuth request: keep the existing real session for callback recovery.
+      await route.fulfill({ status: 400, json: { message: 'Test-owned OAuth boundary' } });
+    });
+    await ownerPage.goto(
+      `${baseUrl}/c/${ids.communityId}#invite=${encodeURIComponent(createdInvite.token)}`
+    );
+    await ownerPage.getByRole('button', { name: 'Continue', exact: true }).click();
+    await ownerPage.getByRole('button', { name: 'Continue with Google' }).click();
+    await expect.poll(() => callbackUrl).toBe(`${baseUrl}/c/${ids.communityId}`);
+    await expect
+      .poll(() => ownerPage.evaluate(() => sessionStorage.getItem('communityPendingInvitePath')))
+      .toBe(`/c/${ids.communityId}`);
+    await ownerPage.goto(baseUrl);
+    await expect(ownerPage).toHaveURL(`${baseUrl}/c/${ids.communityId}`);
+    await expect(ownerPage.getByText('Gathering Place')).toBeVisible();
+    await expect
+      .poll(() => ownerPage.evaluate(() => sessionStorage.getItem('communityPendingInvite')))
+      .toBeNull();
+
+    await observerPage.getByRole('button', { name: 'Switch community' }).click();
+    await expect(observerPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
+    await expect(observerPage.getByRole('button', { name: /Gathering Place/ })).toBeVisible();
+    await observerPage.getByRole('button', { name: /Second Place/ }).click();
+    await expect(observerPage).toHaveURL(`${baseUrl}/c/${secondCommunityId}`);
+    await expect(observerPage.getByText('Second Place')).toBeVisible();
+    const selectedRequests: string[] = [];
+    observerPage.on('request', (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path.startsWith('/api/v1/communities/')) selectedRequests.push(path);
+    });
+    await observerPage.reload();
+    await expect(observerPage.getByText('Second Place')).toBeVisible();
+    expect(selectedRequests.length).toBeGreaterThan(0);
+    expect(
+      selectedRequests.every((path) => path.startsWith(`/api/v1/communities/${secondCommunityId}/`))
+    ).toBe(true);
+    await pool.query("UPDATE communities SET lifecycle='suspended' WHERE id=$1", [
+      secondCommunityId,
+    ]);
+    await observerPage.reload();
+    await expect(observerPage).toHaveURL(baseUrl + '/');
+    const suspendedChoice = observerPage.getByRole('button', { name: /Second Place/ });
+    await expect(suspendedChoice).toBeDisabled();
+    await expect(suspendedChoice).toContainText('Suspended');
   } finally {
     await owner.close();
     await member.close();
