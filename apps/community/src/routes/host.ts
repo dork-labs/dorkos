@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { setCookie } from 'hono/cookie';
 import type { Pool, PoolClient } from 'pg';
+import { z } from 'zod';
 import {
   CommunityWireHostCommunityCreateRequestSchema,
   CommunityWireHostCommunityCreateResponseSchema,
@@ -147,11 +148,13 @@ export function registerHostRoutes(
   app.patch('/host/communities/:id/lifecycle', async (c) => {
     const operator = await requireHostOperator(c, auth, pool);
     const body = await readJson(c, CommunityWireHostCommunityLifecycleRequestSchema);
+    const communityId = z.uuid().safeParse(c.req.param('id'));
+    if (!communityId.success) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
     const community = await transaction(pool, async (client) => {
       await assertHostOperator(client, operator.userId);
       const current = await client.query<HostCommunityRow>(
         'SELECT id,name,description,lifecycle,created_at FROM communities WHERE id=$1 FOR UPDATE',
-        [c.req.param('id')]
+        [communityId.data]
       );
       if (!current.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
       if (current.rows[0].lifecycle === 'pending_owner') {

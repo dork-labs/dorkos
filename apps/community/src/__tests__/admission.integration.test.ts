@@ -1358,6 +1358,16 @@ describe('signed admission over real HTTP and Postgres', () => {
         )
       ).status
     ).toBe(200);
+    expect(
+      (
+        await call(
+          '/api/v1/host/communities/not-a-uuid/lifecycle',
+          'PATCH',
+          { lifecycle: 'active' },
+          ownerCookie
+        )
+      ).status
+    ).toBe(404);
 
     const third = await call(
       '/api/v1/host/communities',
