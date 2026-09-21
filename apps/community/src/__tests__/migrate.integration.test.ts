@@ -54,6 +54,8 @@ it('creates all owner, conversation, credential and auth tables in fresh Postgre
       'host_operators',
       'managed_blobs',
       'tenant_reconciliation',
+      'entry_mentions',
+      'export_archive_channels',
     ]) {
       expect(names).toContain(name);
     }
@@ -147,7 +149,7 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7]);
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();
@@ -278,7 +280,7 @@ it('expands a populated version-four database without changing files or cleanup 
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(
       (
         await db.query(

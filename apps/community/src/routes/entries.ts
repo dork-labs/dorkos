@@ -210,9 +210,10 @@ export function registerEntryRoutes(
         [channel.id]
       );
       const inserted = await client.query<{ id: string }>(
-        `INSERT INTO entries(channel_id,seq,author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,idempotency_key,payload_hash)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+        `INSERT INTO entries(community_id,channel_id,seq,author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,idempotency_key,payload_hash)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
         [
+          principal.community_id,
           channel.id,
           next.rows[0].last_seq,
           principal.kind === 'human' ? principal.id : null,

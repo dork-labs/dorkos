@@ -400,13 +400,48 @@ describe('owner foundation over real HTTP and Postgres', () => {
       (await request(`/api/v1/channels/${channelId}/entries`, { headers: { cookie: bobCookie } }))
         .status
     ).toBe(200);
+    const mentionedAgent = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id)
+         VALUES($1,$2,'Proof Bot','proof.bot','proof-bot-local') RETURNING id`,
+        [communityId, ownerMemberId]
+      )
+    ).rows[0]!.id;
+    await pool.query('INSERT INTO agent_channel_members(channel_id,agent_id) VALUES($1,$2)', [
+      channelId,
+      mentionedAgent,
+    ]);
     const mention = await post(
       `/api/v1/channels/${channelId}/entries`,
-      { text: 'hi @bob and @unknown', idempotencyKey: 'mention-bob' },
+      { text: 'hi @bob and @proof.bot and @unknown', idempotencyKey: 'mention-bob-agent' },
       ownerCookie
     );
     expect(mention.status).toBe(201);
-    expect((await mention.json()).entry.mentions).toEqual([bobMemberId]);
+    const mentionBody = await mention.json();
+    expect(mentionBody.entry.mentions).toEqual([bobMemberId, mentionedAgent]);
+    expect(
+      (
+        await pool.query(
+          `SELECT e.community_id,m.position,m.mentioned_member_id,m.mentioned_agent_id
+           FROM entries e JOIN entry_mentions m ON m.entry_id=e.id
+           WHERE e.id=$1 ORDER BY m.position`,
+          [mentionBody.entry.id]
+        )
+      ).rows
+    ).toEqual([
+      {
+        community_id: communityId,
+        position: 1,
+        mentioned_member_id: bobMemberId,
+        mentioned_agent_id: null,
+      },
+      {
+        community_id: communityId,
+        position: 2,
+        mentioned_member_id: null,
+        mentioned_agent_id: mentionedAgent,
+      },
+    ]);
     await pool.query("UPDATE members SET display_name='Robert' WHERE id=$1", [bobMemberId]);
     const stable = await post(
       `/api/v1/channels/${channelId}/entries`,

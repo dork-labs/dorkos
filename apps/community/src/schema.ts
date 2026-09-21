@@ -10,6 +10,7 @@ import {
   index,
   primaryKey,
   check,
+  foreignKey,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -433,6 +434,44 @@ export const entries = pgTable(
     index('entries_community_idx').on(table.communityId),
   ]
 );
+/** Ordered, tenant-qualified human or agent targets mentioned by one entry. */
+export const entryMentions = pgTable(
+  'entry_mentions',
+  {
+    entryId: uuid('entry_id').notNull(),
+    position: integer('position').notNull(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    mentionedMemberId: uuid('mentioned_member_id'),
+    mentionedAgentId: uuid('mentioned_agent_id'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.entryId, table.position] }),
+    foreignKey({
+      name: 'entry_mentions_entry_tenant_fk',
+      columns: [table.communityId, table.entryId],
+      foreignColumns: [entries.communityId, entries.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'entry_mentions_member_tenant_fk',
+      columns: [table.communityId, table.mentionedMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'entry_mentions_agent_tenant_fk',
+      columns: [table.communityId, table.mentionedAgentId],
+      foreignColumns: [agents.communityId, agents.id],
+    }),
+    check('entry_mentions_position', sql`${table.position} > 0`),
+    check(
+      'entry_mentions_exactly_one_target',
+      sql`(${table.mentionedMemberId} IS NULL) <> (${table.mentionedAgentId} IS NULL)`
+    ),
+    index('entry_mentions_member_idx').on(table.communityId, table.mentionedMemberId),
+    index('entry_mentions_agent_idx').on(table.communityId, table.mentionedAgentId),
+  ]
+);
 /** Unbound or entry-bound blob metadata. */
 export const attachments = pgTable(
   'attachments',
@@ -505,6 +544,33 @@ export const exportArchives = pgTable(
     index('export_archives_expiry_idx')
       .on(table.cleanupNextAttemptAt, table.expiresAt, table.id)
       .where(sql`${table.deletedAt} IS NULL`),
+  ]
+);
+/** Ordered, tenant-qualified channel selection captured by one export archive. */
+export const exportArchiveChannels = pgTable(
+  'export_archive_channels',
+  {
+    exportArchiveId: uuid('export_archive_id').notNull(),
+    position: integer('position').notNull(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    channelId: uuid('channel_id').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.exportArchiveId, table.position] }),
+    foreignKey({
+      name: 'export_archive_channels_archive_tenant_fk',
+      columns: [table.communityId, table.exportArchiveId],
+      foreignColumns: [exportArchives.communityId, exportArchives.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'export_archive_channels_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+    check('export_archive_channels_position', sql`${table.position} > 0`),
+    index('export_archive_channels_channel_idx').on(table.communityId, table.channelId),
   ]
 );
 /** Durable cleanup work for blobs whose metadata transaction did not commit. */

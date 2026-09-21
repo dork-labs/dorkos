@@ -39,7 +39,7 @@ Task 1.1 is complete:
 
 **Workers:** _(none — implementation remains in this owning session)_
 
-Task 1.2 is in progress:
+Task 1.2 implementation reached VERIFY:
 
 - Migration 0006 backfills every nullable tenant key from its authoritative relation, promotes the active owner account to host operations, invalidates legacy bootstrap grants, and leaves the namespace gate dirty.
 - A durable singleton generation is invalidated by every interim inferred-owner insert, update, or delete and by unmanaged cleanup queue changes. Current attachment/export reservations share an advisory fence with reconciliation; operators must separately quiesce old instances before starting it.
@@ -47,13 +47,27 @@ Task 1.2 is in progress:
 - Reconciliation verifies referenced bytes and hashes, converts singleton cleanup only when a legacy queue row proves its origin, and records only the exact generation it validated. A valid-looking opaque key alone is not ownership proof; missing, ambiguous, incomplete, or unexpected objects remain untouched and return a redacted operator action.
 - This is an intermediate expand/backfill stage. Second-community creation remains unavailable until task 1.3 makes tenant keys non-null, validates composite constraints, removes the interim dirty-write triggers, and repeats the authoritative namespace check in its creation transaction.
 
+### Session 4 - 2026-09-20
+
+**Workers:** _(none — implementation remains in this owning session)_
+
+Task 1.3 has started with a bounded normalization foundation:
+
+- Migration 0007 backfills ordered, tenant-qualified entry mentions with distinct human and agent targets and ordered export-channel selections.
+- Composite foreign keys reject cross-community targets. Missing or human/agent-ambiguous mentions and unresolved export channels abort the migration without partial state.
+- Compatibility triggers keep normalized rows synchronized for existing array writers, while the production entry writer now records its authenticated community explicitly. The source arrays, singleton constraint, global member uniqueness, and nullable tenant columns remain until the later Task 1.3 contract slice switches readers and validates every tenant relation.
+- PostgreSQL verification covers human and agent mentions, duplicate order, export order, migration reruns, old-writer updates, missing and ambiguous targets, unresolved channels, cross-tenant rejection, and rollback preservation. The real HTTP entry path passes with ordered human and agent mentions and tenant-qualified normalized rows; the complete Community PostgreSQL gate passes 120 assertions with 4 declared skips across 8 fixtures.
+
 ## Files Modified/Created
 
 **Source files:**
 
 - `apps/community/migrations/0005_tenant_expand.sql`
+- `apps/community/migrations/0006_tenant_backfill.sql`
+- `apps/community/migrations/0007_tenant_relations.sql`
 - `apps/community/src/migrate.ts`
 - `apps/community/src/schema.ts`
+- `apps/community/src/routes/entries.ts`
 - `apps/community/src/routes/attachments.ts`
 - `apps/community/src/routes/exports.ts`
 - `apps/community/src/storage/blob-store.ts`
@@ -65,7 +79,9 @@ Task 1.2 is in progress:
 **Test files:**
 
 - `apps/community/src/__tests__/migrate.integration.test.ts`
+- `apps/community/src/__tests__/foundation.integration.test.ts`
 - `apps/community/src/__tests__/attachments.integration.test.ts`
+- `apps/community/src/__tests__/tenant-relations.integration.test.ts`
 - `apps/community/src/storage/__tests__/blob-store.contract.test.ts`
 - `apps/community/src/__tests__/tenant-reconciliation.integration.test.ts`
 
