@@ -343,7 +343,9 @@ describe('an agent wears its own face across a room', () => {
     // what has to have landed before the mark can be read.
     await screen.findByRole('button', { name: 'How loud Kai is here' });
     await waitFor(() => {
-      const mark = document.querySelector('[data-slot="room-avatar"]');
+      const mark = document.querySelector(
+        '[data-slot="room-avatar"], [data-slot="identity-avatar"]'
+      );
       expect(mark?.textContent).toContain(KAI_ICON);
     });
   });
