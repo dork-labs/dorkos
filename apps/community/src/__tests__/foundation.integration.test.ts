@@ -552,15 +552,18 @@ describe('owner foundation over real HTTP and Postgres', () => {
     });
     expect(beforePrivateAttention.status).toBe(200);
     const beforePrivateCounts = await beforePrivateAttention.json();
-    expect(
-      (
-        await post(
-          `/api/v1/channels/${privateId}/entries`,
-          { text: 'private @bob', idempotencyKey: 'private-attention' },
-          ownerCookie
-        )
-      ).status
-    ).toBe(201);
+    const privateEntry = await post(
+      `/api/v1/channels/${privateId}/entries`,
+      { text: 'private @bob', idempotencyKey: 'private-attention' },
+      ownerCookie
+    );
+    expect(privateEntry.status).toBe(201);
+    const privateEntryId = (await privateEntry.json()).entry.id as string;
+    await pool.query(
+      `INSERT INTO entry_mentions(entry_id,position,community_id,mentioned_member_id)
+       VALUES($1,2,$2,$3)`,
+      [privateEntryId, communityId, bobMemberId]
+    );
     const whileJoinedAttention = await request('/api/v1/attention', {
       headers: { cookie: bobCookie },
     });
