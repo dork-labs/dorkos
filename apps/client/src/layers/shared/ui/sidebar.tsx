@@ -487,6 +487,14 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<'li'>) {
   );
 }
 
+/**
+ * The two axes a sidebar menu button has: its `variant` and its `size`.
+ *
+ * `variant` picks between the flat default row and the outlined one; `size`
+ * picks the row height (`sm` 28px, `default` 32px, `lg` 48px), which the
+ * collapsed icon rail then overrides. Exported so a control that must look like
+ * a menu row without being one can borrow the classes.
+ */
 const sidebarMenuButtonVariants = cva(
   // The transition list names `scale`, not `transform`: Tailwind v4 writes the
   // standalone `scale` property, so the press below was declared and never
@@ -747,6 +755,7 @@ export {
   SidebarMenuAction,
   SidebarMenuBadge,
   SidebarMenuButton,
+  sidebarMenuButtonVariants,
   SidebarMenuItem,
   SidebarMenuSkeleton,
   SidebarMenuSub,

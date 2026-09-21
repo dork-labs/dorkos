@@ -101,6 +101,15 @@ function FieldGroup({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
+/**
+ * The one axis a {@link Field} has: where its control sits relative to its label.
+ *
+ * `vertical` stacks the control under the label, `horizontal` puts it beside,
+ * and `responsive` starts stacked and turns side-by-side once the enclosing
+ * {@link FieldGroup} is wide enough. Exported so a component that composes a
+ * field-shaped row can read the same table instead of restating the axis in a
+ * ternary of its own.
+ */
 const fieldVariants = cva('group/field flex w-full gap-3 data-[invalid=true]:text-destructive', {
   variants: {
     orientation: {
@@ -321,6 +330,7 @@ function FieldError({
 
 export {
   Field,
+  fieldVariants,
   FieldLabel,
   FieldDescription,
   FieldError,
