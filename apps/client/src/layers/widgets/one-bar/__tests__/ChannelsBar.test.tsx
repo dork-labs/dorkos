@@ -194,7 +194,8 @@ describe('ChannelsBar', () => {
         },
       ] as RoomWithRoster['members'],
     });
-    const mark = () => document.querySelector('[data-slot="room-avatar"]');
+    const mark = () =>
+      document.querySelector('[data-slot="room-avatar"], [data-slot="identity-avatar"]');
     const { unmount } = renderBar(withAna);
     expect(mark()).toHaveTextContent('🦊');
     unmount();

@@ -340,6 +340,6 @@ describe('InboxGroupRow glyph', () => {
       />
     );
 
-    expect(document.querySelector('[data-slot="agent-avatar"]')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-slot="identity-avatar"]')).not.toBeInTheDocument();
   });
 });

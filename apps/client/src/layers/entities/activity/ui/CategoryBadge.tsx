@@ -19,11 +19,7 @@ export function CategoryBadge({ category, className }: CategoryBadgeProps) {
   const config = CATEGORY_CONFIG[category];
 
   return (
-    <Badge
-      data-slot="category-badge"
-      shape="pill"
-      className={cn('border-transparent', config.bg, config.text, className)}
-    >
+    <Badge shape="pill" className={cn('border-transparent', config.bg, config.text, className)}>
       {config.label}
     </Badge>
   );

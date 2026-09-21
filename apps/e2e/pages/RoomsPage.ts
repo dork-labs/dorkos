@@ -317,9 +317,19 @@ export class RoomsPage {
     return this.memberRow(name).locator('[data-slot="identity-avatar"]').first();
   }
 
-  /** The room's own mark at the top of the panel — a DM wears its agent's face. */
+  /**
+   * The room's own mark at the top of the panel — a DM wears its agent's face.
+   *
+   * Two slots, because that sentence is now literally true in the markup: a
+   * channel's mark renders as `room-avatar`, while a DM's renders the agent's
+   * own `identity-avatar` (DOR-1870). The unit tests for these marks pair the
+   * slots the same way; matching only the first one made this locator find
+   * nothing on a DM.
+   */
   get panelRoomMark(): Locator {
-    return this.roomPanel.locator('[data-slot="room-avatar"]').first();
+    return this.roomPanel
+      .locator('[data-slot="room-avatar"], [data-slot="identity-avatar"]')
+      .first();
   }
 
   // --- The room's shared canvas (spec `room-canvas` §9) ---

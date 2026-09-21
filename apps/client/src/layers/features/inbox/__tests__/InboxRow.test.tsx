@@ -36,13 +36,13 @@ describe('InboxRow faces', () => {
   it('draws the kind glyph when the caller never resolved an agent', () => {
     render(<InboxRow notification={build()} onOpen={() => {}} />);
 
-    expect(document.querySelector('[data-slot="agent-avatar"]')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-slot="identity-avatar"]')).not.toBeInTheDocument();
   });
 
   it('draws the kind glyph when the caller looked and the roster does not know the id', () => {
     render(<InboxRow notification={build()} agent={null} onOpen={() => {}} />);
 
-    expect(document.querySelector('[data-slot="agent-avatar"]')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-slot="identity-avatar"]')).not.toBeInTheDocument();
   });
 
   it('draws the agent face when the agent resolved, on a neutral-tone row', () => {
@@ -54,7 +54,7 @@ describe('InboxRow faces', () => {
       />
     );
 
-    expect(document.querySelector('[data-slot="agent-avatar"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="identity-avatar"]')).toBeInTheDocument();
   });
 
   it('still draws a face on a warning-tone row — most ordinary activity IS warning tone', () => {
@@ -69,7 +69,7 @@ describe('InboxRow faces', () => {
       />
     );
 
-    expect(document.querySelector('[data-slot="agent-avatar"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="identity-avatar"]')).toBeInTheDocument();
   });
 
   it('keeps the coloured kind glyph on an error-tone row even with a resolved agent', () => {
@@ -81,7 +81,7 @@ describe('InboxRow faces', () => {
       />
     );
 
-    expect(document.querySelector('[data-slot="agent-avatar"]')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-slot="identity-avatar"]')).not.toBeInTheDocument();
   });
 
   it('keeps the glyph on a failed run even though the tier alone reads as warning', () => {
@@ -93,7 +93,7 @@ describe('InboxRow faces', () => {
       />
     );
 
-    expect(document.querySelector('[data-slot="agent-avatar"]')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-slot="identity-avatar"]')).not.toBeInTheDocument();
   });
 });
 
