@@ -7,6 +7,27 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (() => {
+        const fragment = new URLSearchParams(window.location.hash.slice(1));
+        let invite = fragment.get('invite') ?? fragment.get('token');
+        if (!invite) return;
+        Object.defineProperty(window, '__takeDorkosInviteFragment', {
+          value: () => {
+            const captured = invite;
+            invite = null;
+            delete window.__takeDorkosInviteFragment;
+            return captured;
+          },
+          configurable: true,
+          enumerable: false,
+          writable: false,
+        });
+        const tenant = window.location.pathname.match(/^\/c\/[^/]+/u)?.[0];
+        const cleanPath = tenant ? `${tenant}/join` : window.location.pathname;
+        window.history.replaceState(null, '', cleanPath + window.location.search);
+      })();
+    </script>
     <script type="module" src="/main.tsx"></script>
   </body>
 </html>

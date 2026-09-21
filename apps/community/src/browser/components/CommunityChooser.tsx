@@ -21,20 +21,9 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
   const [memberships, setMemberships] = useState<CommunityWireMembershipSummary[] | null>(null);
   const [unauthenticated, setUnauthenticated] = useState(false);
   const [error, setError] = useState('');
-  const pendingInvite = sessionStorage.getItem('communityPendingInvite');
 
   useEffect(() => {
     let current = true;
-    if (pendingInvite) {
-      const path = sessionStorage.getItem('communityPendingInvitePath');
-      if (
-        path &&
-        /^\/c\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(path)
-      ) {
-        window.location.replace(path);
-      } else setUnauthenticated(true);
-      return;
-    }
     void request<{ memberships: CommunityWireMembershipSummary[] }>('/api/v1/memberships')
       .then(({ memberships: next }) => {
         if (!current) return;
@@ -52,7 +41,7 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
     return () => {
       current = false;
     };
-  }, [pendingInvite]);
+  }, []);
 
   if (unauthenticated) return signedOut();
   if (!memberships && !error)

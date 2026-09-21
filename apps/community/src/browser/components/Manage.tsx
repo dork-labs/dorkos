@@ -20,6 +20,8 @@ type Grant = {
   createdAt: string;
 };
 type Props = {
+  communityId: string;
+  communityName: string;
   me: Member;
   channels: Channel[];
   selectedChannel: Channel | null;
@@ -29,6 +31,8 @@ type Props = {
 };
 /** Manage channel, member, agent and account actions for the current role. */
 export function Manage({
+  communityId,
+  communityName,
   me,
   channels,
   selectedChannel,
@@ -56,6 +60,7 @@ export function Manage({
   const [grants, setGrants] = useState<Grant[]>([]);
   const [successor, setSuccessor] = useState('');
   const [password, setPassword] = useState('');
+  const [leaveName, setLeaveName] = useState('');
   const refresh = useCallback(
     async (currentModerator = moderator) => {
       try {
@@ -129,7 +134,7 @@ export function Manage({
       const body = await request<{ token: string }>('/api/v1/invites', 'POST', {
         ...(inviteChannel ? { channelId: inviteChannel } : {}),
       });
-      const link = `${location.origin}${location.pathname}#invite=${encodeURIComponent(body.token)}`;
+      const link = `${location.origin}/c/${communityId}/join#invite=${encodeURIComponent(body.token)}`;
       setInviteLink(link);
       setMessage('Copy this link now. It will not appear in the invite list.');
       await refresh();
@@ -174,7 +179,7 @@ export function Manage({
     setBusy(true);
     setError('');
     try {
-      await request('/api/v1/me/leave', 'POST', {});
+      await request('/api/v1/me/leave', 'POST', { password, communityName: leaveName });
       onLeft();
     } catch (cause) {
       setError(describeError(cause));
@@ -738,7 +743,29 @@ export function Manage({
                     You will lose channel access and local connections. Your past messages stay
                     attributed to you.
                   </p>
-                  <button className="button danger" disabled={busy} onClick={() => void leave()}>
+                  <div className="field">
+                    <label htmlFor="leave-community-name">Enter {communityName}</label>
+                    <input
+                      id="leave-community-name"
+                      value={leaveName}
+                      onChange={(event) => setLeaveName(event.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="leave-password">Confirm password</label>
+                    <input
+                      id="leave-password"
+                      type="password"
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                    />
+                  </div>
+                  <button
+                    className="button danger"
+                    disabled={busy || !password || leaveName !== communityName}
+                    onClick={() => void leave()}
+                  >
                     Leave community
                   </button>
                 </>

@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from 'pg';
 import {
   CommunityWireMemberDirectoryPageSchema,
   CommunityWireMemberDirectoryQuerySchema,
+  CommunityWireMemberLeaveRequestSchema,
   CommunityWireMemberResponseSchema,
   CommunityWireOwnerTransferRequestSchema,
   CommunityWireOwnerTransferResponseSchema,
@@ -51,6 +52,18 @@ async function remove(client: PoolClient, target: Member, actorId: string, actio
     'UPDATE connection_grants SET revoked_at=now() WHERE member_id=$1 AND community_id=$2 AND revoked_at IS NULL',
     [target.id, target.community_id]
   );
+  await client.query('DELETE FROM admission_receipts WHERE member_id=$1 AND community_id=$2', [
+    target.id,
+    target.community_id,
+  ]);
+  await client.query(
+    'UPDATE connection_pairings SET cancelled_at=COALESCE(cancelled_at,now()) WHERE member_id=$1 AND community_id=$2 AND consumed_at IS NULL',
+    [target.id, target.community_id]
+  );
+  await client.query('DELETE FROM read_cursors WHERE member_id=$1 AND community_id=$2', [
+    target.id,
+    target.community_id,
+  ]);
   await client.query(
     'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
     [target.community_id, actorId, action, target.id]
@@ -132,11 +145,26 @@ export function registerMemberRoutes(
 
   app.post('/me/leave', async (c) => {
     const actor = await requireMember(c, auth, pool);
+    const body = await readJson(c, CommunityWireMemberLeaveRequestSchema);
+    try {
+      await auth.api.verifyPassword({
+        headers: c.req.raw.headers,
+        body: { password: body.password },
+      });
+    } catch {
+      throw new ApiError(403, 'FORBIDDEN', 'Reauthentication failed.');
+    }
     await transaction(pool, async (client) => {
       const current = await live(client, actor.id, actor.community_id);
       if (!current) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
       if (current.role === 'owner')
         throw new ApiError(403, 'FORBIDDEN', 'Transfer ownership before leaving.');
+      const community = await client.query<{ name: string }>(
+        'SELECT name FROM communities WHERE id=$1',
+        [actor.community_id]
+      );
+      if (community.rows[0]?.name !== body.communityName)
+        throw new ApiError(409, 'STATE_CONFLICT', 'Enter the community name exactly.');
       await remove(client, current, actor.id, 'member.leave');
     });
     return c.body(null, 204);

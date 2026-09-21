@@ -257,15 +257,58 @@ export const pendingAdmissions = pgTable(
       .notNull()
       .references(() => invites.id),
     tokenHash: text('token_hash').notNull().unique(),
+    accountId: text('account_id'),
+    boundAt: timestamp('bound_at', { withTimezone: true }),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: time('created_at'),
   },
   (table) => [
     index('pending_admissions_community_idx').on(table.communityId),
+    uniqueIndex('pending_admissions_community_id_unique').on(table.communityId, table.id),
     foreignKey({
       name: 'pending_admissions_invite_tenant_fk',
       columns: [table.communityId, table.inviteId],
       foreignColumns: [invites.communityId, invites.id],
+    }),
+  ]
+);
+/** Content-free receipts for retrying a committed admission response. */
+export const admissionReceipts = pgTable(
+  'admission_receipts',
+  {
+    admissionId: uuid('admission_id')
+      .primaryKey()
+      .references(() => pendingAdmissions.id, { onDelete: 'cascade' }),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    inviteId: uuid('invite_id')
+      .notNull()
+      .references(() => invites.id),
+    accountId: text('account_id').notNull(),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => members.id),
+    createdAt: time('created_at'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('admission_receipts_community_idx').on(table.communityId),
+    foreignKey({
+      name: 'admission_receipts_admission_tenant_fk',
+      columns: [table.communityId, table.admissionId],
+      foreignColumns: [pendingAdmissions.communityId, pendingAdmissions.id],
+    }),
+    foreignKey({
+      name: 'admission_receipts_invite_tenant_fk',
+      columns: [table.communityId, table.inviteId],
+      foreignColumns: [invites.communityId, invites.id],
+    }),
+    foreignKey({
+      name: 'admission_receipts_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
     }),
   ]
 );

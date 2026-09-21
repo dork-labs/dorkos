@@ -3,6 +3,7 @@ import type { Context, Hono } from 'hono';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import {
+  CommunityWireDisconnectAllRequestSchema,
   CommunityWireGrantListResponseSchema,
   CommunityWirePairingApproveRequestSchema,
   CommunityWirePairingApproveResponseSchema,
@@ -339,11 +340,38 @@ export function registerPairingRoutes(
     const result = await transaction(pool, async (client) => {
       await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
       return client.query(
-        'UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now()) WHERE id=$1 AND member_id=$2 AND community_id=$3 RETURNING id',
+        `UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now())
+         WHERE id=$1 AND member_id=$2 AND community_id=$3 RETURNING id`,
         [id, actor.id, actor.community_id]
       );
     });
     if (!result.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Grant not found.');
+    return c.body(null, 204);
+  });
+
+  app.delete('/me/grants', async (c) => {
+    const actor = await requireMember(c, auth, pool);
+    const body = await readJson(c, CommunityWireDisconnectAllRequestSchema);
+    try {
+      await auth.api.verifyPassword({
+        headers: c.req.raw.headers,
+        body: { password: body.password },
+      });
+    } catch {
+      throw new ApiError(403, 'FORBIDDEN', 'Reauthentication failed.');
+    }
+    await transaction(pool, async (client) => {
+      await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
+      await client.query(
+        `UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now())
+         WHERE member_id=$1 AND community_id=$2 AND revoked_at IS NULL`,
+        [actor.id, actor.community_id]
+      );
+      await client.query(
+        'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
+        [actor.community_id, actor.id, 'grant.revoke_all', actor.id]
+      );
+    });
     return c.body(null, 204);
   });
 }

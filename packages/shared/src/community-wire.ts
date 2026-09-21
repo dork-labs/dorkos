@@ -40,6 +40,8 @@ export const COMMUNITY_API_V1_ROUTES = {
   memberships: '/api/v1/memberships',
   invites: '/api/v1/invites',
   invitePreview: '/api/v1/invites/preview',
+  invitePreflight: '/api/v1/invites/preflight',
+  inviteBind: '/api/v1/invites/bind',
   inviteRedeem: '/api/v1/invites/redeem',
   pairingStart: '/api/v1/pairings/start',
   pairingApprove: '/api/v1/pairings/approve',
@@ -363,9 +365,13 @@ export const CommunityWireInviteCreateResponseSchema = z.strictObject({
 export const CommunityWireInviteListResponseSchema = z.strictObject({
   invites: z.array(CommunityWireInviteSchema),
 });
-/** Invite preflight only confirms admission eligibility. */
+/** Invite preflight exchanges the fragment for a cookie-bound admission. */
 export const CommunityWireInvitePreflightResponseSchema = z.strictObject({
   granted: z.literal(true),
+  expiresAt: timestamp,
+  communityName: z.string().min(1),
+  inviterName: z.string().min(1),
+  channelName: z.string().nullable(),
 });
 /** Preview and redeem consume a fragment token through same-origin POST. */
 export const CommunityWireInviteTokenRequestSchema = z.strictObject({ token: id });
@@ -375,6 +381,10 @@ export const CommunityWireInvitePreviewResponseSchema = z.strictObject({
   inviterName: z.string().min(1),
   channelName: z.string().nullable(),
 });
+/** Binding attaches a pending admission to exactly one signed-in account. */
+export const CommunityWireInviteBindResponseSchema = z.strictObject({ bound: z.literal(true) });
+/** Redemption needs no reusable invite value after preflight. */
+export const CommunityWireInviteRedeemRequestSchema = z.strictObject({});
 /** An invite redemption receipt contains admitted member identity. */
 export const CommunityWireInviteRedeemResponseSchema = z.strictObject({ memberId: id });
 
@@ -435,6 +445,8 @@ export const CommunityWireGrantSchema = z.strictObject({
 export const CommunityWireGrantListResponseSchema = z.strictObject({
   grants: z.array(CommunityWireGrantSchema),
 });
+/** Disconnecting every installation requires current password confirmation. */
+export const CommunityWireDisconnectAllRequestSchema = z.strictObject({ password: id });
 
 /** An enrolled agent identity and owner bond, without a credential. */
 export const CommunityWireAgentSchema = z.strictObject({
@@ -466,6 +478,11 @@ export const CommunityWireAgentListResponseSchema = z.strictObject({
 export const CommunityWireOwnerTransferRequestSchema = z.strictObject({
   successorMemberId: id,
   password: id,
+});
+/** Leaving confirms both account control and the exact selected community. */
+export const CommunityWireMemberLeaveRequestSchema = z.strictObject({
+  password: id,
+  communityName: z.string().min(1),
 });
 /** Transfer receipt with the new current owner identity. */
 export const CommunityWireOwnerTransferResponseSchema = z.strictObject({ ownerMemberId: id });

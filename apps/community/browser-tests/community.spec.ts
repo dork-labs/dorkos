@@ -60,7 +60,7 @@ test.beforeAll(async () => {
   const app = createCommunityApp({ config, pool });
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
   app.use('/assets/*', serveStatic({ root: staticRoot }));
-  for (const path of ['/', '/join', '/pairing', '/c/:communityId'])
+  for (const path of ['/', '/join', '/pairing', '/c/:communityId', '/c/:communityId/*'])
     app.get(
       path,
       serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
@@ -109,7 +109,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await ownerPage.locator('#invite-channel').selectOption({ label: '#general' });
     await ownerPage.getByRole('button', { name: 'Create invite' }).click();
     const inviteLink = await ownerPage.getByLabel('One-time invite link').inputValue();
-    expect(inviteLink).toMatch(/\/c\/[0-9a-f-]+#invite=/u);
+    expect(inviteLink).toMatch(/\/c\/[0-9a-f-]+\/join#invite=/u);
     await memberPage.goto(inviteLink.replace('#invite=', '#token='));
     await expect(memberPage.getByRole('heading', { name: 'Come on in.' })).toBeVisible();
     await memberPage.screenshot({ path: '/tmp/community-join-mobile.png', fullPage: true });
@@ -471,6 +471,8 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     const exportDownload = memberPage.waitForEvent('download');
     await memberPage.getByRole('button', { name: 'Export my data' }).click();
     expect((await exportDownload).suggestedFilename()).toBe('my-community-data.zip');
+    await memberPage.getByLabel('Enter Gathering Place').fill('Gathering Place');
+    await memberPage.locator('#leave-password').fill('password1234');
     memberPage.once('dialog', (dialog) => void dialog.accept());
     await memberPage.getByRole('button', { name: 'Leave community' }).click();
     await expect(memberPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
@@ -491,6 +493,8 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await ownerPage.getByRole('button', { name: 'Transfer ownership' }).click();
     await expect(ownerPage.getByRole('button', { name: 'Leave community' })).toBeVisible();
     await expect(ownerPage.getByText('Community export')).toHaveCount(0);
+    await ownerPage.getByLabel('Enter Gathering Place').fill('Gathering Place');
+    await ownerPage.locator('#leave-password').fill('password1234');
     ownerPage.once('dialog', (dialog) => void dialog.accept());
     await ownerPage.getByRole('button', { name: 'Leave community' }).click();
     await expect(ownerPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
@@ -551,8 +555,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       memberPage.getByText('This account does not have a community membership yet.')
     ).toBeVisible();
 
-    // Resume the stored invitation after an OAuth callback to the host root.
-    // The auth session is real; only the external OAuth exchange is represented by its saved state.
+    // Preflight keeps the raw invitation out of browser storage and OAuth callback state.
     const createdInvite = await observerPage.evaluate(async (communityId) => {
       const response = await fetch(`/api/v1/communities/${communityId}/invites`, {
         method: 'POST',
@@ -562,32 +565,44 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       if (!response.ok) throw new Error(`invite creation: ${response.status}`);
       return response.json() as Promise<{ token: string }>;
     }, ids.communityId);
-    await ownerPage.route('**/auth-options', (route) =>
-      route.fulfill({
-        json: { google: true, github: false },
-      })
-    );
-    let callbackUrl = '';
-    await ownerPage.route('**/api/auth/sign-in/social', async (route) => {
-      callbackUrl = (route.request().postDataJSON() as { callbackURL: string }).callbackURL;
-      // No external OAuth request: keep the existing real session for callback recovery.
-      await route.fulfill({ status: 400, json: { message: 'Test-owned OAuth boundary' } });
-    });
-    await ownerPage.goto(
-      `${baseUrl}/c/${ids.communityId}#invite=${encodeURIComponent(createdInvite.token)}`
-    );
-    await ownerPage.getByRole('button', { name: 'Continue', exact: true }).click();
-    await ownerPage.getByRole('button', { name: 'Continue with Google' }).click();
-    await expect.poll(() => callbackUrl).toBe(`${baseUrl}/c/${ids.communityId}`);
-    await expect
-      .poll(() => ownerPage.evaluate(() => sessionStorage.getItem('communityPendingInvitePath')))
-      .toBe(`/c/${ids.communityId}`);
-    await ownerPage.goto(baseUrl);
-    await expect(ownerPage).toHaveURL(`${baseUrl}/c/${ids.communityId}`);
-    await expect(ownerPage.getByText('Gathering Place')).toBeVisible();
-    await expect
-      .poll(() => ownerPage.evaluate(() => sessionStorage.getItem('communityPendingInvite')))
-      .toBeNull();
+    const oauth = await browser.newContext();
+    try {
+      const oauthPage = await oauth.newPage();
+      await oauthPage.route('**/auth-options', (route) =>
+        route.fulfill({ json: { google: true, github: false } })
+      );
+      let callbackUrl = '';
+      await oauthPage.route('**/api/auth/sign-in/social', async (route) => {
+        callbackUrl = (route.request().postDataJSON() as { callbackURL: string }).callbackURL;
+        await route.fulfill({ status: 400, json: { message: 'Test-owned OAuth boundary' } });
+      });
+      let urlAtPreflight = '';
+      await oauthPage.route('**/invites/preflight', async (route) => {
+        urlAtPreflight = oauthPage.url();
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        await route.continue();
+      });
+      const rawToken = createdInvite.token;
+      await oauthPage.goto(
+        `${baseUrl}/c/${ids.communityId}/join#invite=${encodeURIComponent(rawToken)}`
+      );
+      await expect(oauthPage).toHaveURL(`${baseUrl}/c/${ids.communityId}/join`);
+      expect(
+        await oauthPage.evaluate((token) => {
+          const values = Object.values(sessionStorage);
+          return values.some((value) => value.includes(token));
+        }, rawToken)
+      ).toBe(false);
+      const continueAdmission = oauthPage.getByRole('button', { name: 'Continue', exact: true });
+      await continueAdmission.click();
+      await expect.poll(() => urlAtPreflight).toBe(`${baseUrl}/c/${ids.communityId}/join`);
+      await oauthPage.getByRole('button', { name: 'Continue with Google' }).click();
+      await expect.poll(() => callbackUrl).toBe(`${baseUrl}/c/${ids.communityId}/join`);
+      expect(callbackUrl).not.toContain(rawToken);
+      expect(await oauthPage.evaluate(() => location.hash)).toBe('');
+    } finally {
+      await oauth.close();
+    }
 
     await observerPage.getByRole('button', { name: 'Switch community' }).click();
     await expect(observerPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();

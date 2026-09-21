@@ -5,19 +5,10 @@ import { ChannelView } from './components/Channel.js';
 import { Manage } from './components/Manage.js';
 import { rememberCommunity } from './components/CommunityChooser.js';
 import { describeError, RequestError, request } from './api.js';
+import { takeInviteFragment } from './invite-fragment.js';
 import type { Channel, Community, Me } from './types.js';
 
-function readInvite() {
-  const fragment = new URLSearchParams(window.location.hash.slice(1));
-  const token =
-    fragment.get('invite') ??
-    fragment.get('token') ??
-    sessionStorage.getItem('communityPendingInvite');
-  if (token)
-    window.history.replaceState(null, '', window.location.pathname + window.location.search);
-  return token;
-}
-const initialInvite = readInvite();
+const initialInvite = takeInviteFragment();
 
 /** Render the signed-in community shell or the admission path. */
 export function CommunityApp() {
@@ -83,7 +74,24 @@ export function CommunityApp() {
         rememberCommunity(metadata.id);
         if (window.location.pathname === '/' || window.location.pathname === '/join')
           window.history.replaceState(null, '', `/c/${metadata.id}`);
+        if (inviteToken && /\/join$/u.test(window.location.pathname)) {
+          setMe(null);
+          setUnadmitted(false);
+          return;
+        }
         try {
+          if (!inviteToken && /\/join$/u.test(window.location.pathname)) {
+            try {
+              await request('/api/v1/invites/bind', 'POST', {});
+              await request('/api/v1/invites/redeem', 'POST', {});
+            } catch (cause) {
+              if (
+                !(cause instanceof RequestError) ||
+                (cause.status !== 401 && cause.status !== 403)
+              )
+                throw cause;
+            }
+          }
           const current = await request<Me>('/api/v1/me');
           if (!active) return;
           setMe(current);
@@ -92,13 +100,10 @@ export function CommunityApp() {
         } catch (cause) {
           if (!active) return;
           if (cause instanceof RequestError && (cause.status === 401 || cause.status === 403)) {
-            if (cause.status === 403 && sessionStorage.getItem('communityPendingInvite')) {
+            if (cause.status === 403 && /\/join$/u.test(window.location.pathname)) {
               try {
-                await request('/api/v1/invites/redeem', 'POST', {
-                  token: sessionStorage.getItem('communityPendingInvite'),
-                });
-                sessionStorage.removeItem('communityPendingInvite');
-                sessionStorage.removeItem('communityPendingInvitePath');
+                await request('/api/v1/invites/bind', 'POST', {});
+                await request('/api/v1/invites/redeem', 'POST', {});
                 setInviteToken(null);
                 setMe(await request<Me>('/api/v1/me'));
                 await refreshChannels();
@@ -304,6 +309,8 @@ export function CommunityApp() {
         )}
         {settings ? (
           <Manage
+            communityId={community!.id}
+            communityName={community!.name}
             me={me.member}
             channels={channels}
             selectedChannel={selected}

@@ -1194,8 +1194,24 @@ describe('private archives and recoverable leave', () => {
   });
 
   it('requires ownership transfer before leave, then revokes the former member’s session', async () => {
-    expect((await post('/api/v1/me/leave', {}, ownerCookie)).status).toBe(403);
-    expect((await post('/api/v1/me/leave', {}, bobCookie)).status).toBe(204);
+    expect(
+      (
+        await post(
+          '/api/v1/me/leave',
+          { password: 'password1234', communityName: 'Files' },
+          ownerCookie
+        )
+      ).status
+    ).toBe(403);
+    expect(
+      (
+        await post(
+          '/api/v1/me/leave',
+          { password: 'password1234', communityName: 'Files' },
+          bobCookie
+        )
+      ).status
+    ).toBe(204);
     expect((await post('/api/v1/me/export', {}, bobCookie)).status).toBe(403);
     expect(
       (await request(`/api/v1/channels/${channelId}/entries`, { headers: { cookie: ownerCookie } }))
