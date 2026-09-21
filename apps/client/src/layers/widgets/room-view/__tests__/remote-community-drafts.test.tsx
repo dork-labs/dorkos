@@ -214,6 +214,8 @@ describe('remote community delivery drafts', () => {
     act(() => result.current.send());
 
     rerender({ context: 'epoch-3' });
+    expect(result.current.text).toBe('');
+    expect(result.current.deliveries).toEqual([]);
     act(() => result.current.setText('final epoch'));
     await act(async () => resolve(entry));
 

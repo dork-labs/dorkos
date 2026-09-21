@@ -8,9 +8,9 @@ import {
 } from './use-community-connections';
 
 /** Discover one community independently so an outage cannot hide the other communities. */
-export function useRemoteCommunityRooms(ref: string, enabled = true) {
+export function useRemoteCommunityRooms(ref: string, enabled = true, accessFingerprint = 'legacy') {
   const transport = useTransport();
-  const authority = useCommunityContentAuthority(enabled);
+  const authority = useCommunityContentAuthority(enabled, accessFingerprint);
   return useQuery({
     queryKey: authority
       ? communityKeys.rooms(authority, ref)
@@ -23,9 +23,14 @@ export function useRemoteCommunityRooms(ref: string, enabled = true) {
 }
 
 /** Current room permission is resolved by the local server, never inferred from the local operator role. */
-export function useRemoteCommunityRoom(ref: string, roomId: string, enabled = true) {
+export function useRemoteCommunityRoom(
+  ref: string,
+  roomId: string,
+  enabled = true,
+  accessFingerprint = 'legacy'
+) {
   const transport = useTransport();
-  const authority = useCommunityContentAuthority(enabled);
+  const authority = useCommunityContentAuthority(enabled, accessFingerprint);
   return useQuery({
     queryKey: authority
       ? communityKeys.room(authority, ref, roomId)
@@ -43,10 +48,11 @@ export function useRemoteCommunityHistory(
   ref: string,
   roomId: string,
   threadRootId?: string,
-  enabled = true
+  enabled = true,
+  accessFingerprint = 'legacy'
 ) {
   const transport = useTransport();
-  const authority = useCommunityContentAuthority(enabled);
+  const authority = useCommunityContentAuthority(enabled, accessFingerprint);
   return useInfiniteQuery({
     queryKey: authority
       ? communityKeys.entries(authority, ref, roomId, threadRootId)
@@ -66,9 +72,14 @@ export function useRemoteCommunityHistory(
 }
 
 /** Roster rows preserve immutable member IDs and the human who owns each agent. */
-export function useRemoteCommunityMembers(ref: string, roomId: string, enabled = true) {
+export function useRemoteCommunityMembers(
+  ref: string,
+  roomId: string,
+  enabled = true,
+  accessFingerprint = 'legacy'
+) {
   const transport = useTransport();
-  const authority = useCommunityContentAuthority(enabled);
+  const authority = useCommunityContentAuthority(enabled, accessFingerprint);
   return useQuery({
     queryKey: authority
       ? communityKeys.members(authority, ref, roomId)
@@ -82,9 +93,13 @@ export function useRemoteCommunityMembers(ref: string, roomId: string, enabled =
 }
 
 /** Owner-scoped local agent enrollments for the selected community. */
-export function useRemoteCommunityAgents(ref: string, enabled = true) {
+export function useRemoteCommunityAgents(
+  ref: string,
+  enabled = true,
+  accessFingerprint = 'legacy'
+) {
   const transport = useTransport();
-  const authority = useCommunityContentAuthority(enabled);
+  const authority = useCommunityContentAuthority(enabled, accessFingerprint);
   return useQuery({
     queryKey: authority
       ? communityKeys.agents(authority, ref)

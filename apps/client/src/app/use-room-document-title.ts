@@ -10,7 +10,11 @@
  * @module app/use-room-document-title
  */
 import { useMemo } from 'react';
-import { useRemoteCommunityRoom } from '@/layers/entities/community';
+import {
+  communityAccessState,
+  useCommunityConnections,
+  useRemoteCommunityRoom,
+} from '@/layers/entities/community';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useSafePathname, useSafeSearch } from '@/layers/shared/model';
 import {
@@ -76,10 +80,14 @@ export function useRoomDocumentTitle(): RoomDocumentTitle {
   const roomId = pathname === ROOMS_PATHNAME ? (search.id ?? null) : null;
 
   const { data: room } = useRoom(search.community ? null : roomId);
+  const connections = useCommunityConnections(Boolean(search.community));
+  const connection = connections.data?.find((item) => item.ref === search.community);
+  const access = communityAccessState(connection?.access);
   const remote = useRemoteCommunityRoom(
     search.community ?? '',
     roomId ?? '',
-    Boolean(search.community && roomId)
+    Boolean(search.community && roomId && access.capabilities.read),
+    access.fingerprint
   );
   const { data: rooms } = useRooms();
 

@@ -41,15 +41,18 @@ export function useRemoteCommunityStream(
   ref: string,
   roomId: string,
   enabled = true,
-  reconnectKey = 0
+  reconnectKey = 0,
+  accessFingerprint = 'legacy',
+  cacheReadable = false
 ) {
   const transport = useTransport();
   const queries = useQueryClient();
-  const authority = useCommunityContentAuthority(enabled);
+  const authority = useCommunityContentAuthority(enabled || cacheReadable, accessFingerprint);
   const address = JSON.stringify([
     authority?.ownerKey,
     authority?.epoch,
     authority?.route.epoch,
+    authority?.accessFingerprint,
     ref,
     roomId,
   ]);
@@ -62,7 +65,8 @@ export function useRemoteCommunityStream(
   }));
 
   useEffect(() => {
-    if (!enabled || !authority) return;
+    if (!authority) return;
+    if (!enabled) return;
     const currentAuthority = authority;
     const controller = new AbortController();
     let retry: ReturnType<typeof setTimeout> | undefined;
@@ -182,10 +186,18 @@ export function useRemoteCommunityStream(
       controller.abort();
       clearTimeout(retry);
     };
-  }, [address, ref, roomId, enabled, reconnectKey, queries, transport, authority]);
+  }, [address, ref, roomId, enabled, reconnectKey, queries, transport, authority, cacheReadable]);
 
   // A route change must never expose the previous community's history for even one render.
-  return state.address === address && enabled && authority
-    ? state
-    : { address, room: null, entries: [], deliveries: [], status: 'connecting' as const };
+  if (state.address !== address || !authority)
+    return { address, room: null, entries: [], deliveries: [], status: 'connecting' as const };
+  if (enabled) return state;
+  if (cacheReadable)
+    return {
+      ...state,
+      room: state.room ? { ...state.room, stale: true, writable: false } : null,
+      deliveries: [],
+      status: 'offline' as const,
+    };
+  return { address, room: null, entries: [], deliveries: [], status: 'removed' as const };
 }

@@ -30,7 +30,7 @@ export function useRemoteCommunityDrafts(
   contextKey = ownerKey
 ) {
   const transport = useTransport();
-  const address = JSON.stringify([ownerKey, ref, roomId]);
+  const address = JSON.stringify([ownerKey, ref, roomId, contextKey]);
   const [draftState, setDraftState] = useState<{
     address: string;
     drafts: Record<string, { text: string; files: PendingFile[] }>;

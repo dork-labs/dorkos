@@ -16,6 +16,15 @@ import { TransportProvider } from '@/layers/shared/model';
 import { CommunityChannelGroups } from '../ui/CommunityChannelGroups';
 
 afterEach(cleanup);
+const access = {
+  state: 'verified',
+  effective: { read: true, post: true, enrollAgent: true, stream: true },
+  lastKnown: {
+    lifecycle: 'active',
+    capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+    verifiedAt: '2026-09-16T10:00:00Z',
+  },
+} as const;
 const connection = (ref: string) =>
   CommunityConnectionDescriptorSchema.parse({
     ref,
@@ -25,6 +34,7 @@ const connection = (ref: string) =>
     connectedHumanMemberId: 'person',
     status: 'connected',
     expiresAt: null,
+    access,
   });
 const room = (community: string) =>
   RemoteCommunityRoomSchema.parse({
@@ -46,6 +56,7 @@ const room = (community: string) =>
     stale: false,
     cacheCursor: null,
     lastRemoteSeq: 0,
+    access,
   });
 
 function mount(community?: string, failFirst = false) {

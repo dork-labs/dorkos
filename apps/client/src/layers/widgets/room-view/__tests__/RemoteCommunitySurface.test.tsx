@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
+import type { CommunityConnectionAccess } from '@dorkos/shared/community-wire';
 import {
   RemoteCommunityEntrySchema,
   RemoteCommunityRoomSchema,
@@ -14,6 +15,15 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { RemoteCommunitySurface } from '../ui/RemoteCommunitySurface';
 
 afterEach(cleanup);
+const access = {
+  state: 'verified',
+  effective: { read: true, post: true, enrollAgent: true, stream: true },
+  lastKnown: {
+    lifecycle: 'active',
+    capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+    verifiedAt: '2026-09-16T10:00:00Z',
+  },
+} as const;
 const room = RemoteCommunityRoomSchema.parse({
   community: 'a',
   roomId: 'same',
@@ -33,6 +43,7 @@ const room = RemoteCommunityRoomSchema.parse({
   stale: false,
   cacheCursor: null,
   lastRemoteSeq: 0,
+  access,
 });
 const ownerEntry = RemoteCommunityEntrySchema.parse({
   community: 'a',
@@ -51,8 +62,20 @@ const ownerEntry = RemoteCommunityEntrySchema.parse({
   cursor: 'cursor-1',
   createdAt: '2026-09-16T10:00:00Z',
 });
-function mount() {
+function mount(connectionAccess: CommunityConnectionAccess = access) {
   const transport = createMockTransport();
+  vi.mocked(transport.listCommunityConnections).mockResolvedValue([
+    {
+      ref: 'a' as never,
+      remoteCommunityId: 'deployment',
+      label: 'Community A',
+      pinnedOrigin: 'https://a.example.com',
+      connectedHumanMemberId: 'person',
+      status: 'connected',
+      expiresAt: null,
+      access: connectionAccess,
+    },
+  ]);
   const queries = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -106,6 +129,40 @@ function mount() {
 }
 
 describe('remote community surface', () => {
+  it('keeps an archived grant read-only without opening a stream or agent controls', async () => {
+    const archivedAccess = {
+      state: 'verified',
+      effective: { read: true, post: false, enrollAgent: false, stream: false },
+      lastKnown: {
+        lifecycle: 'archived',
+        capabilities: { read: true, post: false, enrollAgent: false, stream: false },
+        verifiedAt: '2026-09-16T11:00:00Z',
+      },
+    } as const;
+    const view = mount(archivedAccess);
+    await waitFor(() => expect(view.transport.getRemoteCommunityRoom).toHaveBeenCalled());
+    expect(view.transport.subscribeRemoteCommunityRoom).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Stop my agents' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add to community' })).not.toBeInTheDocument();
+  });
+
+  it('makes unverified access cache-only and starts no protected request', async () => {
+    const unverifiedAccess = {
+      state: 'unverified',
+      effective: { read: false, post: false, enrollAgent: false, stream: false },
+      lastKnown: {
+        lifecycle: 'active',
+        capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+        verifiedAt: '2026-09-16T10:00:00Z',
+      },
+    } as const;
+    const view = mount(unverifiedAccess);
+    await waitFor(() => expect(view.transport.listCommunityConnections).toHaveBeenCalled());
+    expect(view.transport.getRemoteCommunityRoom).not.toHaveBeenCalled();
+    expect(view.transport.listRemoteCommunityEntries).not.toHaveBeenCalled();
+    expect(view.transport.subscribeRemoteCommunityRoom).not.toHaveBeenCalled();
+  });
+
   it('keeps local Stop available when remote access is revoked and hides the composer', async () => {
     const view = mount();
     await waitFor(() => expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalled());
@@ -282,6 +339,7 @@ describe('remote community surface', () => {
 
   it('sends only through the qualified remote transport and leaves local room APIs unused', async () => {
     const view = mount();
+    await waitFor(() => expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalled());
     vi.mocked(view.transport.postRemoteCommunityEntry).mockRejectedValue(
       new Error('Network unavailable')
     );
@@ -310,6 +368,7 @@ describe('remote community surface', () => {
       value: scrollTo,
     });
     const view = mount();
+    await waitFor(() => expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalled());
     vi.mocked(view.transport.postRemoteCommunityEntry).mockResolvedValue(ownerEntry);
     try {
       const input = await screen.findByRole('combobox');

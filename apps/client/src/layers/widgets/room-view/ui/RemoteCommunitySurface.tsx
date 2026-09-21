@@ -1,13 +1,15 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RemoteCommunityEntry } from '@dorkos/shared/community-views';
 import { useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import {
   communityKeys,
+  communityAccessState,
   isCommunityContentAuthorityCurrent,
   mergeRemoteCommunityEntries,
   useCommunityContentAuthority,
+  useCommunityConnections,
   useRemoteCommunityHistory,
   useRemoteCommunityMembers,
   useRemoteCommunityRoom,
@@ -50,24 +52,54 @@ export function RemoteCommunitySurface({
   onThread: (rootId?: string) => void;
 }) {
   const transport = useTransport();
-  const authority = useCommunityContentAuthority();
+  const connections = useCommunityConnections();
+  const connection = connections.data?.find((item) => item.ref === community);
+  const access = communityAccessState(connection?.access);
+  const authority = useCommunityContentAuthority(true, access.fingerprint);
   const ownerAddress = authority ? JSON.stringify([authority.ownerKey, authority.epoch]) : '';
   const contextAddress = authority
-    ? JSON.stringify([authority.ownerKey, authority.epoch, authority.route.epoch])
+    ? JSON.stringify([
+        authority.ownerKey,
+        authority.epoch,
+        authority.route.epoch,
+        authority.accessFingerprint,
+      ])
     : '';
   const queries = useQueryClient();
-  const roomQuery = useRemoteCommunityRoom(community, roomId);
+  useEffect(() => {
+    if (connection?.status === 'reconnect-required' && authority)
+      queries.removeQueries({ queryKey: communityKeys.remote(authority, community) });
+  }, [authority, community, connection?.status, queries]);
+  const roomQuery = useRemoteCommunityRoom(
+    community,
+    roomId,
+    access.capabilities.read,
+    access.fingerprint
+  );
   const [streamRevision, setStreamRevision] = useState(0);
-  const stream = useRemoteCommunityStream(community, roomId, true, streamRevision);
+  const stream = useRemoteCommunityStream(
+    community,
+    roomId,
+    access.capabilities.stream,
+    streamRevision,
+    access.fingerprint,
+    access.cacheReadable
+  );
   const removed = stream.status === 'removed';
   const room = removed ? null : (stream.room ?? roomQuery.data);
   const history = useRemoteCommunityHistory(
     community,
     roomId,
     threadId,
-    !removed && room?.readable === true
+    !removed && access.capabilities.read && room?.readable === true,
+    access.fingerprint
   );
-  const roster = useRemoteCommunityMembers(community, roomId, !removed && room?.readable === true);
+  const roster = useRemoteCommunityMembers(
+    community,
+    roomId,
+    !removed && access.capabilities.read && room?.readable === true,
+    access.fingerprint
+  );
   const [receiptState, setReceiptState] = useState<{
     address: string;
     entries: RemoteCommunityEntry[];
@@ -88,7 +120,8 @@ export function RemoteCommunitySurface({
   const marked = useRef<{ address: string; cursor: string } | null>(null);
   const composer = useRef<ComposerInputHandle>(null);
   const timeline = useRef<ConversationTimelineHandle>(null);
-  const canSend = !removed && stream.status === 'live' && room?.writable === true;
+  const canSend =
+    !removed && access.capabilities.post && stream.status === 'live' && room?.writable === true;
   const entries = useMemo(
     () =>
       removed
@@ -155,11 +188,13 @@ export function RemoteCommunitySurface({
     canSend,
     canSendReason: removed
       ? 'You no longer have access to this channel.'
-      : room?.archived
-        ? 'This channel is archived.'
-        : !room?.joined
-          ? 'Join this channel to send messages.'
-          : 'Reconnecting. Saved messages are read-only until the connection returns.',
+      : !access.capabilities.post && access.cacheReadable
+        ? 'This community is read-only.'
+        : room?.archived
+          ? 'This channel is archived.'
+          : !room?.joined
+            ? 'Join this channel to send messages.'
+            : 'Reconnecting. Saved messages are read-only until the connection returns.',
     attachments: drafts.attachments,
     async send() {
       drafts.send(threadId);
@@ -226,7 +261,7 @@ export function RemoteCommunitySurface({
               Back to channel
             </Button>
           )}
-          {!removed && room && !room.joined && !room.stale && (
+          {!removed && access.capabilities.post && room && !room.joined && !room.stale && (
             <Button
               size="sm"
               disabled={action !== null}
@@ -237,25 +272,29 @@ export function RemoteCommunitySurface({
               Join channel
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={removed}
-            onClick={() => setShowMembers(!showMembers)}
-          >
-            {showMembers ? 'Hide members' : 'Members'}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={action !== null}
-            onClick={() =>
-              void perform('stop', () => transport.haltRemoteCommunityRoom(community, roomId))
-            }
-          >
-            {action === 'stop' ? 'Stopping…' : 'Stop my agents'}
-          </Button>
-          {room?.joined && (
+          {access.cacheReadable && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={removed}
+              onClick={() => setShowMembers(!showMembers)}
+            >
+              {showMembers ? 'Hide members' : 'Members'}
+            </Button>
+          )}
+          {access.capabilities.enrollAgent && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={action !== null}
+              onClick={() =>
+                void perform('stop', () => transport.haltRemoteCommunityRoom(community, roomId))
+              }
+            >
+              {action === 'stop' ? 'Stopping…' : 'Stop my agents'}
+            </Button>
+          )}
+          {access.capabilities.post && room?.joined && (
             <Button
               variant="ghost"
               size="sm"
@@ -331,12 +370,16 @@ export function RemoteCommunitySurface({
                     )}
                   </div>
                 ))}
-                <RemoteCommunityAgents
-                  key={contextAddress}
-                  community={community}
-                  roomId={roomId}
-                  online={stream.status === 'live'}
-                />
+                {access.capabilities.enrollAgent && (
+                  <RemoteCommunityAgents
+                    key={contextAddress}
+                    community={community}
+                    roomId={roomId}
+                    online={stream.status === 'live'}
+                    canEnroll
+                    accessFingerprint={access.fingerprint}
+                  />
+                )}
               </div>
             )}
             {history.isError && (

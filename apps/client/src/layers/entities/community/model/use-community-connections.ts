@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import type { CommunityConnectionAccess } from '@dorkos/shared/community-wire';
 import { useQuery } from '@tanstack/react-query';
 import type { ConfirmedCommunityAuthority } from '@/layers/shared/lib';
 import { isCommunityAuthorityCurrent } from '@/layers/shared/lib';
@@ -13,6 +14,26 @@ import { useConfirmedCommunityAuthority } from './use-community-navigation';
 export interface CommunityContentAuthority extends ConfirmedCommunityAuthority {
   /** Route generation that owns reads, streams, and UI completions. */
   route: CommunityRouteEpoch;
+  /** Access generation that prevents capability changes from reusing writable cache state. */
+  accessFingerprint?: string;
+}
+
+/** Fail-closed client interpretation of one server-verified connection snapshot. */
+export function communityAccessState(access: CommunityConnectionAccess | null | undefined) {
+  const verified = access?.state === 'verified';
+  const capabilities = verified
+    ? access.effective
+    : { read: false, post: false, enrollAgent: false, stream: false };
+  const cacheReadable = verified
+    ? capabilities.read
+    : access?.state === 'unverified' && access.lastKnown?.capabilities.read;
+  const fingerprint =
+    access?.state === 'reconnect-required'
+      ? 'reconnect-required'
+      : access?.lastKnown
+        ? JSON.stringify([access.lastKnown.verifiedAt, access.lastKnown.capabilities])
+        : (access?.state ?? 'pending');
+  return { verified, capabilities, cacheReadable: Boolean(cacheReadable), fingerprint };
 }
 
 /** Local query keys; refs keep different communities' otherwise identical IDs separate. */
@@ -27,7 +48,12 @@ export const communityKeys = {
   remote: (authority: ConfirmedCommunityAuthority, ref: string) =>
     [...communityKeys.owner(authority), ref] as const,
   content: (authority: CommunityContentAuthority, ref: string) =>
-    [...communityKeys.remote(authority, ref), 'context', authority.route.epoch] as const,
+    [
+      ...communityKeys.remote(authority, ref),
+      'context',
+      authority.route.epoch,
+      authority.accessFingerprint,
+    ] as const,
   rooms: (authority: CommunityContentAuthority, ref: string) =>
     [...communityKeys.content(authority, ref), 'rooms'] as const,
   room: (authority: CommunityContentAuthority, ref: string, roomId: string) =>
@@ -66,10 +92,16 @@ export async function withinCommunityContentAuthority<T>(
 }
 
 /** Capture the confirmed owner together with the current committed route generation. */
-export function useCommunityContentAuthority(enabled = true): CommunityContentAuthority | null {
+export function useCommunityContentAuthority(
+  enabled = true,
+  accessFingerprint = 'connection-unresolved'
+): CommunityContentAuthority | null {
   const owner = useConfirmedCommunityAuthority(enabled);
   const route = useCommunityRouteEpoch();
-  return useMemo(() => (owner ? { ...owner, route } : null), [owner, route]);
+  return useMemo(
+    () => (owner ? { ...owner, route, accessFingerprint } : null),
+    [owner, route, accessFingerprint]
+  );
 }
 
 /** Read only browser-safe descriptors from the local server. */
@@ -82,5 +114,6 @@ export function useCommunityConnections(enabled = true) {
       : [...communityKeys.all, 'owner', 'unresolved', 'connections'],
     queryFn: () => withinCommunityAuthority(authority!, () => transport.listCommunityConnections()),
     enabled: enabled && authority !== null,
+    refetchInterval: 30_000,
   });
 }

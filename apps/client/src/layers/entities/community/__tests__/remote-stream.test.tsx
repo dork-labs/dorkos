@@ -18,6 +18,16 @@ import {
   useRemoteCommunityStream,
 } from '../model/use-remote-community-stream';
 
+const access = {
+  state: 'verified',
+  effective: { read: true, post: true, enrollAgent: true, stream: true },
+  lastKnown: {
+    lifecycle: 'active',
+    capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+    verifiedAt: '2026-09-16T10:00:00Z',
+  },
+} as const;
+
 const room = (community = 'a') =>
   RemoteCommunityRoomSchema.parse({
     community,
@@ -38,6 +48,7 @@ const room = (community = 'a') =>
     stale: false,
     cacheCursor: 'opaque',
     lastRemoteSeq: 2,
+    access,
   });
 const entry = (community = 'a', remoteSeq = 1) =>
   RemoteCommunityEntrySchema.parse({
@@ -93,6 +104,7 @@ function setup() {
     epoch: authority.epoch,
     ownerKey: 'owner-a',
     route: getCommunityRouteEpoch(),
+    accessFingerprint: 'legacy',
   };
   client.setQueryData(communityNavigationKeys.authority(authority.epoch), {
     ownerKey: 'owner-a',
@@ -167,6 +179,23 @@ describe('remote room stream lifecycle', () => {
       writable: false,
       stale: true,
     });
+  });
+
+  it('turns a verified stream into cache-only history without reconnecting', () => {
+    const { streams, wrapper } = setup();
+    const hook = renderHook(
+      ({ enabled, cacheReadable }) =>
+        useRemoteCommunityStream('a', 'same', enabled, 0, 'verified-generation', cacheReadable),
+      { wrapper, initialProps: { enabled: true, cacheReadable: false } }
+    );
+    act(() => streams[0].emit(snapshot()));
+    hook.rerender({ enabled: false, cacheReadable: true });
+
+    expect(streams[0].signal?.aborted).toBe(true);
+    expect(streams).toHaveLength(1);
+    expect(hook.result.current.status).toBe('offline');
+    expect(hook.result.current.entries).toHaveLength(1);
+    expect(hook.result.current.room).toMatchObject({ stale: true, writable: false });
   });
 
   it('discards late stream events after the owner generation is invalidated', () => {

@@ -2,6 +2,7 @@
 export {
   useCommunityConnections,
   communityKeys,
+  communityAccessState,
   isCommunityContentAuthorityCurrent,
   useCommunityContentAuthority,
   withinCommunityAuthority,

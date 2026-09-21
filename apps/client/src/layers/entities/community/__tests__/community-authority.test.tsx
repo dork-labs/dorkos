@@ -12,8 +12,18 @@ import {
 } from '@/layers/shared/lib';
 import { commitCommunityRouteEpoch, TransportProvider } from '@/layers/shared/model';
 import { communityNavigationKeys, useCommunityNavigation } from '../model/use-community-navigation';
-import { withinCommunityAuthority } from '../model/use-community-connections';
+import { communityAccessState, withinCommunityAuthority } from '../model/use-community-connections';
 import { useRemoteCommunityRoom } from '../model/use-remote-community';
+
+const access = {
+  state: 'verified',
+  effective: { read: true, post: true, enrollAgent: true, stream: true },
+  lastKnown: {
+    lifecycle: 'active',
+    capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+    verifiedAt: '2026-09-21T00:00:00.000Z',
+  },
+} as const;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -26,6 +36,35 @@ function deferred<T>() {
 afterEach(() => {
   cleanup();
   invalidateCommunityAuthority();
+});
+
+describe('Community access projection', () => {
+  it('keeps an outage on the same cache generation while failing every live capability closed', () => {
+    const verified = communityAccessState(access);
+    const unverified = communityAccessState({
+      ...access,
+      state: 'unverified',
+      effective: { read: false, post: false, enrollAgent: false, stream: false },
+    });
+    expect(unverified.fingerprint).toBe(verified.fingerprint);
+    expect(unverified.cacheReadable).toBe(true);
+    expect(unverified.capabilities).toEqual({
+      read: false,
+      post: false,
+      enrollAgent: false,
+      stream: false,
+    });
+  });
+
+  it('moves reconnect-required access into a purge generation', () => {
+    const reconnect = communityAccessState({
+      ...access,
+      state: 'reconnect-required',
+      effective: { read: false, post: false, enrollAgent: false, stream: false },
+    });
+    expect(reconnect.fingerprint).toBe('reconnect-required');
+    expect(reconnect.cacheReadable).toBe(false);
+  });
 });
 
 describe('Community authority bootstrap', () => {
@@ -161,6 +200,7 @@ describe('Community authority bootstrap', () => {
           stale: false,
           cacheCursor: null,
           lastRemoteSeq: 0,
+          access,
         })
       );
       await firstA.promise;
@@ -188,6 +228,7 @@ describe('Community authority bootstrap', () => {
           stale: false,
           cacheCursor: null,
           lastRemoteSeq: 0,
+          access,
         })
       );
       await finalA.promise;
