@@ -99,10 +99,10 @@ export function registerChannelRoutes(
       );
       // A concurrent demotion may complete while INSERT waits; this check is inside the transaction.
       await requireLiveRole(client, member, ['owner', 'admin']);
-      await client.query('INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2)', [
-        row.rows[0].id,
-        member.id,
-      ]);
+      await client.query(
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)',
+        [member.community_id, row.rows[0].id, member.id]
+      );
       return row.rows[0].id;
     });
     const channel = await channelProjection(pool, id, member);
@@ -153,8 +153,8 @@ export function registerChannelRoutes(
       if (channel.visibility === 'private' && !channel.joined)
         throw new ApiError(404, 'NOT_FOUND', 'Channel not found.');
       await client.query(
-        'INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-        [channel.id, member.id]
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+        [member.community_id, channel.id, member.id]
       );
     });
     return json(c, CommunityWireChannelResponseSchema, {
@@ -232,8 +232,8 @@ export function registerChannelRoutes(
       );
       if (!target.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
       await client.query(
-        'INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-        [channel.id, body.memberId]
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+        [actor.community_id, channel.id, body.memberId]
       );
     });
     return json(c, CommunityWireChannelResponseSchema, {

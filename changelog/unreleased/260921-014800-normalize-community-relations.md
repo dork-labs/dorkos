@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): normalize tenant relation arrays'
+  - 'feat(community): enforce tenant relational contract'
 ---
 
 ### Changed

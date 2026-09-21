@@ -92,7 +92,7 @@ export function entryProjection(
 /** Load one entry without revealing its storage columns. */
 export async function loadEntry(client: PoolClient | Pool, id: string): Promise<EntryRow> {
   const result = await client.query<EntryRow>(
-    'SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.id=$1',
+    `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.id=$1`,
     [id]
   );
   if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Entry not found.');
@@ -192,10 +192,10 @@ export function registerEntryRoutes(
         if (owned.rowCount !== body.attachmentIds.length)
           throw new ApiError(409, 'STATE_CONFLICT', 'An attachment is unavailable.');
       }
-      const roster = await client.query<{ id: string; handle: string }>(
-        `SELECT m.id,m.handle FROM channel_members cm JOIN members m ON m.id=cm.member_id
+      const roster = await client.query<{ id: string; handle: string; kind: 'human' | 'agent' }>(
+        `SELECT m.id,m.handle,'human'::text AS kind FROM channel_members cm JOIN members m ON m.id=cm.member_id
          WHERE cm.channel_id=$1 AND m.active
-         UNION ALL SELECT a.id,a.handle FROM agent_channel_members acm JOIN agents a ON a.id=acm.agent_id
+         UNION ALL SELECT a.id,a.handle,'agent'::text AS kind FROM agent_channel_members acm JOIN agents a ON a.id=acm.agent_id
          JOIN members owner ON owner.id=a.owner_member_id
          WHERE acm.channel_id=$1 AND a.active AND owner.active`,
         [channel.id]
@@ -210,8 +210,8 @@ export function registerEntryRoutes(
         [channel.id]
       );
       const inserted = await client.query<{ id: string }>(
-        `INSERT INTO entries(community_id,channel_id,seq,author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,idempotency_key,payload_hash)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+        `INSERT INTO entries(community_id,channel_id,seq,author_member_id,author_agent_id,author_display_name,text,parent_entry_id,thread_root_entry_id,idempotency_key,payload_hash)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
         [
           principal.community_id,
           channel.id,
@@ -220,11 +220,24 @@ export function registerEntryRoutes(
           principal.kind === 'agent' ? principal.id : null,
           principal.display_name,
           body.text,
-          mentions,
           body.parentEntryId ?? null,
           rootId,
           body.idempotencyKey,
           payloadHash,
+        ]
+      );
+      const kindsById = new Map(roster.rows.map((target) => [target.id, target.kind]));
+      await client.query(
+        `INSERT INTO entry_mentions(entry_id,position,community_id,mentioned_member_id,mentioned_agent_id)
+         SELECT $1,mentioned.position,$2,
+           CASE WHEN mentioned.kind='human' THEN mentioned.id END,
+           CASE WHEN mentioned.kind='agent' THEN mentioned.id END
+         FROM unnest($3::uuid[],$4::text[]) WITH ORDINALITY AS mentioned(id,kind,position)`,
+        [
+          inserted.rows[0].id,
+          principal.community_id,
+          mentions,
+          mentions.map((id) => kindsById.get(id)),
         ]
       );
       if (body.attachmentIds?.length) {
@@ -303,7 +316,7 @@ export function registerEntryRoutes(
       }
       const limit = parsed.limit ?? 50;
       const result = await client.query<EntryRow>(
-        `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+        `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
          FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.channel_id=$1 AND e.seq>$2 AND
            (($3::uuid IS NULL AND e.thread_root_entry_id IS NULL) OR ($3::uuid IS NOT NULL AND (e.id=$3 OR e.thread_root_entry_id=$3)))
          ORDER BY e.seq LIMIT $4`,

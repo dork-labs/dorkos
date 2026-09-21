@@ -21,15 +21,13 @@ export const communities = pgTable(
   'communities',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    singleton: boolean('singleton').notNull().default(true).unique(),
     name: text('name').notNull(),
     description: text('description'),
-    lifecycle: text('lifecycle').notNull().default('active'),
+    lifecycle: text('lifecycle').notNull().default('pending_owner'),
     lifecycleVersion: integer('lifecycle_version').notNull().default(1),
     createdAt: time('created_at'),
   },
   (table) => [
-    check('community_singleton', sql`${table.singleton}`),
     check(
       'communities_lifecycle',
       sql`${table.lifecycle} IN ('pending_owner','active','suspended')`
@@ -141,7 +139,6 @@ export const members = pgTable(
       .references(() => communities.id),
     userId: text('user_id')
       .notNull()
-      .unique()
       .references(() => users.id),
     displayName: text('display_name').notNull(),
     handle: text('handle').notNull(),
@@ -198,13 +195,27 @@ export const invites = pgTable(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: time('created_at'),
   },
-  (table) => [uniqueIndex('invites_community_id_unique').on(table.communityId, table.id)]
+  (table) => [
+    uniqueIndex('invites_community_id_unique').on(table.communityId, table.id),
+    foreignKey({
+      name: 'invites_issuer_tenant_fk',
+      columns: [table.communityId, table.issuerMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'invites_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+  ]
 );
 /** One seat per invitation and account. */
 export const inviteUses = pgTable(
   'invite_uses',
   {
-    communityId: uuid('community_id').references(() => communities.id),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
     inviteId: uuid('invite_id')
       .notNull()
       .references(() => invites.id),
@@ -216,6 +227,11 @@ export const inviteUses = pgTable(
   (table) => [
     primaryKey({ columns: [table.inviteId, table.userId] }),
     index('invite_uses_community_idx').on(table.communityId),
+    foreignKey({
+      name: 'invite_uses_invite_tenant_fk',
+      columns: [table.communityId, table.inviteId],
+      foreignColumns: [invites.communityId, invites.id],
+    }),
   ]
 );
 /** Short-lived signup approval rows. */
@@ -223,7 +239,9 @@ export const pendingAdmissions = pgTable(
   'pending_admissions',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    communityId: uuid('community_id').references(() => communities.id),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
     inviteId: uuid('invite_id')
       .notNull()
       .references(() => invites.id),
@@ -231,14 +249,23 @@ export const pendingAdmissions = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: time('created_at'),
   },
-  (table) => [index('pending_admissions_community_idx').on(table.communityId)]
+  (table) => [
+    index('pending_admissions_community_idx').on(table.communityId),
+    foreignKey({
+      name: 'pending_admissions_invite_tenant_fk',
+      columns: [table.communityId, table.inviteId],
+      foreignColumns: [invites.communityId, invites.id],
+    }),
+  ]
 );
 /** Browser approval pairing requests. */
 export const connectionPairings = pgTable(
   'connection_pairings',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    communityId: uuid('community_id').references(() => communities.id),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
     verifierHash: text('verifier_hash').notNull(),
     installName: text('install_name').notNull(),
     scopes: text('scopes').array().notNull(),
@@ -251,14 +278,23 @@ export const connectionPairings = pgTable(
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     createdAt: time('created_at'),
   },
-  (table) => [index('connection_pairings_community_idx').on(table.communityId)]
+  (table) => [
+    index('connection_pairings_community_idx').on(table.communityId),
+    foreignKey({
+      name: 'connection_pairings_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+  ]
 );
 /** Revocable server-to-server personal grants, stored as hashes. */
 export const connectionGrants = pgTable(
   'connection_grants',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    communityId: uuid('community_id').references(() => communities.id),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
     memberId: uuid('member_id')
       .notNull()
       .references(() => members.id),
@@ -269,7 +305,14 @@ export const connectionGrants = pgTable(
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
-  (table) => [index('connection_grants_community_idx').on(table.communityId)]
+  (table) => [
+    index('connection_grants_community_idx').on(table.communityId),
+    foreignKey({
+      name: 'connection_grants_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+  ]
 );
 
 /** Durable channel identity and commit-serialized sequence counter. */
@@ -297,7 +340,9 @@ export const channels = pgTable(
 export const channelMembers = pgTable(
   'channel_members',
   {
-    communityId: uuid('community_id').references(() => communities.id),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
     channelId: uuid('channel_id')
       .notNull()
       .references(() => channels.id),
@@ -310,6 +355,16 @@ export const channelMembers = pgTable(
     primaryKey({ columns: [table.channelId, table.memberId] }),
     index('channel_members_member_idx').on(table.memberId),
     index('channel_members_community_idx').on(table.communityId),
+    foreignKey({
+      name: 'channel_members_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+    foreignKey({
+      name: 'channel_members_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
   ]
 );
 
@@ -336,6 +391,11 @@ export const agents = pgTable(
     uniqueIndex('agents_handle_unique').on(table.communityId, table.handle),
     uniqueIndex('agents_owner_local_id_unique').on(table.ownerMemberId, table.localAgentId),
     index('agents_owner_active_idx').on(table.ownerMemberId, table.active),
+    foreignKey({
+      name: 'agents_owner_tenant_fk',
+      columns: [table.communityId, table.ownerMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
   ]
 );
 /** Agent bearer records contain only token hashes. */
@@ -343,7 +403,9 @@ export const agentCredentials = pgTable(
   'agent_credentials',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    communityId: uuid('community_id').references(() => communities.id),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
     agentId: uuid('agent_id')
       .notNull()
       .references(() => agents.id),
@@ -351,13 +413,22 @@ export const agentCredentials = pgTable(
     createdAt: time('created_at'),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
-  (table) => [index('agent_credentials_community_idx').on(table.communityId)]
+  (table) => [
+    index('agent_credentials_community_idx').on(table.communityId),
+    foreignKey({
+      name: 'agent_credentials_agent_tenant_fk',
+      columns: [table.communityId, table.agentId],
+      foreignColumns: [agents.communityId, agents.id],
+    }),
+  ]
 );
 /** Explicit agent channel membership. */
 export const agentChannelMembers = pgTable(
   'agent_channel_members',
   {
-    communityId: uuid('community_id').references(() => communities.id),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
     channelId: uuid('channel_id')
       .notNull()
       .references(() => channels.id),
@@ -369,6 +440,16 @@ export const agentChannelMembers = pgTable(
   (table) => [
     primaryKey({ columns: [table.channelId, table.agentId] }),
     index('agent_channel_members_community_idx').on(table.communityId),
+    foreignKey({
+      name: 'agent_channel_members_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+    foreignKey({
+      name: 'agent_channel_members_agent_tenant_fk',
+      columns: [table.communityId, table.agentId],
+      foreignColumns: [agents.communityId, agents.id],
+    }),
   ]
 );
 /** One handle namespace shared by humans and agents. */
@@ -386,7 +467,19 @@ export const communityHandles = pgTable(
       .unique()
       .references(() => agents.id),
   },
-  (table) => [primaryKey({ columns: [table.communityId, table.handle] })]
+  (table) => [
+    primaryKey({ columns: [table.communityId, table.handle] }),
+    foreignKey({
+      name: 'community_handles_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'community_handles_agent_tenant_fk',
+      columns: [table.communityId, table.agentId],
+      foreignColumns: [agents.communityId, agents.id],
+    }),
+  ]
 );
 
 /** Shared immutable entry content and resolved mention identities. */
@@ -394,7 +487,9 @@ export const entries = pgTable(
   'entries',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    communityId: uuid('community_id').references(() => communities.id),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
     channelId: uuid('channel_id')
       .notNull()
       .references(() => channels.id),
@@ -407,10 +502,6 @@ export const entries = pgTable(
     threadRootEntryId: uuid('thread_root_entry_id'),
     idempotencyKey: text('idempotency_key').notNull(),
     payloadHash: text('payload_hash').notNull(),
-    mentions: uuid('mentions')
-      .array()
-      .notNull()
-      .default(sql`'{}'::uuid[]`),
     createdAt: time('created_at'),
   },
   (table) => [
@@ -432,6 +523,31 @@ export const entries = pgTable(
     ),
     index('entries_thread_idx').on(table.channelId, table.threadRootEntryId, table.seq),
     index('entries_community_idx').on(table.communityId),
+    foreignKey({
+      name: 'entries_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+    foreignKey({
+      name: 'entries_author_member_tenant_fk',
+      columns: [table.communityId, table.authorMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'entries_author_agent_tenant_fk',
+      columns: [table.communityId, table.authorAgentId],
+      foreignColumns: [agents.communityId, agents.id],
+    }),
+    foreignKey({
+      name: 'entries_parent_tenant_fk',
+      columns: [table.communityId, table.parentEntryId],
+      foreignColumns: [table.communityId, table.id],
+    }),
+    foreignKey({
+      name: 'entries_thread_root_tenant_fk',
+      columns: [table.communityId, table.threadRootEntryId],
+      foreignColumns: [table.communityId, table.id],
+    }),
   ]
 );
 /** Ordered, tenant-qualified human or agent targets mentioned by one entry. */
@@ -477,7 +593,9 @@ export const attachments = pgTable(
   'attachments',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    communityId: uuid('community_id').references(() => communities.id),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
     channelId: uuid('channel_id')
       .notNull()
       .references(() => channels.id),
@@ -514,6 +632,26 @@ export const attachments = pgTable(
       'attachments_exactly_one_uploader',
       sql`(${table.uploaderMemberId} IS NULL) <> (${table.uploaderAgentId} IS NULL)`
     ),
+    foreignKey({
+      name: 'attachments_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+    foreignKey({
+      name: 'attachments_uploader_member_tenant_fk',
+      columns: [table.communityId, table.uploaderMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'attachments_uploader_agent_tenant_fk',
+      columns: [table.communityId, table.uploaderAgentId],
+      foreignColumns: [agents.communityId, agents.id],
+    }),
+    foreignKey({
+      name: 'attachments_entry_tenant_fk',
+      columns: [table.communityId, table.entryId],
+      foreignColumns: [entries.communityId, entries.id],
+    }),
   ]
 );
 /** One-hour private export lifecycle; bytes remain in the configured BlobStore. */
@@ -521,12 +659,13 @@ export const exportArchives = pgTable(
   'export_archives',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    communityId: uuid('community_id').references(() => communities.id),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
     requesterMemberId: uuid('requester_member_id')
       .notNull()
       .references(() => members.id),
     scope: text('scope').notNull(),
-    channelIds: uuid('channel_ids').array().notNull().default([]),
     blobKey: text('blob_key').notNull().unique(),
     byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
     createdAt: time('created_at'),
@@ -544,6 +683,11 @@ export const exportArchives = pgTable(
     index('export_archives_expiry_idx')
       .on(table.cleanupNextAttemptAt, table.expiresAt, table.id)
       .where(sql`${table.deletedAt} IS NULL`),
+    foreignKey({
+      name: 'export_archives_requester_tenant_fk',
+      columns: [table.communityId, table.requesterMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
   ]
 );
 /** Ordered, tenant-qualified channel selection captured by one export archive. */
@@ -631,7 +775,9 @@ export const managedBlobs = pgTable(
 export const readCursors = pgTable(
   'read_cursors',
   {
-    communityId: uuid('community_id').references(() => communities.id),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
     channelId: uuid('channel_id')
       .notNull()
       .references(() => channels.id),
@@ -644,13 +790,25 @@ export const readCursors = pgTable(
   (table) => [
     primaryKey({ columns: [table.channelId, table.memberId] }),
     index('read_cursors_community_idx').on(table.communityId),
+    foreignKey({
+      name: 'read_cursors_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+    foreignKey({
+      name: 'read_cursors_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
   ]
 );
 /** Atomic owner quota bucket. */
 export const ownerQuotaWindows = pgTable(
   'owner_quota_windows',
   {
-    communityId: uuid('community_id').references(() => communities.id),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
     ownerMemberId: uuid('owner_member_id')
       .notNull()
       .references(() => members.id),
@@ -661,6 +819,11 @@ export const ownerQuotaWindows = pgTable(
   (table) => [
     primaryKey({ columns: [table.ownerMemberId, table.windowStart] }),
     index('owner_quota_windows_community_idx').on(table.communityId),
+    foreignKey({
+      name: 'owner_quota_windows_owner_tenant_fk',
+      columns: [table.communityId, table.ownerMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
   ]
 );
 /** Security-relevant membership and channel actions. */
@@ -676,5 +839,12 @@ export const auditEvents = pgTable(
     subjectId: text('subject_id'),
     createdAt: time('created_at'),
   },
-  (table) => [index('audit_events_community_created_idx').on(table.communityId, table.createdAt)]
+  (table) => [
+    index('audit_events_community_created_idx').on(table.communityId, table.createdAt),
+    foreignKey({
+      name: 'audit_events_actor_tenant_fk',
+      columns: [table.communityId, table.actorMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+  ]
 );

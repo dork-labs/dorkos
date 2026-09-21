@@ -98,10 +98,10 @@ export function registerAgentRoutes(
         [agent.rows[0].id]
       );
       const token = randomToken();
-      await client.query('INSERT INTO agent_credentials(agent_id,token_hash) VALUES($1,$2)', [
-        agent.rows[0].id,
-        hashSecret(token),
-      ]);
+      await client.query(
+        'INSERT INTO agent_credentials(community_id,agent_id,token_hash) VALUES($1,$2,$3)',
+        [member.community_id, agent.rows[0].id, hashSecret(token)]
+      );
       await client.query(
         'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
         [member.community_id, member.id, 'agent.enroll', agent.rows[0].id]
@@ -144,10 +144,10 @@ export function registerAgentRoutes(
         [agent.rows[0].id]
       );
       const token = randomToken();
-      await client.query('INSERT INTO agent_credentials(agent_id,token_hash) VALUES($1,$2)', [
-        agent.rows[0].id,
-        hashSecret(token),
-      ]);
+      await client.query(
+        'INSERT INTO agent_credentials(community_id,agent_id,token_hash) VALUES($1,$2,$3)',
+        [member.community_id, agent.rows[0].id, hashSecret(token)]
+      );
       await client.query(
         'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
         [member.community_id, member.id, 'agent.recover', agent.rows[0].id]
@@ -183,10 +183,10 @@ export function registerAgentRoutes(
         [id]
       );
       const token = randomToken();
-      await client.query('INSERT INTO agent_credentials(agent_id,token_hash) VALUES($1,$2)', [
-        id,
-        hashSecret(token),
-      ]);
+      await client.query(
+        'INSERT INTO agent_credentials(community_id,agent_id,token_hash) VALUES($1,$2,$3)',
+        [member.community_id, id, hashSecret(token)]
+      );
       await client.query(
         'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
         [member.community_id, member.id, 'agent.rotate', id]
@@ -276,8 +276,8 @@ export function registerAgentRoutes(
         throw new ApiError(403, 'FORBIDDEN', 'You cannot add this agent.');
       if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
       await client.query(
-        'INSERT INTO agent_channel_members(channel_id,agent_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-        [channel.id, agentId]
+        'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+        [actor.community_id, channel.id, agentId]
       );
     });
     return json(c, CommunityWireAgentChannelMembershipResponseSchema, { joined: true });

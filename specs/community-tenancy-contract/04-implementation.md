@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 1 / 12
+**Tasks Completed:** 3 / 12
 
 ## Tasks Completed
 
@@ -51,12 +51,15 @@ Task 1.2 implementation reached VERIFY:
 
 **Workers:** _(none — implementation remains in this owning session)_
 
-Task 1.3 has started with a bounded normalization foundation:
+Task 1.3 is complete:
 
 - Migration 0007 backfills ordered, tenant-qualified entry mentions with distinct human and agent targets and ordered export-channel selections.
 - Composite foreign keys reject cross-community targets. Missing or human/agent-ambiguous mentions and unresolved export channels abort the migration without partial state.
-- Compatibility triggers keep normalized rows synchronized for existing array writers, while the production entry writer now records its authenticated community explicitly. The source arrays, singleton constraint, global member uniqueness, and nullable tenant columns remain until the later Task 1.3 contract slice switches readers and validates every tenant relation.
-- PostgreSQL verification covers human and agent mentions, duplicate order, export order, migration reruns, old-writer updates, missing and ambiguous targets, unresolved channels, cross-tenant rejection, and rollback preservation. The real HTTP entry path passes with ordered human and agent mentions and tenant-qualified normalized rows; the complete Community PostgreSQL gate passes 120 assertions with 4 declared skips across 8 fixtures.
+- Migration 0008 switches entry and export readers and writers to normalized relations, removes the legacy arrays and synchronization triggers, makes tenant ownership non-null, and installs composite foreign keys across members, channels, credentials, grants, pairings, invites, entries, files, exports, cursors, quotas, audit rows, and managed storage.
+- The global member account uniqueness and community singleton constraint are removed only after validation. The database now permits one host account to belong to more than one community while retaining one membership per account in each community.
+- New communities begin in `pending_owner`; the bootstrap transaction creates the first owner and activates the community atomically. Deferred constraints require no active owner while pending and exactly one active owner while active or suspended.
+- Every current route and fixture writes explicit tenant ownership. The production entry and export paths write normalized children atomically, and history, stream, archive, and access checks read them without the removed arrays.
+- PostgreSQL verification covers human and agent mentions, duplicate order, export order, migration reruns, missing and ambiguous targets, unresolved channels, cross-tenant rejection, lifecycle ownership, real HTTP writes, attachment/export cleanup, recovery, admission, reconciliation, and the remote adapter. The complete Community PostgreSQL gate passes 121 assertions with 4 declared skips across 8 fixtures.
 
 ## Files Modified/Created
 
@@ -65,11 +68,17 @@ Task 1.3 has started with a bounded normalization foundation:
 - `apps/community/migrations/0005_tenant_expand.sql`
 - `apps/community/migrations/0006_tenant_backfill.sql`
 - `apps/community/migrations/0007_tenant_relations.sql`
+- `apps/community/migrations/0008_tenant_contract.sql`
 - `apps/community/src/migrate.ts`
 - `apps/community/src/schema.ts`
 - `apps/community/src/routes/entries.ts`
 - `apps/community/src/routes/attachments.ts`
 - `apps/community/src/routes/exports.ts`
+- `apps/community/src/routes/agents.ts`
+- `apps/community/src/routes/channels.ts`
+- `apps/community/src/routes/events.ts`
+- `apps/community/src/routes/invites.ts`
+- `apps/community/src/routes/pairings.ts`
 - `apps/community/src/storage/blob-store.ts`
 - `apps/community/src/storage/index.ts`
 - `apps/community/src/storage/managed-blobs.ts`
@@ -84,6 +93,8 @@ Task 1.3 has started with a bounded normalization foundation:
 - `apps/community/src/__tests__/tenant-relations.integration.test.ts`
 - `apps/community/src/storage/__tests__/blob-store.contract.test.ts`
 - `apps/community/src/__tests__/tenant-reconciliation.integration.test.ts`
+- `apps/community/src/__tests__/recovery.integration.test.ts`
+- `apps/community/src/__tests__/remote-adapter-conformance.integration.test.ts`
 
 ## Known Issues
 
@@ -118,3 +129,12 @@ _(None yet)_
 - Reconciliation never emits raw object keys. Only content references, existing inventory, and durable legacy cleanup rows prove ownership. Every otherwise-unexplained object requires manual ownership resolution without automatic deletion.
 - The generation triggers are deliberately conservative during this stage: inferred-owner writes make a completed reconciliation dirty. Task 1.3 replaces that compatibility fence with non-null tenant keys and validated composite constraints before any second tenant can be created.
 - Targeted verification covers fresh and populated migration, attachment/export hash preservation, clean zero-community readiness, pending-cleanup conversion, incomplete and paginated listings, active and late writers, the complete legacy reference-delete and cleanup sequence, stale generations, unexplained-object refusal, and legacy null ownership. The real-Postgres migration/reconciliation set passes 13/13; the BlobStore contract and pagination set passes 12/12; Community typecheck and touched-file lint pass.
+
+### Session 4
+
+- Worktree: `/Users/doriancollier/.dork/workspaces/dorkos/codex-community-tenant-constraints`
+- Branch: `codex/community-tenant-constraints`
+- Stacked base: accepted reconciliation head `c211a0b6b1fa7bd89001423cb9aae4bd485ad26f` (PR #1968).
+- The contract migration validates and locks the normalized model before removing arrays, compatibility triggers, singleton/global uniqueness, and nullable ownership. Existing single-community behavior remains available while the schema can now represent independent tenant membership safely.
+- Targeted real-Postgres verification passes attachments 16/16, recovery 5/5, remote adapter 52/52 active checks, reconciliation 10/10, and admission 16/16. The complete Community PostgreSQL gate passes 121 assertions with 4 declared skips across 8 fixtures.
+- Next task: Task 1.4 proves the supported single-community rollback boundary before tenant-qualified HTTP routing begins.

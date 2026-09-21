@@ -269,10 +269,16 @@ export function registerAttachmentRoutes(
         const window = new Date();
         window.setUTCHours(0, 0, 0, 0);
         const quota = await client.query<{ upload_bytes: string }>(
-          `INSERT INTO owner_quota_windows(owner_member_id,window_start,upload_bytes) VALUES($1,$2,$3)
+          `INSERT INTO owner_quota_windows(community_id,owner_member_id,window_start,upload_bytes) VALUES($1,$2,$3,$4)
            ON CONFLICT(owner_member_id,window_start) DO UPDATE SET upload_bytes=owner_quota_windows.upload_bytes+EXCLUDED.upload_bytes
-           WHERE owner_quota_windows.upload_bytes+EXCLUDED.upload_bytes<=$4 RETURNING upload_bytes`,
-          [principal.ownerMemberId, window, stored.byteSize, config.limits.uploadBytesPerDay]
+           WHERE owner_quota_windows.upload_bytes+EXCLUDED.upload_bytes<=$5 RETURNING upload_bytes`,
+          [
+            principal.community_id,
+            principal.ownerMemberId,
+            window,
+            stored.byteSize,
+            config.limits.uploadBytesPerDay,
+          ]
         );
         if (!quota.rowCount) throw new ApiError(429, 'RATE_LIMITED', 'Daily upload limit reached.');
         const inserted = await client.query<AttachmentRow>(

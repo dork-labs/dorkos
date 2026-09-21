@@ -407,10 +407,10 @@ describe('owner foundation over real HTTP and Postgres', () => {
         [communityId, ownerMemberId]
       )
     ).rows[0]!.id;
-    await pool.query('INSERT INTO agent_channel_members(channel_id,agent_id) VALUES($1,$2)', [
-      channelId,
-      mentionedAgent,
-    ]);
+    await pool.query(
+      'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3)',
+      [communityId, channelId, mentionedAgent]
+    );
     const mention = await post(
       `/api/v1/channels/${channelId}/entries`,
       { text: 'hi @bob and @proof.bot and @unknown', idempotencyKey: 'mention-bob-agent' },
@@ -451,8 +451,13 @@ describe('owner foundation over real HTTP and Postgres', () => {
     const stableBody = await stable.json();
     expect(stableBody.entry.mentions).toEqual([bobMemberId]);
     expect(
-      (await pool.query('SELECT mentions FROM entries WHERE id=$1', [stableBody.entry.id])).rows[0]
-        .mentions
+      (
+        await pool.query(
+          `SELECT array_agg(COALESCE(mentioned_member_id,mentioned_agent_id) ORDER BY position) AS mentions
+           FROM entry_mentions WHERE entry_id=$1`,
+          [stableBody.entry.id]
+        )
+      ).rows[0].mentions
     ).toEqual([bobMemberId]);
     const roster = await request(`/api/v1/channels/${channelId}/members`, {
       headers: { cookie: ownerCookie },
@@ -603,18 +608,18 @@ describe('owner foundation over real HTTP and Postgres', () => {
        VALUES($1,$2,'Owner worker','owner-worker','owner-worker-local') RETURNING id`,
       [communityId, ownerMemberId]
     );
-    await pool.query('INSERT INTO agent_channel_members(channel_id,agent_id) VALUES($1,$2)', [
-      id,
-      agent.rows[0]!.id,
-    ]);
+    await pool.query(
+      'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3)',
+      [communityId, id, agent.rows[0]!.id]
+    );
     const sequence = await pool.query<{ last_seq: string }>(
       'UPDATE channels SET last_seq=last_seq+1 WHERE id=$1 RETURNING last_seq',
       [id]
     );
     await pool.query(
-      `INSERT INTO entries(channel_id,seq,author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,idempotency_key,payload_hash)
-       VALUES($1,$2,NULL,$3,'Owner worker','private correlation',ARRAY[]::uuid[],NULL,NULL,'owner-wire-key','test-hash')`,
-      [id, sequence.rows[0]!.last_seq, agent.rows[0]!.id]
+      `INSERT INTO entries(community_id,channel_id,seq,author_member_id,author_agent_id,author_display_name,text,parent_entry_id,thread_root_entry_id,idempotency_key,payload_hash)
+       VALUES($1,$2,$3,NULL,$4,'Owner worker','private correlation',NULL,NULL,'owner-wire-key','test-hash')`,
+      [communityId, id, sequence.rows[0]!.last_seq, agent.rows[0]!.id]
     );
 
     const [ownerHistory, bobHistory] = await Promise.all([
@@ -840,10 +845,12 @@ describe('owner foundation over real HTTP and Postgres', () => {
   it('does not emit an entry if access ends during attachment enrichment', async () => {
     const created = await post('/api/v1/channels', { name: 'Enrichment revocation' }, ownerCookie);
     const id = (await created.json()).channel.id;
-    await pool.query('INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2)', [
-      id,
-      bobMemberId,
-    ]);
+    const communityId = (await pool.query<{ id: string }>('SELECT id FROM communities')).rows[0]!
+      .id;
+    await pool.query(
+      'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)',
+      [communityId, id, bobMemberId]
+    );
     let entered!: () => void;
     let release!: () => void;
     const atEnrichment = new Promise<void>((resolve) => {
@@ -996,9 +1003,13 @@ describe('owner foundation over real HTTP and Postgres', () => {
       await client.query('BEGIN');
       await client.query('UPDATE channels SET last_seq=270 WHERE id=$1', [id]);
       await client.query(
-        `INSERT INTO entries(channel_id,seq,author_member_id,author_display_name,text,idempotency_key,payload_hash)
-         SELECT $1,n,$2,'Owner','bulk-'||n,'bulk-'||n,'test' FROM generate_series(2,270) AS n`,
-        [id, ownerMemberId]
+        `INSERT INTO entries(community_id,channel_id,seq,author_member_id,author_display_name,text,idempotency_key,payload_hash)
+         SELECT $1,$2,n,$3,'Owner','bulk-'||n,'bulk-'||n,'test' FROM generate_series(2,270) AS n`,
+        [
+          (await client.query<{ id: string }>('SELECT id FROM communities')).rows[0]!.id,
+          id,
+          ownerMemberId,
+        ]
       );
       await client.query('COMMIT');
     } finally {

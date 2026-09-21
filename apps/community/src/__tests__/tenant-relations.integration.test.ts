@@ -142,19 +142,25 @@ it('backfills ordered human, agent, duplicate, and export-channel relations', as
   await migrate(testUrl.toString());
 });
 
-it('keeps normalized relations synchronized for existing array writers', async () => {
+it('uses normalized relations after removing the legacy arrays and synchronization triggers', async () => {
   if (!pool) throw new Error('test database is unavailable');
   const fixture = await seedEntryAndExport(pool);
   await migrate(testUrl.toString());
 
-  await pool.query('UPDATE entries SET mentions=$2 WHERE id=$1', [
-    fixture.entry,
-    [fixture.agent, fixture.member],
-  ]);
-  await pool.query('UPDATE export_archives SET channel_ids=$2 WHERE id=$1', [
+  await pool.query('DELETE FROM entry_mentions WHERE entry_id=$1', [fixture.entry]);
+  await pool.query(
+    `INSERT INTO entry_mentions(entry_id,position,community_id,mentioned_agent_id)
+     VALUES($1,1,$2,$3)`,
+    [fixture.entry, fixture.community, fixture.agent]
+  );
+  await pool.query('DELETE FROM export_archive_channels WHERE export_archive_id=$1', [
     fixture.archive,
-    [fixture.channel],
   ]);
+  await pool.query(
+    `INSERT INTO export_archive_channels(export_archive_id,position,community_id,channel_id)
+     VALUES($1,1,$2,$3)`,
+    [fixture.archive, fixture.community, fixture.channel]
+  );
 
   expect(
     (
@@ -164,10 +170,7 @@ it('keeps normalized relations synchronized for existing array writers', async (
         [fixture.entry]
       )
     ).rows
-  ).toEqual([
-    { position: 1, mentioned_member_id: null, mentioned_agent_id: fixture.agent },
-    { position: 2, mentioned_member_id: fixture.member, mentioned_agent_id: null },
-  ]);
+  ).toEqual([{ position: 1, mentioned_member_id: null, mentioned_agent_id: fixture.agent }]);
   expect(
     (
       await pool.query(
@@ -176,6 +179,76 @@ it('keeps normalized relations synchronized for existing array writers', async (
       )
     ).rows
   ).toEqual([{ position: 1, channel_id: fixture.channel }]);
+});
+
+it('contracts tenant ownership and enforces lifecycle owner invariants', async () => {
+  if (!pool) throw new Error('test database is unavailable');
+  const fixture = await seedEntryAndExport(pool);
+  await migrate(testUrl.toString());
+
+  const contracted = [
+    'invite_uses',
+    'pending_admissions',
+    'connection_pairings',
+    'connection_grants',
+    'channel_members',
+    'agent_credentials',
+    'agent_channel_members',
+    'entries',
+    'attachments',
+    'export_archives',
+    'read_cursors',
+    'owner_quota_windows',
+  ];
+  expect(
+    (
+      await pool.query<{ table_name: string }>(
+        `SELECT table_name FROM information_schema.columns
+         WHERE table_schema='public' AND column_name='community_id'
+           AND table_name=ANY($1::text[]) AND is_nullable='NO'
+         ORDER BY table_name`,
+        [contracted]
+      )
+    ).rows.map((row) => row.table_name)
+  ).toEqual([...contracted].sort());
+  expect(
+    (
+      await pool.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema='public' AND (
+           (table_name='communities' AND column_name='singleton')
+           OR (table_name='entries' AND column_name='mentions')
+           OR (table_name='export_archives' AND column_name='channel_ids')
+         )`
+      )
+    ).rows
+  ).toEqual([]);
+
+  const second = (await pool.query("INSERT INTO communities(name) VALUES('Pending') RETURNING id"))
+    .rows[0].id as string;
+  await expect(
+    pool.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [second])
+  ).rejects.toThrow('active or suspended community requires exactly one active owner');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO members(community_id,user_id,display_name,handle,role)
+       VALUES($1,'relations-user','Relations elsewhere','relations','owner')`,
+      [second]
+    );
+    await client.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [second]);
+    await client.query('COMMIT');
+  } finally {
+    client.release();
+  }
+  expect(
+    (await pool.query(`SELECT count(*)::int AS count FROM members WHERE user_id='relations-user'`))
+      .rows[0]
+  ).toEqual({ count: 2 });
+  await expect(
+    pool.query("UPDATE communities SET lifecycle='pending_owner' WHERE id=$1", [fixture.community])
+  ).rejects.toThrow('pending_owner community cannot have an active owner');
 });
 
 it('rejects missing and human-agent-ambiguous mention targets during migration', async () => {
@@ -249,18 +322,12 @@ it('rejects unresolved export channels and cross-tenant updates without losing p
     )
   ).rows[0].id as string;
   await migrate(testUrl.toString());
-  await pool.query('ALTER TABLE communities DROP CONSTRAINT communities_singleton_key');
-  await pool.query('ALTER TABLE communities DROP CONSTRAINT communities_singleton_check');
-  const other = (
-    await pool.query("INSERT INTO communities(singleton,name) VALUES(false,'Other') RETURNING id")
-  ).rows[0].id as string;
-  await pool.query(
-    "INSERT INTO \"user\"(id,name,email) VALUES('other-user','Other','other@example.test')"
-  );
+  const other = (await pool.query("INSERT INTO communities(name) VALUES('Other') RETURNING id"))
+    .rows[0].id as string;
   const otherMember = (
     await pool.query(
       `INSERT INTO members(community_id,user_id,display_name,handle,role)
-       VALUES($1,'other-user','Other','other','member') RETURNING id`,
+       VALUES($1,'relations-user','Other','other','member') RETURNING id`,
       [other]
     )
   ).rows[0].id as string;
@@ -272,11 +339,23 @@ it('rejects unresolved export channels and cross-tenant updates without losing p
   ).rows[0].id as string;
 
   await expect(
-    pool.query('UPDATE entries SET mentions=$2 WHERE id=$1', [entry, [otherMember]])
-  ).rejects.toMatchObject({ code: '23514' });
-  await expect(
-    pool.query('UPDATE export_archives SET channel_ids=$2 WHERE id=$1', [archive, [otherChannel]])
+    pool.query(
+      `INSERT INTO entry_mentions(entry_id,position,community_id,mentioned_member_id)
+       VALUES($1,4,$2,$3)`,
+      [entry, tenant.community, otherMember]
+    )
   ).rejects.toMatchObject({ code: '23503' });
+  await expect(
+    pool.query(
+      `INSERT INTO export_archive_channels(export_archive_id,position,community_id,channel_id)
+       VALUES($1,3,$2,$3)`,
+      [archive, tenant.community, otherChannel]
+    )
+  ).rejects.toMatchObject({ code: '23503' });
+  expect(
+    (await pool.query(`SELECT count(*)::int AS count FROM members WHERE user_id='relations-user'`))
+      .rows[0]
+  ).toEqual({ count: 2 });
   expect(
     (
       await pool.query('SELECT count(*)::int AS count FROM entry_mentions WHERE entry_id=$1', [

@@ -53,9 +53,19 @@ export function registerPairingRoutes(
       throw new ApiError(400, 'STATE_CONFLICT', 'The pairing challenge is invalid.');
     const id = randomUUID();
     const expiry = new Date(Date.now() + 600_000);
+    const community = await pool.query<{ id: string }>('SELECT id FROM communities LIMIT 2');
+    if (community.rowCount !== 1)
+      throw new ApiError(409, 'STATE_CONFLICT', 'Choose a community before pairing.');
     await pool.query(
-      'INSERT INTO connection_pairings(id,verifier_hash,install_name,scopes,expires_at) VALUES($1,$2,$3,$4,$5)',
-      [id, body.challenge, body.installName, [...new Set(body.scopes)], expiry]
+      'INSERT INTO connection_pairings(id,community_id,verifier_hash,install_name,scopes,expires_at) VALUES($1,$2,$3,$4,$5,$6)',
+      [
+        id,
+        community.rows[0].id,
+        body.challenge,
+        body.installName,
+        [...new Set(body.scopes)],
+        expiry,
+      ]
     );
     return json(
       c,
@@ -121,8 +131,8 @@ export function registerPairingRoutes(
           throw new ApiError(409, 'STATE_CONFLICT', 'This request was approved by another member.');
       } else {
         await client.query(
-          'UPDATE connection_pairings SET member_id=$2,approved_at=now() WHERE id=$1',
-          [id, actor.id]
+          'UPDATE connection_pairings SET member_id=$2,community_id=$3,approved_at=now() WHERE id=$1 AND community_id=$3',
+          [id, actor.id, actor.community_id]
         );
         await client.query(
           'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
@@ -236,8 +246,8 @@ export function registerPairingRoutes(
         scopes: ('read' | 'post' | 'enroll-agent')[];
         created_at: Date;
       }>(
-        'INSERT INTO connection_grants(member_id,token_hash,scopes,install_name) VALUES($1,$2,$3,$4) RETURNING id,member_id,scopes,created_at',
-        [row.member_id, hashSecret(token), row.scopes, row.install_name]
+        'INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name) SELECT community_id,$1,$2,$3,$4 FROM connection_pairings WHERE id=$5 RETURNING id,member_id,scopes,created_at',
+        [row.member_id, hashSecret(token), row.scopes, row.install_name, id]
       );
       await client.query('UPDATE connection_pairings SET consumed_at=now() WHERE id=$1', [id]);
       return {

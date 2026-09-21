@@ -106,10 +106,10 @@ async function seedRoom(adapter: CommunityAdapter): Promise<string> {
     [targetCommunityId, `Conformance ${randomUUID()}`]
   );
   const roomId = result.rows[0]!.id;
-  await targetPool.query('INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2)', [
-    roomId,
-    targetMemberId,
-  ]);
+  await targetPool.query(
+    'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)',
+    [targetCommunityId, roomId, targetMemberId]
+  );
   await adapter.post(roomId, { text: 'first fixture entry', idempotencyKey: randomUUID() });
   await adapter.post(roomId, { text: 'second fixture entry', idempotencyKey: randomUUID() });
   // Seeded rooms represent the already-projected room list a UI subscription
@@ -135,25 +135,38 @@ beforeAll(async () => {
   if (!address || typeof address === 'string') throw new Error('Community HTTP server has no port');
   baseUrl = `http://127.0.0.1:${address.port}`;
 
-  const community = await pool.query<{ id: string }>(
-    "INSERT INTO communities(name) VALUES('Remote conformance') RETURNING id"
-  );
-  communityId = community.rows[0]!.id;
-  const userId = randomUUID();
-  await pool.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
-    userId,
-    'Conformance Owner',
-    `remote-conformance-${randomUUID()}@example.test`,
-  ]);
-  const member = await pool.query<{ id: string }>(
-    "INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$3,$4,'owner') RETURNING id",
-    [communityId, userId, 'Conformance Owner', `owner-${randomUUID().slice(0, 8)}`]
-  );
-  ownerMemberId = member.rows[0]!.id;
-  await pool.query(
-    'INSERT INTO community_handles(community_id,handle,member_id) SELECT community_id,handle,id FROM members WHERE id=$1',
-    [ownerMemberId]
-  );
+  const primaryClient = await pool.connect();
+  try {
+    await primaryClient.query('BEGIN');
+    const community = await primaryClient.query<{ id: string }>(
+      "INSERT INTO communities(name) VALUES('Remote conformance') RETURNING id"
+    );
+    communityId = community.rows[0]!.id;
+    const userId = randomUUID();
+    await primaryClient.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
+      userId,
+      'Conformance Owner',
+      `remote-conformance-${randomUUID()}@example.test`,
+    ]);
+    const member = await primaryClient.query<{ id: string }>(
+      "INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$3,$4,'owner') RETURNING id",
+      [communityId, userId, 'Conformance Owner', `owner-${randomUUID().slice(0, 8)}`]
+    );
+    ownerMemberId = member.rows[0]!.id;
+    await primaryClient.query(
+      'INSERT INTO community_handles(community_id,handle,member_id) SELECT community_id,handle,id FROM members WHERE id=$1',
+      [ownerMemberId]
+    );
+    await primaryClient.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [
+      communityId,
+    ]);
+    await primaryClient.query('COMMIT');
+  } catch (error) {
+    await primaryClient.query('ROLLBACK');
+    throw error;
+  } finally {
+    primaryClient.release();
+  }
 
   await admin.query(`CREATE DATABASE ${secondDatabaseName}`);
   await migrate(secondDatabaseUrl.toString());
@@ -178,32 +191,57 @@ beforeAll(async () => {
   if (!secondAddress || typeof secondAddress === 'string')
     throw new Error('Second Community HTTP server has no port');
   secondBaseUrl = `http://127.0.0.1:${secondAddress.port}`;
-  const secondCommunity = await secondPool.query<{ id: string }>(
-    "INSERT INTO communities(name) VALUES('Remote conformance second') RETURNING id"
-  );
-  secondCommunityId = secondCommunity.rows[0]!.id;
-  const secondUserId = randomUUID();
-  await secondPool.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
-    secondUserId,
-    'Second Owner',
-    `second-${randomUUID()}@example.test`,
-  ]);
-  const secondMember = await secondPool.query<{ id: string }>(
-    "INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$3,$4,'owner') RETURNING id",
-    [secondCommunityId, secondUserId, 'Second Owner', `second-${randomUUID().slice(0, 8)}`]
-  );
-  secondOwnerMemberId = secondMember.rows[0]!.id;
+  const secondaryClient = await secondPool.connect();
+  try {
+    await secondaryClient.query('BEGIN');
+    const secondCommunity = await secondaryClient.query<{ id: string }>(
+      "INSERT INTO communities(name) VALUES('Remote conformance second') RETURNING id"
+    );
+    secondCommunityId = secondCommunity.rows[0]!.id;
+    const secondUserId = randomUUID();
+    await secondaryClient.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
+      secondUserId,
+      'Second Owner',
+      `second-${randomUUID()}@example.test`,
+    ]);
+    const secondMember = await secondaryClient.query<{ id: string }>(
+      "INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$3,$4,'owner') RETURNING id",
+      [secondCommunityId, secondUserId, 'Second Owner', `second-${randomUUID().slice(0, 8)}`]
+    );
+    secondOwnerMemberId = secondMember.rows[0]!.id;
+    await secondaryClient.query(
+      'INSERT INTO community_handles(community_id,handle,member_id) SELECT community_id,handle,id FROM members WHERE id=$1',
+      [secondOwnerMemberId]
+    );
+    await secondaryClient.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [
+      secondCommunityId,
+    ]);
+    await secondaryClient.query('COMMIT');
+  } catch (error) {
+    await secondaryClient.query('ROLLBACK');
+    throw error;
+  } finally {
+    secondaryClient.release();
+  }
   await secondPool.query(
-    'INSERT INTO community_handles(community_id,handle,member_id) SELECT community_id,handle,id FROM members WHERE id=$1',
-    [secondOwnerMemberId]
-  );
-  await secondPool.query(
-    'INSERT INTO connection_grants(member_id,token_hash,scopes,install_name) VALUES($1,$2,$3,$4)',
-    [secondOwnerMemberId, hashSecret(secondCredential), ['read', 'post', 'enroll-agent'], 'Second']
+    'INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name) VALUES($1,$2,$3,$4,$5)',
+    [
+      secondCommunityId,
+      secondOwnerMemberId,
+      hashSecret(secondCredential),
+      ['read', 'post', 'enroll-agent'],
+      'Second',
+    ]
   );
   await pool.query(
-    'INSERT INTO connection_grants(member_id,token_hash,scopes,install_name) VALUES($1,$2,$3,$4)',
-    [ownerMemberId, hashSecret(plantedCredential), ['read', 'post', 'enroll-agent'], 'Conformance']
+    'INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name) VALUES($1,$2,$3,$4,$5)',
+    [
+      communityId,
+      ownerMemberId,
+      hashSecret(plantedCredential),
+      ['read', 'post', 'enroll-agent'],
+      'Conformance',
+    ]
   );
 
   ref = randomUUID() as CommunityRef;
@@ -213,7 +251,21 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await pool.query('UPDATE members SET active=true WHERE community_id=$1', [communityId]);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("DELETE FROM members WHERE community_id=$1 AND role='owner' AND id<>$2", [
+      communityId,
+      ownerMemberId,
+    ]);
+    await client.query("UPDATE members SET active=true,role='owner' WHERE id=$1", [ownerMemberId]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
   await pool.query(
     'DELETE FROM community_handles WHERE agent_id IN (SELECT id FROM agents WHERE owner_member_id=$1)',
     [ownerMemberId]
@@ -261,10 +313,10 @@ communityConformance(() => new RemoteCommunityAdapter(ref, ownerKey, store), {
       [communityId, `Empty ${randomUUID()}`]
     );
     const roomId = result.rows[0]!.id;
-    await pool.query('INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2)', [
-      roomId,
-      ownerMemberId,
-    ]);
+    await pool.query(
+      'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)',
+      [communityId, roomId, ownerMemberId]
+    );
     return roomId;
   },
   makeEvictedRoom: async (_adapter, roomId) => {
@@ -281,12 +333,35 @@ communityConformance(() => new RemoteCommunityAdapter(ref, ownerKey, store), {
     ]);
   },
   revokeOwner: async () => {
-    await pool.query('UPDATE members SET active=false WHERE id=$1', [ownerMemberId]);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const replacementUserId = randomUUID();
+      await client.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
+        replacementUserId,
+        'Replacement Owner',
+        `replacement-${replacementUserId}@example.test`,
+      ]);
+      await client.query("UPDATE members SET active=false,role='member' WHERE id=$1", [
+        ownerMemberId,
+      ]);
+      await client.query(
+        `INSERT INTO members(community_id,user_id,display_name,handle,role)
+         VALUES($1,$2,'Replacement Owner',$3,'owner')`,
+        [communityId, replacementUserId, `replacement-${replacementUserId.slice(0, 8)}`]
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   },
   seedAgentEntry: async (adapter, roomId, agent) => {
     await pool.query(
-      'INSERT INTO agent_channel_members(channel_id,agent_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-      [roomId, agent.memberId]
+      'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+      [communityId, roomId, agent.memberId]
     );
     return (
       await adapter.post(roomId, {
@@ -353,14 +428,14 @@ describe('RemoteCommunityAdapter immutable community cursor scope', () => {
     ]);
     expect(primaryChannel.rows[0]?.epoch).toBe(secondaryChannel.rows[0]?.epoch);
     await Promise.all([
-      pool.query('INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2)', [
-        sharedChannelId,
-        ownerMemberId,
-      ]),
-      secondPool.query('INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2)', [
-        sharedChannelId,
-        secondOwnerMemberId,
-      ]),
+      pool.query(
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)',
+        [communityId, sharedChannelId, ownerMemberId]
+      ),
+      secondPool.query(
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)',
+        [secondCommunityId, sharedChannelId, secondOwnerMemberId]
+      ),
     ]);
 
     const primary = new RemoteCommunityAdapter(ref, ownerKey, store);

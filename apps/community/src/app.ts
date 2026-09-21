@@ -173,9 +173,10 @@ export function createCommunityApp({
         name: string;
         description: null;
         created_at: Date;
-      }>('INSERT INTO communities(name) VALUES($1) RETURNING id,name,description,created_at', [
-        body.name,
-      ]);
+      }>(
+        "INSERT INTO communities(name,lifecycle) VALUES($1,'pending_owner') RETURNING id,name,description,created_at",
+        [body.name]
+      );
       const handle = await mintHandle(client, community.rows[0].id, user.name);
       const member = await client.query<{ id: string }>(
         `INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$3,$4,'owner') RETURNING id`,
@@ -185,6 +186,9 @@ export function createCommunityApp({
         'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',
         [community.rows[0].id, handle, member.rows[0].id]
       );
+      await client.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [
+        community.rows[0].id,
+      ]);
       await client.query('UPDATE bootstrap_grants SET consumed_at=now() WHERE id=$1', [grantId]);
       return {
         community: {

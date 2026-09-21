@@ -191,8 +191,8 @@ export function registerInviteRoutes(
       if (invite.use_count >= invite.seat_limit)
         throw new ApiError(409, 'STATE_CONFLICT', 'This invitation has no seats left.');
       await client.query(
-        'INSERT INTO pending_admissions(invite_id,token_hash,expires_at) VALUES($1,$2,$3)',
-        [invite.id, hashSecret(pending), new Date(Date.now() + 600_000)]
+        'INSERT INTO pending_admissions(community_id,invite_id,token_hash,expires_at) VALUES($1,$2,$3,$4)',
+        [invite.community_id, invite.id, hashSecret(pending), new Date(Date.now() + 600_000)]
       );
     });
     setCookie(c, 'community_admission', signValue(pending, config.authSecret), {
@@ -238,8 +238,8 @@ export function registerInviteRoutes(
           'This invitation has no seats left. Ask for a new link.'
         );
       let member = await client.query<{ id: string; active: boolean }>(
-        'SELECT id,active FROM members WHERE user_id=$1 FOR UPDATE',
-        [user.id]
+        'SELECT id,active FROM members WHERE community_id=$1 AND user_id=$2 FOR UPDATE',
+        [invite.community_id, user.id]
       );
       if (!member.rows[0]) {
         const handle = await mintHandle(client, invite.community_id, user.name);
@@ -259,14 +259,14 @@ export function registerInviteRoutes(
       }
       if (invite.channel_id)
         await client.query(
-          'INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-          [invite.channel_id, member.rows[0].id]
+          'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+          [invite.community_id, invite.channel_id, member.rows[0].id]
         );
       if (!previous.rowCount) {
-        await client.query('INSERT INTO invite_uses(invite_id,user_id) VALUES($1,$2)', [
-          invite.id,
-          user.id,
-        ]);
+        await client.query(
+          'INSERT INTO invite_uses(community_id,invite_id,user_id) VALUES($1,$2,$3)',
+          [invite.community_id, invite.id, user.id]
+        );
         await client.query('UPDATE invites SET use_count=use_count+1 WHERE id=$1', [invite.id]);
       }
       await client.query('DELETE FROM pending_admissions WHERE id=$1', [grant.rows[0].id]);

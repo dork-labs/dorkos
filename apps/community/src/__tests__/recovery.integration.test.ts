@@ -35,47 +35,59 @@ beforeAll(async () => {
       COMMUNITY_STORAGE_PATH: '/tmp/community-recovery-unused',
     })
   );
-  const community = (
-    await pool.query("INSERT INTO communities(name) VALUES('Recovery') RETURNING id")
-  ).rows[0].id;
-  for (const [id, role] of [
-    ['owner', 'owner'],
-    ['other', 'member'],
-  ]) {
-    await pool.query('INSERT INTO "user"(id,name,email) VALUES($1,$1,$2)', [
-      id,
-      `${id}@example.test`,
-    ]);
-    await pool.query(
-      `INSERT INTO account(id,"accountId","providerId","userId",password) VALUES($1,$1,'credential',$1,$2)`,
-      [id, await hashPassword('old-password-123')]
-    );
-    const member = (
-      await pool.query(
-        'INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$2,$2,$3) RETURNING id',
-        [community, id, role]
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const community = (
+      await client.query("INSERT INTO communities(name) VALUES('Recovery') RETURNING id")
+    ).rows[0].id;
+    for (const [id, role] of [
+      ['owner', 'owner'],
+      ['other', 'member'],
+    ]) {
+      await client.query('INSERT INTO "user"(id,name,email) VALUES($1,$1,$2)', [
+        id,
+        `${id}@example.test`,
+      ]);
+      await client.query(
+        `INSERT INTO account(id,"accountId","providerId","userId",password) VALUES($1,$1,'credential',$1,$2)`,
+        [id, await hashPassword('old-password-123')]
+      );
+      const member = (
+        await client.query(
+          'INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$2,$2,$3) RETURNING id',
+          [community, id, role]
+        )
+      ).rows[0].id;
+      if (id === 'owner') ownerId = member;
+      else otherId = member;
+      await client.query(
+        `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes) VALUES($1,$2,$3,'{read,post}')`,
+        [community, member, id]
+      );
+      await client.query(
+        `INSERT INTO connection_pairings(community_id,verifier_hash,member_id,expires_at) VALUES($1,$2,$3,now()+interval '10 minutes')`,
+        [community, id, member]
+      );
+    }
+    agentId = (
+      await client.query(
+        "INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id) VALUES($1,$2,'Agent','agent','local-agent') RETURNING id",
+        [community, ownerId]
       )
     ).rows[0].id;
-    if (id === 'owner') ownerId = member;
-    else otherId = member;
-    await pool.query(
-      `INSERT INTO connection_grants(member_id,token_hash,scopes) VALUES($1,$2,'{read,post}')`,
-      [member, id]
+    await client.query(
+      "INSERT INTO agent_credentials(community_id,agent_id,token_hash) VALUES($1,$2,'agent-token')",
+      [community, agentId]
     );
-    await pool.query(
-      `INSERT INTO connection_pairings(verifier_hash,member_id,expires_at) VALUES($1,$2,now()+interval '10 minutes')`,
-      [id, member]
-    );
+    await client.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [community]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
-  agentId = (
-    await pool.query(
-      "INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id) VALUES($1,$2,'Agent','agent','local-agent') RETURNING id",
-      [community, ownerId]
-    )
-  ).rows[0].id;
-  await pool.query("INSERT INTO agent_credentials(agent_id,token_hash) VALUES($1,'agent-token')", [
-    agentId,
-  ]);
 });
 afterAll(async () => {
   if (pool) await endRecoveryPool(pool);

@@ -119,12 +119,11 @@ it('upgrades a populated foundation database without changing human authors', as
     });
     expect(
       (
-        await db.query(
-          'SELECT lifecycle,lifecycle_version,singleton FROM communities WHERE id=$1',
-          [community]
-        )
+        await db.query('SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1', [
+          community,
+        ])
       ).rows[0]
-    ).toEqual({ lifecycle: 'active', lifecycle_version: 1, singleton: true });
+    ).toEqual({ lifecycle: 'active', lifecycle_version: 1 });
     expect(
       (
         await db.query<{ column_name: string }>(
@@ -149,7 +148,7 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();
@@ -247,7 +246,7 @@ it('expands a populated version-four database without changing files or cleanup 
            ORDER BY indexname`
         )
       ).rows.map((item) => item.indexname)
-    ).toEqual(['members_community_user_unique', 'members_user_id_key']);
+    ).toEqual(['members_community_user_unique']);
     await db.query(
       `INSERT INTO managed_blobs(blob_key,community_id,purpose,community_lifecycle_version,state)
        VALUES($1,$2,'attachment',1,'pending_delete')`,
@@ -280,7 +279,7 @@ it('expands a populated version-four database without changing files or cleanup 
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(
       (
         await db.query(
@@ -314,10 +313,10 @@ it('expands a populated version-four database without changing files or cleanup 
         )
       ).rows[0]
     ).toEqual({
-      state: 'dirty',
-      generation: '5',
-      validated_generation: null,
-      reason_code: 'legacy_tenant_write',
+      state: 'ready',
+      generation: '4',
+      validated_generation: '4',
+      reason_code: 'validated',
     });
     await migrate(upgradeUrl.toString());
   } finally {

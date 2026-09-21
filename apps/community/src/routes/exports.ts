@@ -83,9 +83,9 @@ async function snapshot(pool: Pool | PoolClient, member: Member, scope: 'persona
   );
   const entries = await pool.query(
     owner
-      ? `SELECT e.id,e.channel_id,e.seq,e.author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at
+      ? `SELECT e.id,e.channel_id,e.seq,e.author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at
          FROM entries e JOIN channels c ON c.id=e.channel_id WHERE c.community_id=$1 ORDER BY e.channel_id,e.seq LIMIT $2`
-      : `SELECT e.id,e.channel_id,e.seq,e.author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at
+      : `SELECT e.id,e.channel_id,e.seq,e.author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at
          FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id
          WHERE e.channel_id=ANY($3::uuid[]) AND (e.author_member_id=$1 OR a.owner_member_id=$1)
          ORDER BY e.channel_id,e.seq LIMIT $2`,
@@ -320,17 +320,23 @@ export function registerExportRoutes(
         if (!live.rows[0] || (scope === 'owner' && live.rows[0].role !== 'owner'))
           throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
         if (scope === 'personal') await requireCurrentChannels(client, member.id, data.channelIds);
-        const result = await client.query<ExportArchiveRow>(
-          `INSERT INTO export_archives(community_id,requester_member_id,scope,channel_ids,blob_key,byte_size,expires_at)
-           VALUES($1,$2,$3,$4,$5,$6,now()+interval '1 hour') RETURNING *`,
-          [member.community_id, member.id, scope, data.channelIds, stored.key, stored.byteSize]
+        const result = await client.query<Omit<ExportArchiveRow, 'channel_ids'>>(
+          `INSERT INTO export_archives(community_id,requester_member_id,scope,blob_key,byte_size,expires_at)
+           VALUES($1,$2,$3,$4,$5,now()+interval '1 hour') RETURNING *`,
+          [member.community_id, member.id, scope, stored.key, stored.byteSize]
+        );
+        await client.query(
+          `INSERT INTO export_archive_channels(export_archive_id,position,community_id,channel_id)
+           SELECT $1,selected.position,$2,selected.channel_id
+           FROM unnest($3::uuid[]) WITH ORDINALITY AS selected(channel_id,position)`,
+          [result.rows[0].id, member.community_id, data.channelIds]
         );
         await client.query(
           'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
           [member.community_id, member.id, 'export.create', result.rows[0].id]
         );
         await completeManagedBlobCommit(client, reservation);
-        return result.rows[0];
+        return { ...result.rows[0], channel_ids: data.channelIds };
       });
     } catch (error) {
       await discardManagedBlob(pool, blobStore, reservation, stored).catch(
@@ -386,7 +392,11 @@ export function registerExportRoutes(
   app.get('/api/v1/exports/:id', async (c) => {
     const member = await requireMember(c, auth, pool);
     const result = await pool.query<ExportArchiveRow>(
-      'SELECT * FROM export_archives WHERE id=$1 AND requester_member_id=$2 AND deleted_at IS NULL AND expires_at>now()',
+      `SELECT archive.*,
+        COALESCE((SELECT array_agg(selected.channel_id ORDER BY selected.position)
+          FROM export_archive_channels selected WHERE selected.export_archive_id=archive.id),'{}'::uuid[]) AS channel_ids
+       FROM export_archives archive
+       WHERE archive.id=$1 AND archive.requester_member_id=$2 AND archive.deleted_at IS NULL AND archive.expires_at>now()`,
       [c.req.param('id'), member.id]
     );
     const archive = result.rows[0];
