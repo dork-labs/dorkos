@@ -310,7 +310,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     });
     expect(start.status).toBe(201);
     const { pairingId, approvalUrl } = await start.json();
-    expect(approvalUrl).toContain(pairingId);
+    expect(approvalUrl).toBe(`${config.publicUrl}/pairing?pairingId=${pairingId}`);
     expect(
       (await call(`/api/v1/pairings/${pairingId}`, 'GET', undefined, ownerCookie)).status
     ).toBe(200);
@@ -1243,6 +1243,27 @@ describe('signed admission over real HTTP and Postgres', () => {
         scopes: ['read'],
       })
     ).json();
+    expect(pairing.approvalUrl).toBe(
+      `${config.publicUrl}/c/${secondId}/pairing?pairingId=${pairing.pairingId}`
+    );
+    expect(
+      (
+        await localCall(`/api/v1/communities/${firstId}/pairings/poll`, {
+          pairingId: pairing.pairingId,
+          verifier,
+        })
+      ).status
+    ).toBe(403);
+    expect(
+      (
+        await call(
+          `/api/v1/communities/${firstId}/pairings/approve`,
+          'POST',
+          { pairingId: pairing.pairingId },
+          ownerCookie
+        )
+      ).status
+    ).toBe(403);
     expect(
       (
         await call(

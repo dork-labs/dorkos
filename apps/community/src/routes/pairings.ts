@@ -74,7 +74,9 @@ export function registerPairingRoutes(
       CommunityWirePairingStartResponseSchema,
       {
         pairingId: id,
-        approvalUrl: `${config.publicUrl}/c/${community.communityId}/pairing?pairingId=${id}`,
+        approvalUrl: community.qualified
+          ? `${config.publicUrl}/c/${community.communityId}/pairing?pairingId=${id}`
+          : `${config.publicUrl}/pairing?pairingId=${id}`,
         expiresAt: expiry.toISOString(),
       },
       201
