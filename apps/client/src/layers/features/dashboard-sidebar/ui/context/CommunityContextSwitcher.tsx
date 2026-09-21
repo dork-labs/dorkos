@@ -1,8 +1,8 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp, ChevronDown, HardDrive, Plus, UsersRound } from 'lucide-react';
-import { toast } from 'sonner';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
+import type { CommunityNavigationDescriptor } from '@dorkos/shared/community-navigation';
 import { CommunityInstallationDestinationSchema } from '@dorkos/shared/config-schema';
 import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
 import type { SidebarMenuNode } from '@/layers/shared/ui';
@@ -69,6 +69,44 @@ function orderedConnections(
   });
 }
 
+function navigationDescriptor(
+  connection: CommunityConnectionDescriptor
+): CommunityNavigationDescriptor {
+  const lifecycle = connection.access?.lastKnown?.lifecycle;
+  return {
+    kind: 'community',
+    key: `community:${connection.ref}`,
+    ref: connection.ref,
+    remoteCommunityId: connection.remoteCommunityId,
+    label: connection.label,
+    icon: { kind: 'community', ref: connection.ref },
+    pinnedOrigin: connection.pinnedOrigin,
+    membershipState:
+      lifecycle === 'deletion_pending'
+        ? 'deletion-pending'
+        : (lifecycle ?? (connection.status === 'pending' ? 'pending' : 'active')),
+    connectionState: connection.status,
+    availability:
+      connection.access?.state === 'verified'
+        ? 'online'
+        : connection.access?.state === 'unverified'
+          ? 'offline'
+          : 'unknown',
+    unreadCount: 0,
+    mentionCount: 0,
+  };
+}
+
+function focusPageHeading() {
+  requestAnimationFrame(() => {
+    const heading = document.querySelector<HTMLElement>('main h1, [role="main"] h1');
+    if (heading) {
+      heading.tabIndex = -1;
+      heading.focus();
+    }
+  });
+}
+
 /**
  * Select the local installation or one owner-authorized Community.
  *
@@ -103,6 +141,7 @@ export function CommunityContextSwitcher({
   const pendingSelection = useRef(false);
   const [pendingRef, setPendingRef] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
+  const [open, setOpen] = useState(false);
   const targetPending = selectedRef !== undefined && connections.data === undefined;
   const labelPending = selectedRef === undefined ? installationLabelPending : targetPending;
   const label = selectedRef === undefined ? installationLabel : (selected?.label ?? 'Community');
@@ -116,6 +155,17 @@ export function CommunityContextSwitcher({
     ? destinations.findIndex((connection) => connection.ref === selectedRef)
     : -1;
 
+  useEffect(() => {
+    const openSwitcher = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setOpen(true);
+      }
+    };
+    window.addEventListener('keydown', openSwitcher);
+    return () => window.removeEventListener('keydown', openSwitcher);
+  }, []);
+
   async function selectCommunity(connection: CommunityConnectionDescriptor) {
     if (connection.ref === selectedRef || pendingSelection.current) return;
     if (connection.status !== 'connected') {
@@ -128,6 +178,8 @@ export function CommunityContextSwitcher({
     const capturedRoute = getCommunityRouteEpoch();
     pendingSelection.current = true;
     setPendingRef(connection.ref);
+    await navigate({ to: '/channels', search: { community: connection.ref } });
+    if (isMobile) focusPageHeading();
     try {
       const remembered = await transport.resolveCommunityNavigation(connection.ref);
       const fallback = remembered
@@ -137,17 +189,17 @@ export function CommunityContextSwitcher({
           ) ?? null);
       const roomId = remembered?.roomId ?? fallback?.roomId;
       if (!isCommunityAuthorityCurrent(capturedOwner) || !capturedRoute.isCurrent()) return;
-      await navigate({
-        to: '/channels',
-        search: {
-          community: connection.ref,
-          ...(roomId ? { id: roomId } : {}),
-          ...(remembered?.threadId ? { thread: remembered.threadId } : {}),
-        },
-      });
+      if (roomId)
+        await navigate({
+          to: '/channels',
+          search: {
+            community: connection.ref,
+            ...(roomId ? { id: roomId } : {}),
+            ...(remembered?.threadId ? { thread: remembered.threadId } : {}),
+          },
+        });
     } catch {
-      if (isCommunityAuthorityCurrent(capturedOwner) && capturedRoute.isCurrent())
-        toast.error(`Couldn’t open ${connection.label}`);
+      // The qualified skeleton and any owner-scoped cache remain usable offline.
     } finally {
       pendingSelection.current = false;
       setPendingRef(null);
@@ -197,7 +249,9 @@ export function CommunityContextSwitcher({
 
   return (
     <ResponsiveDropdownMenu
+      open={open}
       onOpenChange={(open) => {
+        setOpen(open);
         if (open) requestAnimationFrame(() => selectedItem.current?.focus());
         else setFilter('');
       }}
@@ -252,25 +306,30 @@ export function CommunityContextSwitcher({
           >
             <span className="min-w-0 flex-1 truncate">{installationLabel}</span>
           </ResponsiveDropdownMenuRadioItem>
-          {visibleDestinations.map((connection) => (
-            <ResponsiveDropdownMenuRadioItem
-              key={connection.ref}
-              value={`community:${connection.ref}`}
-              icon={UsersRound}
-              disabled={pendingRef !== null}
-              itemRef={connection.ref === selectedRef ? selectedItem : undefined}
-              description={
-                connection.status === 'pending'
-                  ? 'Pending'
-                  : connection.status === 'reconnect-required'
-                    ? 'Reconnect'
-                    : undefined
-              }
-              className={pendingRef !== null ? 'opacity-50' : undefined}
-            >
-              <span className="min-w-0 flex-1 truncate">{connection.label}</span>
-            </ResponsiveDropdownMenuRadioItem>
-          ))}
+          {visibleDestinations.map((connection) => {
+            const descriptor = navigationDescriptor(connection);
+            const state =
+              descriptor.membershipState !== 'active'
+                ? descriptor.membershipState.replace('-', ' ')
+                : descriptor.availability !== 'online'
+                  ? descriptor.availability
+                  : undefined;
+            return (
+              <ResponsiveDropdownMenuRadioItem
+                key={connection.ref}
+                value={`community:${connection.ref}`}
+                icon={UsersRound}
+                disabled={pendingRef !== null}
+                itemRef={connection.ref === selectedRef ? selectedItem : undefined}
+                description={
+                  connection.status === 'reconnect-required' ? 'Reconnect required' : state
+                }
+                className={pendingRef !== null ? 'opacity-50' : undefined}
+              >
+                <span className="min-w-0 flex-1 truncate">{connection.label}</span>
+              </ResponsiveDropdownMenuRadioItem>
+            );
+          })}
         </ResponsiveDropdownMenuRadioGroup>
         {selected && selectedIndex > 0 && (
           <ResponsiveDropdownMenuItem

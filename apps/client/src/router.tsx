@@ -710,6 +710,28 @@ export function createAppRouter(queryClient: QueryClient, transport: Transport) 
         typeof search.thread === 'string' ? search.thread : null,
       ])
     );
+    if (typeof search.id === 'string') {
+      const authority = getCommunityAuthority();
+      const route = getCommunityRouteEpoch();
+      if (authority.ownerKey === null) return;
+      const captured = { epoch: authority.epoch, ownerKey: authority.ownerKey };
+      void transport
+        .rememberCommunityNavigation({
+          ref: search.community,
+          roomId: search.id,
+          threadId: typeof search.thread === 'string' ? search.thread : null,
+          scrollAnchorEntryId: null,
+        })
+        .then((state) => {
+          if (
+            state.ownerKey === captured.ownerKey &&
+            isCommunityAuthorityCurrent(captured) &&
+            route.isCurrent()
+          )
+            queryClient.setQueryData(communityNavigationKeys.authority(captured.epoch), state);
+        })
+        .catch(() => undefined);
+    }
   });
   return router;
 }

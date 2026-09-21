@@ -540,7 +540,7 @@ describe('SidebarHeaderBlock', () => {
     await waitFor(() => expect(selected).toHaveFocus());
   });
 
-  it('leaves the committed route unchanged when target reauthorization fails', async () => {
+  it('commits the qualified target before an offline destination read', async () => {
     mockConnections = [
       {
         ref: 'a',
@@ -556,8 +556,9 @@ describe('SidebarHeaderBlock', () => {
     renderBlock();
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
     fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Couldn’t open Alpha'));
-    expect(mockNavigate).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/channels', search: { community: 'a' } });
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it('discards a delayed destination after the local owner changes', async () => {
@@ -601,7 +602,7 @@ describe('SidebarHeaderBlock', () => {
     await waitFor(() =>
       expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
     );
-    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
     expect(toast.error).not.toHaveBeenCalled();
   });
 
@@ -635,7 +636,7 @@ describe('SidebarHeaderBlock', () => {
     await waitFor(() =>
       expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
     );
-    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
     expect(toast.error).not.toHaveBeenCalled();
   });
 
@@ -677,7 +678,7 @@ describe('SidebarHeaderBlock', () => {
     const installation = await screen.findByRole('menuitemradio', { name: /Dorian’s team/ });
     expect(installation).toHaveAttribute('aria-disabled', 'true');
     fireEvent.keyDown(installation, { key: 'Enter' });
-    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
 
     resolveRemembered(null);
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
