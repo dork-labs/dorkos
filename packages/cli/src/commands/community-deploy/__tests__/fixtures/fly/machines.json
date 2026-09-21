@@ -1,0 +1,14 @@
+[
+  {
+    "id": "machine_fixture_01",
+    "name": "community-fixture-01",
+    "state": "started",
+    "region": "ord",
+    "image_ref": {
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "registry": "ghcr.io",
+      "repository": "dork-labs/dorkos-community"
+    },
+    "checks": [{ "name": "health", "status": "passing" }]
+  }
+]

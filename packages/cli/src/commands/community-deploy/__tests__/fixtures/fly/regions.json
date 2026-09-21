@@ -1,0 +1,11 @@
+[
+  {
+    "code": "ord",
+    "name": "Chicago, Illinois (US)",
+    "latitude": 41.88,
+    "longitude": -87.63,
+    "gateway_available": true,
+    "requires_paid_plan": false,
+    "deprecated": false
+  }
+]
