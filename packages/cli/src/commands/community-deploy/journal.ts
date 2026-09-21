@@ -21,6 +21,7 @@ const SafeIdentifierSchema = z
     'Journal identifiers must use the provider id character set'
   );
 const Sha256DigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
+const SecretDigestSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:+/=_-]{0,255}$/);
 const HexHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const JournalLockSchema = z
   .object({ ownerId: z.uuid(), pid: z.number().int().positive(), createdAt: z.iso.datetime() })
@@ -115,20 +116,30 @@ export const LaunchJournalSchema = z
         tigrisBucketId: SafeIdentifierSchema.optional(),
       })
       .strict(),
+    secretDigests: z
+      .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/), SecretDigestSchema)
+      .optional(),
+    secretBaseline: z
+      .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/), SecretDigestSchema)
+      .optional(),
     verifiedBindings: z
       .array(
-        z
-          .object({
-            kind: z.enum([
-              'bucket-to-app',
-              'endpoint-to-project',
-              'machine-to-release',
-              'secret-version-to-machine',
-            ]),
-            sourceId: SafeIdentifierSchema,
-            targetId: SafeIdentifierSchema,
-          })
-          .strict()
+        z.discriminatedUnion('kind', [
+          z
+            .object({
+              kind: z.enum(['bucket-to-app', 'endpoint-to-project', 'machine-to-release']),
+              sourceId: SafeIdentifierSchema,
+              targetId: SafeIdentifierSchema,
+            })
+            .strict(),
+          z
+            .object({
+              kind: z.literal('secret-version-to-machine'),
+              sourceId: SecretDigestSchema,
+              targetId: SafeIdentifierSchema,
+            })
+            .strict(),
+        ])
       )
       .max(64),
     completedSteps: z.array(LaunchStateSchema).max(16),

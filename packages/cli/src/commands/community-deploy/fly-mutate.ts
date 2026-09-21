@@ -103,13 +103,39 @@ export async function stageFlySecrets(
 export async function deployFlyImage(
   options: FlySessionReadOptions,
   appName: string,
-  imageReference: string
+  imageReference: string,
+  configPath?: string
 ): Promise<FlyMutationReceipt> {
   const app = parseInput(ExternalIdentifierSchema, appName);
   const image = parseInput(ImageReferenceSchema, imageReference);
+  if (configPath !== undefined && (configPath.length === 0 || /[\0\r\n]/u.test(configPath))) {
+    throw new ProviderMutationError('INVALID_INPUT');
+  }
   return runProviderMutation({
     ...options,
-    args: ['deploy', '--app', app, '--image', image, '--ha=false', '--yes'],
+    args: [
+      'deploy',
+      '--app',
+      app,
+      '--image',
+      image,
+      ...(configPath === undefined ? [] : ['--config', configPath]),
+      '--ha=false',
+      '--yes',
+    ],
+    parse: () => ({ operation: 'deploy' as const }),
+  });
+}
+
+/** Apply already staged secrets without rebuilding or changing the selected image. */
+export async function deployFlySecrets(
+  options: FlySessionReadOptions,
+  appName: string
+): Promise<FlyMutationReceipt> {
+  const app = parseInput(ExternalIdentifierSchema, appName);
+  return runProviderMutation({
+    ...options,
+    args: ['secrets', 'deploy', '--app', app, '--yes'],
     parse: () => ({ operation: 'deploy' as const }),
   });
 }
@@ -205,6 +231,34 @@ export function verifyFlyDeployment(
     inventory.machines[0]?.checks.length === 0 ||
     inventory.machines[0]?.checks.some((check) => check.status !== 'passing') ||
     !releaseIsNew ||
+    latestRelease?.status !== 'complete' ||
+    latestRelease.imageRef !== `${expectedRepository}@${expectedDigest}` ||
+    inventory.addresses.length === 0
+  ) {
+    throw new ProviderMutationError('INVALID_RESPONSE');
+  }
+  return inventory;
+}
+
+/** Prove the current app already runs one healthy exact-digest deployment. */
+export function verifyExistingFlyDeployment(
+  inventory: FlyRuntimeInventory,
+  expectedRepository: string,
+  expectedDigest: string
+): FlyRuntimeInventory {
+  const latestRelease = inventory.releases.reduce<
+    FlyRuntimeInventory['releases'][number] | undefined
+  >(
+    (latest, release) => (!latest || release.version > latest.version ? release : latest),
+    undefined
+  );
+  if (
+    inventory.machines.length !== 1 ||
+    inventory.machines[0]?.state !== 'started' ||
+    inventory.machines[0]?.imageRepository !== expectedRepository ||
+    inventory.machines[0]?.imageDigest !== expectedDigest ||
+    inventory.machines[0]?.checks.length === 0 ||
+    inventory.machines[0]?.checks.some((check) => check.status !== 'passing') ||
     latestRelease?.status !== 'complete' ||
     latestRelease.imageRef !== `${expectedRepository}@${expectedDigest}` ||
     inventory.addresses.length === 0
