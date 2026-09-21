@@ -23,6 +23,7 @@ let pool: Pool;
 let baseUrl = '';
 let storagePath = '';
 let ownerCookie = '';
+let memberCookie = '';
 let ownerMemberId = '';
 let communityId = '';
 let settingsVersion = 1;
@@ -114,6 +115,42 @@ beforeAll(async () => {
   const claimed = await claim.json();
   communityId = claimed.community.id;
   ownerMemberId = claimed.memberId;
+  const invitation = await jsonRequest(`/api/v1/communities/${communityId}/invites`, 'POST', {
+    seats: 1,
+  });
+  expect(invitation.status).toBe(201);
+  const { token } = await invitation.json();
+  const admitted = await jsonRequest(
+    `/api/v1/communities/${communityId}/invites/preflight`,
+    'POST',
+    { token },
+    ''
+  );
+  expect(admitted.status).toBe(200);
+  const grant = cookieOf(admitted);
+  const memberSignup = await jsonRequest(
+    '/api/auth/sign-up/email',
+    'POST',
+    {
+      name: 'Member',
+      email: 'admin-member@example.test',
+      password,
+    },
+    grant
+  );
+  expect(memberSignup.status).toBe(200);
+  memberCookie = `${grant}; ${cookieOf(memberSignup)}`;
+  expect(
+    (
+      await jsonRequest(
+        `/api/v1/communities/${communityId}/invites/redeem`,
+        'POST',
+        { token },
+        memberCookie
+      )
+    ).status
+  ).toBe(200);
+
   const current = (
     await pool.query('SELECT settings_version,lifecycle_version FROM communities WHERE id=$1', [
       communityId,
@@ -202,13 +239,18 @@ it('uses settings ETags and keeps admin fields out of canonical addressing', asy
     name: 'Renamed Community',
     admissionPolicy: 'closed',
   });
-  expect(
-    (
-      await jsonRequest(path, 'PATCH', { description: 'Lost edit' }, ownerCookie, {
-        'if-match': '"1"',
-      })
-    ).status
-  ).toBe(409);
+  for (const etag of ['"1"', 'invalid']) {
+    const conflict = await jsonRequest(path, 'PATCH', { description: 'Lost edit' }, ownerCookie, {
+      'if-match': etag,
+    });
+    expect(conflict.status).toBe(409);
+    expect(conflict.headers.get('etag')).toBe(`"${settingsVersion}"`);
+    expect(await conflict.json()).toEqual({
+      code: 'STATE_CONFLICT',
+      message: expect.any(String),
+      current: updated,
+    });
+  }
 });
 
 it('stores private raster icons with ETags and queues replaced bytes', async () => {
@@ -529,6 +571,20 @@ it('archives with immediate credential revocation and restores without revival',
     ).status
   ).toBe(403);
 
+  const grantsPath = `/api/v1/communities/${communityId}/me/grants`;
+  const listed = await request(grantsPath, { headers: { cookie: ownerCookie } });
+  expect(listed.status).toBe(200);
+  expect((await listed.json()).grants).toEqual([exchanged.grant]);
+  const revoked = await request(`${grantsPath}/${exchanged.grant.id}`, {
+    method: 'DELETE',
+    headers: { cookie: ownerCookie, origin: 'http://localhost:6481' },
+  });
+  expect(revoked.status).toBe(204);
+  const afterRevoke = await request(`/api/v1/communities/${communityId}/channels`, {
+    headers: { authorization: `Bearer ${readToken}` },
+  });
+  expect(afterRevoke.status).toBe(401);
+
   const restore = await jsonRequest(`/api/v1/communities/${communityId}/owner/lifecycle`, 'POST', {
     action: 'restore',
     lifecycleVersion,
@@ -559,7 +615,7 @@ it('archives with immediate credential revocation and restores without revival',
         headers: { authorization: `Bearer ${readToken}` },
       })
     ).status
-  ).toBe(403);
+  ).toBe(401);
 });
 
 it('requests deletion idempotently and cancels back to archived without reviving access', async () => {
@@ -578,6 +634,29 @@ it('requests deletion idempotently and cancels back to archived without reviving
   const first = await requested.json();
   lifecycleVersion = first.lifecycleVersion;
   expect(first).toMatchObject({ lifecycle: 'deletion_pending', state: 'waiting', attempts: 0 });
+  const memberships = await request('/api/v1/memberships', { headers: { cookie: ownerCookie } });
+  expect(memberships.status).toBe(200);
+  expect((await memberships.json()).memberships).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ communityId, lifecycle: 'deletion_pending' }),
+    ])
+  );
+  expect((await request(path, { headers: { cookie: memberCookie } })).status).toBe(403);
+  expect(
+    (await jsonRequest(`${path}/cancel`, 'POST', { lifecycleVersion, password }, memberCookie))
+      .status
+  ).toBe(403);
+  const recovered = await request(path, { headers: { cookie: ownerCookie } });
+  expect(recovered.status).toBe(200);
+  expect(await recovered.json()).toEqual(first);
+  expect((await request(path)).status).toBe(401);
+  for (const resource of ['me', 'agents', 'icon', 'settings', 'community']) {
+    const denied = await request(`/api/v1/communities/${communityId}/${resource}`, {
+      headers: { cookie: ownerCookie },
+    });
+    expect(denied.status, resource).toBe(423);
+    expect(await denied.json()).toMatchObject({ code: 'COMMUNITY_DELETION_PENDING' });
+  }
   const retry = await jsonRequest(path, 'POST', { ...requestBody, lifecycleVersion });
   expect(retry.status).toBe(200);
   expect((await retry.json()).deleteAfter).toBe(first.deleteAfter);

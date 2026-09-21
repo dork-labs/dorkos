@@ -325,12 +325,17 @@ export async function lockPrincipalAuthority(
 }
 
 /** Require a current Better Auth session and a live admitted member row. */
-export async function requireMember(c: Context, auth: CommunityAuth, pool: Pool): Promise<Member> {
+export async function requireMember(
+  c: Context,
+  auth: CommunityAuth,
+  pool: Pool,
+  options: { allowDeletionPending?: boolean } = {}
+): Promise<Member> {
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
   if (!session) throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
   let tenant: CommunityContext;
   try {
-    tenant = await resolveCommunityContext(c, pool);
+    tenant = await resolveCommunityContext(c, pool, options);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404 && !c.req.param('communityId')) {
       throw new ApiError(403, 'FORBIDDEN', 'You have not joined this community.');

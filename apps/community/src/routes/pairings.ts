@@ -124,7 +124,9 @@ export function registerPairingRoutes(
       CommunityWirePairingStartResponseSchema,
       {
         pairingId: id,
-        approvalUrl: `${config.publicUrl}/c/${community.communityId}/pairing?pairingId=${id}`,
+        approvalUrl: community.qualified
+          ? `${config.publicUrl}/c/${community.communityId}/pairing?pairingId=${id}`
+          : `${config.publicUrl}/pairing?pairingId=${id}`,
         expiresAt: expiry.toISOString(),
       },
       201
@@ -412,7 +414,8 @@ export function registerPairingRoutes(
   app.get('/me/grants', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const result = await transaction(pool, async (client) => {
-      await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
+      const lifecycle = await lockPairingCommunity(client, actor.community_id, true);
+      await requirePairingMember(client, actor, lifecycle);
       return client.query<{
         id: string;
         member_id: string;
@@ -451,7 +454,8 @@ export function registerPairingRoutes(
     const actor = await requireMember(c, auth, pool);
     const id = uuid.parse(c.req.param('id'));
     const result = await transaction(pool, async (client) => {
-      await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
+      const lifecycle = await lockPairingCommunity(client, actor.community_id, true);
+      await requirePairingMember(client, actor, lifecycle);
       return client.query(
         'UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now()) WHERE id=$1 AND member_id=$2 AND community_id=$3 RETURNING id',
         [id, actor.id, actor.community_id]

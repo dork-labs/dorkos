@@ -312,7 +312,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     });
     expect(start.status).toBe(201);
     const { pairingId, approvalUrl } = await start.json();
-    expect(approvalUrl).toContain(pairingId);
+    expect(approvalUrl).toBe(`${config.publicUrl}/pairing?pairingId=${pairingId}`);
     expect(
       (await call(`/api/v1/pairings/${pairingId}`, 'GET', undefined, ownerCookie)).status
     ).toBe(200);
@@ -1267,6 +1267,27 @@ describe('signed admission over real HTTP and Postgres', () => {
         scopes: ['read'],
       })
     ).json();
+    expect(pairing.approvalUrl).toBe(
+      `${config.publicUrl}/c/${secondId}/pairing?pairingId=${pairing.pairingId}`
+    );
+    expect(
+      (
+        await localCall(`/api/v1/communities/${firstId}/pairings/poll`, {
+          pairingId: pairing.pairingId,
+          verifier,
+        })
+      ).status
+    ).toBe(403);
+    expect(
+      (
+        await call(
+          `/api/v1/communities/${firstId}/pairings/approve`,
+          'POST',
+          { pairingId: pairing.pairingId },
+          ownerCookie
+        )
+      ).status
+    ).toBe(403);
     expect(
       (
         await call(
@@ -1316,6 +1337,16 @@ describe('signed admission over real HTTP and Postgres', () => {
     );
     expect(joinedFirst.status).toBe(200);
     const claimantFirstMember = (await joinedFirst.json()).memberId;
+    const visibleMemberships = await call('/api/v1/memberships', 'GET', undefined, claimantCookie);
+    expect(visibleMemberships.status).toBe(200);
+    const visibleMembershipRows = (await visibleMemberships.json()).memberships;
+    expect(visibleMembershipRows).toHaveLength(2);
+    expect(visibleMembershipRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ communityId: firstId, role: 'member', lifecycle: 'active' }),
+        expect.objectContaining({ communityId: secondId, role: 'owner', lifecycle: 'active' }),
+      ])
+    );
     expect(
       (
         await call(
@@ -1329,6 +1360,12 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect(
       (await call(`/api/v1/communities/${secondId}/me`, 'GET', undefined, claimantCookie)).status
     ).toBe(200);
+    expect(
+      (await (await call('/api/v1/memberships', 'GET', undefined, claimantCookie)).json())
+        .memberships
+    ).toEqual([
+      expect.objectContaining({ communityId: secondId, role: 'owner', lifecycle: 'active' }),
+    ]);
     expect(
       (await call('/api/v1/owner-claims/preflight', 'POST', { token: claimToken })).status
     ).toBe(403);
@@ -1392,6 +1429,12 @@ describe('signed admission over real HTTP and Postgres', () => {
       (await call(`/api/v1/communities/${secondId}/channels`, 'GET', undefined, claimantCookie))
         .status
     ).toBe(409);
+    expect(
+      (await (await call('/api/v1/memberships', 'GET', undefined, claimantCookie)).json())
+        .memberships
+    ).toEqual([
+      expect.objectContaining({ communityId: secondId, role: 'owner', lifecycle: 'suspended' }),
+    ]);
     // Commit order does not promise delivery order: the stream rechecks live
     // authority and can close before draining an already committed entry.
     expect(
