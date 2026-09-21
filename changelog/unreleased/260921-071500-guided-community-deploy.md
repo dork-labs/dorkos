@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(cli): guide independent Community deployment'
+  - 'fix(cli): preserve platform environment for Community setup'
 ---
 
 ### Added

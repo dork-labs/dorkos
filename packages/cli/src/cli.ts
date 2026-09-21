@@ -336,6 +336,10 @@ if (process.argv[2] === 'community') {
       import('./commands/community-deploy/community-dispatcher.js'),
       import('@dorkos/shared/community-release-manifest'),
     ]);
+    // Child processes need this narrow set of platform variables exactly as the
+    // launching shell supplied them. The parsed CLI env intentionally omits
+    // variables the CLI itself does not consume.
+    const rawProcessEnv = process.env;
     const childEnv = Object.fromEntries(
       [
         'PATH',
@@ -350,7 +354,7 @@ if (process.argv[2] === 'community') {
         'FLY_CONFIG_DIR',
         'GH_CONFIG_DIR',
       ].flatMap((name) => {
-        const value = env[name as keyof typeof env];
+        const value = rawProcessEnv[name];
         return typeof value === 'string' ? [[name, value]] : [];
       })
     );
