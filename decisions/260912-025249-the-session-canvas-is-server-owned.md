@@ -1,7 +1,7 @@
 ---
 id: 260912-025249
 title: The session canvas is server-owned, and the localStorage slice is retired
-status: proposed
+status: accepted
 created: 2026-09-12
 spec: canvas-agent-seat
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed (extracted from spec `canvas-agent-seat`).
+Accepted (extracted from spec `canvas-agent-seat`).
 
 ## Context
 

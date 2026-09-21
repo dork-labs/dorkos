@@ -1,7 +1,7 @@
 ---
 id: 260912-025252
 title: The ui capability domain gives every runtime the same canvas and browser seat
-status: proposed
+status: accepted
 created: 2026-09-12
 spec: canvas-agent-seat
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed (extracted from spec `canvas-agent-seat`).
+Accepted (extracted from spec `canvas-agent-seat`).
 
 ## Context
 

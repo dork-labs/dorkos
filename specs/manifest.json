@@ -6,7 +6,7 @@
       "slug": "community-self-host-launcher",
       "title": "Guided Community self-host launch",
       "created": "2026-09-20",
-      "status": "specified",
+      "status": "decomposed",
       "project": "Community Self-Hosting"
     },
     {
@@ -3045,6 +3045,32 @@
       "status": "specified",
       "project": "Community Self-Hosting",
       "linearIssue": "DOR-2167"
+    },
+    {
+      "id": "260920-201100",
+      "slug": "community-administration-contract",
+      "title": "Community administration lifecycle contract",
+      "created": "2026-09-20",
+      "status": "specified",
+      "project": "Community Administration",
+      "linearIssue": "DOR-2175"
+    },
+    {
+      "id": "260920-203200",
+      "slug": "community-membership-journeys",
+      "title": "Community membership journey and handoff contract",
+      "created": "2026-09-20",
+      "status": "specified",
+      "project": "Community Membership Journeys",
+      "linearIssue": "DOR-2179"
+    },
+    {
+      "id": "260920-230219",
+      "slug": "evals-runtime-legs",
+      "title": "The eval harness runs a rooms case on the runtime you asked for",
+      "created": "2026-09-20",
+      "status": "implemented",
+      "linearIssue": "DOR-2207"
     }
   ]
 }

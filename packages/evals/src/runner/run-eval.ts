@@ -48,8 +48,8 @@ import { BudgetTracker, evalCostSignal, evalCostUsd } from './budget.js';
 import { TURN_TIMEOUT_ERROR } from './retry.js';
 import {
   resolveModelCredential,
+  paidPathFor,
   resolvePaidProviderCredential,
-  spendsOnExternalProvider,
   noCredentialMessage,
   dockerNeedsPortableCredentialMessage,
   type ModelCredential,
@@ -201,8 +201,7 @@ function credentialGateError(
  * OpenRouter key to spend — which is luck, not a gate.
  *
  * Which side of the split a run lands on follows the MONEY, not the tier string
- * — see {@link spendsOnExternalProvider} for the command that proved the
- * difference matters.
+ * — see {@link paidPathFor} for the command that proved the difference matters.
  *
  * @param tier - The tier this eval runs on.
  * @param provided - A credential the suite already resolved once for the run.
@@ -216,8 +215,9 @@ async function resolveCredentialFor(
 ): Promise<{ credential?: ModelCredential; paidRefusal?: string }> {
   if (tier === 'test-mode') return {};
   if (provided) return { credential: provided };
-  if (spendsOnExternalProvider(tier, runtime, provider)) {
-    const gate = resolvePaidProviderCredential();
+  const paidPath = paidPathFor(tier, runtime, provider);
+  if (paidPath) {
+    const gate = resolvePaidProviderCredential(paidPath);
     return gate.ok ? { credential: gate.credential } : { paidRefusal: gate.message };
   }
   const credential = await resolveModelCredential();
@@ -369,7 +369,10 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
   result.isolation = isolation;
   if (opts.runtime) result.runtime = opts.runtime;
 
-  const sandbox = await createSandbox();
+  // The run's runtime rides the sandbox into `evalCase.seed`, because some state
+  // a case lays down before the boot is what DECIDES which runtime serves its
+  // turns — a rooms case's seeded agent manifest is the whole of DOR-2207.
+  const sandbox = await createSandbox(opts.runtime ? { runtime: opts.runtime } : {});
   let server: HarnessServer | undefined;
   let frames: SseFrame[] = [];
   let room: RoomFacts | undefined;
