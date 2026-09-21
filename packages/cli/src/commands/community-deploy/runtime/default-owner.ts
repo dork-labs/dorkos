@@ -3,7 +3,9 @@
  *
  * @module commands/community-deploy/runtime/default-owner
  */
+import { access, constants } from 'node:fs/promises';
 import { platform } from 'node:os';
+import { delimiter, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { deployFlySecrets, stageFlySecrets, verifyExistingFlyDeployment } from '../fly-mutate.js';
@@ -28,32 +30,93 @@ async function ask(question: string, signal?: AbortSignal): Promise<string> {
   }
 }
 
-async function clipboard(value: string, path: string): Promise<void> {
-  const command =
-    platform() === 'darwin'
-      ? { executable: 'pbcopy', args: [] as string[] }
-      : platform() === 'win32'
-        ? { executable: 'clip.exe', args: [] as string[] }
-        : { executable: 'wl-copy', args: [] as string[] };
+type HandoffPlatform = 'darwin' | 'linux' | 'win32';
+
+function handoffCommands(system: NodeJS.Platform): {
+  clipboard: { executable: string; args: string[] };
+  browser: { executable: string; args(origin: string): string[] };
+} {
+  if (system === 'darwin') {
+    return {
+      clipboard: { executable: 'pbcopy', args: [] },
+      browser: { executable: 'open', args: (origin) => [origin] },
+    };
+  }
+  if (system === 'win32') {
+    return {
+      clipboard: { executable: 'clip.exe', args: [] },
+      browser: { executable: 'cmd.exe', args: (origin) => ['/c', 'start', '', origin] },
+    };
+  }
+  return {
+    clipboard: { executable: 'wl-copy', args: [] },
+    browser: { executable: 'xdg-open', args: (origin) => [origin] },
+  };
+}
+
+async function executableOnPath(executable: string, path: string): Promise<boolean> {
+  for (const directory of path.split(delimiter).filter(Boolean)) {
+    try {
+      await access(join(directory, executable), constants.X_OK);
+      return true;
+    } catch {
+      // Continue through the explicit PATH without invoking a shell.
+    }
+  }
+  return false;
+}
+
+/** Prove the non-printing owner-secret handoff is locally available before provider writes. */
+export async function assertOwnerHandoffPrerequisites(
+  path: string,
+  system: NodeJS.Platform = platform()
+): Promise<void> {
+  if (!(['darwin', 'linux', 'win32'] as const).includes(system as HandoffPlatform)) {
+    throw new Error(
+      'Owner handoff is unsupported on this platform. See https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md'
+    );
+  }
+  const commands = handoffCommands(system);
+  const missing = (
+    await Promise.all(
+      [commands.clipboard.executable, commands.browser.executable].map(async (executable) => ({
+        executable,
+        found: await executableOnPath(executable, path),
+      }))
+    )
+  ).filter(({ found }) => !found);
+  if (missing.length > 0) {
+    throw new Error(
+      `Owner handoff needs ${missing.map(({ executable }) => executable).join(' and ')} before setup can create resources. See https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md`
+    );
+  }
+}
+
+async function clipboard(
+  value: string,
+  env: Readonly<Record<string, string>>,
+  system: NodeJS.Platform
+): Promise<void> {
+  const command = handoffCommands(system).clipboard;
   await runProviderCommand({
     ...command,
-    env: { PATH: path },
+    env,
     timeoutMs: 5_000,
     stdin: value,
     parse: () => undefined,
   });
 }
 
-async function openOrigin(origin: string, path: string): Promise<void> {
-  const command =
-    platform() === 'darwin'
-      ? { executable: 'open', args: [origin] }
-      : platform() === 'win32'
-        ? { executable: 'cmd.exe', args: ['/c', 'start', '', origin] }
-        : { executable: 'xdg-open', args: [origin] };
+async function openOrigin(
+  origin: string,
+  env: Readonly<Record<string, string>>,
+  system: NodeJS.Platform
+): Promise<void> {
+  const boundary = handoffCommands(system).browser;
+  const command = { executable: boundary.executable, args: boundary.args(origin) };
   await runProviderCommand({
     ...command,
-    env: { PATH: path },
+    env,
     timeoutMs: 10_000,
     parse: () => undefined,
   });
@@ -80,10 +143,11 @@ async function ownerExists(origin: string): Promise<boolean> {
 export function createDefaultCommunityOwnerDependencies(input: {
   options: CommunityServiceOptions;
   plan: LaunchPlan;
-  path: string;
+  env: Readonly<Record<string, string>>;
   persist(journal: LaunchJournal, expectedRevision: number): Promise<void>;
   now(): string;
   signal?: AbortSignal;
+  platform?: NodeJS.Platform;
 }): CommunityOwnerDependencies {
   return {
     persist: input.persist,
@@ -117,12 +181,16 @@ export function createDefaultCommunityOwnerDependencies(input: {
       ) {
         throw new Error('Setup-secret handoff was cancelled');
       }
-      await openOrigin(origin, input.path);
-      await clipboard(secret, input.path);
+      const system = input.platform ?? platform();
+      await openOrigin(origin, input.env, system);
+      await clipboard(secret, input.env, system);
       stdout.write(
         'The setup secret is on your clipboard. Clipboard managers may retain it after DorkOS clears the current clipboard.\n'
       );
-      const timer = setTimeout(() => void clipboard('', input.path).catch(() => undefined), 30_000);
+      const timer = setTimeout(
+        () => void clipboard('', input.env, system).catch(() => undefined),
+        30_000
+      );
       timer.unref();
     },
     ownerExists,

@@ -19,6 +19,8 @@ neonctl auth
 dorkos community deploy --help
 ```
 
+The one-time owner handoff also needs a local clipboard command and browser opener: `pbcopy` and `open` on macOS, `wl-copy` and `xdg-open` on Linux, or `clip.exe` and `cmd.exe` on Windows. The launcher checks these before consent so a headless machine cannot create paid resources and then fail to hand over the Setup secret.
+
 Choose the organizations and nearby regions yourself. The command does not silently select an account or region. Run a read-only preview first:
 
 ```sh

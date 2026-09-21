@@ -341,6 +341,8 @@ if (process.argv[2] === 'community') {
         'PATH',
         'HOME',
         'USERPROFILE',
+        'SystemRoot',
+        'WINDIR',
         'APPDATA',
         'XDG_CONFIG_HOME',
         'FLY_CONFIG_DIR',

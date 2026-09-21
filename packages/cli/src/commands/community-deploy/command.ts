@@ -72,6 +72,8 @@ export function formatCommunityPreflight(result: CommunityPreflightResult): stri
     `Plan: ${result.planHash}`,
     'Readiness:',
     readiness,
+    `Billing: creating resources may add charges to Fly organization ${plan.fly.organizationName} and Neon organization ${plan.neon.organizationName}; Tigris charges belong to the selected Fly organization.`,
+    'Review provider billing before consent: https://fly.io/docs/about/pricing/ and https://neon.com/pricing',
     'Resources are retained if setup stops; resume from the launch journal.',
   ].join('\n');
 }

@@ -69,6 +69,7 @@ describe('Community creation executor', () => {
   it('journals each intent before create and completes only after exact-ID inspection', async () => {
     const harness = dependencies();
     const events: string[] = [];
+    harness.value.progress = (service) => events.push(`progress:${service}`);
     vi.mocked(harness.value.persist).mockImplementation(async (next, expected) => {
       expect(expected).toBe(harness.persisted().revision);
       events.push(
@@ -85,14 +86,17 @@ describe('Community creation executor', () => {
 
     const result = await executeCommunityCreationPhase(plan, harness.persisted(), harness.value);
     expect(events).toEqual([
+      'progress:fly',
       'intent:fly',
       'create',
       'intent:fly',
       'state:fly_app_created',
+      'progress:neon',
       'intent:neon',
       'create',
       'intent:neon',
       'state:neon_project_created',
+      'progress:tigris',
       'intent:tigris',
       'create',
       'intent:tigris',

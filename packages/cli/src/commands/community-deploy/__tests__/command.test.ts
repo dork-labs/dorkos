@@ -105,6 +105,9 @@ describe('Community deploy command orchestration', () => {
     expect(output).toContain('Dorian [org-dorian]');
     expect(output).toContain('one shared-cpu-1x Machine');
     expect(output).toContain('fly-billing: unknown');
+    expect(output).toContain('creating resources may add charges');
+    expect(output).toContain('https://fly.io/docs/about/pricing/');
+    expect(output).toContain('https://neon.com/pricing');
     expect(output).toContain('Resources are retained');
     expect(output).not.toContain(release.image.digest);
     expect(output).not.toContain('postgresql://');

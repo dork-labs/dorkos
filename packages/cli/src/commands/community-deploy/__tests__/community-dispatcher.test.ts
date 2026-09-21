@@ -48,10 +48,11 @@ else if (name === 'neonctl' && args[0] === 'orgs') value = [{id:'org-dorian',nam
 else if (name === 'neonctl' && args[0] === 'api' && args[1] === '/regions') value = {regions:[{region_id:'aws-us-east-2',name:'AWS US East 2',default:false,geo_lat:40.4,geo_long:-82.9}]};
 else if (name === 'neonctl' && args[0] === 'projects') value = [];
 else if (name === 'neonctl' && args[0] === '--version') { process.stdout.write('5.0.0'); process.exit(0); }
+else if (['open','pbcopy','xdg-open','wl-copy'].includes(name)) process.exit(0);
 else process.exit(2);
 process.stdout.write(JSON.stringify(value));
 `;
-  for (const name of ['gh', 'fly', 'neonctl']) {
+  for (const name of ['gh', 'fly', 'neonctl', 'open', 'pbcopy', 'xdg-open', 'wl-copy']) {
     const executable = join(root, name);
     await writeFile(executable, source(name));
     await chmod(executable, 0o755);
@@ -157,6 +158,72 @@ describe('Community command dispatcher', () => {
     expect(output.mock.calls.map(([value]) => String(value)).join('')).toContain(runId);
   });
 
+  it('renders retained-resource recovery when resume preflight fails before execution', async () => {
+    const path = await fixtureBin();
+    const dorkHome = await mkdtemp(join(tmpdir(), 'dorkos-community-home-'));
+    roots.push(dorkHome);
+    const runId = randomUUID();
+    const plan = createLaunchPlan({
+      dorkosVersion: '0.76.0',
+      imageDigest: `sha256:${'a'.repeat(64)}`,
+      fly: {
+        organizationId: 'dork-labs',
+        organizationName: 'Dork Labs',
+        appName: 'dorkos-community-test',
+        region: 'ord',
+        machineSize: 'shared-cpu-1x',
+      },
+      neon: {
+        organizationId: 'org-dorian',
+        organizationName: 'Dorian',
+        projectName: 'dorkos-community-test',
+        region: 'aws-us-east-2',
+      },
+      tigris: { bucketName: 'dorkos-community-test', private: true },
+    });
+    const initial = createInitialCommunityLaunchJournal(runId, plan, '2026-09-21T00:00:00.000Z');
+    await initializeLaunchJournal(launchJournalPath(dorkHome, runId), {
+      ...initial,
+      state: 'fly_app_created',
+      resources: { flyAppId: 'app-retained' },
+      completedSteps: ['planned', 'fly_app_created'],
+    });
+    const errorOutput = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await expect(
+      runCommunityDispatcher(
+        [
+          'deploy',
+          '--resume',
+          runId,
+          '--version',
+          '0.76.0',
+          '--fly-org',
+          'wrong-org',
+          '--fly-region',
+          'ord',
+          '--neon-org',
+          'org-dorian',
+          '--neon-region',
+          'aws-us-east-2',
+          '--app-name',
+          'dorkos-community-test',
+        ],
+        {
+          cliVersion: '0.76.0',
+          dorkHome,
+          processEnv: { PATH: path },
+          parseRelease: (bytes) =>
+            JSON.parse(Buffer.from(bytes).toString('utf8')) as CompatibleCommunityRelease,
+        }
+      )
+    ).rejects.toThrow('FLY_ORGANIZATION_NOT_FOUND');
+    const rendered = errorOutput.mock.calls.map(([value]) => String(value)).join('');
+    expect(rendered).toContain('Fly app app-retained');
+    expect(rendered).toContain('may incur charges');
+    expect(rendered).toContain(`--resume ${runId}`);
+  });
+
   it('states retained ownership, possible costs/data, and recovery limits', () => {
     const plan = createLaunchPlan({
       dorkosVersion: '0.76.0',
@@ -210,5 +277,56 @@ describe('Community command dispatcher', () => {
     expect(completion).toContain('Deployment health:');
     expect(completion).toContain('Recovery readiness: not verified');
     expect(completion).toContain('Tigris snapshots are a separate operator choice');
+  });
+
+  it('renders pending creation reconciliation without suggesting name adoption', () => {
+    const plan = createLaunchPlan({
+      dorkosVersion: '0.76.0',
+      imageDigest: `sha256:${'a'.repeat(64)}`,
+      fly: {
+        organizationId: 'dork-labs',
+        organizationName: 'Dork Labs',
+        appName: 'dorkos-community-test',
+        region: 'ord',
+        machineSize: 'shared-cpu-1x',
+      },
+      neon: {
+        organizationId: 'org-dorian',
+        organizationName: 'Dorian',
+        projectName: 'dorkos-community-test',
+        region: 'aws-us-east-2',
+      },
+      tigris: { bucketName: 'dorkos-community-test', private: true },
+    });
+    const base = createInitialCommunityLaunchJournal(
+      randomUUID(),
+      plan,
+      '2026-09-21T00:00:00.000Z'
+    );
+    const recovery = formatCommunityRecovery(
+      {
+        ...base,
+        state: 'uncertain',
+        pendingIntent: {
+          provider: 'neon',
+          organizationId: 'org-dorian',
+          resourceName: 'dorkos-community-test',
+        },
+      },
+      {
+        version: '0.76.0',
+        flyOrganization: 'dork-labs',
+        flyRegion: 'ord',
+        appName: 'dorkos-community-test',
+        machineSize: 'shared-cpu-1x',
+        neonOrganization: 'org-dorian',
+        neonRegion: 'aws-us-east-2',
+        neonProjectName: 'dorkos-community-test',
+        bucketName: 'dorkos-community-test',
+      }
+    );
+    expect(recovery).toContain('Manual reconciliation required');
+    expect(recovery).toContain('neonctl projects list --org-id org-dorian');
+    expect(recovery).toContain('Do not create or adopt a name match');
   });
 });

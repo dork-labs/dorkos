@@ -4,6 +4,7 @@ covers:
   - 'feat(cli): wire guided Community setup'
   - 'fix(cli): retain Community creation identity'
   - 'fix(cli): complete Community launch recovery'
+  - 'fix(cli): make Community launch failures recoverable'
 ---
 
 ### Added

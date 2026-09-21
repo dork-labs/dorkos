@@ -33,6 +33,7 @@ import type { CommunityCreationDependencies, CreatedResourceIdentity } from '../
 import type { LaunchJournal } from '../journal.js';
 import type { LaunchPlan } from '../plan.js';
 import { ProviderMutationError } from '../provider-mutation.js';
+import { classifyCommunityProviderPreflightFailure } from './versions.js';
 
 /** Local executable and profile settings used by the default service assembly. */
 export interface CommunityServiceOptions {
@@ -51,15 +52,20 @@ export async function readDefaultCommunityPreflight(
   options: CommunityServiceOptions,
   selection: CommunityPreflightSelection
 ): Promise<CommunityPreflightInventory> {
-  const [flyOrganizations, flyRegions, flyApps, neonOrganizations, neonRegions, neonProjects] =
-    await Promise.all([
+  const [flyInventory, neonInventory] = await Promise.all([
+    Promise.all([
       readFlyOrganizations(options.fly),
       readFlyRegions(options.fly),
       readFlyApps(options.fly, selection.flyOrganization),
+    ]).catch((error: unknown) => classifyCommunityProviderPreflightFailure('fly', error)),
+    Promise.all([
       readNeonOrganizations(options.neon),
       readNeonRegions(options.neon),
       readNeonProjects(options.neon, selection.neonOrganization),
-    ]);
+    ]).catch((error: unknown) => classifyCommunityProviderPreflightFailure('neon', error)),
+  ]);
+  const [flyOrganizations, flyRegions, flyApps] = flyInventory;
+  const [neonOrganizations, neonRegions, neonProjects] = neonInventory;
   return { flyOrganizations, flyRegions, flyApps, neonOrganizations, neonRegions, neonProjects };
 }
 
@@ -166,6 +172,7 @@ export function createDefaultCommunityCreationDependencies(input: {
   latestJournal(): LaunchJournal;
   persist(journal: LaunchJournal, expectedRevision: number): Promise<void>;
   now(): string;
+  progress?: CommunityCreationDependencies['progress'];
   confirmTigrisTerms(): Promise<void>;
 }): CommunityCreationDependencies {
   const app = async () => {
@@ -176,6 +183,7 @@ export function createDefaultCommunityCreationDependencies(input: {
   return {
     persist: input.persist,
     now: input.now,
+    progress: input.progress,
     fly: {
       create: async () => {
         const created = await createFlyApp(

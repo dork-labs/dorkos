@@ -15,7 +15,10 @@ import {
   createDefaultCommunityCreationDependencies,
 } from './runtime/default-services.js';
 import { createDefaultCommunityDeployDependencies } from './runtime/default-deploy.js';
-import { createDefaultCommunityOwnerDependencies } from './runtime/default-owner.js';
+import {
+  assertOwnerHandoffPrerequisites,
+  createDefaultCommunityOwnerDependencies,
+} from './runtime/default-owner.js';
 import { executeCommunityCreationPhase } from './execute.js';
 import { executeCommunityDeployPhase } from './deploy.js';
 import { executeCommunityOwnerHandoff } from './owner.js';
@@ -125,10 +128,19 @@ export function formatCommunityRecovery(
       ? `  Tigris bucket ${journal.resources.tigrisBucketId} — owner ${selection.flyOrganization}; may incur charges; private files may exist.\n    Inspect: fly storage status ${selection.bucketName} --app ${selection.appName}\n    Console: https://fly.io/apps/${selection.appName}`
       : null,
   ].filter((row): row is string => row !== null);
+  const pending = journal.pendingIntent;
+  const reconciliation = pending
+    ? pending.provider === 'fly'
+      ? `Unresolved Fly creation intent for ${pending.resourceName} in ${pending.organizationId}. Do not create or adopt a name match. Inspect: fly apps list --org ${pending.organizationId} --json\nConsole: https://fly.io/dashboard/${pending.organizationId}`
+      : pending.provider === 'neon'
+        ? `Unresolved Neon creation intent for ${pending.resourceName} in ${pending.organizationId}. Do not create or adopt a name match. Inspect: neonctl projects list --org-id ${pending.organizationId} --output json\nConsole: https://console.neon.tech`
+        : `Unresolved Tigris creation intent for ${pending.resourceName} in ${pending.organizationId}. Do not create or adopt a name match. Inspect: fly storage list --org ${pending.organizationId}\nConsole: https://fly.io/dashboard/${pending.organizationId}`
+    : null;
   return [
     'Confirmed retained resources:',
     rows.length ? rows.join('\n') : '  No resource identity has been confirmed.',
     `Journal state: ${journal.state}`,
+    ...(reconciliation ? ['Manual reconciliation required:', reconciliation] : []),
     'Automatic cleanup was not attempted.',
     'Resume with:',
     `  ${resumeCommand(journal, selection)}`,
@@ -204,6 +216,7 @@ export async function runCommunityDispatcher(
     neonProjectName: parsed.values['project-name'] ?? appName,
     bucketName: parsed.values['bucket-name'] ?? appName,
   };
+  let latest: LaunchJournal | null = resumeJournal;
   const childEnv = context.processEnv;
   const cancellation = new AbortController();
   const cancel = () => cancellation.abort();
@@ -259,7 +272,10 @@ export async function runCommunityDispatcher(
             });
             return release;
           }),
-        readPreflight: (requested) => readDefaultCommunityPreflight(serviceOptions, requested),
+        readPreflight: async (requested) => {
+          await assertOwnerHandoffPrerequisites(childEnv.PATH ?? '');
+          return readDefaultCommunityPreflight(serviceOptions, requested);
+        },
         renderPreflight: (result) => {
           process.stdout.write(`${formatCommunityPreflight(result)}\nJournal: ${journalPath}\n`);
         },
@@ -270,7 +286,6 @@ export async function runCommunityDispatcher(
             signal: cancellation.signal,
           }),
         execute: async (result) => {
-          let latest: LaunchJournal;
           if (parsed.values.resume) {
             const existing = resumeJournal!;
             assertCommunityLaunchPlanUnchanged(existing, result.plan);
@@ -287,68 +302,57 @@ export async function runCommunityDispatcher(
             await writeLaunchJournal(journalPath, next, expectedRevision);
             latest = next;
           };
-          try {
-            latest = await executeCommunityCreationPhase(
-              result.plan,
-              latest,
-              createDefaultCommunityCreationDependencies({
-                options: serviceOptions,
-                plan: result.plan,
-                latestJournal: () => latest,
-                persist,
-                now: () => new Date().toISOString(),
-                confirmTigrisTerms: () =>
-                  requireTigrisTermsAcceptance({
-                    input: process.stdin,
-                    output: process.stdout,
-                    signal: cancellation.signal,
-                  }),
-              })
-            );
-            const deployed = await executeCommunityDeployPhase(
-              result.plan,
-              latest,
-              createDefaultCommunityDeployDependencies({
-                options: serviceOptions,
-                plan: result.plan,
-                latestJournal: () => latest,
-                persist,
-                now: () => new Date().toISOString(),
-              })
-            );
-            latest = deployed.journal;
-            latest = await executeCommunityOwnerHandoff(
-              result.plan,
-              latest,
-              deployed.bootstrapSecret,
-              createDefaultCommunityOwnerDependencies({
-                options: serviceOptions,
-                plan: result.plan,
-                path: childEnv.PATH ?? '',
-                persist,
-                now: () => new Date().toISOString(),
-                signal: cancellation.signal,
-              })
-            );
-          } catch (error) {
-            if (cancellation.signal.aborted) {
-              const uncertain = latest.pendingIntent !== null || latest.state === 'uncertain';
-              const cancelled: LaunchJournal = {
-                ...latest,
-                revision: latest.revision + 1,
-                state: uncertain ? 'uncertain' : latest.state,
-                lastSafeError: uncertain
-                  ? { category: 'uncertain', code: 'CREATION_OUTCOME_UNCERTAIN' }
-                  : { category: 'transient', code: 'CANCELLED' },
-                updatedAt: new Date().toISOString(),
-              };
-              await persist(cancelled, latest.revision).catch(() => undefined);
-            }
-            process.stderr.write(
-              `Community setup stopped.\n${formatCommunityRecovery(latest, selection)}\n`
-            );
-            throw error;
-          }
+          process.stdout.write(
+            'Provisioning Fly, Neon, and private Tigris resources. Progress is saved after each verified identity.\n'
+          );
+          latest = await executeCommunityCreationPhase(
+            result.plan,
+            latest,
+            createDefaultCommunityCreationDependencies({
+              options: serviceOptions,
+              plan: result.plan,
+              latestJournal: () => latest!,
+              persist,
+              now: () => new Date().toISOString(),
+              progress: (service) =>
+                process.stdout.write(`Checking ${service} resource identity…\n`),
+              confirmTigrisTerms: () =>
+                requireTigrisTermsAcceptance({
+                  input: process.stdin,
+                  output: process.stdout,
+                  signal: cancellation.signal,
+                }),
+            })
+          );
+          process.stdout.write(
+            'Applying private secrets and deploying the pinned Community image…\n'
+          );
+          const deployed = await executeCommunityDeployPhase(
+            result.plan,
+            latest,
+            createDefaultCommunityDeployDependencies({
+              options: serviceOptions,
+              plan: result.plan,
+              latestJournal: () => latest!,
+              persist,
+              now: () => new Date().toISOString(),
+            })
+          );
+          latest = deployed.journal;
+          process.stdout.write('Verifying the owner handoff and final deployment health…\n');
+          latest = await executeCommunityOwnerHandoff(
+            result.plan,
+            latest,
+            deployed.bootstrapSecret,
+            createDefaultCommunityOwnerDependencies({
+              options: serviceOptions,
+              plan: result.plan,
+              env: childEnv,
+              persist,
+              now: () => new Date().toISOString(),
+              signal: cancellation.signal,
+            })
+          );
           process.stdout.write(
             latest.state === 'complete'
               ? `${formatCommunityCompletion(`https://${result.plan.fly.appName}.fly.dev`)}\n`
@@ -358,6 +362,27 @@ export async function runCommunityDispatcher(
       }
     );
     return 0;
+  } catch (error) {
+    if (latest && cancellation.signal.aborted) {
+      const uncertain = latest.pendingIntent !== null || latest.state === 'uncertain';
+      const cancelled: LaunchJournal = {
+        ...latest,
+        revision: latest.revision + 1,
+        state: uncertain ? 'uncertain' : latest.state,
+        lastSafeError: uncertain
+          ? { category: 'uncertain', code: 'CREATION_OUTCOME_UNCERTAIN' }
+          : { category: 'transient', code: 'CANCELLED' },
+        updatedAt: new Date().toISOString(),
+      };
+      await writeLaunchJournal(journalPath, cancelled, latest.revision).catch(() => undefined);
+      latest = cancelled;
+    }
+    if (latest) {
+      process.stderr.write(
+        `Community setup stopped.\n${formatCommunityRecovery(latest, selection)}\n`
+      );
+    }
+    throw error;
   } finally {
     process.removeListener('SIGINT', cancel);
     process.removeListener('SIGTERM', cancel);

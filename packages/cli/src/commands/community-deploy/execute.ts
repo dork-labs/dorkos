@@ -49,6 +49,8 @@ export interface CommunityCreationDependencies {
   tigris: CreationBoundary;
   /** Clock used only for journal timestamps. */
   now(): string;
+  /** Render the current secret-free service step before it may block. */
+  progress?(service: CreationService): void;
 }
 
 /** Durable stop when a prior create may have succeeded without provable identity. */
@@ -316,6 +318,9 @@ export async function executeCommunityCreationPhase(
       boundary: dependencies.tigris,
     },
   ];
-  for (const step of steps) current = await executeCreationStep(current, step, dependencies);
+  for (const step of steps) {
+    dependencies.progress?.(step.service);
+    current = await executeCreationStep(current, step, dependencies);
+  }
   return current;
 }
