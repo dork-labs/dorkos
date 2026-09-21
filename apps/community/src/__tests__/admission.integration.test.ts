@@ -5,6 +5,8 @@ import { serve } from '@hono/node-server';
 import { migrate } from '../migrate.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
+import { sweepExpiredAdmissions } from '../routes/invites.js';
+import { bootstrapFirstHost } from './bootstrap-test-helper.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for admission HTTP tests');
@@ -70,7 +72,8 @@ async function joinWithInvite(name: string, email: string) {
   const preflight = await call('/api/v1/invites/preflight', 'POST', { token });
   expect(preflight.status).toBe(200);
   const cookie = await signup(name, email, cookieOf(preflight));
-  const admitted = await call('/api/v1/invites/redeem', 'POST', { token }, cookie);
+  expect((await call('/api/v1/invites/bind', 'POST', {}, cookie)).status).toBe(200);
+  const admitted = await call('/api/v1/invites/redeem', 'POST', {}, cookie);
   expect(admitted.status).toBe(200);
   return { cookie, id: (await admitted.json()).memberId };
 }
@@ -80,6 +83,13 @@ function cookieOf(response: Response) {
     .getSetCookie()
     .map((value) => value.split(';')[0])
     .join('; ');
+}
+
+function withAdmission(sessionCookie: string, response: Response) {
+  return `${sessionCookie
+    .split('; ')
+    .filter((part) => !part.startsWith('community_admission='))
+    .join('; ')}; ${cookieOf(response)}`;
 }
 
 async function call(path: string, method: string, body?: unknown, cookie?: string) {
@@ -151,29 +161,18 @@ beforeAll(async () => {
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Missing HTTP address');
   baseUrl = `http://localhost:${address.port}`;
-  const preflight = await call('/api/v1/bootstrap/preflight', 'POST', {
+  const setup = await bootstrapFirstHost((path, body, cookie) => call(path, 'POST', body, cookie), {
     secret: config.bootstrapSecret,
+    accountName: 'Owner',
+    email: 'owner@admission.test',
+    password: 'password1234',
+    communityName: 'Admission test',
+    channelName: 'General',
   });
-  const grant = cookieOf(preflight);
-  ownerCookie = await signup('Owner', 'owner@admission.test', grant);
-  expect(
-    (
-      await call(
-        '/api/v1/bootstrap/claim',
-        'POST',
-        {
-          secret: config.bootstrapSecret,
-          name: 'Admission test',
-        },
-        ownerCookie
-      )
-    ).status
-  ).toBe(200);
-  communityId = (await pool.query('SELECT id FROM communities')).rows[0].id;
-  ownerId = (await pool.query("SELECT id FROM members WHERE role='owner'")).rows[0].id;
-  const channel = await call('/api/v1/channels', 'POST', { name: 'General' }, ownerCookie);
-  expect(channel.status).toBe(201);
-  channelId = (await channel.json()).channel.id;
+  ownerCookie = setup.cookie;
+  communityId = setup.communityId;
+  ownerId = setup.memberId;
+  channelId = setup.channelId;
 });
 
 afterAll(async () => {
@@ -184,6 +183,41 @@ afterAll(async () => {
 });
 
 describe('signed admission over real HTTP and Postgres', () => {
+  it('limits invite discovery by both socket peer and invite identity', async () => {
+    const limitedConfig = {
+      ...config,
+      limits: { ...config.limits, invitePreviewAttemptsPerMinute: 1 },
+    };
+    const limitedApp = createCommunityApp({
+      config: limitedConfig,
+      pool,
+      hooks: { invitePreviewPeer: (c) => c.req.header('x-test-peer') ?? 'unknown' },
+    });
+    const limitedServer = serve({ fetch: limitedApp.fetch, port: 0 });
+    await new Promise<void>((resolve) => limitedServer.once('listening', resolve));
+    const address = limitedServer.address();
+    if (!address || typeof address === 'string') throw new Error('Missing limited HTTP address');
+    const limitedUrl = `http://localhost:${address.port}`;
+    const preview = (peer: string, token: string) =>
+      fetch(`${limitedUrl}/api/v1/invites/preview`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: config.publicUrl,
+          'x-test-peer': peer,
+        },
+        body: JSON.stringify({ token }),
+      });
+    try {
+      expect((await preview('peer-a', 'unknown-token')).status).toBe(403);
+      expect((await preview('peer-b', 'unknown-token')).status).toBe(429);
+      expect((await preview('peer-c', 'another-token')).status).toBe(403);
+      expect((await preview('peer-c', 'third-token')).status).toBe(429);
+    } finally {
+      await new Promise<void>((resolve) => limitedServer.close(() => resolve()));
+    }
+  });
+
   it('admits exactly one contender for the final seat and leaves the other unadmitted', async () => {
     expect(
       (
@@ -203,9 +237,11 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect([a.status, b.status]).toEqual([200, 200]);
     const aCookie = await signup('Alice', 'alice@admission.test', cookieOf(a));
     const bCookie = await signup('Bob', 'bob@admission.test', cookieOf(b));
+    expect((await call('/api/v1/invites/bind', 'POST', {}, aCookie)).status).toBe(200);
+    expect((await call('/api/v1/invites/bind', 'POST', {}, bCookie)).status).toBe(200);
     const results = await Promise.all([
-      call('/api/v1/invites/redeem', 'POST', { token }, aCookie),
-      call('/api/v1/invites/redeem', 'POST', { token }, bCookie),
+      call('/api/v1/invites/redeem', 'POST', {}, aCookie),
+      call('/api/v1/invites/redeem', 'POST', {}, bCookie),
     ]);
     expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
     const winner = results.findIndex((result) => result.status === 200);
@@ -227,9 +263,7 @@ describe('signed admission over real HTTP and Postgres', () => {
         ])
       ).rows[0].n
     ).toBe(1);
-    expect((await call('/api/v1/invites/redeem', 'POST', { token }, admittedCookie)).status).toBe(
-      200
-    );
+    expect((await call('/api/v1/invites/redeem', 'POST', {}, admittedCookie)).status).toBe(200);
     expect(
       (await pool.query('SELECT use_count FROM invites WHERE id=$1', [invite.id])).rows[0].use_count
     ).toBe(1);
@@ -245,13 +279,194 @@ describe('signed admission over real HTTP and Postgres', () => {
       .split('; ')
       .filter((part) => !part.startsWith('community_admission='))
       .join('; ')}; ${cookieOf(recoveryPreflight)}`;
-    expect(
-      (await call('/api/v1/invites/redeem', 'POST', { token: recoveryToken }, recoveryCookie))
-        .status
-    ).toBe(200);
+    expect((await call('/api/v1/invites/bind', 'POST', {}, recoveryCookie)).status).toBe(200);
+    expect((await call('/api/v1/invites/redeem', 'POST', {}, recoveryCookie)).status).toBe(200);
     expect((await call('/api/v1/invites/preview', 'POST', { token: `${token}x` })).status).toBe(
       403
     );
+  });
+
+  it('settles a repeated same-account invitation transaction without consuming another seat', async () => {
+    const issued = await call('/api/v1/invites', 'POST', { seats: 2 }, ownerCookie);
+    expect(issued.status).toBe(201);
+    const { token, invite } = await issued.json();
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const preflight = await call('/api/v1/invites/preflight', 'POST', { token });
+      expect(preflight.status).toBe(200);
+      const admissionCookie = withAdmission(admittedCookie, preflight);
+      expect((await call('/api/v1/invites/bind', 'POST', {}, admissionCookie)).status).toBe(200);
+      const redeemed = await call('/api/v1/invites/redeem', 'POST', {}, admissionCookie);
+      expect(redeemed.status).toBe(200);
+      expect(await redeemed.json()).toEqual({ memberId: admittedId });
+    }
+
+    expect(
+      (
+        await pool.query(
+          `SELECT i.use_count,
+                  count(DISTINCT p.id)::int AS admissions,
+                  count(DISTINCT r.admission_id)::int AS receipts,
+                  bool_and(p.consumed_at IS NOT NULL) AS consumed
+           FROM invites i
+           JOIN pending_admissions p ON p.invite_id=i.id AND p.community_id=i.community_id
+           LEFT JOIN admission_receipts r
+             ON r.admission_id=p.id AND r.community_id=p.community_id
+           WHERE i.id=$1 GROUP BY i.use_count`,
+          [invite.id]
+        )
+      ).rows[0]
+    ).toEqual({ use_count: 1, admissions: 2, receipts: 2, consumed: true });
+  });
+
+  it('binds one browser transaction to one account and adds a channel for an active member', async () => {
+    const channelResponse = await call(
+      '/api/v1/channels',
+      'POST',
+      { name: `Invite channel ${randomUUID().slice(0, 8)}`, visibility: 'private' },
+      ownerCookie
+    );
+    expect(channelResponse.status).toBe(201);
+    const invitedChannelId = (await channelResponse.json()).channel.id;
+    const issued = await call(
+      '/api/v1/invites',
+      'POST',
+      { channelId: invitedChannelId, seats: 1 },
+      ownerCookie
+    );
+    const { token, invite } = await issued.json();
+    const preflight = await call('/api/v1/invites/preflight', 'POST', { token });
+    expect(preflight.status).toBe(200);
+    expect(await preflight.clone().json()).toMatchObject({
+      granted: true,
+      communityName: 'Admission test',
+      channelName: expect.stringContaining('Invite channel'),
+    });
+    const memberAdmission = withAdmission(admittedCookie, preflight);
+    expect((await call('/api/v1/invites/bind', 'POST', {}, memberAdmission)).status).toBe(200);
+    const switchedAccount = withAdmission(ownerCookie, preflight);
+    expect((await call('/api/v1/invites/bind', 'POST', {}, switchedAccount)).status).toBe(403);
+    const redeemed = await call('/api/v1/invites/redeem', 'POST', {}, memberAdmission);
+    expect(redeemed.status).toBe(200);
+    expect((await redeemed.json()).memberId).toBe(admittedId);
+    expect((await call('/api/v1/invites/redeem', 'POST', {}, memberAdmission)).status).toBe(200);
+    expect(
+      (
+        await pool.query(
+          'SELECT count(*)::int AS n FROM channel_members WHERE community_id=(SELECT community_id FROM members WHERE id=$1) AND member_id=$1 AND channel_id=$2',
+          [admittedId, invitedChannelId]
+        )
+      ).rows[0].n
+    ).toBe(1);
+    expect(
+      (await pool.query('SELECT use_count FROM invites WHERE id=$1', [invite.id])).rows[0]
+    ).toEqual({ use_count: 1 });
+  });
+
+  it('invalidates old receipts on removal and reactivates only through a new scoped invite', async () => {
+    const issued = await call('/api/v1/invites', 'POST', { seats: 1 }, ownerCookie);
+    const { token, invite } = await issued.json();
+    const preflight = await call('/api/v1/invites/preflight', 'POST', { token });
+    const cookie = await signup(
+      'Receipt member',
+      'receipt-member@admission.test',
+      cookieOf(preflight)
+    );
+    expect((await call('/api/v1/invites/bind', 'POST', {}, cookie)).status).toBe(200);
+    const redeemed = await call('/api/v1/invites/redeem', 'POST', {}, cookie);
+    const memberId = (await redeemed.json()).memberId;
+    const communityId = (
+      await pool.query<{ community_id: string }>('SELECT community_id FROM members WHERE id=$1', [
+        memberId,
+      ])
+    ).rows[0].community_id;
+    await pool.query(
+      `INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)
+       ON CONFLICT DO NOTHING`,
+      [communityId, channelId, memberId]
+    );
+    await pool.query(
+      `INSERT INTO read_cursors(community_id,member_id,channel_id,seq)
+       VALUES($1,$2,$3,0)`,
+      [communityId, memberId, channelId]
+    );
+    await pool.query(
+      `INSERT INTO connection_pairings(community_id,verifier_hash,install_name,scopes,member_id,expires_at,approved_at)
+       VALUES($1,$2,'Receipt install','{read}',$3,now()+interval '10 minutes',now())`,
+      [communityId, randomBytes(32).toString('hex'), memberId]
+    );
+    await pool.query(
+      `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name)
+       VALUES($1,$2,$3,'{read}','Receipt install')`,
+      [communityId, memberId, createHash('sha256').update(randomBytes(32)).digest('hex')]
+    );
+    expect(
+      (await call(`/api/v1/members/${memberId}`, 'DELETE', undefined, ownerCookie)).status
+    ).toBe(204);
+    expect((await call('/api/v1/invites/redeem', 'POST', {}, cookie)).status).toBe(403);
+    expect(
+      (await pool.query('SELECT active FROM members WHERE id=$1', [memberId])).rows[0]
+    ).toEqual({
+      active: false,
+    });
+    expect(
+      (await pool.query('SELECT use_count FROM invites WHERE id=$1', [invite.id])).rows[0]
+    ).toEqual({ use_count: 1 });
+    const reactivationInvite = await call(
+      '/api/v1/invites',
+      'POST',
+      { seats: 1, channelId },
+      ownerCookie
+    );
+    const reactivationToken = (await reactivationInvite.json()).token;
+    const reactivationPreflight = await call('/api/v1/invites/preflight', 'POST', {
+      token: reactivationToken,
+    });
+    const reactivationCookie = withAdmission(cookie, reactivationPreflight);
+    expect((await call('/api/v1/invites/bind', 'POST', {}, reactivationCookie)).status).toBe(200);
+    const reactivated = await call('/api/v1/invites/redeem', 'POST', {}, reactivationCookie);
+    expect(await reactivated.json()).toEqual({ memberId });
+    expect((await call('/api/v1/invites/redeem', 'POST', {}, cookie)).status).toBe(403);
+    expect(
+      (
+        await pool.query(
+          'SELECT array_agg(channel_id ORDER BY channel_id) AS channels FROM channel_members WHERE community_id=$1 AND member_id=$2',
+          [communityId, memberId]
+        )
+      ).rows[0].channels
+    ).toEqual([channelId]);
+    expect(
+      (
+        await pool.query(
+          'SELECT count(*)::int AS n FROM read_cursors WHERE community_id=$1 AND member_id=$2',
+          [communityId, memberId]
+        )
+      ).rows[0].n
+    ).toBe(0);
+    expect(
+      (
+        await pool.query(
+          'SELECT count(*)::int AS n FROM connection_pairings WHERE community_id=$1 AND member_id=$2 AND cancelled_at IS NULL',
+          [communityId, memberId]
+        )
+      ).rows[0].n
+    ).toBe(0);
+    expect(
+      (
+        await pool.query(
+          'SELECT count(*)::int AS n FROM connection_grants WHERE community_id=$1 AND member_id=$2 AND revoked_at IS NULL',
+          [communityId, memberId]
+        )
+      ).rows[0].n
+    ).toBe(0);
+    await pool.query('DELETE FROM connection_pairings WHERE community_id=$1 AND member_id=$2', [
+      communityId,
+      memberId,
+    ]);
+    await pool.query('DELETE FROM connection_grants WHERE community_id=$1 AND member_id=$2', [
+      communityId,
+      memberId,
+    ]);
   });
 
   it('exposes only the current member and a bounded moderator directory', async () => {
@@ -376,6 +591,9 @@ describe('signed admission over real HTTP and Postgres', () => {
       expect(
         (await call(`/api/v1/me/grants/${grant.id}`, 'DELETE', undefined, ownerCookie)).status
       ).toBe(204);
+      expect(
+        (await call(`/api/v1/me/grants/${grant.id}`, 'DELETE', undefined, ownerCookie)).status
+      ).toBe(204);
       expect((await bearerCall('/api/v1/me/connection-access', 'GET', token)).status).toBe(401);
       // Another admitted person commits after revocation. The old connection
       // must close rather than deliver even this otherwise-visible entry.
@@ -470,6 +688,124 @@ describe('signed admission over real HTTP and Postgres', () => {
         ).json()
       ).status
     ).toBe('cancelled');
+  });
+
+  it('disconnects all selected-member installations idempotently after reauthentication', async () => {
+    const communityId = (
+      await pool.query<{ community_id: string }>('SELECT community_id FROM members WHERE id=$1', [
+        ownerId,
+      ])
+    ).rows[0].community_id;
+    const ownerGrants = await pool.query<{ id: string }>(
+      `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name)
+       VALUES($1,$2,$3,'{read}','Owner laptop'),($1,$2,$4,'{read,post}','Owner desktop')
+       RETURNING id`,
+      [
+        communityId,
+        ownerId,
+        createHash('sha256').update(randomBytes(32)).digest('hex'),
+        createHash('sha256').update(randomBytes(32)).digest('hex'),
+      ]
+    );
+    const otherGrant = await pool.query<{ id: string }>(
+      `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name)
+       VALUES($1,$2,$3,'{read}','Other laptop') RETURNING id`,
+      [communityId, admittedId, createHash('sha256').update(randomBytes(32)).digest('hex')]
+    );
+    expect(
+      (await call('/api/v1/me/grants', 'DELETE', { password: 'wrong-password' }, ownerCookie))
+        .status
+    ).toBe(403);
+    await pool.query(
+      "UPDATE communities SET lifecycle='archived',archived_at=now(),lifecycle_version=lifecycle_version+1 WHERE id=$1",
+      [communityId]
+    );
+    try {
+      expect(
+        (await call('/api/v1/me/grants', 'DELETE', { password: 'password1234' }, ownerCookie))
+          .status
+      ).toBe(204);
+      expect(
+        (await call('/api/v1/me/grants', 'DELETE', { password: 'password1234' }, ownerCookie))
+          .status
+      ).toBe(204);
+    } finally {
+      await pool.query(
+        "UPDATE communities SET lifecycle='active',archived_at=NULL,lifecycle_version=lifecycle_version+1 WHERE id=$1",
+        [communityId]
+      );
+    }
+    expect(
+      (
+        await pool.query<{ revoked: boolean }>(
+          'SELECT bool_and(revoked_at IS NOT NULL) AS revoked FROM connection_grants WHERE id=ANY($1::uuid[])',
+          [ownerGrants.rows.map((row) => row.id)]
+        )
+      ).rows[0].revoked
+    ).toBe(true);
+    expect(
+      (
+        await pool.query('SELECT revoked_at FROM connection_grants WHERE id=$1', [
+          otherGrant.rows[0].id,
+        ])
+      ).rows[0].revoked_at
+    ).toBeNull();
+    await pool.query('DELETE FROM connection_grants WHERE id=ANY($1::uuid[])', [
+      [...ownerGrants.rows, ...otherGrant.rows].map((row) => row.id),
+    ]);
+  });
+
+  it('sweeps expired admission transactions without racing a locked transaction', async () => {
+    const inviteId = randomUUID();
+    const admissionId = randomUUID();
+    const accountId = (
+      await pool.query<{ user_id: string }>('SELECT user_id FROM members WHERE id=$1', [ownerId])
+    ).rows[0].user_id;
+    await pool.query(
+      `INSERT INTO invites(
+         id,community_id,issuer_member_id,token_hash,seat_limit,expires_at
+       ) VALUES($1,$2,$3,$4,1,now()+interval '1 hour')`,
+      [inviteId, communityId, ownerId, createHash('sha256').update(randomBytes(32)).digest('hex')]
+    );
+    await pool.query(
+      `INSERT INTO pending_admissions(
+         id,community_id,invite_id,token_hash,account_id,bound_at,consumed_at,expires_at
+       ) VALUES($1,$2,$3,$4,$5,now(),now(),now()-interval '1 second')`,
+      [
+        admissionId,
+        communityId,
+        inviteId,
+        createHash('sha256').update(randomBytes(32)).digest('hex'),
+        accountId,
+      ]
+    );
+    await pool.query(
+      `INSERT INTO admission_receipts(
+         admission_id,community_id,invite_id,account_id,member_id,expires_at
+       ) VALUES($1,$2,$3,$4,$5,now()-interval '1 second')`,
+      [admissionId, communityId, inviteId, accountId, ownerId]
+    );
+    const blocker = await pool.connect();
+    await blocker.query('BEGIN');
+    try {
+      await blocker.query('SELECT 1 FROM pending_admissions WHERE id=$1 FOR UPDATE', [admissionId]);
+      expect(await sweepExpiredAdmissions(pool)).toBe(0);
+      expect(
+        (await pool.query('SELECT 1 FROM admission_receipts WHERE admission_id=$1', [admissionId]))
+          .rowCount
+      ).toBe(1);
+    } finally {
+      await blocker.query('ROLLBACK');
+      blocker.release();
+    }
+    expect(await sweepExpiredAdmissions(pool)).toBe(1);
+    expect(
+      (await pool.query('SELECT 1 FROM pending_admissions WHERE id=$1', [admissionId])).rowCount
+    ).toBe(0);
+    expect(
+      (await pool.query('SELECT 1 FROM admission_receipts WHERE admission_id=$1', [admissionId]))
+        .rowCount
+    ).toBe(0);
   });
 
   it('does not admit through revoked or expired invites and never consumes seats on preview', async () => {
@@ -1059,7 +1395,16 @@ describe('signed admission over real HTTP and Postgres', () => {
       (await pool.query('SELECT lifecycle_version FROM communities WHERE id=$1', [communityId]))
         .rows[0].lifecycle_version
     );
-    expect((await call('/api/v1/me/leave', 'POST', {}, ownerCookie)).status).toBe(403);
+    expect(
+      (
+        await call(
+          '/api/v1/me/leave',
+          'POST',
+          { password: 'password1234', communityName: 'Admission test' },
+          ownerCookie
+        )
+      ).status
+    ).toBe(403);
     const wrong = await call(
       '/api/v1/owner/transfer',
       'POST',
@@ -1102,7 +1447,16 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect(transfers.map((response) => response.status).sort()).toEqual([200, 409]);
     const owners = await pool.query("SELECT id FROM members WHERE role='owner' AND active");
     expect(owners.rows.map((row) => row.id)).toEqual([admittedId]);
-    expect((await call('/api/v1/me/leave', 'POST', {}, ownerCookie)).status).toBe(204);
+    expect(
+      (
+        await call(
+          '/api/v1/me/leave',
+          'POST',
+          { password: 'password1234', communityName: 'Admission test' },
+          ownerCookie
+        )
+      ).status
+    ).toBe(204);
     expect((await call('/api/v1/channels', 'GET', undefined, ownerCookie)).status).toBe(403);
     expect(
       (await bearerCall(`/api/v1/channels/${channelId}/entries`, 'GET', agentToken)).status
@@ -1172,12 +1526,8 @@ describe('signed admission over real HTTP and Postgres', () => {
       'native-other@admission.test',
       cookieOf(preflight)
     );
-    const redeemed = await call(
-      '/api/v1/invites/redeem',
-      'POST',
-      { token: inviteToken },
-      otherCookie
-    );
+    expect((await call('/api/v1/invites/bind', 'POST', {}, otherCookie)).status).toBe(200);
+    const redeemed = await call('/api/v1/invites/redeem', 'POST', {}, otherCookie);
     expect(redeemed.status).toBe(200);
     const other = { cookie: otherCookie, id: (await redeemed.json()).memberId };
     const otherGrant = (await issueGrant(other.cookie, ['read', 'post', 'enroll-agent'])).token;
@@ -1338,15 +1688,25 @@ describe('signed admission over real HTTP and Postgres', () => {
       { seats: 1 },
       admittedCookie
     );
+    expect(firstInvite.status).toBe(201);
     const firstInviteToken = (await firstInvite.json()).token;
     const firstPreflight = await call(`/api/v1/communities/${firstId}/invites/preflight`, 'POST', {
       token: firstInviteToken,
     });
+    expect(firstPreflight.status).toBe(200);
+    const claimantFirstCookie = `${claimantCookie}; ${cookieOf(firstPreflight)}`;
+    const claimantFirstBind = await call(
+      `/api/v1/communities/${firstId}/invites/bind`,
+      'POST',
+      {},
+      claimantFirstCookie
+    );
+    expect(claimantFirstBind.status).toBe(200);
     const joinedFirst = await call(
       `/api/v1/communities/${firstId}/invites/redeem`,
       'POST',
-      { token: firstInviteToken },
-      `${claimantCookie}; ${cookieOf(firstPreflight)}`
+      {},
+      claimantFirstCookie
     );
     expect(joinedFirst.status).toBe(200);
     const claimantFirstMember = (await joinedFirst.json()).memberId;

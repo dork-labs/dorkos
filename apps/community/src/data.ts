@@ -335,7 +335,7 @@ export async function requireMember(
   c: Context,
   auth: CommunityAuth,
   pool: Pool,
-  options: { allowDeletionPending?: boolean } = {}
+  options: { allowSuspended?: boolean; allowDeletionPending?: boolean } = {}
 ): Promise<Member> {
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
   if (!session) throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.');

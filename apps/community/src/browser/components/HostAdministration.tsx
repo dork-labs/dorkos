@@ -129,6 +129,11 @@ export function HostAdministration() {
         Create and maintain community records. This page does not show community content or member
         details.
       </p>
+      <p className="muted">
+        Need a separate host?{' '}
+        <a href="https://dorkos.ai/docs/self-hosting/deployment">Deploy a new host</a>. Deployment
+        does not create a community on this host.
+      </p>
       {error && (
         <div role="alert" className="notice error mb-4">
           {error}
