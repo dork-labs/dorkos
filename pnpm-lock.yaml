@@ -1649,8 +1649,8 @@ importers:
   packages/relay:
     dependencies:
       '@chat-adapter/telegram':
-        specifier: ^4.39.0
-        version: 4.40.0(zod@4.6.5)
+        specifier: ^4.41.0
+        version: 4.41.0(zod@4.6.5)
       '@dorkos/db':
         specifier: workspace:*
         version: link:../db
@@ -1667,8 +1667,8 @@ importers:
         specifier: ^8.1.1
         version: 8.1.1
       chat:
-        specifier: ^4.39.0
-        version: 4.40.0(zod@4.6.5)
+        specifier: ^4.41.0
+        version: 4.41.0(zod@4.6.5)
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0
@@ -2273,12 +2273,12 @@ packages:
   '@cfworker/json-schema@4.1.1':
     resolution: {integrity: sha512-gAmrUZSGtKc3AiBL71iNWxDsyUC5uMaKKGdvzYsBoTW/xi42JQHl7eKV2OYzCUqvc+D2RCcf7EXY2iCyFIk6og==}
 
-  '@chat-adapter/shared@4.40.0':
-    resolution: {integrity: sha512-uTDl9p+PVkGtAw9dgvRdkydifvYVp98R26vGHhU4V5HuS7DBTedTdb1COUOh6vfP0SrC+xSozp4O/IyfbXZSKw==}
+  '@chat-adapter/shared@4.41.0':
+    resolution: {integrity: sha512-h/MiKMoQf5nl5Zgua8EMxVSdyylFg8pA+nKnwYNexPHzr59I1PT9u7z3EVSOrjbMjre3MmlrUM0TPbIWaRrSZg==}
     engines: {node: '>=20'}
 
-  '@chat-adapter/telegram@4.40.0':
-    resolution: {integrity: sha512-SbAjiGIMWEK+nR7tdMenmAvnaUDSNQM8cqXc7zFBSbc5lCWtkcBEDsfpMGueqVR3FSsEnwOpOdWFHCsGgseiCQ==}
+  '@chat-adapter/telegram@4.41.0':
+    resolution: {integrity: sha512-qxPbIFiMsbMaXjzi+H9SNvAYa9KgtYWJHUDNm6t/UyW14tHAxpw54/uCjYYWSNIJCXcvlMQGqMtPNWZX3Ij4GA==}
     engines: {node: '>=20'}
 
   '@codemirror/autocomplete@6.20.3':
@@ -6787,8 +6787,8 @@ packages:
   chardet@2.1.1:
     resolution: {integrity: sha512-PsezH1rqdV9VvyNhxxOW32/d75r01NY7TQCmOqomRo15ZSOKbpTFVsfjghxo6JloQUCGnH4k1LGu0R4yCLlWQQ==}
 
-  chat@4.40.0:
-    resolution: {integrity: sha512-slu3VDxItlelEZ8A5vqzlmtT2WErqj2YCGuhhcNx+Ev0+wHeBUqUDUA7hXkca+BfFtW1ZX7ECcySCTG2q2gefg==}
+  chat@4.41.0:
+    resolution: {integrity: sha512-vMeODhulMdi7od1c6e4B/ZfIp/zq0f5KP3WKNCAAdNrTOeDgjRNZQZahaIax/t/gu+LE5vwJSjFU46Ro9Kx9tA==}
     engines: {node: '>=20'}
     peerDependencies:
       ai: ^6.0.182 || ^7.0.0
@@ -11970,19 +11970,19 @@ snapshots:
 
   '@cfworker/json-schema@4.1.1': {}
 
-  '@chat-adapter/shared@4.40.0(zod@4.6.5)':
+  '@chat-adapter/shared@4.41.0(zod@4.6.5)':
     dependencies:
-      chat: 4.40.0(zod@4.6.5)
+      chat: 4.41.0(zod@4.6.5)
     transitivePeerDependencies:
       - ai
       - supports-color
       - workflow
       - zod
 
-  '@chat-adapter/telegram@4.40.0(zod@4.6.5)':
+  '@chat-adapter/telegram@4.41.0(zod@4.6.5)':
     dependencies:
-      '@chat-adapter/shared': 4.40.0(zod@4.6.5)
-      chat: 4.40.0(zod@4.6.5)
+      '@chat-adapter/shared': 4.41.0(zod@4.6.5)
+      chat: 4.41.0(zod@4.6.5)
     transitivePeerDependencies:
       - ai
       - supports-color
@@ -16871,7 +16871,7 @@ snapshots:
 
   chardet@2.1.1: {}
 
-  chat@4.40.0(zod@4.6.5):
+  chat@4.41.0(zod@4.6.5):
     dependencies:
       '@workflow/serde': 4.1.0-beta.2
       mdast-util-to-string: 4.0.0
