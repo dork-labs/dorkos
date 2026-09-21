@@ -2,6 +2,7 @@ import type { Hono } from 'hono';
 import type { Pool } from 'pg';
 import {
   CommunityWireChannelSchema,
+  CommunityWireAttentionResponseSchema,
   CommunityWireEventSchema,
   CommunityWireReadCursorRequestSchema,
   CommunityWireReadCursorResponseSchema,
@@ -87,6 +88,31 @@ export function registerEventRoutes(
     };
   }
 ) {
+  app.get('/attention', async (c) => {
+    const principal = await requirePrincipal(c, auth, pool, 'read');
+    if (principal.kind !== 'human')
+      throw new ApiError(403, 'FORBIDDEN', 'Agents do not have personal attention summaries.');
+    const result = await pool.query<{ unread_count: string; mention_count: string }>(
+      `SELECT
+         COALESCE(SUM(GREATEST(channel.last_seq-COALESCE(cursor.seq,0),0)),0)::text AS unread_count,
+         COALESCE(SUM((SELECT count(DISTINCT entry.id) FROM entries entry
+           JOIN entry_mentions mention ON mention.entry_id=entry.id
+           WHERE entry.channel_id=channel.id AND entry.community_id=$2
+             AND entry.seq>COALESCE(cursor.seq,0) AND mention.mentioned_member_id=$1)),0)::text AS mention_count
+       FROM channels channel
+       LEFT JOIN channel_members membership ON membership.channel_id=channel.id AND membership.member_id=$1
+       LEFT JOIN read_cursors cursor ON cursor.channel_id=channel.id AND cursor.member_id=$1
+       WHERE channel.community_id=$2 AND (channel.visibility='public' OR membership.member_id IS NOT NULL)`,
+      [principal.id, principal.community_id]
+    );
+    await assertPrincipalCurrent(c, auth, pool, principal, 'read');
+    const row = result.rows[0] ?? { unread_count: '0', mention_count: '0' };
+    return json(c, CommunityWireAttentionResponseSchema, {
+      unreadCount: Number(row.unread_count),
+      mentionCount: Number(row.mention_count),
+    });
+  });
+
   app.get('/channels/:id/read-cursor', async (c) => {
     const member = await requirePrincipal(c, auth, pool, 'read');
     if (member.kind !== 'human')

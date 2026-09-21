@@ -13,6 +13,7 @@ import {
   CommunityConnectionListResponseSchema,
   CommunityConnectionStatusResponseSchema,
   CommunityConnectionPollResponseSchema,
+  type CommunityConnectionDescriptor,
 } from '@dorkos/shared/community-connections';
 import {
   CommunityNavigationMoveRequestSchema,
@@ -113,6 +114,25 @@ function failure(res: Response, error: unknown): void {
   }
 }
 
+/** Add current attention only after the local owner and remote read grant are verified. */
+async function withAttention(
+  connection: CommunityConnectionDescriptor,
+  owner: string
+): Promise<CommunityConnectionDescriptor> {
+  if (connection.status !== 'connected' || connection.access?.state !== 'verified')
+    return connection;
+  if (!connection.access.effective.read) return connection;
+  try {
+    const attention = await getRemoteCommunityAdapter(connection.ref, owner).attention();
+    return {
+      ...connection,
+      attention: { ...attention, state: 'verified', verifiedAt: new Date().toISOString() },
+    };
+  } catch {
+    return connection;
+  }
+}
+
 /** Build the production route or inject an isolated service in HTTP tests. */
 export function createCommunityConnectionsRouter(
   connectionService: RemoteCommunityPairingService = getRemotePairingService(),
@@ -138,7 +158,9 @@ export function createCommunityConnectionsRouter(
     try {
       res.json(
         CommunityConnectionListResponseSchema.parse({
-          connections: await connectionService.list(owner),
+          connections: await Promise.all(
+            (await connectionService.list(owner)).map((item) => withAttention(item, owner))
+          ),
         })
       );
     } catch (error) {
@@ -256,7 +278,7 @@ export function createCommunityConnectionsRouter(
     try {
       res.json(
         CommunityConnectionStatusResponseSchema.parse({
-          connection: await connectionService.status(ref.data, owner),
+          connection: await withAttention(await connectionService.status(ref.data, owner), owner),
         })
       );
     } catch (error) {

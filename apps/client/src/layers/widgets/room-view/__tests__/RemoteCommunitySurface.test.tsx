@@ -74,6 +74,7 @@ function mount(connectionAccess: CommunityConnectionAccess = access) {
       status: 'connected',
       expiresAt: null,
       access: connectionAccess,
+      attention: { state: 'unavailable', unreadCount: null, mentionCount: null, verifiedAt: null },
     },
   ]);
   const queries = new QueryClient({

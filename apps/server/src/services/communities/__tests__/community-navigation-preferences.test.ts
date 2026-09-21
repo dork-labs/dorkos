@@ -32,6 +32,7 @@ async function createHarness(refs: string[]) {
       status: 'connected',
       expiresAt: null,
       access: verifiedAccess,
+      attention: { state: 'unavailable', unreadCount: null, mentionCount: null, verifiedAt: null },
     }))
   );
   const canReadRoom = vi.fn(async () => true);
@@ -135,6 +136,12 @@ describe('CommunityNavigationPreferenceService', () => {
         status: 'connected',
         expiresAt: null,
         access: verifiedAccess,
+        attention: {
+          state: 'unavailable',
+          unreadCount: null,
+          mentionCount: null,
+          verifiedAt: null,
+        },
       },
     ]);
 
