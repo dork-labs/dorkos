@@ -10,6 +10,15 @@ import type { Channel, Community, Me } from './types.js';
 
 const initialInvite = takeInviteFragment();
 
+function isCommunityUnavailable(cause: unknown): cause is RequestError {
+  return (
+    cause instanceof RequestError &&
+    ['COMMUNITY_UNAVAILABLE', 'COMMUNITY_SUSPENDED', 'COMMUNITY_DELETION_PENDING'].includes(
+      cause.code
+    )
+  );
+}
+
 /** Render the signed-in community shell or the admission path. */
 export function CommunityApp() {
   const [inviteToken, setInviteToken] = useState(initialInvite);
@@ -43,7 +52,7 @@ export function CommunityApp() {
     } catch (cause) {
       if (
         cause instanceof RequestError &&
-        (cause.status === 401 || cause.status === 403 || cause.code === 'COMMUNITY_UNAVAILABLE')
+        (cause.status === 401 || cause.status === 403 || isCommunityUnavailable(cause))
       ) {
         returnToChooser();
         setMe(null);
@@ -115,7 +124,7 @@ export function CommunityApp() {
               setMe(null);
               setUnadmitted(cause.status === 403);
             }
-          } else if (cause instanceof RequestError && cause.code === 'COMMUNITY_UNAVAILABLE') {
+          } else if (isCommunityUnavailable(cause)) {
             returnToChooser();
             setMe(null);
           } else setError(describeError(cause));
@@ -128,7 +137,7 @@ export function CommunityApp() {
         } else if (cause instanceof RequestError && cause.code === 'COMMUNITY_SELECTION_REQUIRED') {
           setHostSignIn(true);
           setMe(null);
-        } else if (cause instanceof RequestError && cause.code === 'COMMUNITY_UNAVAILABLE') {
+        } else if (isCommunityUnavailable(cause)) {
           returnToChooser();
           setMe(null);
         } else setError(describeError(cause));
