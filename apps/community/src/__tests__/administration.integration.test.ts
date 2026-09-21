@@ -28,6 +28,7 @@ let communityId = '';
 let settingsVersion = 1;
 let lifecycleVersion = 1;
 const password = 'password1234';
+let beforeExportStored: (() => Promise<void>) | undefined;
 let afterExportStored: (() => Promise<void>) | undefined;
 
 function cookieOf(response: Response): string {
@@ -76,6 +77,7 @@ beforeAll(async () => {
   const filesystem = new FileSystemBlobStore(storagePath);
   const blobStore: BlobStore = {
     put: async (input) => {
+      if (input.kind === 'export') await beforeExportStored?.();
       const result = await filesystem.put(input);
       if (input.kind === 'export') await afterExportStored?.();
       return result;
@@ -597,6 +599,31 @@ it('deletes only the due tenant after every owned blob is confirmed absent', asy
   const accountCount = Number(
     (await pool.query('SELECT count(*) AS count FROM "user"')).rows[0].count
   );
+  let signalExportStarted!: () => void;
+  let releaseExport!: () => void;
+  const exportStarted = new Promise<void>((resolve) => {
+    signalExportStarted = resolve;
+  });
+  const exportReleased = new Promise<void>((resolve) => {
+    releaseExport = resolve;
+  });
+  beforeExportStored = async () => {
+    signalExportStarted();
+    await exportReleased;
+  };
+  const heldExport = jsonRequest(`/api/v1/communities/${communityId}/owner/export`, 'POST', {
+    password,
+  });
+  await exportStarted;
+  const heldBlob = (
+    await pool.query<{ blob_key: string }>(
+      `SELECT blob_key FROM managed_blobs
+       WHERE community_id=$1 AND purpose='export' AND state='reserved'
+       ORDER BY created_at DESC LIMIT 1`,
+      [communityId]
+    )
+  ).rows[0];
+  expect(heldBlob).toEqual({ blob_key: expect.any(String) });
   const requested = await jsonRequest(`/api/v1/communities/${communityId}/owner/deletion`, 'POST', {
     lifecycleVersion,
     password,
@@ -616,6 +643,52 @@ it('deletes only the due tenant after every owned blob is confirmed absent', asy
   );
 
   const blobStore = new FileSystemBlobStore(storagePath);
+  const heldResult = await sweepCommunityDeletions(pool, blobStore, 100);
+  const heldProgress = (
+    await pool.query(
+      `SELECT p.state,m.state AS managed_state
+       FROM community_deletion_blob_progress p
+       JOIN managed_blobs m USING(blob_key)
+       WHERE p.community_id=$1 AND p.blob_key=$2`,
+      [communityId, heldBlob.blob_key]
+    )
+  ).rows[0];
+  const communityRetained = (
+    await pool.query('SELECT 1 FROM communities WHERE id=$1', [communityId])
+  ).rowCount;
+  await pool.query(
+    `UPDATE community_deletion_blob_progress SET state='deleted',deleted_at=now()
+     WHERE community_id=$1 AND blob_key=$2`,
+    [communityId, heldBlob.blob_key]
+  );
+  await pool.query(
+    'UPDATE community_deletion_jobs SET next_attempt_at=now() WHERE community_id=$1',
+    [communityId]
+  );
+  const legacyProgressResult = await sweepCommunityDeletions(pool, blobStore, 100);
+  const legacyCommunityRetained = (
+    await pool.query('SELECT 1 FROM communities WHERE id=$1', [communityId])
+  ).rowCount;
+
+  beforeExportStored = undefined;
+  releaseExport();
+  expect((await heldExport).status).toBe(409);
+  expect((await blobStore.listNamespace()).keys).not.toContain(heldBlob.blob_key);
+  expect(heldResult).toMatchObject({ claimed: 1, completed: 0, failed: 0 });
+  expect(legacyProgressResult).toMatchObject({ claimed: 1, completed: 0, failed: 0 });
+  expect(heldProgress).toEqual({ state: 'retrying', managed_state: 'reserved' });
+  expect(communityRetained).toBe(1);
+  expect(legacyCommunityRetained).toBe(1);
+
+  await pool.query(
+    'UPDATE community_deletion_jobs SET next_attempt_at=now() WHERE community_id=$1',
+    [communityId]
+  );
+  await pool.query(
+    `UPDATE community_deletion_blob_progress
+     SET state='retrying',deleted_at=NULL,next_attempt_at=now() WHERE community_id=$1`,
+    [communityId]
+  );
   let failNextDelete = true;
   const failingBlobStore: BlobStore = {
     put: (input) => blobStore.put(input),
