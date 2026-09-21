@@ -13,7 +13,6 @@ import {
 } from '@dorkos/shared/community-admin-wire';
 import {
   CommunityWireBootstrapClaimResponseSchema,
-  CommunityWireHostCommunityListResponseSchema,
   CommunityWireOwnerClaimPreflightRequestSchema,
   CommunityWireOwnerClaimPreflightResponseSchema,
   CommunityWireOwnerClaimRequestSchema,
@@ -451,16 +450,21 @@ export function registerHostRoutes(
     if (!token) throw new ApiError(403, 'FORBIDDEN', 'The owner claim is missing or invalid.');
     const result = await transaction(pool, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(77281503)');
-      const grant = await client.query<{ id: string; community_id: string }>(
+      const tokenHash = hashSecret(token);
+      // Discover the immutable tenant without taking the grant row lock. Every
+      // owner-claim mutation locks community before grant, so claim, reissue,
+      // and revoke cannot form a grant↔community lock cycle.
+      const candidate = await client.query<{ id: string; community_id: string }>(
         `SELECT id,community_id FROM bootstrap_grants
          WHERE token_hash=$1 AND purpose='owner_claim' AND community_id IS NOT NULL
-           AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>now() FOR UPDATE`,
-        [hashSecret(token)]
+           AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>now()`,
+        [tokenHash]
       );
-      if (!grant.rows[0]) throw new ApiError(403, 'FORBIDDEN', 'The owner claim is unavailable.');
+      if (!candidate.rows[0])
+        throw new ApiError(403, 'FORBIDDEN', 'The owner claim is unavailable.');
       const community = await client.query<HostCommunityRow>(
         `${hostProjectionSql} WHERE c.id=$1 FOR UPDATE OF c`,
-        [grant.rows[0].community_id]
+        [candidate.rows[0].community_id]
       );
       if (community.rows[0]?.lifecycle !== 'pending_owner') {
         throw new ApiError(
@@ -469,6 +473,13 @@ export function registerHostRoutes(
           'Only an unclaimed community accepts this claim.'
         );
       }
+      const grant = await client.query<{ id: string }>(
+        `SELECT id FROM bootstrap_grants
+         WHERE id=$1 AND community_id=$2 AND token_hash=$3 AND purpose='owner_claim'
+           AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>now() FOR UPDATE`,
+        [candidate.rows[0].id, community.rows[0].id, tokenHash]
+      );
+      if (!grant.rows[0]) throw new ApiError(403, 'FORBIDDEN', 'The owner claim is unavailable.');
       const owner = await client.query(
         "SELECT 1 FROM members WHERE community_id=$1 AND role='owner' AND active",
         [community.rows[0].id]
