@@ -24,6 +24,25 @@ export interface Principal {
   community_id: string;
   credentialHash?: string;
   credentialKind?: 'grant' | 'agent';
+  historyOnly?: boolean;
+}
+
+function lifecycleError(lifecycle: string): ApiError {
+  if (lifecycle === 'archived')
+    return new ApiError(423, 'COMMUNITY_ARCHIVED', 'This community is archived.');
+  if (lifecycle === 'suspended')
+    return new ApiError(503, 'COMMUNITY_SUSPENDED', 'This community is suspended.');
+  if (lifecycle === 'deletion_pending')
+    return new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This community is being deleted.');
+  return new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is unavailable.');
+}
+
+function archivedReadAllowed(
+  lifecycle: string,
+  scope: 'read' | 'post' | 'enroll-agent',
+  scopes?: readonly string[]
+): boolean {
+  return lifecycle === 'archived' && scope === 'read' && (!scopes || scopes.join(',') === 'read');
 }
 
 function bearer(c: Context): string | null {
@@ -37,9 +56,15 @@ export async function lockActiveCommunity(client: PoolClient, communityId: strin
     'SELECT lifecycle FROM communities WHERE id=$1 FOR SHARE',
     [communityId]
   );
-  if (result.rows[0]?.lifecycle !== 'active') {
-    throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is unavailable.');
-  }
+  const lifecycle = result.rows[0]?.lifecycle;
+  if (lifecycle === 'active') return;
+  if (lifecycle === 'archived')
+    throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'This community is archived.');
+  if (lifecycle === 'suspended')
+    throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This community is suspended.');
+  if (lifecycle === 'deletion_pending')
+    throw new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This community is being deleted.');
+  throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is unavailable.');
 }
 
 /** Require a live scoped personal connection token; cookies cannot issue agent secrets. */
@@ -62,6 +87,8 @@ export async function requireConnectionGrant(
   const member = result.rows[0];
   if (!member || !member.scopes.includes(scope))
     throw new ApiError(401, 'UNAUTHENTICATED', 'This connection is unavailable or lacks access.');
+  if (tenant.lifecycle !== 'active' && !archivedReadAllowed(tenant.lifecycle, scope, member.scopes))
+    throw lifecycleError(tenant.lifecycle);
   await pool.query('UPDATE connection_grants SET last_used_at=now() WHERE id=$1', [
     member.grant_id,
   ]);
@@ -76,15 +103,23 @@ export async function assertConnectionGrantCurrent(
   communityId: string,
   scope: 'read' | 'post' | 'enroll-agent'
 ): Promise<void> {
-  await lockActiveCommunity(client, communityId);
+  const lifecycleResult = await client.query<{ lifecycle: string }>(
+    'SELECT lifecycle FROM communities WHERE id=$1 FOR SHARE',
+    [communityId]
+  );
+  const lifecycle = lifecycleResult.rows[0]?.lifecycle;
+  if (lifecycle !== 'active' && !(lifecycle === 'archived' && scope === 'read'))
+    throw lifecycleError(lifecycle ?? 'unavailable');
   const owner = await client.query(
     'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
     [memberId, communityId]
   );
   if (!owner.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Owner membership has ended.');
   const grant = await client.query(
-    'SELECT 1 FROM connection_grants WHERE member_id=$1 AND community_id=$2 AND token_hash=$3 AND revoked_at IS NULL AND scopes @> ARRAY[$4]::text[] FOR SHARE',
-    [memberId, communityId, tokenHash, scope]
+    `SELECT 1 FROM connection_grants WHERE member_id=$1 AND community_id=$2
+     AND token_hash=$3 AND revoked_at IS NULL AND scopes @> ARRAY[$4]::text[]
+     AND ($5::text <> 'archived' OR history_only) FOR SHARE`,
+    [memberId, communityId, tokenHash, scope, lifecycle]
   );
   if (!grant.rowCount)
     throw new ApiError(401, 'UNAUTHENTICATED', 'This connection is unavailable.');
@@ -101,6 +136,9 @@ export async function requirePrincipal(
   const token = bearer(c);
   if (!token) {
     const member = await requireMember(c, auth, pool);
+    const tenant = await resolveCommunityContext(c, pool);
+    if (tenant.lifecycle !== 'active' && !archivedReadAllowed(tenant.lifecycle, scope))
+      throw lifecycleError(tenant.lifecycle);
     return {
       kind: 'human',
       id: member.id,
@@ -116,8 +154,9 @@ export async function requirePrincipal(
     display_name: string;
     community_id: string;
     scopes: string[];
+    history_only: boolean;
   }>(
-    `SELECT m.id,m.display_name,m.community_id,g.scopes FROM connection_grants g
+    `SELECT m.id,m.display_name,m.community_id,g.scopes,g.history_only FROM connection_grants g
      JOIN members m ON m.id=g.member_id WHERE g.token_hash=$1
        AND g.community_id=$2 AND m.community_id=$2 AND g.revoked_at IS NULL AND m.active`,
     [tokenHash, tenant.communityId]
@@ -125,6 +164,11 @@ export async function requirePrincipal(
   if (human.rows[0]) {
     if (!human.rows[0].scopes.includes(scope))
       throw new ApiError(403, 'FORBIDDEN', 'This connection cannot perform that action.');
+    if (
+      tenant.lifecycle !== 'active' &&
+      !archivedReadAllowed(tenant.lifecycle, scope, human.rows[0].scopes)
+    )
+      throw lifecycleError(tenant.lifecycle);
     if (touch)
       await pool.query(
         "UPDATE connection_grants SET last_used_at=now() WHERE token_hash=$1 AND revoked_at IS NULL AND (last_used_at IS NULL OR last_used_at<now()-interval '1 minute')",
@@ -138,6 +182,7 @@ export async function requirePrincipal(
       community_id: human.rows[0].community_id,
       credentialHash: tokenHash,
       credentialKind: 'grant',
+      historyOnly: human.rows[0].history_only,
     };
   }
   const agent = await pool.query<{
@@ -153,6 +198,7 @@ export async function requirePrincipal(
     [tokenHash, tenant.communityId]
   );
   if (!agent.rows[0]) throw new ApiError(401, 'UNAUTHENTICATED', 'This credential is unavailable.');
+  if (tenant.lifecycle !== 'active') throw lifecycleError(tenant.lifecycle);
   return {
     kind: 'agent',
     id: agent.rows[0].id,
@@ -177,7 +223,8 @@ export async function assertPrincipalCurrent(
     current.id !== principal.id ||
     current.kind !== principal.kind ||
     current.community_id !== principal.community_id ||
-    current.credentialHash !== principal.credentialHash
+    current.credentialHash !== principal.credentialHash ||
+    current.historyOnly !== principal.historyOnly
   ) {
     throw new ApiError(401, 'UNAUTHENTICATED', 'This credential is unavailable.');
   }
@@ -190,7 +237,13 @@ export async function assertPrincipalCurrentInTransaction(
   scope: 'read' | 'post',
   sessionId?: string
 ): Promise<void> {
-  await lockActiveCommunity(client, principal.community_id);
+  const lifecycleResult = await client.query<{ lifecycle: string }>(
+    'SELECT lifecycle FROM communities WHERE id=$1 FOR SHARE',
+    [principal.community_id]
+  );
+  const lifecycle = lifecycleResult.rows[0]?.lifecycle;
+  if (lifecycle !== 'active' && !(lifecycle === 'archived' && scope === 'read'))
+    throw lifecycleError(lifecycle ?? 'unavailable');
   if (principal.kind === 'agent') {
     const current = await client.query(
       `SELECT 1 FROM agent_credentials ac JOIN agents a ON a.id=ac.agent_id
@@ -206,8 +259,9 @@ export async function assertPrincipalCurrentInTransaction(
       `SELECT 1 FROM connection_grants g JOIN members m ON m.id=g.member_id
        WHERE g.member_id=$1 AND g.token_hash=$2 AND g.revoked_at IS NULL
          AND g.community_id=$3 AND m.community_id=$3
-         AND g.scopes @> ARRAY[$4]::text[] AND m.active`,
-      [principal.id, principal.credentialHash, principal.community_id, scope]
+         AND g.scopes @> ARRAY[$4]::text[] AND m.active
+         AND ($5::text <> 'archived' OR g.history_only)`,
+      [principal.id, principal.credentialHash, principal.community_id, scope, lifecycle]
     );
     if (current.rowCount) return;
   } else if (sessionId) {
@@ -234,7 +288,13 @@ export async function lockPrincipalAuthority(
   principal: Principal,
   scope: 'read' | 'post' = 'post'
 ): Promise<void> {
-  await lockActiveCommunity(client, principal.community_id);
+  const lifecycleResult = await client.query<{ lifecycle: string }>(
+    'SELECT lifecycle FROM communities WHERE id=$1 FOR SHARE',
+    [principal.community_id]
+  );
+  const lifecycle = lifecycleResult.rows[0]?.lifecycle;
+  if (lifecycle !== 'active' && !(lifecycle === 'archived' && scope === 'read'))
+    throw lifecycleError(lifecycle ?? 'unavailable');
   const owner = await client.query(
     'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
     [principal.ownerMemberId, principal.community_id]
@@ -254,8 +314,10 @@ export async function lockPrincipalAuthority(
       throw new ApiError(401, 'UNAUTHENTICATED', 'This credential is unavailable.');
   } else if (principal.credentialKind === 'grant') {
     const grant = await client.query(
-      'SELECT 1 FROM connection_grants WHERE member_id=$1 AND community_id=$2 AND token_hash=$3 AND revoked_at IS NULL AND scopes @> ARRAY[$4]::text[] FOR SHARE',
-      [principal.id, principal.community_id, principal.credentialHash, scope]
+      `SELECT 1 FROM connection_grants WHERE member_id=$1 AND community_id=$2
+       AND token_hash=$3 AND revoked_at IS NULL AND scopes @> ARRAY[$4]::text[]
+       AND ($5::text <> 'archived' OR history_only) FOR SHARE`,
+      [principal.id, principal.community_id, principal.credentialHash, scope, lifecycle]
     );
     if (!grant.rowCount)
       throw new ApiError(401, 'UNAUTHENTICATED', 'This connection is unavailable.');
@@ -335,9 +397,19 @@ export async function requireHostOperator(
 export async function lockChannel(
   client: PoolClient,
   channelId: string,
-  member: Member | Principal
+  member: Member | Principal,
+  scope: 'read' | 'post' = 'post'
 ) {
-  await lockActiveCommunity(client, member.community_id);
+  if (scope === 'post') {
+    await lockActiveCommunity(client, member.community_id);
+  } else {
+    const lifecycle = await client.query<{ lifecycle: string }>(
+      'SELECT lifecycle FROM communities WHERE id=$1 FOR SHARE',
+      [member.community_id]
+    );
+    if (!['active', 'archived'].includes(lifecycle.rows[0]?.lifecycle ?? ''))
+      throw lifecycleError(lifecycle.rows[0]?.lifecycle ?? 'unavailable');
+  }
   const result = await client.query<{
     id: string;
     name: string;

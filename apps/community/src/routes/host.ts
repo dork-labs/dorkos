@@ -1,17 +1,22 @@
+import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import { setCookie } from 'hono/cookie';
 import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import {
-  CommunityWireHostCommunityCreateRequestSchema,
-  CommunityWireHostCommunityCreateResponseSchema,
-  CommunityWireHostCommunityLifecycleRequestSchema,
+  CommunityAdminClaimMutationRequestSchema,
+  CommunityAdminClaimResponseSchema,
+  CommunityAdminCreateRequestSchema,
+  CommunityAdminCreateResponseSchema,
+  CommunityAdminHostLifecycleRequestSchema,
+  CommunityAdminHostProjectionSchema,
+} from '@dorkos/shared/community-admin-wire';
+import {
+  CommunityWireBootstrapClaimResponseSchema,
   CommunityWireHostCommunityListResponseSchema,
-  CommunityWireHostCommunitySchema,
   CommunityWireOwnerClaimPreflightRequestSchema,
   CommunityWireOwnerClaimPreflightResponseSchema,
   CommunityWireOwnerClaimRequestSchema,
-  CommunityWireBootstrapClaimResponseSchema,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
@@ -26,8 +31,13 @@ interface HostCommunityRow {
   id: string;
   name: string;
   description: string | null;
-  lifecycle: 'pending_owner' | 'active' | 'suspended';
+  lifecycle: 'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
+  lifecycle_version: number;
+  settings_version: number;
   created_at: Date;
+  owner_present: boolean;
+  deletion_state: 'waiting' | 'deleting' | 'retrying' | null;
+  suspended_from_state?: 'active' | 'archived' | null;
 }
 
 function projectCommunity(row: HostCommunityRow) {
@@ -36,9 +46,19 @@ function projectCommunity(row: HostCommunityRow) {
     name: row.name,
     description: row.description,
     lifecycle: row.lifecycle,
+    lifecycleVersion: row.lifecycle_version,
+    settingsVersion: row.settings_version,
+    ownerPresent: row.owner_present,
+    deletionState: row.deletion_state,
     createdAt: row.created_at.toISOString(),
   };
 }
+
+const hostProjectionSql = `SELECT c.id,c.name,c.description,c.lifecycle,c.lifecycle_version,
+  c.settings_version,c.created_at,c.suspended_from_state,
+  EXISTS(SELECT 1 FROM members m WHERE m.community_id=c.id AND m.role='owner' AND m.active) AS owner_present,
+  j.state AS deletion_state
+  FROM communities c LEFT JOIN community_deletion_jobs j ON j.community_id=c.id`;
 
 async function assertHostOperator(client: PoolClient, userId: string): Promise<void> {
   const operator = await client.query(
@@ -48,27 +68,113 @@ async function assertHostOperator(client: PoolClient, userId: string): Promise<v
   if (!operator.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Host operator access ended.');
 }
 
+function payloadHash(body: z.infer<typeof CommunityAdminCreateRequestSchema>): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        name: body.name,
+        description: body.description ?? null,
+        admissionPolicy: body.admissionPolicy ?? 'invite_only',
+      })
+    )
+    .digest('hex');
+}
+
 async function createPendingCommunity(
   client: PoolClient,
-  userId: string,
-  name: string,
-  tokenHash: string,
-  expiresAt: Date
-): Promise<HostCommunityRow> {
+  input: {
+    userId: string;
+    body: z.infer<typeof CommunityAdminCreateRequestSchema>;
+    tokenHash: string;
+    expiresAt: Date;
+  }
+): Promise<{ row: HostCommunityRow; grantId: string; expiresAt: Date; replayed: boolean }> {
   await client.query('SELECT pg_advisory_xact_lock(77281503)');
-  await assertHostOperator(client, userId);
-  const community = await client.query<HostCommunityRow>(
-    `INSERT INTO communities(name,lifecycle)
-     VALUES($1,'pending_owner')
-     RETURNING id,name,description,lifecycle,created_at`,
-    [name]
+  await assertHostOperator(client, input.userId);
+  const hash = payloadHash(input.body);
+  const receipt = await client.query<{
+    payload_hash: string;
+    community_id: string;
+    owner_claim_grant_id: string;
+    expires_at: Date;
+  }>(
+    `SELECT r.payload_hash,r.community_id,r.owner_claim_grant_id,g.expires_at
+     FROM community_creation_receipts r
+     JOIN bootstrap_grants g ON g.id=r.owner_claim_grant_id
+     WHERE r.idempotency_key=$1 FOR UPDATE OF r`,
+    [input.body.idempotencyKey]
+  );
+  if (receipt.rows[0]) {
+    if (receipt.rows[0].payload_hash !== hash) {
+      throw new ApiError(409, 'IDEMPOTENCY_CONFLICT', 'That creation key has different inputs.');
+    }
+    const existing = await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [
+      receipt.rows[0].community_id,
+    ]);
+    if (!existing.rows[0])
+      throw new ApiError(409, 'STATE_CONFLICT', 'Creation receipt is invalid.');
+    return {
+      row: existing.rows[0],
+      grantId: receipt.rows[0].owner_claim_grant_id,
+      expiresAt: receipt.rows[0].expires_at,
+      replayed: true,
+    };
+  }
+  const community = await client.query<{ id: string }>(
+    `INSERT INTO communities(name,description,admission_policy,lifecycle)
+     VALUES($1,$2,$3,'pending_owner') RETURNING id`,
+    [input.body.name, input.body.description ?? null, input.body.admissionPolicy ?? 'invite_only']
+  );
+  const grant = await client.query<{ id: string }>(
+    `INSERT INTO bootstrap_grants(token_hash,purpose,community_id,expires_at)
+     VALUES($1,'owner_claim',$2,$3) RETURNING id`,
+    [input.tokenHash, community.rows[0].id, input.expiresAt]
   );
   await client.query(
-    `INSERT INTO bootstrap_grants(token_hash,purpose,community_id,expires_at)
-     VALUES($1,'owner_claim',$2,$3)`,
-    [tokenHash, community.rows[0].id, expiresAt]
+    `INSERT INTO community_creation_receipts(
+       idempotency_key,operator_user_id,payload_hash,community_id,owner_claim_grant_id
+     ) VALUES($1,$2,$3,$4,$5)`,
+    [input.body.idempotencyKey, input.userId, hash, community.rows[0].id, grant.rows[0].id]
   );
-  return community.rows[0];
+  await client.query(
+    `INSERT INTO host_audit_events(actor_user_id,community_id,action,next_state,changed_fields)
+     VALUES($1,$2,'community.create','pending_owner',ARRAY['name','description','admission_policy'])`,
+    [input.userId, community.rows[0].id]
+  );
+  const row = await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [
+    community.rows[0].id,
+  ]);
+  return {
+    row: row.rows[0],
+    grantId: grant.rows[0].id,
+    expiresAt: input.expiresAt,
+    replayed: false,
+  };
+}
+
+/** Revoke every invitation, pairing, personal grant, and agent credential for a tenant. */
+export async function revokeTenantAccess(client: PoolClient, communityId: string): Promise<void> {
+  await client.query(
+    'UPDATE invites SET revoked_at=COALESCE(revoked_at,now()) WHERE community_id=$1',
+    [communityId]
+  );
+  await client.query('DELETE FROM pending_admissions WHERE community_id=$1', [communityId]);
+  await client.query(
+    'UPDATE connection_pairings SET cancelled_at=COALESCE(cancelled_at,now()) WHERE community_id=$1 AND consumed_at IS NULL',
+    [communityId]
+  );
+  await client.query(
+    'UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now()) WHERE community_id=$1',
+    [communityId]
+  );
+  await client.query(
+    'UPDATE agent_credentials SET revoked_at=COALESCE(revoked_at,now()) WHERE community_id=$1',
+    [communityId]
+  );
+  await client.query(
+    'UPDATE agents SET active=false,revoked_at=COALESCE(revoked_at,now()) WHERE community_id=$1',
+    [communityId]
+  );
 }
 
 /** Register host-only metadata, lifecycle, creation, and pending-owner claim endpoints. */
@@ -81,19 +187,16 @@ export function registerHostRoutes(
   app.get('/host/communities', async (c) => {
     await requireHostOperator(c, auth, pool);
     const communities = await pool.query<HostCommunityRow>(
-      'SELECT id,name,description,lifecycle,created_at FROM communities ORDER BY created_at,id'
+      `${hostProjectionSql} ORDER BY c.created_at,c.id`
     );
-    return json(c, CommunityWireHostCommunityListResponseSchema, {
-      communities: communities.rows.map(projectCommunity),
-    });
+    return c.json({ communities: communities.rows.map(projectCommunity) });
   });
 
   app.post('/host/communities', async (c) => {
     const operator = await requireHostOperator(c, auth, pool);
-    const body = await readJson(c, CommunityWireHostCommunityCreateRequestSchema);
+    const body = await readJson(c, CommunityAdminCreateRequestSchema);
     const token = randomToken();
-    const tokenHash = hashSecret(token);
-    const expiresAt = new Date(Date.now() + 30 * 60_000);
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60_000);
     const count = await pool.query<{ count: number }>(
       'SELECT count(*)::int AS count FROM communities'
     );
@@ -104,22 +207,16 @@ export function registerHostRoutes(
         'Complete first installation before creating another community.'
       );
     }
-
-    let community: HostCommunityRow | undefined;
-    if (count.rows[0].count === 1) {
-      const gated = await withReconciledTenantNamespace(pool, blobStore, async (client) => {
-        const current = await client.query<{ count: number }>(
-          'SELECT count(*)::int AS count FROM communities'
-        );
-        if (current.rows[0].count !== 1) {
-          throw new ApiError(
-            409,
-            'STATE_CONFLICT',
-            'Community creation changed; retry from current host state.'
-          );
-        }
-        return createPendingCommunity(client, operator.userId, body.name, tokenHash, expiresAt);
+    const create = (client: PoolClient) =>
+      createPendingCommunity(client, {
+        userId: operator.userId,
+        body,
+        tokenHash: hashSecret(token),
+        expiresAt,
       });
+    let result: Awaited<ReturnType<typeof createPendingCommunity>> | undefined;
+    if (count.rows[0].count === 1) {
+      const gated = await withReconciledTenantNamespace(pool, blobStore, create);
       if (!gated.reconciliation.ready || !gated.value) {
         throw new ApiError(
           409,
@@ -127,53 +224,192 @@ export function registerHostRoutes(
           'Storage ownership must be reconciled before creating another community.'
         );
       }
-      community = gated.value;
+      result = gated.value;
     } else {
-      community = await transaction(pool, (client) =>
-        createPendingCommunity(client, operator.userId, body.name, tokenHash, expiresAt)
-      );
+      result = await transaction(pool, create);
     }
+    c.header('Cache-Control', 'no-store');
     return json(
       c,
-      CommunityWireHostCommunityCreateResponseSchema,
+      CommunityAdminCreateResponseSchema,
       {
-        community: projectCommunity(community),
-        ownerClaimToken: token,
-        expiresAt: expiresAt.toISOString(),
+        community: projectCommunity(result.row),
+        ownerClaimGrantId: result.grantId,
+        ownerClaimToken: result.replayed ? null : token,
+        expiresAt: result.expiresAt.toISOString(),
+        replayed: result.replayed,
       },
-      201
+      result.replayed ? 200 : 201
     );
+  });
+
+  app.post('/host/communities/:id/owner-claims/reissue', async (c) => {
+    const operator = await requireHostOperator(c, auth, pool);
+    await readJson(c, CommunityAdminClaimMutationRequestSchema);
+    const communityId = z.uuid().safeParse(c.req.param('id'));
+    if (!communityId.success) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+    const token = randomToken();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60_000);
+    const grantId = await transaction(pool, async (client) => {
+      await assertHostOperator(client, operator.userId);
+      const community = await client.query<{ lifecycle: string }>(
+        'SELECT lifecycle FROM communities WHERE id=$1 FOR UPDATE',
+        [communityId.data]
+      );
+      if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (community.rows[0].lifecycle !== 'pending_owner') {
+        throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed community accepts claims.');
+      }
+      await client.query(
+        `UPDATE bootstrap_grants SET revoked_at=now(),revoked_by=$2
+         WHERE community_id=$1 AND purpose='owner_claim' AND consumed_at IS NULL AND revoked_at IS NULL`,
+        [communityId.data, operator.userId]
+      );
+      const grant = await client.query<{ id: string }>(
+        `INSERT INTO bootstrap_grants(token_hash,purpose,community_id,expires_at)
+         VALUES($1,'owner_claim',$2,$3) RETURNING id`,
+        [hashSecret(token), communityId.data, expiresAt]
+      );
+      await client.query(
+        `INSERT INTO host_audit_events(actor_user_id,community_id,action,changed_fields)
+         VALUES($1,$2,'owner_claim.reissue',ARRAY['owner_claim'])`,
+        [operator.userId, communityId.data]
+      );
+      return grant.rows[0].id;
+    });
+    c.header('Cache-Control', 'no-store');
+    return json(c, CommunityAdminClaimResponseSchema, {
+      grantId,
+      ownerClaimToken: token,
+      expiresAt: expiresAt.toISOString(),
+    });
+  });
+
+  app.post('/host/communities/:id/owner-claims/:grantId/revoke', async (c) => {
+    const operator = await requireHostOperator(c, auth, pool);
+    await readJson(c, CommunityAdminClaimMutationRequestSchema);
+    const ids = z
+      .strictObject({ communityId: z.uuid(), grantId: z.uuid() })
+      .safeParse({ communityId: c.req.param('id'), grantId: c.req.param('grantId') });
+    if (!ids.success) throw new ApiError(404, 'NOT_FOUND', 'Owner claim not found.');
+    await transaction(pool, async (client) => {
+      await assertHostOperator(client, operator.userId);
+      const community = await client.query<{ lifecycle: string }>(
+        'SELECT lifecycle FROM communities WHERE id=$1 FOR UPDATE',
+        [ids.data.communityId]
+      );
+      if (community.rows[0]?.lifecycle !== 'pending_owner') {
+        throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed community has claims.');
+      }
+      const revoked = await client.query(
+        `UPDATE bootstrap_grants SET revoked_at=now(),revoked_by=$3
+         WHERE id=$1 AND community_id=$2 AND purpose='owner_claim'
+           AND consumed_at IS NULL AND revoked_at IS NULL`,
+        [ids.data.grantId, ids.data.communityId, operator.userId]
+      );
+      if (!revoked.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Owner claim not found.');
+      await client.query(
+        `INSERT INTO host_audit_events(actor_user_id,community_id,action,changed_fields)
+         VALUES($1,$2,'owner_claim.revoke',ARRAY['owner_claim'])`,
+        [operator.userId, ids.data.communityId]
+      );
+    });
+    return c.body(null, 204);
+  });
+
+  app.delete('/host/communities/:id', async (c) => {
+    const operator = await requireHostOperator(c, auth, pool);
+    const communityId = z.uuid().safeParse(c.req.param('id'));
+    if (!communityId.success) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+    await transaction(pool, async (client) => {
+      await assertHostOperator(client, operator.userId);
+      const community = await client.query<{ lifecycle: string }>(
+        'SELECT lifecycle FROM communities WHERE id=$1 FOR UPDATE',
+        [communityId.data]
+      );
+      if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (community.rows[0].lifecycle !== 'pending_owner') {
+        throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed community can be abandoned.');
+      }
+      const unsafe = await client.query(
+        `SELECT 1 WHERE
+          EXISTS(SELECT 1 FROM members WHERE community_id=$1)
+          OR EXISTS(SELECT 1 FROM channels WHERE community_id=$1)
+          OR EXISTS(SELECT 1 FROM managed_blobs WHERE community_id=$1)
+          OR EXISTS(SELECT 1 FROM bootstrap_grants WHERE community_id=$1 AND revoked_at IS NULL)
+        `,
+        [communityId.data]
+      );
+      if (unsafe.rowCount) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'Revoke every owner claim and remove unclaimed tenant state first.'
+        );
+      }
+      await client.query('DELETE FROM community_creation_receipts WHERE community_id=$1', [
+        communityId.data,
+      ]);
+      await client.query('DELETE FROM bootstrap_grants WHERE community_id=$1', [communityId.data]);
+      await client.query('DELETE FROM communities WHERE id=$1', [communityId.data]);
+      await client.query(
+        `INSERT INTO host_audit_events(actor_user_id,community_id,action,prior_state)
+         VALUES($1,$2,'community.abandon','pending_owner')`,
+        [operator.userId, communityId.data]
+      );
+    });
+    return c.body(null, 204);
   });
 
   app.patch('/host/communities/:id/lifecycle', async (c) => {
     const operator = await requireHostOperator(c, auth, pool);
-    const body = await readJson(c, CommunityWireHostCommunityLifecycleRequestSchema);
+    const body = await readJson(c, CommunityAdminHostLifecycleRequestSchema);
     const communityId = z.uuid().safeParse(c.req.param('id'));
     if (!communityId.success) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
     const community = await transaction(pool, async (client) => {
       await assertHostOperator(client, operator.userId);
       const current = await client.query<HostCommunityRow>(
-        'SELECT id,name,description,lifecycle,created_at FROM communities WHERE id=$1 FOR UPDATE',
+        `${hostProjectionSql} WHERE c.id=$1 FOR UPDATE OF c`,
         [communityId.data]
       );
-      if (!current.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
-      if (current.rows[0].lifecycle === 'pending_owner') {
-        throw new ApiError(
-          409,
-          'STATE_CONFLICT',
-          'An unclaimed community cannot be suspended or resumed.'
+      const row = current.rows[0];
+      if (!row) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (row.lifecycle_version !== body.lifecycleVersion) {
+        throw new ApiError(409, 'STATE_CONFLICT', 'Community lifecycle changed.');
+      }
+      let next: 'active' | 'archived' | 'suspended';
+      if (body.action === 'suspend') {
+        if (row.lifecycle !== 'active' && row.lifecycle !== 'archived') {
+          throw new ApiError(409, 'STATE_CONFLICT', 'This community cannot be suspended.');
+        }
+        next = 'suspended';
+        await revokeTenantAccess(client, row.id);
+        await client.query(
+          `UPDATE communities SET lifecycle='suspended',suspended_from_state=$2,
+             suspended_at=now(),lifecycle_version=lifecycle_version+1 WHERE id=$1`,
+          [row.id, row.lifecycle]
+        );
+      } else {
+        if (row.lifecycle !== 'suspended' || !row.suspended_from_state) {
+          throw new ApiError(409, 'STATE_CONFLICT', 'This community is not suspended.');
+        }
+        next = row.suspended_from_state;
+        await client.query(
+          `UPDATE communities SET lifecycle=$2,suspended_from_state=NULL,suspended_at=NULL,
+             lifecycle_version=lifecycle_version+1 WHERE id=$1`,
+          [row.id, next]
         );
       }
-      const updated = await client.query<HostCommunityRow>(
-        `UPDATE communities
-         SET lifecycle=$2,lifecycle_version=lifecycle_version+1
-         WHERE id=$1
-         RETURNING id,name,description,lifecycle,created_at`,
-        [current.rows[0].id, body.lifecycle]
+      await client.query(
+        `INSERT INTO host_audit_events(
+           actor_user_id,community_id,action,prior_state,next_state,changed_fields
+         ) VALUES($1,$2,$3,$4,$5,ARRAY['lifecycle'])`,
+        [operator.userId, row.id, `community.${body.action}`, row.lifecycle, next]
       );
-      return updated.rows[0];
+      return (await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [row.id]))
+        .rows[0];
     });
-    return json(c, CommunityWireHostCommunitySchema, projectCommunity(community));
+    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community));
   });
 
   app.post('/owner-claims/preflight', async (c) => {
@@ -182,7 +418,7 @@ export function registerHostRoutes(
       `SELECT g.community_id,g.expires_at FROM bootstrap_grants g
        JOIN communities c ON c.id=g.community_id
        WHERE g.token_hash=$1 AND g.purpose='owner_claim' AND g.consumed_at IS NULL
-         AND g.expires_at>now() AND c.lifecycle='pending_owner'
+         AND g.revoked_at IS NULL AND g.expires_at>now() AND c.lifecycle='pending_owner'
          AND NOT EXISTS (
            SELECT 1 FROM members m
            WHERE m.community_id=c.id AND m.role='owner' AND m.active
@@ -197,6 +433,7 @@ export function registerHostRoutes(
       path: '/',
       maxAge: 30 * 60,
     });
+    c.header('Cache-Control', 'no-store');
     return json(c, CommunityWireOwnerClaimPreflightResponseSchema, {
       granted: true,
       communityId: claim.rows[0].community_id,
@@ -217,13 +454,12 @@ export function registerHostRoutes(
       const grant = await client.query<{ id: string; community_id: string }>(
         `SELECT id,community_id FROM bootstrap_grants
          WHERE token_hash=$1 AND purpose='owner_claim' AND community_id IS NOT NULL
-           AND consumed_at IS NULL AND expires_at>now() FOR UPDATE`,
+           AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>now() FOR UPDATE`,
         [hashSecret(token)]
       );
       if (!grant.rows[0]) throw new ApiError(403, 'FORBIDDEN', 'The owner claim is unavailable.');
       const community = await client.query<HostCommunityRow>(
-        `SELECT id,name,description,lifecycle,created_at FROM communities
-         WHERE id=$1 FOR UPDATE`,
+        `${hostProjectionSql} WHERE c.id=$1 FOR UPDATE OF c`,
         [grant.rows[0].community_id]
       );
       if (community.rows[0]?.lifecycle !== 'pending_owner') {
@@ -250,12 +486,19 @@ export function registerHostRoutes(
         [community.rows[0].id, handle, member.rows[0].id]
       );
       await client.query(
-        "UPDATE communities SET lifecycle='active',lifecycle_version=lifecycle_version+1 WHERE id=$1",
+        `UPDATE communities SET lifecycle='active',activated_at=now(),
+           lifecycle_version=lifecycle_version+1 WHERE id=$1`,
         [community.rows[0].id]
       );
       await client.query('UPDATE bootstrap_grants SET consumed_at=now() WHERE id=$1', [
         grant.rows[0].id,
       ]);
+      await client.query(
+        `INSERT INTO audit_events(
+           community_id,actor_member_id,action,prior_state,next_state,changed_fields
+         ) VALUES($1,$2,'owner_claim.consume','pending_owner','active',ARRAY['lifecycle','owner'])`,
+        [community.rows[0].id, member.rows[0].id]
+      );
       return {
         community: {
           id: community.rows[0].id,
@@ -266,6 +509,7 @@ export function registerHostRoutes(
         memberId: member.rows[0].id,
       };
     });
+    c.header('Cache-Control', 'no-store');
     return json(c, CommunityWireBootstrapClaimResponseSchema, result);
   });
 }

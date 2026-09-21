@@ -6,7 +6,8 @@ import { ApiError } from './http.js';
 const CommunityIdSchema = z.uuid();
 
 /** Community lifecycle states that determine whether member traffic may run. */
-export type CommunityLifecycle = 'pending_owner' | 'active' | 'suspended';
+export type CommunityLifecycle =
+  'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
 
 /** Immutable tenant selection resolved from a canonical path or singleton alias. */
 export interface CommunityContext {

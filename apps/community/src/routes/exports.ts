@@ -58,7 +58,16 @@ interface ExportArchiveRow {
 }
 
 async function snapshot(pool: PoolClient, member: Member, scope: 'personal' | 'owner') {
-  await lockActiveCommunity(pool, member.community_id);
+  if (scope === 'personal') {
+    await lockActiveCommunity(pool, member.community_id);
+  } else {
+    const community = await pool.query<{ lifecycle: string }>(
+      'SELECT lifecycle FROM communities WHERE id=$1 FOR SHARE',
+      [member.community_id]
+    );
+    if (!community.rows[0] || !['active', 'archived'].includes(community.rows[0].lifecycle))
+      throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community cannot be exported now.');
+  }
   await requireLiveRole(pool, member, scope === 'owner' ? ['owner'] : ['owner', 'admin', 'member']);
   const owner = scope === 'owner';
   const channels = await pool.query(
@@ -302,7 +311,9 @@ export function registerExportRoutes(
       return snapshot(client, current, scope);
     });
     const reservation = await transaction(pool, (client) =>
-      reserveManagedBlob(client, current.community_id, 'export')
+      reserveManagedBlob(client, current.community_id, 'export', {
+        allowArchived: scope === 'owner',
+      })
     );
     let stored;
     try {

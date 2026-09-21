@@ -14,6 +14,7 @@ export {
   managedBlobWriteSignal,
   MANAGED_BLOB_RESERVATION_TTL_MS,
   prepareManagedBlobCommit,
+  queueCommittedBlobDeletion,
   reserveManagedBlob,
 } from './managed-blobs.js';
 export type { ManagedBlobReservation } from './managed-blobs.js';
