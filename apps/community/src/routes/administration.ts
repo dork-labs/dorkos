@@ -21,6 +21,7 @@ import {
   reserveManagedBlob,
   type BlobStore,
 } from '../storage/index.js';
+import { prepareCommunityDeletionInventory } from '../deletion-worker.js';
 import { resolveCommunityContext } from '../tenant-context.js';
 import { revokeTenantAccess } from './host.js';
 
@@ -446,6 +447,40 @@ export function registerAdministrationRoutes(
     const actor = await requireMember(c, auth, pool, { allowDeletionPending: true });
     const body = await readJson(c, CommunityAdminDeletionRequestSchema);
     await verifyPassword(auth, c.req.raw, body.password);
+    const existing = await transaction(pool, async (client) => {
+      const current = await lockSettings(client, actor.community_id);
+      await lockMember(client, actor, ['owner']);
+      if (current.lifecycle === 'deletion_pending') {
+        const pending = await client.query(
+          `SELECT c.id AS community_id,c.lifecycle,c.lifecycle_version,c.delete_after,
+                  j.state,j.attempts
+           FROM communities c JOIN community_deletion_jobs j ON j.community_id=c.id
+           WHERE c.id=$1`,
+          [current.id]
+        );
+        return pending.rows[0];
+      }
+      if (current.lifecycle !== 'active' && current.lifecycle !== 'archived') {
+        throw new ApiError(409, 'STATE_CONFLICT', 'This community cannot be deleted now.');
+      }
+      if (current.lifecycle_version !== body.lifecycleVersion) {
+        throw new AdminSettingsConflict(projectSettings(current));
+      }
+      if (body.confirmName !== current.name || body.confirmIdSuffix !== current.id.slice(-8)) {
+        throw new ApiError(409, 'STATE_CONFLICT', 'Deletion confirmation did not match.');
+      }
+      return null;
+    });
+    if (existing) {
+      return json(c, CommunityAdminDeletionStatusSchema, deletionProjection(existing));
+    }
+    if (!(await prepareCommunityDeletionInventory(pool, blobStore, actor.community_id))) {
+      throw new ApiError(
+        409,
+        'STATE_CONFLICT',
+        'Storage ownership must be reconciled before deleting this community.'
+      );
+    }
     const result = await transaction(pool, async (client) => {
       const current = await lockSettings(client, actor.community_id);
       const currentActor = await lockMember(client, actor, ['owner']);

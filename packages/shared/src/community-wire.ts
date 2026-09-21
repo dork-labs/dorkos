@@ -60,6 +60,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   exportArchive: '/api/v1/exports/:id',
   agents: '/api/v1/agents',
   me: '/api/v1/me',
+  connectionAccess: '/api/v1/me/connection-access',
   members: '/api/v1/members',
   authOptions: '/api/v1/auth-options',
   memberRole: '/api/v1/members/:id/role',
@@ -490,6 +491,10 @@ export const CommunityConnectionAccessSchema = z
   });
 /** Current effective access and the most recently verified Community authority. */
 export type CommunityConnectionAccess = z.infer<typeof CommunityConnectionAccessSchema>;
+/** Bearer-bound access for the exact installation grant making the request. */
+export const CommunityWireConnectionAccessResponseSchema = z.strictObject({
+  access: CommunityConnectionAccessSchema,
+});
 /** A grant description the member can inspect and revoke without seeing its token. */
 export const CommunityWireGrantSchema = z.strictObject({
   id,

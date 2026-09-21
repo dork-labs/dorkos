@@ -88,7 +88,12 @@ export function getRemoteConnectionStore(): RemoteConnectionStore {
 
 /** The production pairing service over the same protected connection store. */
 export function getRemotePairingService(): RemoteCommunityPairingService {
-  return (pairing ??= new RemoteCommunityPairingService(getRemoteConnectionStore()));
+  return (pairing ??= new RemoteCommunityPairingService(
+    getRemoteConnectionStore(),
+    (communityRef, ownerKey) =>
+      getRemoteCommunityLifecycle().revokeConnection(communityRef, ownerKey),
+    () => getRemoteCommunityLifecycle().refreshSubscriptions()
+  ));
 }
 
 /** Bind the trusted Mesh manifest-to-author lookup used by native enrollment and lifecycle code. */

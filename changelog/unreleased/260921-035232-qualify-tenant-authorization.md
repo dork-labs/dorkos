@@ -2,6 +2,8 @@
 covers:
   - 'feat(community): qualify tenant authorization'
   - 'fix(community): preserve singleton pairing approval'
+  - 'feat(community): track tenant blob ownership'
+  - 'feat(community): expand tenant persistence schema'
 ---
 
 ### Added

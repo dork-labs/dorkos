@@ -8,6 +8,15 @@ import { ConfigManager } from '../../core/config-manager.js';
 import { CommunityNavigationPreferenceService } from '../community-navigation-preferences.js';
 
 const directories: string[] = [];
+const verifiedAccess = {
+  state: 'verified' as const,
+  effective: { read: true, post: true, enrollAgent: true, stream: true },
+  lastKnown: {
+    lifecycle: 'active' as const,
+    capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+    verifiedAt: '2026-09-21T12:00:00.000Z',
+  },
+};
 
 async function createHarness(refs: string[]) {
   const directory = await mkdtemp(join(tmpdir(), 'community-navigation-'));
@@ -22,6 +31,7 @@ async function createHarness(refs: string[]) {
       connectedHumanMemberId: 'member',
       status: 'connected',
       expiresAt: null,
+      access: verifiedAccess,
     }))
   );
   const canReadRoom = vi.fn(async () => true);
@@ -124,6 +134,7 @@ describe('CommunityNavigationPreferenceService', () => {
         connectedHumanMemberId: 'member',
         status: 'connected',
         expiresAt: null,
+        access: verifiedAccess,
       },
     ]);
 

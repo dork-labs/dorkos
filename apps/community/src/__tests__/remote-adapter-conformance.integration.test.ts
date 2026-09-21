@@ -93,7 +93,16 @@ async function connect(
     },
     randomUUID()
   );
-  await store.complete(refToUse, ownerKey, memberId, token);
+  const capabilities = { read: true, post: true, enrollAgent: true, stream: true };
+  await store.complete(refToUse, ownerKey, memberId, token, {
+    state: 'verified',
+    effective: capabilities,
+    lastKnown: {
+      lifecycle: 'active',
+      capabilities,
+      verifiedAt: new Date().toISOString(),
+    },
+  });
 }
 
 /** Seed one joined channel and write history through the public adapter. */
