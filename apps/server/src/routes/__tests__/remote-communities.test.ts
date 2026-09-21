@@ -393,7 +393,6 @@ describe('qualified remote community writes and live projections', () => {
       () => request(testServer).get(`/api/communities/${fixture.ref}/agents`),
       () =>
         request(testServer).post(`/api/communities/${fixture.ref}/agents/mesh-manifest-a/enroll`),
-      () => request(testServer).delete(`/api/communities/${fixture.ref}/agents/local-agent-a`),
       () =>
         request(testServer).post(
           `/api/communities/${fixture.ref}/rooms/room-a/agents/local-agent-a/membership`
@@ -434,6 +433,27 @@ describe('qualified remote community writes and live projections', () => {
       expect(fixture.lifecycle.revokeEnrollment).not.toHaveBeenCalled();
       expect(fixture.lifecycle.leaveRoom).not.toHaveBeenCalled();
     }
+  });
+
+  it('fences a local agent enrollment during an outage without remote cleanup', async () => {
+    fixture.connectionStatus.mockResolvedValueOnce(
+      connectionWithAccess({
+        state: 'unverified',
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: fixture.access.lastKnown,
+      })
+    );
+    const response = await request(testServer).delete(
+      `/api/communities/${fixture.ref}/agents/local-agent-a`
+    );
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ localRevoked: true, remoteRevoked: false });
+    expect(fixture.lifecycle.revokeEnrollment).toHaveBeenCalledWith(
+      fixture.ref,
+      'local-agent-a',
+      'owner-a'
+    );
+    expect(fixture.adapter.revokeAgent).not.toHaveBeenCalled();
   });
 
   it('posts only as the connected human and does not attach agent-only origin metadata', async () => {

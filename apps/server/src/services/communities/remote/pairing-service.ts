@@ -90,8 +90,29 @@ export class RemoteCommunityPairingService {
     private readonly onReconnectRequired?: (
       communityRef: CommunityRef,
       ownerKey: string
-    ) => Promise<void>
+    ) => Promise<void>,
+    private readonly onAccessAuthorityChanged?: (
+      communityRef: CommunityRef,
+      ownerKey: string
+    ) => void
   ) {}
+
+  private notifyAccessAuthorityChanged(
+    ref: CommunityRef,
+    ownerKey: string,
+    before: CommunityConnectionAccess | null | undefined,
+    after: CommunityConnectionAccess
+  ): void {
+    if (
+      before?.state === after.state &&
+      before.effective.read === after.effective.read &&
+      before.effective.post === after.effective.post &&
+      before.effective.enrollAgent === after.effective.enrollAgent &&
+      before.effective.stream === after.effective.stream
+    )
+      return;
+    this.onAccessAuthorityChanged?.(ref, ownerKey);
+  }
 
   private async requireReconnect(ref: CommunityRef, ownerKey: string): Promise<void> {
     const results = await Promise.allSettled([
@@ -139,13 +160,17 @@ export class RemoteCommunityPairingService {
         await this.requireReconnect(ref, ownerKey);
         return this.store.project(await this.store.get(ref, ownerKey));
       }
-      return this.store.updateAccess(ref, ownerKey, {
+      const unavailable = await this.store.updateAccess(ref, ownerKey, {
         state: 'unverified',
         effective: { read: false, post: false, enrollAgent: false, stream: false },
         lastKnown: record.access?.lastKnown ?? null,
       });
+      this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, unavailable.access!);
+      return unavailable;
     }
-    return this.store.updateAccess(ref, ownerKey, access);
+    const verified = await this.store.updateAccess(ref, ownerKey, access);
+    this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, verified.access!);
+    return verified;
   }
 
   /** Begin a ten-minute verifier-bound request at the checked deployment origin. */

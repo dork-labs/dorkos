@@ -2,6 +2,7 @@
 covers:
   - 'feat(community): project verified connection access'
   - 'fix(community): enforce projected access everywhere'
+  - 'fix(community): refresh streams when access changes'
 ---
 
 ### Fixed

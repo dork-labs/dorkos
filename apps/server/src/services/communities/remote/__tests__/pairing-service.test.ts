@@ -490,7 +490,12 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     const owner = 'access-owner';
     const store = new RemoteConnectionStore(directory);
     const revokeConnection = vi.fn(async () => undefined);
-    const service = new RemoteCommunityPairingService(store, revokeConnection);
+    const accessAuthorityChanged = vi.fn();
+    const service = new RemoteCommunityPairingService(
+      store,
+      revokeConnection,
+      accessAuthorityChanged
+    );
     const started = await service.start(owner, `${origin}/c/${remoteCommunityId}`, 'Access test');
     const connected = await service.poll(started.connection.ref, owner);
     expect(connected.connection?.access).toMatchObject({ state: 'verified' });
@@ -505,7 +510,19 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
         effective: { read: false, post: false, enrollAgent: false, stream: false },
         lastKnown: connected.connection?.access?.lastKnown,
       });
+      expect(accessAuthorityChanged).toHaveBeenCalledOnce();
 
+      rejectedAuthorization = undefined;
+      rejectedPath = undefined;
+      await expect(service.status(started.connection.ref, owner)).resolves.toMatchObject({
+        access: { state: 'verified' },
+      });
+      expect(accessAuthorityChanged).toHaveBeenCalledTimes(2);
+      await service.status(started.connection.ref, owner);
+      expect(accessAuthorityChanged).toHaveBeenCalledTimes(2);
+
+      rejectedAuthorization = `Bearer ${token}`;
+      rejectedPath = `${qualified}/me/connection-access`;
       rejectedStatus = 401;
       const rejected = await service.status(started.connection.ref, owner);
       expect(rejected).toMatchObject({

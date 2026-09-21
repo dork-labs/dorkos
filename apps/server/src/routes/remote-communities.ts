@@ -642,7 +642,6 @@ export function createRemoteCommunitiesRouter(): Router {
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!owner || !ref.success) return;
     try {
-      await verifiedConnection(ref.data, owner, 'enrollAgent');
       const enrollments = getRemoteCommunityEnrollmentStore();
       const binding = enrollments.findAnyRemoteMember(ref.data, req.params.localAgentId, owner);
       if (!binding) return res.status(404).json({ error: 'Agent enrollment not found.' });
@@ -654,9 +653,17 @@ export function createRemoteCommunitiesRouter(): Router {
         req.params.localAgentId,
         owner
       );
-      let remoteRevoked = true;
+      let remoteRevoked = false;
       try {
-        await getRemoteCommunityAdapter(ref.data, owner).revokeAgent(binding.remoteMemberId);
+        const connection = await getRemotePairingService().status(ref.data, owner);
+        if (
+          connection.status === 'connected' &&
+          connection.access?.state === 'verified' &&
+          connection.access.effective.enrollAgent
+        ) {
+          await getRemoteCommunityAdapter(ref.data, owner).revokeAgent(binding.remoteMemberId);
+          remoteRevoked = true;
+        }
       } catch {
         remoteRevoked = false;
       }

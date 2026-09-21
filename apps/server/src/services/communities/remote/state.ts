@@ -91,7 +91,8 @@ export function getRemotePairingService(): RemoteCommunityPairingService {
   return (pairing ??= new RemoteCommunityPairingService(
     getRemoteConnectionStore(),
     (communityRef, ownerKey) =>
-      getRemoteCommunityLifecycle().revokeConnection(communityRef, ownerKey)
+      getRemoteCommunityLifecycle().revokeConnection(communityRef, ownerKey),
+    () => getRemoteCommunityLifecycle().refreshSubscriptions()
   ));
 }
 
