@@ -4,7 +4,11 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { RemoteConnectionStore, RemoteConnectionNotFoundError } from '../connection-store.js';
+import {
+  RemoteConnectionAuthorizationError,
+  RemoteConnectionStore,
+  RemoteConnectionNotFoundError,
+} from '../connection-store.js';
 import { EncryptedFileCredentialStore } from '../../../core/credential-provider.js';
 import { RemoteCommunityPairingService, RemotePairingBusyError } from '../pairing-service.js';
 import {
@@ -31,6 +35,9 @@ let redirect = false;
 let pollCount = 0;
 let waitForPoll: (() => Promise<void>) | undefined;
 let waitForExchange: (() => Promise<void>) | undefined;
+let rejectedAuthorization: string | undefined;
+let rejectedStatus = 403;
+let rejectedPath: string | undefined;
 const token = 'private-pairing-bearer-should-never-appear-in-dto';
 const remoteAgentId = randomUUID();
 const requests: Array<{ path: string; body: Record<string, string> }> = [];
@@ -51,6 +58,14 @@ beforeAll(async () => {
       res.statusCode = 302;
       res.setHeader('location', `${redirectedOrigin}/private`);
       res.end();
+      return;
+    }
+    if (
+      rejectedAuthorization &&
+      req.headers.authorization === rejectedAuthorization &&
+      (!rejectedPath || req.url === rejectedPath)
+    ) {
+      send({ error: 'Grant rejected' }, rejectedStatus);
       return;
     }
     if (req.url === '/api/v1/community') {
@@ -272,6 +287,239 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     await service.disconnect(started.connection.ref, 'adapter-owner');
     approved = false;
     pollCount = 0;
+  });
+  it('persists a reconnect-required state when the remote rejects the personal grant', async () => {
+    approved = true;
+    const store = new RemoteConnectionStore(directory);
+    const service = new RemoteCommunityPairingService(store);
+    const started = await service.start('revoked-owner', origin, 'Revoked install');
+    expect((await service.poll(started.connection.ref, 'revoked-owner')).status).toBe('connected');
+    const revokeConnection = vi.fn(async () => undefined);
+    const adapter = new RemoteCommunityAdapter(
+      started.connection.ref,
+      'revoked-owner',
+      store,
+      undefined,
+      revokeConnection
+    );
+    rejectedAuthorization = `Bearer ${token}`;
+    rejectedStatus = 401;
+    try {
+      await expect(adapter.listRooms()).rejects.toMatchObject({
+        name: 'RemoteConnectionAuthorizationError',
+      });
+      expect(await store.list('revoked-owner')).toEqual([
+        expect.objectContaining({ ref: started.connection.ref, status: 'reconnect-required' }),
+      ]);
+      await expect(
+        store.personalToken(started.connection.ref, 'revoked-owner')
+      ).rejects.toMatchObject({ name: 'RemoteConnectionAuthorizationError' });
+      expect(
+        await new EncryptedFileCredentialStore(directory).get(
+          `community:${started.connection.ref}:personal`
+        )
+      ).toBeNull();
+      expect(revokeConnection).toHaveBeenCalledWith(started.connection.ref, 'revoked-owner');
+      await expect(service.poll(started.connection.ref, 'revoked-owner')).rejects.toBeInstanceOf(
+        RemoteConnectionAuthorizationError
+      );
+    } finally {
+      rejectedAuthorization = undefined;
+      rejectedStatus = 403;
+      rejectedPath = undefined;
+      await service.disconnect(started.connection.ref, 'revoked-owner');
+      approved = false;
+      pollCount = 0;
+    }
+  });
+  it('fences local authority even when reconnect persistence fails', async () => {
+    approved = true;
+    const store = new RemoteConnectionStore(directory);
+    const service = new RemoteCommunityPairingService(store);
+    const started = await service.start('recovery-owner', origin, 'Recovery install');
+    expect((await service.poll(started.connection.ref, 'recovery-owner')).status).toBe('connected');
+    const revokeConnection = vi.fn(async () => undefined);
+    const adapter = new RemoteCommunityAdapter(
+      started.connection.ref,
+      'recovery-owner',
+      store,
+      undefined,
+      revokeConnection
+    );
+    const persistenceFailure = new Error('simulated credential persistence failure');
+    vi.spyOn(store, 'requireReconnect').mockRejectedValueOnce(persistenceFailure);
+    rejectedAuthorization = `Bearer ${token}`;
+    rejectedStatus = 401;
+    try {
+      await expect(adapter.listRooms()).rejects.toBe(persistenceFailure);
+      expect(revokeConnection).toHaveBeenCalledWith(started.connection.ref, 'recovery-owner');
+      expect(await store.personalToken(started.connection.ref, 'recovery-owner')).toBe(token);
+    } finally {
+      rejectedAuthorization = undefined;
+      rejectedStatus = 403;
+      rejectedPath = undefined;
+      await service.disconnect(started.connection.ref, 'recovery-owner');
+      approved = false;
+      pollCount = 0;
+    }
+  });
+  it('still clears rejected credentials when local authority cleanup fails', async () => {
+    approved = true;
+    const store = new RemoteConnectionStore(directory);
+    const service = new RemoteCommunityPairingService(store);
+    const started = await service.start('cleanup-owner', origin, 'Cleanup install');
+    expect((await service.poll(started.connection.ref, 'cleanup-owner')).status).toBe('connected');
+    const cleanupFailure = new Error('simulated local cleanup failure');
+    const adapter = new RemoteCommunityAdapter(
+      started.connection.ref,
+      'cleanup-owner',
+      store,
+      undefined,
+      vi.fn(() => Promise.reject(cleanupFailure))
+    );
+    rejectedAuthorization = `Bearer ${token}`;
+    rejectedStatus = 401;
+    try {
+      await expect(adapter.listRooms()).rejects.toBe(cleanupFailure);
+      expect(await store.list('cleanup-owner')).toEqual([
+        expect.objectContaining({ ref: started.connection.ref, status: 'reconnect-required' }),
+      ]);
+      await expect(
+        store.personalToken(started.connection.ref, 'cleanup-owner')
+      ).rejects.toBeInstanceOf(RemoteConnectionAuthorizationError);
+    } finally {
+      rejectedAuthorization = undefined;
+      rejectedStatus = 403;
+      rejectedPath = undefined;
+      await service.disconnect(started.connection.ref, 'cleanup-owner');
+      approved = false;
+      pollCount = 0;
+    }
+  });
+  it('preserves a valid personal connection when a remote action is forbidden', async () => {
+    approved = true;
+    const store = new RemoteConnectionStore(directory);
+    const service = new RemoteCommunityPairingService(store);
+    const started = await service.start('forbidden-owner', origin, 'Forbidden action install');
+    expect((await service.poll(started.connection.ref, 'forbidden-owner')).status).toBe(
+      'connected'
+    );
+    const adapter = new RemoteCommunityAdapter(started.connection.ref, 'forbidden-owner', store);
+    rejectedAuthorization = `Bearer ${token}`;
+    try {
+      await expect(adapter.connect()).resolves.toMatchObject({ status: 'unreachable' });
+      await expect(adapter.listRooms()).rejects.toMatchObject({
+        name: 'PinnedHttpError',
+        status: 403,
+      });
+      expect(await store.list('forbidden-owner')).toEqual([
+        expect.objectContaining({ ref: started.connection.ref, status: 'connected' }),
+      ]);
+      expect(await store.personalToken(started.connection.ref, 'forbidden-owner')).toBe(token);
+    } finally {
+      rejectedAuthorization = undefined;
+      rejectedPath = undefined;
+      await service.disconnect(started.connection.ref, 'forbidden-owner');
+      approved = false;
+      pollCount = 0;
+    }
+  });
+  it('treats a temporary channel-directory failure as unavailable without changing credentials', async () => {
+    approved = true;
+    const store = new RemoteConnectionStore(directory);
+    const service = new RemoteCommunityPairingService(store);
+    const started = await service.start('unavailable-owner', origin, 'Unavailable install');
+    expect((await service.poll(started.connection.ref, 'unavailable-owner')).status).toBe(
+      'connected'
+    );
+    const adapter = new RemoteCommunityAdapter(started.connection.ref, 'unavailable-owner', store);
+    rejectedAuthorization = `Bearer ${token}`;
+    rejectedStatus = 503;
+    try {
+      await expect(adapter.connect()).resolves.toEqual({
+        status: 'unreachable',
+        error: 'The community returned HTTP 503.',
+      });
+      expect(await store.list('unavailable-owner')).toEqual([
+        expect.objectContaining({ ref: started.connection.ref, status: 'connected' }),
+      ]);
+      expect(await store.personalToken(started.connection.ref, 'unavailable-owner')).toBe(token);
+    } finally {
+      rejectedAuthorization = undefined;
+      rejectedStatus = 403;
+      rejectedPath = undefined;
+      await service.disconnect(started.connection.ref, 'unavailable-owner');
+      approved = false;
+      pollCount = 0;
+    }
+  });
+  it('does not replace the personal connection state when an agent grant is rejected', async () => {
+    approved = true;
+    const store = new RemoteConnectionStore(directory);
+    const service = new RemoteCommunityPairingService(store);
+    const started = await service.start('agent-revoked-owner', origin, 'Agent revoked install');
+    expect((await service.poll(started.connection.ref, 'agent-revoked-owner')).status).toBe(
+      'connected'
+    );
+    await store.saveAgentToken(
+      started.connection.ref,
+      'agent-revoked-owner',
+      remoteAgentId,
+      'private-agent-token'
+    );
+    const adapter = new RemoteCommunityAdapter(
+      started.connection.ref,
+      'agent-revoked-owner',
+      store
+    );
+    rejectedAuthorization = 'Bearer private-agent-token';
+    rejectedStatus = 401;
+    try {
+      await expect(adapter.listRooms({ actingMemberId: remoteAgentId })).rejects.toMatchObject({
+        name: 'PinnedHttpError',
+        status: 401,
+      });
+      expect(await store.list('agent-revoked-owner')).toEqual([
+        expect.objectContaining({ ref: started.connection.ref, status: 'connected' }),
+      ]);
+      expect(await store.personalToken(started.connection.ref, 'agent-revoked-owner')).toBe(token);
+    } finally {
+      rejectedAuthorization = undefined;
+      rejectedStatus = 403;
+      rejectedPath = undefined;
+      await service.disconnect(started.connection.ref, 'agent-revoked-owner');
+      approved = false;
+      pollCount = 0;
+    }
+  });
+  it('preserves a valid read grant when an enrollment request lacks its scope', async () => {
+    approved = true;
+    const store = new RemoteConnectionStore(directory);
+    const service = new RemoteCommunityPairingService(store);
+    const started = await service.start('read-only-owner', origin, 'Read-only install');
+    expect((await service.poll(started.connection.ref, 'read-only-owner')).status).toBe(
+      'connected'
+    );
+    const adapter = new RemoteCommunityAdapter(started.connection.ref, 'read-only-owner', store);
+    rejectedAuthorization = `Bearer ${token}`;
+    rejectedStatus = 401;
+    rejectedPath = '/api/v1/agents';
+    try {
+      await expect(
+        adapter.admitAgent({ agentId: randomUUID(), displayName: 'Denied Agent' })
+      ).rejects.toMatchObject({ name: 'PinnedHttpError', status: 401 });
+      expect(await store.list('read-only-owner')).toEqual([
+        expect.objectContaining({ ref: started.connection.ref, status: 'connected' }),
+      ]);
+      expect(await store.personalToken(started.connection.ref, 'read-only-owner')).toBe(token);
+    } finally {
+      rejectedAuthorization = undefined;
+      rejectedStatus = 403;
+      rejectedPath = undefined;
+      await service.disconnect(started.connection.ref, 'read-only-owner');
+      approved = false;
+      pollCount = 0;
+    }
   });
   it('rejects private targets and refuses a cross-host redirect without following it', async () => {
     expect((await checkedAddress(parseCommunityOrigin('http://localhost:6491'))).address).toBe(

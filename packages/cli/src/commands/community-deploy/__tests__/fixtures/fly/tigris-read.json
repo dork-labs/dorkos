@@ -1,0 +1,22 @@
+{
+  "data": {
+    "node": {
+      "id": "addon_fixture_01",
+      "name": "community-fixture-bucket",
+      "status": "ready",
+      "options": {
+        "public": false
+      },
+      "organization": {
+        "slug": "fixture-org"
+      },
+      "addOnProvider": {
+        "name": "tigris"
+      },
+      "app": {
+        "id": "app_fixture_01",
+        "name": "community-fixture-app"
+      }
+    }
+  }
+}

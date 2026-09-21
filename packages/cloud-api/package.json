@@ -1,6 +1,6 @@
 {
   "name": "@dork-labs/cloud-api",
-  "version": "0.75.1",
+  "version": "0.76.0",
   "description": "The public wire contract for DorkOS Cloud: Zod schemas for the /v1 surface, plus a thin fetch client.",
   "license": "MIT",
   "repository": {

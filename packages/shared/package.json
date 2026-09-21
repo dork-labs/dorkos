@@ -165,6 +165,10 @@
       "types": "./src/community-connections.ts",
       "default": "./dist/community-connections.js"
     },
+    "./community-release-manifest": {
+      "types": "./src/community-release-manifest.ts",
+      "default": "./dist/community-release-manifest.js"
+    },
     "./community-deliveries": {
       "types": "./src/community-deliveries.ts",
       "default": "./dist/community-deliveries.js"

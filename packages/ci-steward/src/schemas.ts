@@ -80,6 +80,14 @@ const TriageConfigSchema = z
     canary_red_min_runs: z.number().int().positive(),
     /** Rule 11's second arm: hours without a canary result before the schedule is treated as stopped. */
     canary_silent_hours: z.number().int().positive(),
+    /** Load average per online core, p90, at or above which a machine is saturated. */
+    machine_load_per_core: z.number().positive(),
+    /** Available memory in MiB, p10, at or below which a machine is out of memory. */
+    machine_mem_available_mb: z.number().positive(),
+    /** Swap in use in MiB, p50, at or above which a machine is thrashing. */
+    machine_swap_used_mb: z.number().positive(),
+    /** Machine readings needed before any of the three above judges anything. */
+    machine_load_min_n: z.number().int().positive(),
     /** The report calls out a trigger that has been open this many days or more. */
     open_days_warning: z.number().int().positive(),
     /** Days of history the daily report's sparklines draw. */
@@ -210,6 +218,12 @@ export const ConfigSchema = z
         stale_after_days: z.number().int().positive(),
         /** ...until this old, when the clone is treated as retired and only reported. */
         retired_after_days: z.number().int().positive(),
+        /** Heavy local gates allowed to run at once on one machine (scripts/heavy-run-lock.sh). */
+        heavy_run_slots: z.number().int().positive(),
+        /** How long a heavy gate waits for a slot before running anyway, loudly. */
+        heavy_lock_wait_seconds: z.number().int().positive(),
+        /** A slot held longer than this is reclaimable even from a live owner. */
+        heavy_lock_max_hold_seconds: z.number().int().positive(),
       })
       .strict(),
   })

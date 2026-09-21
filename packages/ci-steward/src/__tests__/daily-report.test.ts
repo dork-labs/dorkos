@@ -649,3 +649,57 @@ describe('the template', () => {
     expect(renderDailyReport(inp).html).toBe(renderDailyReport(inp).html);
   });
 });
+
+/**
+ * The machine, beside the two local measures it explains (DOR-2160).
+ *
+ * This is here because of the defect shape this repo keeps finding: a number
+ * that is collected, exported, thresholded and tested everywhere except on the
+ * one surface a person actually looks at. `local-commit` and `local-push` read
+ * mostly as a fact about somebody's box, and reading them without the box is
+ * how "my pushes are slow" stayed a feeling for months.
+ */
+describe('what the machine was doing', () => {
+  const machine = {
+    n: 100,
+    clones: 1,
+    load_per_core_p90: 23.32,
+    mem_available_mb_p10: 3313.4,
+    swap_used_mb_p50: 12058,
+  };
+
+  it('says all three numbers in plain words, beside the local SLOs', () => {
+    const inp = recorded({ machine });
+    writeData(inp.dataDir, `local/c/${DAY}.json`, {
+      schema: 1,
+      clone: 'c',
+      date: DAY,
+      exported_at: `${DAY}T01:00:00Z`,
+      hooks: {
+        'pre-push': {
+          durations: [[100, 123]],
+          killed: 2,
+          failed: 0,
+          notes: { lock_timeout: 1 },
+        },
+      },
+      commands: {},
+    });
+    const { html } = renderDailyReport(inp);
+    expect(html).toContain('23.32 runnable processes per core');
+    expect(html).toContain('3313 MB of memory free');
+    expect(html).toContain('12058 MB of swap in use');
+    // What an exit status cannot say: the OS took two runs away, and one ran
+    // with no machine-wide slot because the wait for one ran out.
+    expect(html).toContain(
+      'Of 3 hook runs, 2 were killed by the operating system and 1 ran without waiting for a free slot'
+    );
+  });
+
+  it('says nothing rather than zeros when no machine reported', () => {
+    // A page that prints "0 MB free" for a machine nobody measured is worse
+    // than one that stays quiet: it reads as a measurement.
+    const { html } = renderDailyReport(recorded());
+    expect(html).not.toContain('runnable processes per core');
+  });
+});
