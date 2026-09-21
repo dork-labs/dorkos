@@ -36,6 +36,7 @@ import {
 import { DEFAULT_TEAM_VIEW, LEGACY_TABLE_VIEW, TEAM_VIEWS } from '@/layers/shared/lib';
 import { resolveSessionForCwd, SESSION_LOOKUP_FAILED_MESSAGE } from '@/layers/entities/session';
 import type { Transport } from '@dorkos/shared/transport';
+import { commitCommunityRouteEpoch } from '@/layers/shared/model';
 
 // ── Router context ──────────────────────────────────────────
 interface RouterContext {
@@ -645,13 +646,37 @@ const routeTree = rootRoute.addChildren([
  * @param transport - The transport loaders reach the server through
  */
 export function createAppRouter(queryClient: QueryClient, transport: Transport) {
-  return createRouter({
+  const router = createRouter({
     routeTree,
     context: { queryClient, transport },
     defaultPreload: 'intent',
     defaultErrorComponent: RouteErrorFallback,
     defaultNotFoundComponent: NotFoundFallback,
   });
+  router.subscribe('onLoad', ({ toLocation }) => {
+    if (toLocation.pathname !== '/channels') {
+      commitCommunityRouteEpoch('installation');
+      return;
+    }
+    const search = toLocation.search as {
+      community?: unknown;
+      id?: unknown;
+      thread?: unknown;
+    };
+    if (typeof search.community !== 'string' || typeof search.id !== 'string') {
+      commitCommunityRouteEpoch('installation');
+      return;
+    }
+    commitCommunityRouteEpoch(
+      JSON.stringify([
+        'community',
+        search.community,
+        search.id,
+        typeof search.thread === 'string' ? search.thread : null,
+      ])
+    );
+  });
+  return router;
 }
 
 // ── Type registration ───────────────────────────────────────

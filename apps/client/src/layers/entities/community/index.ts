@@ -2,7 +2,11 @@
 export {
   useCommunityConnections,
   communityKeys,
+  isCommunityContentAuthorityCurrent,
+  useCommunityContentAuthority,
   withinCommunityAuthority,
+  withinCommunityContentAuthority,
+  type CommunityContentAuthority,
 } from './model/use-community-connections';
 export {
   communityNavigationKeys,

@@ -45,6 +45,17 @@
 - Added a cross-tab cookie-switch refusal so data returned for owner B cannot be stored under an
   already confirmed owner-A namespace.
 
+**Tasks 1.3–1.4 in progress:** Fence content at the committed route boundary.
+
+- Added a monotonically increasing route generation committed from successful router loads; the
+  qualified community, room, and thread destination is the generation identity.
+- Qualified room, history, roster, agent, and stream caches by the confirmed owner and route
+  generation while preserving the owner/ref prefix used for revocation cleanup.
+- Guarded late reads, stream events, action results, read cursors, agent enrollment, delivery
+  receipts, and retry rows against both owner authorization and the captured route generation.
+- Added a rapid A→B→A regression proving that an earlier A response cannot populate the returned A
+  view even when owner authority never changes.
+
 ## Files Modified/Created
 
 **Source files:**
@@ -56,7 +67,14 @@
 - `apps/server/src/routes/community-connections.ts`
 - `apps/client/src/layers/shared/lib/transport/community-methods.ts`
 - `apps/client/src/layers/entities/community/model/use-community-navigation.ts`
+- `apps/client/src/layers/entities/community/model/use-community-connections.ts`
+- `apps/client/src/layers/entities/community/model/use-remote-community.ts`
+- `apps/client/src/layers/entities/community/model/use-remote-community-stream.ts`
+- `apps/client/src/layers/shared/model/navigation/community-route-epoch.ts`
+- `apps/client/src/router.tsx`
 - `apps/client/src/layers/widgets/room-view/model/use-remote-community-drafts.ts`
+- `apps/client/src/layers/widgets/room-view/ui/RemoteCommunityAgents.tsx`
+- `apps/client/src/layers/widgets/room-view/ui/RemoteCommunitySurface.tsx`
 - `apps/client/src/layers/features/auth/model/use-auth-session.ts`
 
 **Test files:**
@@ -69,9 +87,8 @@
 
 ## Known Issues
 
-- Task 1.2 is not complete until the wider Community query/cache namespace participates in the
-  route-epoch boundary required by tasks 1.3 and 1.4; the owner/authorization generation is now
-  explicit, while rapid A→B→A route epochs remain to be wired.
+- Task 1.3 still needs the visible switcher and target skeleton so the route-epoch boundary is
+  reflected in navigation rather than only protecting the existing room surface.
 - Effective `read`, `post`, and `enrollAgent` capabilities will come from the reviewed Community
   administration contract. The local app must consume that server projection rather than infer
   write access from lifecycle, membership, or a restored read-only connection.
@@ -93,3 +110,6 @@
 - Owner-boundary verification on 2026-09-21: 71 focused tests passed after one test-fixture cache-key
   correction; client and server typechecks passed; client, server, and shared lint completed with
   no errors (existing repository warnings remain).
+- Route-boundary verification on 2026-09-21: 33 focused tests passed, including rapid A→B→A query,
+  stream, receipt, and draft fencing; client typecheck and changed-file lint completed with no new
+  errors (the pre-existing stream effect warning remains).

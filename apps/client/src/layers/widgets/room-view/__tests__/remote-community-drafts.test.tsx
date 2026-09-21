@@ -196,4 +196,29 @@ describe('remote community delivery drafts', () => {
     expect(result.current.text).toBe('owner b draft');
     expect(result.current.deliveries).toEqual([]);
   });
+
+  it('does not insert a late receipt into a newer route epoch for the same owner and room', async () => {
+    const { transport, receipt, wrapper } = harness();
+    let resolve!: (value: RemoteCommunityEntry) => void;
+    vi.mocked(transport.postRemoteCommunityEntry).mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      })
+    );
+    const { result, rerender } = renderHook(
+      ({ context }) =>
+        useRemoteCommunityDrafts('a', 'same', true, [], receipt, 'owner-a', 'channel', context),
+      { wrapper, initialProps: { context: 'epoch-1' } }
+    );
+    act(() => result.current.setText('first epoch'));
+    act(() => result.current.send());
+
+    rerender({ context: 'epoch-3' });
+    act(() => result.current.setText('final epoch'));
+    await act(async () => resolve(entry));
+
+    expect(receipt).not.toHaveBeenCalled();
+    expect(result.current.text).toBe('final epoch');
+    expect(result.current.deliveries).toEqual([]);
+  });
 });

@@ -6,7 +6,8 @@ import type {
 } from '@dorkos/shared/community-views';
 import {
   communityKeys,
-  useConfirmedCommunityAuthority,
+  isCommunityContentAuthorityCurrent,
+  useCommunityContentAuthority,
   useRemoteCommunityAgents,
 } from '@/layers/entities/community';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
@@ -43,7 +44,7 @@ export function RemoteCommunityAgents({
 }) {
   const transport = useTransport();
   const queries = useQueryClient();
-  const authority = useConfirmedCommunityAuthority();
+  const authority = useCommunityContentAuthority();
   const agents = useRemoteCommunityAgents(community);
   const local = useRegisteredAgents();
   const [selected, setSelected] = useState('');
@@ -58,12 +59,14 @@ export function RemoteCommunityAgents({
       (agent) => !active.some((enrollment) => enrollment.localAgentId === agent.id)
     ) ?? [];
   async function refresh() {
-    if (authority)
+    if (authority && isCommunityContentAuthorityCurrent(authority))
       await queries.invalidateQueries({ queryKey: communityKeys.remote(authority, community) });
   }
   async function enroll(event: FormEvent) {
     event.preventDefault();
     if (!selected || pending || !online) return;
+    if (!authority) return;
+    const captured = authority;
     setPending(true);
     setError(null);
     try {
@@ -72,13 +75,17 @@ export function RemoteCommunityAgents({
         selected,
         handle.trim() ? { handle: handle.trim() } : {}
       );
+      if (!isCommunityContentAuthorityCurrent(captured)) return;
       setSelected('');
       setHandle('');
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The agent could not join this community.');
+      if (isCommunityContentAuthorityCurrent(captured))
+        setError(
+          cause instanceof Error ? cause.message : 'The agent could not join this community.'
+        );
     } finally {
-      setPending(false);
+      if (isCommunityContentAuthorityCurrent(captured)) setPending(false);
     }
   }
   return (

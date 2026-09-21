@@ -1,13 +1,13 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RemoteCommunityEntry } from '@dorkos/shared/community-views';
-import { isCommunityAuthorityCurrent } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import {
   communityKeys,
+  isCommunityContentAuthorityCurrent,
   mergeRemoteCommunityEntries,
-  useConfirmedCommunityAuthority,
+  useCommunityContentAuthority,
   useRemoteCommunityHistory,
   useRemoteCommunityMembers,
   useRemoteCommunityRoom,
@@ -50,8 +50,11 @@ export function RemoteCommunitySurface({
   onThread: (rootId?: string) => void;
 }) {
   const transport = useTransport();
-  const authority = useConfirmedCommunityAuthority();
-  const authorityAddress = authority ? JSON.stringify([authority.ownerKey, authority.epoch]) : '';
+  const authority = useCommunityContentAuthority();
+  const ownerAddress = authority ? JSON.stringify([authority.ownerKey, authority.epoch]) : '';
+  const contextAddress = authority
+    ? JSON.stringify([authority.ownerKey, authority.epoch, authority.route.epoch])
+    : '';
   const queries = useQueryClient();
   const roomQuery = useRemoteCommunityRoom(community, roomId);
   const [streamRevision, setStreamRevision] = useState(0);
@@ -68,10 +71,10 @@ export function RemoteCommunitySurface({
   const [receiptState, setReceiptState] = useState<{
     address: string;
     entries: RemoteCommunityEntry[];
-  }>(() => ({ address: authorityAddress, entries: [] }));
+  }>(() => ({ address: contextAddress, entries: [] }));
   const receipts = useMemo(
-    () => (receiptState.address === authorityAddress ? receiptState.entries : []),
-    [authorityAddress, receiptState]
+    () => (receiptState.address === contextAddress ? receiptState.entries : []),
+    [contextAddress, receiptState]
   );
   const [receiptRevision, setReceiptRevision] = useState(0);
   const [showMembers, setShowMembers] = useState(false);
@@ -80,8 +83,8 @@ export function RemoteCommunitySurface({
     name: string | null;
     error: string | null;
   }>({ address: '', name: null, error: null });
-  const action = actionState.address === authorityAddress ? actionState.name : null;
-  const actionError = actionState.address === authorityAddress ? actionState.error : null;
+  const action = actionState.address === contextAddress ? actionState.name : null;
+  const actionError = actionState.address === contextAddress ? actionState.error : null;
   const marked = useRef<{ address: string; cursor: string } | null>(null);
   const composer = useRef<ComposerInputHandle>(null);
   const timeline = useRef<ConversationTimelineHandle>(null);
@@ -102,17 +105,17 @@ export function RemoteCommunitySurface({
   const onReceipt = useCallback(
     (entry: RemoteCommunityEntry) => {
       setReceiptState((current) => ({
-        address: authorityAddress,
+        address: contextAddress,
         entries: mergeRemoteCommunityEntries(
           community,
           roomId,
-          current.address === authorityAddress ? current.entries : [],
+          current.address === contextAddress ? current.entries : [],
           [entry]
         ).slice(-500),
       }));
       setReceiptRevision((current) => current + 1);
     },
-    [authorityAddress, community, roomId]
+    [contextAddress, community, roomId]
   );
   // A person who sends a message expects to see their confirmed post, even if
   // they were reading earlier history when it arrived. Incoming activity keeps
@@ -126,8 +129,9 @@ export function RemoteCommunitySurface({
     canSend,
     entries,
     onReceipt,
-    authorityAddress || 'unresolved',
-    threadId ?? 'channel'
+    ownerAddress || 'unresolved',
+    threadId ?? 'channel',
+    contextAddress || 'unresolved'
   );
   const visible = entries.filter((entry) =>
     threadId ? entry.id === threadId || entry.threadRootEntryId === threadId : entry.depth === 0
@@ -164,23 +168,23 @@ export function RemoteCommunitySurface({
   async function perform(name: string, work: () => Promise<unknown>) {
     if (action || !authority) return;
     const captured = authority;
-    const address = authorityAddress;
+    const address = contextAddress;
     setActionState({ address, name, error: null });
     try {
       await work();
-      if (!isCommunityAuthorityCurrent(captured)) return;
+      if (!isCommunityContentAuthorityCurrent(captured)) return;
       if (name === 'join' || name === 'leave' || name.startsWith('retry:'))
         setStreamRevision((current) => current + 1);
       await queries.invalidateQueries({ queryKey: communityKeys.remote(captured, community) });
     } catch (cause) {
-      if (isCommunityAuthorityCurrent(captured))
+      if (isCommunityContentAuthorityCurrent(captured))
         setActionState({
           address,
           name,
           error: cause instanceof Error ? cause.message : 'The action could not be completed.',
         });
     } finally {
-      if (isCommunityAuthorityCurrent(captured))
+      if (isCommunityContentAuthorityCurrent(captured))
         setActionState((current) =>
           current.address === address ? { ...current, name: null } : current
         );
@@ -194,20 +198,20 @@ export function RemoteCommunitySurface({
       history.hasNextPage ||
       !latest ||
       stream.status !== 'live' ||
-      (marked.current?.address === authorityAddress && marked.current.cursor === latest.cursor) ||
+      (marked.current?.address === contextAddress && marked.current.cursor === latest.cursor) ||
       !authority
     )
       return;
     const captured = authority;
-    marked.current = { address: authorityAddress, cursor: latest.cursor };
+    marked.current = { address: contextAddress, cursor: latest.cursor };
     void transport
       .setRemoteCommunityReadCursor(community, roomId, latest.cursor)
       .then(() => {
-        if (isCommunityAuthorityCurrent(captured))
+        if (isCommunityContentAuthorityCurrent(captured))
           void queries.invalidateQueries({ queryKey: communityKeys.rooms(captured, community) });
       })
       .catch(() => {
-        if (marked.current?.address === authorityAddress) marked.current = null;
+        if (marked.current?.address === contextAddress) marked.current = null;
       });
   }
   return (
@@ -328,7 +332,7 @@ export function RemoteCommunitySurface({
                   </div>
                 ))}
                 <RemoteCommunityAgents
-                  key={authorityAddress}
+                  key={contextAddress}
                   community={community}
                   roomId={roomId}
                   online={stream.status === 'live'}

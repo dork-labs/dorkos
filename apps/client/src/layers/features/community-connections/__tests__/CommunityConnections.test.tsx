@@ -8,12 +8,8 @@ import type { Transport } from '@dorkos/shared/transport';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import { createMockTransport } from '@dorkos/test-utils';
-import {
-  getCommunityAuthority,
-  invalidateCommunityAuthority,
-  type ConfirmedCommunityAuthority,
-} from '@/layers/shared/lib';
-import { TransportProvider } from '@/layers/shared/model';
+import { getCommunityAuthority, invalidateCommunityAuthority } from '@/layers/shared/lib';
+import { getCommunityRouteEpoch, TransportProvider } from '@/layers/shared/model';
 import { communityKeys } from '@/layers/entities/community';
 import { CommunityConnections } from '../ui/CommunityConnections';
 
@@ -85,7 +81,13 @@ describe('community pairing controls', () => {
     });
     const client = mount(transport);
     await user.click(await screen.findByRole('button', { name: 'Disconnect Community A' }));
-    const authority = getCommunityAuthority() as ConfirmedCommunityAuthority;
+    const currentAuthority = getCommunityAuthority();
+    if (!currentAuthority.ownerKey) throw new Error('Community owner was not confirmed');
+    const authority = {
+      ...currentAuthority,
+      ownerKey: currentAuthority.ownerKey,
+      route: getCommunityRouteEpoch(),
+    };
     client.setQueryData(communityKeys.room(authority, a.ref, 'same-room-id'), { text: 'A only' });
     client.setQueryData(communityKeys.room(authority, b.ref, 'same-room-id'), { text: 'B only' });
     expect(transport.disconnectCommunity).not.toHaveBeenCalled();

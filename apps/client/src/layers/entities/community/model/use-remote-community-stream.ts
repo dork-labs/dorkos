@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import type { CommunityDelivery } from '@dorkos/shared/community-deliveries';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RemoteCommunityEntry, RemoteCommunityRoom } from '@dorkos/shared/community-views';
-import { isCommunityAuthorityCurrent } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
-import { communityKeys } from './use-community-connections';
-import { useConfirmedCommunityAuthority } from './use-community-navigation';
+import {
+  communityKeys,
+  isCommunityContentAuthorityCurrent,
+  useCommunityContentAuthority,
+} from './use-community-connections';
 
 interface StreamState {
   address: string;
@@ -43,8 +45,14 @@ export function useRemoteCommunityStream(
 ) {
   const transport = useTransport();
   const queries = useQueryClient();
-  const authority = useConfirmedCommunityAuthority(enabled);
-  const address = JSON.stringify([authority?.ownerKey, authority?.epoch, ref, roomId]);
+  const authority = useCommunityContentAuthority(enabled);
+  const address = JSON.stringify([
+    authority?.ownerKey,
+    authority?.epoch,
+    authority?.route.epoch,
+    ref,
+    roomId,
+  ]);
   const [state, setState] = useState<StreamState>(() => ({
     address,
     room: null,
@@ -79,7 +87,7 @@ export function useRemoteCommunityStream(
             if (
               controller.signal.aborted ||
               denied ||
-              !isCommunityAuthorityCurrent(currentAuthority)
+              !isCommunityContentAuthorityCurrent(currentAuthority)
             )
               return;
             if (event.type === 'closed') {
@@ -134,13 +142,18 @@ export function useRemoteCommunityStream(
           { since, signal: controller.signal }
         );
       } catch (error) {
-        if (controller.signal.aborted || !isCommunityAuthorityCurrent(currentAuthority)) return;
+        if (controller.signal.aborted || !isCommunityContentAuthorityCurrent(currentAuthority))
+          return;
         const status =
           error && typeof error === 'object' && 'status' in error ? error.status : undefined;
         if (status === 401 || status === 403 || status === 404) removeAccess();
         if (status === 410) since = undefined;
       }
-      if (controller.signal.aborted || denied || !isCommunityAuthorityCurrent(currentAuthority))
+      if (
+        controller.signal.aborted ||
+        denied ||
+        !isCommunityContentAuthorityCurrent(currentAuthority)
+      )
         return;
       const cachedRoom = queries.getQueryData<RemoteCommunityRoom>(
         communityKeys.room(currentAuthority, ref, roomId)
