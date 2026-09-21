@@ -75,6 +75,8 @@ export interface RemoteCommunityLifecycle {
     localAgentId: string,
     ownerAuthorId: string
   ): Promise<void>;
+  /** Fence every local authority derived from a rejected owner connection grant. */
+  revokeConnection(communityRef: CommunityRef, ownerAuthorId: string): Promise<void>;
   /** Reconcile private background streams after native enrollment or membership changes. */
   refreshSubscriptions(): void;
 }
@@ -229,7 +231,9 @@ export function getRemoteCommunityAdapter(
       ref,
       ownerAuthorId,
       getRemoteConnectionStore(),
-      getRemoteCommunityEnrollmentStore()
+      getRemoteCommunityEnrollmentStore(),
+      (communityRef, ownerKey) =>
+        getRemoteCommunityLifecycle().revokeConnection(communityRef, ownerKey)
     );
     adapters.set(key, adapter);
   }

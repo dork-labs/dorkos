@@ -257,6 +257,20 @@ export class RemoteRoomSubscriptionBridge {
     this.mirrors.removeAgentMembership(communityRef, ownerAuthorId, authorId);
   }
 
+  /** Revoke every local authority derived from one rejected owner connection grant. */
+  async revokeConnection(
+    communityRef: MirrorRoomInput['communityRef'],
+    ownerAuthorId: string
+  ): Promise<void> {
+    const enrollments = [...this.enrollments.activeForOwner(communityRef, ownerAuthorId)];
+    this.mirrors.revoke(communityRef);
+    await Promise.all(
+      enrollments.map((enrollment) =>
+        this.revokeEnrollment(communityRef, enrollment.localAgentId, ownerAuthorId)
+      )
+    );
+  }
+
   /**
    * Revoke rooms an authoritative enrolled-agent directory no longer returns,
    * and stop every local turn and queued delivery that those grants enabled.
