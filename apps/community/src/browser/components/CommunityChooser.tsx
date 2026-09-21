@@ -9,9 +9,9 @@ export function rememberCommunity(communityId: string): void {
   localStorage.setItem(LAST_COMMUNITY_KEY, communityId);
 }
 
-function enterCommunity(communityId: string, replace = false): void {
+function enterCommunity(communityId: string, replace = false, deletion = false): void {
   rememberCommunity(communityId);
-  const path = `/c/${communityId}`;
+  const path = `/c/${communityId}${deletion ? '/deletion' : ''}`;
   if (replace) window.location.replace(path);
   else window.location.assign(path);
 }
@@ -21,12 +21,33 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
   const [memberships, setMemberships] = useState<CommunityWireMembershipSummary[] | null>(null);
   const [unauthenticated, setUnauthenticated] = useState(false);
   const [error, setError] = useState('');
+  const pendingInvite = sessionStorage.getItem('communityPendingInvite');
 
   useEffect(() => {
     let current = true;
+    if (pendingInvite) {
+      const path = sessionStorage.getItem('communityPendingInvitePath');
+      if (
+        path &&
+        /^\/c\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(path)
+      ) {
+        window.location.replace(path);
+      } else setUnauthenticated(true);
+      return;
+    }
     void request<{ memberships: CommunityWireMembershipSummary[] }>('/api/v1/memberships')
       .then(({ memberships: next }) => {
         if (!current) return;
+        const remembered = next.find(
+          (membership) =>
+            membership.communityId === localStorage.getItem(LAST_COMMUNITY_KEY) &&
+            membership.lifecycle === 'deletion_pending' &&
+            membership.role === 'owner'
+        );
+        if (remembered) {
+          enterCommunity(remembered.communityId, true, true);
+          return;
+        }
         if (next.length === 1 && next[0].lifecycle === 'active') {
           enterCommunity(next[0].communityId, true);
           return;
@@ -41,7 +62,7 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
     return () => {
       current = false;
     };
-  }, []);
+  }, [pendingInvite]);
 
   if (unauthenticated) return signedOut();
   if (!memberships && !error)
@@ -67,7 +88,12 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
         ) : (
           <div className="stack">
             {memberships?.map((membership) => {
-              const available = membership.lifecycle === 'active';
+              const deletionRecovery =
+                membership.lifecycle === 'deletion_pending' && membership.role === 'owner';
+              const available =
+                membership.lifecycle === 'active' ||
+                membership.lifecycle === 'archived' ||
+                deletionRecovery;
               const remembered =
                 localStorage.getItem(LAST_COMMUNITY_KEY) === membership.communityId;
               return (
@@ -75,7 +101,7 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
                   key={membership.communityId}
                   className="button justify-between text-left"
                   disabled={!available}
-                  onClick={() => enterCommunity(membership.communityId)}
+                  onClick={() => enterCommunity(membership.communityId, false, deletionRecovery)}
                 >
                   <span>
                     <strong>{membership.name}</strong>
@@ -84,7 +110,17 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
                     </span>
                   </span>
                   <span className="small muted">
-                    {available ? (remembered ? 'Last opened' : 'Open') : 'Suspended'}
+                    {deletionRecovery
+                      ? 'Review deletion'
+                      : available
+                        ? remembered
+                          ? 'Last opened'
+                          : membership.lifecycle === 'archived'
+                            ? 'Read history'
+                            : 'Open'
+                        : membership.lifecycle === 'suspended'
+                          ? 'Suspended'
+                          : 'Unavailable'}
                   </span>
                 </button>
               );

@@ -21,6 +21,10 @@ const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
 app.use('/assets/*', serveStatic({ root: staticRoot }));
 app.get('/', serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) }));
 app.get(
+  '/host',
+  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
+);
+app.get(
   '/join',
   serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
 );

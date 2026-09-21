@@ -11,7 +11,6 @@ import { parseConfig } from '../config.js';
 import { sweepCommunityDeletions } from '../deletion-worker.js';
 import { migrate } from '../migrate.js';
 import { FileSystemBlobStore, type BlobStore } from '../storage/index.js';
-import { bootstrapFirstHost } from './bootstrap-test-helper.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for administration tests');
@@ -96,19 +95,29 @@ beforeAll(async () => {
   if (!address || typeof address === 'string') throw new Error('Missing HTTP address');
   baseUrl = `http://localhost:${address.port}`;
 
-  const setup = await bootstrapFirstHost(
-    (path, body, cookie) => jsonRequest(path, 'POST', body, cookie ?? ''),
-    {
-      secret: config.bootstrapSecret,
-      accountName: 'Owner',
-      email: 'admin-owner@example.test',
-      password,
-      communityName: 'First Community',
-    }
+  const preflight = await jsonRequest(
+    '/api/v1/bootstrap/preflight',
+    'POST',
+    { secret: config.bootstrapSecret },
+    ''
   );
-  ownerCookie = setup.cookie;
-  communityId = setup.communityId;
-  ownerMemberId = setup.memberId;
+  const bootstrapCookie = cookieOf(preflight);
+  const signup = await jsonRequest(
+    '/api/auth/sign-up/email',
+    'POST',
+    { name: 'Owner', email: 'admin-owner@example.test', password },
+    bootstrapCookie
+  );
+  ownerCookie = `${bootstrapCookie}; ${cookieOf(signup)}`;
+  const claim = await jsonRequest(
+    '/api/v1/bootstrap/claim',
+    'POST',
+    { secret: config.bootstrapSecret, name: 'First Community' },
+    ownerCookie
+  );
+  const claimed = await claim.json();
+  communityId = claimed.community.id;
+  ownerMemberId = claimed.memberId;
   const invitation = await jsonRequest(`/api/v1/communities/${communityId}/invites`, 'POST', {
     seats: 1,
   });
@@ -135,15 +144,11 @@ beforeAll(async () => {
   expect(memberSignup.status).toBe(200);
   memberCookie = `${grant}; ${cookieOf(memberSignup)}`;
   expect(
-    (await jsonRequest(`/api/v1/communities/${communityId}/invites/bind`, 'POST', {}, memberCookie))
-      .status
-  ).toBe(200);
-  expect(
     (
       await jsonRequest(
         `/api/v1/communities/${communityId}/invites/redeem`,
         'POST',
-        {},
+        { token },
         memberCookie
       )
     ).status
