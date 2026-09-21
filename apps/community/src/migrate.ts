@@ -18,6 +18,7 @@ export async function migrate(databaseUrl: string): Promise<void> {
       [3, '0003_files.sql'],
       [4, '0004_cleanup_backoff.sql'],
       [5, '0005_tenant_expand.sql'],
+      [6, '0006_tenant_backfill.sql'],
     ] as const) {
       const applied = await client.query('SELECT 1 FROM community_migrations WHERE version=$1', [
         version,

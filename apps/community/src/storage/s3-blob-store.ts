@@ -6,6 +6,7 @@ import { Readable } from 'node:stream';
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -114,6 +115,42 @@ export class S3BlobStore implements BlobStore {
         throw new BlobStoreError('BLOB_ABORTED', 'Blob operation cancelled');
       throw error;
     }
+  }
+
+  /** Exhaust every S3 page and return no snapshot when any page is incomplete or invalid. */
+  async listNamespace(options: { signal?: AbortSignal } = {}) {
+    const keys = new Set<string>();
+    let unexpectedEntries = 0;
+    let continuationToken: string | undefined;
+    const seenTokens = new Set<string>();
+    try {
+      for (;;) {
+        assertNotAborted(options.signal);
+        const page = await this.client.send(
+          new ListObjectsV2Command({ Bucket: this.bucket, ContinuationToken: continuationToken }),
+          { abortSignal: options.signal }
+        );
+        for (const item of page.Contents ?? []) {
+          if (!item.Key || !/^[a-f0-9]{64}$/.test(item.Key)) {
+            unexpectedEntries++;
+          } else if (keys.has(item.Key)) {
+            throw new Error('duplicate key');
+          } else {
+            keys.add(item.Key);
+          }
+        }
+        if (!page.IsTruncated) break;
+        const next = page.NextContinuationToken;
+        if (!next || seenTokens.has(next)) throw new Error('invalid continuation');
+        seenTokens.add(next);
+        continuationToken = next;
+      }
+    } catch {
+      if (options.signal?.aborted)
+        throw new BlobStoreError('BLOB_ABORTED', 'Blob operation cancelled');
+      throw new BlobStoreError('BLOB_LIST_INCOMPLETE', 'Blob namespace listing failed');
+    }
+    return { keys: [...keys].sort(), temporaryKeys: [], unexpectedEntries };
   }
 }
 

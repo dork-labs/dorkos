@@ -35,6 +35,18 @@ Task 1.1 is complete:
 - The existing cleanup worker preserves committed objects, discovers interrupted reserved, stored, and pending-delete inventory, and retries managed deletions. A known-settled failed delete removes inventory after confirmed deletion. An uncertain interrupted writer retains a content-free tenant tombstone and hourly same-key cleanup until the pre-second-tenant namespace reconciliation gate can prove the writer and object are gone.
 - Expired attachment and export cleanup reconciles the managed inventory while retaining legacy-row compatibility.
 
+### Session 3 - 2026-09-20
+
+**Workers:** _(none — implementation remains in this owning session)_
+
+Task 1.2 is in progress:
+
+- Migration 0006 backfills every nullable tenant key from its authoritative relation, promotes the active owner account to host operations, invalidates legacy bootstrap grants, and leaves the namespace gate dirty.
+- A durable singleton generation is invalidated by every interim inferred-owner insert, update, or delete and by unmanaged cleanup queue changes. Current attachment/export reservations share an advisory fence with reconciliation; operators must separately quiesce old instances before starting it.
+- Filesystem and S3 storage expose complete namespace snapshots; S3 exhausts pagination and returns no partial result after a page failure.
+- Reconciliation verifies referenced bytes and hashes, converts singleton cleanup only when a legacy queue row proves its origin, and records only the exact generation it validated. A valid-looking opaque key alone is not ownership proof; missing, ambiguous, incomplete, or unexpected objects remain untouched and return a redacted operator action.
+- This is an intermediate expand/backfill stage. Second-community creation remains unavailable until task 1.3 makes tenant keys non-null, validates composite constraints, removes the interim dirty-write triggers, and repeats the authoritative namespace check in its creation transaction.
+
 ## Files Modified/Created
 
 **Source files:**
@@ -48,12 +60,14 @@ Task 1.1 is complete:
 - `apps/community/src/storage/index.ts`
 - `apps/community/src/storage/managed-blobs.ts`
 - `apps/community/src/storage/pending-deletions.ts`
+- `apps/community/src/storage/tenant-reconciliation.ts`
 
 **Test files:**
 
 - `apps/community/src/__tests__/migrate.integration.test.ts`
 - `apps/community/src/__tests__/attachments.integration.test.ts`
 - `apps/community/src/storage/__tests__/blob-store.contract.test.ts`
+- `apps/community/src/__tests__/tenant-reconciliation.integration.test.ts`
 
 ## Known Issues
 
@@ -79,3 +93,12 @@ _(None yet)_
 - Stacked base: schema-expand head `1494cbcbd1df188b7f5cdfeaf92e807fb81622bd` (PR #1954).
 - Real HTTP/Postgres coverage proves reservation exists before the storage call, a lifecycle change or expired lease rejects the reference, active reservations survive cleanup, stale and interrupted inventory is quarantined and retried using the same key, an object published after the first uncertain cleanup is deleted on the next pass, failed cleanup remains tenant-owned, the worker never deletes a committed referenced object, and known-settled cleanup removes both bytes and inventory.
 - Next slice: task 1.2 inventories and backfills every legacy attachment, export, pending deletion, and provider object while the deployment still has zero or one community; ambiguity blocks second-tenant creation.
+
+### Session 3
+
+- Worktree: `/Users/doriancollier/.dork/workspaces/dorkos/codex-community-tenant-backfill`
+- Branch: `codex/community-tenant-backfill`
+- Stacked base: managed-blob head `3480796fe8a134c8dcd53875f8dd958720061dfe` (PR #1959).
+- Reconciliation never emits raw object keys. Only content references, existing inventory, and durable legacy cleanup rows prove ownership. Every otherwise-unexplained object requires manual ownership resolution without automatic deletion.
+- The generation triggers are deliberately conservative during this stage: inferred-owner writes make a completed reconciliation dirty. Task 1.3 replaces that compatibility fence with non-null tenant keys and validated composite constraints before any second tenant can be created.
+- Targeted verification covers fresh and populated migration, attachment/export hash preservation, clean zero-community readiness, pending-cleanup conversion, incomplete and paginated listings, active and late writers, the complete legacy reference-delete and cleanup sequence, stale generations, unexplained-object refusal, and legacy null ownership. The real-Postgres migration/reconciliation set passes 13/13; the BlobStore contract and pagination set passes 12/12; Community typecheck and touched-file lint pass.
