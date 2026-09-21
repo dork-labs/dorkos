@@ -16,6 +16,16 @@ import {
   useRemoteCommunityStream,
 } from '../model/use-remote-community-stream';
 
+const access = {
+  state: 'verified',
+  effective: { read: true, post: true, enrollAgent: true, stream: true },
+  lastKnown: {
+    lifecycle: 'active',
+    capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+    verifiedAt: '2026-09-16T10:00:00Z',
+  },
+} as const;
+
 const room = (community = 'a') =>
   RemoteCommunityRoomSchema.parse({
     community,
@@ -36,6 +46,7 @@ const room = (community = 'a') =>
     stale: false,
     cacheCursor: 'opaque',
     lastRemoteSeq: 2,
+    access,
   });
 const entry = (community = 'a', remoteSeq = 1) =>
   RemoteCommunityEntrySchema.parse({
