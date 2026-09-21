@@ -1,0 +1,11 @@
+{
+ "schema": 1,
+ "updated_at": "2026-09-21T10:13:19.123Z",
+ "days": [
+  {
+   "date": "2026-09-20",
+   "light": "red",
+   "headline": "queue-green under floor: 67.4% (n=184, 2026-09-14 to 2026-09-20)."
+  }
+ ]
+}

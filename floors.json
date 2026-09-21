@@ -1,0 +1,149 @@
+{
+ "schema": 1,
+ "updated_at": "2026-09-21T10:13:19.123Z",
+ "slos": {
+  "headroom": {
+   "floor": {
+    "p95_over_timeout": 0.9
+   },
+   "weeks": [
+    {
+     "week": "2026-W38",
+     "status": "ok"
+    }
+   ],
+   "moved": []
+  },
+  "queue-green": {
+   "floor": {
+    "share": 0.75
+   },
+   "weeks": [
+    {
+     "week": "2026-W38",
+     "status": "breach"
+    }
+   ],
+   "moved": []
+  },
+  "wasted-queue-builds": {
+   "floor": {
+    "share": 0.2
+   },
+   "weeks": [
+    {
+     "week": "2026-W38",
+     "status": "ok"
+    }
+   ],
+   "moved": []
+  },
+  "flaky-test-runs": {
+   "floor": {},
+   "weeks": [
+    {
+     "week": "2026-W38",
+     "status": "met"
+    }
+   ],
+   "moved": []
+  },
+  "main-green": {
+   "floor": {
+    "red_episodes": 3
+   },
+   "weeks": [
+    {
+     "week": "2026-W38",
+     "status": "ok"
+    }
+   ],
+   "moved": []
+  },
+  "review-completes": {
+   "floor": {
+    "share": 0.9
+   },
+   "weeks": [
+    {
+     "week": "2026-W38",
+     "status": "ok"
+    }
+   ],
+   "moved": []
+  },
+  "review-recovery": {
+   "floor": {
+    "p90": 120
+   },
+   "weeks": [
+    {
+     "week": "2026-W38",
+     "status": "met"
+    }
+   ],
+   "moved": []
+  },
+  "pr-feedback": {
+   "floor": {
+    "p90": 40
+   },
+   "weeks": [
+    {
+     "week": "2026-W38",
+     "status": "breach"
+    }
+   ],
+   "moved": []
+  },
+  "queue-build": {
+   "floor": {
+    "p90": 55
+   },
+   "weeks": [
+    {
+     "week": "2026-W38",
+     "status": "ok"
+    }
+   ],
+   "moved": []
+  },
+  "lead-time": {
+   "floor": {
+    "p90": 180
+   },
+   "weeks": [
+    {
+     "week": "2026-W38",
+     "status": "breach"
+    }
+   ],
+   "moved": []
+  },
+  "local-commit": {
+   "floor": {
+    "p90": 210
+   },
+   "weeks": [
+    {
+     "week": "2026-W38",
+     "status": "unmeasured"
+    }
+   ],
+   "moved": []
+  },
+  "local-push": {
+   "floor": {
+    "p90": 600,
+    "killed_share": 0.15
+   },
+   "weeks": [
+    {
+     "week": "2026-W38",
+     "status": "unmeasured"
+    }
+   ],
+   "moved": []
+  }
+ }
+}

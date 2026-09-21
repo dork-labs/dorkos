@@ -1,0 +1,629 @@
+<!doctype html>
+<!--
+  The daily CI report's template. The engine (packages/ci-steward/src/html.ts
+  and daily-report.ts) fills the {{slots}} below and writes the result to
+  reports/YYYY-MM-DD.html on the ci-steward-data branch.
+
+  RESTYLE THIS FILE, NOT THE ENGINE. All the CSS is right here, inline, and the
+  engine only emits elements that carry the class names this stylesheet
+  defines. There is no build step and no network: no web fonts, no CDN, no
+  script, and the favicon is an inline data URI, so the page opens from a
+  file:// URL with no internet and makes no request at all.
+
+  LAYOUT CONTRACT, in order of importance:
+    1. The page NEVER scrolls sideways, at any width. `.scroll-x` is the
+       last-resort guard: a table too wide to fit scrolls inside its own panel
+       instead of dragging the document with it.
+    2. Prose stays readable: `main` is 960px. A section that earns more room
+       goes in `.wide`, which breaks out to min(1440px, 100vw - 2rem) and stays
+       centred. The SLO table and the trigger list use it.
+    3. Under 720px the table becomes cards, with no script: the header row is
+       hidden and each cell prints its own label from `data-label`.
+
+  The slots:
+    {{name}}    a value, HTML-escaped when it is filled in
+    {{{name}}}  a block of markup the engine built (already escaped inside)
+
+  An unknown slot is left alone rather than silently emptied, so a typo here
+  shows up on the page instead of deleting a section.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CI report for 2026-09-20</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%233f4ea8'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        --bg: #fbfbfa;
+        --panel: #ffffff;
+        --ink: #1d1d1f;
+        --muted: #6b6b70;
+        --line: #e4e4e2;
+        --green: #2f7d4f;
+        --amber: #9a6400;
+        --red: #b3261e;
+        --accent: #3f4ea8;
+        --radius: 10px;
+        --prose: 960px;
+        --wide: 1440px;
+        --gutter: 1.5rem;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #16171a;
+          --panel: #1e2024;
+          --ink: #ececee;
+          --muted: #9fa0a6;
+          --line: #2e3137;
+          --green: #6ddc9b;
+          --amber: #ecb44a;
+          --red: #ff8f85;
+          --accent: #9aa7f5;
+        }
+      }
+      * {
+        box-sizing: border-box;
+        min-width: 0;
+      }
+      html,
+      body {
+        max-width: 100%;
+      }
+      body {
+        margin: 0;
+        padding: 32px var(--gutter) 72px;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          15px/1.55 ui-sans-serif,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+      }
+      main {
+        max-width: var(--prose);
+        margin: 0 auto;
+      }
+      /* Break out of the prose column, stay centred, and keep the SAME gutter
+         as the narrow column: a wide block flush to the window edge while the
+         prose above it starts 240px in reads as two different pages. Each
+         section's heading sits inside its own .wide block, so a heading always
+         lines up with the panel it belongs to. */
+      .wide {
+        width: min(var(--wide), calc(100vw - var(--gutter) * 2));
+        margin-left: 50%;
+        transform: translateX(-50%);
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 15px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin: 36px 0 12px;
+      }
+      p {
+        margin: 0 0 10px;
+      }
+      a {
+        color: var(--accent);
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 24px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 16px 18px;
+      }
+      /* The guard: a table wider than its panel scrolls here, not on the page. */
+      .scroll-x {
+        overflow-x: auto;
+        max-width: 100%;
+      }
+      .headline {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        border-left: 4px solid var(--line);
+      }
+      .headline.green {
+        border-left-color: var(--green);
+      }
+      .headline.amber {
+        border-left-color: var(--amber);
+      }
+      .headline.red {
+        border-left-color: var(--red);
+      }
+      .lamp {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        margin-top: 5px;
+        flex: none;
+        background: var(--muted);
+      }
+      .green .lamp {
+        background: var(--green);
+      }
+      .amber .lamp {
+        background: var(--amber);
+      }
+      .red .lamp {
+        background: var(--red);
+      }
+      .headline-text {
+        font-size: 17px;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .headline-why {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 4px;
+        overflow-wrap: anywhere;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        font-weight: 600;
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      td.num {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      td.measure {
+        min-width: 11rem;
+      }
+      code,
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .tag {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 999px;
+        font-size: 11px;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        border: 1px solid currentColor;
+        white-space: nowrap;
+      }
+      .tag.met,
+      .tag.ok,
+      .tag.green,
+      .tag.verified {
+        color: var(--green);
+      }
+      .tag.amber,
+      .tag.partial,
+      .tag.insufficient,
+      .tag.unmeasured,
+      .tag.pending,
+      .tag.inconclusive {
+        color: var(--amber);
+      }
+      .tag.red,
+      .tag.breach,
+      .tag.failed {
+        color: var(--red);
+      }
+      .trend.better {
+        color: var(--green);
+      }
+      .trend.worse {
+        color: var(--red);
+      }
+      .trend.flat {
+        color: var(--muted);
+      }
+      svg.spark {
+        display: block;
+      }
+      svg.spark path {
+        fill: none;
+        stroke: var(--accent);
+        stroke-width: 1.5;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+      .trigger {
+        border-left: 3px solid var(--line);
+        padding: 2px 0 2px 12px;
+        margin: 0 0 16px;
+      }
+      .trigger.red {
+        border-left-color: var(--red);
+      }
+      .trigger.amber {
+        border-left-color: var(--amber);
+      }
+      .trigger-head {
+        font-weight: 600;
+      }
+      .trigger div {
+        overflow-wrap: anywhere;
+      }
+      .trigger-meta,
+      .note {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      ul.plain {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      ul.plain li {
+        padding: 6px 0;
+        border-bottom: 1px solid var(--line);
+        overflow-wrap: anywhere;
+      }
+      ul.plain li:last-child {
+        border-bottom: none;
+      }
+      .days {
+        columns: 240px;
+      }
+      footer {
+        margin-top: 48px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      /* A laptop still fits the table: tighter padding, a narrower name column.
+         Past that it scrolls inside .scroll-x rather than on the page. */
+      @media (max-width: 1100px) {
+        th,
+        td {
+          padding: 6px 7px;
+        }
+        td.measure {
+          min-width: 9rem;
+        }
+      }
+
+      /* A phone gets cards, not a table. CSS only. */
+      @media (max-width: 720px) {
+        :root {
+          --gutter: 1.5rem;
+        }
+        body {
+          padding: 20px var(--gutter) 56px;
+        }
+        .wide {
+          width: 100%;
+          margin-left: 0;
+          transform: none;
+        }
+        table.cards,
+        table.cards tbody,
+        table.cards tr,
+        table.cards td {
+          display: block;
+          width: 100%;
+        }
+        table.cards thead {
+          display: none;
+        }
+        table.cards tr {
+          border: 1px solid var(--line);
+          border-radius: var(--radius);
+          padding: 10px 12px;
+          margin-bottom: 12px;
+        }
+        table.cards td {
+          border-bottom: none;
+          padding: 3px 0;
+          white-space: normal;
+        }
+        table.cards td[data-label]::before {
+          content: attr(data-label) ': ';
+          color: var(--muted);
+          font-size: 12px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        table.cards td.measure::before {
+          content: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>CI report for 2026-09-20</h1>
+      <p class="sub">Computed by ci-steward from real runs. Daily run. 1 red, 9 amber open. Collected 2026-09-21T10:13:19.123Z.</p>
+
+      <div class="panel headline red">
+        <span class="lamp"></span>
+        <div>
+          <div class="headline-text">queue-green under floor: 67.4% (n=184, 2026-09-14 to 2026-09-20).</div>
+          <div class="headline-why">Take its path from ci/slos.yaml.</div>
+        </div>
+      </div>
+
+      <h2>What to work on</h2>
+      <div class="panel">
+        <p><strong class="mono">queue-green</strong></p>
+        <p>Merge-queue builds come back green: 67.4%, floor ≥ 75%.</p>
+        <p class="note">Quality breaches outrank speed.</p>
+      </div>
+
+      <div class="wide">
+        <h2>How the pipeline is doing</h2>
+        <div class="panel">
+      <div class="scroll-x"><table class="cards">
+        <thead><tr>
+          <th>Measure</th><th>Now</th><th>Standing</th><th>Floor</th><th>Goal</th><th>Trend</th><th>14 days</th>
+        </tr></thead>
+        <tbody><tr>
+          <td class="measure">
+            <div>Jobs finish well inside their timeouts</div>
+            <div class="note mono">headroom · %</div>
+          </td>
+          <td class="num" data-label="Now">65.9%</td>
+          <td data-label="Standing"><span class="tag ok" title="ok, short of goal">ok</span></td>
+          <td class="num" data-label="Floor">≤ 90%</td>
+          <td class="num" data-label="Goal">≤ 60%</td>
+          <td class="num trend worse" data-label="Trend" title="worse than a week ago">worse: 61.1% → 65.9%</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="Jobs finish well inside their timeouts, last 14 days"><path d="M37.2 21.0 L44.4 17.6 L51.6 8.6 L58.8 4.4 L66.1 3.8 L73.3 3.8 L80.5 3.8 L87.8 1.0 L95.0 1.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>Merge-queue builds come back green</div>
+            <div class="note mono">queue-green · %</div>
+          </td>
+          <td class="num" data-label="Now">67.4%</td>
+          <td data-label="Standing"><span class="tag breach" title="under floor">breach</span></td>
+          <td class="num" data-label="Floor">≥ 75%</td>
+          <td class="num" data-label="Goal">≥ 97%</td>
+          <td class="num trend worse" data-label="Trend" title="worse than a week ago">worse: 76.5% → 67.4%</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="Merge-queue builds come back green, last 14 days"><path d="M37.2 8.3 L44.4 1.0 L51.6 7.3 L58.8 6.3 L66.1 2.8 L73.3 5.3 L80.5 4.2 L87.8 4.7 L95.0 21.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>Queue builds are not thrown away on flakes</div>
+            <div class="note mono">wasted-queue-builds · %</div>
+          </td>
+          <td class="num" data-label="Now">16.9%</td>
+          <td data-label="Standing"><span class="tag ok" title="ok, short of goal">ok</span></td>
+          <td class="num" data-label="Floor">≤ 20%</td>
+          <td class="num" data-label="Goal">≤ 3%</td>
+          <td class="num trend better" data-label="Trend" title="better than a week ago">better: 27.5% → 16.9%</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="Queue builds are not thrown away on flakes, last 14 days"><path d="M37.2 1.0 L44.4 7.0 L51.6 10.9 L58.8 15.2 L66.1 16.9 L73.3 16.8 L80.5 17.1 L87.8 21.0 L95.0 16.5" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>Tests pass without needing a retry</div>
+            <div class="note mono">flaky-test-runs · %</div>
+          </td>
+          <td class="num" data-label="Now">0%</td>
+          <td data-label="Standing"><span class="tag met" title="at goal">met</span></td>
+          <td class="num" data-label="Floor">none</td>
+          <td class="num" data-label="Goal">≤ 1.5%</td>
+          <td class="num trend better" data-label="Trend" title="better than a week ago">better: 0.5% → 0%</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="Tests pass without needing a retry, last 14 days"><path d="M44.4 1.4 L51.6 1.0 L58.8 1.8 L66.1 1.8 L73.3 1.8 L80.5 1.4 L87.8 1.4 L95.0 21.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>main stays green</div>
+            <div class="note mono">main-green · count per 28d</div>
+          </td>
+          <td class="num" data-label="Now">spells 2 · fix p90 26.3</td>
+          <td data-label="Standing"><span class="tag ok" title="ok, short of goal">ok</span></td>
+          <td class="num" data-label="Floor">spells ≤ 3</td>
+          <td class="num" data-label="Goal">spells ≤ 1 · fix p90 &lt; 30</td>
+          <td class="num trend better" data-label="Trend" title="better than a week ago">better: 14 → 2</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="main stays green, last 14 days"><path d="M1.0 1.0 L8.2 1.0 L15.5 4.6 L22.7 4.6 L29.9 5.5 L37.2 6.5 L44.4 10.1 L51.6 11.0 L58.8 11.9 L66.1 14.6 L73.3 15.5 L80.5 15.5 L87.8 17.4 L95.0 21.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>The automated review finishes the first time</div>
+            <div class="note mono">review-completes · %</div>
+          </td>
+          <td class="num" data-label="Now">91%</td>
+          <td data-label="Standing"><span class="tag ok" title="ok, short of goal">ok</span></td>
+          <td class="num" data-label="Floor">≥ 90%</td>
+          <td class="num" data-label="Goal">≥ 99%</td>
+          <td class="num trend better" data-label="Trend" title="better than a week ago">better: 87.9% → 91%</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="The automated review finishes the first time, last 14 days"><path d="M44.4 17.7 L51.6 21.0 L58.8 16.5 L66.1 5.8 L73.3 4.3 L80.5 2.9 L87.8 14.2 L95.0 1.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>A failed review is re-run quickly</div>
+            <div class="note mono">review-recovery · minutes</div>
+          </td>
+          <td class="num" data-label="Now">p90 27</td>
+          <td data-label="Standing"><span class="tag met" title="at goal">met</span></td>
+          <td class="num" data-label="Floor">p90 ≤ 120</td>
+          <td class="num" data-label="Goal">p90 ≤ 30</td>
+          <td class="num trend flat" data-label="Trend" title="nothing to compare with yet">no prior week</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="A failed review is re-run quickly, last 14 days"><path d="M58.8 1.0 L66.1 1.0 L73.3 1.0 L80.5 1.0 L87.8 21.0 L95.0 1.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>A PR hears back from CI fast</div>
+            <div class="note mono">pr-feedback · minutes</div>
+          </td>
+          <td class="num" data-label="Now">p50 7.7 · p90 44.5</td>
+          <td data-label="Standing"><span class="tag breach" title="under floor">breach</span></td>
+          <td class="num" data-label="Floor">p90 ≤ 40</td>
+          <td class="num" data-label="Goal">p50 ≤ 7 · p90 ≤ 12</td>
+          <td class="num trend better" data-label="Trend" title="better than a week ago">better: 14.1 → 7.7</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="A PR hears back from CI fast, last 14 days"><path d="M37.2 1.0 L44.4 3.2 L51.6 3.5 L58.8 3.5 L66.1 3.5 L73.3 3.2 L80.5 3.2 L87.8 15.4 L95.0 21.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>A clean queue build is quick</div>
+            <div class="note mono">queue-build · minutes</div>
+          </td>
+          <td class="num" data-label="Now">p50 30 · p90 52.4</td>
+          <td data-label="Standing"><span class="tag ok" title="ok, short of goal">ok</span></td>
+          <td class="num" data-label="Floor">p90 ≤ 55</td>
+          <td class="num" data-label="Goal">p50 ≤ 12 · p90 ≤ 18</td>
+          <td class="num trend worse" data-label="Trend" title="worse than a week ago">worse: 26.8 → 30</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="A clean queue build is quick, last 14 days"><path d="M44.4 21.0 L51.6 16.6 L58.8 7.3 L66.1 4.1 L73.3 4.1 L80.5 4.1 L87.8 2.2 L95.0 1.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>A PR merges soon after it opens</div>
+            <div class="note mono">lead-time · minutes</div>
+          </td>
+          <td class="num" data-label="Now">p50 69.1 · p90 184.1</td>
+          <td data-label="Standing"><span class="tag breach" title="under floor">breach</span></td>
+          <td class="num" data-label="Floor">p90 ≤ 180</td>
+          <td class="num" data-label="Goal">p50 ≤ 30 · p90 ≤ 60</td>
+          <td class="num trend worse" data-label="Trend" title="worse than a week ago">worse: 60 → 69.1</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="A PR merges soon after it opens, last 14 days"><path d="M44.4 13.6 L51.6 8.2 L58.8 19.3 L66.1 21.0 L73.3 21.0 L80.5 20.9 L87.8 15.4 L95.0 1.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>git commit is quick</div>
+            <div class="note mono">local-commit · seconds</div>
+          </td>
+          <td class="num" data-label="Now">-</td>
+          <td data-label="Standing"><span class="tag unmeasured" title="not measured">unmeasured</span></td>
+          <td class="num" data-label="Floor">p90 ≤ 210</td>
+          <td class="num" data-label="Goal">p90 ≤ 20</td>
+          <td class="num trend flat" data-label="Trend" title="nothing measured yet">no data</td>
+          <td data-label="14 days"><span class="note">not enough days yet</span></td>
+        </tr><tr>
+          <td class="measure">
+            <div>git push is quick and never killed</div>
+            <div class="note mono">local-push · seconds</div>
+          </td>
+          <td class="num" data-label="Now">-</td>
+          <td data-label="Standing"><span class="tag unmeasured" title="not measured">unmeasured</span></td>
+          <td class="num" data-label="Floor">p90 ≤ 600 · killed ≤ 15%</td>
+          <td class="num" data-label="Goal">p90 ≤ 120 · killed ≤ 0%</td>
+          <td class="num trend flat" data-label="Trend" title="nothing measured yet">no data</td>
+          <td data-label="14 days"><span class="note">not enough days yet</span></td>
+        </tr></tbody>
+      </table></div>
+      <p class="note">7 days to 2026-09-20. p50 is the middle run, p90 the slow end: 9 in 10 are faster. The floor is the line we promise not to fall below; it tightens after four good weeks. Too few runs judges nothing.</p></div>
+
+        <h2>Open triggers</h2>
+        <div class="panel"><div class="trigger red">
+          <div class="trigger-head">queue-green under floor: 67.4% (n=184, 2026-09-14 to 2026-09-20).</div>
+          <div>Fix: Take its path from ci/slos.yaml.</div>
+          <div class="trigger-meta mono">slo-floor:queue-green · queue-green · since 2026-09-20 · proposed: 260919-175500</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 22 min (13fd2bb).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:13fd2bb1bd59 · main-green · since 2026-09-20 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 27 min (6b13262).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:6b13262116c5 · main-green · since 2026-09-20 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">lead-time under floor: p50 69.1, p90 184.1 (n=105, 2026-09-14 to 2026-09-20).</div>
+          <div>Fix: Take its path from ci/slos.yaml.</div>
+          <div class="trigger-meta mono">slo-floor:lead-time · lead-time · since 2026-09-20 · proposed: 260919-204500</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">pr-feedback under floor: p50 7.7, p90 44.5 (n=92, 2026-09-14 to 2026-09-20).</div>
+          <div>Fix: Take its path from ci/slos.yaml.</div>
+          <div class="trigger-meta mono">slo-floor:pr-feedback · pr-feedback · since 2026-09-20 · proposed: 260919-175502</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">Checks the collector could not identify failed on 3 of 38 queue ejections in 7d; 2 real.</div>
+          <div>Fix: Find which job fails these. An ejection with nothing to blame cannot be fixed.</div>
+          <div class="trigger-meta mono">repeat-ejection:unattributed · since 2026-09-20</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.browser-test.browser-test (with wf.browser-test.browser-shard) failed on 16 of 38 queue ejections in 7d; 3 real.</div>
+          <div>Fix: Quarantine or fix what fails without the code being wrong. The rest are wasted builds.</div>
+          <div class="trigger-meta mono">repeat-ejection:wf.browser-test.browser-test · wf.browser-test.browser-test · since 2026-09-20</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.credential-free-build.credential-free-build failed on 5 of 38 queue ejections in 7d; 1 real.</div>
+          <div>Fix: Quarantine or fix what fails without the code being wrong. The rest are wasted builds.</div>
+          <div class="trigger-meta mono">repeat-ejection:wf.credential-free-build.credential-free-build · wf.credential-free-build.credential-free-build · since 2026-09-20 · proposed: 260919-175501</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.harness-windows.harness-windows failed on 3 of 38 queue ejections in 7d; 1 real.</div>
+          <div>Fix: Quarantine or fix what fails without the code being wrong. The rest are wasted builds.</div>
+          <div class="trigger-meta mono">repeat-ejection:wf.harness-windows.harness-windows · wf.harness-windows.harness-windows · since 2026-09-20</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.test.test (with wf.test.community-packaged and wf.test.community-pg and wf.test.test-shard) failed on 19 of 38 queue ejections in 7d; 2 real.</div>
+          <div>Fix: Quarantine or fix what fails without the code being wrong. The rest are wasted builds.</div>
+          <div class="trigger-meta mono">repeat-ejection:wf.test.test · wf.test.test · since 2026-09-20</div>
+        </div>
+      <p class="note">Computed from the data, never written by a model. Nothing here opens a pull request or changes anything; a person or an agent decides, and proposes the narrowest change that could move the number.</p></div>
+      </div>
+
+      <h2>That day (2026-09-20)</h2>
+      <div class="panel"><ul class="plain"><li><strong>19</strong> pull requests merged.</li><li><strong>59</strong> queue builds, 32 green.</li><li><strong>15</strong> thrown out of the queue on a failed check; 15 passed next time unchanged, so that work was wasted.</li><li><strong>11578</strong> job minutes, 609.4 per merged PR.</li><li><strong>0</strong> red commits on main.</li><li><strong>0</strong> main-canary runs — nothing checked main today.</li></ul><p>Failing on those 15:</p>
+        <ul class="plain"><li><span class="mono">wf.test.test (with wf.test.community-packaged and wf.test.community-pg)</span>: <strong>13</strong> of 15, 0 a real problem in the code.</li><li><span class="mono">wf.browser-test.browser-test (with wf.browser-test.browser-shard)</span>: <strong>5</strong> of 15, 0 a real problem in the code.</li><li><span class="mono">wf.credential-free-build.credential-free-build</span>: <strong>1</strong> of 15, 0 a real problem in the code.</li><li><span class="mono">wf.harness-windows.harness-windows</span>: <strong>1</strong> of 15, 0 a real problem in the code.</li></ul>
+        <p class="note">A pull request usually fails more than one check, so these add up to more than 15. A fan-in job is red whenever a job it waits on is red, so it is shown with those folded in, not counted twice.</p></div>
+
+      <h2>Experiments</h2>
+      <div class="panel">
+      <div class="scroll-x"><table class="cards">
+        <thead><tr><th>Change</th><th>Result</th><th>Why</th></tr></thead>
+        <tbody><tr>
+            <td class="measure name"><div>Browser suite runs in three shards behind one browser-test gate (#1135)</div><div class="note mono">260819-235925 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 260824-121951 changed the same gate inside the after-window (2026-08-19T23:59:25Z to…</td>
+          </tr><tr>
+            <td class="measure name"><div>Heavy suites run once per PR in the merge queue, and the queue batches up to 5 (#1246)</div><div class="note mono">260824-121951 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 260830-213616 changed the same gate inside the after-window (2026-08-24T12:19:51Z to…</td>
+          </tr><tr>
+            <td class="measure name"><div>Queue test sweep split across four shards (#1391)</div><div class="note mono">260830-213616 · active</div></td>
+            <td data-label="Result"><span class="tag pending">pending</span></td>
+            <td data-label="Why">Waiting: 13 of 15 after-window days not collected (2026-08-30 to 09-11); backfill reaches them first.</td>
+          </tr><tr>
+            <td class="measure name"><div>The test gate leaves pre-push</div><div class="note mono">260919-175505 · active</div></td>
+            <td data-label="Result"><span class="tag pending">pending</span></td>
+            <td data-label="Why">The after-window runs to 2026-10-05T04:14:37Z; the verdict is computed on 2026-10-06.</td>
+          </tr><tr>
+            <td class="measure name"><div>A main canary — the required suites run against main HEAD four times a day</div><div class="note mono">260920-184120 · active</div></td>
+            <td data-label="Result"><span class="tag pending">no verdict</span></td>
+            <td data-label="Why">No hypothesis, or its PR has not merged.</td>
+          </tr><tr>
+            <td class="measure name"><div>Local vitest runs capped at four workers</div><div class="note mono">260921-022119 · active</div></td>
+            <td data-label="Result"><span class="tag pending">pending</span></td>
+            <td data-label="Why">The after-window runs to 2026-10-05T04:14:37Z; the verdict is computed on 2026-10-06.</td>
+          </tr></tbody>
+      </table></div>
+      <p class="note">Pending means the wait after the change is not over; the reason says when it will be judged. Computed from the recorded data, never written by hand.</p></div>
+
+      <h2>Data health</h2>
+      <div class="panel">
+        <p>The collector checked itself: fine.</p>
+        <ul class="plain">
+          <li><strong>700</strong> of 700 GitHub requests used (GitHub allows 1,000 an hour).</li>
+          <li><strong>7</strong> of 7 days recorded.</li>
+          <li>Machines sending hook timings: none.</li>
+          <li>Data-branch protections: in place.</li>
+        </ul>
+        
+        <p class="note">Also: 19 of 28 days missing to 2026-09-20 (2026-08-24 to 09-11).</p>
+        <p class="note">Blind spot: <span class="mono">--no-verify</span> commits and pushes skip the local timer, so they never show up here.</p>
+      </div>
+
+      <footer>Rendered 2026-09-21T10:13:19.123Z by ci-steward from the ci-steward-data branch. Machine-readable: latest.json, triggers.json, verdicts/*.json, and the Monday deep summary reports/YYYY-Www.md.</footer>
+    </main>
+  </body>
+</html>

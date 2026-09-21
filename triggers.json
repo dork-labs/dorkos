@@ -1,0 +1,120 @@
+{
+ "schema": 1,
+ "date": "2026-09-20",
+ "computed_at": "2026-09-21T10:13:19.123Z",
+ "constraint": "queue-green",
+ "canary_since": null,
+ "open": [
+  {
+   "id": "slo-floor:queue-green",
+   "rule": "slo-floor",
+   "severity": "red",
+   "scope": "queue-green",
+   "what": "queue-green under floor: 67.4% (n=184, 2026-09-14 to 2026-09-20).",
+   "action": "Take its path from ci/slos.yaml.",
+   "ledger_entry": "260919-175500",
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-20"
+  },
+  {
+   "id": "main-red:13fd2bb1bd59",
+   "rule": "main-red",
+   "severity": "amber",
+   "scope": "main-green",
+   "what": "main red 22 min (13fd2bb).",
+   "action": "Why did the queue miss it? If nothing did, this one is history.",
+   "ledger_entry": "260919-175509",
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-20"
+  },
+  {
+   "id": "main-red:6b13262116c5",
+   "rule": "main-red",
+   "severity": "amber",
+   "scope": "main-green",
+   "what": "main red 27 min (6b13262).",
+   "action": "Why did the queue miss it? If nothing did, this one is history.",
+   "ledger_entry": "260919-175509",
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-20"
+  },
+  {
+   "id": "slo-floor:lead-time",
+   "rule": "slo-floor",
+   "severity": "amber",
+   "scope": "lead-time",
+   "what": "lead-time under floor: p50 69.1, p90 184.1 (n=105, 2026-09-14 to 2026-09-20).",
+   "action": "Take its path from ci/slos.yaml.",
+   "ledger_entry": "260919-204500",
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-20"
+  },
+  {
+   "id": "slo-floor:pr-feedback",
+   "rule": "slo-floor",
+   "severity": "amber",
+   "scope": "pr-feedback",
+   "what": "pr-feedback under floor: p50 7.7, p90 44.5 (n=92, 2026-09-14 to 2026-09-20).",
+   "action": "Take its path from ci/slos.yaml.",
+   "ledger_entry": "260919-175502",
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-20"
+  },
+  {
+   "id": "repeat-ejection:unattributed",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "",
+   "what": "Checks the collector could not identify failed on 3 of 38 queue ejections in 7d; 2 real.",
+   "action": "Find which job fails these. An ejection with nothing to blame cannot be fixed.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-20"
+  },
+  {
+   "id": "repeat-ejection:wf.browser-test.browser-test",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "wf.browser-test.browser-test",
+   "what": "wf.browser-test.browser-test (with wf.browser-test.browser-shard) failed on 16 of 38 queue ejections in 7d; 3 real.",
+   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-20"
+  },
+  {
+   "id": "repeat-ejection:wf.credential-free-build.credential-free-build",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "wf.credential-free-build.credential-free-build",
+   "what": "wf.credential-free-build.credential-free-build failed on 5 of 38 queue ejections in 7d; 1 real.",
+   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
+   "ledger_entry": "260919-175501",
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-20"
+  },
+  {
+   "id": "repeat-ejection:wf.harness-windows.harness-windows",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "wf.harness-windows.harness-windows",
+   "what": "wf.harness-windows.harness-windows failed on 3 of 38 queue ejections in 7d; 1 real.",
+   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-20"
+  },
+  {
+   "id": "repeat-ejection:wf.test.test",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "wf.test.test",
+   "what": "wf.test.test (with wf.test.community-packaged and wf.test.community-pg and wf.test.test-shard) failed on 19 of 38 queue ejections in 7d; 2 real.",
+   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-20"
+  }
+ ],
+ "cleared": []
+}

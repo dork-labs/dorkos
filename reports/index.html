@@ -1,0 +1,392 @@
+<!doctype html>
+<!--
+  The daily CI report's template. The engine (packages/ci-steward/src/html.ts
+  and daily-report.ts) fills the {{slots}} below and writes the result to
+  reports/YYYY-MM-DD.html on the ci-steward-data branch.
+
+  RESTYLE THIS FILE, NOT THE ENGINE. All the CSS is right here, inline, and the
+  engine only emits elements that carry the class names this stylesheet
+  defines. There is no build step and no network: no web fonts, no CDN, no
+  script, and the favicon is an inline data URI, so the page opens from a
+  file:// URL with no internet and makes no request at all.
+
+  LAYOUT CONTRACT, in order of importance:
+    1. The page NEVER scrolls sideways, at any width. `.scroll-x` is the
+       last-resort guard: a table too wide to fit scrolls inside its own panel
+       instead of dragging the document with it.
+    2. Prose stays readable: `main` is 960px. A section that earns more room
+       goes in `.wide`, which breaks out to min(1440px, 100vw - 2rem) and stays
+       centred. The SLO table and the trigger list use it.
+    3. Under 720px the table becomes cards, with no script: the header row is
+       hidden and each cell prints its own label from `data-label`.
+
+  The slots:
+    {{name}}    a value, HTML-escaped when it is filled in
+    {{{name}}}  a block of markup the engine built (already escaped inside)
+
+  An unknown slot is left alone rather than silently emptied, so a typo here
+  shows up on the page instead of deleting a section.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CI reports</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%233f4ea8'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        --bg: #fbfbfa;
+        --panel: #ffffff;
+        --ink: #1d1d1f;
+        --muted: #6b6b70;
+        --line: #e4e4e2;
+        --green: #2f7d4f;
+        --amber: #9a6400;
+        --red: #b3261e;
+        --accent: #3f4ea8;
+        --radius: 10px;
+        --prose: 960px;
+        --wide: 1440px;
+        --gutter: 1.5rem;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #16171a;
+          --panel: #1e2024;
+          --ink: #ececee;
+          --muted: #9fa0a6;
+          --line: #2e3137;
+          --green: #6ddc9b;
+          --amber: #ecb44a;
+          --red: #ff8f85;
+          --accent: #9aa7f5;
+        }
+      }
+      * {
+        box-sizing: border-box;
+        min-width: 0;
+      }
+      html,
+      body {
+        max-width: 100%;
+      }
+      body {
+        margin: 0;
+        padding: 32px var(--gutter) 72px;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          15px/1.55 ui-sans-serif,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+      }
+      main {
+        max-width: var(--prose);
+        margin: 0 auto;
+      }
+      /* Break out of the prose column, stay centred, and keep the SAME gutter
+         as the narrow column: a wide block flush to the window edge while the
+         prose above it starts 240px in reads as two different pages. Each
+         section's heading sits inside its own .wide block, so a heading always
+         lines up with the panel it belongs to. */
+      .wide {
+        width: min(var(--wide), calc(100vw - var(--gutter) * 2));
+        margin-left: 50%;
+        transform: translateX(-50%);
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 15px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin: 36px 0 12px;
+      }
+      p {
+        margin: 0 0 10px;
+      }
+      a {
+        color: var(--accent);
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 24px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 16px 18px;
+      }
+      /* The guard: a table wider than its panel scrolls here, not on the page. */
+      .scroll-x {
+        overflow-x: auto;
+        max-width: 100%;
+      }
+      .headline {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        border-left: 4px solid var(--line);
+      }
+      .headline.green {
+        border-left-color: var(--green);
+      }
+      .headline.amber {
+        border-left-color: var(--amber);
+      }
+      .headline.red {
+        border-left-color: var(--red);
+      }
+      .lamp {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        margin-top: 5px;
+        flex: none;
+        background: var(--muted);
+      }
+      .green .lamp {
+        background: var(--green);
+      }
+      .amber .lamp {
+        background: var(--amber);
+      }
+      .red .lamp {
+        background: var(--red);
+      }
+      .headline-text {
+        font-size: 17px;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .headline-why {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 4px;
+        overflow-wrap: anywhere;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        font-weight: 600;
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      td.num {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      td.measure {
+        min-width: 11rem;
+      }
+      code,
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .tag {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 999px;
+        font-size: 11px;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        border: 1px solid currentColor;
+        white-space: nowrap;
+      }
+      .tag.met,
+      .tag.ok,
+      .tag.green,
+      .tag.verified {
+        color: var(--green);
+      }
+      .tag.amber,
+      .tag.partial,
+      .tag.insufficient,
+      .tag.unmeasured,
+      .tag.pending,
+      .tag.inconclusive {
+        color: var(--amber);
+      }
+      .tag.red,
+      .tag.breach,
+      .tag.failed {
+        color: var(--red);
+      }
+      .trend.better {
+        color: var(--green);
+      }
+      .trend.worse {
+        color: var(--red);
+      }
+      .trend.flat {
+        color: var(--muted);
+      }
+      svg.spark {
+        display: block;
+      }
+      svg.spark path {
+        fill: none;
+        stroke: var(--accent);
+        stroke-width: 1.5;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+      .trigger {
+        border-left: 3px solid var(--line);
+        padding: 2px 0 2px 12px;
+        margin: 0 0 16px;
+      }
+      .trigger.red {
+        border-left-color: var(--red);
+      }
+      .trigger.amber {
+        border-left-color: var(--amber);
+      }
+      .trigger-head {
+        font-weight: 600;
+      }
+      .trigger div {
+        overflow-wrap: anywhere;
+      }
+      .trigger-meta,
+      .note {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      ul.plain {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      ul.plain li {
+        padding: 6px 0;
+        border-bottom: 1px solid var(--line);
+        overflow-wrap: anywhere;
+      }
+      ul.plain li:last-child {
+        border-bottom: none;
+      }
+      .days {
+        columns: 240px;
+      }
+      footer {
+        margin-top: 48px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      /* A laptop still fits the table: tighter padding, a narrower name column.
+         Past that it scrolls inside .scroll-x rather than on the page. */
+      @media (max-width: 1100px) {
+        th,
+        td {
+          padding: 6px 7px;
+        }
+        td.measure {
+          min-width: 9rem;
+        }
+      }
+
+      /* A phone gets cards, not a table. CSS only. */
+      @media (max-width: 720px) {
+        :root {
+          --gutter: 1.5rem;
+        }
+        body {
+          padding: 20px var(--gutter) 56px;
+        }
+        .wide {
+          width: 100%;
+          margin-left: 0;
+          transform: none;
+        }
+        table.cards,
+        table.cards tbody,
+        table.cards tr,
+        table.cards td {
+          display: block;
+          width: 100%;
+        }
+        table.cards thead {
+          display: none;
+        }
+        table.cards tr {
+          border: 1px solid var(--line);
+          border-radius: var(--radius);
+          padding: 10px 12px;
+          margin-bottom: 12px;
+        }
+        table.cards td {
+          border-bottom: none;
+          padding: 3px 0;
+          white-space: normal;
+        }
+        table.cards td[data-label]::before {
+          content: attr(data-label) ': ';
+          color: var(--muted);
+          font-size: 12px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        table.cards td.measure::before {
+          content: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>CI reports</h1>
+      <p class="sub">One page a day, newest first. 1 recorded.</p>
+
+      <div class="panel headline red">
+        <span class="lamp"></span>
+        <div>
+          <div class="headline-text">Newest: 2026-09-20</div>
+          <div class="headline-why">queue-green under floor: 67.4% (n=184, 2026-09-14 to 2026-09-20).</div>
+        </div>
+      </div>
+
+      
+
+      <h2>Every day</h2>
+      <div class="panel"><ul class="plain days"><li>
+          <a href="2026-09-20.html">2026-09-20</a>
+          <span class="tag red">red</span>
+          <div class="note">queue-green under floor: 67.4% (n=184, 2026-09-14 to 2026-09-20).</div>
+        </li></ul></div>
+
+      <footer>Rendered 2026-09-21T10:13:19.123Z by ci-steward.</footer>
+    </main>
+  </body>
+</html>
