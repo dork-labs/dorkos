@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { Settings } from 'lucide-react';
 import { toast } from 'sonner';
@@ -559,6 +559,21 @@ describe('SidebarHeaderBlock', () => {
     await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/channels', search: { community: 'a' } });
     expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('opens from the global context shortcut without stealing text-entry keys', async () => {
+    renderBlock();
+    await act(async () => undefined);
+    fireEvent.keyDown(document.body, { key: 'K', metaKey: true, shiftKey: true });
+    expect(await screen.findByText('Switch context')).toBeVisible();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.focus();
+    fireEvent.keyDown(input, { key: 'K', metaKey: true, shiftKey: true });
+    expect(screen.queryByText('Switch context')).not.toBeInTheDocument();
+    input.remove();
   });
 
   it('discards a delayed destination after the local owner changes', async () => {
