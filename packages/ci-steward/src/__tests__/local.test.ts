@@ -156,7 +156,11 @@ describe('lefthook.yml wiring', () => {
   );
 
   it('finds the commands', () => {
-    expect(commands.length).toBeGreaterThanOrEqual(7);
+    // Six since DOR-2160 removed the pre-push test gate: five at commit, one at
+    // push. A floor rather than an equality, because adding a hook command is
+    // ordinary and the thing this guards is the scanner silently matching
+    // nothing — but the floor moves down with the file, or it stops guarding.
+    expect(commands.length).toBeGreaterThanOrEqual(6);
   });
 
   it.each(commands.map((c) => [`${c.hook}.${c.name}`, c] as const))(
@@ -405,31 +409,15 @@ describe('the machine, and how a run ended', () => {
     });
   });
 
-  it('tells a run cut short by its budget from one that finished and one the OS killed', () => {
-    const run = (id: string, hook: string, pp: number, at: number, note?: string) => [
-      line({ e: 'S', h: hook, c: 'tests', id, pp, t: at }),
-      ...(note ? [line({ e: 'O', h: hook, c: 'tests', id, o: note, d: 121, t: at + 1 })] : []),
-      line({ e: 'E', h: hook, c: 'tests', id, pp, t: at + 5, x: 0 }),
-    ];
+  it('tells a run that finished from one the OS took away', () => {
     const text = [
-      ...run('a', 'pre-push', 10, t0),
-      ...run('b', 'pre-push', 20, t0 + 100, 'budget_exceeded'),
+      line({ e: 'S', h: 'pre-commit', c: 'lint', id: 'a', pp: 10, t: t0 }),
+      line({ e: 'E', h: 'pre-commit', c: 'lint', id: 'a', pp: 10, t: t0 + 5, x: 0 }),
       // SIGKILL runs no trap at all: a START with no END, past the ceiling.
-      line({ e: 'S', h: 'pre-push', c: 'tests', id: 'c', pp: 30, t: t0 + 200 }),
+      line({ e: 'S', h: 'pre-commit', c: 'lint', id: 'c', pp: 30, t: t0 + 200 }),
     ].join('\n');
     const runs = hookRuns(parseTimings(text), t0 + 5000, 600);
-    expect(runs.map((r) => r.outcome)).toEqual(['finished', 'budget', 'killed']);
-  });
-
-  it('counts a killed run as killed even when it also left a note', () => {
-    // The OS taking the process away is the more serious fact about the run,
-    // and a budget note on the same run must not soften it into "cut short".
-    const text = [
-      line({ e: 'S', h: 'pre-push', c: 'tests', id: 'a', pp: 10, t: t0 }),
-      line({ e: 'O', h: 'pre-push', c: 'tests', id: 'a', o: 'budget_exceeded', d: 121, t: t0 + 1 }),
-      line({ e: 'E', h: 'pre-push', c: 'tests', id: 'a', pp: 10, t: t0 + 2, x: 143 }),
-    ].join('\n');
-    expect(hookRuns(parseTimings(text), t0 + 5000, 600)[0]!.outcome).toBe('killed');
+    expect(runs.map((r) => r.state)).toEqual(['done', 'killed']);
   });
 
   it('carries notes and machine readings into the day a clone exports', () => {
@@ -446,7 +434,7 @@ describe('the machine, and how a run ended', () => {
         m: 700,
         s: 15881,
       }),
-      line({ e: 'O', h: 'pre-push', c: 'tests', id: 'a', o: 'budget_exceeded', d: 121, t: t0 + 1 }),
+      line({ e: 'O', h: 'pre-push', c: 'tests', id: 'a', o: 'lock_timeout', d: 45, t: t0 + 1 }),
       line({ e: 'O', h: 'pre-push', c: 'tests', id: 'a', o: 'lock_wait', d: 30, t: t0 + 2 }),
       line({
         e: 'E',
@@ -464,10 +452,10 @@ describe('the machine, and how a run ended', () => {
     ].join('\n');
     const runs = hookRuns(parseTimings(text), t0 + 5000, 600);
     const [day] = aggregateDays(runs, 'clone-x', '2026-09-19', '2026-09-19T01:00:00Z');
-    expect(day!.commands['pre-push.tests']!.notes).toEqual({ budget_exceeded: 1, lock_wait: 1 });
+    expect(day!.commands['pre-push.tests']!.notes).toEqual({ lock_timeout: 1, lock_wait: 1 });
     // The hook's own bucket carries its commands' notes, so a reader asking
-    // "how often did a push get cut short" never has to know the command name.
-    expect(day!.hooks['pre-push']!.notes).toEqual({ budget_exceeded: 1, lock_wait: 1 });
+    // "how often did a gate run with no slot" never has to know the command name.
+    expect(day!.hooks['pre-push']!.notes).toEqual({ lock_timeout: 1, lock_wait: 1 });
     expect(day!.machine).toEqual({
       load_per_core: [
         [36_000, 2],

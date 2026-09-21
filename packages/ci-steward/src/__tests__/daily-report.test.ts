@@ -680,7 +680,7 @@ describe('what the machine was doing', () => {
           durations: [[100, 123]],
           killed: 2,
           failed: 0,
-          notes: { budget_exceeded: 1 },
+          notes: { lock_timeout: 1 },
         },
       },
       commands: {},
@@ -689,10 +689,11 @@ describe('what the machine was doing', () => {
     expect(html).toContain('23.32 runnable processes per core');
     expect(html).toContain('3313 MB of memory free');
     expect(html).toContain('12058 MB of swap in use');
-    // The three-way outcome, which is the whole condition on the pre-push gate
-    // being allowed to pass when its budget runs out.
-    expect(html).toContain('Of 3 hook runs, 1 were cut short by their own budget');
-    expect(html).toContain('2 were killed by the operating system');
+    // What an exit status cannot say: the OS took two runs away, and one ran
+    // with no machine-wide slot because the wait for one ran out.
+    expect(html).toContain(
+      'Of 3 hook runs, 2 were killed by the operating system and 1 ran without waiting for a free slot'
+    );
   });
 
   it('says nothing rather than zeros when no machine reported', () => {

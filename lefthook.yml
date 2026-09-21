@@ -20,28 +20,35 @@
 #
 # So the job of a local gate is not to repeat the queue. It is to catch, in
 # seconds, the handful of mistakes the queue is slow or unhelpful at telling you
-# about — a formatting miss that reds the required `lint` job twenty minutes
-# later, a type error in the package you just edited — and then to get out of
-# the way.
+# about, and then to get out of the way. After DOR-2160 that is exactly three
+# things and they are all this file does:
 #
-# That was not how they behaved. Measured on this machine from the time-wrap's
-# own records, 2026-09-19 to 2026-09-20, 49 pre-push runs: p90 26.6 minutes, one
-# run at 43 minutes, and two test commands killed outright; another agent's push
-# ran the hook for 22 minutes and died on a tree its change never touched. The
-# cause is not any one suite. It is that several agents plus the operator's dev
-# server share 14 cores and each gate runs `turbo test` with a full worker pool,
-# so the load average sat around 500 and the kernel was killing background
-# processes for memory. A gate that cannot finish while the machine is busy is
-# not a gate, it is a toll — and the toll is paid in `--no-verify`, which loses
-# the two-second checks along with the twenty-minute one.
+#   at commit  prettier on staged files, Drizzle migrations, a directory-size
+#              check, and lint + typecheck of the affected packages
+#   at push    a formatting check on the changed files
 #
-# The two answers, both below: the heavy pre-push command is bounded in
-# wall-clock time and a timeout PASSES with a loud note
-# (`scripts/pre-push-watchdog.sh`), and every heavy command holds one of a small
-# number of machine-wide slots so several agents cannot all run a suite at once
-# (`scripts/heavy-run-lock.sh`). Both record what they did in the local timings,
-# so a gate that stopped checking is a number in the daily report and not a
-# feeling.
+# Nothing at push claims to have tested anything. That is not an omission; it is
+# the decision, and the `pre-push:` block below carries the measurement behind
+# it.
+#
+# WHY IT NEEDED DECIDING. Measured on this machine from the time-wrap's own
+# records, 2026-09-19 to 2026-09-20, 49 pre-push runs: p90 26.6 minutes, one run
+# at 43 minutes, and two test commands killed outright; another agent's push ran
+# the hook for 22 minutes and died on a tree its change never touched. The cause
+# is not any one suite. Several agents plus the operator's dev server share 14
+# cores and 48 GiB, each gate ran `turbo test` with a full worker pool, and the
+# load average sat around 500 with 15.9 GB of a 17.4 GB swap file in use while
+# the kernel killed background processes for memory. A gate that cannot finish
+# while the machine is busy is not a gate, it is a toll — and the toll is paid
+# in `--no-verify`, which loses the cheap checks along with the expensive one.
+#
+# Two answers, and they are separate. The expensive gate left the push path
+# entirely (see `pre-push:`). The gates that remain expensive are the two at
+# commit time, so each holds one of a small number of machine-wide slots
+# (`scripts/heavy-run-lock.sh`), which stops several agents running a full
+# affected sweep at the same moment. Both the slot waits and every hook's load,
+# memory and swap are recorded in the local timings, so what this machine is
+# doing to these numbers is a figure in the daily report and not a feeling.
 pre-commit:
   commands:
     format:
@@ -112,268 +119,90 @@ pre-commit:
       # a break that only appears once two branches combine is caught by the
       # queue rather than by this hook.
       #
-      # UNDER THE MACHINE-WIDE SLOT CAP (DOR-2160), like every heavy local
-      # command. Affected-only made this cheap for a docs commit and left it
-      # expensive for a code one: measured p90 186s, worst 409s. Those are the
-      # runs that collide with three other agents' suites, and the cap is what
-      # stops four of them being in flight at once. It never refuses: waiting is
-      # bounded and a wait that runs out runs the command anyway, loudly
-      # (scripts/heavy-run-lock.sh). This hook is NOT time-bounded the way
-      # pre-push is — a commit is cheap to retry and nothing downstream repeats
-      # lint for you until the PR — so the cap is the whole of the change here.
+      # UNDER THE MACHINE-WIDE SLOT CAP (DOR-2160). With the test gate gone from
+      # `pre-push`, this and the typecheck below are the two heavy local
+      # commands left: affected-only made them cheap for a docs commit and left
+      # them expensive for a code one, measured p90 186 s and worst 409 s here,
+      # p90 160 s and worst 473 s for typecheck. Those are the runs that collide
+      # with three other agents' suites, and the cap is what stops four of them
+      # being in flight at once. It never refuses: waiting is bounded, and a
+      # wait that runs out runs the command anyway, loudly
+      # (scripts/heavy-run-lock.sh). Nothing here is time-bounded — a commit is
+      # cheap to retry, and nothing downstream repeats lint for you until the PR
+      # — so the cap is the whole of the change.
       run: |
         [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-commit lint
         TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" bash scripts/heavy-run-lock.sh pnpm exec turbo lint --affected
       fail_text: 'Lint failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
     typecheck:
-      # Affected-only against origin/main — see the lint command above for why,
-      # and for why this one holds a machine-wide slot too (p90 160s, worst 473s).
+      # Affected-only against origin/main, and under the same machine-wide slot
+      # cap — see the lint command above for both arguments and both sets of
+      # numbers.
       run: |
         [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-commit typecheck
         TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" bash scripts/heavy-run-lock.sh pnpm exec turbo typecheck --affected
       fail_text: 'Typecheck failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
 
 pre-push:
-  # STREAM THE GATE'S OUTPUT AS IT ARRIVES (DOR-473). Without this, lefthook
-  # buffers a command's output and prints it only once the command has
-  # finished. Measured against lefthook 2.1.12: a command that echoes at t+0 and
-  # exits at t+8 has its echo appear at t+8, not before. So for the whole of a
-  # healthy four-minute run the terminal showed the lefthook banner and nothing
-  # else — and a run that had wedged looked exactly the same, forever. That is
-  # the "two minutes with an empty log" in DOR-473: there was no way to tell
-  # "compiling" from "stuck" by looking, so the only move available was to kill
-  # it and re-push with --no-verify, which is what everyone learned to do.
+  # WHAT HAPPENS AT PUSH NOW: one formatting check, and nothing else (DOR-2160).
   #
-  # `follow` only decides whether lefthook relays what it receives; the gate
-  # below still has to PRODUCE output incrementally for there to be anything to
-  # relay, which is the other half of scripts/pre-push-watchdog.sh's job.
+  # THE TEST GATE IS GONE. It ran `turbo test --affected` here for months, and
+  # the measurement that ended it is a cliff, not a slope. 49 pre-push runs on
+  # the operator machine over 2026-09-19/20:
+  #
+  #   58 commands finished in under 50 seconds — pushes whose affected set was
+  #      empty or trivial, where the gate ran nothing and proved nothing.
+  #   10 commands took over 579 seconds, the worst 2604, with 2 killed outright.
+  #   NOTHING IN BETWEEN. Not one run landed between 50 s and 579 s.
+  #
+  # Read that cliff against any budget you might put on it. A two-minute bound —
+  # which is what this file carried for one commit — lands squarely in the empty
+  # middle: it returns no verdict on a single push that had real work to do,
+  # while charging two minutes to every one of them. The gate would have been
+  # theatre with a bill attached, and `tracked.gate-cut-short` would have read
+  # about 15% while being dominated by pushes that had nothing to test anyway,
+  # so even the question "is the budget costing us anything" would have had no
+  # answer. Making the bound bigger only moves it back toward the 26.6-minute
+  # p90 that made agents type `--no-verify` in the first place.
+  #
+  # So the honest move is to stop pretending. The merge queue runs the full
+  # suites on the real merged tree and is the gate that decides every merge; the
+  # PR's affected-only `test` leg reports a break in about 14 minutes without
+  # anybody waiting at a terminal. Neither of those got worse today. What went
+  # away is a local step that, on this machine, either tested nothing or could
+  # not finish.
+  #
+  # WHAT STAYS, AND WHY IT IS DIFFERENT. The formatting check below is fast
+  # (p90 10 s, worst 29 s), deterministic, and it preempts a REQUIRED CI gate:
+  # `prettier --check .` inside the `lint` job. Seven PRs across five sessions
+  # went red on exactly that in one week, every one a single `prettier --write`
+  # from green. It is the one local check whose verdict is both certain and
+  # cheaper than finding out from CI.
+  #
+  # Nothing at push claims to have tested anything. `contributing/ci.md` says so
+  # in the same words, and scripts/__tests__/local-gate-shape.test.ts fails if a
+  # test command comes back here without a ledger entry to explain it.
+  #
+  # `follow: true` stays: lefthook otherwise buffers a command's output until it
+  # exits, and the one thing this hook prints is a failure a person has to read.
+  # `piped` and the `priority` keys are GONE with the second command — they
+  # ordered two commands against each other and there is now one, so they would
+  # assert a fact about a file that no longer holds.
   follow: true
-  #
-  # RUN IN ORDER AND STOP AT THE FIRST FAILURE (DOR-1839). Without `piped`,
-  # lefthook runs a hook's commands concurrently, so the two-second formatting
-  # check below would race a six-minute test sweep and you would wait out the
-  # sweep to be told about a missing space. Piped makes the cheap, certain
-  # verdict preempt the expensive one.
-  #
-  # ORDER IS BY `priority`, NOT BY POSITION IN THIS FILE. Measured against
-  # lefthook 2.1.12: with `piped: true` and no priorities, commands run in
-  # ALPHABETICAL order by name regardless of the order they are written — a
-  # command named `zzz` written first still runs second. `formatting` happens to
-  # sort before `tests` anyway, so both mechanisms agree today; the priorities
-  # are here so that a rename cannot silently reverse them, and
-  # scripts/__tests__/pre-push-format-gate.test.ts fails if they do.
-  piped: true
   commands:
     formatting:
-      priority: 1
-      # Two seconds that save a CI round-trip: seven PRs across five sessions
-      # went red on the required `lint` check's `prettier --check .` in one
-      # week, every one a single `prettier --write` from green. The script's
-      # header carries the full argument — what it diffs against (the same base
-      # this file's `tests` command pins), why it checks rather than writes, and
-      # why a checkout with no node_modules fails here loudly instead of
-      # cryptically two steps later.
+      # The script's header carries the full argument: what it diffs against
+      # (origin/main, pinned — the local `main` on a worktree machine trails by
+      # dozens of commits), why it checks rather than writes, and why a checkout
+      # with no node_modules fails here loudly instead of cryptically later.
       #
-      # NO `use_stdin` HERE, deliberately. lefthook hands git's ref list to
-      # whichever command asks for it, and `tests` below needs it to recognise a
-      # delete-only push. This step wants nothing from stdin, and taking it
-      # would put two commands in a queue for one pipe. (Verified on lefthook
-      # 2.1.12: with this command running first and not declaring `use_stdin`,
-      # the `tests` command still receives git's ref line intact.)
-      #
-      # THE PRICE OF THAT, STATED: DOR-116's delete-only carve-out is the `tests`
-      # command's alone and does not extend here, so `git push origin --delete
-      # <branch>` now pays this check. It costs 26ms when the branch it is run
-      # from matches origin/main and a few hundred milliseconds otherwise —
-      # against a second consumer for one pipe, and a second copy of a ref-parsing
-      # loop to keep in step with the first. Worth it; noted so the next person to
-      # find it does not read it as an oversight.
+      # NO `use_stdin`, and nothing in this hook takes it any more. git offers
+      # the pre-push ref list to whichever command asks; the departed `tests`
+      # command asked, so it could skip a delete-only push (DOR-116). This check
+      # wants nothing from stdin and is cheap enough that the carve-out was never
+      # worth having here: `git push origin --delete <branch>` pays 26 ms when
+      # the branch matches origin/main and a few hundred milliseconds otherwise.
       run: |
         [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push formatting
         bash scripts/pre-push-format-check.sh
       fail_text: 'Formatting check failed — run the `prettier --write` command printed above, commit, and push again.'
-    tests:
-      priority: 2
-      # DOR-116 — delete-only pushes (e.g. `git push origin --delete <branch>`)
-      # have nothing to test. lefthook does not forward git's pre-push stdin
-      # (one "<local ref> <local sha> <remote ref> <remote sha>" line per
-      # updated ref, see githooks(5)) to the run command unless use_stdin is
-      # set, so that's required below. A local sha of all zeros means that
-      # ref update is a deletion; skip the gate only when EVERY line is a
-      # deletion and at least one line was actually seen — empty/missing
-      # stdin falls through to running tests (safe default).
-      #
-      # AFFECTED-ONLY, on purpose (DOR-617). This gate used to run all 18
-      # package suites on every push. On a machine already running other
-      # agents that takes minutes and fails with rotating timeouts on a tree
-      # the push never touched — so it got bypassed, six times on 2026-07-27
-      # by three different actors, correctly each time. A gate that cannot
-      # pass while the machine is busy is not a gate, it is a toll.
-      #
-      # `--affected` is the same mode `pnpm verify` uses (see the root
-      # package.json): turbo diffs against the base branch and runs the
-      # changed packages AND their dependents, so touching packages/relay
-      # still pulls in server, client, mesh and the rest that import it.
-      # A push that touches only docs, specs or a workflow runs nothing at
-      # all, in about a second.
-      #
-      # That last sentence only holds because the base is pinned below
-      # (DOR-1717) — it was not, and the sentence was false, until then.
-      # Turbo's default base is the local `main` branch, which on a worktree
-      # machine only moves when a human pulls while every branch is cut
-      # straight from origin/main, so it trails by dozens of commits and the
-      # diff sweeps in everybody else's merges.
-      #
-      # Measured 2026-09-02 (`turbo test --affected --dry=json`), local ref
-      # standing ten commits behind. Read the counts carefully: turbo's task
-      # total includes the `build` and `generate:api-docs` tasks a suite
-      # depends on, so the number of actual SUITES is the smaller one.
-      #   * root files only  — stale: 24 packages / 57 tasks / 23 suites.
-      #     That is byte-for-byte what `turbo test` with no --affected at all
-      #     resolves to, i.e. the entire monorepo. Pinned: 1 package (`//`),
-      #     0 tasks, 0 suites.
-      #   * one file in packages/icons — stale: the same 24 / 57 / 23.
-      #     Pinned: 7 packages / 40 tasks / 6 suites.
-      # The stale run returns an identical set for both diffs, which is the
-      # tell: the staleness, not the change, was picking the packages. The
-      # `main` fallback covers a clone with no `origin` remote.
-      #
-      # WHAT THIS GATE STILL DOES NOT CATCH, covered by the full-monorepo
-      # `test` workflow (.github/workflows/test.yml) as a required merge-queue
-      # check — the split is the point: local gate fast and survivable, CI
-      # gate complete.
-      #   * A break that only exists once two independently-affected PRs
-      #     combine; neither PR's own diff can see it. The merge queue builds
-      #     the combined tree and is the only thing that can see this.
-      #   * A commit that touches only repo-root files — AGENTS.md, README.md,
-      #     this file. `--affected` maps changed files onto packages and root
-      #     files belong to none, so the run resolves to the `//` package and
-      #     executes zero suites ("Tasks: 0 successful, 0 total", ~150ms).
-      #
-      # TWO ROOT FILES ARE NOT IN THAT LAST BULLET, both global inputs:
-      #   * turbo.json — changing it marks every package affected.
-      #   * pnpm-lock.yaml — turbo re-derives each package's external
-      #     dependencies from the lockfile, so a real dependency bump marks
-      #     every package that depends on the moved package. Measured by
-      #     rewriting one resolved version: 24 packages / 57 tasks /
-      #     23 suites, the whole repo. (A whitespace-only lockfile edit
-      #     changes no dependency and does resolve to `//` alone — it is the
-      #     derived graph that counts, not the file's bytes. Do not read that
-      #     as "lockfile changes are cheap".)
-      #
-      # A push made while HEAD is ahead of origin/main runs the real closure,
-      # pinned: measured 20 packages / 53 tasks / 19 suites with HEAD three
-      # commits ahead. Before the pin this was a hole — base and HEAD were
-      # the same local ref, so pushing `main` resolved to zero packages and
-      # ran nothing at all.
-      #
-      # CACHE-KEY CONSTRAINT — do not re-fork the turbo invocation below.
-      # Turbo hashes the passthrough args (everything after `--`) into the
-      # task cache key, but NOT runner flags like --concurrency or
-      # --affected. The passthrough here must stay exactly `-- --run` so this
-      # gate shares its cache with the dev loop's `pnpm test -- --run` and
-      # with CI: a green dev run makes the push instant (all cache hits).
-      # Adding any passthrough flag (e.g. --retry) forks the key and forces a
-      # full re-run on every push. (Verified: `@dorkos/relay#test` hashes to
-      # the same value with and without --affected, and to the same value
-      # again with TURBO_SCM_BASE unset, pinned to origin/main, and set to
-      # junk — the base picks which tasks run, never what they hash to, so
-      # the pin below shares its cache with CI and the dev loop.)
-      #
-      #   --concurrency=1  (DOR-121, not hashed) Turbo otherwise fans out ~10
-      #     package suites in parallel and each `vitest run` spawns its own
-      #     ~CPU-count worker pool, oversubscribing the CPU (~9x on a 14-core
-      #     box). Suites run one-at-a-time; each keeps its internal parallelism.
-      #
-      #   VITEST_RETRY=2 absorbs timing flake in integration tests at the gate
-      #     only (wired into vitest configs). It rides globalPassThroughEnv, so
-      #     it is NOT hashed and does not fork the cache key. CI does not set
-      #     this variable; its merge-queue leg passes `--retry=1` on the command
-      #     line and names every test that only passed because of it (DOR-1701,
-      #     .github/workflows/test.yml). This gate cannot do the same — the
-      #     reporter would be a passthrough flag, and the constraint above is
-      #     exactly why it is not one — so a retried pass is still silent here.
-      #     A commit can therefore pass here and be named as a flake there; when
-      #     that happens the test is flaky and the CI verdict is the honest one.
-      #
-      # THE WATCHDOG WRAPPER (DOR-473). Everything above makes the gate run the
-      # RIGHT suites; none of it bounds how long they may take. Under
-      # `--concurrency=1` one vitest that never exits — an unclosed handle, a
-      # worker starved on a box already running several agents — stops the whole
-      # gate forever, because nothing in git → lefthook → turbo → vitest has a
-      # timeout anywhere in it. Paired with lefthook's output buffering (see
-      # `follow` on the hook above) that produced the reported symptom exactly:
-      # a push that sat for minutes with an empty terminal and no way to tell
-      # what it was doing, until it was killed and re-run with --no-verify.
-      #
-      # scripts/pre-push-watchdog.sh wraps the run without altering it: same
-      # command, same output, same exit code, so the cache-key constraint above
-      # is untouched — the turbo invocation and its `-- --run` passthrough are
-      # byte-for-byte what they were, merely passed as arguments rather than
-      # executed directly. What it adds is a heartbeat while the run is quiet,
-      # and a bound after which it stops the run and prints what it was running
-      # (the last output, which turbo prefixes with the package and task, plus
-      # the live process tree). A timeout FAILS the push — exit 124, distinct
-      # from a test failure's exit 1 — because "the gate did not answer" is not
-      # "the gate said yes"; the header of that script argues the case at
-      # length, and `git push --no-verify` remains the deliberate way out.
-      #
-      # Its own fixture suite is scripts/test-pre-push-watchdog.sh, named in
-      # `test:scripts` and in scripts-test.yml.
-      #
-      # THE BUDGET, AND WHY A TIMEOUT NOW PASSES (DOR-2160). The watchdog's own
-      # defaults are a 300s silence bound and a 7200s ceiling, and a timeout
-      # fails the push. Both are right for a script that knows nothing about its
-      # caller, and both are wrong here, because this caller has a second gate
-      # behind it that is strictly better. Set here, argued here:
-      #
-      #   DORKOS_PREPUSH_MAX_SECONDS=120   a hard wall-clock budget, including
-      #     whatever the slot below cost. The measured p90 was 26.6 minutes and
-      #     the worst run 43; two minutes is not "the suites, faster", it is a
-      #     different promise — as much checking as two minutes buys.
-      #
-      #   DORKOS_PREPUSH_ON_TIMEOUT=pass   exceeding it is a PASS with a loud
-      #     block explaining that the gate did not finish. Failing instead would
-      #     red a green tree several times a day on a box at load ~500, and the
-      #     thing an agent does about a gate that reds green trees is type
-      #     `--no-verify` — which also skips the two-second formatting check
-      #     above, the one this gate is most useful for. The merge queue runs
-      #     these same suites in FULL on the real merged tree and refuses the
-      #     merge if they fail, so nothing reaches `main` on the strength of a
-      #     budget that ran out. What is lost is the local warning, not the
-      #     protection.
-      #
-      #     It is not silent, which is the whole condition on it being honest:
-      #     the watchdog writes a `budget_exceeded` note into the local timings,
-      #     `ci-steward local-export` carries it to the data branch, and the
-      #     daily report shows how often the gate stopped checking. If that
-      #     share climbs, the budget is wrong and the ledger entry says to
-      #     revert — see ci/ledger/260919-175505-pre-push-bounded-two-minutes.md
-      #     and its counter-metrics (queue-green, wasted-queue-builds).
-      #
-      # THE SLOT (scripts/heavy-run-lock.sh) sits between the watchdog and
-      # turbo, so waiting for it is inside the 120s budget rather than added to
-      # it, and so the watchdog's process-tree stop reaches the lock script and
-      # its release trap. Four agents' suites at once is what produced the load
-      # this change exists to bring down; the cap is what stops it.
-      use_stdin: true
-      run: |
-        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push tests
-        saw_ref=0
-        all_deletes=1
-        while read -r local_ref local_sha remote_ref remote_sha; do
-          saw_ref=1
-          [ "$local_sha" = "0000000000000000000000000000000000000000" ] || all_deletes=0
-        done
-        if [ "$saw_ref" = "1" ] && [ "$all_deletes" = "1" ]; then
-          echo "Delete-only push — skipping the test gate (nothing to test)."
-          exit 0
-        fi
-        export TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)"
-        VITEST_RETRY=2 \
-        DORKOS_PREPUSH_MAX_SECONDS="${DORKOS_PREPUSH_MAX_SECONDS:-120}" \
-        DORKOS_PREPUSH_ON_TIMEOUT="${DORKOS_PREPUSH_ON_TIMEOUT:-pass}" \
-          bash scripts/pre-push-watchdog.sh \
-          bash scripts/heavy-run-lock.sh \
-          pnpm exec dotenv -- turbo test --affected --concurrency=1 -- --run
-      fail_text: 'Tests failed — fix them before pushing, or turbo could not resolve the diff base. A "pre-push gate stopped" block above is not a failure: the gate ran out of its two-minute budget and let the push through, and the merge queue runs the full suites anyway.'

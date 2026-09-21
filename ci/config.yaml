@@ -297,11 +297,20 @@ triage:
 # Local hook timings (plan §4.5): the lefthook time-wrap and ci-local-export.
 local:
   timings_file: ci-steward/local-timings.jsonl
-  # A START with no END older than this was killed. It is the pre-push
-  # watchdog's own ceiling (DORKOS_PREPUSH_MAX_SECONDS, 7200, in
-  # scripts/pre-push-watchdog.sh) plus 5 minutes, so a push that is still
-  # running is never called killed. A hook stopped by INT, TERM or HUP is
-  # known at once: the time-wrap writes its END with 128+n.
+  # A START with no END older than this was killed. SIGKILL runs no trap, so
+  # this age is the only evidence it ever leaves; a hook stopped by INT, TERM or
+  # HUP is known at once, because the time-wrap writes its END with 128+n.
+  #
+  # The number came from the pre-push watchdog's own ceiling
+  # (DORKOS_PREPUSH_MAX_SECONDS, 7200) plus 5 minutes. DOR-2160 removed that
+  # watchdog along with the gate it bounded, and this stayed put on purpose
+  # rather than being retuned to the new shape. Two reasons. Nothing local is
+  # bounded any more, so there is no ceiling to derive a tighter number FROM;
+  # and the only wrong answer here is calling a hook that is still running
+  # killed, which would put a false number into local-push's `killed_share`
+  # floor. 7500 s is roughly ten times the slowest hook run ever measured on
+  # this machine (734 s). The cost of the generosity is detection latency for
+  # one rare event, which no decision depends on.
   killed_after_seconds: 7500
   # The agent tool ceiling: the wait a killed push cost, in local-push's
   # excess wait-hours.
@@ -324,19 +333,33 @@ local:
   # commit whose affected set is empty, which holds a slot for a second, and
   # serialising those would add waiting to runs that cost nothing. Three allows
   # roughly 3x oversubscription — bad, but a long way from the ~10x measured —
-  # and it leaves a slot free when one agent's pre-commit takes two (lint and
-  # typecheck run concurrently in that hook). Raise it only with a ledger entry
-  # and the load numbers from the daily report; lowering it is cheaper to try.
+  # and it leaves a slot free when one agent's pre-commit takes two, because
+  # lint and typecheck run concurrently in that hook. Raise it only with a
+  # ledger entry and the load numbers from the daily report; lowering it is
+  # cheaper to try.
+  #
+  # WHAT HOLDS A SLOT, as of DOR-2160: the pre-commit `lint` and `typecheck`
+  # commands, and nothing else. The pre-push test gate was the third and it no
+  # longer exists. Fast checks are never capped.
   #
   # The script reads these three with `sed`, because it runs before any
   # node_modules exist; local.test.ts pins its fallbacks to the values here so
   # the fallback can never quietly become the real number.
   heavy_run_slots: 3
   # How long a heavy command waits for a slot before running anyway, loudly.
-  # 45s against the pre-push gate's 120s budget: the wait is INSIDE the budget,
-  # so this is the most of it that may be spent queueing rather than testing.
+  #
+  # THERE IS NO BUDGET FOR THIS TO COME OUT OF. An earlier draft set 45 s
+  # against a 120 s pre-push budget, so the wait was carved out of time the gate
+  # already had; with the test gate gone, both commands this guards are
+  # unbounded and every second here is latency ADDED to a commit. 45 s is chosen
+  # against the commands themselves: it is about a quarter of lint's 186 s p90,
+  # so a full wait is a visible but minor tax on the run it protects, and it is
+  # long enough that a colliding sweep usually clears. Past it the command runs
+  # uncapped, which is worse for the machine and better than a commit that
+  # waits on other agents indefinitely.
   heavy_lock_wait_seconds: 45
   # A slot held longer than this is reclaimable even if its owner is alive. The
-  # slowest heavy command measured here is a pre-commit lint at 734s; 900 is
-  # above that and far below anything a healthy run reaches.
+  # slowest heavy command measured here is a pre-commit typecheck at 473 s (lint
+  # peaked at 409 s); 900 is well above both and far below anything a healthy
+  # run reaches.
   heavy_lock_max_hold_seconds: 900

@@ -15,14 +15,24 @@
 #
 # WHY THIS SUITE IS WORTH ITS LINES
 #
-# A lock in a push hook has one failure mode that matters more than all the
-# others: it wedges the push. Not slowly — forever, on a machine where the
-# holder was SIGKILLed by a kernel reclaiming memory and will never come back to
-# release anything. That is not a hypothetical here; it is the same machine, on
-# the same day, that killed three background processes for memory while a
-# 22-minute pre-push died on a tree it never touched.
+# A lock in a commit hook has two failure modes that matter more than all the
+# others, and they pull in opposite directions.
 #
-# So the cases split into two groups and the second is the important one:
+# It WEDGES. Not slowly — forever, on a machine where the holder was SIGKILLed
+# by a kernel reclaiming memory and will never come back to release anything.
+# That is not a hypothetical here; it is the same machine, on the same day, that
+# killed three background processes for memory while a 22-minute pre-push died
+# on a tree it never touched.
+#
+# Or it QUIETLY STOPS CAPPING. Every path that removes a slot is a path that can
+# remove somebody else's, and when it does, the victim keeps running with no
+# lock while its slot is handed to a third process. Nothing fails, nothing is
+# logged, and the cap degrades a notch that it never recovers. An earlier
+# version of this script did exactly that twice over — it read the gap between a
+# holder's `mkdir` and its `printf` as abandonment, and it released `$held`
+# without checking the slot was still its own.
+#
+# So the cases split into three groups:
 #
 #   * IT CAPS — two runs at once with one slot really do serialise. Without
 #     this the whole change is decoration.
@@ -31,6 +41,10 @@
 #     slot is waited for and then given up on, and neither path ever blocks
 #     past its bound. `a SIGKILLed holder does not wedge the next run` is the
 #     case the whole design is for.
+#
+#   * IT NEVER DELETES A LIVE SLOT — a slot in the act of being acquired is not
+#     reclaimed, and a process whose slot was reclaimed and re-let does not
+#     delete the new holder's on its way out.
 #
 # Hermetic: throwaway git repos and `sleep`, never turbo or this repo's suites,
 # so it needs no `pnpm install`. Bounds are driven to the smallest values that
@@ -277,6 +291,66 @@ else
 fi
 
 echo ""
+echo "== it must never delete a slot that is not its own =="
+
+# BUG 1, REPRODUCED: an acquire in progress read as abandoned.
+#
+# Taking a slot is two steps — `mkdir` publishes it, the `printf` that writes
+# `owner` lands a moment later. A slot that exists with no owner file is
+# therefore either a holder mid-acquire or a holder that died between the two.
+# Treating it as the second deleted live runs; the grace on the directory's own
+# mtime is what tells them apart, and this hand-builds the ambiguous state.
+repo=$(new_repo)
+mkdir -p "$(lock_dir "$repo")/slot-1"
+out=$(cd "$repo" && DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=2 DORKOS_HEAVY_POLL_SECONDS=0.3 \
+  bash "$CHECK" bash -c 'echo waited-it-out' 2>&1)
+check_contains 'a fresh owner-less slot is not reclaimed' 'running anyway' "$out"
+if [ -d "$(lock_dir "$repo")/slot-1" ]; then
+  pass=$((pass + 1))
+  printf 'ok   an acquire in progress survives another process polling for a slot\n'
+else
+  fail=$((fail + 1))
+  printf 'FAIL a slot with no owner file yet was deleted — that is a live acquire\n'
+fi
+
+# The same slot, backdated past the grace, must now be reclaimed: the guard has
+# to distinguish the two, not simply refuse to ever reclaim an owner-less slot.
+# Backdated two hours so the test never depends on the grace's exact value.
+touch -t "$(date -v-2H '+%Y%m%d%H%M' 2>/dev/null || date -d '2 hours ago' '+%Y%m%d%H%M')" \
+  "$(lock_dir "$repo")/slot-1" 2>/dev/null
+out=$(cd "$repo" && DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=2 DORKOS_HEAVY_POLL_SECONDS=0.3 \
+  bash "$CHECK" bash -c 'echo took-the-abandoned-slot' 2>&1)
+check_contains 'an old owner-less slot IS reclaimed' 'took-the-abandoned-slot' "$out"
+if printf '%s' "$out" | grep -qF 'running anyway'; then
+  fail=$((fail + 1))
+  printf 'FAIL an abandoned owner-less slot was never reclaimed; the grace is now a leak\n'
+else
+  pass=$((pass + 1))
+  printf 'ok   an abandoned owner-less slot is reclaimed rather than waited out\n'
+fi
+
+# BUG 2, REPRODUCED: releasing a slot that has changed hands.
+#
+# A process whose slot was reclaimed while it ran must not delete the new
+# holder's slot on the way out. Staged directly: take a slot, overwrite its
+# owner with another pid (which is what a reclaim-and-re-let leaves behind), and
+# let the original exit.
+repo=$(new_repo)
+(
+  cd "$repo" && bash "$CHECK" bash -c '
+    printf "999999 1\n" > "$0/slot-1/owner"
+    exit 0
+  ' "$(lock_dir "$repo")"
+) >/dev/null 2>&1
+if [ -d "$(lock_dir "$repo")/slot-1" ]; then
+  pass=$((pass + 1))
+  printf 'ok   a slot that changed hands is not deleted by its previous owner\n'
+else
+  fail=$((fail + 1))
+  printf 'FAIL release deleted a slot owned by another process; the cap silently degrades\n'
+fi
+
+echo ""
 echo "== it must degrade rather than refuse =="
 
 # Outside a git checkout there is nothing every worktree shares, so there is no
@@ -293,6 +367,30 @@ check_contains 'switched off, the command still runs' 'cap-switched-off' "$out"
 
 out=$(cd "$repo" && bash "$CHECK" 2>&1)
 check_eq 'no command at all is a usage error, not a pass' 2 "$?"
+
+# An existing but UNWRITABLE lock root satisfies `mkdir -p`, so existence alone
+# reads as success while every slot acquire fails. Without the writability probe
+# the acquire loop waits out its whole bound and then reports that all slots are
+# busy when none of them is — every gate on the machine paying the full wait,
+# forever, for a message naming the wrong problem.
+repo=$(new_repo)
+mkdir -p "$(lock_dir "$repo")"
+chmod 500 "$(lock_dir "$repo")"
+started=$(date +%s)
+out=$(cd "$repo" && DORKOS_HEAVY_WAIT_SECONDS=30 bash "$CHECK" bash -c 'echo ran-despite-unwritable-root' 2>&1)
+status=$?
+elapsed=$(($(date +%s) - started))
+chmod 700 "$(lock_dir "$repo")"
+check_eq 'an unwritable lock root still runs the command' 0 "$status"
+check_contains 'an unwritable lock root does not swallow the output' 'ran-despite-unwritable-root' "$out"
+check_contains 'an unwritable lock root says what is wrong' 'cannot write' "$out"
+if [ "$elapsed" -le 3 ]; then
+  pass=$((pass + 1))
+  printf 'ok   an unwritable lock root costs no wait at all (%ss of a 30s bound)\n' "$elapsed"
+else
+  fail=$((fail + 1))
+  printf 'FAIL an unwritable lock root cost %ss; every gate would pay that\n' "$elapsed"
+fi
 
 echo ""
 printf '%s passed, %s failed\n' "$pass" "$fail"

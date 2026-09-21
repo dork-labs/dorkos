@@ -1,20 +1,20 @@
 ---
 id: 260919-175505
-title: 'Pre-push bounded to about two minutes'
+title: 'The test gate leaves pre-push'
 kind: experiment
 status: active
 actor: agent
 gates:
-  - lefthook.pre-push.tests
+  - lefthook.pre-push.formatting
   - lefthook.pre-commit.lint
   - lefthook.pre-commit.typecheck
 prs: []
 hypothesis:
-  metric: 'hook.pre-push.duration_p90'
+  metric: 'local-push'
   slo: 'local-push'
   baseline: 1593
-  baseline_source: 'the time-wrap records themselves, $(git rev-parse --git-common-dir)/ci-steward/local-timings.jsonl on the operator machine, 2026-09-19T20:05Z to 2026-09-20T23:48Z: 49 pre-push runs, p90 1593 s, p50 7 s, worst 2606 s, 1 run killed and 2 of 47 `tests` commands killed. ci/slos.yaml records p90 601 s and 13-18% killed from research/20260919_ci-pipeline-02-timings.md, which measured a different population (agent tool-call durations, which the 600 s tool ceiling truncates); the hook records are not truncated and are the honest number.'
-  target: 180
+  baseline_source: 'the time-wrap records on the operator machine, $(git rev-parse --git-common-dir)/ci-steward/local-timings.jsonl, 2026-09-19T20:05Z to 2026-09-20T23:48Z: 49 pre-push runs, p90 1593 s, p50 7 s, worst 2606 s, 1 run killed and 2 of 47 `tests` commands killed. An independent recompute during review read p90 1654 s on a slightly later window. ci/slos.yaml records p90 601 s from research/20260919_ci-pipeline-02-timings.md, which is DISCARDED here: it measured agent tool-call durations against a 600 s tool ceiling, so 601 is the ceiling plus one second — a censored distribution, not a measurement.'
+  target: 30
   after_days: 14
 ratchet-release: []
 field-changes: []
@@ -22,71 +22,101 @@ field-changes: []
 
 ## What changed
 
-Three things, one hypothesis, because they are one mechanism.
+The `tests` command is gone from `pre-push`. What remains at push is the
+formatting check. At commit, `lint` and `typecheck` stay, and each now holds one
+of three machine-wide slots.
 
-1. **The pre-push test command has a hard wall-clock budget of 120 s**
-   (`DORKOS_PREPUSH_MAX_SECONDS`), and exceeding it is a **pass with a loud
-   block**, not a failure (`DORKOS_PREPUSH_ON_TIMEOUT=pass`, new in
-   `scripts/pre-push-watchdog.sh`, whose default stays fail-closed). The
-   watchdog writes a `budget_exceeded` note into the local timings on that path,
-   so a gate that stopped checking is counted rather than silent.
-2. **Heavy local commands hold one of three machine-wide slots**
-   (`scripts/heavy-run-lock.sh`, `local.heavy_run_slots`): the pre-push test
-   command and the pre-commit `lint` and `typecheck` commands. The lock lives in
-   the clone's shared git common dir, so every worktree on the machine sees it.
-   It can never wedge a push: a dead holder's slot is reclaimed, waiting is
-   bounded at 45 s, and a wait that runs out runs the command anyway with a note.
-3. **The machine is measured.** Every time-wrap event line now carries load
-   average, cores, available memory and swap in use; `tracked.machine-load` and
-   `tracked.gate-cut-short` carry them into the daily snapshot, and triage rule
-   12 fires when a machine is chronically saturated, naming whether CPU, memory
-   or swap is the cause.
+The original proposal — bound the test gate to about two minutes and pass on a
+timeout — was implemented, reviewed, and rejected on its own measurement. This
+entry records what was actually done.
 
-## Why the target is 180 s and not 120 s
+## The cliff, which is why a budget was the wrong answer
 
-The metric is the **whole hook**, not the command the budget is on. The hook is
-the formatting check plus the test command, both under one lefthook process, and
-the formatting check's own p90 is 10 s with a worst case of 29 s. 120 s of test
-budget plus a formatting check plus lefthook's own startup does not fit in 120 s
-of hook, and a target the change cannot reach even when it works perfectly is a
-target that scores a working change `failed`.
+Across 68 `pre-push.tests` command runs on the operator machine:
 
-180 s is the budget plus honest overhead. It is above `local-push`'s objective
-(120 s), and that gap is deliberate and stated: this experiment is not claimed to
-reach the objective on its own. What reaches the objective is this plus the
-machine no longer being at load 500, which is what the slot cap is for and what
-rule 12 will say when it has.
+| runs | duration                                     |
+| ---- | -------------------------------------------- |
+| 58   | under 50 s                                   |
+| 0    | 50 s to 579 s                                |
+| 10   | over 579 s (worst 2604 s; 2 killed outright) |
+
+There is no middle. The 58 are pushes whose affected set was empty or trivial,
+where the gate ran nothing and proved nothing. The 10 are pushes that had real
+work, and on this machine none of them finished in anything a person waits for.
+
+Put any budget against that distribution and it lands in the empty band. A
+two-minute bound returns **no verdict on a single push that had work to do**,
+while charging two minutes to every one of them. Worse for the experiment
+itself: `tracked.gate-cut-short` would have read about 15% and been dominated by
+pushes that had nothing to test, so even "is the budget costing us anything"
+would have had no answer. Raising the bound only walks back toward the
+26.6-minute p90 that made agents type `--no-verify` in the first place.
+
+A gate that cannot return a verdict is not a cheap gate. It is theatre with a
+bill attached, paid on every push by every agent on the machine.
+
+## What still catches a break
+
+- The **merge queue** runs the full monorepo suites, lint, typecheck and the
+  browser shards against `main` plus everything ahead of the PR, and refuses the
+  merge if any of them fail. It is unchanged and it is the guarantee.
+- The **PR's affected-only `test` leg** reports a break in about 14 minutes,
+  with nobody waiting at a terminal.
+- The **formatting check stays at push**, because it is the one local check
+  whose verdict is both certain and cheaper than hearing it from CI: p90 10 s,
+  deterministic, and it preempts `prettier --check .` inside the required `lint`
+  job, which seven PRs across five sessions went red on in one week.
+
+Nothing that reaches `main` reaches it with less checking than before. What went
+away is a local step that either tested nothing or could not finish.
+
+## Why this metric, and why the last one was a tautology
+
+The first draft named `hook.pre-push.duration_p90` against a 180 s target while
+the change mechanically capped that hook at about 120 s. That is not a
+hypothesis; it is arithmetic wearing a hypothesis's clothes, and it would have
+been scored `verified` by construction.
+
+With the gate removed there is no cap, so `local-push` is load-bearing again:
+what remains at push is a real command whose duration is decided by the diff and
+the machine, and it can fail to improve for reasons worth knowing about. A p90
+of 30 s is the claim. The formatting check's own p90 was 10 s with a worst case
+of 29 s over the same window, so 30 s says the hook is now that check plus
+lefthook's own startup and nothing else — and it leaves room for the check to
+be slow on a large diff without the entry being wrong.
+
+`local-push`'s second floor, `killed_share`, should go to zero: nothing left in
+the hook runs long enough for the agent tool ceiling or the kernel to reach it.
+That is reported beside, not scored, because 49 runs is a thin denominator for a
+share that was already only 2%.
 
 ## What would make me revert
 
-The whole argument for passing on a timeout is that the merge queue is the real
-gate. If the local gate catching less means the queue catches more, the trade
-was bad. Two counter-metrics, both already collected, watched over the same
-14 days:
+The claim is that the local gate was catching nothing worth its cost. If that is
+wrong, the work it used to stop now arrives at the queue instead. Two
+counter-metrics, both already collected, over the same 14 days:
 
-- **`queue-green`** (today 75%, objective ≥ 97%). A fall here means work that
-  the local gate used to stop is now being stopped by the queue instead, one
-  ejected batch at a time.
+- **`queue-green`** (today 75%, objective ≥ 97%). A fall means breaks that the
+  local gate used to stop are being stopped by the queue instead, one ejected
+  batch at a time.
 - **`wasted-queue-builds`** (today about 17-21%, objective ≤ 3%). The direct
   price: every batch discarded because one entry failed is up to four other PRs
   paying for a failure their own diff did not have.
 
-Revert if either gets materially worse while `hook.pre-push.duration_p90`
-improves. The revert is small and separable: set
-`DORKOS_PREPUSH_ON_TIMEOUT=fail` and drop `DORKOS_PREPUSH_MAX_SECONDS`, leaving
-the slot cap and the measurement in place, because those two are what tell you
-whether the budget was the problem in the first place.
+Revert if either gets materially worse while `local-push` improves. The revert
+is a single command block returning to `lefthook.yml`; the slot cap and the
+machine measurement are independent of it and would stay.
 
-**Watch `tracked.gate-cut-short` first.** If almost no run hits the budget, the
-budget is costing nothing and the counter-metrics above cannot have moved
-because of it. If most runs hit it, the local gate has effectively stopped
-running tests and the honest response is to say so in `contributing/ci.md`
-rather than to keep a gate that only pretends.
+**Read the counter-metrics with the 58 in mind.** Most pushes never had a test
+verdict to lose — their affected set was empty — so if `queue-green` falls, the
+cause is concentrated in the small number of pushes that did, and it should be
+attributable to specific ejections rather than to a general drift.
 
 ## Confounders, named
 
-`lefthook.pre-commit.lint` and `lefthook.pre-commit.typecheck` are listed as
-gates because the slot cap touches them, and a change to the same machine in the
-same window would otherwise confound this entry silently. They get no separate
-hypothesis: `local-commit` is reported beside, not scored, and no second entry
-in this window touches those gates.
+Three gates are listed because this change touches all three, and a second
+change to the same machine in the same window would otherwise confound the
+entry silently. Only `local-push` is scored. `local-commit` is reported beside
+it: the slot cap can only make a commit slower — a wait of up to 45 s — and if
+it shows up there, that is the cap working, not a regression to chase. No other
+active entry names any of these gates.

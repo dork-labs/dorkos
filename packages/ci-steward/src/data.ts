@@ -560,12 +560,11 @@ export type Floors = z.infer<typeof FloorsSchema>;
  * One hook's, or one command's, runs in a day.
  *
  * `killed` is the OS taking the process away — on the machine this was written
- * for, memory pressure. `notes` counts the outcomes an exit status cannot
- * carry, keyed by the note the time-wrap recorded: `budget_exceeded` for a gate
- * its own wall-clock bound cut short and passed anyway, `lock_timeout` for one
- * that gave up waiting for a heavy-run slot and ran uncapped, `lock_wait` for
- * one that waited and got a slot. A gate that stops checking has to be a number
- * here, or it is indistinguishable from a gate that checked and was happy.
+ * for, memory pressure. `notes` counts what an exit status cannot carry, keyed
+ * by the note the time-wrap recorded: `lock_timeout` for a heavy command that
+ * gave up waiting for a machine-wide slot and ran uncapped, `lock_wait` for one
+ * that waited and got a slot. A cap that stopped capping has to be a number
+ * here, or it is indistinguishable from a machine that was never busy.
  * Optional, for days exported before DOR-2160.
  */
 const LocalBucketSchema = z

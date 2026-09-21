@@ -112,27 +112,45 @@ export function machineSaturated(inp: TriageInput): NewTrigger[] {
  */
 export function machineNote(inp: DailyReportInput): Html {
   const m = inp.latest.machine;
-  if (!m || m.n === 0) return raw('');
   const local = loadLocalDays(inp.dataDir, daysBetween(addDays(inp.day, -6), inp.day));
+
+  // TWO INDEPENDENT FACTS, REPORTED INDEPENDENTLY. An earlier version returned
+  // early when no machine had reported, which also silenced the run counts
+  // below — so a Windows Git Bash clone, where none of the load and memory
+  // probes exist, would have hidden its killed hooks and its uncapped runs
+  // behind a missing load average. The probes and the counts come from
+  // different sources and either can be absent alone.
+  const machine: string[] = [];
+  if (m && m.n > 0) {
+    const parts: string[] = [];
+    if (m.load_per_core_p90 !== null)
+      parts.push(`${m.load_per_core_p90} runnable processes per core at the slow end`);
+    if (m.mem_available_mb_p10 !== null)
+      parts.push(`as little as ${Math.round(m.mem_available_mb_p10)} MB of memory free`);
+    if (m.swap_used_mb_p50 !== null)
+      parts.push(`${Math.round(m.swap_used_mb_p50)} MB of swap in use`);
+    if (parts.length) {
+      const where = m.clones === 1 ? 'The machine' : `The ${m.clones} machines`;
+      machine.push(
+        `${where} running these hooks: ${parts.join(', ')}. A slow gate here is mostly a fact about the box, not about the pipeline.`
+      );
+    }
+  }
+
   let runs = 0;
-  let budget = 0;
   let killed = 0;
+  let uncapped = 0;
   for (const d of local)
     for (const h of Object.values(d.hooks)) {
       runs += h.durations.length + h.killed;
-      budget += h.notes?.budget_exceeded ?? 0;
       killed += h.killed;
+      uncapped += h.notes?.lock_timeout ?? 0;
     }
-  const parts: string[] = [];
-  if (m.load_per_core_p90 !== null)
-    parts.push(`${m.load_per_core_p90} runnable processes per core at the slow end`);
-  if (m.mem_available_mb_p10 !== null)
-    parts.push(`as little as ${Math.round(m.mem_available_mb_p10)} MB of memory free`);
-  if (m.swap_used_mb_p50 !== null)
-    parts.push(`${Math.round(m.swap_used_mb_p50)} MB of swap in use`);
-  const where = m.clones === 1 ? 'The machine' : `The ${m.clones} machines`;
-  const ended = runs
-    ? ` Of ${runs} hook runs, ${budget} were cut short by their own budget and passed anyway, and ${killed} were killed by the operating system.`
-    : '';
-  return h`<p class="note">${where} running these hooks: ${parts.join(', ')}.${ended} A slow gate here is mostly a fact about the box, not about the pipeline.</p>`;
+  if (runs)
+    machine.push(
+      `Of ${runs} hook runs, ${killed} were killed by the operating system and ${uncapped} ran without waiting for a free slot.`
+    );
+
+  if (machine.length === 0) return raw('');
+  return h`<p class="note">${machine.join(' ')}</p>`;
 }

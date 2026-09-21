@@ -17,14 +17,12 @@
  * than the ceiling (SIGKILL runs no trap). A younger unmatched START is
  * "running or killed", never "killed".
  *
- * HOW A RUN ENDED IS THREE ANSWERS, NOT TWO (DOR-2160). `finished` is the run
- * that ran to a verdict. `budget` is the run its own wall-clock bound cut short
- * and let through anyway — the pre-push gate passes on a timeout because the
- * merge queue is the real gate, and that pass must be visible in the data
- * rather than indistinguishable from a clean one; the watchdog writes a
- * `budget_exceeded` note for it. `killed` is the operating system taking the
- * process away, which on this machine means memory pressure, and is a different
- * fact from either. `HookRun.outcome` below is where the three are told apart.
+ * A NOTE IS NOT A STATUS (DOR-2160). `notes` carries what the exit status
+ * cannot: `lock_wait` when a heavy command queued behind another agent's, and
+ * `lock_timeout` when it gave up waiting and ran with no machine-wide slot at
+ * all. Neither changes whether the run succeeded, and neither is inferable from
+ * anything else — a command that ran uncapped looks exactly like one that had a
+ * slot to itself, which is how a cap stops existing without anyone noticing.
  *
  * Every event line also carries the machine at that instant — load average
  * `l`, cores `n`, available memory `m` in MiB, swap in use `s` in MiB — because
@@ -80,9 +78,6 @@ interface CommandRun {
   machine: MachineSample[];
 }
 
-/** How a run ended, beyond its exit status. */
-export type RunOutcome = 'finished' | 'budget' | 'killed' | 'open';
-
 /** One hook run: its commands under one lefthook process. */
 export interface HookRun {
   hook: string;
@@ -90,16 +85,11 @@ export interface HookRun {
   /** Wall seconds from the first START to the last END; `null` when killed or still open. */
   seconds: number | null;
   state: 'done' | 'killed' | 'open';
-  /** Finished, cut short by its own budget and passed, killed by the OS, or still running. */
-  outcome: RunOutcome;
   failed: boolean;
   commands: CommandRun[];
   /** Every machine reading this run's events carried, oldest first. */
   machine: MachineSample[];
 }
-
-/** The note the pre-push watchdog writes when its wall-clock budget ran out. */
-export const BUDGET_NOTE = 'budget_exceeded';
 
 /**
  * Parse the timings file's text, skipping lines that are not events.
@@ -223,16 +213,11 @@ export function hookRuns(
           ? 'killed'
           : 'open';
     const end = Math.max(...g.map((c) => c.end ?? c.start));
-    const budget = g.some((c) => (c.notes[BUDGET_NOTE] ?? 0) > 0);
     return {
       hook: g[0]!.hook,
       start,
       seconds: state === 'done' ? end - start : null,
       state,
-      // A killed run is killed whatever notes it left: the OS took it away, and
-      // that is the more serious fact about it.
-      outcome:
-        state === 'killed' ? 'killed' : state === 'open' ? 'open' : budget ? 'budget' : 'finished',
       failed: g.some((c) => c.status !== null && c.status !== 0 && !SIGNAL_STATUSES.has(c.status)),
       commands: g,
       machine: g.flatMap((c) => c.machine).sort((a, b) => a.t - b.t),

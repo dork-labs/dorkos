@@ -31,16 +31,19 @@
 # a gate that can block forever is a gate that gets bypassed, and a bypassed
 # gate protects nothing. So every path out of the acquire loop is bounded.
 #
-#   * A slot is free                  -> take it, run, release on exit.
+#   * A slot is free                  -> take it, run, release it on exit.
 #   * Every slot is held, but one holder is DEAD (killed, crashed, SIGKILLed
 #     with no chance to release) -> reclaim that slot and take it. A stale lock
-#     can never wedge the next push; that is proved by a fixture case that kills
-#     a holder with SIGKILL and pushes again.
+#     cannot wedge the next run; the fixture suite proves it by SIGKILLing a
+#     holder and running again.
 #   * Every slot is held by something alive, for longer than the wait bound
-#     -> RUN ANYWAY, loudly, and record it. Skipping the gate would be the other
-#     option; running is chosen because the caller is already bounded (the
-#     pre-push budget is about two minutes) so the damage is capped, while a
-#     silently skipped test gate is the failure this repo has already had once.
+#     -> RUN ANYWAY, loudly, and record it. Skipping the command would be the
+#     other option and is rejected: the commands this guards are a commit's lint
+#     and typecheck, whose whole value is the verdict, and a gate that
+#     sometimes silently declines to answer is worse than one that sometimes
+#     adds to the load. Nothing above this wrapper bounds the run, so "run
+#     anyway" really does mean uncapped — which is why it is recorded as
+#     `lock_timeout` rather than passed over in silence.
 #
 # There is no queue, no fairness and no ordering. Waiters poll. Under contention
 # that is not the fairest design, but it is the one with no state to corrupt:
@@ -60,16 +63,28 @@
 # on the way out, including on INT, TERM and HUP. SIGKILL runs nothing, so a
 # slot outlives its holder often enough to matter.
 #
-# A waiter treats a slot as reclaimable when its owner pid is gone (`kill -0`
-# fails) or when it has been held past MAX_HOLD_SECONDS. Reclaiming is a `mv`
-# to a unique name followed by `rm -rf`, never a bare `rm -rf` on the live path:
-# two waiters reclaiming at once both `mv`, one wins, the loser's `mv` fails
-# because the source is gone, and neither deletes a directory the other is using.
-# After the `mv` the owner string is re-read from the moved copy; if it changed
-# between the sample and the move, a NEW holder took the slot in that window and
-# the directory is moved straight back. Even if that put-back failed, the worst
-# case is one extra concurrent run — never a lost lock and never a wedge,
-# because taking a slot is `mkdir`, which only one process can win.
+# A waiter treats a slot as reclaimable when its owner's pid is gone, when it
+# has been held past MAX_HOLD_SECONDS, or when it has no owner file at all and
+# its directory is older than OWNERLESS_GRACE_MINUTES. That last clause is not
+# decoration: without it, the gap between a holder's `mkdir` and its `printf`
+# reads as abandonment, and a fresh acquire gets reclaimed out from under a live
+# run. `reclaimable` argues it at length, with the pid-reuse hole it does not
+# close.
+#
+# Reclaiming is a `mv` into a name claimed with `mkdir`, followed by `rm -rf` —
+# never a bare `rm -rf` on the live path. Two waiters reclaiming at once both
+# `mv`, one wins, and the loser's `mv` fails because the source is gone, so
+# neither deletes a directory the other is using. After the `mv` the owner
+# string is re-read from the moved copy, and a change means a NEW holder took
+# the slot in that window, so it goes straight back.
+#
+# THE CLAIMS THIS MAKES ARE NARROW ON PURPOSE. Those two steps make a reclaim
+# race harmless; they do not make the design race-FREE, and an earlier draft of
+# this header said they did. A reclaim that slips through leaves one extra
+# concurrent run, bounded by the slot count; it cannot wedge anything, because
+# taking a slot is `mkdir` and only one process can win that. The complementary
+# half is in `release`, which re-reads the owner before removing anything, so a
+# process whose slot was reclaimed and re-let cannot delete the new holder's.
 #
 # WHEN THE RELEASE TRAP ACTUALLY RUNS, stated because it is not instant.
 #
@@ -170,12 +185,38 @@ case $common in /* | [A-Za-z]:/*) ;; *) common="$PWD/$common" ;; esac
 lock_root="$common/ci-steward/heavy-locks"
 mkdir -p "$lock_root" 2>/dev/null || run_uncapped "$@"
 
+# WRITABILITY IS A SEPARATE QUESTION FROM EXISTENCE, and getting them confused
+# is a failure that looks exactly like success. `mkdir -p` returns 0 for a
+# directory that is already there, including one this user cannot write. Every
+# `mkdir` of a slot then fails, no slot can ever be taken, and the loop below
+# waits out the whole bound and reports that all slots are busy when not one of
+# them is — so every gate on the machine pays the full wait and then runs
+# anyway, forever, with a message that names the wrong problem. One probe
+# answers it: take a slot-shaped directory and give it straight back.
+probe="$lock_root/.probe-$$"
+if ! mkdir -- "$probe" 2>/dev/null; then
+  echo "[heavy-run-lock] cannot write ${lock_root} — running without the machine-wide cap." >&2
+  run_uncapped "$@"
+fi
+rmdir -- "$probe" 2>/dev/null
+
+now() { date +%s; }
+
+owner_of() { cat -- "$1/owner" 2>/dev/null; }
+
 held=''
 release() {
-  # Only ever the slot this process owns: `held` is set exactly once, by the
-  # mkdir that created it.
+  # ONLY IF IT IS STILL OURS. `held` is set once, by the mkdir that created the
+  # slot — but a slot can change hands underneath us: another waiter that judged
+  # this process dead may already have reclaimed it and handed it to a live
+  # holder. Releasing on the strength of `held` alone would then delete a
+  # stranger's live slot, and because that stranger goes on running with no lock,
+  # the cap degrades a little further with every occurrence and never recovers.
+  # Re-reading the owner is one `cat` on a path we are about to remove anyway.
   [ -n "$held" ] || return 0
-  rm -rf -- "$held" 2>/dev/null
+  case "$(owner_of "$held")" in
+    "$$ "*) rm -rf -- "$held" 2>/dev/null ;;
+  esac
   held=''
 }
 trap 'release' EXIT
@@ -185,17 +226,48 @@ trap 'release; exit 130' INT
 trap 'release; exit 143' TERM
 trap 'release; exit 129' HUP
 
-now() { date +%s; }
-
-owner_of() { cat -- "$1/owner" 2>/dev/null; }
+# Minutes an owner-less slot must have existed before it counts as abandoned.
+# Whole minutes because that is the smallest unit `find -mmin` takes on both BSD
+# and GNU, and `find` is the only portable way to ask a directory's age without
+# `stat`, whose flags differ between them.
+OWNERLESS_GRACE_MINUTES=1
 
 # True when the slot at $1 is held by a process that is gone, or held past the
-# ceiling. An unreadable or half-written owner file counts as stale: a slot
-# nobody can account for is exactly what a killed holder leaves.
+# ceiling.
+#
+# THE OWNER-LESS WINDOW, which an earlier version got wrong and for which
+# deleting a live slot was the punishment. Taking a slot is two steps: `mkdir`
+# publishes it, and the `printf` that writes `owner` lands a moment later (it
+# forks `date` first). Between them the slot exists with no owner file. Reading
+# "no owner" as "abandoned" made every fresh acquire reclaimable by whoever
+# polled inside that window, and the reclaim then deleted a slot whose holder
+# was seconds into a real run.
+#
+# So an owner-less slot is judged by the only other thing that can date it: the
+# directory's own mtime, which `mkdir` sets. Younger than the grace, it is an
+# acquire in progress and is left alone; older, nobody ever wrote an owner and
+# it is genuinely abandoned. A minute is enormous against a window measured in
+# milliseconds, and the price of being generous is that one truly abandoned
+# owner-less slot -- a holder SIGKILLed between its `mkdir` and its `printf` --
+# waits a minute instead of no time at all.
+#
+# PID REUSE is the residual hole, named here rather than solved. Asking the
+# kernel whether a pid exists answers "some process holds it", not "the process
+# that wrote this owner file holds it". After a wrap-around a dead holder's pid
+# can be live again, and this will call its slot held until MAX_HOLD_SECONDS
+# retires it. That fails in the safe direction -- a slot stays held too long, so
+# the cap is briefly tighter than configured and a waiter gives up and runs
+# uncapped -- and the ceiling bounds how long it lasts. Closing it properly
+# means comparing process start times, which has no portable spelling across
+# macOS, Linux and Windows Git Bash.
 reclaimable() {
   local slot=$1 line pid started
   line=$(owner_of "$slot")
-  [ -n "$line" ] || return 0
+  if [ -z "$line" ]; then
+    # No owner: abandoned only if the directory itself is older than the grace.
+    [ -n "$(find "$lock_root" -maxdepth 1 -name "${slot##*/}" -mmin "+$OWNERLESS_GRACE_MINUTES" 2>/dev/null)" ]
+    return $?
+  fi
   pid=${line%% *}
   started=${line##* }
   case $pid in '' | *[!0-9]*) return 0 ;; esac
@@ -209,7 +281,15 @@ reclaimable() {
 reclaim() {
   local slot=$1 before dead
   before=$(owner_of "$slot")
+  # The graveyard name is CLAIMED with mkdir, not merely composed. Two reclaims
+  # by the same pid in the same second would otherwise pick the same name, and
+  # `mv dir existing-dir` moves the source INSIDE the target rather than
+  # failing -- which buries a slot one level down where nothing looks for it and
+  # leaks the directory forever. mkdir refuses a name that exists, so the loser
+  # gives up and re-polls instead.
   dead="$lock_root/.dead-$$-$(now)-${slot##*/}"
+  mkdir -- "$dead" 2>/dev/null || return 1
+  rmdir -- "$dead" 2>/dev/null || return 1
   mv -- "$slot" "$dead" 2>/dev/null || return 1
   if [ "$(owner_of "$dead")" != "$before" ]; then
     mv -- "$dead" "$slot" 2>/dev/null

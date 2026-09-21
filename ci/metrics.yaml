@@ -109,13 +109,14 @@ tracked:
   - id: tracked.gate-cut-short
     unit: ratio
     definition: >-
-      Share of local hook runs that did not finish, split by why: cut short by
-      their own wall-clock budget and passed anyway (the `budget_exceeded` note
-      the pre-push watchdog writes), or taken away by the operating system (a
-      signal END, or a START with no END past the ceiling). A local gate that
-      stops checking must be a number, or it is indistinguishable from one that
-      checked and was happy — which is the whole condition on the pre-push gate
-      being allowed to pass on a timeout.
+      Share of local hook runs that did not run as intended, split by why: taken
+      away by the operating system (a signal END, or a START with no END past
+      the ceiling), or run with no machine-wide slot because the wait for one
+      ran out (the `lock_timeout` note scripts/heavy-run-lock.sh writes). Both
+      are invisible in every other number — a killed hook leaves no verdict to
+      count, and a command that ran uncapped looks exactly like one that had a
+      slot to itself, which is how a concurrency cap stops existing without
+      anybody noticing.
   - id: tracked.cache-hit-rate
     unit: ratio
     definition: Share of cache restore steps (pnpm store, Playwright, turbo) that hit an existing entry.

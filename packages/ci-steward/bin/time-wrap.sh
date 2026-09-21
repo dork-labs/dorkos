@@ -69,10 +69,10 @@
 #
 # NOTES ARE THE THIRD EVENT TYPE. `ci_steward_note <key> [number]` appends an
 # `O` line under the running command's id, for an outcome the exit status
-# cannot carry: a gate that was cut short by its budget and passed anyway, a
-# heavy-run slot that was never granted. A gate that stops checking must be
-# visible in the data rather than silent, and "it exited 0" is exactly the shape
-# of silence. Child processes get it too: the run's identity is exported, so a
+# cannot carry: today, a heavy-run slot that was waited for, and one that was
+# never granted so the command ran uncapped. A gate whose protection quietly
+# stopped applying must be visible in the data, and "it exited 0" is exactly the
+# shape of silence. Child processes get it too: the run's identity is exported, so a
 # script the hook invokes can source this file and write a note against the same
 # run.
 ci_steward_time_wrap() {
@@ -169,7 +169,7 @@ _cst_cores() {
 
 # One outcome the exit status cannot carry, against the running command.
 #
-#   ci_steward_note budget_exceeded        a flag: the thing happened
+#   ci_steward_note lock_timeout           a flag: the thing happened
 #   ci_steward_note lock_wait 37           the same, with one number
 #
 # The key is restricted to lowercase and underscores and the number to digits,
