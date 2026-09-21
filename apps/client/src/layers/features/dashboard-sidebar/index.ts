@@ -14,6 +14,7 @@ export { DashboardSidebar } from './ui/DashboardSidebar';
 // swap region, so a marketplace takeover replaces the body and leaves the way
 // to make things standing (BC-43 → BC-46, P2 AC-8).
 export { SidebarHeaderBlock } from './ui/SidebarHeaderBlock';
+export { MobileCommunityContextSwitcher } from './ui/context/CommunityContextSwitcher';
 // The ⌘N chord on its own, so the shortcut registry's gate
 // (`shortcuts-registered.test.tsx`) can mount and fire it without standing up
 // the whole menu around it.

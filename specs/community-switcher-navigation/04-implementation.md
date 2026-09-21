@@ -68,6 +68,14 @@
 - Preserve an explicit Community route even when it has no readable room so the content surface
   shows a safe empty frame instead of falling back to local rooms.
 
+**Task 2.3 in progress:** Reuse the context model in persistent phone chrome.
+
+- Mount the same route-owned trigger in the phone's persistent top bar and render its destinations
+  through the shared responsive menu, which becomes a safe-area-aware bottom sheet below 768px.
+- Preserve the four existing bottom destinations and mount no duplicate sidebar body.
+- Keep rows at the shared 44px phone target, add search at eight Communities, and expose explicit
+  up/down order actions instead of touch drag.
+
 ## Files Modified/Created
 
 **Source files:**
@@ -84,7 +92,7 @@
 - `apps/client/src/layers/entities/community/model/use-remote-community-stream.ts`
 - `apps/client/src/layers/shared/model/navigation/community-route-epoch.ts`
 - `apps/client/src/router.tsx`
-- `apps/client/src/layers/features/dashboard-sidebar/ui/CommunityContextSwitcher.tsx`
+- `apps/client/src/layers/features/dashboard-sidebar/ui/context/CommunityContextSwitcher.tsx`
 - `apps/client/src/layers/features/dashboard-sidebar/ui/CommunityChannelGroups.tsx`
 - `apps/client/src/layers/features/dashboard-sidebar/ui/SidebarHeaderBlock.tsx`
 - `apps/client/src/layers/features/dashboard-sidebar/ui/SidebarZones.tsx`
@@ -104,8 +112,9 @@
 
 ## Known Issues
 
-- The desktop switcher and contextual body are present; the persistent phone trigger and full
-  bottom-sheet interaction remain in Task 2.3.
+- The desktop switcher, contextual body, phone trigger, responsive sheet, search, and explicit
+  order actions are present. Browser proof at 390px/200% zoom and post-selection heading focus
+  remain in Task 2.3.
 - Effective `read`, `post`, and `enrollAgent` capabilities will come from the reviewed Community
   administration contract. The local app must consume that server projection rather than infer
   write access from lifecycle, membership, or a restored read-only connection.
@@ -133,3 +142,7 @@
 - Desktop context checkpoint on 2026-09-21: the focused header, contextual navigation, qualified
   channel route, and authority suites passed; client typecheck passed. The switch waits for
   destination reauthorization before committing and focuses the selected menu row when opened.
+- Phone context checkpoint on 2026-09-21: 74 focused switcher, responsive-menu, and shell tests
+  passed; client typecheck and changed-file ESLint passed. The phone keeps its four bottom
+  destinations, mounts one persistent top trigger, opens a bottom sheet, searches eight or more
+  Communities, and exposes keyboard-safe order actions.

@@ -1,24 +1,30 @@
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { ChevronDown, HardDrive, Plus, UsersRound } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, HardDrive, Plus, UsersRound } from 'lucide-react';
 import { toast } from 'sonner';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
+import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
 import type { SidebarMenuNode } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
-import { useOpenConnections, useTransport } from '@/layers/shared/model';
+import { useIsMobile, useOpenConnections, useTransport } from '@/layers/shared/model';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  ResponsiveDropdownMenu,
+  ResponsiveDropdownMenuContent,
+  ResponsiveDropdownMenuItem,
+  ResponsiveDropdownMenuLabel,
+  ResponsiveDropdownMenuRadioGroup,
+  ResponsiveDropdownMenuRadioItem,
+  ResponsiveDropdownMenuSeparator,
+  ResponsiveDropdownMenuTrigger,
+  Input,
   SidebarMenuNodes,
   Skeleton,
 } from '@/layers/shared/ui';
-import { useCommunityConnections, useCommunityNavigation } from '@/layers/entities/community';
+import {
+  useCommunityConnections,
+  useCommunityNavigation,
+  useMoveCommunityNavigation,
+} from '@/layers/entities/community';
+import { useTeamRoster } from '@/layers/entities/team';
 
 /** Props for the route-owned Community context trigger. */
 export interface CommunityContextSwitcherProps {
@@ -32,6 +38,12 @@ export interface CommunityContextSwitcherProps {
   onCloseAutoFocus: (event: Event) => void;
   /** Extra trigger classes supplied by its persistent chrome. */
   triggerClassName?: string;
+}
+
+function installationNameFor(displayName: string | null): string {
+  const trimmed = displayName?.trim() ?? '';
+  if (trimmed.length === 0 || trimmed === OPERATOR_FALLBACK_DISPLAY_NAME) return 'Your team';
+  return trimmed.endsWith('s') ? `${trimmed}’ team` : `${trimmed}’s team`;
 }
 
 function orderedConnections(
@@ -65,6 +77,7 @@ export function CommunityContextSwitcher({
   triggerClassName,
 }: CommunityContextSwitcherProps) {
   const transport = useTransport();
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
   const openConnections = useOpenConnections();
   const search = useRouterState({ select: (state) => state.location.search }) as {
@@ -72,6 +85,7 @@ export function CommunityContextSwitcher({
   };
   const selectedRef = search.community;
   const navigation = useCommunityNavigation();
+  const moveNavigation = useMoveCommunityNavigation();
   const connections = useCommunityConnections();
   const destinations = useMemo(
     () => orderedConnections(connections.data ?? [], navigation.data?.order ?? []),
@@ -80,9 +94,19 @@ export function CommunityContextSwitcher({
   const selected = destinations.find((connection) => connection.ref === selectedRef) ?? null;
   const selectedItem = useRef<HTMLDivElement>(null);
   const [pendingRef, setPendingRef] = useState<string | null>(null);
+  const [filter, setFilter] = useState('');
   const targetPending = selectedRef !== undefined && connections.data === undefined;
   const labelPending = selectedRef === undefined ? installationLabelPending : targetPending;
   const label = selectedRef === undefined ? installationLabel : (selected?.label ?? 'Community');
+  const visibleDestinations =
+    isMobile && destinations.length >= 8 && filter.trim().length > 0
+      ? destinations.filter((connection) =>
+          connection.label.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase())
+        )
+      : destinations;
+  const selectedIndex = selectedRef
+    ? destinations.findIndex((connection) => connection.ref === selectedRef)
+    : -1;
 
   async function selectCommunity(connection: CommunityConnectionDescriptor) {
     if (connection.ref === selectedRef || pendingRef !== null) return;
@@ -114,13 +138,23 @@ export function CommunityContextSwitcher({
     }
   }
 
+  function selectDestination(value: string) {
+    if (value === 'installation') {
+      if (selectedRef !== undefined) void navigate({ to: '/' });
+      return;
+    }
+    const connection = destinations.find((item) => `community:${item.ref}` === value);
+    if (connection) void selectCommunity(connection);
+  }
+
   return (
-    <DropdownMenu
+    <ResponsiveDropdownMenu
       onOpenChange={(open) => {
         if (open) requestAnimationFrame(() => selectedItem.current?.focus());
+        else setFilter('');
       }}
     >
-      <DropdownMenuTrigger asChild>
+      <ResponsiveDropdownMenuTrigger asChild>
         <button
           type="button"
           data-testid="sidebar-header-block"
@@ -139,46 +173,96 @@ export function CommunityContextSwitcher({
           <ChevronDown className="size-3.5 shrink-0 opacity-50" aria-hidden />
           <span className="sr-only">Choose context</span>
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64" onCloseAutoFocus={onCloseAutoFocus}>
-        <DropdownMenuLabel>Switch context</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={selectedRef ? `community:${selectedRef}` : 'installation'}>
-          <DropdownMenuRadioItem
-            ref={selectedRef === undefined ? selectedItem : undefined}
+      </ResponsiveDropdownMenuTrigger>
+      <ResponsiveDropdownMenuContent
+        align="start"
+        className="w-64"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
+        <ResponsiveDropdownMenuLabel>Switch context</ResponsiveDropdownMenuLabel>
+        {isMobile && destinations.length >= 8 && (
+          <div className="px-4 pb-2">
+            <Input
+              type="search"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+              placeholder="Find a community"
+              aria-label="Find a community"
+            />
+          </div>
+        )}
+        <ResponsiveDropdownMenuRadioGroup
+          value={selectedRef ? `community:${selectedRef}` : 'installation'}
+          onValueChange={selectDestination}
+        >
+          <ResponsiveDropdownMenuRadioItem
             value="installation"
-            disabled={pendingRef !== null}
-            onSelect={() => {
-              if (selectedRef !== undefined) void navigate({ to: '/' });
-            }}
+            icon={HardDrive}
+            itemRef={selectedRef === undefined ? selectedItem : undefined}
+            className={pendingRef !== null ? 'pointer-events-none opacity-50' : undefined}
           >
-            <HardDrive className="mr-2 size-3.5" aria-hidden />
             <span className="min-w-0 flex-1 truncate">{installationLabel}</span>
-          </DropdownMenuRadioItem>
-          {destinations.map((connection) => (
-            <DropdownMenuRadioItem
+          </ResponsiveDropdownMenuRadioItem>
+          {visibleDestinations.map((connection) => (
+            <ResponsiveDropdownMenuRadioItem
               key={connection.ref}
-              ref={connection.ref === selectedRef ? selectedItem : undefined}
               value={`community:${connection.ref}`}
-              disabled={pendingRef !== null}
-              onSelect={() => void selectCommunity(connection)}
+              icon={UsersRound}
+              itemRef={connection.ref === selectedRef ? selectedItem : undefined}
+              description={
+                connection.status === 'pending'
+                  ? 'Pending'
+                  : connection.status === 'reconnect-required'
+                    ? 'Reconnect'
+                    : undefined
+              }
+              className={pendingRef !== null ? 'pointer-events-none opacity-50' : undefined}
             >
-              <UsersRound className="mr-2 size-3.5" aria-hidden />
               <span className="min-w-0 flex-1 truncate">{connection.label}</span>
-              {connection.status !== 'connected' && (
-                <span className="text-muted-foreground ml-auto text-[11px]">
-                  {connection.status === 'pending' ? 'Pending' : 'Reconnect'}
-                </span>
-              )}
-            </DropdownMenuRadioItem>
+            </ResponsiveDropdownMenuRadioItem>
           ))}
-        </DropdownMenuRadioGroup>
-        <DropdownMenuItem onSelect={() => openConnections('accounts')}>
-          <Plus className="size-3.5" aria-hidden />
+        </ResponsiveDropdownMenuRadioGroup>
+        {selected && selectedIndex > 0 && (
+          <ResponsiveDropdownMenuItem
+            icon={ArrowUp}
+            onSelect={() => moveNavigation.mutate({ ref: selected.ref, direction: 'up' })}
+          >
+            Move {selected.label} up
+          </ResponsiveDropdownMenuItem>
+        )}
+        {selected && selectedIndex >= 0 && selectedIndex < destinations.length - 1 && (
+          <ResponsiveDropdownMenuItem
+            icon={ArrowDown}
+            onSelect={() => moveNavigation.mutate({ ref: selected.ref, direction: 'down' })}
+          >
+            Move {selected.label} down
+          </ResponsiveDropdownMenuItem>
+        )}
+        <ResponsiveDropdownMenuItem icon={Plus} onSelect={() => openConnections('accounts')}>
           Add community…
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <SidebarMenuNodes variant="dropdown" nodes={footerNodes} />
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </ResponsiveDropdownMenuItem>
+        {footerNodes.length > 0 && (
+          <>
+            <ResponsiveDropdownMenuSeparator />
+            <SidebarMenuNodes variant="dropdown" nodes={footerNodes} />
+          </>
+        )}
+      </ResponsiveDropdownMenuContent>
+    </ResponsiveDropdownMenu>
+  );
+}
+
+/** Persistent phone trigger for the same route-owned context model. */
+export function MobileCommunityContextSwitcher() {
+  const roster = useTeamRoster();
+  const self = roster.data?.members.find((member) => member.isSelf) ?? null;
+  return (
+    <CommunityContextSwitcher
+      installationLabel={installationNameFor(self?.displayName ?? null)}
+      installationLabelPending={roster.isPending}
+      footerNodes={[]}
+      onCloseAutoFocus={() => {}}
+      triggerClassName="hover:bg-accent focus-visible:ring-ring flex min-w-0 max-w-40 items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm font-semibold outline-hidden focus-visible:ring-2"
+    />
   );
 }

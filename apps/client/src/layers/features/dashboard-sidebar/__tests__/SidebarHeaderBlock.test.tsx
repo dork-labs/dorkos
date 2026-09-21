@@ -18,6 +18,7 @@ import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
 import type { SidebarMenuNode } from '@/layers/shared/ui';
 import { buildHeaderBlockMenuNodes } from '../ui/header-block-menu';
 import { SidebarHeaderBlock, teamNameFor } from '../ui/SidebarHeaderBlock';
+import { MobileCommunityContextSwitcher } from '../ui/context/CommunityContextSwitcher';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -30,6 +31,7 @@ let mockSelf: { id: string; displayName: string; isSelf: boolean } | null = {
 };
 /** Whether the roster read has answered yet — the header's one gate (D6). */
 let mockRosterPending = false;
+let mockIsMobile = false;
 vi.mock('@/layers/entities/team', () => ({
   useTeamRoster: () => ({
     data: mockRosterPending ? undefined : { members: mockSelf === null ? [] : [mockSelf] },
@@ -43,6 +45,7 @@ const mockOpenConnections = vi.fn();
 const mockNavigate = vi.fn(() => Promise.resolve());
 const mockResolveCommunityNavigation = vi.fn();
 const mockListRemoteCommunityRooms = vi.fn();
+const mockMoveCommunityNavigation = vi.fn();
 const mockSetGlobalPaletteOpen = vi.fn();
 let mockSearch: { community?: string } = {};
 let mockConnections: Array<{
@@ -76,6 +79,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
     useSettingsDeepLink: () => ({ open: mockOpenSettings }),
     useProfileDeepLink: () => ({ open: mockOpenProfile }),
     useOpenConnections: () => mockOpenConnections,
+    useIsMobile: () => mockIsMobile,
     useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
       selector({ setGlobalPaletteOpen: mockSetGlobalPaletteOpen }),
   };
@@ -92,6 +96,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 vi.mock('@/layers/entities/community', () => ({
   useCommunityConnections: () => ({ data: mockConnections }),
   useCommunityNavigation: () => ({ data: { ownerKey: 'owner-a', order: mockCommunityOrder } }),
+  useMoveCommunityNavigation: () => ({ mutate: mockMoveCommunityNavigation }),
 }));
 
 // The New menu is the header block's neighbour, not its subject: it reaches for
@@ -126,6 +131,7 @@ beforeEach(() => {
   mockConfig = { version: '0.58.0', latestVersion: null, isDevMode: false };
   mockMenuNodes = null;
   mockRosterPending = false;
+  mockIsMobile = false;
   mockSearch = {};
   mockConnections = [];
   mockCommunityOrder = [];
@@ -144,6 +150,16 @@ function renderBlock() {
   return render(
     <QueryClientProvider client={client}>
       <SidebarHeaderBlock />
+    </QueryClientProvider>
+  );
+}
+
+function renderMobileSwitcher() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  mockIsMobile = true;
+  return render(
+    <QueryClientProvider client={client}>
+      <MobileCommunityContextSwitcher />
     </QueryClientProvider>
   );
 }
@@ -256,6 +272,59 @@ describe('teamNameFor', () => {
 });
 
 describe('SidebarHeaderBlock', () => {
+  it('opens the shared destinations as a bottom sheet from phone top chrome', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    renderMobileSwitcher();
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Dorian’s team/ })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    expect(screen.getByRole('radio', { name: /Alpha/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Add community/ })).toBeInTheDocument();
+  });
+
+  it('adds phone search at eight communities and exposes keyboard-safe reorder actions', async () => {
+    mockSearch = { community: 'community-4' };
+    mockConnections = Array.from({ length: 8 }, (_, index) => ({
+      ref: `community-${index}`,
+      remoteCommunityId: `remote-${index}`,
+      label: `Community ${index}`,
+      pinnedOrigin: `https://community-${index}.example.com`,
+      connectedHumanMemberId: `person-${index}`,
+      status: 'connected' as const,
+      expiresAt: null,
+    }));
+    renderMobileSwitcher();
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    const search = await screen.findByRole('searchbox', { name: 'Find a community' });
+    expect(screen.getByRole('button', { name: 'Move Community 4 up' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Move Community 4 up' }));
+    expect(mockMoveCommunityNavigation).toHaveBeenCalledWith({
+      ref: 'community-4',
+      direction: 'up',
+    });
+
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    fireEvent.change(await screen.findByRole('searchbox', { name: 'Find a community' }), {
+      target: { value: 'Community 7' },
+    });
+    expect(screen.getByRole('radio', { name: /Community 7/ })).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: /Community 1/ })).not.toBeInTheDocument();
+    expect(search).not.toBeInTheDocument();
+  });
+
   it('is a button named after the operator, with the New button and the ⌘K pill beside it', () => {
     renderBlock();
     const block = screen.getByRole('button', { name: /Dorian’s team/ });

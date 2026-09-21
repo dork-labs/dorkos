@@ -214,6 +214,8 @@ function ResponsiveDropdownMenuRadioGroup({
 export interface ResponsiveDropdownMenuRadioItemProps {
   value: string;
   children: React.ReactNode;
+  /** Optional desktop menu-item ref used for deliberate focus placement. */
+  itemRef?: React.Ref<HTMLDivElement>;
   /**
    * Icon rendered before the label. Widened beyond `LucideIcon` so custom
    * marks (e.g. runtime-descriptor logos) qualify — only `className` is passed.
@@ -227,6 +229,7 @@ export interface ResponsiveDropdownMenuRadioItemProps {
 function ResponsiveDropdownMenuRadioItem({
   value,
   children,
+  itemRef,
   icon: Icon,
   description,
   className,
@@ -235,7 +238,7 @@ function ResponsiveDropdownMenuRadioItem({
 
   if (isDesktop) {
     return (
-      <DropdownMenuRadioItem value={value} className={className}>
+      <DropdownMenuRadioItem ref={itemRef} value={value} className={className}>
         {Icon || description ? (
           <div className="flex items-center gap-2">
             {Icon && <Icon className="size-(--size-icon-xs) shrink-0" />}
