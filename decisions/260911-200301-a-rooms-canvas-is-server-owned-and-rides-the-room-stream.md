@@ -1,7 +1,7 @@
 ---
 id: 260911-200301
 title: A room's canvas is server-owned and rides the room stream as whole-document state
-status: proposed
+status: accepted
 created: 2026-09-11
 spec: room-canvas
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed (extracted from spec `room-canvas`).
+Accepted (extracted from spec `room-canvas`).
 
 ## Context
 
