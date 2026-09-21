@@ -10,8 +10,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   initializeLaunchJournal,
   launchJournalPath,
+  listIncompleteLaunchJournals,
   LaunchJournalConflictError,
   LaunchJournalLockedError,
+  LaunchSafeErrorCodeSchema,
   LaunchJournalStaleLockError,
   readLaunchJournal,
   recoverStaleLaunchJournalLock,
@@ -50,6 +52,50 @@ afterEach(async () => {
 });
 
 describe('Community launch journal', () => {
+  it('accepts every safe Fly and bounded-process classification without provider text', () => {
+    expect(
+      [
+        'TERMS_VIEWER_MISSING',
+        'TERMS_NOT_ACCEPTED',
+        'ADD_ON_MISSING',
+        'INVALID_EXPECTED_BINDING',
+        'BINDING_MISMATCH',
+        'PUBLIC_BUCKET',
+        'INVALID_INPUT',
+        'MISSING_TIGRIS_SECRETS',
+        'CREDENTIAL_DISPOSED',
+        'SPAWN',
+        'TIMEOUT',
+        'OUTPUT_LIMIT',
+        'EXIT',
+        'COMMUNITY_RELEASE_NOT_READY',
+        'COMMUNITY_RELEASE_INVALID',
+        'COMMUNITY_RELEASE_VERSION_MISMATCH',
+        'COMMUNITY_RELEASE_PROVENANCE_MISMATCH',
+        'CANCELLED',
+      ].map((code) => LaunchSafeErrorCodeSchema.parse(code))
+    ).toEqual([
+      'TERMS_VIEWER_MISSING',
+      'TERMS_NOT_ACCEPTED',
+      'ADD_ON_MISSING',
+      'INVALID_EXPECTED_BINDING',
+      'BINDING_MISMATCH',
+      'PUBLIC_BUCKET',
+      'INVALID_INPUT',
+      'MISSING_TIGRIS_SECRETS',
+      'CREDENTIAL_DISPOSED',
+      'SPAWN',
+      'TIMEOUT',
+      'OUTPUT_LIMIT',
+      'EXIT',
+      'COMMUNITY_RELEASE_NOT_READY',
+      'COMMUNITY_RELEASE_INVALID',
+      'COMMUNITY_RELEASE_VERSION_MISMATCH',
+      'COMMUNITY_RELEASE_PROVENANCE_MISMATCH',
+      'CANCELLED',
+    ]);
+  });
+
   it('writes atomically with private permissions and round-trips validated state', async () => {
     const dorkHome = await root();
     const runId = randomUUID();
@@ -59,6 +105,29 @@ describe('Community launch journal', () => {
     expect((await lstat(path)).mode & 0o777).toBe(0o600);
     expect(await readLaunchJournal(path)).toEqual(journal(runId));
     expect(await readFile(path, 'utf8')).not.toContain('password');
+  });
+
+  it('lists only incomplete validated journals in most-recent order', async () => {
+    const dorkHome = await root();
+    const first = randomUUID();
+    const second = randomUUID();
+    const complete = randomUUID();
+    await initializeLaunchJournal(launchJournalPath(dorkHome, first), journal(first));
+    await initializeLaunchJournal(launchJournalPath(dorkHome, second), {
+      ...journal(second),
+      state: 'owner_pending',
+      updatedAt: '2026-09-21T05:00:00.000Z',
+    });
+    await initializeLaunchJournal(launchJournalPath(dorkHome, complete), {
+      ...journal(complete),
+      state: 'complete',
+      completedSteps: ['planned', 'complete'],
+    });
+
+    expect((await listIncompleteLaunchJournals(dorkHome)).map((item) => item.runId)).toEqual([
+      second,
+      first,
+    ]);
   });
 
   it('rejects stale revisions and concurrent initialization', async () => {

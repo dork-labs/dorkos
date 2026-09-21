@@ -1,0 +1,10 @@
+{
+  "ID": "app_fixture_01",
+  "Name": "community-fixture-app",
+  "Status": "pending",
+  "Organization": {
+    "ID": "org_fixture_01",
+    "Slug": "fixture-org",
+    "Name": "Fixture Organization"
+  }
+}

@@ -31,6 +31,7 @@ if (nodeVersionIssue) {
 
 // Injected at build time by esbuild define
 declare const __CLI_VERSION__: string;
+declare const __COMMUNITY_MIGRATION_COMPATIBILITY_ID__: string;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -61,6 +62,7 @@ const knownCommands = new Set([
   'debug',
   'version',
   'cleanup',
+  'community',
   'config',
   'init',
 ]);
@@ -325,6 +327,53 @@ if (process.argv[2] === 'shape') {
 // runs in production mode). Shared by the early `auth` interception here and the
 // main command flow below.
 const DORK_HOME = env.DORK_HOME || defaultDorkHome();
+
+// Community deployment has its own provider-command namespace and deliberately
+// starts neither the local server nor DorkOS Cloud.
+if (process.argv[2] === 'community') {
+  try {
+    const [dispatcher, releaseContract] = await Promise.all([
+      import('./commands/community-deploy/community-dispatcher.js'),
+      import('@dorkos/shared/community-release-manifest'),
+    ]);
+    const childEnv = Object.fromEntries(
+      [
+        'PATH',
+        'HOME',
+        'USERPROFILE',
+        'SystemRoot',
+        'WINDIR',
+        'APPDATA',
+        'XDG_CONFIG_HOME',
+        'XDG_RUNTIME_DIR',
+        'WAYLAND_DISPLAY',
+        'FLY_CONFIG_DIR',
+        'GH_CONFIG_DIR',
+      ].flatMap((name) => {
+        const value = env[name as keyof typeof env];
+        return typeof value === 'string' ? [[name, value]] : [];
+      })
+    );
+    const exitCode = await dispatcher.runCommunityDispatcher(process.argv.slice(3), {
+      cliVersion: __CLI_VERSION__,
+      dorkHome: DORK_HOME,
+      processEnv: childEnv,
+      parseRelease: (bytes) =>
+        releaseContract.parseCompatibleCommunityReleaseManifest(
+          JSON.parse(Buffer.from(bytes).toString('utf8')),
+          {
+            platform: { os: 'linux', architecture: 'amd64' },
+            configSchemaVersion: releaseContract.COMMUNITY_CONFIG_SCHEMA_VERSION,
+            migrationCompatibilityId: __COMMUNITY_MIGRATION_COMPATIBILITY_ID__,
+          }
+        ),
+    });
+    process.exit(exitCode);
+  } catch (error) {
+    console.error(`Community setup failed: ${error instanceof Error ? error.message : 'unknown'}`);
+    process.exit(1);
+  }
+}
 
 // Opt-in error reporting (DOR-293, consolidated in DOR-318). Install early so
 // standalone CLI commands (doctor, feedback, package, harness, …) are covered —
