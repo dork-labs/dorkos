@@ -716,7 +716,8 @@ export function createAppRouter(queryClient: QueryClient, transport: Transport) 
       const authority = getCommunityAuthority();
       const route = getCommunityRouteEpoch();
       void (async () => {
-        const ownerKey = authority.ownerKey ?? (await transport.getCommunityNavigation()).ownerKey;
+        const navigationState = await transport.getCommunityNavigation();
+        const ownerKey = authority.ownerKey ?? navigationState.ownerKey;
         if (!route.isCurrent()) return;
         if (authority.ownerKey === null && !confirmCommunityAuthority(authority.epoch, ownerKey))
           return;
@@ -725,7 +726,10 @@ export function createAppRouter(queryClient: QueryClient, transport: Transport) 
           ref,
           roomId,
           threadId: typeof search.thread === 'string' ? search.thread : null,
-          scrollAnchorEntryId: null,
+          scrollAnchorEntryId:
+            navigationState.destinations.find(
+              (destination) => destination.ref === ref && destination.roomId === roomId
+            )?.scrollAnchorEntryId ?? null,
         });
         if (
           state.ownerKey === captured.ownerKey &&

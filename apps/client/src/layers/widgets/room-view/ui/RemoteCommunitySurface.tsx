@@ -10,6 +10,8 @@ import {
   mergeRemoteCommunityEntries,
   useCommunityContentAuthority,
   useCommunityConnections,
+  useCommunityNavigation,
+  useRememberCommunityNavigation,
   useRemoteCommunityHistory,
   useRemoteCommunityMembers,
   useRemoteCommunityRoom,
@@ -66,6 +68,33 @@ export function RemoteCommunitySurface({
       ])
     : '';
   const queries = useQueryClient();
+  const navigation = useCommunityNavigation();
+  const rememberNavigation = useRememberCommunityNavigation();
+  const remembered = navigation.data?.destinations.find(
+    (destination) => destination.ref === community && destination.roomId === roomId
+  );
+  const anchorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noteTopRow = useCallback(
+    (entryId: string | undefined) => {
+      if (!entryId || !authority) return;
+      if (anchorTimer.current) clearTimeout(anchorTimer.current);
+      anchorTimer.current = setTimeout(() => {
+        rememberNavigation.mutate({
+          ref: community,
+          roomId,
+          threadId: threadId ?? null,
+          scrollAnchorEntryId: entryId,
+        });
+      }, 400);
+    },
+    [authority, community, rememberNavigation, roomId, threadId]
+  );
+  useEffect(
+    () => () => {
+      if (anchorTimer.current) clearTimeout(anchorTimer.current);
+    },
+    []
+  );
   useEffect(() => {
     if (connection?.status === 'reconnect-required' && authority)
       queries.removeQueries({ queryKey: communityKeys.remote(authority, community) });
@@ -406,6 +435,8 @@ export function RemoteCommunitySurface({
               rows={rows}
               label={threadId ? 'Community thread' : 'Community messages'}
               busy={history.isFetching}
+              resumeRow={() => remembered?.scrollAnchorEntryId ?? undefined}
+              onTopRow={noteTopRow}
               onReachedBottom={markRead}
               onOpenThread={onThread}
               empty={
