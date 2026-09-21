@@ -59,11 +59,11 @@ export const communities = pgTable(
     ),
     check(
       'communities_icon_metadata',
-      sql`(${table.iconBlobKey} IS NULL AND ${table.iconContentType} IS NULL) OR (${table.iconBlobKey} IS NOT NULL AND ${table.iconContentType} IN ('image/png','image/jpeg','image/gif','image/webp'))`
+      sql`(${table.iconBlobKey} IS NULL AND ${table.iconContentType} IS NULL) OR (${table.iconBlobKey} IS NOT NULL AND ${table.iconContentType} IS NOT NULL AND ${table.iconContentType} IN ('image/png','image/jpeg','image/gif','image/webp'))`
     ),
     check(
       'communities_suspension_state',
-      sql`(${table.lifecycle} = 'suspended' AND ${table.suspendedFromState} IN ('active','archived') AND ${table.suspendedAt} IS NOT NULL) OR (${table.lifecycle} <> 'suspended' AND ${table.suspendedFromState} IS NULL AND ${table.suspendedAt} IS NULL)`
+      sql`(${table.lifecycle} = 'suspended' AND ${table.suspendedFromState} IS NOT NULL AND ${table.suspendedFromState} IN ('active','archived') AND ${table.suspendedAt} IS NOT NULL) OR (${table.lifecycle} <> 'suspended' AND ${table.suspendedFromState} IS NULL AND ${table.suspendedAt} IS NULL)`
     ),
     check(
       'communities_deletion_state',

@@ -1392,10 +1392,23 @@ describe('signed admission over real HTTP and Postgres', () => {
       (await call(`/api/v1/communities/${secondId}/channels`, 'GET', undefined, claimantCookie))
         .status
     ).toBe(409);
-    // The post held behind the channel lock committed before the lifecycle
-    // transition, so its durable event precedes the suspension close.
-    expect((await nextSse(secondReader)).type).toBe('entry');
-    expect((await nextSse(secondReader)).type).toBe('closed');
+    // Commit order does not promise delivery order: the stream rechecks live
+    // authority and can close before draining an already committed entry.
+    expect(
+      (
+        await pool.query('SELECT text FROM entries WHERE channel_id=$1 AND idempotency_key=$2', [
+          secondChannelId,
+          'before-suspension',
+        ])
+      ).rows
+    ).toEqual([{ text: 'before suspension' }]);
+    const finalEvent = await nextSse(secondReader);
+    if (finalEvent.type === 'entry') {
+      expect(finalEvent).toMatchObject({ type: 'entry', entry: { text: 'before suspension' } });
+      expect((await nextSse(secondReader)).type).toBe('closed');
+    } else {
+      expect(finalEvent.type).toBe('closed');
+    }
     expect(
       (
         await call(

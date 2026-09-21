@@ -18,7 +18,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.end();
-  await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
+  await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
   await admin.end();
 });
 
@@ -79,6 +79,11 @@ it('migrates active settings and constrains every lifecycle resume combination',
   await expect(
     db.query("UPDATE communities SET lifecycle='suspended' WHERE id=$1", [communityId])
   ).rejects.toMatchObject({ code: '23514' });
+  await expect(
+    db.query("UPDATE communities SET lifecycle='suspended',suspended_at=now() WHERE id=$1", [
+      communityId,
+    ])
+  ).rejects.toMatchObject({ code: '23514' });
   await db.query(
     `UPDATE communities SET lifecycle='suspended',suspended_from_state='active',suspended_at=now()
      WHERE id=$1`,
@@ -110,9 +115,18 @@ it('binds icon inventory and deletion progress to the exact tenant', async () =>
      ) VALUES($1,$2,'icon',2,'committed',8,$3,now(),now())`,
     [key, first, 'b'.repeat(64)]
   );
-  await db.query('UPDATE communities SET icon_blob_key=$2 WHERE id=$1', [first, key]);
   await expect(
-    db.query('UPDATE communities SET icon_blob_key=$2 WHERE id=$1', [second, key])
+    db.query('UPDATE communities SET icon_blob_key=$2 WHERE id=$1', [first, key])
+  ).rejects.toMatchObject({ code: '23514' });
+  await db.query(
+    "UPDATE communities SET icon_blob_key=$2,icon_content_type='image/png' WHERE id=$1",
+    [first, key]
+  );
+  await expect(
+    db.query("UPDATE communities SET icon_blob_key=$2,icon_content_type='image/png' WHERE id=$1", [
+      second,
+      key,
+    ])
   ).rejects.toMatchObject({ code: '23503' });
   await expect(
     db.query(

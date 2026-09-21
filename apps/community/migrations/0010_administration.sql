@@ -40,10 +40,10 @@ ALTER TABLE communities ADD CONSTRAINT communities_description_length CHECK (
 );
 ALTER TABLE communities ADD CONSTRAINT communities_icon_metadata CHECK (
   (icon_blob_key IS NULL AND icon_content_type IS NULL)
-  OR (icon_blob_key IS NOT NULL AND icon_content_type IN ('image/png','image/jpeg','image/gif','image/webp'))
+  OR (icon_blob_key IS NOT NULL AND icon_content_type IS NOT NULL AND icon_content_type IN ('image/png','image/jpeg','image/gif','image/webp'))
 );
 ALTER TABLE communities ADD CONSTRAINT communities_suspension_state CHECK (
-  (lifecycle = 'suspended' AND suspended_from_state IN ('active','archived') AND suspended_at IS NOT NULL)
+  (lifecycle = 'suspended' AND suspended_from_state IS NOT NULL AND suspended_from_state IN ('active','archived') AND suspended_at IS NOT NULL)
   OR (lifecycle <> 'suspended' AND suspended_from_state IS NULL AND suspended_at IS NULL)
 );
 ALTER TABLE communities ADD CONSTRAINT communities_deletion_state CHECK (

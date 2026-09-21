@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { serve } from '@hono/node-server';
 import { Pool } from 'pg';
+import { strFromU8, unzipSync } from 'fflate';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { sweepCommunityDeletions } from '../deletion-worker.js';
@@ -27,6 +28,7 @@ let communityId = '';
 let settingsVersion = 1;
 let lifecycleVersion = 1;
 const password = 'password1234';
+let afterExportStored: (() => Promise<void>) | undefined;
 
 function cookieOf(response: Response): string {
   return response.headers
@@ -71,7 +73,18 @@ beforeAll(async () => {
     COMMUNITY_PUBLIC_URL: 'http://localhost:6481',
     COMMUNITY_STORAGE_PATH: storagePath,
   });
-  const app = createCommunityApp({ config, pool });
+  const filesystem = new FileSystemBlobStore(storagePath);
+  const blobStore: BlobStore = {
+    put: async (input) => {
+      const result = await filesystem.put(input);
+      if (input.kind === 'export') await afterExportStored?.();
+      return result;
+    },
+    get: (key, options) => filesystem.get(key, options),
+    delete: (key, options) => filesystem.delete(key, options),
+    listNamespace: (options) => filesystem.listNamespace(options),
+  };
+  const app = createCommunityApp({ config, pool, blobStore });
   server = serve({ fetch: app.fetch, port: 0 });
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
@@ -113,7 +126,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await new Promise<void>((resolve) => server?.close(() => resolve()));
   await pool?.end();
-  await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
+  await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
   await admin.end();
   if (storagePath) await rm(storagePath, { recursive: true, force: true });
 });
@@ -260,6 +273,124 @@ it('stores private raster icons with ETags and queues replaced bytes', async () 
     ).status
   ).toBe(404);
 });
+
+it('locks community before membership when committing an owner export', async () => {
+  const administrator = await pool.connect();
+  const { pid } = (await administrator.query<{ pid: number }>('SELECT pg_backend_pid() AS pid'))
+    .rows[0];
+  let signalStored!: () => void;
+  const stored = new Promise<void>((resolve) => {
+    signalStored = resolve;
+  });
+  afterExportStored = async () => {
+    await administrator.query('BEGIN');
+    await administrator.query('SELECT id FROM communities WHERE id=$1 FOR UPDATE', [communityId]);
+    signalStored();
+  };
+  const exported = jsonRequest(`/api/v1/communities/${communityId}/owner/export`, 'POST', {
+    password,
+  });
+  try {
+    await stored;
+    await expect
+      .poll(async () => {
+        const blocked = await pool.query(
+          'SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid))',
+          [pid]
+        );
+        return blocked.rowCount;
+      })
+      .toBe(1);
+    // A competing administration transaction can still take membership while
+    // export waits on lifecycle. The old member-first path fails with 55P03.
+    await administrator.query('SELECT id FROM members WHERE id=$1 FOR UPDATE NOWAIT', [
+      ownerMemberId,
+    ]);
+  } finally {
+    afterExportStored = undefined;
+    await administrator.query('ROLLBACK');
+    administrator.release();
+  }
+  expect((await exported).status).toBe(201);
+});
+
+it.each(['active', 'archived'] as const)(
+  'exports an owner snapshot with %s lifecycle, versions and only its tenant audit',
+  async (lifecycle) => {
+    const created = await jsonRequest('/api/v1/host/communities', 'POST', {
+      idempotencyKey: `export-${lifecycle}`,
+      name: `Export ${lifecycle}`,
+      description: null,
+      admissionPolicy: 'invite_only',
+    });
+    expect(created.status).toBe(201);
+    const pending = await created.json();
+    const preflight = await jsonRequest('/api/v1/owner-claims/preflight', 'POST', {
+      token: pending.ownerClaimToken,
+    });
+    expect(preflight.status).toBe(200);
+    const sessionCookie = ownerCookie
+      .split('; ')
+      .filter((part) => !part.startsWith('community_bootstrap='))
+      .join('; ');
+    const claim = await jsonRequest(
+      '/api/v1/owner-claims/claim',
+      'POST',
+      {},
+      `${sessionCookie}; ${cookieOf(preflight)}`
+    );
+    expect(claim.status).toBe(200);
+    const claimed = await claim.json();
+    const exportCommunityId = claimed.community.id;
+    if (lifecycle === 'archived') {
+      const archived = await jsonRequest(
+        `/api/v1/communities/${exportCommunityId}/owner/lifecycle`,
+        'POST',
+        {
+          action: 'archive',
+          lifecycleVersion: 2,
+          password,
+          confirmName: `Export ${lifecycle}`,
+        }
+      );
+      expect(archived.status).toBe(200);
+    }
+    const exported = await jsonRequest(
+      `/api/v1/communities/${exportCommunityId}/owner/export`,
+      'POST',
+      { password }
+    );
+    expect(exported.status).toBe(201);
+    const { archiveId } = await exported.json();
+    const download = await request(
+      `/api/v1/communities/${exportCommunityId}/exports/${archiveId}`,
+      {
+        headers: { cookie: ownerCookie },
+      }
+    );
+    expect(download.status).toBe(200);
+    const archive = unzipSync(new Uint8Array(await download.arrayBuffer()));
+    const manifest = JSON.parse(strFromU8(archive['manifest.json']));
+    expect(manifest.community).toEqual({
+      id: exportCommunityId,
+      lifecycle,
+      lifecycleVersion: lifecycle === 'active' ? 2 : 3,
+      settingsVersion: 1,
+    });
+    expect(manifest.auditEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ community_id: exportCommunityId, action: 'owner_claim.consume' }),
+      ])
+    );
+    expect(
+      manifest.auditEvents.every(
+        (event: { community_id: string }) => event.community_id === exportCommunityId
+      )
+    ).toBe(true);
+    expect(manifest.members).toHaveLength(1);
+    expect(manifest.members[0].id).toBe(claimed.memberId);
+  }
+);
 
 it('archives with immediate credential revocation and restores without revival', async () => {
   const channel = await jsonRequest(`/api/v1/communities/${communityId}/channels`, 'POST', {

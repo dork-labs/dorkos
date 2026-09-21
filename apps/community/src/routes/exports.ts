@@ -8,13 +8,7 @@ import {
   CommunityWireOwnerExportRequestSchema,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
-import {
-  lockActiveCommunity,
-  requireLiveRole,
-  requireMember,
-  transaction,
-  type Member,
-} from '../data.js';
+import { lockActiveCommunity, requireMember, transaction, type Member } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 import {
   BlobStoreError,
@@ -57,18 +51,40 @@ interface ExportArchiveRow {
   expires_at: Date;
 }
 
+interface ExportCommunity {
+  id: string;
+  lifecycle: 'active' | 'archived';
+  lifecycleVersion: number;
+  settingsVersion: number;
+}
+
+// Lock lifecycle before membership, matching administration mutations. Archived
+// authority is specific to owner exports; ordinary mutations remain active-only.
+async function lockExportAuthority(
+  client: PoolClient,
+  member: Member,
+  scope: 'personal' | 'owner'
+): Promise<ExportCommunity> {
+  if (scope === 'personal') await lockActiveCommunity(client, member.community_id);
+  const community = await client.query<ExportCommunity>(
+    `SELECT id,lifecycle,lifecycle_version AS "lifecycleVersion",settings_version AS "settingsVersion"
+     FROM communities WHERE id=$1 FOR SHARE`,
+    [member.community_id]
+  );
+  const current = community.rows[0];
+  if (!current || !['active', 'archived'].includes(current.lifecycle))
+    throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community cannot be exported now.');
+  const live = await client.query<{ role: Member['role'] }>(
+    'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
+    [member.id, member.community_id]
+  );
+  if (!live.rows[0] || (scope === 'owner' && live.rows[0].role !== 'owner'))
+    throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
+  return current;
+}
+
 async function snapshot(pool: PoolClient, member: Member, scope: 'personal' | 'owner') {
-  if (scope === 'personal') {
-    await lockActiveCommunity(pool, member.community_id);
-  } else {
-    const community = await pool.query<{ lifecycle: string }>(
-      'SELECT lifecycle FROM communities WHERE id=$1 FOR SHARE',
-      [member.community_id]
-    );
-    if (!community.rows[0] || !['active', 'archived'].includes(community.rows[0].lifecycle))
-      throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community cannot be exported now.');
-  }
-  await requireLiveRole(pool, member, scope === 'owner' ? ['owner'] : ['owner', 'admin', 'member']);
+  const community = await lockExportAuthority(pool, member, scope);
   const owner = scope === 'owner';
   const channels = await pool.query(
     owner
@@ -118,7 +134,15 @@ async function snapshot(pool: PoolClient, member: Member, scope: 'personal' | 'o
          ORDER BY att.id LIMIT $2`,
     owner ? [member.community_id, MAX_ROWS + 1] : [member.id, MAX_ROWS + 1, accessibleChannelIds]
   );
-  for (const result of [channels, members, agents, entries, attachments]) {
+  const audit = owner
+    ? await pool.query(
+        `SELECT id,community_id,actor_member_id,actor_kind,action,subject_id,
+                prior_state,next_state,changed_fields,created_at
+         FROM audit_events WHERE community_id=$1 ORDER BY created_at,id LIMIT $2`,
+        [member.community_id, MAX_ROWS + 1]
+      )
+    : { rows: [] };
+  for (const result of [channels, members, agents, entries, attachments, audit]) {
     if (result.rows.length > MAX_ROWS)
       throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'This export exceeds the archive limit.');
   }
@@ -129,6 +153,8 @@ async function snapshot(pool: PoolClient, member: Member, scope: 'personal' | 'o
     version: 1,
     scope,
     requesterMemberId: member.id,
+    community,
+    ...(owner ? { auditEvents: audit.rows } : {}),
     channels: channels.rows,
     members: members.rows,
     agents: agents.rows,
@@ -333,12 +359,7 @@ export function registerExportRoutes(
     }
     try {
       return await transaction(pool, async (client) => {
-        const live = await client.query<Member>(
-          'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
-          [member.id, member.community_id]
-        );
-        if (!live.rows[0] || (scope === 'owner' && live.rows[0].role !== 'owner'))
-          throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
+        await lockExportAuthority(client, member, scope);
         if (scope === 'personal') await requireCurrentChannels(client, member.id, data.channelIds);
         await prepareManagedBlobCommit(client, reservation, stored);
         const result = await client.query<Omit<ExportArchiveRow, 'channel_ids'>>(
