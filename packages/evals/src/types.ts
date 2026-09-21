@@ -293,7 +293,9 @@ export interface EvalSandbox {
   /** Fresh temporary `DORK_HOME` the runtime and oracles read/write. */
   dorkHome: string;
   /**
-   * The runtime this run was asked for (`--runtime`), when it named one.
+   * The runtime every session in this eval binds to, as the runner resolved it
+   * — the same value `RunEvalOptions.runtime` carries, handed to the sandbox so
+   * a case's `seed` can read it. Absent when the run resolved no runtime.
    *
    * A seed reads it because some state a case lays down before the boot DECIDES
    * which runtime serves a turn: a room turn's session is minted by the room
@@ -302,9 +304,6 @@ export interface EvalSandbox {
    * case could only ever be measured on whatever its seed hard-coded — which is
    * exactly how `--suite rooms --runtime opencode` ran every turn on
    * claude-code (DOR-2207).
-   *
-   * Absent on `test-mode`, which registers no such runtime and leaves the
-   * server default in charge.
    */
   runtime?: EvalRuntime;
 }

@@ -25,8 +25,14 @@ import { RunSummarySchema, type EvalCase, type RuntimeTier } from '../../types.j
 import { selfTestCase } from '../../suite/selftest.js';
 import { roomsHaltStopsCase } from '../../suite/rooms.js';
 import { widgetRoundTripCase } from '../../suite/ui.js';
-import { runSuite } from '../run-suite.js';
+import {
+  codexIgnoresModelNotice,
+  resolveRunIsolation,
+  resolveRunModel,
+  runSuite,
+} from '../run-suite.js';
 import { DEFAULT_CHEAP_MODEL } from '../harness-server.js';
+import { DEFAULT_OPENROUTER_MODEL } from '../../types.js';
 import { evaluateRunGate } from '../../report/summary.js';
 
 // The local-sign-in probe shells out to the real `claude` binary; left real, a
@@ -378,6 +384,53 @@ describe('runSuite on the paid real-provider tier', () => {
     await expect(stat(path.join(outDir as string, 'cheap-tier-codex'))).rejects.toThrow();
   });
 
+  it.each([
+    ['opencode', /openrouter\.ai/],
+    ['codex', /OpenAI/],
+  ] as const)(
+    'refuses `--isolation docker` on the %s path, naming what it could not have reached',
+    async (runtime, reaches) => {
+      outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-'));
+      // Refused BEFORE the money question, and that ordering is the assertion:
+      // this is a fault in the command that was typed, and producing a key
+      // cannot fix it. So the message has to be the DOCKER one — a mutation that
+      // drops `runtime` from the refusal's `paidPathFor` call leaves the run
+      // falling through to the opt-in refusal instead, which reads as a
+      // different problem entirely.
+      const refused = runSuite([{ ...paidCase, runtimeTier: 'claude-code-cheap' }], {
+        tier: 'claude-code-cheap',
+        runtime,
+        isolation: 'docker',
+        outDir: outDir as string,
+        runId: `docker-${runtime}`,
+        notify: () => {},
+      });
+      await expect(refused).rejects.toThrow(/docker isolation tier/);
+      await expect(refused).rejects.toThrow(/no\s+network/);
+      await expect(refused).rejects.toThrow(reaches);
+      // Nothing was written, because nothing was attempted.
+      await expect(stat(path.join(outDir as string, `docker-${runtime}`))).rejects.toThrow();
+    }
+  );
+
+  it('tells a person that --model does not reach a Codex turn, rather than refusing the run', async () => {
+    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-'));
+    const said: string[] = [];
+    await expect(
+      runSuite([{ ...paidCase, runtimeTier: 'claude-code-cheap' }], {
+        tier: 'claude-code-cheap',
+        runtime: 'codex',
+        model: 'gpt-5-codex',
+        outDir: outDir as string,
+        runId: 'codex-model-notice',
+        notify: (message) => said.push(message),
+      })
+      // It still stops at the spend gate — the notice is about honesty, not a
+      // second gate, and an unarmed Codex run refuses either way.
+    ).rejects.toThrow(/DORKOS_EVALS_PAID_CODEX/);
+    expect(said).toContain(codexIgnoresModelNotice('gpt-5-codex'));
+  });
+
   it('leaves an ordinary claude-code run on the Anthropic credential ladder', async () => {
     outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-'));
     // The negative control that keeps the rule above from being "refuse
@@ -535,5 +588,104 @@ describe('the paid spend ceiling', () => {
       notify: () => {},
     });
     expect(summary.budgetUsd).toBe(1.25);
+  });
+});
+
+/**
+ * The isolation a paid path gets, which the README described before the code
+ * did.
+ *
+ * `--isolation auto` is a PREFERENCE: a case that declares `preferDocker` gets a
+ * container when one is available. A container has no network at all (ADR
+ * 260725-133222), so an OpenCode or Codex case that got one would fail every
+ * turn while the run reported containment it never asked for — and while the
+ * README promised the opposite. Keyed on `tier === 'real-provider'`, only the
+ * paid TIER was downgraded; the two paid RUNTIMES were not.
+ *
+ * Tested on the pure function because arming a paid run needs the un-stubbable
+ * module-scope flag, so `runSuite` cannot reach the branch at all.
+ */
+describe('resolveRunIsolation — a paid path never containerizes', () => {
+  /** `[tier, runtime, provider, requested, resolved, why]`. */
+  const cases: [
+    RuntimeTier,
+    string | undefined,
+    string | undefined,
+    'auto' | 'docker' | 'child-process' | undefined,
+    'auto' | 'docker' | 'child-process' | undefined,
+    string,
+  ][] = [
+    ['real-provider', 'opencode', 'openrouter', 'auto', 'child-process', 'the paid tier'],
+    // THE 🔴: both of these kept `auto` and containerized their preferDocker cases.
+    [
+      'claude-code-cheap',
+      'opencode',
+      undefined,
+      'auto',
+      'child-process',
+      'OpenCode on a cheap tier',
+    ],
+    ['claude-code-cheap', 'codex', undefined, 'auto', 'child-process', 'a Codex leg'],
+    ['claude-code-cheap', undefined, 'openrouter', 'auto', 'child-process', 'a named provider'],
+    // Asking for nothing in particular on a paid path is still downgraded: the
+    // launcher resolver's own default is `auto`.
+    ['claude-code-cheap', 'codex', undefined, undefined, 'child-process', 'no isolation named'],
+    // The negative controls. An ordinary run keeps exactly what it asked for.
+    ['claude-code-cheap', 'claude-code', undefined, 'auto', 'auto', 'the ordinary run'],
+    ['claude-code-cheap', 'claude-code', undefined, 'docker', 'docker', 'containment as asked'],
+    ['test-mode', undefined, undefined, undefined, undefined, 'the free structural run'],
+  ];
+
+  it.each(cases)('%s + %s + %s + %s → %s (%s)', (tier, runtime, provider, requested, expected) => {
+    expect(resolveRunIsolation(tier, runtime, provider, requested)).toBe(expected);
+  });
+});
+
+/**
+ * The model a run may honestly record.
+ *
+ * A Codex run recorded `claude-haiku-4-5` — the cheap ANTHROPIC default — in
+ * `results.json`, for a run no Anthropic model ever answered. Nothing forwards a
+ * model id to a Codex turn: the harness writes no codex config, the messages
+ * route carries no model, and the codex environment projection strips
+ * `ANTHROPIC_MODEL`. So the honest record is none.
+ */
+describe('resolveRunModel — a run records only a model something forwarded', () => {
+  /** `[tier, runtime, requested, recorded, why]`. */
+  const cases: [
+    RuntimeTier,
+    'claude-code' | 'codex' | 'opencode' | undefined,
+    string | undefined,
+    string | undefined,
+    string,
+  ][] = [
+    // THE 🔴, both halves: a Codex run records nothing, passed or defaulted.
+    ['claude-code-cheap', 'codex', undefined, undefined, 'nothing forwards a model to codex'],
+    ['claude-code-cheap', 'codex', 'gpt-5-codex', undefined, 'not even one that was typed'],
+    ['real-provider', 'codex', undefined, undefined, 'the tier does not change that'],
+    // The paths that DO forward one.
+    ['claude-code-cheap', 'claude-code', undefined, DEFAULT_CHEAP_MODEL, 'ANTHROPIC_MODEL'],
+    ['claude-code-cheap', 'claude-code', 'claude-sonnet-4-5', 'claude-sonnet-4-5', 'as typed'],
+    [
+      'claude-code-cheap',
+      'opencode',
+      undefined,
+      DEFAULT_OPENROUTER_MODEL,
+      'the sandbox config pin',
+    ],
+    ['real-provider', 'opencode', undefined, DEFAULT_OPENROUTER_MODEL, 'the paid default'],
+    ['test-mode', undefined, undefined, undefined, 'reaches no model at all'],
+  ];
+
+  it.each(cases)('%s + %s + %s → %s (%s)', (tier, runtime, requested, expected) => {
+    expect(resolveRunModel(tier, runtime, requested)).toBe(expected);
+  });
+
+  it('never hands a Codex run the cheap Anthropic default', () => {
+    // The mutation this exists to survive: dropping the codex arm puts a Haiku
+    // id back in `results.json` for a run that never saw an Anthropic model.
+    for (const tier of ['claude-code-cheap', 'real-provider'] as const) {
+      expect(resolveRunModel(tier, 'codex', undefined)).not.toBe(DEFAULT_CHEAP_MODEL);
+    }
   });
 });

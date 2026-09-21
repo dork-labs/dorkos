@@ -201,8 +201,7 @@ function credentialGateError(
  * OpenRouter key to spend — which is luck, not a gate.
  *
  * Which side of the split a run lands on follows the MONEY, not the tier string
- * — see {@link paidPathFor} for the command that proved the
- * difference matters.
+ * — see {@link paidPathFor} for the command that proved the difference matters.
  *
  * @param tier - The tier this eval runs on.
  * @param provided - A credential the suite already resolved once for the run.

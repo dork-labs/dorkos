@@ -2,13 +2,13 @@
 slug: evals-runtime-legs
 number: 260920-230219
 created: 2026-09-20
-status: specified
+status: implemented
 linear-issue: DOR-2207
 ---
 
 # The eval harness runs a rooms case on the runtime you asked for
 
-**Status:** Approved
+**Status:** Implemented
 **Author:** the DOR-2207 orchestrator
 **Date:** 2026-09-20
 

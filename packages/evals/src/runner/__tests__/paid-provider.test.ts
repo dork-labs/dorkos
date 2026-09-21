@@ -490,6 +490,19 @@ describe('paidPathFor — the rule the gate keys on', () => {
     // The negative controls that keep this from being "refuse everything".
     ['claude-code-cheap', 'claude-code', undefined, null, 'the ordinary Anthropic run'],
     ['test-mode', undefined, undefined, null, 'the free structural run'],
+    // `test-mode` × every runtime, so the table is the whole table rather than
+    // its interesting corner. The free tier reaches no model at all — but the
+    // rule is the MONEY, not the tier string, so a `test-mode` run that somehow
+    // carried a paid runtime must still gate. `run-suite` drops `--runtime` on
+    // this tier (it resolves the runtime to `undefined`), which is why the
+    // realistic row is the third one; the first two pin that this function does
+    // not quietly special-case the free tier.
+    ['test-mode', 'opencode', undefined, 'openrouter', 'a paid runtime is paid on any tier'],
+    ['test-mode', 'codex', undefined, 'codex', 'the same, on the codex bill'],
+    ['test-mode', 'claude-code', undefined, null, 'the free run as run-suite spells it'],
+    // …and the remaining credentialed cells, for completeness.
+    ['real-provider', 'claude-code', undefined, 'openrouter', 'the tier gates whatever rides it'],
+    ['claude-code-cheap', undefined, undefined, null, 'no runtime, no provider, no spend'],
   ];
 
   it.each(cases)('%s + %s + %s → %s (%s)', (tier, runtime, provider, expected) => {
