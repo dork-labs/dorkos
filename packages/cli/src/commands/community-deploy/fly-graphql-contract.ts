@@ -51,6 +51,15 @@ const ReadEnvelopeSchema = z
     data: z.object({ node: AddOnSchema.nullable() }).strict(),
   })
   .strict();
+const DeleteEnvelopeSchema = z
+  .object({
+    data: z
+      .object({
+        deleteAddOn: z.object({ deletedAddOnName: SafeIdentifierSchema }).strict(),
+      })
+      .strict(),
+  })
+  .strict();
 
 const ExpectedBindingSchema = z
   .object({
@@ -116,6 +125,15 @@ export const FLY_TIGRIS_READ_QUERY = `
         addOnProvider { name }
         app { id name }
       }
+    }
+  }
+`;
+
+/** Minimal deletion mutation used only after exact journal binding is reverified. */
+export const FLY_TIGRIS_DELETE_MUTATION = `
+  mutation DorkosDeleteTigris($name: String!, $provider: String!) {
+    deleteAddOn(input: { name: $name, provider: $provider }) {
+      deletedAddOnName
     }
   }
 `;
@@ -243,6 +261,20 @@ export function parseTigrisReadResponse(response: unknown): TigrisAddOnIdentity 
   }
   if (parsed.data.node === null) throw new FlyGraphqlContractError('ADD_ON_MISSING');
   return sanitizeAddOn(parsed.data.node);
+}
+
+/** Parse Tigris deletion acknowledgement and bind it to the exact expected name. */
+export function parseTigrisDeleteResponse(response: unknown, expectedName: string): string {
+  let parsed: z.infer<typeof DeleteEnvelopeSchema>;
+  try {
+    parsed = DeleteEnvelopeSchema.parse(response);
+  } catch {
+    throw invalidResponse();
+  }
+  if (parsed.data.deleteAddOn.deletedAddOnName !== expectedName) {
+    throw new FlyGraphqlContractError('BINDING_MISMATCH');
+  }
+  return parsed.data.deleteAddOn.deletedAddOnName;
 }
 
 /**

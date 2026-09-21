@@ -9,6 +9,11 @@
  * fifteen were present, so the gaps read as accidents rather than as
  * encapsulation (DOR-1761).
  *
+ * The second suite applies the same argument to `cva`/`tv` variant tables: a
+ * `*Variants` object the barrel cannot see is a set of classes a sibling
+ * component has to retype by hand. Three of fourteen were unreachable when that
+ * suite was written (DOR-1871).
+ *
  * This walks the real barrel and the real sources rather than pinning a list: a
  * list would go stale the next time somebody adds a component.
  */
@@ -90,6 +95,35 @@ describe('shared/ui barrel', () => {
     // the coverage gap noted below for components whose props type is an
     // inline `React.ComponentProps<...>` instead.
     expect(subjects).toBeGreaterThan(50);
+    expect(missing).toEqual([]);
+  });
+});
+
+describe('shared/ui variant tables', () => {
+  it('publishes every `*Variants` object declared under shared/ui', () => {
+    const { values } = barrelExports();
+    // Same anti-vacuity guard as above: an empty `values` would make every
+    // variant object below look published.
+    expect(values.size).toBeGreaterThan(100);
+
+    const missing: string[] = [];
+    let subjects = 0;
+
+    for (const file of sourceFiles(UI_DIR)) {
+      const src = readFileSync(file, 'utf8');
+      for (const match of src.matchAll(/^\s*(?:export\s+)?const\s+(\w+Variants)\s*=/gm)) {
+        const name = match[1];
+        subjects++;
+        if (values.has(name)) continue;
+        missing.push(`${name} (declared in ${file.slice(UI_DIR.length + 1)})`);
+      }
+    }
+
+    // Fourteen variant tables exist today, eleven of which were already on the
+    // barrel; DOR-1871 published the last three. A floor under fourteen catches
+    // the walk finding nothing without pinning a count that a new primitive
+    // would have to bump.
+    expect(subjects).toBeGreaterThanOrEqual(14);
     expect(missing).toEqual([]);
   });
 });

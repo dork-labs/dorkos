@@ -17,7 +17,7 @@ const fixtureSchema = z
 
 function nodeFixture(
   source: string,
-  overrides: Partial<{ timeoutMs: number; maxBytes: number }> = {}
+  overrides: Partial<{ timeoutMs: number; maxBytes: number; signal: AbortSignal }> = {}
 ) {
   return runProviderCommand({
     executable: process.execPath,
@@ -25,6 +25,7 @@ function nodeFixture(
     env: {},
     timeoutMs: overrides.timeoutMs ?? 2_000,
     maxBytes: overrides.maxBytes,
+    signal: overrides.signal,
     parse: (stdout) => fixtureSchema.parse(JSON.parse(stdout)),
   });
 }
@@ -88,6 +89,26 @@ describe('provider process boundary', () => {
       );
       await waitForFile(ready);
       await expect(command).rejects.toMatchObject({ code: 'TIMEOUT' });
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      await expect(readFile(marker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('stops the exact provider process before cancellation returns', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'dorkos-provider-cancel-'));
+    const ready = join(directory, 'ready');
+    const marker = join(directory, 'late-side-effect');
+    const controller = new AbortController();
+    try {
+      const command = nodeFixture(
+        `const {writeFileSync}=require('node:fs');process.on('SIGTERM',()=>setTimeout(()=>{writeFileSync(${JSON.stringify(marker)},'late');process.exit(0)},500));writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000);`,
+        { timeoutMs: 2_000, signal: controller.signal }
+      );
+      await waitForFile(ready);
+      controller.abort();
+      await expect(command).rejects.toMatchObject({ code: 'CANCELLED' });
       await new Promise((resolve) => setTimeout(resolve, 600));
       await expect(readFile(marker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {

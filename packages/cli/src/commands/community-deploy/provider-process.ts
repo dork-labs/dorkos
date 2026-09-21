@@ -24,6 +24,8 @@ export interface ProviderCommandOptions<T> {
   env: Readonly<Record<string, string>>;
   /** Maximum wall time in milliseconds. */
   timeoutMs: number;
+  /** Operator cancellation shared by the complete guided launch. */
+  signal?: AbortSignal;
   /** Maximum bytes accepted on either output stream. */
   maxBytes?: number;
   /** Optional secret document streamed to stdin. */
@@ -35,7 +37,7 @@ export interface ProviderCommandOptions<T> {
 /** Generic safe provider error that never includes raw command output. */
 export class ProviderCommandError extends Error {
   /** Stable failure category safe for logs and journals. */
-  readonly code: 'SPAWN' | 'TIMEOUT' | 'OUTPUT_LIMIT' | 'EXIT' | 'INVALID_RESPONSE';
+  readonly code: 'SPAWN' | 'TIMEOUT' | 'OUTPUT_LIMIT' | 'EXIT' | 'INVALID_RESPONSE' | 'CANCELLED';
 
   /**
    * Create a provider command error without raw stdout or stderr.
@@ -73,6 +75,11 @@ export function runProviderCommand<T>(
     let pendingError: ProviderCommandError | undefined;
     let terminationTimer: NodeJS.Timeout | undefined;
 
+    const scrubStdout = (): void => {
+      for (const chunk of stdout) chunk.fill(0);
+      stdout.length = 0;
+    };
+
     const failAfterClose = (error: ProviderCommandError): void => {
       if (settled || pendingError) return;
       pendingError = error;
@@ -88,6 +95,9 @@ export function runProviderCommand<T>(
       () => failAfterClose(new ProviderCommandError('TIMEOUT')),
       options.timeoutMs
     );
+    const cancel = () => failAfterClose(new ProviderCommandError('CANCELLED'));
+    options.signal?.addEventListener('abort', cancel, { once: true });
+    if (options.signal?.aborted) cancel();
     child.once('error', () => failAfterClose(new ProviderCommandError('SPAWN')));
     child.stdout.on('data', (chunk: Buffer) => {
       if (settled || pendingError) return;
@@ -108,12 +118,23 @@ export function runProviderCommand<T>(
       settled = true;
       clearTimeout(timer);
       clearTimeout(terminationTimer);
-      if (pendingError) return reject(pendingError);
-      if (code !== 0) return reject(new ProviderCommandError('EXIT'));
+      options.signal?.removeEventListener('abort', cancel);
+      if (pendingError) {
+        scrubStdout();
+        return reject(pendingError);
+      }
+      if (code !== 0) {
+        scrubStdout();
+        return reject(new ProviderCommandError('EXIT'));
+      }
+      const output = Buffer.concat(stdout);
       try {
-        resolve({ value: options.parse(Buffer.concat(stdout).toString('utf8')) });
+        resolve({ value: options.parse(output.toString('utf8')) });
       } catch {
         reject(new ProviderCommandError('INVALID_RESPONSE'));
+      } finally {
+        output.fill(0);
+        scrubStdout();
       }
     });
     child.stdin.on('error', () => failAfterClose(new ProviderCommandError('EXIT')));
