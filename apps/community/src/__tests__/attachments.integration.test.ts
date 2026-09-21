@@ -433,6 +433,19 @@ describe('attachments over real HTTP and Postgres', () => {
           )
         ).rows[0].count
       ).toBe(0);
+      expect(
+        (
+          await pool.query<{
+            outcome_uncertain: boolean;
+            attempts: number;
+            byte_size: string | null;
+          }>(
+            `SELECT p.last_error_at IS NULL AS outcome_uncertain,p.attempts,m.byte_size
+             FROM pending_blob_deletions p JOIN managed_blobs m USING(blob_key)
+             WHERE m.state='pending_delete'`
+          )
+        ).rows[0]
+      ).toEqual({ outcome_uncertain: true, attempts: 1, byte_size: null });
     } finally {
       put.mockRestore();
       remove.mockRestore();
@@ -443,14 +456,23 @@ describe('attachments over real HTTP and Postgres', () => {
       );
     }
     await pool.query("UPDATE pending_blob_deletions SET next_attempt_at=now()-interval '1 second'");
-    expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 1, failed: 0 });
+    expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 0, failed: 0 });
+    await expect(
+      blobStore.get(
+        (
+          await pool.query<{ blob_key: string }>(
+            "SELECT blob_key FROM managed_blobs WHERE state='pending_delete'"
+          )
+        ).rows[0].blob_key
+      )
+    ).rejects.toMatchObject({ code: 'BLOB_NOT_FOUND' });
     expect(
       (
         await pool.query(
           "SELECT count(*)::int AS count FROM managed_blobs WHERE state<>'committed'"
         )
       ).rows[0].count
-    ).toBe(0);
+    ).toBe(1);
   });
 
   it('keeps active reservations and repeatedly reconciles an uncertain expired writer', async () => {
@@ -582,6 +604,83 @@ describe('attachments over real HTTP and Postgres', () => {
     await pool.query('DELETE FROM pending_blob_deletions WHERE blob_key=$1', [key]);
     await pool.query('DELETE FROM managed_blobs WHERE blob_key=$1', [key]);
   });
+
+  it.each(['successful', 'failed'] as const)(
+    'keeps a rejected writer tombstone after the immediate %s delete and removes its late publish',
+    async (firstDelete) => {
+      const originalPut = blobStore.put.bind(blobStore);
+      const originalDelete = blobStore.delete.bind(blobStore);
+      let key: string | undefined;
+      const put = vi
+        .spyOn(blobStore, 'put')
+        .mockImplementationOnce(async (input) => {
+          key = input.key;
+          throw new Error('provider rejected before late publish');
+        })
+        .mockImplementation(originalPut);
+      const remove =
+        firstDelete === 'failed'
+          ? vi
+              .spyOn(blobStore, 'delete')
+              .mockRejectedValueOnce(new Error('immediate cleanup failed'))
+              .mockImplementation(originalDelete)
+          : null;
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        expect((await upload(channelId, ownerCookie, `rejected-late-${firstDelete}`)).status).toBe(
+          503
+        );
+      } finally {
+        put.mockRestore();
+        remove?.mockRestore();
+        errorLog.mockRestore();
+      }
+      expect(key).toMatch(/^[a-f0-9]{64}$/);
+      expect(
+        (
+          await pool.query<{
+            state: string;
+            outcome_uncertain: boolean;
+            attempts: number;
+          }>(
+            `SELECT m.state,p.last_error_at IS NULL AS outcome_uncertain,p.attempts
+             FROM managed_blobs m JOIN pending_blob_deletions p USING(blob_key)
+             WHERE m.blob_key=$1`,
+            [key!]
+          )
+        ).rows[0]
+      ).toEqual({
+        state: 'pending_delete',
+        outcome_uncertain: true,
+        attempts: 1,
+      });
+
+      await blobStore.put({
+        key: key!,
+        source: Readable.from([Buffer.from('late rejected-writer bytes')]),
+        displayName: 'late-rejected.txt',
+        maxBytes: 1024,
+      });
+      await pool.query(
+        "UPDATE pending_blob_deletions SET next_attempt_at=now()-interval '1 second' WHERE blob_key=$1",
+        [key!]
+      );
+      expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 0, failed: 0 });
+      await expect(blobStore.get(key!)).rejects.toMatchObject({ code: 'BLOB_NOT_FOUND' });
+      expect(
+        (
+          await pool.query<{ state: string; outcome_uncertain: boolean }>(
+            `SELECT m.state,p.last_error_at IS NULL AS outcome_uncertain
+             FROM managed_blobs m JOIN pending_blob_deletions p USING(blob_key)
+             WHERE m.blob_key=$1`,
+            [key!]
+          )
+        ).rows[0]
+      ).toEqual({ state: 'pending_delete', outcome_uncertain: true });
+      await pool.query('DELETE FROM pending_blob_deletions WHERE blob_key=$1', [key!]);
+      await pool.query('DELETE FROM managed_blobs WHERE blob_key=$1', [key!]);
+    }
+  );
 
   it('refuses a late reference commit after the reservation lease expires', async () => {
     const originalPut = blobStore.put.bind(blobStore);

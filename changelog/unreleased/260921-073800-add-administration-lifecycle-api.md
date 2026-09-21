@@ -5,6 +5,5 @@ covers:
 
 ### Added
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- Add administration lifecycle API
+- Community owners can update settings and icons, transfer ownership, archive a community, or request deletion with a seven-day grace period.
+- Server operators can create communities for new owners and suspend or resume a community.

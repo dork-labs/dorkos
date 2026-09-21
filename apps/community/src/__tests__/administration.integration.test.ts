@@ -1,8 +1,8 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { serve } from '@hono/node-server';
 import { Pool } from 'pg';
 import { strFromU8, unzipSync } from 'fflate';
@@ -20,6 +20,7 @@ const dbUrl = new URL(adminUrl);
 dbUrl.pathname = `/${dbName}`;
 let server: ReturnType<typeof serve>;
 let pool: Pool;
+let blobStore: BlobStore;
 let baseUrl = '';
 let storagePath = '';
 let ownerCookie = '';
@@ -76,7 +77,7 @@ beforeAll(async () => {
     COMMUNITY_STORAGE_PATH: storagePath,
   });
   const filesystem = new FileSystemBlobStore(storagePath);
-  const blobStore: BlobStore = {
+  blobStore = {
     put: async (input) => {
       if (input.kind === 'export') await beforeExportStored?.();
       const result = await filesystem.put(input);
@@ -192,6 +193,81 @@ it('rejects suspended public discovery on qualified and singleton routes', async
     expect(resumed.status).toBe(200);
     lifecycleVersion = (await resumed.json()).lifecycleVersion;
   }
+});
+
+it('rejects deletion maintenance before a non-owner can reconcile storage', async () => {
+  const path = `/api/v1/communities/${communityId}/owner/deletion`;
+  const requestBody = {
+    lifecycleVersion,
+    password,
+    confirmName: 'First Community',
+    confirmIdSuffix: communityId.slice(-8),
+  };
+  const reconciliationBefore = (
+    await pool.query(
+      'SELECT generation,state,namespace_digest FROM tenant_reconciliation WHERE singleton=true'
+    )
+  ).rows[0];
+  const unauthorizedList = vi.spyOn(blobStore, 'listNamespace');
+  const unauthorized = await jsonRequest(path, 'POST', requestBody, memberCookie);
+  expect(unauthorized.status).toBe(403);
+  expect(unauthorizedList).not.toHaveBeenCalled();
+  expect(
+    (
+      await pool.query(
+        'SELECT generation,state,namespace_digest FROM tenant_reconciliation WHERE singleton=true'
+      )
+    ).rows[0]
+  ).toEqual(reconciliationBefore);
+  unauthorizedList.mockRestore();
+});
+
+it('returns an in-flight singleton deletion job before reconciling missing bytes', async () => {
+  const path = `/api/v1/communities/${communityId}/owner/deletion`;
+  const requestBody = {
+    lifecycleVersion,
+    password,
+    confirmName: 'First Community',
+    confirmIdSuffix: communityId.slice(-8),
+  };
+  const exportResponse = await jsonRequest(
+    `/api/v1/communities/${communityId}/owner/export`,
+    'POST',
+    { password }
+  );
+  expect(exportResponse.status).toBe(201);
+  const { archiveId } = await exportResponse.json();
+  const referencedBlobKey = (
+    await pool.query<{ blob_key: string }>('SELECT blob_key FROM export_archives WHERE id=$1', [
+      archiveId,
+    ])
+  ).rows[0].blob_key;
+  const referencedBytes = await readFile(join(storagePath, referencedBlobKey));
+
+  const requested = await jsonRequest(path, 'POST', requestBody);
+  expect(requested.status).toBe(200);
+  const first = await requested.json();
+  lifecycleVersion = first.lifecycleVersion;
+  await blobStore.delete(referencedBlobKey);
+
+  const retryList = vi.spyOn(blobStore, 'listNamespace');
+  const retry = await jsonRequest(path, 'POST', { ...requestBody, lifecycleVersion });
+  expect(retry.status).toBe(200);
+  expect(await retry.json()).toEqual(first);
+  expect(retryList).not.toHaveBeenCalled();
+  retryList.mockRestore();
+  await writeFile(join(storagePath, referencedBlobKey), referencedBytes, { mode: 0o600 });
+
+  const cancel = await jsonRequest(`${path}/cancel`, 'POST', { lifecycleVersion, password });
+  expect(cancel.status).toBe(200);
+  lifecycleVersion = (await cancel.json()).lifecycleVersion;
+  const restore = await jsonRequest(`/api/v1/communities/${communityId}/owner/lifecycle`, 'POST', {
+    action: 'restore',
+    lifecycleVersion,
+    password,
+  });
+  expect(restore.status).toBe(200);
+  lifecycleVersion = (await restore.json()).lifecycleVersion;
 });
 
 it('creates a pending tenant idempotently and rotates its private owner claim', async () => {
@@ -340,6 +416,17 @@ it('stores private raster icons with ETags and queues replaced bytes', async () 
       })
     ).status
   ).toBe(404);
+  const uncertain = (
+    await pool.query<{ blob_key: string; outcome_uncertain: boolean }>(
+      `SELECT m.blob_key,p.last_error_at IS NULL AS outcome_uncertain
+       FROM managed_blobs m JOIN pending_blob_deletions p USING(blob_key)
+       WHERE m.community_id=$1 AND m.purpose='icon' AND m.byte_size IS NULL`,
+      [communityId]
+    )
+  ).rows;
+  expect(uncertain).toEqual([{ blob_key: expect.any(String), outcome_uncertain: true }]);
+  await pool.query('DELETE FROM pending_blob_deletions WHERE blob_key=$1', [uncertain[0].blob_key]);
+  await pool.query('DELETE FROM managed_blobs WHERE blob_key=$1', [uncertain[0].blob_key]);
 });
 
 it('locks community before membership when committing an owner export', async () => {

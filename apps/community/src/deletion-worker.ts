@@ -1,11 +1,57 @@
 import type { Pool } from 'pg';
 import { transaction } from './data.js';
-import { BlobStoreError, type BlobStore } from './storage/index.js';
+import { BlobStoreError, reconcileTenantNamespace, type BlobStore } from './storage/index.js';
 
 const DELETE_BATCH = 25;
+const MISSING_DELETION_INVENTORY_SQL = `
+  SELECT a.blob_key FROM attachments a
+  LEFT JOIN managed_blobs m ON m.blob_key=a.blob_key
+    AND m.community_id=a.community_id AND m.purpose='attachment'
+  WHERE a.community_id=$1 AND (m.blob_key IS NULL OR m.state<>'committed')
+  UNION ALL
+  SELECT e.blob_key FROM export_archives e
+  LEFT JOIN managed_blobs m ON m.blob_key=e.blob_key
+    AND m.community_id=e.community_id AND m.purpose='export'
+  WHERE e.community_id=$1 AND (m.blob_key IS NULL OR m.state<>'committed')
+  UNION ALL
+  SELECT c.icon_blob_key FROM communities c
+  LEFT JOIN managed_blobs m ON m.blob_key=c.icon_blob_key
+    AND m.community_id=c.id AND m.purpose='icon'
+  WHERE c.id=$1 AND c.icon_blob_key IS NOT NULL
+    AND (m.blob_key IS NULL OR m.state<>'committed')`;
 
 function safeDeleteError(error: unknown): string {
   return error instanceof BlobStoreError ? error.code : 'BLOB_DELETE_FAILED';
+}
+
+async function countMissingDeletionInventory(pool: Pool, communityId: string): Promise<number> {
+  const result = await pool.query<{ count: number }>(
+    `SELECT count(*)::int AS count FROM (${MISSING_DELETION_INVENTORY_SQL}) missing`,
+    [communityId]
+  );
+  return result.rows[0]?.count ?? 0;
+}
+
+/** Adopt verified legacy singleton blobs before permanent deletion can be requested. */
+export async function prepareCommunityDeletionInventory(
+  pool: Pool,
+  blobStore: BlobStore,
+  communityId: string
+): Promise<boolean> {
+  const state = await pool.query<{ count: number; multiple_used: boolean }>(
+    `SELECT (SELECT count(*)::int FROM communities) AS count,
+            (SELECT multiple_communities_used FROM community_backout_fence WHERE singleton)
+              AS multiple_used`
+  );
+  const host = state.rows[0];
+  // A host which has never admitted a second tenant has no durable proof that its legacy
+  // namespace was ever inventoried. Re-run the complete gate even when no relational reference
+  // is missing so unexplained legacy objects block deletion instead of becoming silent orphans.
+  if (host?.count === 1 && !host.multiple_used) {
+    const reconciliation = await reconcileTenantNamespace(pool, blobStore);
+    return reconciliation.ready && (await countMissingDeletionInventory(pool, communityId)) === 0;
+  }
+  return (await countMissingDeletionInventory(pool, communityId)) === 0;
 }
 
 /** Delete one due tenant in bounded, restart-safe object and database phases. */
@@ -159,6 +205,20 @@ export async function sweepCommunityDeletions(
       [job.community_id]
     );
     if (!locked.rows[0]) return false;
+    const missingInventory = await client.query(
+      `SELECT 1 FROM (${MISSING_DELETION_INVENTORY_SQL}) missing LIMIT 1`,
+      [job.community_id]
+    );
+    if (missingInventory.rowCount) {
+      await client.query(
+        `UPDATE community_deletion_jobs
+         SET state='retrying',next_attempt_at=now()+interval '1 hour',
+             updated_at=now(),last_error_class='INCOMPLETE_BLOB_INVENTORY'
+         WHERE community_id=$1`,
+        [job.community_id]
+      );
+      return false;
+    }
     const incomplete = await client.query(
       // Recheck writer uncertainty under the final community lock so progress
       // recorded by an older worker cannot discard its durable tombstone.
