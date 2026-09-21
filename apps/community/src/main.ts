@@ -9,6 +9,7 @@ import { createBlobStore } from './storage/index.js';
 import { sweepExpiredAttachments } from './routes/attachments.js';
 import { sweepExpiredExports } from './routes/exports.js';
 import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
+import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './deletion-worker.js';
 
 const config = parseConfig(process.env);
 await migrate(config.databaseUrl);
@@ -51,6 +52,18 @@ const cleanup = setInterval(() => {
   void sweepPendingBlobDeletions(pool, blobStore).catch((error: unknown) => {
     console.error(
       'Community pending blob cleanup unavailable',
+      error instanceof Error ? error.name : 'unknown'
+    );
+  });
+  void sweepCommunityDeletions(pool, blobStore).catch((error: unknown) => {
+    console.error(
+      'Community deletion unavailable',
+      error instanceof Error ? error.name : 'unknown'
+    );
+  });
+  void sweepCommunityDeletionTombstones(pool).catch((error: unknown) => {
+    console.error(
+      'Community deletion receipt cleanup unavailable',
       error instanceof Error ? error.name : 'unknown'
     );
   });

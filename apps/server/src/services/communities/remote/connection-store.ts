@@ -15,6 +15,10 @@ import {
   type CommunityConnectionDescriptor,
 } from '@dorkos/shared/community-connections';
 import {
+  CommunityConnectionAccessSchema,
+  type CommunityConnectionAccess,
+} from '@dorkos/shared/community-wire';
+import {
   EncryptedFileCredentialStore,
   type CredentialStore,
 } from '../../core/credential-provider.js';
@@ -30,6 +34,7 @@ const RecordSchema = z.strictObject({
   pairingId: z.string().min(1).nullable(),
   expiresAt: z.iso.datetime().nullable(),
   agentIds: z.array(z.string().min(1)),
+  access: CommunityConnectionAccessSchema.nullable().optional(),
 });
 type ConnectionRecord = z.infer<typeof RecordSchema>;
 
@@ -50,6 +55,27 @@ export class RemoteConnectionAuthorizationError extends Error {
     super('Community connection must be reconnected');
     this.name = 'RemoteConnectionAuthorizationError';
   }
+}
+
+const noEffectiveAccess = { read: false, post: false, enrollAgent: false, stream: false } as const;
+
+function projectedAccess(record: ConnectionRecord): CommunityConnectionAccess | null {
+  if (record.status === 'pending') return null;
+  if (record.status === 'reconnect-required') {
+    return CommunityConnectionAccessSchema.parse({
+      state: 'reconnect-required',
+      effective: noEffectiveAccess,
+      lastKnown: record.access?.lastKnown ?? null,
+    });
+  }
+  return (
+    record.access ??
+    CommunityConnectionAccessSchema.parse({
+      state: 'unverified',
+      effective: noEffectiveAccess,
+      lastKnown: null,
+    })
+  );
 }
 
 /** Atomic, owner-scoped metadata plus the existing AES-GCM credential store. */
@@ -156,6 +182,7 @@ export class RemoteConnectionStore {
       connectedHumanMemberId,
       status,
       expiresAt,
+      access: projectedAccess(record),
     });
   }
 
@@ -200,7 +227,8 @@ export class RemoteConnectionStore {
     ref: CommunityRef,
     ownerKey: string,
     memberId: string,
-    token: string
+    token: string,
+    access: CommunityConnectionAccess
   ): Promise<RemoteConnectionDescriptor> {
     return this.exclusive(async () => {
       const record = await this.get(ref, ownerKey);
@@ -220,6 +248,7 @@ export class RemoteConnectionStore {
           connectedHumanMemberId: memberId,
           pairingId: null,
           expiresAt: null,
+          access,
         });
         records[index] = updated;
         await this.write(records);
@@ -229,6 +258,24 @@ export class RemoteConnectionStore {
       }
       await this.credentials.delete(`community:${ref}:pairing`);
       return this.project(updated);
+    });
+  }
+
+  /** Persist the latest exact-grant verification or bounded outage snapshot. */
+  async updateAccess(
+    ref: CommunityRef,
+    ownerKey: string,
+    access: CommunityConnectionAccess
+  ): Promise<RemoteConnectionDescriptor> {
+    return this.exclusive(async () => {
+      const records = await this.read();
+      const index = records.findIndex(
+        (item) => item.ref === ref && item.ownerKey === ownerKey && item.status === 'connected'
+      );
+      if (index < 0) throw new RemoteConnectionNotFoundError();
+      records[index] = RecordSchema.parse({ ...records[index], access });
+      await this.write(records);
+      return this.project(records[index]!);
     });
   }
 
@@ -251,7 +298,15 @@ export class RemoteConnectionStore {
         throw new RemoteConnectionNotFoundError();
       const record = records[index]!;
       if (record.status !== 'reconnect-required') {
-        records[index] = RecordSchema.parse({ ...record, status: 'reconnect-required' });
+        records[index] = RecordSchema.parse({
+          ...record,
+          status: 'reconnect-required',
+          access: {
+            state: 'reconnect-required',
+            effective: noEffectiveAccess,
+            lastKnown: record.access?.lastKnown ?? null,
+          },
+        });
         await this.write(records);
       }
       await this.credentials.delete(`community:${ref}:personal`);

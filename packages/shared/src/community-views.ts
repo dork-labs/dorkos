@@ -13,6 +13,7 @@ import type { HaltRoomResponse } from './room-schemas.js';
 import {
   CommunityWireEntryPostRequestSchema,
   CommunityWireHandleSchema,
+  CommunityConnectionAccessSchema,
 } from './community-wire.js';
 import {
   CommunityAttachmentSchema,
@@ -38,10 +39,14 @@ export const RemoteCommunityRoomSchema = CommunityRoomSchema.extend({
   stale: z.boolean(),
   cacheCursor: CommunityCursorSchema.nullable(),
   lastRemoteSeq: sequence,
+  access: CommunityConnectionAccessSchema,
 })
   .strict()
   .refine(
-    (room) => !room.writable || (room.readable && room.joined && !room.stale && !room.archived),
+    (room) =>
+      (!room.readable || room.access.effective.read) &&
+      (!room.writable || room.access.effective.post) &&
+      (!room.writable || (room.readable && room.joined && !room.stale && !room.archived)),
     {
       message: 'Writing requires current joined membership in a readable, active room',
     }

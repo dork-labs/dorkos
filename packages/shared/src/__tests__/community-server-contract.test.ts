@@ -29,6 +29,7 @@ import {
   CommunityWireAgentChannelMembershipResponseSchema,
   CommunityWireOwnerTransferResponseSchema,
   CommunityWireGrantListResponseSchema,
+  CommunityConnectionAccessSchema,
   CommunityWireAuthOptionsSchema,
 } from '../community-wire.js';
 import {
@@ -246,6 +247,8 @@ describe('community server port additions', () => {
           memberId: 'human-1',
           installName: 'Desk',
           scopes: ['read', 'post'],
+          lifecycle: 'active',
+          capabilities: { read: true, post: true, enrollAgent: false, stream: true },
           createdAt: '2026-09-16T00:00:00.000Z',
         },
       }).success
@@ -312,13 +315,19 @@ describe('community server port additions', () => {
       true
     );
     expect(
-      CommunityWireOwnerTransferResponseSchema.parse({ ownerMemberId: 'human-2' }).ownerMemberId
+      CommunityWireOwnerTransferResponseSchema.parse({
+        communityId: 'community-1',
+        ownerMemberId: 'human-2',
+        lifecycleVersion: 2,
+      }).ownerMemberId
     ).toBe('human-2');
     const grant = {
       id: 'grant-1',
       memberId: 'human-1',
       installName: 'Desk',
       scopes: ['read'],
+      lifecycle: 'active',
+      capabilities: { read: true, post: false, enrollAgent: false, stream: true },
       createdAt: invite.createdAt,
     };
     expect(CommunityWireGrantListResponseSchema.parse({ grants: [grant] }).grants).toHaveLength(1);
@@ -334,5 +343,67 @@ describe('community server port additions', () => {
     expect(COMMUNITY_API_V1_ROUTES.pairingCancel).toBe('/api/v1/pairings/cancel');
     expect(COMMUNITY_API_V1_ROUTES.pairingDecline).toBe('/api/v1/pairings/decline');
     expect(COMMUNITY_API_V1_ROUTES.channelAgents).toBe('/api/v1/channels/:id/agents');
+  });
+
+  it('keeps stale Community authority separate from effective access', () => {
+    const access = {
+      state: 'unverified',
+      effective: { read: false, post: false, enrollAgent: false, stream: false },
+      lastKnown: {
+        lifecycle: 'archived',
+        capabilities: { read: true, post: false, enrollAgent: false, stream: false },
+        verifiedAt: '2026-09-21T00:00:00.000Z',
+      },
+    };
+    expect(CommunityConnectionAccessSchema.parse(access)).toEqual(access);
+    expect(
+      CommunityConnectionAccessSchema.safeParse({
+        ...access,
+        lastKnown: { ...access.lastKnown, lifecycle: 'pending_owner' },
+      }).success
+    ).toBe(false);
+    expect(
+      CommunityConnectionAccessSchema.safeParse({ ...access, privateToken: 'secret' }).success
+    ).toBe(false);
+    expect(
+      CommunityConnectionAccessSchema.safeParse({
+        ...access,
+        state: 'verified',
+        effective: { read: true, post: false, enrollAgent: false, stream: false },
+      }).success
+    ).toBe(true);
+    expect(
+      CommunityConnectionAccessSchema.safeParse({
+        ...access,
+        state: 'verified',
+        effective: { read: true, post: true, enrollAgent: false, stream: false },
+      }).success
+    ).toBe(false);
+    expect(
+      CommunityConnectionAccessSchema.safeParse({
+        ...access,
+        effective: { read: true, post: false, enrollAgent: false, stream: false },
+      }).success
+    ).toBe(false);
+    expect(
+      CommunityConnectionAccessSchema.safeParse({
+        ...access,
+        lastKnown: {
+          ...access.lastKnown,
+          lifecycle: 'suspended',
+          capabilities: { read: false, post: true, enrollAgent: false, stream: false },
+        },
+      }).success
+    ).toBe(false);
+    expect(
+      CommunityConnectionAccessSchema.safeParse({
+        ...access,
+        lastKnown: {
+          ...access.lastKnown,
+          lifecycle: 'deletion_pending',
+          capabilities: { read: false, post: false, enrollAgent: false, stream: true },
+        },
+      }).success
+    ).toBe(false);
   });
 });

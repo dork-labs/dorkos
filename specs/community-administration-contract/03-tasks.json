@@ -28,8 +28,12 @@
       "activeForm": "Implementing host creation and claims",
       "size": "large",
       "priority": "high",
-      "dependencies": ["1.1"],
-      "parallelWith": ["1.3"],
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.3"
+      ],
       "issue": "DOR-2176",
       "parentIssue": "DOR-2175"
     },
@@ -42,8 +46,12 @@
       "activeForm": "Implementing versioned settings",
       "size": "large",
       "priority": "high",
-      "dependencies": ["1.1"],
-      "parallelWith": ["1.2"],
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.2"
+      ],
       "issue": "DOR-2176",
       "parentIssue": "DOR-2175"
     },
@@ -52,11 +60,14 @@
       "phase": 1,
       "phaseName": "Lifecycle APIs",
       "subject": "[community-administration-contract] [P1] Enforce transfer, archive, restore, suspension, and immediate revocation",
-      "description": "Make lifecycle transitions use recent reauthentication, ETags, tenant locks, exact role checks, audit, typed unavailable responses, and immediate stream/credential revocation. Transfer remains active-only and changes the former owner to member. Restore/resume never revives a grant, invitation, agent, or credential.\n\nAcceptance criteria:\n- Transfer races leave exactly one owner and never cross tenants.\n- Archive preserves every content row/blob while ending writes, invitations, pairings, grants, agents, and streams.\n- Owner export/restore/delete remain available while archived; ordinary content is read-only.\n- Suspension rejects every tenant credential and resumes to the recorded active/archive state.\n- Host authority alone cannot transfer, archive, restore, or read content.",
+      "description": "Make lifecycle transitions use recent reauthentication, ETags, tenant locks, exact role checks, audit, typed unavailable responses, and immediate stream/credential revocation. Transfer remains active-only and changes the former owner to member. Restore/resume never revives a grant, invitation, agent, or credential.\n\nAcceptance criteria:\n- Transfer races leave exactly one owner and never cross tenants.\n- Archive preserves every content row/blob while ending writes, invitations, all pending or pre-existing pairings/grants, agents, and streams; only the existing tenant-qualified pairing protocol may later mint a personal grant for an active human membership requesting exactly `{read}`.\n- Archived read-only grants persist immutable `history_only` identity and project exactly `read=true`, `post=false`, `enrollAgent=false`, and `stream=false`; their only mutation is the same tenant/member's read cursor; they cannot subscribe or perform any content, membership, invitation, admin, agent, or export mutation, and restore leaves their capabilities unchanged.\n- Connection and room access separates server-verified effective capabilities from last-known stale cache metadata. Temporary unverified state disables every live operation but may render visibly stale protected history; reconnect-required purges protected cache. Internal verification probes remain possible while effective access is false.\n- Owner export/restore/delete remain available while archived; ordinary content is read-only.\n- Suspension rejects every tenant credential and resumes to the recorded active/archive state.\n- Host authority alone cannot transfer, archive, restore, or read content.",
       "activeForm": "Enforcing lifecycle transitions",
       "size": "large",
       "priority": "high",
-      "dependencies": ["1.2", "1.3"],
+      "dependencies": [
+        "1.2",
+        "1.3"
+      ],
       "parallelWith": [],
       "issue": "DOR-2176",
       "parentIssue": "DOR-2175"
@@ -70,8 +81,12 @@
       "activeForm": "Implementing deletion requests",
       "size": "medium",
       "priority": "high",
-      "dependencies": ["1.4"],
-      "parallelWith": ["1.6"],
+      "dependencies": [
+        "1.4"
+      ],
+      "parallelWith": [
+        "1.6"
+      ],
       "issue": "DOR-2176",
       "parentIssue": "DOR-2175"
     },
@@ -84,8 +99,12 @@
       "activeForm": "Building exact-tenant deletion",
       "size": "large",
       "priority": "high",
-      "dependencies": ["1.4"],
-      "parallelWith": ["1.5"],
+      "dependencies": [
+        "1.4"
+      ],
+      "parallelWith": [
+        "1.5"
+      ],
       "issue": "DOR-2176",
       "parentIssue": "DOR-2175"
     },
@@ -98,8 +117,13 @@
       "activeForm": "Building administration surfaces",
       "size": "large",
       "priority": "high",
-      "dependencies": ["1.5", "1.6"],
-      "parallelWith": ["2.2"],
+      "dependencies": [
+        "1.5",
+        "1.6"
+      ],
+      "parallelWith": [
+        "2.2"
+      ],
       "issue": "DOR-2177",
       "parentIssue": "DOR-2175"
     },
@@ -112,8 +136,13 @@
       "activeForm": "Building lifecycle progress UX",
       "size": "large",
       "priority": "high",
-      "dependencies": ["1.5", "1.6"],
-      "parallelWith": ["2.1"],
+      "dependencies": [
+        "1.5",
+        "1.6"
+      ],
+      "parallelWith": [
+        "2.1"
+      ],
       "issue": "DOR-2177",
       "parentIssue": "DOR-2175"
     },
@@ -126,8 +155,13 @@
       "activeForm": "Proving administration permissions",
       "size": "large",
       "priority": "high",
-      "dependencies": ["2.1", "2.2"],
-      "parallelWith": ["3.2"],
+      "dependencies": [
+        "2.1",
+        "2.2"
+      ],
+      "parallelWith": [
+        "3.2"
+      ],
       "issue": "DOR-2178",
       "parentIssue": "DOR-2175"
     },
@@ -140,8 +174,13 @@
       "activeForm": "Proving deletion and recovery isolation",
       "size": "large",
       "priority": "high",
-      "dependencies": ["2.1", "2.2"],
-      "parallelWith": ["3.1"],
+      "dependencies": [
+        "2.1",
+        "2.2"
+      ],
+      "parallelWith": [
+        "3.1"
+      ],
       "issue": "DOR-2178",
       "parentIssue": "DOR-2175"
     }

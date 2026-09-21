@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Context, Hono } from 'hono';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import {
+  CommunityWireConnectionAccessResponseSchema,
   CommunityWireGrantListResponseSchema,
   CommunityWirePairingApproveRequestSchema,
   CommunityWirePairingApproveResponseSchema,
@@ -21,7 +22,7 @@ import {
 } from '@dorkos/shared/community-private-wire';
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
-import { lockActiveCommunity, requireLiveRole, requireMember, transaction } from '../data.js';
+import { requireConnectionGrant, requireLiveRole, requireMember, transaction } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 import { equalSecret, hashSecret, randomToken } from '../security.js';
 import { resolveCommunityContext } from '../tenant-context.js';
@@ -37,6 +38,54 @@ function privateCaller(origin: string | undefined) {
     throw new ApiError(403, 'FORBIDDEN', 'A local install must make this request directly.');
 }
 
+function exactArchivedRead(scopes: readonly string[]): boolean {
+  return scopes.length === 1 && scopes[0] === 'read';
+}
+
+async function pairingScopes(pool: Pool, id: string, communityId: string): Promise<string[]> {
+  const result = await pool.query<{ scopes: string[] }>(
+    'SELECT scopes FROM connection_pairings WHERE id=$1 AND community_id=$2',
+    [id, communityId]
+  );
+  return result.rows[0]?.scopes ?? [];
+}
+
+async function lockPairingCommunity(
+  client: PoolClient,
+  communityId: string,
+  allowArchivedRead: boolean
+): Promise<'active' | 'archived'> {
+  const result = await client.query<{ lifecycle: string }>(
+    'SELECT lifecycle FROM communities WHERE id=$1 FOR SHARE',
+    [communityId]
+  );
+  const lifecycle = result.rows[0]?.lifecycle;
+  if (lifecycle === 'active' || (lifecycle === 'archived' && allowArchivedRead)) return lifecycle;
+  if (lifecycle === 'archived')
+    throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'Archived communities accept read-only pairing.');
+  if (lifecycle === 'suspended')
+    throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This community is suspended.');
+  if (lifecycle === 'deletion_pending')
+    throw new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This community is being deleted.');
+  throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is unavailable.');
+}
+
+async function requirePairingMember(
+  client: PoolClient,
+  actor: Awaited<ReturnType<typeof requireMember>>,
+  lifecycle: 'active' | 'archived'
+): Promise<void> {
+  if (lifecycle === 'active') {
+    await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
+    return;
+  }
+  const member = await client.query(
+    'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
+    [actor.id, actor.community_id]
+  );
+  if (!member.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
+}
+
 /** Register browser-approved, verifier-bound pairing and revocable personal grants. */
 export function registerPairingRoutes(
   app: Hono,
@@ -47,6 +96,27 @@ export function registerPairingRoutes(
     limitStart,
   }: { pool: Pool; auth: CommunityAuth; config: CommunityConfig; limitStart: (c: Context) => void }
 ) {
+  app.get('/me/connection-access', async (c) => {
+    const { member: grant, lifecycle } = await requireConnectionGrant(c, pool, 'read');
+    const capabilities = {
+      read: true,
+      post: grant.scopes.includes('post') && !grant.history_only,
+      enrollAgent: grant.scopes.includes('enroll-agent') && !grant.history_only,
+      stream: !grant.history_only,
+    };
+    return json(c, CommunityWireConnectionAccessResponseSchema, {
+      access: {
+        state: 'verified',
+        effective: capabilities,
+        lastKnown: {
+          lifecycle,
+          capabilities,
+          verifiedAt: new Date().toISOString(),
+        },
+      },
+    });
+  });
+
   app.post('/pairings/start', async (c) => {
     limitStart(c);
     const body = await readJson(c, CommunityWirePairingStartRequestSchema);
@@ -55,8 +125,10 @@ export function registerPairingRoutes(
     const id = randomUUID();
     const expiry = new Date(Date.now() + 600_000);
     const community = await resolveCommunityContext(c, pool);
+    const archivedRead =
+      community.qualified && community.lifecycle === 'archived' && exactArchivedRead(body.scopes);
     await transaction(pool, async (client) => {
-      await lockActiveCommunity(client, community.communityId);
+      await lockPairingCommunity(client, community.communityId, archivedRead);
       await client.query(
         'INSERT INTO connection_pairings(id,community_id,verifier_hash,install_name,scopes,expires_at) VALUES($1,$2,$3,$4,$5,$6)',
         [
@@ -86,8 +158,15 @@ export function registerPairingRoutes(
   app.get('/pairings/:id', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const id = uuid.parse(c.req.param('id'));
+    const community = await resolveCommunityContext(c, pool);
+    const scopes = await pairingScopes(pool, id, actor.community_id);
     const result = await transaction(pool, async (client) => {
-      await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
+      const lifecycle = await lockPairingCommunity(
+        client,
+        actor.community_id,
+        community.qualified && exactArchivedRead(scopes)
+      );
+      await requirePairingMember(client, actor, lifecycle);
       return client.query<{
         id: string;
         install_name: string;
@@ -123,17 +202,23 @@ export function registerPairingRoutes(
 
   app.post('/pairings/approve', async (c) => {
     const actor = await requireMember(c, auth, pool);
+    const community = await resolveCommunityContext(c, pool);
     const { pairingId } = await readJson(c, CommunityWirePairingApproveRequestSchema);
     const id = uuid.parse(pairingId);
+    const scopes = await pairingScopes(pool, id, actor.community_id);
     await transaction(pool, async (client) => {
-      await lockActiveCommunity(client, actor.community_id);
+      const lifecycle = await lockPairingCommunity(
+        client,
+        actor.community_id,
+        community.qualified && exactArchivedRead(scopes)
+      );
       const pair = await client.query<{ member_id: string | null; approved_at: Date | null }>(
         'SELECT member_id,approved_at FROM connection_pairings WHERE id=$1 AND community_id=$2 AND expires_at>now() AND cancelled_at IS NULL AND consumed_at IS NULL FOR UPDATE',
         [id, actor.community_id]
       );
       if (!pair.rows[0])
         throw new ApiError(409, 'STATE_CONFLICT', 'This pairing request is no longer available.');
-      await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
+      await requirePairingMember(client, actor, lifecycle);
       if (pair.rows[0].approved_at) {
         if (pair.rows[0].member_id !== actor.id)
           throw new ApiError(409, 'STATE_CONFLICT', 'This request was approved by another member.');
@@ -153,17 +238,23 @@ export function registerPairingRoutes(
 
   app.post('/pairings/decline', async (c) => {
     const actor = await requireMember(c, auth, pool);
+    const community = await resolveCommunityContext(c, pool);
     const { pairingId } = await readJson(c, CommunityWirePairingDeclineRequestSchema);
     const id = uuid.parse(pairingId);
+    const scopes = await pairingScopes(pool, id, actor.community_id);
     await transaction(pool, async (client) => {
-      await lockActiveCommunity(client, actor.community_id);
+      const lifecycle = await lockPairingCommunity(
+        client,
+        actor.community_id,
+        community.qualified && exactArchivedRead(scopes)
+      );
       const pair = await client.query<{ member_id: string | null }>(
         'SELECT member_id FROM connection_pairings WHERE id=$1 AND community_id=$2 AND expires_at>now() AND cancelled_at IS NULL AND consumed_at IS NULL FOR UPDATE',
         [id, actor.community_id]
       );
       if (!pair.rows[0])
         throw new ApiError(409, 'STATE_CONFLICT', 'This pairing request is no longer available.');
-      await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
+      await requirePairingMember(client, actor, lifecycle);
       if (pair.rows[0].member_id && pair.rows[0].member_id !== actor.id)
         throw new ApiError(403, 'FORBIDDEN', 'Another member approved this request.');
       await client.query(
@@ -185,8 +276,13 @@ export function registerPairingRoutes(
     const id = uuid.parse(pairingId);
     if (!/^[A-Za-z0-9_-]{43}$/.test(verifier))
       throw new ApiError(403, 'FORBIDDEN', 'Invalid pairing verifier.');
+    const scopes = await pairingScopes(pool, id, community.communityId);
     const response = await transaction(pool, async (client) => {
-      await lockActiveCommunity(client, community.communityId);
+      await lockPairingCommunity(
+        client,
+        community.communityId,
+        community.qualified && exactArchivedRead(scopes)
+      );
       const result = await client.query<{
         verifier_hash: string;
         approved_at: Date | null;
@@ -228,8 +324,13 @@ export function registerPairingRoutes(
     const id = uuid.parse(pairingId);
     if (!/^[A-Za-z0-9_-]{43}$/.test(verifier))
       throw new ApiError(403, 'FORBIDDEN', 'Invalid pairing verifier.');
+    const scopes = await pairingScopes(pool, id, community.communityId);
     const result = await transaction(pool, async (client) => {
-      await lockActiveCommunity(client, community.communityId);
+      const lifecycle = await lockPairingCommunity(
+        client,
+        community.communityId,
+        community.qualified && exactArchivedRead(scopes)
+      );
       const pair = await client.query<{
         verifier_hash: string;
         code_hash: string | null;
@@ -261,10 +362,23 @@ export function registerPairingRoutes(
         id: string;
         member_id: string;
         scopes: ('read' | 'post' | 'enroll-agent')[];
+        history_only: boolean;
         created_at: Date;
       }>(
-        'INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name) SELECT community_id,$1,$2,$3,$4 FROM connection_pairings WHERE id=$5 AND community_id=$6 RETURNING id,member_id,scopes,created_at',
-        [row.member_id, hashSecret(token), row.scopes, row.install_name, id, community.communityId]
+        `INSERT INTO connection_grants(
+           community_id,member_id,token_hash,scopes,install_name,history_only
+         ) SELECT community_id,$1,$2,$3,$4,$7 FROM connection_pairings
+           WHERE id=$5 AND community_id=$6
+         RETURNING id,member_id,scopes,history_only,created_at`,
+        [
+          row.member_id,
+          hashSecret(token),
+          row.scopes,
+          row.install_name,
+          id,
+          community.communityId,
+          lifecycle === 'archived',
+        ]
       );
       await client.query(
         'UPDATE connection_pairings SET consumed_at=now() WHERE id=$1 AND community_id=$2',
@@ -276,6 +390,13 @@ export function registerPairingRoutes(
           id: grant.rows[0].id,
           memberId: grant.rows[0].member_id,
           scopes: grant.rows[0].scopes,
+          lifecycle,
+          capabilities: {
+            read: grant.rows[0].scopes.includes('read'),
+            post: grant.rows[0].scopes.includes('post'),
+            enrollAgent: grant.rows[0].scopes.includes('enroll-agent'),
+            stream: grant.rows[0].scopes.includes('read') && !grant.rows[0].history_only,
+          },
           installName: row.install_name,
           createdAt: grant.rows[0].created_at.toISOString(),
         },
@@ -291,8 +412,13 @@ export function registerPairingRoutes(
     const community = await resolveCommunityContext(c, pool);
     const { pairingId, verifier } = await readJson(c, CommunityWirePairingCancelRequestSchema);
     const id = uuid.parse(pairingId);
+    const scopes = await pairingScopes(pool, id, community.communityId);
     await transaction(pool, async (client) => {
-      await lockActiveCommunity(client, community.communityId);
+      await lockPairingCommunity(
+        client,
+        community.communityId,
+        community.qualified && exactArchivedRead(scopes)
+      );
       const result = await client.query<{ verifier_hash: string }>(
         'SELECT verifier_hash FROM connection_pairings WHERE id=$1 AND community_id=$2 FOR UPDATE',
         [id, community.communityId]
@@ -310,15 +436,21 @@ export function registerPairingRoutes(
   app.get('/me/grants', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const result = await transaction(pool, async (client) => {
-      await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
+      const lifecycle = await lockPairingCommunity(client, actor.community_id, true);
+      await requirePairingMember(client, actor, lifecycle);
       return client.query<{
         id: string;
         member_id: string;
         scopes: ('read' | 'post' | 'enroll-agent')[];
         install_name: string;
+        history_only: boolean;
+        lifecycle: 'active' | 'archived';
         created_at: Date;
       }>(
-        'SELECT id,member_id,scopes,install_name,created_at FROM connection_grants WHERE member_id=$1 AND community_id=$2 AND revoked_at IS NULL ORDER BY created_at,id',
+        `SELECT g.id,g.member_id,g.scopes,g.install_name,g.history_only,g.created_at,c.lifecycle
+         FROM connection_grants g JOIN communities c ON c.id=g.community_id
+         WHERE g.member_id=$1 AND g.community_id=$2 AND g.revoked_at IS NULL
+         ORDER BY g.created_at,g.id`,
         [actor.id, actor.community_id]
       );
     });
@@ -327,6 +459,13 @@ export function registerPairingRoutes(
         id: row.id,
         memberId: row.member_id,
         scopes: row.scopes,
+        lifecycle: row.lifecycle,
+        capabilities: {
+          read: row.scopes.includes('read'),
+          post: row.scopes.includes('post'),
+          enrollAgent: row.scopes.includes('enroll-agent'),
+          stream: row.scopes.includes('read') && !row.history_only,
+        },
         installName: row.install_name,
         createdAt: row.created_at.toISOString(),
       })),
@@ -337,7 +476,8 @@ export function registerPairingRoutes(
     const actor = await requireMember(c, auth, pool);
     const id = uuid.parse(c.req.param('id'));
     const result = await transaction(pool, async (client) => {
-      await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
+      const lifecycle = await lockPairingCommunity(client, actor.community_id, true);
+      await requirePairingMember(client, actor, lifecycle);
       return client.query(
         'UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now()) WHERE id=$1 AND member_id=$2 AND community_id=$3 RETURNING id',
         [id, actor.id, actor.community_id]
