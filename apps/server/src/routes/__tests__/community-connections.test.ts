@@ -43,6 +43,12 @@ const navigation = {
   get: vi.fn(async () => ({ ownerKey: 'author-a', order: [ref], destinations: [] })),
   move: vi.fn(async () => ({ ownerKey: 'author-a', order: [ref], destinations: [] })),
   remember: vi.fn(async () => ({ ownerKey: 'author-a', order: [ref], destinations: [] })),
+  rememberInstallation: vi.fn(async (_owner: string, installationDestination: unknown) => ({
+    ownerKey: 'author-a',
+    installationDestination,
+    order: [ref],
+    destinations: [],
+  })),
   resolve: vi.fn(async () => null),
 };
 
@@ -200,7 +206,12 @@ describe('local connection route authority and public projection', () => {
       .get('/api/community-connections/navigation')
       .set('x-test-author', 'author-a');
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ ownerKey: 'author-a', order: [ref], destinations: [] });
+    expect(response.body).toEqual({
+      ownerKey: 'author-a',
+      installationDestination: { path: '/', search: {} },
+      order: [ref],
+      destinations: [],
+    });
     expect(navigation.get).toHaveBeenCalledWith('author-a');
 
     expect(
@@ -209,6 +220,24 @@ describe('local connection route authority and public projection', () => {
           .post('/api/community-connections/navigation/move')
           .set('x-test-author', 'author-a')
           .send({ ref, direction: 'sideways' })
+      ).status
+    ).toBe(400);
+
+    const remembered = await request(server)
+      .put('/api/community-connections/navigation/installation')
+      .set('x-test-author', 'author-a')
+      .send({ destination: { path: '/tasks', search: { view: 'board' } } });
+    expect(remembered.status).toBe(200);
+    expect(navigation.rememberInstallation).toHaveBeenCalledWith('author-a', {
+      path: '/tasks',
+      search: { view: 'board' },
+    });
+    expect(
+      (
+        await request(server)
+          .put('/api/community-connections/navigation/installation')
+          .set('x-test-author', 'author-a')
+          .send({ destination: { path: '/channels', search: { community: ref } } })
       ).status
     ).toBe(400);
   });

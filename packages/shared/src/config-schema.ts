@@ -55,22 +55,25 @@ export const CommunityInstallationPathSchema = z.enum([
   '/marketplace/sources',
   '/feedback-requests',
 ]);
-function containsCommunityField(value: unknown): boolean {
-  if (!value || typeof value !== 'object') return false;
-  if (Array.isArray(value)) return value.some(containsCommunityField);
-  return Object.entries(value).some(
-    ([key, child]) => key === 'community' || containsCommunityField(child)
-  );
-}
+const CommunityInstallationSearchScalarSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+]);
+const CommunityInstallationSearchValueSchema = z.union([
+  CommunityInstallationSearchScalarSchema,
+  z.array(CommunityInstallationSearchScalarSchema).max(100),
+]);
 
 /** Route-validated local destination; Community authority is never persisted here. */
 export const CommunityInstallationDestinationSchema = z
   .strictObject({
     path: CommunityInstallationPathSchema,
-    search: z.record(z.string(), z.json()).default({}),
+    search: z.record(z.string(), CommunityInstallationSearchValueSchema).default({}),
   })
   .superRefine(({ search }, context) => {
-    if (containsCommunityField(search))
+    if ('community' in search)
       context.addIssue({
         code: 'custom',
         path: ['search'],

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CommunityInstallationDestinationSchema } from '../config-schema.js';
 import {
   CommunityNavigationDescriptorListSchema,
   CommunityNavigationDescriptorSchema,
@@ -148,12 +149,12 @@ describe('Community navigation preferences', () => {
     expect(communityNavigationForOwner(second, 'owner-b').installationDestination.path).toBe(
       '/connections'
     );
-    expect(() =>
-      rememberCommunityInstallationDestination(second, 'owner-a', {
+    expect(
+      CommunityInstallationDestinationSchema.safeParse({
         path: '/channels',
         search: { nested: { community: 'remote-a' } },
-      })
-    ).toThrow();
+      }).success
+    ).toBe(false);
   });
 
   it('prunes removed refs and their destinations only after an authoritative refresh', () => {

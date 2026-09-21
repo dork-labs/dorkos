@@ -73,6 +73,29 @@ describe('CommunityNavigationPreferenceService', () => {
     expect(ownerB.destinations[0]?.threadId).toBe('thread-b');
   });
 
+  it('serializes local route writes without replacing another owner destination', async () => {
+    const harness = await createHarness(['a']);
+    await Promise.all([
+      harness.service.rememberInstallation('owner-a', {
+        path: '/tasks',
+        search: { view: 'board' },
+      }),
+      harness.service.rememberInstallation('owner-b', {
+        path: '/connections',
+        search: { tab: 'accounts' },
+      }),
+    ]);
+
+    expect((await harness.service.get('owner-a')).installationDestination).toEqual({
+      path: '/tasks',
+      search: { view: 'board' },
+    });
+    expect((await harness.service.get('owner-b')).installationDestination).toEqual({
+      path: '/connections',
+      search: { tab: 'accounts' },
+    });
+  });
+
   it('reauthorizes a remembered room and erases it when access is gone', async () => {
     const harness = await createHarness(['a']);
     await harness.service.remember('owner-a', {

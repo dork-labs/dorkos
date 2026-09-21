@@ -39,6 +39,7 @@ import {
   LEGACY_TABLE_VIEW,
   TEAM_VIEWS,
   getCommunityAuthority,
+  confirmCommunityAuthority,
   isCommunityAuthorityCurrent,
 } from '@/layers/shared/lib';
 import { communityNavigationKeys } from '@/layers/entities/community';
@@ -665,27 +666,31 @@ export function createAppRouter(queryClient: QueryClient, transport: Transport) 
     if (toLocation.pathname !== '/channels') {
       commitCommunityRouteEpoch('installation');
       const authority = getCommunityAuthority();
-      if (authority.ownerKey !== null) {
-        const captured = { epoch: authority.epoch, ownerKey: authority.ownerKey };
-        const route = getCommunityRouteEpoch();
-        const destination = CommunityInstallationDestinationSchema.safeParse({
-          path: toLocation.pathname,
-          search: toLocation.search,
-        });
-        if (destination.success)
-          void transport
-            .rememberCommunityInstallationDestination(destination.data)
-            .then((state) => {
-              if (
-                state.ownerKey !== captured.ownerKey ||
-                !isCommunityAuthorityCurrent(captured) ||
-                !route.isCurrent()
-              )
-                return;
-              queryClient.setQueryData(communityNavigationKeys.authority(captured.epoch), state);
-            })
-            .catch(() => undefined);
-      }
+      const route = getCommunityRouteEpoch();
+      const destination = CommunityInstallationDestinationSchema.safeParse({
+        path: toLocation.pathname,
+        search: toLocation.search,
+      });
+      if (destination.success)
+        void (async () => {
+          const ownerKey: string =
+            authority.ownerKey ??
+            (await transport.getCommunityNavigation().then((state) => {
+              if (!route.isCurrent() || !confirmCommunityAuthority(authority.epoch, state.ownerKey))
+                throw new Error('Community authority changed');
+              return state.ownerKey;
+            }));
+          const captured = { epoch: authority.epoch, ownerKey };
+          if (!isCommunityAuthorityCurrent(captured) || !route.isCurrent()) return;
+          const state = await transport.rememberCommunityInstallationDestination(destination.data);
+          if (
+            state.ownerKey !== captured.ownerKey ||
+            !isCommunityAuthorityCurrent(captured) ||
+            !route.isCurrent()
+          )
+            return;
+          queryClient.setQueryData(communityNavigationKeys.authority(captured.epoch), state);
+        })().catch(() => undefined);
       return;
     }
     const search = toLocation.search as {

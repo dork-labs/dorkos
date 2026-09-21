@@ -46,6 +46,7 @@ const mockOpenProfile = vi.fn();
 const mockOpenConnections = vi.fn();
 const mockNavigate = vi.fn(() => Promise.resolve());
 const mockResolveCommunityNavigation = vi.fn();
+const mockGetCommunityNavigation = vi.fn();
 const mockListRemoteCommunityRooms = vi.fn();
 const mockMoveCommunityNavigation = vi.fn();
 const mockSetGlobalPaletteOpen = vi.fn();
@@ -75,6 +76,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
     ...actual,
     useTransport: () => ({
       getConfig: mockGetConfig,
+      getCommunityNavigation: mockGetCommunityNavigation,
       resolveCommunityNavigation: mockResolveCommunityNavigation,
       listRemoteCommunityRooms: mockListRemoteCommunityRooms,
     }),
@@ -138,6 +140,12 @@ beforeEach(() => {
   mockConnections = [];
   mockCommunityOrder = [];
   mockResolveCommunityNavigation.mockResolvedValue(null);
+  mockGetCommunityNavigation.mockResolvedValue({
+    ownerKey: 'owner-a',
+    installationDestination: { path: '/', search: {} },
+    order: [],
+    destinations: [],
+  });
   mockListRemoteCommunityRooms.mockResolvedValue({
     community: 'community-a',
     rooms: [],
@@ -435,6 +443,79 @@ describe('SidebarHeaderBlock', () => {
       })
     );
     expect(mockListRemoteCommunityRooms).not.toHaveBeenCalled();
+  });
+
+  it('re-reads and restores the owner’s local route only on explicit installation selection', async () => {
+    mockSearch = { community: 'a' };
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockGetCommunityNavigation.mockResolvedValue({
+      ownerKey: 'owner-a',
+      installationDestination: { path: '/tasks', search: { view: 'board' } },
+      order: ['a'],
+      destinations: [],
+    });
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Dorian’s team/ }));
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith({ to: '/tasks', search: { view: 'board' } })
+    );
+    expect(mockGetCommunityNavigation).toHaveBeenCalledOnce();
+  });
+
+  it('discards a delayed installation route after the owner changes', async () => {
+    let resolveNavigation!: (value: {
+      ownerKey: string;
+      installationDestination: { path: '/tasks'; search: {} };
+      order: string[];
+      destinations: [];
+    }) => void;
+    mockSearch = { community: 'a' };
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockGetCommunityNavigation.mockReturnValue(
+      new Promise((resolve) => {
+        resolveNavigation = resolve;
+      })
+    );
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Dorian’s team/ }));
+    await waitFor(() => expect(mockGetCommunityNavigation).toHaveBeenCalledOnce());
+
+    const nextOwner = invalidateCommunityAuthority();
+    confirmCommunityAuthority(nextOwner.epoch, 'owner-b');
+    resolveNavigation({
+      ownerKey: 'owner-a',
+      installationDestination: { path: '/tasks', search: {} },
+      order: [],
+      destinations: [],
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
+    );
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('names and focuses the route-selected Community when the menu opens', async () => {
