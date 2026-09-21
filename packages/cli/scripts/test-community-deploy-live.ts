@@ -208,7 +208,9 @@ async function main(): Promise<void> {
     await writePrivateClipboardShim(shimDirectory, socketPath);
     const environment: Record<string, string> = {
       PATH: `${shimDirectory}:${process.env.PATH ?? ''}`,
-      HOME: join(runDirectory, 'home'),
+      // Provider CLIs must resolve the operator's existing authenticated profiles.
+      // Only DorkOS launch state is isolated; no provider credential is copied.
+      HOME: process.env.HOME ?? homedir(),
       DORK_HOME: durableHome,
       ...Object.fromEntries(
         [
@@ -222,7 +224,6 @@ async function main(): Promise<void> {
         )
       ),
     };
-    await mkdir(environment.HOME, { mode: 0o700 });
     const fly = { executable: 'fly', env: environment, timeoutMs: 30_000 };
     const neon = { executable: 'neonctl', env: environment, timeoutMs: 30_000 };
     // Read exact designated-organization inventories before the installed launcher can write.
