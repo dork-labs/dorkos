@@ -10,6 +10,7 @@ const connection = {
   pinnedOrigin: 'https://community.example.com',
   connectedHumanMemberId: null,
   status: 'pending',
+  access: null,
   expiresAt: '2026-09-16T18:00:00.000Z',
 };
 afterEach(() => vi.unstubAllGlobals());
