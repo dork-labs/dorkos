@@ -1319,6 +1319,24 @@ describe('signed admission over real HTTP and Postgres', () => {
       claimantCookie
     );
     const secondChannelId = (await secondChannel.json()).channel.id as string;
+    const firstStream = await call(
+      `/api/v1/communities/${firstId}/channels/${channelId}/events`,
+      'GET',
+      undefined,
+      admittedCookie
+    );
+    const secondStream = await call(
+      `/api/v1/communities/${secondId}/channels/${secondChannelId}/events`,
+      'GET',
+      undefined,
+      claimantCookie
+    );
+    const firstReader = firstStream.body!.getReader();
+    const secondReader = secondStream.body!.getReader();
+    expect((await nextSse(firstReader)).type).toBe('snapshot');
+    expect((await nextSse(firstReader)).type).toBe('replay_complete');
+    expect((await nextSse(secondReader)).type).toBe('snapshot');
+    expect((await nextSse(secondReader)).type).toBe('replay_complete');
     const blocker = await pool.connect();
     try {
       await blocker.query('BEGIN');
@@ -1348,6 +1366,20 @@ describe('signed admission over real HTTP and Postgres', () => {
       (await call(`/api/v1/communities/${secondId}/channels`, 'GET', undefined, claimantCookie))
         .status
     ).toBe(409);
+    expect((await nextSse(secondReader)).type).toBe('closed');
+    expect(
+      (
+        await call(
+          `/api/v1/communities/${firstId}/channels/${channelId}/entries`,
+          'POST',
+          { text: 'first remains live', idempotencyKey: 'first-remains-live' },
+          admittedCookie
+        )
+      ).status
+    ).toBe(201);
+    expect((await nextSse(firstReader)).type).toBe('entry');
+    await firstReader.cancel();
+    await secondReader.cancel().catch(() => undefined);
     expect(
       (
         await call(

@@ -276,12 +276,15 @@ export function registerEventRoutes(
       }>(
         principal.kind === 'agent'
           ? `SELECT (a.active AND owner.active) AS active,(cm.agent_id IS NOT NULL) AS joined,ch.archived,ch.epoch
-           FROM agents a JOIN members owner ON owner.id=a.owner_member_id JOIN channels ch ON ch.id=$2
+           FROM agents a JOIN members owner ON owner.id=a.owner_member_id
+           JOIN communities co ON co.id=a.community_id AND co.lifecycle='active'
+           JOIN channels ch ON ch.id=$2
            LEFT JOIN agent_channel_members cm ON cm.channel_id=ch.id AND cm.agent_id=a.id
            WHERE a.id=$1 AND a.community_id=$3 AND ch.community_id=$3
              AND a.owner_member_id=$5 AND ${credential}`
           : `SELECT m.active,(cm.member_id IS NOT NULL) AS joined,ch.archived,ch.epoch
-           FROM members m JOIN channels ch ON ch.id=$2
+           FROM members m JOIN communities co ON co.id=m.community_id AND co.lifecycle='active'
+           JOIN channels ch ON ch.id=$2
            LEFT JOIN channel_members cm ON cm.channel_id=ch.id AND cm.member_id=m.id
            WHERE m.id=$1 AND m.community_id=$3 AND ch.community_id=$3 AND ${credential}`,
         values

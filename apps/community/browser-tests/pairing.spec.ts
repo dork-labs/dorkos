@@ -83,6 +83,10 @@ test.beforeAll(async () => {
     '/pairing',
     serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
   );
+  app.get(
+    '/c/:communityId/pairing',
+    serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
+  );
   server = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' });
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const grant = await post('/api/v1/bootstrap/preflight', { secret: config.bootstrapSecret });
@@ -122,6 +126,7 @@ test.describe('Community pairing approval @smoke', () => {
     context,
   }) => {
     const { pairingId, approvalUrl, verifier } = await pairing('Kai’s laptop');
+    expect(new URL(approvalUrl).pathname).toMatch(/^\/c\/[0-9a-f-]+\/pairing$/);
     const browserResponses: string[] = [];
     page.on('response', (response) => {
       if (response.url().includes('/api/v1/pairings/')) browserResponses.push(response.url());
@@ -132,7 +137,8 @@ test.describe('Community pairing approval @smoke', () => {
     await context.addCookies(ownerCookies);
     const statusResponse = page.waitForResponse(
       (response) =>
-        response.url().endsWith(`/api/v1/pairings/${pairingId}`) && response.status() === 200
+        new URL(response.url()).pathname.endsWith(`/pairings/${pairingId}`) &&
+        response.status() === 200
     );
     await page.reload();
     const statusBody = await (await statusResponse).text();
@@ -143,7 +149,7 @@ test.describe('Community pairing approval @smoke', () => {
     await expect(page.getByText('Post messages')).toBeVisible();
     await expect(page.getByText('Add your agents')).toBeVisible();
     const approveResponse = page.waitForResponse((response) =>
-      response.url().endsWith('/api/v1/pairings/approve')
+      new URL(response.url()).pathname.endsWith('/pairings/approve')
     );
     await page.getByRole('button', { name: 'Approve connection' }).click();
     const approveBody = await (await approveResponse).text();

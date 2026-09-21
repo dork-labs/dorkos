@@ -162,3 +162,11 @@ Tasks 2.1 through 2.3 reached VERIFY:
 - The branch composes the independently accepted Task 1.4 backout commit and receipt exactly. It also composes the final reviewed Task 1.2 deferred-invalidation head, keeping normalized export-channel writes after managed-blob preparation and retaining all three lock-order regressions.
 - The first combined PostgreSQL run exposed three integration expectations and one worktree-native dependency gap: the final contract intentionally retains only the two managed cleanup invalidators, member leave preserves the host session and returns tenant-scoped `403`, export authority now blocks on the tenant-qualified role lock, and `better-sqlite3` needed a worktree-local Node 24 rebuild. After correcting those expectations and rebuilding the local native module, the failed files passed 74 active assertions with 4 declared skips. The final complete PostgreSQL gate passed 138 active assertions with 4 declared skips across 10 fixtures.
 - Seven of twelve tasks are complete; DOR-2173 owns tenant-qualified discovery/native participation next, while final isolation and upgrade proof remain in DOR-2174.
+
+### Session 6 - 2026-09-21
+
+**Workers:** independent sibling review by `/root/fly_readiness_sol`; corrections remain in this owning session.
+
+- Review found that canonical pairing approval URLs reached the SPA but the browser entry selected Pairing only for the legacy `/pairing` path. The browser root now renders Pairing for the exact `/c/:communityId/pairing` shape, and the existing Playwright pairing flow uses the actual server-issued canonical URL. Both desktop and narrow-viewport cases pass 2/2.
+- Review also found that an already-open SSE stream rechecked credential, member, and channel state but not the selected community lifecycle. Human and agent access checks now require that same tenant to remain active. The real HTTP/PostgreSQL admission suite passes 17/17 and proves suspending B closes B's stream while A continues to deliver an entry.
+- Removing the lifecycle joins makes that same real-PostgreSQL test fail because B emits an entry after suspension; restoring the fix returns the suite to green. The red run is retained at `.temp/tenant-authorization-review/suspension-mutant.log`.
