@@ -3,6 +3,8 @@ covers:
   - 'feat(community): normalize tenant relation arrays'
   - 'feat(community): enforce tenant relational contract'
   - 'fix(community): keep tenant reconciliation out of startup'
+  - 'docs(community): pin explicit tenant reconciliation gate'
+  - 'fix(community): validate tenant owner lifecycle'
 ---
 
 ### Changed

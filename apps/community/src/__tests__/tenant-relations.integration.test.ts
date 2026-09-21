@@ -246,10 +246,79 @@ it('contracts tenant ownership and enforces lifecycle owner invariants', async (
     (await pool.query(`SELECT count(*)::int AS count FROM members WHERE user_id='relations-user'`))
       .rows[0]
   ).toEqual({ count: 2 });
+  const moveSource = (
+    await pool.query("INSERT INTO communities(name) VALUES('Move source') RETURNING id")
+  ).rows[0].id as string;
+  const moveTarget = (
+    await pool.query("INSERT INTO communities(name) VALUES('Move target') RETURNING id")
+  ).rows[0].id as string;
+  const moveUser = randomUUID();
+  await pool.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
+    moveUser,
+    'Move Owner',
+    `${moveUser}@example.test`,
+  ]);
+  const moveClient = await pool.connect();
+  let moveMember: string;
+  try {
+    await moveClient.query('BEGIN');
+    moveMember = (
+      await moveClient.query<{ id: string }>(
+        `INSERT INTO members(community_id,user_id,display_name,handle,role)
+         VALUES($1,$2,'Move Owner',$3,'owner') RETURNING id`,
+        [moveSource, moveUser, `move-${moveUser.slice(0, 8)}`]
+      )
+    ).rows[0]!.id;
+    await moveClient.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [moveSource]);
+    await moveClient.query('COMMIT');
+
+    await moveClient.query('BEGIN');
+    await moveClient.query('UPDATE members SET community_id=$1 WHERE id=$2', [
+      moveTarget,
+      moveMember,
+    ]);
+    await moveClient.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [moveTarget]);
+    await expect(moveClient.query('COMMIT')).rejects.toThrow('member community is immutable');
+    await moveClient.query('ROLLBACK');
+  } finally {
+    moveClient.release();
+  }
+  expect(
+    (await pool.query('SELECT community_id FROM members WHERE id=$1', [moveMember])).rows[0]
+  ).toEqual({ community_id: moveSource });
   await expect(
     pool.query("UPDATE communities SET lifecycle='pending_owner' WHERE id=$1", [fixture.community])
   ).rejects.toThrow('pending_owner community cannot have an active owner');
 });
+
+it.each(['zero', 'multiple'] as const)(
+  'rejects a preexisting active community with %s active owners',
+  async (ownerCount) => {
+    if (!pool) throw new Error('test database is unavailable');
+    const community = (
+      await pool.query("INSERT INTO communities(name) VALUES('Invalid owners') RETURNING id")
+    ).rows[0].id as string;
+    const count = ownerCount === 'zero' ? 0 : 2;
+    if (ownerCount === 'multiple') await pool.query('DROP INDEX one_active_owner');
+    for (let index = 0; index < count; index += 1) {
+      const userId = randomUUID();
+      await pool.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
+        userId,
+        `Owner ${index}`,
+        `${userId}@example.test`,
+      ]);
+      await pool.query(
+        `INSERT INTO members(community_id,user_id,display_name,handle,role)
+         VALUES($1,$2,$3,$4,'owner')`,
+        [community, userId, `Owner ${index}`, `owner-${index}`]
+      );
+    }
+
+    await expect(migrate(testUrl.toString())).rejects.toThrow(
+      'tenant contract found invalid community owner lifecycle'
+    );
+  }
+);
 
 it('rejects missing and human-agent-ambiguous mention targets during migration', async () => {
   if (!pool) throw new Error('test database is unavailable');

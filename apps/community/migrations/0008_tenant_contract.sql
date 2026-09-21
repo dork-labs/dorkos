@@ -113,12 +113,30 @@ DROP TRIGGER owner_quota_windows_legacy_tenant_write ON owner_quota_windows;
 DROP FUNCTION invalidate_tenant_reconciliation();
 
 ALTER TABLE communities ALTER COLUMN lifecycle SET DEFAULT 'pending_owner';
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM communities c
+    LEFT JOIN members m ON m.community_id=c.id
+    GROUP BY c.id,c.lifecycle
+    HAVING (c.lifecycle='pending_owner' AND count(*) FILTER (WHERE m.role='owner' AND m.active)<>0)
+      OR (c.lifecycle IN ('active','suspended') AND count(*) FILTER (WHERE m.role='owner' AND m.active)<>1)
+  ) THEN
+    RAISE EXCEPTION 'tenant contract found invalid community owner lifecycle';
+  END IF;
+END $$;
+
 CREATE FUNCTION enforce_community_owner_lifecycle() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   target_id uuid;
   target_lifecycle text;
   active_owners bigint;
 BEGIN
+  IF TG_TABLE_NAME='members' THEN
+    IF TG_OP='UPDATE' AND OLD.community_id IS DISTINCT FROM NEW.community_id THEN
+      RAISE EXCEPTION 'member community is immutable';
+    END IF;
+  END IF;
   IF TG_TABLE_NAME='communities' THEN
     target_id := NEW.id;
   ELSIF TG_OP='DELETE' THEN
