@@ -158,6 +158,12 @@ export function CommunityContextSwitcher({
   useEffect(() => {
     const openSwitcher = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'k') {
+        const target = event.target as HTMLElement | null;
+        if (
+          target?.isContentEditable ||
+          target?.closest('input, textarea, select, [contenteditable="true"]')
+        )
+          return;
         event.preventDefault();
         setOpen(true);
       }
@@ -175,12 +181,12 @@ export function CommunityContextSwitcher({
     const owner = getCommunityAuthority();
     if (owner.ownerKey === null) return;
     const capturedOwner = { epoch: owner.epoch, ownerKey: owner.ownerKey };
-    const capturedRoute = getCommunityRouteEpoch();
     pendingSelection.current = true;
     setPendingRef(connection.ref);
-    await navigate({ to: '/channels', search: { community: connection.ref } });
-    if (isMobile) focusPageHeading();
     try {
+      await navigate({ to: '/channels', search: { community: connection.ref } });
+      const capturedRoute = getCommunityRouteEpoch();
+      if (isMobile) focusPageHeading();
       const remembered = await transport.resolveCommunityNavigation(connection.ref);
       const fallback = remembered
         ? null
