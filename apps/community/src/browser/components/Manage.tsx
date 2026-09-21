@@ -21,25 +21,31 @@ type Grant = {
   createdAt: string;
 };
 type Props = {
+  communityId: string;
+  communityName: string;
   me: Member;
   channels: Channel[];
   selectedChannel: Channel | null;
   onChanged: () => void;
   onCurrentMemberChanged: () => Promise<Member>;
   onLeft: () => void;
+  readOnly?: boolean;
 };
 /** Manage channel, member, agent and account actions for the current role. */
 export function Manage({
+  communityId,
+  communityName,
   me,
   channels,
   selectedChannel,
   onChanged,
   onCurrentMemberChanged,
   onLeft,
+  readOnly = false,
 }: Props) {
   const moderator = me.role === 'owner' || me.role === 'admin';
-  const [tab, setTab] = useState<'community' | 'members' | 'agents' | 'account' | 'settings'>(
-    'community'
+  const [tab, setTab] = useState<'community' | 'members' | 'agents' | 'account' | 'settings'>(() =>
+    readOnly ? (moderator ? 'settings' : 'account') : 'community'
   );
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -59,14 +65,18 @@ export function Manage({
   const [grants, setGrants] = useState<Grant[]>([]);
   const [successor, setSuccessor] = useState('');
   const [password, setPassword] = useState('');
+  const [leaveName, setLeaveName] = useState('');
   const refresh = useCallback(
     async (currentModerator = moderator) => {
       try {
         const requests: Promise<unknown>[] = [
           request<{ grants: Grant[] }>('/api/v1/me/grants').then((body) => setGrants(body.grants)),
-          request<{ agents: Agent[] }>('/api/v1/agents').then((body) => setAgents(body.agents)),
         ];
-        if (currentModerator) {
+        if (!readOnly)
+          requests.push(
+            request<{ agents: Agent[] }>('/api/v1/agents').then((body) => setAgents(body.agents))
+          );
+        if (currentModerator && !readOnly) {
           requests.push(
             request<{ invites: Invite[] }>('/api/v1/invites').then((body) =>
               setInvites(body.invites)
@@ -81,7 +91,7 @@ export function Manage({
             })
           );
         }
-        if (selectedChannel?.joined)
+        if (selectedChannel?.joined && !readOnly)
           requests.push(
             request<{ members: Member[] }>(`/api/v1/channels/${selectedChannel!.id}/members`).then(
               (body) => setRoster(body.members)
@@ -92,7 +102,7 @@ export function Manage({
         setError(describeError(cause));
       }
     },
-    [moderator, selectedChannel?.id, selectedChannel?.joined]
+    [moderator, readOnly, selectedChannel?.id, selectedChannel?.joined]
   );
   useEffect(() => {
     void refresh();
@@ -132,7 +142,7 @@ export function Manage({
       const body = await request<{ token: string }>('/api/v1/invites', 'POST', {
         ...(inviteChannel ? { channelId: inviteChannel } : {}),
       });
-      const link = `${location.origin}${location.pathname}#invite=${encodeURIComponent(body.token)}`;
+      const link = `${location.origin}/c/${communityId}/join#invite=${encodeURIComponent(body.token)}`;
       setInviteLink(link);
       setMessage('Copy this link now. It will not appear in the invite list.');
       await refresh();
@@ -177,7 +187,7 @@ export function Manage({
     setBusy(true);
     setError('');
     try {
-      await request('/api/v1/me/leave', 'POST', {});
+      await request('/api/v1/me/leave', 'POST', { password, communityName: leaveName });
       onLeft();
     } catch (cause) {
       setError(describeError(cause));
@@ -189,12 +199,20 @@ export function Manage({
     <div className="content-scroll">
       <main className="settings">
         <p className="eyebrow">Community settings</p>
-        <h2>Make room for your people.</h2>
-        <p className="muted">Manage channels and access without leaving the conversation.</p>
+        <h2>{readOnly ? 'Archived history' : 'Make room for your people.'}</h2>
+        <p className="muted">
+          {readOnly
+            ? 'History and exports remain available. Restore this community before changing content or access.'
+            : 'Manage channels and access without leaving the conversation.'}
+        </p>
         <nav className="row mb-6" aria-label="Settings sections">
-          {(moderator
-            ? (['community', 'members', 'agents', 'account', 'settings'] as const)
-            : (['community', 'members', 'agents', 'account'] as const)
+          {(readOnly
+            ? moderator
+              ? (['account', 'settings'] as const)
+              : (['account'] as const)
+            : moderator
+              ? (['community', 'members', 'agents', 'account', 'settings'] as const)
+              : (['community', 'members', 'agents', 'account'] as const)
           ).map((item) => (
             <button
               key={item}
@@ -227,7 +245,7 @@ export function Manage({
             onOpenPeople={() => setTab('members')}
           />
         )}
-        {tab === 'community' && (
+        {!readOnly && tab === 'community' && (
           <div className="settings-grid">
             {moderator && (
               <>
@@ -403,7 +421,7 @@ export function Manage({
             )}
           </div>
         )}
-        {tab === 'members' && (
+        {!readOnly && tab === 'members' && (
           <div className="settings-grid">
             <section className="panel">
               <h3>Channel roster {selectedChannel ? `· #${selectedChannel.name}` : ''}</h3>
@@ -551,7 +569,7 @@ export function Manage({
             )}
           </div>
         )}
-        {tab === 'agents' && (
+        {!readOnly && tab === 'agents' && (
           <div className="settings-grid">
             <section className="panel">
               <h3>Your agents</h3>
@@ -741,73 +759,97 @@ export function Manage({
                 </>
               )}
             </section>
-            <section className="panel">
-              <h3>Leave community</h3>
-              {me.role === 'owner' ? (
-                <p className="small muted">Transfer ownership before you leave.</p>
-              ) : (
-                <>
-                  <p className="small muted">
-                    You will lose channel access and local connections. Your past messages stay
-                    attributed to you.
-                  </p>
-                  <button className="button danger" disabled={busy} onClick={() => void leave()}>
-                    Leave community
-                  </button>
-                </>
-              )}
-              {me.role === 'owner' && (
-                <>
-                  <div className="field">
-                    <label htmlFor="successor">New owner</label>
-                    <select
-                      id="successor"
-                      value={successor}
-                      onChange={(event) => setSuccessor(event.target.value)}
+            {!readOnly && (
+              <section className="panel">
+                <h3>Leave community</h3>
+                {me.role === 'owner' ? (
+                  <p className="small muted">Transfer ownership before you leave.</p>
+                ) : (
+                  <>
+                    <p className="small muted">
+                      You will lose channel access and local connections. Your past messages stay
+                      attributed to you.
+                    </p>
+                    <div className="field">
+                      <label htmlFor="leave-community-name">Enter {communityName}</label>
+                      <input
+                        id="leave-community-name"
+                        value={leaveName}
+                        onChange={(event) => setLeaveName(event.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="leave-password">Confirm password</label>
+                      <input
+                        id="leave-password"
+                        type="password"
+                        autoComplete="current-password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                      />
+                    </div>
+                    <button
+                      className="button danger"
+                      disabled={busy || !password || leaveName !== communityName}
+                      onClick={() => void leave()}
                     >
-                      <option value="">Choose a member</option>
-                      {directory
-                        .filter((member) => member.memberId !== me.memberId)
-                        .map((member) => (
-                          <option key={member.memberId} value={member.memberId}>
-                            {member.displayName}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="transfer-password">Confirm password</label>
-                    <input
-                      id="transfer-password"
-                      type="password"
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                    />
-                  </div>
-                  <button
-                    className="button danger"
-                    disabled={!successor || !password || busy}
-                    onClick={() =>
-                      void perform(
-                        () =>
-                          request<{ lifecycleVersion: number }>('/api/v1/settings').then(
-                            (settings) =>
-                              request('/api/v1/owner/transfer', 'POST', {
-                                successorMemberId: successor,
-                                password,
-                                lifecycleVersion: settings.lifecycleVersion,
-                              })
-                          ),
-                        'Ownership transferred.'
-                      )
-                    }
-                  >
-                    <KeyRound size={16} /> Transfer ownership
-                  </button>
-                </>
-              )}
-            </section>
+                      Leave community
+                    </button>
+                  </>
+                )}
+                {me.role === 'owner' && (
+                  <>
+                    <div className="field">
+                      <label htmlFor="successor">New owner</label>
+                      <select
+                        id="successor"
+                        value={successor}
+                        onChange={(event) => setSuccessor(event.target.value)}
+                      >
+                        <option value="">Choose a member</option>
+                        {directory
+                          .filter((member) => member.memberId !== me.memberId)
+                          .map((member) => (
+                            <option key={member.memberId} value={member.memberId}>
+                              {member.displayName}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="transfer-password">Confirm password</label>
+                      <input
+                        id="transfer-password"
+                        type="password"
+                        autoComplete="current-password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                      />
+                    </div>
+                    <button
+                      className="button danger"
+                      disabled={!successor || !password || busy}
+                      onClick={() =>
+                        void perform(
+                          () =>
+                            request<{ lifecycleVersion: number }>('/api/v1/settings').then(
+                              (settings) =>
+                                request('/api/v1/owner/transfer', 'POST', {
+                                  successorMemberId: successor,
+                                  password,
+                                  lifecycleVersion: settings.lifecycleVersion,
+                                })
+                            ),
+                          'Ownership transferred.'
+                        )
+                      }
+                    >
+                      <KeyRound size={16} /> Transfer ownership
+                    </button>
+                  </>
+                )}
+              </section>
+            )}
           </div>
         )}
       </main>

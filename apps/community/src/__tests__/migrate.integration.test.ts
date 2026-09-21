@@ -132,6 +132,40 @@ it('upgrades a populated foundation database without changing human authors', as
         ])
       ).rows[0]
     ).toEqual({ lifecycle: 'active', lifecycle_version: 1 });
+    const invite = (
+      await db.query<{ id: string }>(
+        `INSERT INTO invites(community_id,issuer_member_id,token_hash,seat_limit,expires_at)
+         VALUES($1,$2,'migration-invite',1,now()+interval '1 hour') RETURNING id`,
+        [community, member]
+      )
+    ).rows[0].id;
+    const admission = (
+      await db.query<{ id: string }>(
+        `INSERT INTO pending_admissions(
+           community_id,invite_id,token_hash,account_id,bound_at,expires_at
+         ) VALUES($1,$2,'migration-admission','upgrade-user',now(),now()+interval '10 minutes')
+         RETURNING id`,
+        [community, invite]
+      )
+    ).rows[0].id;
+    await expect(
+      db.query(
+        `INSERT INTO admission_receipts(
+           admission_id,community_id,invite_id,account_id,member_id,expires_at
+         ) VALUES($1,$2,$3,'another-account',$4,now()+interval '10 minutes')`,
+        [admission, community, invite, member]
+      )
+    ).rejects.toMatchObject({ code: '23503' });
+    const unboundAdmission = (
+      await db.query<{ id: string }>(
+        `INSERT INTO pending_admissions(community_id,invite_id,token_hash,expires_at)
+         VALUES($1,$2,'unbound-migration-admission',now()+interval '10 minutes') RETURNING id`,
+        [community, invite]
+      )
+    ).rows[0].id;
+    await expect(
+      db.query('UPDATE pending_admissions SET consumed_at=now() WHERE id=$1', [unboundAdmission])
+    ).rejects.toMatchObject({ code: '23514' });
     expect(
       (
         await db.query<{ column_name: string }>(
@@ -156,7 +190,7 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();
@@ -362,7 +396,7 @@ it('expands a populated version-four database without changing files or cleanup 
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
     expect(
       (
         await db.query(

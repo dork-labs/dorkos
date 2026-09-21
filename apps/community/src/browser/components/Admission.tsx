@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { createAuthClient } from 'better-auth/react';
 import { ArrowRight, Check, KeyRound, UsersRound } from 'lucide-react';
-import { describeError, request } from '../api.js';
+import { describeError, RequestError, request } from '../api.js';
+import { clearInviteFragment } from '../invite-fragment.js';
 import type { Community } from '../types.js';
 
 type Props = {
   community: Community | null;
   inviteToken: string | null;
   unadmitted: boolean;
-  onAdmitted: () => void;
+  onAdmitted: (joined: boolean) => void;
+  onInviteExchanged: () => void;
   hostSignIn?: boolean;
 };
 type Preview = { communityName: string; inviterName: string; channelName: string | null };
@@ -20,6 +22,7 @@ export function Admission({
   inviteToken,
   unadmitted,
   onAdmitted,
+  onInviteExchanged,
   hostSignIn = false,
 }: Props) {
   const [mode, setMode] = useState<'signup' | 'signin'>(
@@ -29,6 +32,8 @@ export function Admission({
     hostSignIn || (community && !inviteToken) ? 'account' : 'initial'
   );
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [pendingAdmission, setPendingAdmission] = useState(false);
+  const [rawInvite, setRawInvite] = useState(inviteToken);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -50,10 +55,6 @@ export function Admission({
     setBusy(true);
     setError('');
     try {
-      if (inviteToken) {
-        sessionStorage.setItem('communityPendingInvite', inviteToken);
-        sessionStorage.setItem('communityPendingInvitePath', window.location.pathname);
-      }
       const result = await authClient.signIn.social({
         provider,
         callbackURL: window.location.origin + window.location.pathname,
@@ -71,11 +72,25 @@ export function Admission({
     setError('');
     try {
       if (isOwner) await request('/api/v1/bootstrap/preflight', 'POST', { secret });
-      else if (inviteToken) {
-        setPreview(
-          await request<Preview>('/api/v1/invites/preview', 'POST', { token: inviteToken })
+      else if (rawInvite) {
+        const result = await request<Preview & { granted: true; expiresAt: string }>(
+          '/api/v1/invites/preflight',
+          'POST',
+          { token: rawInvite }
         );
-        await request('/api/v1/invites/preflight', 'POST', { token: inviteToken });
+        setPreview(result);
+        setPendingAdmission(true);
+        clearInviteFragment();
+        setRawInvite(null);
+        onInviteExchanged();
+        try {
+          await request('/api/v1/invites/bind', 'POST', {});
+          await request('/api/v1/invites/redeem', 'POST', {});
+          onAdmitted(true);
+          return;
+        } catch (cause) {
+          if (!(cause instanceof RequestError) || cause.status !== 401) throw cause;
+        }
       } else throw new Error('Ask a community member for a new invitation link.');
       setStage('account');
     } catch (cause) {
@@ -91,19 +106,28 @@ export function Admission({
     setError('');
     try {
       const path = mode === 'signup' ? '/api/auth/sign-up/email' : '/api/auth/sign-in/email';
-      await request(
-        path,
-        'POST',
-        mode === 'signup' ? { name, email, password } : { email, password }
-      );
       if (isOwner) {
-        await request('/api/v1/bootstrap/claim', 'POST', { secret, name: communityName });
-        await request('/api/v1/channels', 'POST', { name: channelName, visibility: 'public' });
-      } else if (inviteToken)
-        await request('/api/v1/invites/redeem', 'POST', { token: inviteToken });
-      sessionStorage.removeItem('communityPendingInvite');
-      sessionStorage.removeItem('communityPendingInvitePath');
-      onAdmitted();
+        await request('/api/v1/bootstrap/complete', 'POST', {
+          secret,
+          accountName: name,
+          email,
+          password,
+          communityName,
+          channelName,
+        });
+        await request('/api/auth/sign-in/email', 'POST', { email, password });
+      } else {
+        await request(
+          path,
+          'POST',
+          mode === 'signup' ? { name, email, password } : { email, password }
+        );
+      }
+      if (!isOwner && pendingAdmission) {
+        await request('/api/v1/invites/bind', 'POST', {});
+        await request('/api/v1/invites/redeem', 'POST', {});
+      }
+      onAdmitted(!isOwner);
     } catch (cause) {
       setError(describeError(cause));
     } finally {
@@ -135,7 +159,7 @@ export function Admission({
         <p className="muted mb-7">
           {isOwner
             ? 'Claim the first account, name your space, and open a channel.'
-            : inviteToken
+            : rawInvite
               ? 'Check the invitation, then create or sign in to your account.'
               : 'Sign in to your account. To join for the first time, ask a member for an invitation.'}
         </p>
@@ -178,12 +202,12 @@ export function Admission({
             <button
               className="button primary w-full"
               type="submit"
-              disabled={busy || (!isOwner && !inviteToken)}
+              disabled={busy || (!isOwner && !rawInvite)}
             >
               {busy ? 'Checking…' : 'Continue'}
               <ArrowRight size={17} />
             </button>
-            {!isOwner && !inviteToken && (
+            {!isOwner && !rawInvite && (
               <p className="hint mt-3">
                 If your link has expired or was already used, ask for another one.
               </p>
@@ -204,7 +228,7 @@ export function Admission({
               </div>
             )}
             <div className="row mb-5">
-              {(isOwner || inviteToken) && (
+              {(isOwner || pendingAdmission) && (
                 <button
                   type="button"
                   className={`button ${mode === 'signup' ? 'primary' : ''}`}
@@ -213,13 +237,15 @@ export function Admission({
                   Create account
                 </button>
               )}
-              <button
-                type="button"
-                className={`button ${mode === 'signin' ? 'primary' : ''}`}
-                onClick={() => setMode('signin')}
-              >
-                Sign in
-              </button>
+              {!isOwner && (
+                <button
+                  type="button"
+                  className={`button ${mode === 'signin' ? 'primary' : ''}`}
+                  onClick={() => setMode('signin')}
+                >
+                  Sign in
+                </button>
+              )}
             </div>
             {mode === 'signup' && (
               <div className="field">
@@ -289,7 +315,7 @@ export function Admission({
                 ? 'Working…'
                 : isOwner
                   ? 'Create community'
-                  : inviteToken
+                  : pendingAdmission
                     ? 'Join community'
                     : 'Sign in'}
               <KeyRound size={16} />

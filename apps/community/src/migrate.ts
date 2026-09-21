@@ -23,6 +23,7 @@ export async function migrate(databaseUrl: string): Promise<void> {
       [8, '0008_tenant_contract.sql'],
       [9, '0009_backout_fence.sql'],
       [10, '0010_administration.sql'],
+      [11, '0011_membership_protocol.sql'],
     ] as const) {
       const applied = await client.query('SELECT 1 FROM community_migrations WHERE version=$1', [
         version,

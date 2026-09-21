@@ -1,6 +1,9 @@
 ---
 covers:
-  - 'feat(community): qualify native connections and membership chooser'
+  - 'refactor(client): publish the three variant tables the barrel could not see (#1966)'
+  - 'feat(community): qualify native community connections'
+  - 'feat(community): add tenant membership chooser'
+  - 'fix(community): recover multi-community admission'
 ---
 
 ### Added

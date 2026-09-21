@@ -13,11 +13,6 @@ export function createCommunityAuth(pool: Pool, config: CommunityConfig) {
         `SELECT 1 FROM bootstrap_grants g
          WHERE g.token_hash=$1 AND g.consumed_at IS NULL AND g.expires_at>now()
            AND (
-             (g.purpose='first_install' AND g.community_id IS NULL
-               AND NOT EXISTS (SELECT 1 FROM communities)
-               AND NOT EXISTS (SELECT 1 FROM host_operators)
-               AND NOT EXISTS (SELECT 1 FROM members))
-             OR
              (g.purpose='owner_claim' AND g.community_id IS NOT NULL
                AND EXISTS (
                  SELECT 1 FROM communities c

@@ -8,6 +8,7 @@ import { parseConfig } from '../config.js';
 import { encodeCursor } from '../cursor.js';
 import { lockChannel, transaction, type Member } from '../data.js';
 import { CommunityWireCommunitySchema } from '@dorkos/shared/community-wire';
+import { bootstrapFirstHost, seedCredentialAccount } from './bootstrap-test-helper.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl)
@@ -36,6 +37,7 @@ let bobMemberId = '';
 const hooks: {
   afterSnapshotWatermark?: () => Promise<void>;
   afterEntryAttachmentLookup?: () => Promise<void>;
+  beforeBootstrapChannelCreate?: () => Promise<void>;
 } = {};
 const sseBuffers = new WeakMap<ReadableStreamDefaultReader<Uint8Array>, string>();
 
@@ -129,53 +131,26 @@ describe('owner foundation over real HTTP and Postgres', () => {
       duplex: 'half',
     } as RequestInit & { duplex: 'half' });
     expect(chunked.status).toBe(413);
-    const preflight = await post('/api/v1/bootstrap/preflight', { secret: config.bootstrapSecret });
-    expect(preflight.status).toBe(200);
-    const grant = cookieOf(preflight);
-    expect(grant).toContain('community_bootstrap=');
-
-    const signup = await post(
-      '/api/auth/sign-up/email',
-      { name: 'Owner', email: 'owner@example.test', password: 'password1234' },
-      grant
-    );
-    expect(signup.status).toBe(200);
-    ownerCookie = `${grant}; ${cookieOf(signup)}`;
-    const bobSignup = await post(
-      '/api/auth/sign-up/email',
-      { name: 'Bob', email: 'bob@example.test', password: 'password1234' },
-      grant
-    );
-    expect(bobSignup.status).toBe(200);
-    bobCookie = `${grant}; ${cookieOf(bobSignup)}`;
-    expect((await request('/api/v1/channels', { headers: { cookie: ownerCookie } })).status).toBe(
-      403
-    );
-
-    const [one, two] = await Promise.all([
-      post(
-        '/api/v1/bootstrap/claim',
-        { secret: config.bootstrapSecret, name: 'Test community' },
-        ownerCookie
-      ),
-      post(
-        '/api/v1/bootstrap/claim',
-        { secret: config.bootstrapSecret, name: 'Test community' },
-        ownerCookie
-      ),
-    ]);
-    expect([one.status, two.status].sort()).toEqual([200, 403]);
-    expect(
-      (await pool.query("SELECT count(*)::int AS count FROM members WHERE role='owner' AND active"))
-        .rows[0].count
-    ).toBe(1);
-    expect(
-      (
-        await pool.query<{ count: number }>(
-          'SELECT count(*)::int AS count FROM host_operators WHERE revoked_at IS NULL'
-        )
-      ).rows[0].count
-    ).toBe(1);
+    const setup = await bootstrapFirstHost(post, {
+      secret: config.bootstrapSecret,
+      accountName: 'Owner',
+      email: 'owner@example.test',
+      password: 'password1234',
+      communityName: 'Test community',
+    });
+    ownerCookie = setup.cookie;
+    ownerMemberId = setup.memberId;
+    await seedCredentialAccount(pool, {
+      name: 'Bob',
+      email: 'bob@example.test',
+      password: 'password1234',
+    });
+    const bobSignin = await post('/api/auth/sign-in/email', {
+      email: 'bob@example.test',
+      password: 'password1234',
+    });
+    expect(bobSignin.status).toBe(200);
+    bobCookie = cookieOf(bobSignin);
     expect(
       (await post('/api/v1/bootstrap/preflight', { secret: config.bootstrapSecret })).status
     ).toBe(409);
@@ -184,14 +159,13 @@ describe('owner foundation over real HTTP and Postgres', () => {
         await post(
           '/api/auth/sign-up/email',
           { name: 'Late', email: 'late@example.test', password: 'password1234' },
-          grant
+          ownerCookie
         )
       ).status
     ).toBe(403);
     expect((await request('/api/v1/channels', { headers: { cookie: bobCookie } })).status).toBe(
       403
     );
-    ownerMemberId = (await pool.query("SELECT id FROM members WHERE role='owner'")).rows[0].id;
     const publicCommunity = await request('/api/v1/community');
     expect(publicCommunity.status).toBe(200);
     const publicBody = await publicCommunity.json();
