@@ -413,19 +413,24 @@ jobs:
       - name: npm-availability wait fixtures
         run: bash scripts/test-wait-for-npm.sh
 
-      # pre-push-watchdog.sh (DOR-473) is the bound on the pre-push test gate,
-      # which had none: one vitest that never exited stopped `git push` forever,
-      # with lefthook's buffered output showing an empty terminal throughout, so
-      # the standing workaround became `--no-verify` and the gate protected
-      # nothing. A watchdog has two ways to fail and both are silent — too slack
-      # and the stall passes through exactly as before, too eager and it starts
-      # killing honest pushes, which would send everyone back to --no-verify
-      # with a better excuse. Hermetic: shell fixtures under a temp dir with
-      # second-scale bounds from the script's DORKOS_PREPUSH_* overrides, so it
-      # never runs turbo, vitest or this repo's real suites, needs no
-      # `pnpm install`, and takes about half a minute.
-      - name: Pre-push watchdog fixtures
-        run: bash scripts/test-pre-push-watchdog.sh
+      # heavy-run-lock.sh (DOR-2160) is the machine-wide cap on how many heavy
+      # local gates run at once — the answer to several agents each starting a
+      # full affected sweep on one 14-core box, which measured a load average
+      # around 500 with the kernel killing processes for memory. It wraps the
+      # pre-commit lint and typecheck commands, so its dangerous failures are
+      # not "the cap is a bit loose": they are "no commit on this machine ever
+      # returns" (a holder SIGKILLed for memory runs no release trap and leaves
+      # its slot behind) and "the cap silently stops existing" (a reclaim or a
+      # release that deletes a LIVE holder's slot, which the suite reproduces
+      # and pins). Its centrepiece SIGKILLs a holder and asserts the next run
+      # gets through in seconds; the rest pin that it caps at all, that waiting
+      # is bounded, that giving up runs the command rather than hanging or
+      # silently skipping it, and that a slot that changed hands is never
+      # deleted by its previous owner. Hermetic: throwaway git repos and
+      # `sleep`, no `pnpm install`, about fifteen seconds, almost all of it
+      # deliberate waiting on bounds.
+      - name: Heavy-run lock fixtures
+        run: bash scripts/test-heavy-run-lock.sh
 
       # run-credential-free.sh (DOR-2081) is the environment scrub behind the
       # `credential-free-build` check, and it is the only thing standing behind

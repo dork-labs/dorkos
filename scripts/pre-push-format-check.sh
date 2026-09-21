@@ -47,10 +47,12 @@
 # local state. Refusing is the only honest move: it is the one outcome where the
 # thing you push and the thing on your disk still match.
 #
-# WHICH FILES — THE SAME "CHANGED" THE TEST GATE MEANS
+# WHICH FILES — THE SAME "CHANGED" THE COMMIT GATES MEAN
 #
-# The base is resolved with the exact expression the `tests` command in
-# lefthook.yml uses for TURBO_SCM_BASE (DOR-617/DOR-1717):
+# The base is resolved with the exact expression the pre-commit `lint` and
+# `typecheck` commands in lefthook.yml use for TURBO_SCM_BASE
+# (DOR-617/DOR-1717; the pre-push `tests` command used it too, until DOR-2160
+# removed that command):
 #
 #     $(git rev-parse --verify --quiet origin/main || echo main)
 #
@@ -93,8 +95,9 @@
 # `prettier.getFileInfo` over `git ls-files`) — while this gate still looks only
 # at the handful you touched, one of which is the config itself. So the one edit
 # that can red CI everywhere at once is the one edit this cannot see coming. It
-# is deliberate: checking 9,918 files takes minutes, which is the test gate's
-# job, not this one's. Run `pnpm format:check` by hand when you touch either file.
+# is deliberate: checking 9,918 files takes minutes, which is the required
+# `lint` job's work in CI, not this one's. Run `pnpm format:check` by hand when
+# you touch either file.
 #
 # `--diff-filter=ACMRT` drops deletions, so a push that removes files never hands
 # prettier a path that is gone; a rename reports only its DESTINATION under
@@ -169,18 +172,17 @@
 # The last 25 squashed PRs on main changed a median of 11 files and a maximum of
 # 63, so a real push pays well under a second. It is not free at every scale —
 # 374 files takes 4.5s and 2,871 takes 29s — but those are spans of main, not
-# branches, and any push that large is already paying minutes in the test gate
-# behind this one. Revisit `--cache` if that ever stops being true.
+# branches, not branches. Revisit `--cache` if that ever stops being true.
 #
 # THE FRESH-WORKTREE CASE — the one place this DELIBERATELY fails
 #
-# A worktree created but never `pnpm install`ed has no prettier, and every other
-# gate in the pre-push hook is equally dead there: turbo is missing too, so the
-# push already failed in ~0.4s with a message about a diff base. This step runs
-# FIRST, so its message is now the one you see, and it names the fix. It exits 1
-# rather than skipping, because "we could not check" is not "there is nothing to
-# check" — the same fail-closed argument scripts/pre-push-watchdog.sh makes for
-# its timeout. `git push --no-verify` remains the deliberate way past it.
+# A worktree created but never `pnpm install`ed has no prettier, so this check
+# cannot run at all. Since DOR-2160 it is the ONLY command in the pre-push hook,
+# which makes the choice here the whole behaviour of the hook in that state: it
+# exits 1, because "we could not check" is not "there is nothing to check", and
+# because a fresh worktree that cannot run prettier cannot run the commit gates
+# either — you want to hear it now, with the fix named, rather than at the first
+# commit. `git push --no-verify` remains the deliberate way past it.
 #
 # Contrast with the Stop hook, which no-ops in the identical situation: that one
 # is cosmetic and runs unasked dozens of times a turn, this one runs once at the
@@ -202,8 +204,8 @@ if [ -z "$repo_root" ]; then
 fi
 cd "$repo_root" || exit 1
 
-# Identical to the `tests` command's TURBO_SCM_BASE expression, on purpose — see
-# the header. `--verify --quiet` prints a sha and stays silent when the ref is
+# Identical to the pre-commit gates' TURBO_SCM_BASE expression, on purpose —
+# see the header. `--verify --quiet` prints a sha and stays silent when the ref is
 # absent, so the fallback is the literal branch name for git to resolve.
 base="$(git rev-parse --verify --quiet origin/main || echo main)"
 
@@ -257,8 +259,8 @@ if [ ! -x "$prettier_bin" ]; then
   printf 'git push refused: no prettier in this checkout.\n\n'
   printf '  %s\n\n' "$prettier_bin"
   printf 'is missing, so the formatting check could not run. This is what a worktree\n'
-  printf 'created but never installed looks like — the test gate behind this one needs\n'
-  printf 'the same node_modules and would fail next. Run:\n\n'
+  printf 'created but never installed looks like — the commit gates need the same\n'
+  printf 'node_modules and would fail next. Run:\n\n'
   printf '  pnpm install\n\n'
   exit 1
 fi

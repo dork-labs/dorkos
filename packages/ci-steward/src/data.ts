@@ -402,6 +402,32 @@ export type Constraint = z.infer<typeof ConstraintSchema>;
  * wrong. A field added here is additive from now on; a reader that does not
  * know it ignores it.
  */
+/**
+ * What the machines running the hooks were doing over a window: the tracked
+ * metric `tracked.machine-load` and its two memory companions.
+ *
+ * Each statistic is read at its own bad end (see `machineReading`), and is
+ * `null` when nothing reported it rather than 0, which would read as a
+ * measurement. `n` counts readings, not runs; `clones` is how many machines
+ * they came from, because a number pooled across two machines describes
+ * neither.
+ */
+export const MachineReadingSchema = z
+  .object({
+    n: z.number(),
+    clones: z.number(),
+    /** Load average divided by online cores, p90. */
+    load_per_core_p90: z.number().nullable(),
+    /** Available memory in MiB, p10 — the low end, where it hurt. */
+    mem_available_mb_p10: z.number().nullable(),
+    /** Swap in use in MiB, p50 — sustained swap, not a spike. */
+    swap_used_mb_p50: z.number().nullable(),
+  })
+  .strict();
+
+/** What the machines running the hooks were doing. */
+export type MachineReading = z.infer<typeof MachineReadingSchema>;
+
 export const LatestSchema = z.object({
   schema: z.literal(1),
   date: z.string(),
@@ -416,6 +442,12 @@ export const LatestSchema = z.object({
   constraint: ConstraintSchema,
   /** Local SLOs (local-commit, local-push) in breach, for the SessionStart line. */
   local_breaches: z.array(z.string()),
+  /**
+   * What the machines running the hooks were doing over the same window. A
+   * local SLO reads mostly as a fact about the box, and until DOR-2160 nothing
+   * recorded the box. Absent on days collected before that.
+   */
+  machine: MachineReadingSchema.optional(),
   /** Both data-branch rulesets present and unchanged. */
   safeguards_ok: z.boolean(),
   /**
@@ -524,6 +556,26 @@ export const FloorsSchema = z
 /** `floors.json`. */
 export type Floors = z.infer<typeof FloorsSchema>;
 
+/**
+ * One hook's, or one command's, runs in a day.
+ *
+ * `killed` is the OS taking the process away — on the machine this was written
+ * for, memory pressure. `notes` counts what an exit status cannot carry, keyed
+ * by the note the time-wrap recorded: `lock_timeout` for a heavy command that
+ * gave up waiting for a machine-wide slot and ran uncapped, `lock_wait` for one
+ * that waited and got a slot. A cap that stopped capping has to be a number
+ * here, or it is indistinguishable from a machine that was never busy.
+ * Optional, for days exported before DOR-2160.
+ */
+const LocalBucketSchema = z
+  .object({
+    durations: Timed,
+    killed: z.number(),
+    failed: z.number(),
+    notes: z.record(z.string(), z.number()).optional(),
+  })
+  .strict();
+
 /** One clone's local hook timings for one day (plan §4.5). */
 const LocalDaySchema = z
   .object({
@@ -532,15 +584,19 @@ const LocalDaySchema = z
     date: z.string(),
     exported_at: z.string(),
     /** hook -> whole-hook runs: `[start second of day, wall seconds]` of finished runs, runs killed (START, no END, past the ceiling), and runs with a failing command. */
-    hooks: z.record(
-      z.string(),
-      z.object({ durations: Timed, killed: z.number(), failed: z.number() }).strict()
-    ),
+    hooks: z.record(z.string(), LocalBucketSchema),
     /** hook.command -> the same, per lefthook command. */
-    commands: z.record(
-      z.string(),
-      z.object({ durations: Timed, killed: z.number(), failed: z.number() }).strict()
-    ),
+    commands: z.record(z.string(), LocalBucketSchema),
+    /**
+     * The machine as the day's hook events saw it, `[start second of day,
+     * value]`: load average per core, available memory in MiB, swap in use in
+     * MiB. Optional, because days exported before DOR-2160 carry none — and a
+     * platform that will not answer one probe still sends the others.
+     */
+    machine: z
+      .object({ load_per_core: Timed, mem_available_mb: Timed, swap_used_mb: Timed })
+      .strict()
+      .optional(),
   })
   .strict();
 /** One clone's local hook timings for one day. */
