@@ -15,6 +15,25 @@ const generator = readFileSync(
 const publisher = join(root, 'scripts/publish-community-release-assets.sh');
 
 describe('Community release workflow', () => {
+  it('rejects dot-separated version suffixes before building the image', () => {
+    const metadataStep = workflow.match(
+      /      - name: Extract release metadata[\s\S]*?        run: \|\n([\s\S]*?)(?=\n      - name:)/
+    )?.[1];
+    expect(metadataStep).toBeTruthy();
+    const script = metadataStep!
+      .split('\n')
+      .map((line) => line.slice(10))
+      .join('\n');
+    const accepts = (version: string) =>
+      spawnSync('bash', ['-c', script], {
+        env: { GITHUB_REF_NAME: `v${version}`, GITHUB_OUTPUT: '/dev/null' },
+      }).status === 0;
+
+    expect(accepts('1.2.3')).toBe(true);
+    expect(accepts('1.2.3-rc.1')).toBe(true);
+    expect(accepts('1.2.3.4')).toBe(false);
+  });
+
   it('publishes a dedicated two-platform image and selects its immutable index digest', () => {
     expect(workflow).toContain('IMAGE_NAME: dork-labs/dorkos-community');
     expect(workflow).toContain('platforms: linux/amd64,linux/arm64');

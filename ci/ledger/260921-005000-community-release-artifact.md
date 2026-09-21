@@ -31,3 +31,8 @@ existing pull-request or merge-queue gate. Its own 75-minute timeout matches the
 measured multi-platform Docker release lane while the first runs establish a
 Community-specific baseline. Revert if it can create a release, select a mutable
 tag for deployment, publish a partial platform index, or delay an existing gate.
+
+The review correction aligns the early shell version check with the manifest's
+hyphen-prefixed prerelease grammar. Its regression executes the actual workflow
+step in Bash and rejects a dot-only suffix before any image build. This does not
+change gate retries, timeouts, required status, or the release lane's scope.
