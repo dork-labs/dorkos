@@ -243,7 +243,6 @@ export function createCommunityApp({
   communityApi.get('/community', async (c) => {
     const tenant = await resolveCommunityContext(c, pool, {
       allowPendingOwner: true,
-      allowSuspended: true,
     });
     const result = await pool.query<{
       id: string;

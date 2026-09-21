@@ -61,7 +61,7 @@ export async function resolveCommunityContext(
     throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is not ready yet.');
   }
   if (community.lifecycle === 'suspended' && !options.allowSuspended) {
-    throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is unavailable.');
+    throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This community is suspended.');
   }
   if (community.lifecycle === 'deletion_pending' && !options.allowDeletionPending) {
     throw new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This community is being deleted.');

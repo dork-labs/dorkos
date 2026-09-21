@@ -40,8 +40,15 @@ import type { Task } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { TaskRunHistoryPanel } from './TaskRunHistoryPanel';
 
-/** Size variants controlling how much detail a TaskRow displays. */
-export type TaskRowSize = 'default' | 'compact' | 'minimal';
+/**
+ * Density steps controlling how much detail a TaskRow displays.
+ *
+ * Deliberately not the `xs · sm · md · lg` scale: the axis is not how big the
+ * row is but how much of the task it tells you, so the steps are named for
+ * that (`.claude/rules/components.md`). `comfortable` replaced a step named
+ * `default`, which said nothing at all about the row it produced (DOR-1873).
+ */
+export type TaskRowSize = 'comfortable' | 'compact' | 'minimal';
 
 /** Formats a cron expression into a human-readable string. */
 function formatCron(cron: string): string {
@@ -116,8 +123,8 @@ interface TaskRowProps {
  * A single task row with status dot, cron description, action controls,
  * and an animated run history panel that expands on click.
  *
- * Supports three size variants:
- * - `default` — full detail with tags, run history, and all actions
+ * Supports three density steps:
+ * - `comfortable` — full detail with tags, run history, and all actions
  * - `compact` — cron info and run-only action, no tags or history
  * - `minimal` — name and status dot only, no actions
  */
@@ -127,7 +134,7 @@ export function TaskRow({
   expanded,
   onToggleExpand,
   onEdit,
-  size = 'default',
+  size = 'comfortable',
   showAgent = true,
 }: TaskRowProps) {
   const updateTask = useUpdateTask();
@@ -138,10 +145,10 @@ export function TaskRow({
 
   const isMinimal = size === 'minimal';
   const isCompact = size === 'compact';
-  const isDefault = size === 'default';
+  const isComfortable = size === 'comfortable';
   const shouldShowAgent = showAgent && !isMinimal;
   const shouldShowCron = !isMinimal;
-  const shouldShowHistory = isDefault;
+  const shouldShowHistory = isComfortable;
   const isSystem = agent?.isSystem === true;
   // A package-shipped schedule found switched off draws as an ordinary
   // switched-off task — no card, no reason line (DOR-2059) — but that makes it
@@ -323,7 +330,7 @@ export function TaskRow({
               <Play className="size-3" />
               Run
             </button>
-          ) : isDefault ? (
+          ) : isComfortable ? (
             <div className="flex items-center gap-2">
               {task.cron ? (
                 <Switch
@@ -402,7 +409,7 @@ export function TaskRow({
           ) : null}
         </div>
 
-        {/* Expanded panel — file path + run history (default size only) */}
+        {/* Expanded panel — file path + run history (comfortable size only) */}
         <AnimatePresence initial={false}>
           {expanded && shouldShowHistory && (
             <motion.div
@@ -426,7 +433,7 @@ export function TaskRow({
         </AnimatePresence>
       </div>
 
-      {isDefault && (
+      {isComfortable && (
         <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
           <DialogContent>
             <DialogHeader>
