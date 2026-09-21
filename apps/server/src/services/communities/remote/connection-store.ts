@@ -183,10 +183,6 @@ export class RemoteConnectionStore {
       status,
       expiresAt,
       access: projectedAccess(record),
-      attention:
-        status === 'pending'
-          ? null
-          : { state: 'unavailable', unreadCount: null, mentionCount: null, verifiedAt: null },
     });
   }
 

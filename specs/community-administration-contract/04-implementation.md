@@ -15,21 +15,21 @@
 
 **Workers:** `/root/fly_readiness_sol`
 
-_(No tasks completed yet)_
+- Initial schema, routes, and worker implementation; subsequent acceptance and corrections are recorded below.
 
 ## Files Modified/Created
 
 **Source files:**
 
-_(None yet)_
+- Lifecycle migration and schema; administration/host routes; exact-tenant deletion worker and storage cleanup; shared access DTOs; local connection and remote route enforcement.
 
 **Test files:**
 
-_(None yet)_
+- PostgreSQL schema, role, lifecycle, deletion, and storage concurrency tests; local route and background stream capability tests.
 
 ## Known Issues
 
-_(None yet)_
+- Final composed API review remains required. Administration UI and cross-tenant browser proof are tracked by DOR-2177 and DOR-2178.
 
 ## Implementation Notes
 
@@ -57,8 +57,8 @@ _(None yet)_
 
 - The reviewed API composition includes requesting-owner deletion status recovery, deletion-pending traffic denial, safe current settings on stale-version conflicts, archived personal grant revocation, and suspended public discovery refusal.
 - Deletion keeps tenant-owned cleanup records when a storage write rejects but can still publish late. Focused regression tests cover successful and failed immediate deletion, late publication, and an old-behavior mutation that fails the assertions.
-- **Task 1.4 is still open:** the wire schema exists, but local connection and room responses must project verified effective access separately from stale last-known metadata. The switcher must consume that projection rather than infer access from connection status.
-- **Tasks 1.5 and 1.6 have reviewed corrections awaiting combined verification:** legacy namespace reconciliation now runs only after owner authorization. An authorized retry of an existing deletion job returns that job before checking already-deleted object bytes. Both causal regressions pass independently.
+- **Task 1.4 backend is implemented and independently reviewed:** local connection and room responses now project verified effective access separately from stale last-known metadata. Every live route checks its precise capability before remote I/O. Production status changes refresh background agent subscriptions, stopping streams when authority becomes unverified. Protective local agent revocation remains available during an outage. Switcher presentation is tracked separately in DOR-2184.
+- **Tasks 1.5 and 1.6 have independently reviewed corrections and combined verification:** legacy namespace reconciliation now runs only after owner authorization. An authorized retry of an existing deletion job returns that job before checking already-deleted object bytes. Both causal regressions pass independently.
 - Final combined PostgreSQL verification and independent composition review are required before opening the API PR. Earlier test counts below are historical evidence, not final acceptance of the combined branch.
 - DOR-2177 administration UI has its own reviewed branch and browser evidence; DOR-2178 remains the full cross-tenant administration proof gate.
 
@@ -66,4 +66,16 @@ _(None yet)_
 
 - Combined reviewed deletion fixes with the suspended-discovery regression, preserving both sides of the test-file merge.
 - From the repository root: `COMMUNITY_TEST_DATABASE_URL=<isolated local Postgres> VITEST_MAX_WORKERS=4 pnpm exec vitest run --root apps/community --config vitest.pg.config.ts --maxWorkers=1 --fileParallelism=false` passed all 13 files: **162 passed, 4 declared skips**. The owned PostgreSQL container was stopped afterward.
-- This completes the combined deletion test run, not task 1.4's still-pending local access projection or the final API review.
+- This completes the combined deletion test run. The access projection was subsequently reviewed through exact head `4b70c1997020ef0102087cee78efc3b31f47cc7c` with zero Important or Nit findings; its main composition `a98fb6ece68bd723aed07c99c14a35c3c4b784bd` preserves the same source tree. Final API composition review remains required.
+
+### Final API composition verification
+
+- Combined the accepted access projection and administration implementation with native participation based on merged tenant authorization. Conflict resolutions retain the reviewed API superset; production source remains identical to the accepted access composition.
+- Fresh full PostgreSQL run after composition: **13 files passed, 162 passed, 4 declared skips**. The owned `dorkos-admin-composition-pg` container was stopped immediately afterward.
+- Final independent composition review remains open; no claim is made yet that the full administration programme or its browser proof is complete.
+
+### Standalone API browser compatibility
+
+- CI passed all 162 PostgreSQL assertions but exposed a browser fixture that created an invalid suspended state. Updated the fixture with the required prior lifecycle and timestamp.
+- The causal rerun then exposed a real compatibility gap: the pre-administration browser only recognized `COMMUNITY_UNAVAILABLE`, while the API now distinguishes suspension and pending deletion. Moved the already-reviewed administration UI lifecycle-error helper into this API slice so it can land independently.
+- Fresh production build and the complete three-case browser suite now pass (one worker, no retries, unchanged deadlines). The suspension case returns the affected member to the chooser. The owned PostgreSQL container was stopped after verification.

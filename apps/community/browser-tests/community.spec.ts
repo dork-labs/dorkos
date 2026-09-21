@@ -606,9 +606,10 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     expect(
       selectedRequests.every((path) => path.startsWith(`/api/v1/communities/${secondCommunityId}/`))
     ).toBe(true);
-    await pool.query("UPDATE communities SET lifecycle='suspended' WHERE id=$1", [
-      secondCommunityId,
-    ]);
+    await pool.query(
+      "UPDATE communities SET lifecycle='suspended',suspended_from_state='active',suspended_at=now() WHERE id=$1",
+      [secondCommunityId]
+    );
     await observerPage.reload();
     await expect(observerPage).toHaveURL(baseUrl + '/');
     const suspendedChoice = observerPage.getByRole('button', { name: /Second Place/ });

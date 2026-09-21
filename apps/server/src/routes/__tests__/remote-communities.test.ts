@@ -55,12 +55,6 @@ const fixture = vi.hoisted(() => {
     status: 'connected' as const,
     expiresAt: null,
     access,
-    attention: {
-      state: 'unavailable' as const,
-      unreadCount: null,
-      mentionCount: null,
-      verifiedAt: null,
-    },
   }));
   const adapter = {
     connect: vi.fn<() => Promise<CommunityConnection>>(async () => ({
@@ -270,7 +264,6 @@ function connectionWithAccess(
     status: 'connected',
     expiresAt: null,
     access,
-    attention: { state: 'unavailable', unreadCount: null, mentionCount: null, verifiedAt: null },
   };
 }
 
@@ -319,7 +312,6 @@ describe('qualified remote community writes and live projections', () => {
         effective: { read: false, post: false, enrollAgent: false, stream: false },
         lastKnown: fixture.access.lastKnown,
       },
-      attention: { state: 'unavailable', unreadCount: null, mentionCount: null, verifiedAt: null },
     });
     const response = await request(testServer).get(`/api/communities/${fixture.ref}/rooms`);
     expect(response.status).toBe(502);
@@ -344,7 +336,6 @@ describe('qualified remote community writes and live projections', () => {
           verifiedAt: '2026-09-21T00:00:00.000Z',
         },
       },
-      attention: { state: 'unavailable', unreadCount: null, mentionCount: null, verifiedAt: null },
     });
     const response = await request(testServer).get(
       `/api/communities/${fixture.ref}/rooms/room-a/events`

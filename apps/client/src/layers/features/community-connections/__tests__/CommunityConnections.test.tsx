@@ -8,9 +8,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import { createMockTransport } from '@dorkos/test-utils';
-import { getCommunityAuthority, invalidateCommunityAuthority } from '@/layers/shared/lib';
-import { getCommunityRouteEpoch, TransportProvider } from '@/layers/shared/model';
-import { communityKeys } from '@/layers/entities/community';
+import { TransportProvider } from '@/layers/shared/model';
 import { CommunityConnections } from '../ui/CommunityConnections';
 
 const a: CommunityConnectionDescriptor = {
@@ -30,12 +28,6 @@ const a: CommunityConnectionDescriptor = {
       verifiedAt: '2026-09-21T12:00:00.000Z',
     },
   },
-  attention: {
-    state: 'verified',
-    unreadCount: 0,
-    mentionCount: 0,
-    verifiedAt: '2026-09-21T12:00:00.000Z',
-  },
 };
 const b = {
   ...a,
@@ -43,10 +35,7 @@ const b = {
   label: 'Community B',
   pinnedOrigin: 'https://b.example',
 };
-afterEach(() => {
-  cleanup();
-  invalidateCommunityAuthority();
-});
+afterEach(cleanup);
 function mount(transport: Transport) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -69,7 +58,6 @@ describe('community pairing controls', () => {
       status: 'pending' as const,
       connectedHumanMemberId: null,
       access: null,
-      attention: null,
     };
     const list = vi.fn().mockResolvedValueOnce([]).mockResolvedValue([pending]);
     const transport = createMockTransport({
@@ -101,16 +89,9 @@ describe('community pairing controls', () => {
       listCommunityConnections: vi.fn().mockResolvedValueOnce([a, b]).mockResolvedValue([b]),
     });
     const client = mount(transport);
+    client.setQueryData(['communities', a.ref, 'room', 'same-room-id'], { text: 'A only' });
+    client.setQueryData(['communities', b.ref, 'room', 'same-room-id'], { text: 'B only' });
     await user.click(await screen.findByRole('button', { name: 'Disconnect Community A' }));
-    const currentAuthority = getCommunityAuthority();
-    if (!currentAuthority.ownerKey) throw new Error('Community owner was not confirmed');
-    const authority = {
-      ...currentAuthority,
-      ownerKey: currentAuthority.ownerKey,
-      route: getCommunityRouteEpoch(),
-    };
-    client.setQueryData(communityKeys.room(authority, a.ref, 'same-room-id'), { text: 'A only' });
-    client.setQueryData(communityKeys.room(authority, b.ref, 'same-room-id'), { text: 'B only' });
     expect(transport.disconnectCommunity).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Keep connected' })).toHaveFocus();
     await user.click(screen.getByRole('button', { name: 'Keep connected' }));
@@ -121,10 +102,8 @@ describe('community pairing controls', () => {
     await waitFor(() => expect(screen.queryByText('Community A')).not.toBeInTheDocument());
     expect(screen.getByText('Community B')).toBeInTheDocument();
     expect(screen.getByLabelText('Community address')).toHaveFocus();
-    expect(
-      client.getQueryData(communityKeys.room(authority, a.ref, 'same-room-id'))
-    ).toBeUndefined();
-    expect(client.getQueryData(communityKeys.room(authority, b.ref, 'same-room-id'))).toEqual({
+    expect(client.getQueryData(['communities', a.ref, 'room', 'same-room-id'])).toBeUndefined();
+    expect(client.getQueryData(['communities', b.ref, 'room', 'same-room-id'])).toEqual({
       text: 'B only',
     });
   });
