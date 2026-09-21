@@ -129,7 +129,7 @@ export function Manage({
       const body = await request<{ token: string }>('/api/v1/invites', 'POST', {
         ...(inviteChannel ? { channelId: inviteChannel } : {}),
       });
-      const link = `${location.origin}/join#invite=${encodeURIComponent(body.token)}`;
+      const link = `${location.origin}${location.pathname}#invite=${encodeURIComponent(body.token)}`;
       setInviteLink(link);
       setMessage('Copy this link now. It will not appear in the invite list.');
       await refresh();
