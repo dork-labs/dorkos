@@ -1,6 +1,6 @@
 # Task 1.4: single-community backout
 
-Status: verification in progress. Refs DOR-2172; this slice does not complete authorization or multi-community rollout.
+Status: complete and independently accepted (0 Important, 0 Nit). Refs DOR-2172; this slice does not complete authorization or multi-community rollout.
 
 Worker: `/root`. Worktree: `/Users/doriancollier/.codex/worktrees/community-backout/dorkos`. Branch: `codex/community-backout`. Base: `f2c48aff63687173a884f9cddfd868a09ae68661`.
 
@@ -20,4 +20,4 @@ The diagnostic fails closed on an empty host, multiple communities, any multiple
 
 The first targeted run passed all nine assertions but exited red with four unhandled teardown errors. It used `pool.end()` followed by forced database drop, which can interrupt PostgreSQL connections before close acknowledgment. The new fixture now waits for all pool `remove` acknowledgments and drops without force; its six tests then passed without unhandled errors. Retain both results.
 
-Targeted migration and backout verification passed 9/9. The permanent-history mutation test deliberately disabled the latch: after deleting the second community, the test failed because the diagnostic incorrectly returned eligible. Restoring the latch restores the refusal. Community build and typecheck passed; lint exited zero with existing warnings. Independent adversarial review and normal push gates are pending.
+Targeted migration and backout verification passed 9/9. The permanent-history mutation test deliberately disabled the latch: after deleting the second community, the test failed because the diagnostic incorrectly returned eligible. Restoring the latch restores the refusal. Community build and typecheck passed; lint exited zero with existing warnings. Independent adversarial review accepted exact source commit `f3694edcf5ab3c58c7285ecd23b094ecbbd3cd20` with 0 Important and 0 Nit findings. The accepted commit was integrated into the cohesive persistence branch without changing its tree.

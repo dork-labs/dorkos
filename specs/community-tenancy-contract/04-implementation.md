@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 3 / 12
+**Tasks Completed:** 4 / 12
 
 ## Tasks Completed
 
@@ -60,7 +60,7 @@ Task 1.3 is complete:
 - The global member account uniqueness and community singleton constraint are removed only after validation. The database now permits one host account to belong to more than one community while retaining one membership per account in each community.
 - New communities begin in `pending_owner`; the bootstrap transaction creates the first owner and activates the community atomically. Migration validates existing owner counts before removing singleton constraints. Deferred constraints require no active owner while pending and exactly one active owner while active or suspended, and memberships cannot move between communities.
 - Every current route and fixture writes explicit tenant ownership. The production entry and export paths write normalized children atomically, and history, stream, archive, and access checks read them without the removed arrays.
-- PostgreSQL verification covers human and agent mentions, duplicate order, export order, migration reruns, missing and ambiguous targets, unresolved channels, cross-tenant rejection, lifecycle ownership, real HTTP writes, attachment/export cleanup, recovery, admission, reconciliation, and the remote adapter. The complete Community PostgreSQL gate passes 121 assertions with 4 declared skips across 8 fixtures.
+- PostgreSQL verification covers human and agent mentions, duplicate order, export order, migration reruns, missing and ambiguous targets, unresolved channels, cross-tenant rejection, lifecycle ownership, real HTTP writes, attachment/export cleanup, recovery, admission, reconciliation, and the remote adapter. The corrected-head Community PostgreSQL gate passed 121 assertions, timed out in 2 cases, and declared 4 skips across 8 fixtures. Both timed-out cases passed in isolation, and the two complete files passed together with `maxWorkers=2` (13/13); no broad rerun was used to erase the original result.
 
 ## Files Modified/Created
 
@@ -137,5 +137,7 @@ _(None yet)_
 - Branch: `codex/community-tenant-constraints`
 - Stacked base: accepted reconciliation head `c211a0b6b1fa7bd89001423cb9aae4bd485ad26f` (PR #1968).
 - The contract migration validates and locks the normalized model before removing arrays, compatibility triggers, singleton/global uniqueness, and nullable ownership. Existing single-community behavior remains available while the schema can now represent independent tenant membership safely.
-- Targeted real-Postgres verification passes attachments 16/16, recovery 5/5, remote adapter 52/52 active checks, reconciliation 10/10, and admission 16/16. The complete Community PostgreSQL gate passes 121 assertions with 4 declared skips across 8 fixtures.
-- Next task: Task 1.4 proves the supported single-community rollback boundary before tenant-qualified HTTP routing begins.
+- Targeted real-Postgres verification passes attachments 16/16, recovery 5/5, remote adapter 52/52 active checks, reconciliation 10/10, and admission 16/16. The corrected-head Community PostgreSQL gate passed 121 assertions, timed out in 2 cases, and declared 4 skips across 8 fixtures. Both timed-out cases passed in isolation, and the two complete files passed together with `maxWorkers=2` (13/13); no broad rerun was used to erase the original result.
+- Task 1.4 is complete: the supported backout is a coordinated pre-migration database/object restore into an isolated deployment of the original image. Migration 0009 permanently refuses backout after a second community has ever existed, even if later deleted. The read-only diagnostic cannot authorize or perform a restore.
+- Targeted PostgreSQL migration/backout verification passed 9/9. A durable-history mutation failed 1/6 with the latch removed and passed 6/6 after restoration. A real PostgreSQL 17 dump/restore rehearsal preserved every original public table row and matching file bytes while correctly excluding a post-backup write. Independent review accepted the exact Task 1.4 commit with 0 Important and 0 Nit findings.
+- Next task: tenant-qualified HTTP authorization and account-wide recovery complete Tasks 2.x before any multi-community rollout.
