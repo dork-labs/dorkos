@@ -10,8 +10,17 @@ import {
 import type { CommunityAuth } from '../auth.js';
 import { requireMember, transaction, type Member } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
-import { BlobStoreError, downloadHeaders, type BlobStore } from '../storage/index.js';
-import { cleanupBackoffSql, deleteUnreferencedBlob } from '../storage/pending-deletions.js';
+import {
+  BlobStoreError,
+  completeManagedBlobCommit,
+  discardManagedBlob,
+  downloadHeaders,
+  managedBlobWriteSignal,
+  prepareManagedBlobCommit,
+  reserveManagedBlob,
+  type BlobStore,
+} from '../storage/index.js';
+import { cleanupBackoffSql } from '../storage/pending-deletions.js';
 
 const MAX_EXPORT_BYTES = 1024 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
@@ -234,6 +243,9 @@ export async function sweepExpiredExports(pool: Pool, blobStore: BlobStore, batc
           return;
         }
         await client.query('UPDATE export_archives SET deleted_at=now() WHERE id=$1', [row.id]);
+        await client.query('DELETE FROM managed_blobs WHERE blob_key=$1', [
+          current.rows[0].blob_key,
+        ]);
         await client.query(
           'INSERT INTO audit_events(community_id,action,subject_id) VALUES($1,$2,$3)',
           [current.rows[0].community_id, 'export.expire', row.id]
@@ -279,21 +291,28 @@ export function registerExportRoutes(
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
       return snapshot(client, current, scope);
     });
+    const reservation = await transaction(pool, (client) =>
+      reserveManagedBlob(client, current.community_id, 'export')
+    );
     let stored;
     try {
       stored = await blobStore.put({
+        key: reservation.key,
         source: zipSource(data.manifestBytes, data.attachments, blobStore),
         displayName: scope === 'owner' ? 'community-export.zip' : 'my-community-data.zip',
         maxBytes: MAX_EXPORT_BYTES,
         kind: 'export',
+        signal: managedBlobWriteSignal(),
       });
     } catch (error) {
+      await discardManagedBlob(pool, blobStore, reservation).catch(() => undefined);
       if (error instanceof BlobStoreError && error.code === 'BLOB_TOO_LARGE')
         throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'This export exceeds the archive limit.');
       throw error;
     }
     try {
       return await transaction(pool, async (client) => {
+        await prepareManagedBlobCommit(client, reservation, stored);
         const live = await client.query<Member>(
           'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND active FOR SHARE',
           [member.id]
@@ -302,23 +321,26 @@ export function registerExportRoutes(
           throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
         if (scope === 'personal') await requireCurrentChannels(client, member.id, data.channelIds);
         const result = await client.query<ExportArchiveRow>(
-          `INSERT INTO export_archives(requester_member_id,scope,channel_ids,blob_key,byte_size,expires_at)
-           VALUES($1,$2,$3,$4,$5,now()+interval '1 hour') RETURNING *`,
-          [member.id, scope, data.channelIds, stored.key, stored.byteSize]
+          `INSERT INTO export_archives(community_id,requester_member_id,scope,channel_ids,blob_key,byte_size,expires_at)
+           VALUES($1,$2,$3,$4,$5,$6,now()+interval '1 hour') RETURNING *`,
+          [member.community_id, member.id, scope, data.channelIds, stored.key, stored.byteSize]
         );
         await client.query(
           'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
           [member.community_id, member.id, 'export.create', result.rows[0].id]
         );
+        await completeManagedBlobCommit(client, reservation);
         return result.rows[0];
       });
     } catch (error) {
-      await deleteUnreferencedBlob(pool, blobStore, stored.key).catch((cleanupError: unknown) => {
-        console.error(
-          'Community blob cleanup could not be queued',
-          cleanupError instanceof Error ? cleanupError.name : 'unknown'
-        );
-      });
+      await discardManagedBlob(pool, blobStore, reservation, stored).catch(
+        (cleanupError: unknown) => {
+          console.error(
+            'Community blob cleanup could not be queued',
+            cleanupError instanceof Error ? cleanupError.name : 'unknown'
+          );
+        }
+      );
       throw error;
     }
   };
