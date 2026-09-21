@@ -38,6 +38,9 @@ import type { EvalRuntime } from '../types.js';
  */
 const OPENCODE_RUNTIME: EvalRuntime = 'opencode';
 
+/** The runtime an eval server boots on when nobody names one (`runtimes.default`). */
+const CLAUDE_CODE_RUNTIME: EvalRuntime = 'claude-code';
+
 /** A running harness server, addressable by URL, with a teardown handle. */
 export interface HarnessServer {
   /** Base URL of the listening server (e.g. `http://127.0.0.1:53511`). */
@@ -370,14 +373,18 @@ export async function startChildProcessServer(
   const launcher = opts.launcher ?? new ChildProcessLauncher();
   const port = await allocatePort(host);
 
-  // `ANTHROPIC_MODEL` is claude-code's model selector and NOTHING else's. Setting
-  // it on an OpenCode boot would leave a Haiku id in the environment of a server
-  // that answers through OpenRouter — a value no code reads and every reader of a
-  // retained sandbox would be misled by.
+  // `ANTHROPIC_MODEL` is claude-code's model selector and NOTHING else's, so it
+  // is injected for claude-code and for nothing else. Setting it on an OpenCode
+  // or Codex boot would leave a Haiku id in the environment of a server that
+  // answers somewhere else entirely — a value no code reads (the codex
+  // environment projection strips it) and every reader of a retained sandbox
+  // would be misled by. A run with no runtime named boots the config schema's
+  // own default, which is claude-code.
   const runsOpenCode = opts.runtime === OPENCODE_RUNTIME;
-  const env: Record<string, string> = runsOpenCode
-    ? { ...opts.env }
-    : { ANTHROPIC_MODEL: opts.model ?? DEFAULT_CHEAP_MODEL, ...opts.env };
+  const runsClaudeCode = opts.runtime === undefined || opts.runtime === CLAUDE_CODE_RUNTIME;
+  const env: Record<string, string> = runsClaudeCode
+    ? { ANTHROPIC_MODEL: opts.model ?? DEFAULT_CHEAP_MODEL, ...opts.env }
+    : { ...opts.env };
 
   if (runsOpenCode) await configureOpenCodeSandbox(opts);
 

@@ -36,10 +36,10 @@ import { noOpenCodeBinaryMessage, resolveHostOpenCodeBinary } from './opencode-s
 import { runWithInfrastructureRetry, transcriptNameForAttempt } from './retry.js';
 import { createLauncherResolver, type IsolationTier } from './isolation/resolve-launcher.js';
 import {
+  paidPathFor,
   paidProviderRefusesDockerMessage,
   resolveModelCredential,
   resolvePaidProviderCredential,
-  spendsOnExternalProvider,
   type ModelCredential,
 } from './credentials.js';
 import { writeResults } from '../report/summary.js';
@@ -95,9 +95,98 @@ export function defaultRunBudgetUsd(
   runtime: string | undefined,
   provider: string | undefined
 ): number {
-  return spendsOnExternalProvider(tier, runtime, provider)
+  return paidPathFor(tier, runtime, provider) !== null
     ? PAID_PROVIDER_RUN_BUDGET_USD
     : DEFAULT_RUN_BUDGET_USD;
+}
+
+/**
+ * The isolation tier a run actually gets, after the paid paths have had their
+ * say.
+ *
+ * A FUNCTION for the same reason {@link defaultRunBudgetUsd} is one: arming a
+ * paid run needs the module-scope opt-in flag, which no test can stub, so the
+ * paid branch of an inline ternary is unreachable from the suite and executed by
+ * no test at all. Written inline it keyed on `tier === 'real-provider'`, which
+ * meant `--runtime opencode` and `--runtime codex` kept the default `auto` tier
+ * and containerized every `preferDocker` case into a network-less container —
+ * a run that cannot reach the API it is paying for, and the README said
+ * otherwise.
+ *
+ * `child-process` rather than a refusal: `auto` is a preference, not a request
+ * for containment, so downgrading it is the right answer. An explicit
+ * `--isolation docker` on a paid path is refused instead, loudly, in
+ * {@link runSuite}.
+ *
+ * @param tier - The tier the run booted.
+ * @param runtime - The agent runtime the run was pointed at, if any.
+ * @param provider - The provider the run named, if any.
+ * @param requested - The isolation the caller asked for, if any.
+ * @returns The isolation to resolve launchers with.
+ */
+export function resolveRunIsolation(
+  tier: RuntimeTier,
+  runtime: string | undefined,
+  provider: string | undefined,
+  requested: IsolationTier | undefined
+): IsolationTier | undefined {
+  return paidPathFor(tier, runtime, provider) ? 'child-process' : requested;
+}
+
+/**
+ * The model id this run may HONESTLY record, which is the one something
+ * actually forwards to a turn.
+ *
+ * `--model` reaches a turn exactly two ways: as `ANTHROPIC_MODEL` in a
+ * claude-code server's environment (`harness-server.ts`), or as the
+ * `provider/model` pin written into an OpenCode sandbox config
+ * (`opencode-sandbox.ts`). **Codex has neither.** The harness writes no codex
+ * config, `POST /api/sessions/:id/messages` carries no model, and the codex
+ * environment projection strips `ANTHROPIC_MODEL` — so a Codex turn is answered
+ * by the runtime's own default whatever was typed.
+ *
+ * So the codex path records nothing rather than a plausible id. Recording the
+ * cheap Anthropic default there put `claude-haiku-4-5` in `results.json` for a
+ * run no Anthropic model ever saw, which is worse than an empty column: a
+ * `chat` case that pins a model would red against a name nobody chose, and
+ * anyone reading the numbers later would attribute them to the wrong model.
+ *
+ * A function rather than an inline ternary for {@link defaultRunBudgetUsd}'s
+ * reason: the codex branch is unreachable from the suite, because arming a
+ * Codex run needs the un-stubbable module-scope flag.
+ *
+ * @param tier - The tier the run booted.
+ * @param runtime - The agent runtime the run resolved, if any.
+ * @param requested - The model the caller passed with `--model`, if any.
+ * @returns The model id to record and forward, or `undefined` to record none.
+ */
+export function resolveRunModel(
+  tier: RuntimeTier,
+  runtime: EvalRuntime | undefined,
+  requested: string | undefined
+): string | undefined {
+  if (runtime === 'codex') return undefined;
+  if (requested !== undefined) return requested;
+  if (tier === 'test-mode') return undefined;
+  return tier === 'real-provider' || runtime === 'opencode'
+    ? DEFAULT_OPENROUTER_MODEL
+    : DEFAULT_CHEAP_MODEL;
+}
+
+/**
+ * What a person is told when they pass `--model` to a Codex run, which forwards
+ * it nowhere. Said rather than refused: the run is perfectly able to proceed on
+ * the runtime's own model, and a gate would stop a leg that works.
+ *
+ * @param model - The model id they passed.
+ * @returns The notice.
+ */
+export function codexIgnoresModelNotice(model: string): string {
+  return (
+    `--model ${model} does not reach a Codex turn: nothing forwards a model id to the Codex ` +
+    `runtime, so this run is answered by whatever model Codex itself is configured to use. The ` +
+    `run records no model rather than one that did not answer it.`
+  );
 }
 
 /** Options for {@link runSuite}. */
@@ -283,13 +372,18 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
   // be fixed by producing a key, so answering it first is the more useful order.
   // `auto` never reaches for a container on this tier either — a silent degrade
   // would hand an operator who asked for containment a bare-host turn.
-  if (
-    opts.isolation === 'docker' &&
-    spendsOnExternalProvider(opts.tier, opts.runtime, opts.provider)
-  ) {
-    throw new PaidTierRefusedError(paidProviderRefusesDockerMessage());
+  const requestedPaidPath = paidPathFor(opts.tier, opts.runtime, opts.provider);
+  if (opts.isolation === 'docker' && requestedPaidPath) {
+    throw new PaidTierRefusedError(paidProviderRefusesDockerMessage(requestedPaidPath));
   }
-  const isolation: IsolationTier | undefined = paid ? 'child-process' : opts.isolation;
+  // `auto` must not containerize a paid path: its containers have no network,
+  // and a preference is not a request for containment (see the resolver).
+  const isolation: IsolationTier | undefined = resolveRunIsolation(
+    opts.tier,
+    opts.runtime,
+    opts.provider,
+    opts.isolation
+  );
 
   // The runtime + provider + model triple, resolved ONCE so every case, the
   // summary, and the sandbox config agree about what answered this run — and
@@ -314,13 +408,10 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
   // provider credential reference with nobody having passed the spend gate.
   const provider =
     opts.provider ?? (paid || runtime === 'opencode' ? OPENROUTER_PROVIDER_ID : undefined);
-  const model =
-    opts.model ??
-    (opts.tier === 'test-mode'
-      ? undefined
-      : paid || runtime === 'opencode'
-        ? DEFAULT_OPENROUTER_MODEL
-        : DEFAULT_CHEAP_MODEL);
+  // Only ever the id something actually forwards to a turn — see the resolver
+  // for why a Codex run records none.
+  const model = resolveRunModel(opts.tier, runtime, opts.model);
+  if (runtime === 'codex' && opts.model !== undefined) notify(codexIgnoresModelNotice(opts.model));
 
   // Resolve the model credential ONCE for the whole run: probing the local
   // `claude` sign-in costs a subprocess, and the answer cannot change mid-run.
@@ -329,15 +420,16 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
   // fix-it message rather than silently passing.
   //
   // WHICH question gets asked follows the MONEY, not the tier string
-  // ({@link spendsOnExternalProvider}). Keying it on `tier === 'real-provider'`
-  // was a hole a reviewer walked straight through: `--tier claude-code-cheap
-  // --runtime opencode --model openrouter/…` reached OpenRouter with
+  // ({@link paidPathFor}). Keying it on `tier === 'real-provider'` was a hole a
+  // reviewer walked straight through: `--tier claude-code-cheap --runtime
+  // opencode --model openrouter/…` reached OpenRouter with
   // DORKOS_EVALS_PAID_PROVIDER never set, and then recorded
   // `credentialSource: 'anthropic-…'`, so the run named the wrong bill as well
   // as skipping the gate.
   let credential: ModelCredential | undefined;
-  if (spendsOnExternalProvider(opts.tier, runtime, provider)) {
-    const gate = resolvePaidProviderCredential();
+  const paidPath = paidPathFor(opts.tier, runtime, provider);
+  if (paidPath) {
+    const gate = resolvePaidProviderCredential(paidPath);
     if (!gate.ok && gate.reason === 'no-opt-in') throw new PaidTierRefusedError(gate.message);
     // `no-key` deliberately falls through with NO credential: `runEval`'s
     // credential gate then errors every case with the fix-it message, so a run

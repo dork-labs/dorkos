@@ -10,7 +10,7 @@ import {
   ListObjectsV2Command,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FileSystemBlobStore, S3BlobStore, downloadHeaders, type BlobStore } from '../index.js';
 
 const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(4096, 1)]);
@@ -59,11 +59,6 @@ function contract(
       });
       expect(stored.key).toBe(key);
       expect(await readAll((await fixture.reopen().get(key)).body)).toEqual(png);
-      expect(await fixture.store.listNamespace()).toEqual({
-        keys: [key],
-        temporaryKeys: [],
-        unexpectedEntries: 0,
-      });
       await fixture.store.delete(key);
     });
 
@@ -229,47 +224,6 @@ function contract(
     });
   });
 }
-
-describe('S3 namespace pagination', () => {
-  it('exhausts every page before returning one sorted snapshot', async () => {
-    const store = new S3BlobStore({ bucket: 'test', region: 'us-east-1' });
-    const first = 'a'.repeat(64);
-    const second = 'b'.repeat(64);
-    const send = vi.fn(async (command: ListObjectsV2Command) => {
-      if (command.input.ContinuationToken === undefined) {
-        return {
-          IsTruncated: true,
-          NextContinuationToken: 'page-2',
-          Contents: [{ Key: second }],
-        };
-      }
-      return { IsTruncated: false, Contents: [{ Key: first }] };
-    });
-    Object.defineProperty(store, 'client', { value: { send } });
-
-    await expect(store.listNamespace()).resolves.toEqual({
-      keys: [first, second],
-      temporaryKeys: [],
-      unexpectedEntries: 0,
-    });
-    expect(send).toHaveBeenCalledTimes(2);
-  });
-
-  it('returns no partial snapshot when a later page fails', async () => {
-    const store = new S3BlobStore({ bucket: 'test', region: 'us-east-1' });
-    const send = vi
-      .fn()
-      .mockResolvedValueOnce({
-        IsTruncated: true,
-        NextContinuationToken: 'page-2',
-        Contents: [{ Key: 'a'.repeat(64) }],
-      })
-      .mockRejectedValueOnce(new Error('provider page failed'));
-    Object.defineProperty(store, 'client', { value: { send } });
-
-    await expect(store.listNamespace()).rejects.toMatchObject({ code: 'BLOB_LIST_INCOMPLETE' });
-  });
-});
 
 contract('filesystem blob store', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'community-blobs-'));

@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { transaction } from '../data.js';
 import type { BlobStore } from './blob-store.js';
+import { MANAGED_BLOB_RESERVATION_TTL_MS } from './managed-blobs.js';
 
 /**
  * Build a capped database-clock retry delay for a trusted cleanup attempt column.
@@ -28,10 +29,10 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
        WHERE (state='pending_delete' AND NOT EXISTS(
                 SELECT 1 FROM pending_blob_deletions p WHERE p.blob_key=managed_blobs.blob_key
               ))
-          OR (state IN ('reserved','stored') AND created_at<=now()-interval '1 hour')
+          OR (state IN ('reserved','stored') AND created_at<=now()-($2 * interval '1 millisecond'))
      ) candidates
      ORDER BY eligible_at,blob_key LIMIT $1`,
-    [batchSize]
+    [batchSize, MANAGED_BLOB_RESERVATION_TTL_MS]
   );
   let deleted = 0;
   let failed = 0;
@@ -42,9 +43,9 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
     try {
       await transaction(pool, async (client) => {
         const managed = await client.query<{ state: string; lease_expired: boolean }>(
-          `SELECT state,created_at<=now()-interval '1 hour' AS lease_expired
+          `SELECT state,created_at<=now()-($2 * interval '1 millisecond') AS lease_expired
            FROM managed_blobs WHERE blob_key=$1 FOR UPDATE`,
-          [candidate.blob_key]
+          [candidate.blob_key, MANAGED_BLOB_RESERVATION_TTL_MS]
         );
         const queue = await client.query<{ blob_key: string; outcome_uncertain: boolean }>(
           `SELECT blob_key,last_error_at IS NULL AS outcome_uncertain

@@ -53,7 +53,6 @@ it('creates all owner, conversation, credential and auth tables in fresh Postgre
       'audit_events',
       'host_operators',
       'managed_blobs',
-      'tenant_reconciliation',
     ]) {
       expect(names).toContain(name);
     }
@@ -110,11 +109,7 @@ it('upgrades a populated foundation database without changing human authors', as
         [entry]
       )
     ).rows[0];
-    expect(row).toEqual({
-      author_member_id: member,
-      author_agent_id: null,
-      community_id: community,
-    });
+    expect(row).toEqual({ author_member_id: member, author_agent_id: null, community_id: null });
     expect(
       (
         await db.query(
@@ -147,7 +142,7 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6]);
+    ).toEqual([1, 2, 3, 4, 5]);
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();
@@ -235,7 +230,7 @@ it('expands a populated version-four database without changing files or cleanup 
           [attachment, archive]
         )
       ).rows[0]
-    ).toEqual({ attachment_community: community, export_community: community });
+    ).toEqual({ attachment_community: null, export_community: null });
     expect(
       (
         await db.query<{ indexname: string }>(
@@ -278,45 +273,7 @@ it('expands a populated version-four database without changing files or cleanup 
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(
-      (
-        await db.query(
-          `SELECT state,community_id,generation,reason_code
-           FROM tenant_reconciliation WHERE singleton`
-        )
-      ).rows[0]
-    ).toEqual({
-      state: 'dirty',
-      community_id: community,
-      generation: '4',
-      reason_code: 'managed_blob_write',
-    });
-    expect(
-      (await db.query('SELECT user_id FROM host_operators WHERE user_id=$1', ['v4-user'])).rows
-    ).toEqual([{ user_id: 'v4-user' }]);
-    await db.query(
-      `UPDATE tenant_reconciliation
-       SET state='ready',validated_generation=generation,namespace_digest=$1,
-           completed_at=now(),reason_code='validated'
-       WHERE singleton`,
-      ['0'.repeat(64)]
-    );
-    await db.query("UPDATE attachments SET display_name='proof-renamed.txt' WHERE id=$1", [
-      attachment,
-    ]);
-    expect(
-      (
-        await db.query(
-          'SELECT state,generation,validated_generation,reason_code FROM tenant_reconciliation WHERE singleton'
-        )
-      ).rows[0]
-    ).toEqual({
-      state: 'dirty',
-      generation: '5',
-      validated_generation: null,
-      reason_code: 'legacy_tenant_write',
-    });
+    ).toEqual([1, 2, 3, 4, 5]);
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();

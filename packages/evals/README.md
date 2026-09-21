@@ -84,28 +84,35 @@ DORKOS_EVALS_PAID_PROVIDER=1 OPENROUTER_API_KEY=sk-or-… \
   pnpm evals -- --suite chat --tier real-provider
 ```
 
-**Any run that reaches an external provider** spends money that is **not** a
-Claude subscription, so it asks for two separate things and needs both:
+**Any run that spends outside a Claude subscription** asks for two separate
+things and needs both — the decision and the instrument. Which pair it asks for
+depends on whose account the run would bill:
 
-- `DORKOS_EVALS_PAID_PROVIDER=1` — the decision. Without it the run stops before
-  it starts anything, prints why, and bills nothing.
-- `OPENROUTER_API_KEY` — the instrument. With the flag and no key, every case is
-  an error. Never a pass, never a quiet skip.
+| The run reaches                                                                | The decision                   | The instrument       |
+| ------------------------------------------------------------------------------ | ------------------------------ | -------------------- |
+| OpenRouter (`--tier real-provider`, `--runtime opencode`, or any `--provider`) | `DORKOS_EVALS_PAID_PROVIDER=1` | `OPENROUTER_API_KEY` |
+| OpenAI (`--runtime codex`, on any tier)                                        | `DORKOS_EVALS_PAID_CODEX=1`    | `CODEX_API_KEY`      |
+
+Without the flag the run stops before it starts anything, prints why, and bills
+nothing. With the flag and no key, every case is an error — never a pass, never a
+quiet skip.
 
 A key on its own does nothing. That is deliberate: people leave keys exported
 because half the toolchain wants one, and having a key is not the same as
-deciding to spend.
+deciding to spend. The refusal names the pair for the path you are on and no
+other, so a `--runtime codex` run is never sent hunting for an OpenRouter key.
 
 **What decides whether you are asked is what the run REACHES, not which `--tier`
 you typed.** OpenCode is the only runtime that fronts an outside provider, so
 `--runtime opencode` spends on one whatever tier sits beside it, and naming
-`--provider` does the same. All three of these ask for the flag, and refuse
-without it:
+`--provider` does the same. Codex bills OpenAI the same way. All four of these
+ask for a flag, and refuse without it:
 
 ```bash
 pnpm evals -- --suite chat --tier real-provider
 pnpm evals -- --suite chat --tier claude-code-cheap --runtime opencode
 pnpm evals -- --suite chat --tier claude-code-cheap --provider openrouter
+pnpm evals -- --suite chat --tier claude-code-cheap --runtime codex
 ```
 
 That is not a nicety. Keying the gate on the tier name was a real hole: the
@@ -119,6 +126,30 @@ Defaults you get for free: `--runtime opencode`, `--provider openrouter`,
 a tripwire, not an allowance — a full six-case pass measured **$0.0072** on
 OpenRouter's own meter (2026-09-01), so reaching fifty cents means something
 looped.
+
+### Running the Codex leg
+
+```bash
+# the chat suite on Codex, billed to an OpenAI account
+DORKOS_EVALS_PAID_CODEX=1 CODEX_API_KEY=sk-… \
+  pnpm evals -- --suite chat --tier claude-code-cheap --runtime codex --budget 0.50
+```
+
+The key is not optional the way it is in everyday use. A Codex leg runs inside a
+sandbox whose `CODEX_HOME` points at an empty directory — an eval must never read
+or write your real Codex store — so a ChatGPT login on this machine is invisible
+to the run, and the forwarded key is the only way it reaches OpenAI. Like the
+OpenRouter leg, it refuses `--isolation docker`, whose containers have no network.
+
+### A rooms case runs on the runtime you asked for
+
+`--runtime` reaches a room turn through the agents a `rooms` case seeds: their
+manifests are written with the runtime the run named, because a room turn's
+session is minted by the room runner and there is no request to hint. Until
+DOR-2207 those manifests always said `claude-code`, so every rooms number in the
+repo is a claude-code number, and `--suite rooms --runtime opencode` ran nothing
+at all. Name no runtime and a rooms case still seeds `claude-code`, which is what
+a credentialed run boots with anyway.
 
 Read the harness's own total as a FLOOR, not a bill. That same run printed
 `$0.0015`, about a fifth of what OpenRouter charged. The harness can only count
@@ -674,9 +705,11 @@ of the eval workflow allowed exactly that, which meant a stale or mistyped name
 would ship an unrelated repository secret to a third party as an auth header.
 Adding a source means adding a literal name, never an input.
 
-The `real-provider` tier is outside that ladder on purpose. It reads
-`OPENROUTER_API_KEY` and nothing else, and only when `DORKOS_EVALS_PAID_PROVIDER`
-is `1`. Being signed in to `claude` must never arm a run that bills an OpenRouter
+The paid paths are outside that ladder on purpose. A run heading for OpenRouter
+reads `OPENROUTER_API_KEY` and nothing else, and only when
+`DORKOS_EVALS_PAID_PROVIDER` is `1`; a `--runtime codex` run reads `CODEX_API_KEY`
+and nothing else, and only when `DORKOS_EVALS_PAID_CODEX` is `1`. Being signed in
+to `claude` must never arm a run that bills somebody else's
 account, and folding the two questions together is exactly how it would: while
 this tier was being built, a run armed with the flag and no OpenRouter key booted
 five servers and drove real turns, because the local sign-in answered the ladder.
@@ -808,8 +841,9 @@ it arrive by accident.
 | `docker`         | one throwaway container per eval     | the two variables only     |
 | `auto` (default) | container for cases that ask for one | depends which one it picks |
 
-A `real-provider` run always uses `child-process` and refuses to do anything else,
-for the same reason the table below explains: containers have no network.
+Any run that reaches a paid path — `real-provider`, `--runtime opencode`,
+`--provider`, `--runtime codex` — uses `child-process` and refuses to do anything
+else, for the same reason the table below explains: containers have no network.
 
 The container is the reason for the split. It gets no network, no host home, and
 a short list of environment variables, which is what makes it safe to let an
@@ -832,9 +866,9 @@ of them, `core` and `rooms`, as two steps, because `--suite` takes one name. The
 credentialed suite is manual only, and promoting a case out of quarantine stays a
 human decision made on the evidence it uploads.
 
-The `real-provider` tier has no CI job at all, and no workflow in this repo sets
-`DORKOS_EVALS_PAID_PROVIDER`. It is a thing a person runs on their own machine,
-having decided to spend.
+The paid paths have no CI job at all, and no workflow in this repo sets
+`DORKOS_EVALS_PAID_PROVIDER` or `DORKOS_EVALS_PAID_CODEX`. They are a thing a
+person runs on their own machine, having decided to spend.
 
 ## Adding a case
 
