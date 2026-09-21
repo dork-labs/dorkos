@@ -343,6 +343,7 @@ describe('community server port additions', () => {
     expect(COMMUNITY_API_V1_ROUTES.pairingCancel).toBe('/api/v1/pairings/cancel');
     expect(COMMUNITY_API_V1_ROUTES.pairingDecline).toBe('/api/v1/pairings/decline');
     expect(COMMUNITY_API_V1_ROUTES.channelAgents).toBe('/api/v1/channels/:id/agents');
+    expect(COMMUNITY_API_V1_ROUTES.attention).toBe('/api/v1/attention');
   });
 
   it('keeps stale Community authority separate from effective access', () => {
