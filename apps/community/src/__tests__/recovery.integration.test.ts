@@ -88,7 +88,13 @@ async function endRecoveryPool(pool: Pool) {
   await Promise.all([pool.end(), disconnected]);
 }
 
-type CloseablePoolClient = PoolClient & {
+// `end` is REPLACED rather than intersected: @types/pg 8.23 added a zero-arg
+// `end(): Promise<void>` overload, and intersecting it with the callback form
+// yields a set no single stub can satisfy. Only the callback form can reach the
+// client this test stubs — pg-pool calls `client.end(cb)` from `_remove`, which
+// is the path `pool.end()` takes; its one zero-arg `client.end()` call site is
+// the connection-timeout branch, which acts on a client that never connected.
+type CloseablePoolClient = Omit<PoolClient, 'end'> & {
   end(callback: (error: Error) => void): void;
 };
 
