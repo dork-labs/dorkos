@@ -295,6 +295,39 @@ describe('signed admission over real HTTP and Postgres', () => {
     );
   });
 
+  it('settles a repeated same-account invitation transaction without consuming another seat', async () => {
+    const issued = await call('/api/v1/invites', 'POST', { seats: 2 }, ownerCookie);
+    expect(issued.status).toBe(201);
+    const { token, invite } = await issued.json();
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const preflight = await call('/api/v1/invites/preflight', 'POST', { token });
+      expect(preflight.status).toBe(200);
+      const admissionCookie = withAdmission(admittedCookie, preflight);
+      expect((await call('/api/v1/invites/bind', 'POST', {}, admissionCookie)).status).toBe(200);
+      const redeemed = await call('/api/v1/invites/redeem', 'POST', {}, admissionCookie);
+      expect(redeemed.status).toBe(200);
+      expect(await redeemed.json()).toEqual({ memberId: admittedId });
+    }
+
+    expect(
+      (
+        await pool.query(
+          `SELECT i.use_count,
+                  count(DISTINCT p.id)::int AS admissions,
+                  count(DISTINCT r.admission_id)::int AS receipts,
+                  bool_and(p.consumed_at IS NOT NULL) AS consumed
+           FROM invites i
+           JOIN pending_admissions p ON p.invite_id=i.id AND p.community_id=i.community_id
+           LEFT JOIN admission_receipts r
+             ON r.admission_id=p.id AND r.community_id=p.community_id
+           WHERE i.id=$1 GROUP BY i.use_count`,
+          [invite.id]
+        )
+      ).rows[0]
+    ).toEqual({ use_count: 1, admissions: 2, receipts: 2, consumed: true });
+  });
+
   it('binds one browser transaction to one account and adds a channel for an active member', async () => {
     const channelResponse = await call(
       '/api/v1/channels',

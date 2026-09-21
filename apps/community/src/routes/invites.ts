@@ -329,13 +329,6 @@ export function registerInviteRoutes(
         'SELECT 1 FROM invite_uses WHERE invite_id=$1 AND user_id=$2',
         [invite.id, user.id]
       );
-      if (previous.rowCount) {
-        const admitted = await client.query<{ id: string }>(
-          'SELECT id FROM members WHERE user_id=$1 AND community_id=$2 AND active',
-          [user.id, invite.community_id]
-        );
-        if (admitted.rows[0]) return admitted.rows[0].id;
-      }
       if (!previous.rowCount && invite.use_count >= invite.seat_limit)
         throw new ApiError(
           409,
