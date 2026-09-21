@@ -198,7 +198,7 @@ export function registerAttachmentRoutes(
     blobStore,
   }: { pool: Pool; auth: CommunityAuth; config: CommunityConfig; blobStore: BlobStore }
 ) {
-  app.post('/api/v1/channels/:id/attachments', async (c) => {
+  app.post('/channels/:id/attachments', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'post');
     const openedSession = principal.credentialHash
       ? null
@@ -321,11 +321,11 @@ export function registerAttachmentRoutes(
     }
   });
 
-  app.get('/api/v1/attachments/:id', async (c) => {
+  app.get('/attachments/:id', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'read');
     const row = await pool.query<AttachmentRow>(
-      'SELECT * FROM attachments WHERE id=$1 AND entry_id IS NOT NULL',
-      [c.req.param('id')]
+      'SELECT * FROM attachments WHERE id=$1 AND community_id=$2 AND entry_id IS NOT NULL',
+      [c.req.param('id'), principal.community_id]
     );
     const attachment = row.rows[0];
     if (!attachment) throw new ApiError(404, 'NOT_FOUND', 'File not found.');

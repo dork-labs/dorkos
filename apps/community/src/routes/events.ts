@@ -87,7 +87,7 @@ export function registerEventRoutes(
     };
   }
 ) {
-  app.get('/api/v1/channels/:id/read-cursor', async (c) => {
+  app.get('/channels/:id/read-cursor', async (c) => {
     const member = await requirePrincipal(c, auth, pool, 'read');
     if (member.kind !== 'human')
       throw new ApiError(403, 'FORBIDDEN', 'Agents do not have read cursors.');
@@ -112,7 +112,7 @@ export function registerEventRoutes(
     });
   });
 
-  app.put('/api/v1/channels/:id/read-cursor', async (c) => {
+  app.put('/channels/:id/read-cursor', async (c) => {
     const member = await requirePrincipal(c, auth, pool, 'read');
     if (member.kind !== 'human')
       throw new ApiError(403, 'FORBIDDEN', 'Agents do not have read cursors.');
@@ -164,7 +164,7 @@ export function registerEventRoutes(
     });
   });
 
-  app.get('/api/v1/channels/:id/events', async (c) => {
+  app.get('/channels/:id/events', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'read');
     const openedSession = principal.credentialHash
       ? null

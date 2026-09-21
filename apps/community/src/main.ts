@@ -26,6 +26,14 @@ app.get(
   '/pairing',
   serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
 );
+app.get(
+  '/c/:communityId',
+  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
+);
+app.get(
+  '/c/:communityId/*',
+  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
+);
 const server = serve({ fetch: app.fetch, port: config.port });
 const cleanup = setInterval(() => {
   void sweepExpiredAttachments(pool, blobStore).catch((error: unknown) => {

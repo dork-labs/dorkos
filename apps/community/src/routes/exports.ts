@@ -8,7 +8,13 @@ import {
   CommunityWireOwnerExportRequestSchema,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
-import { requireMember, transaction, type Member } from '../data.js';
+import {
+  lockActiveCommunity,
+  requireLiveRole,
+  requireMember,
+  transaction,
+  type Member,
+} from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 import {
   BlobStoreError,
@@ -51,7 +57,9 @@ interface ExportArchiveRow {
   expires_at: Date;
 }
 
-async function snapshot(pool: Pool | PoolClient, member: Member, scope: 'personal' | 'owner') {
+async function snapshot(pool: PoolClient, member: Member, scope: 'personal' | 'owner') {
+  await lockActiveCommunity(pool, member.community_id);
+  await requireLiveRole(pool, member, scope === 'owner' ? ['owner'] : ['owner', 'admin', 'member']);
   const owner = scope === 'owner';
   const channels = await pool.query(
     owner
@@ -280,15 +288,17 @@ export function registerExportRoutes(
 ) {
   const create = async (member: Member, scope: 'personal' | 'owner') => {
     const currentResult = await pool.query<Member>(
-      'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND active',
-      [member.id]
+      'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active',
+      [member.id, member.community_id]
     );
     const current = currentResult.rows[0];
     if (!current) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
     if (scope === 'owner' && current.role !== 'owner')
       throw new ApiError(403, 'FORBIDDEN', 'Only the owner can export the community.');
     const data = await transaction(pool, async (client) => {
-      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      // The snapshot also locks lifecycle and membership authority, so this
+      // repeatable-read transaction cannot be declared READ ONLY.
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
       return snapshot(client, current, scope);
     });
     const reservation = await transaction(pool, (client) =>
@@ -314,8 +324,8 @@ export function registerExportRoutes(
       return await transaction(pool, async (client) => {
         await prepareManagedBlobCommit(client, reservation, stored);
         const live = await client.query<Member>(
-          'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND active FOR SHARE',
-          [member.id]
+          'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
+          [member.id, member.community_id]
         );
         if (!live.rows[0] || (scope === 'owner' && live.rows[0].role !== 'owner'))
           throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
@@ -350,7 +360,7 @@ export function registerExportRoutes(
       throw error;
     }
   };
-  app.post('/api/v1/me/export', async (c) => {
+  app.post('/me/export', async (c) => {
     const member = await requireMember(c, auth, pool);
     const archive = await create(member, 'personal');
     return json(
@@ -365,7 +375,7 @@ export function registerExportRoutes(
     );
   });
 
-  app.post('/api/v1/owner/export', async (c) => {
+  app.post('/owner/export', async (c) => {
     const member = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireOwnerExportRequestSchema);
     try {
@@ -389,21 +399,22 @@ export function registerExportRoutes(
     );
   });
 
-  app.get('/api/v1/exports/:id', async (c) => {
+  app.get('/exports/:id', async (c) => {
     const member = await requireMember(c, auth, pool);
     const result = await pool.query<ExportArchiveRow>(
       `SELECT archive.*,
         COALESCE((SELECT array_agg(selected.channel_id ORDER BY selected.position)
           FROM export_archive_channels selected WHERE selected.export_archive_id=archive.id),'{}'::uuid[]) AS channel_ids
        FROM export_archives archive
-       WHERE archive.id=$1 AND archive.requester_member_id=$2 AND archive.deleted_at IS NULL AND archive.expires_at>now()`,
-      [c.req.param('id'), member.id]
+       WHERE archive.id=$1 AND archive.requester_member_id=$2 AND archive.community_id=$3
+         AND archive.deleted_at IS NULL AND archive.expires_at>now()`,
+      [c.req.param('id'), member.id, member.community_id]
     );
     const archive = result.rows[0];
     if (!archive) throw new ApiError(404, 'NOT_FOUND', 'Archive not found.');
     const live = await pool.query<Member>(
-      'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND active',
-      [member.id]
+      'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active',
+      [member.id, member.community_id]
     );
     if (!live.rows[0] || (archive.scope === 'owner' && live.rows[0].role !== 'owner'))
       throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');

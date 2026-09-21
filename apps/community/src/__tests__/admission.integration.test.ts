@@ -904,7 +904,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect(
       (await call(`/api/v1/members/${ordinary.id}`, 'DELETE', undefined, admittedCookie)).status
     ).toBe(204);
-    expect((await call('/api/v1/channels', 'GET', undefined, ordinary.cookie)).status).toBe(401);
+    expect((await call('/api/v1/channels', 'GET', undefined, ordinary.cookie)).status).toBe(403);
     expect(
       (await call(`/api/v1/members/${admittedId}/role`, 'PATCH', { role: 'member' }, ownerCookie))
         .status
@@ -1070,7 +1070,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     const owners = await pool.query("SELECT id FROM members WHERE role='owner' AND active");
     expect(owners.rows.map((row) => row.id)).toEqual([admittedId]);
     expect((await call('/api/v1/me/leave', 'POST', {}, ownerCookie)).status).toBe(204);
-    expect((await call('/api/v1/channels', 'GET', undefined, ownerCookie)).status).toBe(401);
+    expect((await call('/api/v1/channels', 'GET', undefined, ownerCookie)).status).toBe(403);
     expect(
       (await bearerCall(`/api/v1/channels/${channelId}/entries`, 'GET', agentToken)).status
     ).toBe(401);

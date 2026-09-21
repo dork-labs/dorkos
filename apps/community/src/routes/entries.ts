@@ -109,7 +109,7 @@ export function registerEntryRoutes(
     receiptGate,
   }: { pool: Pool; auth: CommunityAuth; config: CommunityConfig; receiptGate?: DeliveryReceiptGate }
 ) {
-  app.post('/api/v1/channels/:id/entries', async (c) => {
+  app.post('/channels/:id/entries', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'post');
     const body = await readJson(c, CommunityWireEntryPostRequestSchema);
     if (Buffer.byteLength(body.text, 'utf8') > config.limits.textBytes) {
@@ -275,7 +275,7 @@ export function registerEntryRoutes(
     );
   });
 
-  app.get('/api/v1/channels/:id/entries', async (c) => {
+  app.get('/channels/:id/entries', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'read');
     // Capture the original cookie session before holding a pool client. Better
     // Auth needs its own pool connection; only the same-client row check is safe

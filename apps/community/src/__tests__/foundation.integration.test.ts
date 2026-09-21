@@ -6,6 +6,7 @@ import { migrate } from '../migrate.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { encodeCursor } from '../cursor.js';
+import { lockChannel, transaction, type Member } from '../data.js';
 import { CommunityWireCommunitySchema } from '@dorkos/shared/community-wire';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
@@ -167,6 +168,13 @@ describe('owner foundation over real HTTP and Postgres', () => {
     expect(
       (await pool.query("SELECT count(*)::int AS count FROM members WHERE role='owner' AND active"))
         .rows[0].count
+    ).toBe(1);
+    expect(
+      (
+        await pool.query<{ count: number }>(
+          'SELECT count(*)::int AS count FROM host_operators WHERE revoked_at IS NULL'
+        )
+      ).rows[0].count
     ).toBe(1);
     expect(
       (await post('/api/v1/bootstrap/preflight', { secret: config.bootstrapSecret })).status
@@ -1060,5 +1068,80 @@ describe('owner foundation over real HTTP and Postgres', () => {
         })
       ).status
     ).toBe(410);
+  });
+
+  it('uses canonical tenant routes and fails closed when the singleton alias is ambiguous', async () => {
+    const current = (
+      await pool.query<{ id: string }>(
+        "SELECT id FROM communities WHERE lifecycle='active' ORDER BY created_at LIMIT 1"
+      )
+    ).rows[0]!.id;
+    expect(
+      (
+        await request(`/api/v1/communities/${current}/channels`, {
+          headers: { cookie: ownerCookie },
+        })
+      ).status
+    ).toBe(200);
+    expect(
+      (
+        await request('/api/v1/communities/not-a-uuid/channels', {
+          headers: { cookie: ownerCookie },
+        })
+      ).status
+    ).toBe(404);
+
+    const pending = (
+      await pool.query<{ id: string }>(
+        "INSERT INTO communities(name,lifecycle) VALUES('Awaiting owner','pending_owner') RETURNING id"
+      )
+    ).rows[0]!.id;
+    try {
+      const ambiguous = await request('/api/v1/channels', { headers: { cookie: ownerCookie } });
+      expect(ambiguous.status).toBe(409);
+      expect(await ambiguous.json()).toMatchObject({ code: 'COMMUNITY_SELECTION_REQUIRED' });
+
+      expect(
+        (
+          await request(`/api/v1/communities/${current}/channels`, {
+            headers: { cookie: ownerCookie },
+          })
+        ).status
+      ).toBe(200);
+      const unavailable = await request(`/api/v1/communities/${pending}/channels`, {
+        headers: { cookie: ownerCookie },
+      });
+      expect(unavailable.status).toBe(409);
+      expect(await unavailable.json()).toMatchObject({ code: 'COMMUNITY_UNAVAILABLE' });
+
+      const exactDiscovery = await request(`/api/v1/communities/${pending}/community`);
+      expect(exactDiscovery.status).toBe(200);
+      expect(await exactDiscovery.json()).toMatchObject({ id: pending, name: 'Awaiting owner' });
+    } finally {
+      await pool.query('DELETE FROM communities WHERE id=$1', [pending]);
+    }
+  });
+
+  it('rechecks lifecycle inside a tenant mutation transaction', async () => {
+    const member = (
+      await pool.query<Member>(
+        'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1',
+        [ownerMemberId]
+      )
+    ).rows[0]!;
+    await pool.query(
+      "UPDATE communities SET lifecycle='suspended',lifecycle_version=lifecycle_version+1 WHERE id=$1",
+      [member.community_id]
+    );
+    try {
+      await expect(
+        transaction(pool, (client) => lockChannel(client, channelId, member))
+      ).rejects.toMatchObject({ code: 'COMMUNITY_UNAVAILABLE' });
+    } finally {
+      await pool.query(
+        "UPDATE communities SET lifecycle='active',lifecycle_version=lifecycle_version+1 WHERE id=$1",
+        [member.community_id]
+      );
+    }
   });
 });

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowUp, Download, MessageCircle, Paperclip, RotateCcw, X } from 'lucide-react';
 import type { CommunityWireEvent } from '@dorkos/shared/community-wire';
-import { describeError, download, RequestError, request, upload } from '../api.js';
+import { describeError, download, RequestError, request, tenantApiPath, upload } from '../api.js';
 import type { Channel as ChannelType, Entry } from '../types.js';
 
 type Page = { entries: Entry[]; nextCursor: string | null };
@@ -117,7 +117,7 @@ export function ChannelView({ channel, onChanged }: Props) {
   }, [load, channel.joined]);
   useEffect(() => {
     if (!channel.joined) return;
-    const source = new EventSource(`/api/v1/channels/${channel.id}/events`);
+    const source = new EventSource(tenantApiPath(`/api/v1/channels/${channel.id}/events`));
     const receive = (raw: MessageEvent) => {
       try {
         const event = JSON.parse(raw.data) as CommunityWireEvent;

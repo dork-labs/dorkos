@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { hashPassword } from 'better-auth/crypto';
 import { Pool } from 'pg';
 
-/** Reset an existing active member's password through privileged offline database access. */
+/** Reset one host account and revoke credentials derived from every membership. */
 export async function recoverPassword(pool: Pool, email: string, password: string): Promise<void> {
   if (!email || email.length > 320 || email !== email.trim()) {
     throw new Error('Provide the account email address.');
@@ -15,45 +15,55 @@ export async function recoverPassword(pool: Pool, email: string, password: strin
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    // All community mutations take the member lock before sessions or credentials.
+    // Recovery is host-wide. Lock the account first, then every membership in a stable order so
+    // concurrent tenant mutations cannot leave one community's derived credentials valid.
     // Run this command with the web service stopped, including every replica.
-    const result = await client.query<{ id: string; user_id: string; community_id: string }>(
-      `SELECT m.id,m.user_id,m.community_id FROM members m JOIN "user" u ON u.id=m.user_id
-       WHERE u.email=$1 AND m.active FOR UPDATE OF m`,
+    const account = await client.query<{ id: string }>(
+      `SELECT id FROM "user" WHERE email=$1 FOR UPDATE`,
       [email.toLowerCase()]
     );
-    const member = result.rows[0];
-    if (!member) throw new Error('No active member has that email address.');
+    const userId = account.rows[0]?.id;
+    if (!userId) throw new Error('No host account has that email address.');
+    const memberships = await client.query<{ id: string; community_id: string }>(
+      `SELECT id,community_id FROM members WHERE user_id=$1
+       ORDER BY community_id,id FOR UPDATE`,
+      [userId]
+    );
+    const memberIds = memberships.rows.map((member) => member.id);
+
     const updated = await client.query(
       `UPDATE account SET password=$1,"updatedAt"=now()
        WHERE "userId"=$2 AND "providerId"='credential' RETURNING id`,
-      [hashed, member.user_id]
+      [hashed, userId]
     );
     if (!updated.rowCount) {
       await client.query(
         `INSERT INTO account(id,"accountId","providerId","userId",password)
          VALUES($1,$2,'credential',$2,$3)`,
-        [randomUUID(), member.user_id, hashed]
+        [randomUUID(), userId, hashed]
       );
     }
-    await client.query('DELETE FROM session WHERE "userId"=$1', [member.user_id]);
+    await client.query('DELETE FROM session WHERE "userId"=$1', [userId]);
     await client.query(
-      'UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now()) WHERE member_id=$1',
-      [member.id]
+      `UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now())
+       WHERE member_id=ANY($1::uuid[])`,
+      [memberIds]
     );
     await client.query(
       `UPDATE agent_credentials SET revoked_at=COALESCE(revoked_at,now())
-       WHERE agent_id IN (SELECT id FROM agents WHERE owner_member_id=$1)`,
-      [member.id]
+       WHERE agent_id IN (SELECT id FROM agents WHERE owner_member_id=ANY($1::uuid[]))`,
+      [memberIds]
     );
     await client.query(
-      'UPDATE connection_pairings SET cancelled_at=COALESCE(cancelled_at,now()) WHERE member_id=$1',
-      [member.id]
+      `UPDATE connection_pairings SET cancelled_at=COALESCE(cancelled_at,now())
+       WHERE member_id=ANY($1::uuid[])`,
+      [memberIds]
     );
     await client.query(
       `INSERT INTO audit_events(community_id,action,subject_id)
-       VALUES($1,'member.password_recovery',$2)`,
-      [member.community_id, member.id]
+       SELECT community_id,'member.password_recovery',id FROM members
+       WHERE id=ANY($1::uuid[]) ORDER BY community_id,id`,
+      [memberIds]
     );
     await client.query('COMMIT');
   } catch (error) {

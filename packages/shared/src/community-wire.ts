@@ -437,6 +437,8 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'ATTACHMENT_TOO_LARGE',
   'UNSUPPORTED_ATTACHMENT_TYPE',
   'RATE_LIMITED',
+  'COMMUNITY_SELECTION_REQUIRED',
+  'COMMUNITY_UNAVAILABLE',
   'UNAVAILABLE',
 ]);
 /** Public error response; no database cause, credential or path is serialized. */

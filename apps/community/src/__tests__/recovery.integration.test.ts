@@ -15,6 +15,7 @@ const dbName = `community_recovery_${randomUUID().replaceAll('-', '')}`;
 const dbUrl = new URL(adminUrl);
 dbUrl.pathname = `/${dbName}`;
 let pool: Pool;
+let communityId: string;
 let ownerId: string;
 let otherId: string;
 let agentId: string;
@@ -38,7 +39,7 @@ beforeAll(async () => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const community = (
+    communityId = (
       await client.query("INSERT INTO communities(name) VALUES('Recovery') RETURNING id")
     ).rows[0].id;
     for (const [id, role] of [
@@ -56,31 +57,31 @@ beforeAll(async () => {
       const member = (
         await client.query(
           'INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$2,$2,$3) RETURNING id',
-          [community, id, role]
+          [communityId, id, role]
         )
       ).rows[0].id;
       if (id === 'owner') ownerId = member;
       else otherId = member;
       await client.query(
         `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes) VALUES($1,$2,$3,'{read,post}')`,
-        [community, member, id]
+        [communityId, member, id]
       );
       await client.query(
         `INSERT INTO connection_pairings(community_id,verifier_hash,member_id,expires_at) VALUES($1,$2,$3,now()+interval '10 minutes')`,
-        [community, id, member]
+        [communityId, id, member]
       );
     }
     agentId = (
       await client.query(
         "INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id) VALUES($1,$2,'Agent','agent','local-agent') RETURNING id",
-        [community, ownerId]
+        [communityId, ownerId]
       )
     ).rows[0].id;
     await client.query(
       "INSERT INTO agent_credentials(community_id,agent_id,token_hash) VALUES($1,$2,'agent-token')",
-      [community, agentId]
+      [communityId, agentId]
     );
-    await client.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [community]);
+    await client.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [communityId]);
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -150,7 +151,56 @@ describe('offline member recovery', () => {
     expect(teardownSettled).toBe(true);
   });
 
-  it('changes the real login, revokes existing access, and preserves another member and owner role', async () => {
+  it('recovers one host login and revokes derived access across every membership', async () => {
+    const second = await pool.connect();
+    let secondCommunityId: string;
+    let secondMemberId: string;
+    let secondAgentId: string;
+    try {
+      await second.query('BEGIN');
+      secondCommunityId = (
+        await second.query("INSERT INTO communities(name) VALUES('Recovery Two') RETURNING id")
+      ).rows[0].id;
+      secondMemberId = (
+        await second.query(
+          `INSERT INTO members(community_id,user_id,display_name,handle,role)
+           VALUES($1,'owner','Owner Two','owner-two','owner') RETURNING id`,
+          [secondCommunityId]
+        )
+      ).rows[0].id;
+      await second.query(
+        `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes)
+         VALUES($1,$2,'owner-second','{read,post}')`,
+        [secondCommunityId, secondMemberId]
+      );
+      await second.query(
+        `INSERT INTO connection_pairings(community_id,verifier_hash,member_id,expires_at)
+         VALUES($1,'owner-second',$2,now()+interval '10 minutes')`,
+        [secondCommunityId, secondMemberId]
+      );
+      secondAgentId = (
+        await second.query(
+          `INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id)
+           VALUES($1,$2,'Agent Two','agent-two','local-agent-two') RETURNING id`,
+          [secondCommunityId, secondMemberId]
+        )
+      ).rows[0].id;
+      await second.query(
+        `INSERT INTO agent_credentials(community_id,agent_id,token_hash)
+         VALUES($1,$2,'agent-token-two')`,
+        [secondCommunityId, secondAgentId]
+      );
+      await second.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [
+        secondCommunityId,
+      ]);
+      await second.query('COMMIT');
+    } catch (error) {
+      await second.query('ROLLBACK');
+      throw error;
+    } finally {
+      second.release();
+    }
+
     expect((await signIn('owner@example.test', 'old-password-123')).status).toBe(200);
     expect((await signIn('other@example.test', 'old-password-123')).status).toBe(200);
     await recoverPassword(pool, 'owner@example.test', 'new-password-456');
@@ -159,11 +209,18 @@ describe('offline member recovery', () => {
     expect(
       (
         await pool.query(
-          "SELECT actor_member_id,subject_id FROM audit_events WHERE action='member.password_recovery' AND subject_id=$1",
-          [ownerId]
+          `SELECT community_id,actor_member_id,subject_id FROM audit_events
+           WHERE action='member.password_recovery' AND subject_id=ANY($1::text[])
+           ORDER BY community_id`,
+          [[ownerId, secondMemberId]]
         )
       ).rows
-    ).toEqual([{ actor_member_id: null, subject_id: ownerId }]);
+    ).toEqual(
+      [
+        { community_id: communityId, actor_member_id: null, subject_id: ownerId },
+        { community_id: secondCommunityId, actor_member_id: null, subject_id: secondMemberId },
+      ].sort((left, right) => left.community_id.localeCompare(right.community_id))
+    );
     expect(
       (await pool.query('SELECT count(*)::int AS count FROM session WHERE "userId"=$1', ['owner']))
         .rows[0].count
@@ -183,9 +240,25 @@ describe('offline member recovery', () => {
       (await pool.query('SELECT revoked_at FROM connection_grants WHERE member_id=$1', [otherId]))
         .rows[0].revoked_at
     ).toBeNull();
+    for (const id of [agentId, secondAgentId]) {
+      expect(
+        (await pool.query('SELECT revoked_at FROM agent_credentials WHERE agent_id=$1', [id]))
+          .rows[0].revoked_at
+      ).not.toBeNull();
+    }
     expect(
-      (await pool.query('SELECT revoked_at FROM agent_credentials WHERE agent_id=$1', [agentId]))
-        .rows[0].revoked_at
+      (
+        await pool.query('SELECT revoked_at FROM connection_grants WHERE member_id=$1', [
+          secondMemberId,
+        ])
+      ).rows[0].revoked_at
+    ).not.toBeNull();
+    expect(
+      (
+        await pool.query('SELECT cancelled_at FROM connection_pairings WHERE member_id=$1', [
+          secondMemberId,
+        ])
+      ).rows[0].cancelled_at
     ).not.toBeNull();
     expect(
       (
@@ -212,14 +285,18 @@ describe('offline member recovery', () => {
     ).toEqual({ user_id: 'other', role: 'member' });
   });
 
-  it('does not readmit a removed member or create a new account', async () => {
+  it('recovers the host account without readmitting an inactive membership', async () => {
     await pool.query('UPDATE members SET active=false WHERE id=$1', [otherId]);
-    await expect(recoverPassword(pool, 'other@example.test', 'valid-password-123')).rejects.toThrow(
-      'No active member'
+    await recoverPassword(pool, 'other@example.test', 'valid-password-123');
+    expect((await signIn('other@example.test', 'valid-password-123')).status).toBe(200);
+    expect((await pool.query('SELECT active FROM members WHERE id=$1', [otherId])).rows[0]).toEqual(
+      {
+        active: false,
+      }
     );
     await expect(
       recoverPassword(pool, 'unknown@example.test', 'valid-password-123')
-    ).rejects.toThrow('No active member');
+    ).rejects.toThrow('No host account');
     expect((await pool.query('SELECT count(*)::int AS count FROM "user"')).rows[0].count).toBe(2);
   });
 

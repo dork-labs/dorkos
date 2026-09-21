@@ -46,36 +46,33 @@ export function registerAgentRoutes(
   app: Hono,
   { pool, auth, config }: { pool: Pool; auth: CommunityAuth; config: CommunityConfig }
 ) {
-  app.post('/api/v1/agents', async (c) => {
+  app.post('/agents', async (c) => {
     const { member, tokenHash } = await requireConnectionGrant(c, pool, 'enroll-agent');
     const body = await readJson(c, CommunityWireAgentEnrollRequestSchema);
     const result = await transaction(pool, async (client) => {
-      const owner = await client.query('SELECT 1 FROM members WHERE id=$1 AND active FOR UPDATE', [
+      await assertConnectionGrantCurrent(
+        client,
         member.id,
-      ]);
-      if (!owner.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Owner membership has ended.');
-      const grant = await client.query(
-        "SELECT 1 FROM connection_grants WHERE member_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND scopes @> ARRAY['enroll-agent']::text[] FOR SHARE",
-        [member.id, tokenHash]
+        tokenHash,
+        member.community_id,
+        'enroll-agent'
       );
-      if (!grant.rowCount)
-        throw new ApiError(401, 'UNAUTHENTICATED', 'This connection is unavailable.');
       const existing = await client.query<AgentRow>(
-        'SELECT id,display_name,handle,owner_member_id,active FROM agents WHERE owner_member_id=$1 AND local_agent_id=$2 FOR UPDATE',
-        [member.id, body.localAgentId]
+        'SELECT id,display_name,handle,owner_member_id,active FROM agents WHERE owner_member_id=$1 AND community_id=$2 AND local_agent_id=$3 FOR UPDATE',
+        [member.id, member.community_id, body.localAgentId]
       );
       if (existing.rows[0]?.active)
         throw new ApiError(409, 'STATE_CONFLICT', 'This local agent is already enrolled.');
       const count = await client.query<{ n: string }>(
-        'SELECT count(*)::text AS n FROM agents WHERE owner_member_id=$1 AND active',
-        [member.id]
+        'SELECT count(*)::text AS n FROM agents WHERE owner_member_id=$1 AND community_id=$2 AND active',
+        [member.id, member.community_id]
       );
       if (Number(count.rows[0].n) >= config.limits.agentsPerOwner)
         throw new ApiError(429, 'RATE_LIMITED', 'Active agent limit reached.');
       const agent = existing.rows[0]
         ? await client.query<AgentRow>(
-            'UPDATE agents SET active=true,revoked_at=NULL,display_name=$2 WHERE id=$1 RETURNING id,display_name,handle,owner_member_id,active',
-            [existing.rows[0].id, body.displayName]
+            'UPDATE agents SET active=true,revoked_at=NULL,display_name=$3 WHERE id=$1 AND community_id=$2 RETURNING id,display_name,handle,owner_member_id,active',
+            [existing.rows[0].id, member.community_id, body.displayName]
           )
         : await (async () => {
             const handle =
@@ -92,10 +89,13 @@ export function registerAgentRoutes(
           })();
       // Reactivation is a new authority: old room memberships and credentials
       // cannot survive an ejection or a lost initial response.
-      await client.query('DELETE FROM agent_channel_members WHERE agent_id=$1', [agent.rows[0].id]);
       await client.query(
-        'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND revoked_at IS NULL',
-        [agent.rows[0].id]
+        'DELETE FROM agent_channel_members WHERE agent_id=$1 AND community_id=$2',
+        [agent.rows[0].id, member.community_id]
+      );
+      await client.query(
+        'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND community_id=$2 AND revoked_at IS NULL',
+        [agent.rows[0].id, member.community_id]
       );
       const token = randomToken();
       await client.query(
@@ -113,7 +113,7 @@ export function registerAgentRoutes(
     return out;
   });
 
-  app.get('/api/v1/agents', async (c) => {
+  app.get('/agents', async (c) => {
     const grant = c.req.header('authorization')
       ? await requireConnectionGrant(c, pool, 'enroll-agent')
       : undefined;
@@ -129,19 +129,25 @@ export function registerAgentRoutes(
   // commits. The owner-scoped local id is the recovery key; this endpoint is
   // deliberately distinct from ordinary enrollment so retries never rotate a
   // still-working credential.
-  app.post('/api/v1/agents/recover', async (c) => {
+  app.post('/agents/recover', async (c) => {
     const { member, tokenHash } = await requireConnectionGrant(c, pool, 'enroll-agent');
     const body = await readJson(c, CommunityWireAgentEnrollRequestSchema);
     const result = await transaction(pool, async (client) => {
-      await assertConnectionGrantCurrent(client, member.id, tokenHash, 'enroll-agent');
+      await assertConnectionGrantCurrent(
+        client,
+        member.id,
+        tokenHash,
+        member.community_id,
+        'enroll-agent'
+      );
       const agent = await client.query<AgentRow>(
-        'SELECT id,display_name,handle,owner_member_id,active FROM agents WHERE owner_member_id=$1 AND local_agent_id=$2 AND active FOR UPDATE',
-        [member.id, body.localAgentId]
+        'SELECT id,display_name,handle,owner_member_id,active FROM agents WHERE owner_member_id=$1 AND community_id=$2 AND local_agent_id=$3 AND active FOR UPDATE',
+        [member.id, member.community_id, body.localAgentId]
       );
       if (!agent.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Active agent not found.');
       await client.query(
-        'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND revoked_at IS NULL',
-        [agent.rows[0].id]
+        'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND community_id=$2 AND revoked_at IS NULL',
+        [agent.rows[0].id, member.community_id]
       );
       const token = randomToken();
       await client.query(
@@ -159,28 +165,25 @@ export function registerAgentRoutes(
     return out;
   });
 
-  app.post('/api/v1/agents/:id/rotate', async (c) => {
+  app.post('/agents/:id/rotate', async (c) => {
     const { member, tokenHash } = await requireConnectionGrant(c, pool, 'enroll-agent');
     const id = uuid.parse(c.req.param('id'));
     const result = await transaction(pool, async (client) => {
-      const owner = await client.query('SELECT 1 FROM members WHERE id=$1 AND active FOR UPDATE', [
+      await assertConnectionGrantCurrent(
+        client,
         member.id,
-      ]);
-      if (!owner.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Owner membership has ended.');
-      const grant = await client.query(
-        "SELECT 1 FROM connection_grants WHERE member_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND scopes @> ARRAY['enroll-agent']::text[] FOR SHARE",
-        [member.id, tokenHash]
+        tokenHash,
+        member.community_id,
+        'enroll-agent'
       );
-      if (!grant.rowCount)
-        throw new ApiError(401, 'UNAUTHENTICATED', 'This connection is unavailable.');
       const agent = await client.query<AgentRow>(
-        'SELECT id,display_name,handle,owner_member_id,active FROM agents WHERE id=$1 AND owner_member_id=$2 AND active FOR UPDATE',
-        [id, member.id]
+        'SELECT id,display_name,handle,owner_member_id,active FROM agents WHERE id=$1 AND owner_member_id=$2 AND community_id=$3 AND active FOR UPDATE',
+        [id, member.id, member.community_id]
       );
       if (!agent.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Agent not found.');
       await client.query(
-        'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND revoked_at IS NULL',
-        [id]
+        'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND community_id=$2 AND revoked_at IS NULL',
+        [id, member.community_id]
       );
       const token = randomToken();
       await client.query(
@@ -198,7 +201,7 @@ export function registerAgentRoutes(
     return out;
   });
 
-  app.delete('/api/v1/agents/:id', async (c) => {
+  app.delete('/agents/:id', async (c) => {
     const grant = c.req.header('authorization')
       ? await requireConnectionGrant(c, pool, 'enroll-agent')
       : undefined;
@@ -206,7 +209,13 @@ export function registerAgentRoutes(
     const id = uuid.parse(c.req.param('id'));
     await transaction(pool, async (client) => {
       if (grant)
-        await assertConnectionGrantCurrent(client, actor.id, grant.tokenHash, 'enroll-agent');
+        await assertConnectionGrantCurrent(
+          client,
+          actor.id,
+          grant.tokenHash,
+          actor.community_id,
+          'enroll-agent'
+        );
       const role = await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
       const candidate = await client.query<{ owner_member_id: string; owner_role: Member['role'] }>(
         'SELECT a.owner_member_id,m.role AS owner_role FROM agents a JOIN members m ON m.id=a.owner_member_id WHERE a.id=$1 AND a.community_id=$2 AND a.active AND m.active',
@@ -242,12 +251,18 @@ export function registerAgentRoutes(
         throw new ApiError(404, 'NOT_FOUND', 'Agent not found.');
       if (owner && owner.rows[0].role !== 'member')
         throw new ApiError(403, 'FORBIDDEN', 'You cannot remove this agent.');
-      await client.query('UPDATE agents SET active=false,revoked_at=now() WHERE id=$1', [id]);
       await client.query(
-        'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND revoked_at IS NULL',
-        [id]
+        'UPDATE agents SET active=false,revoked_at=now() WHERE id=$1 AND community_id=$2',
+        [id, actor.community_id]
       );
-      await client.query('DELETE FROM agent_channel_members WHERE agent_id=$1', [id]);
+      await client.query(
+        'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND community_id=$2 AND revoked_at IS NULL',
+        [id, actor.community_id]
+      );
+      await client.query(
+        'DELETE FROM agent_channel_members WHERE agent_id=$1 AND community_id=$2',
+        [id, actor.community_id]
+      );
       await client.query(
         'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
         [actor.community_id, actor.id, 'agent.eject', id]
@@ -256,7 +271,7 @@ export function registerAgentRoutes(
     return c.body(null, 204);
   });
 
-  app.post('/api/v1/channels/:id/agents', async (c) => {
+  app.post('/channels/:id/agents', async (c) => {
     const grant = c.req.header('authorization')
       ? await requireConnectionGrant(c, pool, 'enroll-agent')
       : undefined;
@@ -265,7 +280,13 @@ export function registerAgentRoutes(
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
       if (grant)
-        await assertConnectionGrantCurrent(client, actor.id, grant.tokenHash, 'enroll-agent');
+        await assertConnectionGrantCurrent(
+          client,
+          actor.id,
+          grant.tokenHash,
+          actor.community_id,
+          'enroll-agent'
+        );
       const role = await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
       const agent = await client.query<{ owner_member_id: string }>(
         'SELECT owner_member_id FROM agents WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
@@ -283,7 +304,7 @@ export function registerAgentRoutes(
     return json(c, CommunityWireAgentChannelMembershipResponseSchema, { joined: true });
   });
 
-  app.delete('/api/v1/channels/:id/agents/:agentId', async (c) => {
+  app.delete('/channels/:id/agents/:agentId', async (c) => {
     const grant = c.req.header('authorization')
       ? await requireConnectionGrant(c, pool, 'enroll-agent')
       : undefined;
@@ -292,7 +313,13 @@ export function registerAgentRoutes(
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
       if (grant)
-        await assertConnectionGrantCurrent(client, actor.id, grant.tokenHash, 'enroll-agent');
+        await assertConnectionGrantCurrent(
+          client,
+          actor.id,
+          grant.tokenHash,
+          actor.community_id,
+          'enroll-agent'
+        );
       const role = await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
       const agent = await client.query<{ owner_member_id: string }>(
         'SELECT owner_member_id FROM agents WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
