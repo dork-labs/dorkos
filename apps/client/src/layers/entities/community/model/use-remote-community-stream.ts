@@ -47,7 +47,7 @@ export function useRemoteCommunityStream(
 ) {
   const transport = useTransport();
   const queries = useQueryClient();
-  const authority = useCommunityContentAuthority(enabled || cacheReadable, accessFingerprint);
+  const authority = useCommunityContentAuthority(true, accessFingerprint);
   const address = JSON.stringify([
     authority?.ownerKey,
     authority?.epoch,
