@@ -32,6 +32,7 @@ import {
   type Verdict,
 } from './data.ts';
 import { canaryRow } from './canary.ts';
+import { machineNote } from './machine.ts';
 import { floorValues } from './floors.ts';
 import { fill, h, raw, sparkline, type Html } from './html.ts';
 import type { HandFiles } from './load.ts';
@@ -366,7 +367,7 @@ function sloTable(inp: DailyReportInput, series: Map<string, (number | null)[]>)
         </tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
-      <p class="note">7 days to ${inp.day}. p50 is the middle run, p90 the slow end: 9 in 10 are faster. The floor is the line we promise not to fall below; it tightens after four good weeks. Too few runs judges nothing.</p></div>`;
+      <p class="note">7 days to ${inp.day}. p50 is the middle run, p90 the slow end: 9 in 10 are faster. The floor is the line we promise not to fall below; it tightens after four good weeks. Too few runs judges nothing.</p>${machineNote(inp)}</div>`;
 }
 
 /** True when `triggers.json` is missing, or was computed for another day. */
@@ -578,12 +579,11 @@ export function renderDailyReport(inp: DailyReportInput): {
   const head = headlineOf(inp);
   const open = triggersStale(inp) ? [] : (inp.triggers?.open ?? []);
   const reds = open.filter((t) => t.severity === 'red').length;
-  const ambers = open.length - reds;
   const counts = triggersStale(inp)
     ? 'Triggers not computed'
     : open.length === 0
       ? 'No trigger open'
-      : `${reds} red, ${ambers} amber open`;
+      : `${reds} red, ${open.length - reds} amber open`;
   const html = fill(template(), {
     title: `CI report for ${inp.day}`,
     subtitle: `Computed by ci-steward from real runs. ${

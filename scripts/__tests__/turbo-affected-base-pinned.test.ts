@@ -199,8 +199,11 @@ describe('local turbo --affected gates pin their diff base', () => {
   it('finds the call sites at all', () => {
     // Without this, every assertion below passes vacuously the day someone
     // renames a hook or the scanner stops matching — the exact way a guard
-    // dies quietly. Four known sites today: pre-commit lint, pre-commit
-    // typecheck, pre-push tests, and `pnpm verify`.
+    // dies quietly. THREE known sites today: pre-commit lint, pre-commit
+    // typecheck, and `pnpm verify`. There were four until DOR-2160 removed the
+    // pre-push `tests` command, whose measured runs either proved nothing or
+    // could not finish; the site list shrinking is the expected consequence,
+    // and this line is where a fifth appearing gets noticed.
     const sites = affectedCommands([
       ...lefthookCommands(lefthookText),
       ...rootScripts(packageText),
@@ -208,7 +211,6 @@ describe('local turbo --affected gates pin their diff base', () => {
     expect(sites.map((s) => s.label).sort()).toEqual([
       'lefthook.yml pre-commit.lint',
       'lefthook.yml pre-commit.typecheck',
-      'lefthook.yml pre-push.tests',
       'package.json scripts.verify',
     ]);
   });
@@ -249,13 +251,15 @@ describe('local turbo --affected gates pin their diff base', () => {
   });
 
   it('reads block scalars, not just inline commands', () => {
-    // The pre-push gate is a `run: |` block, so a scanner that only handled
-    // inline `run:` values would silently drop the one site DOR-1717 fixed.
-    const prePush = lefthookCommands(lefthookText).find(
-      (c) => c.label === 'lefthook.yml pre-push.tests'
+    // Every lefthook command is a `run: |` block — it has to be, because the
+    // time-wrap occupies the first line of each one — so a scanner that only
+    // handled inline `run:` values would silently drop every site in the file
+    // and report that nothing needs a pin.
+    const lint = lefthookCommands(lefthookText).find(
+      (c) => c.label === 'lefthook.yml pre-commit.lint'
     );
-    expect(prePush?.text).toContain('Delete-only push');
-    expect(prePush?.text).toContain('turbo test --affected');
+    expect(lint?.text).toContain('ci_steward_time_wrap pre-commit lint');
+    expect(lint?.text).toContain('turbo lint --affected');
   });
 
   it('runs verify tests through Turbo with the pre-push scheduling contract', () => {

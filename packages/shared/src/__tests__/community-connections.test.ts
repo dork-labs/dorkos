@@ -34,4 +34,10 @@ describe('local community connection DTOs', () => {
       }).success
     ).toBe(false);
   });
+
+  it('accepts a connection whose remote grant must be replaced', () => {
+    expect(
+      CommunityConnectionDescriptorSchema.parse({ ...connection, status: 'reconnect-required' })
+    ).toMatchObject({ status: 'reconnect-required' });
+  });
 });

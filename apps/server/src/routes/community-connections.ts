@@ -18,7 +18,10 @@ import { readOwnerAccount } from '../services/core/auth/index.js';
 import { getRoomService } from '../services/rooms/index.js';
 import { resolveCaller } from './room-caller.js';
 import { isLocalCaller, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
-import { RemoteConnectionNotFoundError } from '../services/communities/remote/connection-store.js';
+import {
+  RemoteConnectionAuthorizationError,
+  RemoteConnectionNotFoundError,
+} from '../services/communities/remote/connection-store.js';
 import {
   RemoteCommunityPairingService,
   RemotePairingBusyError,
@@ -65,6 +68,11 @@ function failure(res: Response, error: unknown): void {
     res.status(426).json({
       code: 'COMMUNITY_UPGRADE_REQUIRED',
       error: 'Upgrade this Community server before connecting it to DorkOS.',
+    });
+  } else if (error instanceof RemoteConnectionAuthorizationError) {
+    res.status(409).json({
+      error: 'Reconnect this community to continue.',
+      code: 'COMMUNITY_RECONNECT_REQUIRED',
     });
   } else if (error instanceof RemoteConnectionNotFoundError) {
     res.status(404).json({ error: 'Community connection not found.' });

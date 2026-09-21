@@ -303,6 +303,41 @@ async function shootCanvas(page: Page, theme: Theme, rec: RunRecorder): Promise<
 const TYPE_DELAY_MS = 55;
 
 /**
+ * Dismiss the canvas held-update banner (ADR-0292) if it is showing, retrying
+ * briefly since the editor can surface it more than once in a row.
+ *
+ * The banner is honest, on-product behavior, not a capture bug: a file-backed
+ * canvas doc's own autosave round-trips through the server and echoes back as
+ * a `canvas` event while `editing` is still true, which edit-protection cannot
+ * tell apart from a real agent push — so it holds the echo and shows the same
+ * "Reload / Keep mine" notice a person editing this surface would see too. It
+ * fires at least twice here: once for Milkdown's own markdown round-trip the
+ * moment edit mode mounts (bullets and heading spacing get renormalized before
+ * a single key is pressed), and again for the drive's own typed autosave. A
+ * money shot cannot ship mid-transient, so this clicks "Keep mine" — keep what
+ * was just typed, discard the held echo — until the banner stops reappearing.
+ */
+async function dismissCanvasHeldUpdate(page: Page): Promise<void> {
+  const keepMine = page.getByRole('button', { name: 'Keep mine' });
+  for (let i = 0; i < 4; i++) {
+    if (await keepMine.isVisible().catch(() => false)) {
+      await keepMine.click();
+    }
+    await sleep(600);
+  }
+  // The capture stack's Vite ws-proxy occasionally drops with ECONNRESET
+  // (seen across every run of this pipeline, not something this drive causes)
+  // — the client's own `ServerUnreachableScreen` blanks the whole window for
+  // it and self-heals the moment the proxy reconnects. A shot taken mid-drop
+  // would ship a "can't reach its server" screenshot instead of the canvas, so
+  // wait it out rather than shoot through it.
+  const unreachable = page.getByTestId('server-unreachable');
+  if (await unreachable.isVisible().catch(() => false)) {
+    await unreachable.waitFor({ state: 'hidden', timeout: WAIT_MS });
+  }
+}
+
+/**
  * Drive a real edit of the file-backed canvas document: enter edit mode via the
  * pencil control, place the cursor at the end, and type a new markdown section
  * (Milkdown converts the `## ` and `- ` shorthands live). Autosave persists it
@@ -328,6 +363,9 @@ async function driveCanvasEditing(page: Page, mark?: LoopMark): Promise<void> {
   await page.keyboard.type('Per-route needs a **budget registry** first.', {
     delay: TYPE_DELAY_MS,
   });
+  // Let the debounced autosave (500ms) round-trip and clear the transient
+  // held-update banner before the still/loop settles on this frame.
+  await dismissCanvasHeldUpdate(page);
 }
 
 /** Capture the canvas mid-edit (editor active, freshly typed section visible). */
@@ -459,13 +497,15 @@ async function drivePersonality(page: Page, mark?: LoopMark): Promise<void> {
   await page.goto(url('/team?view=table'));
   // The docked profile binds to the agent whose row action opened it — a bare
   // ?agent= URL param resolves against the default cwd instead.
-  // Scoped to the table row: the sidebar carries its own "Open atlas’s
+  // Scoped to the table row: the sidebar carries its own "Open Atlas’s
   // profile" control, and the sidebar entry’s composed accessible name now
   // contains that string too (the Asks work, DOR-1330, appends "Awaiting your
-  // approval"), so an unscoped match went from one element to three.
+  // approval"), so an unscoped match went from one element to three. The name
+  // is the agent's `displayName` verbatim ("Atlas") — `exact: true` makes the
+  // match case-sensitive, so the capitalization has to match here too.
   await page
     .getByRole('row')
-    .getByRole('button', { name: 'Open atlas\u2019s profile', exact: true })
+    .getByRole('button', { name: 'Open Atlas\u2019s profile', exact: true })
     .click({ timeout: WAIT_MS });
   // Personality is a row on the profile's root that opens a popover, and its
   // accessible name carries the current archetype after the label — hence the

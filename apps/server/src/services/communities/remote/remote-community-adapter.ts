@@ -56,7 +56,11 @@ import {
   pinnedSse,
   communityApiPath,
 } from './pinned-origin.js';
-import { RemoteConnectionNotFoundError, RemoteConnectionStore } from './connection-store.js';
+import {
+  RemoteConnectionAuthorizationError,
+  RemoteConnectionNotFoundError,
+  RemoteConnectionStore,
+} from './connection-store.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 
 const capabilities: CommunityCapabilities = {
@@ -265,7 +269,11 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     readonly community: CommunityRef,
     private readonly ownerKey: string,
     private readonly store: RemoteConnectionStore,
-    private readonly enrollments?: CommunityAgentEnrollmentStore
+    private readonly enrollments?: CommunityAgentEnrollmentStore,
+    private readonly onReconnectRequired?: (
+      communityRef: CommunityRef,
+      ownerKey: string
+    ) => Promise<void>
   ) {}
 
   getCapabilities(): CommunityCapabilities {
@@ -286,6 +294,48 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     return this.store.personalToken(this.community, this.ownerKey);
   }
 
+  private async rejectedPersonalGrant(
+    error: unknown,
+    context: CommunityReadContext | undefined,
+    path: string
+  ): Promise<never> {
+    if (
+      !context?.actingMemberId &&
+      error instanceof PinnedHttpError &&
+      (error.status === 401 || error.status === 403)
+    ) {
+      let rejected = error.status === 401 && path === COMMUNITY_API_V1_ROUTES.channels;
+      if (!rejected && path !== COMMUNITY_API_V1_ROUTES.channels) {
+        try {
+          const target = await this.endpoint(COMMUNITY_API_V1_ROUTES.channels);
+          await pinnedJson(target.origin, target.path, undefined, undefined, {
+            authorization: await this.credential(),
+          });
+        } catch (probeError) {
+          rejected = probeError instanceof PinnedHttpError && probeError.status === 401;
+        }
+      }
+      if (rejected) {
+        await this.requireReconnect();
+        throw new RemoteConnectionAuthorizationError();
+      }
+    }
+    throw error;
+  }
+
+  private async requireReconnect(): Promise<void> {
+    const results = await Promise.allSettled([
+      this.onReconnectRequired?.(this.community, this.ownerKey) ?? Promise.resolve(),
+      this.store.requireReconnect(this.community, this.ownerKey),
+    ]);
+    const failures = results.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason] : []
+    );
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(failures, 'Failed to revoke the rejected community connection');
+  }
+
   private async request(
     path: string,
     body?: unknown,
@@ -293,13 +343,17 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     signal?: AbortSignal
   ): Promise<unknown> {
-    const endpoint = await this.endpoint(path);
-    return pinnedJson(endpoint.origin, endpoint.path, body, signal, {
-      method,
-      authorization: await this.credential(context),
-      maxBytes: 1024 * 1024,
-      accept: method === 'DELETE' ? [200, 201, 204] : [200, 201],
-    });
+    try {
+      const endpoint = await this.endpoint(path);
+      return await pinnedJson(endpoint.origin, endpoint.path, body, signal, {
+        method,
+        authorization: await this.credential(context),
+        maxBytes: 1024 * 1024,
+        accept: method === 'DELETE' ? [200, 201, 204] : [200, 201],
+      });
+    } catch (error) {
+      return this.rejectedPersonalGrant(error, context, path);
+    }
   }
 
   async connect(): Promise<CommunityConnection> {
@@ -318,8 +372,17 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
         identity: { community: this.community, memberId: descriptor.connectedHumanMemberId! },
       };
     } catch (error) {
-      if (error instanceof PinnedHttpError && (error.status === 401 || error.status === 403))
+      if (error instanceof PinnedHttpError && error.status === 401) {
+        await this.requireReconnect();
         return { status: 'unauthorized', error: 'The stored community grant was rejected.' };
+      }
+      if (error instanceof RemoteConnectionAuthorizationError)
+        return { status: 'unauthorized', error: 'Reconnect this community to continue.' };
+      if (error instanceof PinnedHttpError)
+        return {
+          status: 'unreachable',
+          error: `The community returned HTTP ${error.status}.`,
+        };
       if (error instanceof PinnedOriginError) return { status: 'unreachable', error: error.code };
       return { status: 'unauthorized', error: 'The stored community grant is unavailable.' };
     }
@@ -440,6 +503,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     const community = this.community;
     const endpoint = this.endpoint.bind(this);
     const credential = this.credential.bind(this);
+    const rejectedPersonalGrant = this.rejectedPersonalGrant.bind(this);
     const cancelled = new AbortController();
     const stream: AsyncGenerator<RemoteNativeRoomEvent, void, unknown> = (async function* () {
       try {
@@ -480,7 +544,15 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
         }
       } catch (error) {
         if (cancelled.signal.aborted || signal?.aborted) return;
-        throw remoteRoomError(error, community, roomId);
+        try {
+          await rejectedPersonalGrant(
+            error,
+            context,
+            `/api/v1/channels/${encodeURIComponent(roomId)}/events`
+          );
+        } catch (reconciled) {
+          throw remoteRoomError(reconciled, community, roomId);
+        }
       }
     })();
     return {
@@ -664,12 +736,21 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     context?: CommunityReadContext
   ): Promise<DownloadCommunityAttachment> {
     const target = await this.endpoint(`/api/v1/attachments/${encodeURIComponent(attachmentId)}`);
-    const bytes = (await pinnedJson(target.origin, target.path, undefined, undefined, {
-      method: 'GET',
-      authorization: await this.credential(context),
-      response: 'buffer',
-      maxBytes: MAX_REMOTE_ATTACHMENT_BYTES,
-    })) as Buffer;
+    let bytes: Buffer;
+    try {
+      bytes = (await pinnedJson(target.origin, target.path, undefined, undefined, {
+        method: 'GET',
+        authorization: await this.credential(context),
+        response: 'buffer',
+        maxBytes: MAX_REMOTE_ATTACHMENT_BYTES,
+      })) as Buffer;
+    } catch (error) {
+      return this.rejectedPersonalGrant(
+        error,
+        context,
+        `/api/v1/attachments/${encodeURIComponent(attachmentId)}`
+      );
+    }
     return {
       attachment: {
         id: attachmentId,

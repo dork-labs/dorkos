@@ -225,4 +225,4 @@ slos:
     objective:
       - { stat: p90, op: '<=', value: 120, unit: seconds }
       - { stat: killed_share, op: '<=', value: 0, unit: ratio }
-    path: pre-push bounded to about 2 minutes, the rest left to CI
+    path: the test gate leaves pre-push entirely; a formatting check stays

@@ -15,7 +15,11 @@ import {
   CommunityPairingPollPrivateResponseSchema,
   CommunityPairingExchangeSecretResponseSchema,
 } from '@dorkos/shared/community-private-wire';
-import { RemoteConnectionStore, type RemoteConnectionDescriptor } from './connection-store.js';
+import {
+  RemoteConnectionAuthorizationError,
+  RemoteConnectionStore,
+  type RemoteConnectionDescriptor,
+} from './connection-store.js';
 import {
   communityApiPath,
   parseCommunityLink,
@@ -164,6 +168,8 @@ export class RemoteCommunityPairingService {
       const connection = await this.store.get(ref, ownerKey);
       if (connection.status === 'connected')
         return { status: 'connected', connection: this.store.project(connection) };
+      if (connection.status === 'reconnect-required')
+        throw new RemoteConnectionAuthorizationError();
       if (!connection.pairingId || !connection.expiresAt)
         throw new PinnedOriginError('REMOTE_RESPONSE');
       if (Date.parse(connection.expiresAt) <= Date.now()) {

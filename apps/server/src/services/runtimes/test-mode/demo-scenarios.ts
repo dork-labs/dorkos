@@ -1,5 +1,6 @@
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
+import { peekCanvasService, sessionScope, SESSION_AGENT_AUTHOR } from '../../canvas/index.js';
 import type { ScenarioFn } from './scenario-store.js';
 import { DEMO_SESSION_ID, DEMO_MODEL, delay, streamText } from './demo-scenario-shared.js';
 import { demoGenUiTicTacToe } from './demo-scenario-tictactoe.js';
@@ -194,13 +195,29 @@ const CANVAS_DOC =
 /** File (relative to the session cwd) that backs the canvas document. */
 const CANVAS_SOURCE_PATH = 'rate-limiting-design.md';
 
+/** The canvas content `demoCanvas` puts on the table. */
+const CANVAS_CONTENT = {
+  type: 'markdown' as const,
+  title: 'rate-limiting-design.md',
+  content: CANVAS_DOC,
+  sourcePath: CANVAS_SOURCE_PATH,
+};
+
 /**
  * Opens the canvas beside chat with a design document, via the same
  * `ui_command`/`open_canvas` path the `control_ui` MCP tool uses in production.
  * The content is file-backed (`sourcePath`) so the canvas offers its real
  * edit-in-place mode; the capture harness seeds the matching file on disk.
+ *
+ * **Writes through the canvas service first** (spec `canvas-agent-seat` §1.2),
+ * the same as `controlUi` does for a real agent's tool call. Since that spec
+ * landed, a session's canvas is the SERVER's: the `ui_command` below only
+ * reveals the pane, and `serverAppliedCanvas` (`main.tsx`) tells the client's
+ * dispatcher never to source the document from the command itself. A scenario
+ * that skipped this write used to reveal an empty "blank canvas" splash forever
+ * — there was no second event coming to fill it.
  */
-const demoCanvas: ScenarioFn = async function* () {
+const demoCanvas: ScenarioFn = async function* (_content, ctx) {
   yield {
     type: 'session_status',
     data: { sessionId: DEMO_SESSION_ID, model: DEMO_MODEL },
@@ -208,17 +225,13 @@ const demoCanvas: ScenarioFn = async function* () {
   yield* streamText(
     `I've written up the rate-limiting design — opening it in the canvas so we can edit it together.\n\n`
   );
+  peekCanvasService()?.open(sessionScope(ctx.sessionId), SESSION_AGENT_AUTHOR, CANVAS_CONTENT);
   yield {
     type: 'ui_command',
     data: {
       command: {
         action: 'open_canvas',
-        content: {
-          type: 'markdown',
-          title: 'rate-limiting-design.md',
-          content: CANVAS_DOC,
-          sourcePath: CANVAS_SOURCE_PATH,
-        },
+        content: CANVAS_CONTENT,
         preferredWidth: 50,
       },
     },
