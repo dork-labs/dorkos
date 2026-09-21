@@ -1,5 +1,6 @@
 import { build, formatMessages, type Message, type Plugin } from 'esbuild';
 import { execSync } from 'child_process';
+import { createHash } from 'node:crypto';
 import fs from 'fs/promises';
 import { cpSync, readFileSync, readdirSync } from 'fs';
 import path from 'path';
@@ -13,6 +14,22 @@ const PACKAGES_DIR = path.join(ROOT, 'packages');
 
 // Read CLI package version for injection into the binary
 const { version } = JSON.parse(readFileSync(path.join(CLI_PKG, 'package.json'), 'utf-8'));
+
+function communityMigrationCompatibilityId(): string {
+  const migrations = path.join(ROOT, 'apps/community/migrations');
+  const hash = createHash('sha256');
+  for (const filename of readdirSync(migrations)
+    .filter((entry) => entry.endsWith('.sql'))
+    .sort()) {
+    hash.update(filename);
+    hash.update('\0');
+    hash.update(readFileSync(path.join(migrations, filename)));
+    hash.update('\0');
+  }
+  return `sha256:${hash.digest('hex')}`;
+}
+
+const communityMigrationId = communityMigrationCompatibilityId();
 
 // --- Vintage-consistency invariant -----------------------------------------
 //
@@ -270,7 +287,10 @@ async function buildCLI() {
       '@inquirer/prompts',
     ],
     plugins: [dorkosSourcePlugin()],
-    define: { __CLI_VERSION__: JSON.stringify(version) },
+    define: {
+      __CLI_VERSION__: JSON.stringify(version),
+      __COMMUNITY_MIGRATION_COMPATIBILITY_ID__: JSON.stringify(communityMigrationId),
+    },
     sourcemap: true,
     banner: {
       js: "import { createRequire as __cjsRequire } from 'module'; import { fileURLToPath as __fup } from 'url'; const require = __cjsRequire(import.meta.url); const __filename = __fup(import.meta.url);",
@@ -355,7 +375,10 @@ async function buildCLI() {
       'gray-matter',
     ],
     plugins: [dorkosSourcePlugin(), serverServicesRedirectPlugin()],
-    define: { __CLI_VERSION__: JSON.stringify(version) },
+    define: {
+      __CLI_VERSION__: JSON.stringify(version),
+      __COMMUNITY_MIGRATION_COMPATIBILITY_ID__: JSON.stringify(communityMigrationId),
+    },
     banner: { js: '#!/usr/bin/env node' },
   });
 

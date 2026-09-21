@@ -11,6 +11,12 @@ const cliEnvSchema = z.object({
   // Where `dorkos browser` looks for Chrome: PATH on Linux, the three install
   // roots on Windows (lib/agent-browser/chrome-locator.ts).
   PATH: z.string().optional(),
+  HOME: z.string().optional(),
+  USERPROFILE: z.string().optional(),
+  APPDATA: z.string().optional(),
+  XDG_CONFIG_HOME: z.string().optional(),
+  FLY_CONFIG_DIR: z.string().optional(),
+  GH_CONFIG_DIR: z.string().optional(),
   LOCALAPPDATA: z.string().optional(),
   PROGRAMFILES: z.string().optional(),
   'PROGRAMFILES(X86)': z.string().optional(),

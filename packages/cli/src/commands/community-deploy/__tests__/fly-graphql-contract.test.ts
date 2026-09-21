@@ -6,15 +6,22 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   FLY_TIGRIS_CREATE_MUTATION,
+  FLY_TIGRIS_DELETE_MUTATION,
   FLY_TIGRIS_READ_QUERY,
   FLY_TIGRIS_TERMS_QUERY,
   FlyGraphqlContractError,
   createTigrisVariables,
   parseTigrisCreateResponse,
+  parseTigrisDeleteResponse,
   parseTigrisReadResponse,
   parseTigrisTermsResponse,
   verifyTigrisBinding,
 } from '../fly-graphql-contract.js';
+import {
+  expectSanitizedProviderFixture,
+  mutateTrustedProviderFields,
+  objectAt,
+} from './provider-contract-harness.js';
 
 const fixtureDirectory = new URL('./fixtures/fly/', import.meta.url);
 const expectedBinding = {
@@ -27,40 +34,6 @@ const expectedBinding = {
 
 async function fixture(name: string): Promise<unknown> {
   return JSON.parse(await readFile(new URL(name, fixtureDirectory), 'utf8'));
-}
-
-function copy<T>(value: T): T {
-  return structuredClone(value);
-}
-
-function objectAt(value: unknown, ...path: string[]): Record<string, unknown> {
-  let current = value;
-  for (const segment of path) {
-    if (typeof current !== 'object' || current === null || Array.isArray(current)) {
-      throw new Error(`Fixture path is not an object: ${path.join('.')}`);
-    }
-    current = (current as Record<string, unknown>)[segment];
-  }
-  if (typeof current !== 'object' || current === null || Array.isArray(current)) {
-    throw new Error(`Fixture path is not an object: ${path.join('.')}`);
-  }
-  return current as Record<string, unknown>;
-}
-
-function collectStrings(value: unknown): string[] {
-  if (typeof value === 'string') return [value];
-  if (Array.isArray(value)) return value.flatMap(collectStrings);
-  if (typeof value === 'object' && value !== null) {
-    return Object.entries(value).flatMap(([key, child]) => [key, ...collectStrings(child)]);
-  }
-  return [];
-}
-
-function hasTerminalControl(value: string): boolean {
-  return Array.from(value).some((character) => {
-    const code = character.codePointAt(0) ?? 0;
-    return code < 32 || code === 127;
-  });
 }
 
 describe('Fly Tigris GraphQL contract', () => {
@@ -94,13 +67,11 @@ describe('Fly Tigris GraphQL contract', () => {
       ['app', 'id'],
       ['app', 'name'],
     ];
-    for (const path of paths) {
-      const changed = copy(source);
-      const target = objectAt(changed, 'data', 'createAddOn', 'addOn', ...path.slice(0, -1));
-      const key = path.at(-1)!;
-      target[`${key}_renamed`] = target[key];
-      delete target[key];
-      expect(() => parseTigrisCreateResponse(changed), path.join('.')).toThrow(
+    for (const mutation of mutateTrustedProviderFields(
+      source,
+      paths.map((path) => ['data', 'createAddOn', 'addOn', ...path])
+    )) {
+      expect(() => parseTigrisCreateResponse(mutation.value), mutation.label).toThrow(
         FlyGraphqlContractError
       );
     }
@@ -147,6 +118,18 @@ describe('Fly Tigris GraphQL contract', () => {
     );
   });
 
+  it('rejects every mutation of the trusted deletion identity', async () => {
+    const source = await fixture('tigris-delete.json');
+    for (const mutation of mutateTrustedProviderFields(source, [
+      ['data', 'deleteAddOn', 'deletedAddOnName'],
+    ])) {
+      expect(
+        () => parseTigrisDeleteResponse(mutation.value, 'community-fixture-bucket'),
+        mutation.label
+      ).toThrow(FlyGraphqlContractError);
+    }
+  });
+
   it('rejects public access and every wrong provider binding', async () => {
     const source = await fixture('tigris-read.json');
     objectAt(source, 'data', 'node', 'options').public = true;
@@ -169,10 +152,20 @@ describe('Fly Tigris GraphQL contract', () => {
     ).toThrowError(expect.objectContaining({ code: 'INVALID_EXPECTED_BINDING' }));
   });
 
-  it('pins minimal operations and creates variables without a public option', () => {
+  it('pins minimal operations and creates variables without a public option', async () => {
     expect(FLY_TIGRIS_TERMS_QUERY).toContain('agreedToProviderTos');
     expect(FLY_TIGRIS_READ_QUERY).toContain('node(id: $id)');
     expect(FLY_TIGRIS_CREATE_MUTATION).toContain('createAddOn(input: $input)');
+    expect(FLY_TIGRIS_DELETE_MUTATION).toContain('deletedAddOnName');
+    expect(
+      parseTigrisDeleteResponse(await fixture('tigris-delete.json'), 'community-fixture-bucket')
+    ).toBe('community-fixture-bucket');
+    expect(() =>
+      parseTigrisDeleteResponse(
+        { data: { deleteAddOn: { deletedAddOnName: 'foreign-bucket' } } },
+        'community-fixture-bucket'
+      )
+    ).toThrowError(expect.objectContaining({ code: 'BINDING_MISMATCH' }));
     for (const document of [FLY_TIGRIS_CREATE_MUTATION, FLY_TIGRIS_READ_QUERY]) {
       expect(document).not.toMatch(
         /\b(password|environment|ssoLink|errorMessage|metadata|publicUrl)\b/u
@@ -199,13 +192,17 @@ describe('Fly Tigris GraphQL contract', () => {
   });
 
   it('keeps checked-in provider fixtures free of credential shapes and terminal controls', async () => {
-    for (const name of ['tigris-terms.json', 'tigris-create.json', 'tigris-read.json']) {
+    for (const name of [
+      'tigris-terms.json',
+      'tigris-create.json',
+      'tigris-read.json',
+      'tigris-delete.json',
+    ]) {
       const text = await readFile(new URL(name, fixtureDirectory), 'utf8');
-      expect(text, fileURLToPath(new URL(name, fixtureDirectory))).not.toMatch(
-        /password|secret|access[_-]?key|session[_-]?token|postgres(?:ql)?:\/\/|https?:\/\//iu
+      expectSanitizedProviderFixture(
+        JSON.parse(text),
+        fileURLToPath(new URL(name, fixtureDirectory))
       );
-      for (const value of collectStrings(JSON.parse(text)))
-        expect(hasTerminalControl(value)).toBe(false);
     }
   });
 });

@@ -1,0 +1,9 @@
+{
+  "project": {
+    "id": "project_fixture_01",
+    "org_id": "org_fixture_01",
+    "name": "Community Fixture",
+    "region_id": "aws-us-east-2",
+    "pg_version": 17
+  }
+}
