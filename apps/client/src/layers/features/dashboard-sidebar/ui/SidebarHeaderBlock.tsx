@@ -18,7 +18,6 @@
  */
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
 import { isNewer } from '@/layers/shared/lib';
@@ -29,21 +28,13 @@ import {
   useSettingsDeepLink,
   useTransport,
 } from '@/layers/shared/model';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  SidebarHeader,
-  SidebarMenuNodes,
-  Skeleton,
-  TOUCH_TARGET_MIN_H,
-  useGuardedMenuNodes,
-} from '@/layers/shared/ui';
+import { SidebarHeader, TOUCH_TARGET_MIN_H, useGuardedMenuNodes } from '@/layers/shared/ui';
 import { useTeamRoster } from '@/layers/entities/team';
 import { buildHeaderBlockMenuNodes } from './header-block-menu';
 import { NewMenu } from './NewMenu';
 import { SidebarSearchPill } from './SidebarSearchPill';
 import { configKeys, CONFIG_STALE_TIME_MS } from '@/layers/entities/config';
+import { CommunityContextSwitcher } from './context/CommunityContextSwitcher';
 
 /**
  * What this cockpit is called.
@@ -138,46 +129,18 @@ export function SidebarHeaderBlock() {
     // two surfaces, and the header and the roster are one surface (R1).
     <SidebarHeader className="gap-2 px-2 py-3">
       <div className="flex items-center gap-1">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              data-testid="sidebar-header-block"
-              // Not "workspace menu": the sidebar says "project" for the
-              // repo/cwd dimension and says "workspace" in exactly one place,
-              // the menu row that names the existing settings surface (§16,
-              // R4). A screen reader hears the same vocabulary a sighted
-              // reader does.
-              aria-label={nameUnknown ? 'Team menu' : `${teamName} menu`}
-              className={cn(
-                'text-sidebar-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] font-semibold outline-hidden transition-colors duration-150 focus-visible:ring-2',
-                isMobile && TOUCH_TARGET_MIN_H
-              )}
-            >
-              {nameUnknown ? (
-                // Sized to the name it stands in for, on the same 13px line, so
-                // the header does not resize when the roster lands.
-                <Skeleton
-                  className="my-[3px] h-3.5 w-24 rounded-sm"
-                  data-testid="sidebar-team-name-skeleton"
-                />
-              ) : (
-                <span className="truncate">{teamName}</span>
-              )}
-              <ChevronDown className="size-3.5 shrink-0 opacity-50" aria-hidden />
-            </button>
-          </DropdownMenuTrigger>
-          {/* Portalled by the primitive, which is what makes BC-43's promise
-              structural: however long this list grows, it renders outside the
-              header block's own box and cannot move anything in it. */}
-          <DropdownMenuContent
-            align="start"
-            className="w-56"
+        {!isMobile && (
+          <CommunityContextSwitcher
+            installationLabel={teamName}
+            installationLabelPending={nameUnknown}
+            footerNodes={guarded.nodes}
             onCloseAutoFocus={guarded.onCloseAutoFocus}
-          >
-            <SidebarMenuNodes variant="dropdown" nodes={guarded.nodes} />
-          </DropdownMenuContent>
-        </DropdownMenu>
+            triggerClassName={cn(
+              'text-sidebar-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] font-semibold outline-hidden transition-colors duration-150 focus-visible:ring-2',
+              isMobile && TOUCH_TARGET_MIN_H
+            )}
+          />
+        )}
         <NewMenu />
       </div>
       <SidebarSearchPill />

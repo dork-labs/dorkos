@@ -1,8 +1,12 @@
 import { useCallback, useId, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { communityKeys, useCommunityConnections } from '@/layers/entities/community';
+import {
+  communityKeys,
+  useCommunityConnections,
+  useConfirmedCommunityAuthority,
+} from '@/layers/entities/community';
 import { useTransport } from '@/layers/shared/model';
-import { getPlatform } from '@/layers/shared/lib';
+import { getPlatform, isCommunityAuthorityCurrent } from '@/layers/shared/lib';
 import { Button, Input, Label, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { CommunityConnectionRow } from './CommunityConnectionRow';
 
@@ -11,29 +15,57 @@ export function CommunityConnections() {
   const embedded = getPlatform().isEmbedded;
   const transport = useTransport();
   const client = useQueryClient();
+  const authority = useConfirmedCommunityAuthority(!embedded);
   const list = useCommunityConnections(!embedded);
+  const authorityAddress = authority ? JSON.stringify([authority.ownerKey, authority.epoch]) : '';
   const id = useId();
   const [url, setUrl] = useState('');
   const [installName, setInstallName] = useState('My DorkOS');
-  const [approvalUrls, setApprovalUrls] = useState<Record<string, string>>({});
-  const [notice, setNotice] = useState('');
+  const [approvalState, setApprovalState] = useState<{
+    address: string;
+    urls: Record<string, string>;
+  }>({ address: '', urls: {} });
+  const approvalUrls = approvalState.address === authorityAddress ? approvalState.urls : {};
+  const [noticeState, setNoticeState] = useState({ address: '', message: '' });
+  const notice = noticeState.address === authorityAddress ? noticeState.message : '';
   const addressInput = useRef<HTMLInputElement>(null);
   const onRemoved = useCallback(() => addressInput.current?.focus(), []);
-  const onOutcome = useCallback((message: string) => setNotice(message), []);
+  const onOutcome = useCallback(
+    (message: string) => setNoticeState({ address: authorityAddress, message }),
+    [authorityAddress]
+  );
   const start = useMutation({
-    mutationFn: () =>
-      transport.startCommunityConnection({ url: url.trim(), installName: installName.trim() }),
+    mutationFn: async () => {
+      if (!authority || !isCommunityAuthorityCurrent(authority))
+        throw new Error('Community owner is still loading.');
+      const result = await transport.startCommunityConnection({
+        url: url.trim(),
+        installName: installName.trim(),
+      });
+      if (!isCommunityAuthorityCurrent(authority)) throw new Error('Community owner changed.');
+      return result;
+    },
     onSuccess: async (result) => {
-      setApprovalUrls((previous) => ({ ...previous, [result.connection.ref]: result.approvalUrl }));
+      setApprovalState((previous) => ({
+        address: authorityAddress,
+        urls: {
+          ...(previous.address === authorityAddress ? previous.urls : {}),
+          [result.connection.ref]: result.approvalUrl,
+        },
+      }));
       setUrl('');
-      setNotice('Open the community below to approve this installation.');
-      await client.invalidateQueries({ queryKey: communityKeys.connections });
+      setNoticeState({
+        address: authorityAddress,
+        message: 'Open the community below to approve this installation.',
+      });
+      if (authority)
+        await client.invalidateQueries({ queryKey: communityKeys.connections(authority) });
     },
   });
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!url.trim() || !installName.trim() || start.isPending) return;
-    setNotice('');
+    setNoticeState({ address: authorityAddress, message: '' });
     start.mutate();
   }
   if (embedded) return null;
@@ -61,7 +93,7 @@ export function CommunityConnections() {
               autoComplete="url"
               value={url}
               onChange={(event) => setUrl(event.target.value)}
-              disabled={start.isPending}
+              disabled={start.isPending || !authority}
             />
           </div>
           <div className="space-y-1.5">
@@ -72,14 +104,14 @@ export function CommunityConnections() {
               maxLength={120}
               value={installName}
               onChange={(event) => setInstallName(event.target.value)}
-              disabled={start.isPending}
+              disabled={start.isPending || !authority}
             />
           </div>
         </div>
         <Button
           type="submit"
           size="sm"
-          disabled={start.isPending || !url.trim() || !installName.trim()}
+          disabled={start.isPending || !authority || !url.trim() || !installName.trim()}
         >
           {start.isPending ? 'Connecting…' : 'Connect community'}
         </Button>
@@ -101,7 +133,7 @@ export function CommunityConnections() {
           onRetry={() => void list.refetch()}
           isRetrying={list.isFetching}
         />
-      ) : list.data.length ? (
+      ) : authority && list.data.length ? (
         <ul className="space-y-3">
           {list.data.map((connection) => (
             <CommunityConnectionRow
@@ -110,6 +142,7 @@ export function CommunityConnections() {
               approvalUrl={approvalUrls[connection.ref]}
               onOutcome={onOutcome}
               onRemoved={onRemoved}
+              authority={authority}
             />
           ))}
         </ul>

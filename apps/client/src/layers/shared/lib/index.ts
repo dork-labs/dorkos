@@ -42,6 +42,16 @@ export {
   type OwnerSetupRequest,
 } from './auth-signal';
 export {
+  confirmCommunityAuthority,
+  getCommunityAuthority,
+  invalidateCommunityAuthority,
+  isCommunityAuthorityCurrent,
+  registerCommunityAuthorityCleanup,
+  subscribeCommunityAuthority,
+  type CommunityAuthoritySnapshot,
+  type ConfirmedCommunityAuthority,
+} from './community-authority-state';
+export {
   getPlatform,
   platformCanSearchMessages,
   setPlatformAdapter,

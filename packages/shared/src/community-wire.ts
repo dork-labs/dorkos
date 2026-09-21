@@ -51,6 +51,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   pairingCancel: '/api/v1/pairings/cancel',
   pairingExchange: '/api/v1/pairings/exchange',
   channels: '/api/v1/channels',
+  attention: '/api/v1/attention',
   channel: '/api/v1/channels/:id',
   channelMembers: '/api/v1/channels/:id/members',
   channelAgents: '/api/v1/channels/:id/agents',
@@ -217,6 +218,14 @@ export const CommunityWireChannelSchema = z.strictObject({
 });
 /** Public channel projection. */
 export type CommunityWireChannel = z.infer<typeof CommunityWireChannelSchema>;
+/**
+ * Tenant-authorized aggregate activity for the currently authenticated human.
+ * Counts deliberately omit channel, author, and entry identity.
+ */
+export const CommunityWireAttentionResponseSchema = z.strictObject({
+  unreadCount: z.number().int().nonnegative(),
+  mentionCount: z.number().int().nonnegative(),
+});
 /** Create a channel; authority is derived from the session, never this body. */
 export const CommunityWireChannelCreateRequestSchema = z.strictObject({
   name: z.string().min(1),

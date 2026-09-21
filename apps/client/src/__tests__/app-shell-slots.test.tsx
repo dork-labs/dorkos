@@ -172,6 +172,9 @@ vi.mock('@/layers/features/dashboard-sidebar', async () => {
     // leaves the panel's identity and its navigation standing (spec R2, BC-43,
     // BC-47).
     SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
+    MobileCommunityContextSwitcher: () => (
+      <button data-testid="mobile-community-switcher">Context</button>
+    ),
     SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
     // The panel's one bottom card. Stubbed at the same seam as the strip: this
     // suite is about WHICH cockpit the shell mounts, and the slot's own
@@ -627,6 +630,12 @@ describe('AppShell slot integration', () => {
     it('drops the toggle with the panel — no hamburger that opens nothing', () => {
       renderAppShell();
       expect(screen.queryByRole('button', { name: 'Toggle sidebar' })).not.toBeInTheDocument();
+    });
+
+    it('keeps the Community context trigger in persistent top chrome', () => {
+      renderAppShell();
+      expect(screen.getByTestId('mobile-community-switcher')).toBeInTheDocument();
+      expect(screen.getByTestId('mobile-community-switcher').closest('header')).not.toBeNull();
     });
 
     it('mounts the four destinations along the bottom instead', () => {

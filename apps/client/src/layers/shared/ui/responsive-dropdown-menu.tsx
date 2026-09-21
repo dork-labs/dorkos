@@ -214,6 +214,10 @@ function ResponsiveDropdownMenuRadioGroup({
 export interface ResponsiveDropdownMenuRadioItemProps {
   value: string;
   children: React.ReactNode;
+  /** Prevent pointer and keyboard selection while the destination is unavailable. */
+  disabled?: boolean;
+  /** Optional desktop menu-item ref used for deliberate focus placement. */
+  itemRef?: React.Ref<HTMLDivElement>;
   /**
    * Icon rendered before the label. Widened beyond `LucideIcon` so custom
    * marks (e.g. runtime-descriptor logos) qualify — only `className` is passed.
@@ -227,6 +231,8 @@ export interface ResponsiveDropdownMenuRadioItemProps {
 function ResponsiveDropdownMenuRadioItem({
   value,
   children,
+  disabled,
+  itemRef,
   icon: Icon,
   description,
   className,
@@ -235,7 +241,7 @@ function ResponsiveDropdownMenuRadioItem({
 
   if (isDesktop) {
     return (
-      <DropdownMenuRadioItem value={value} className={className}>
+      <DropdownMenuRadioItem ref={itemRef} value={value} disabled={disabled} className={className}>
         {Icon || description ? (
           <div className="flex items-center gap-2">
             {Icon && <Icon className="size-(--size-icon-xs) shrink-0" />}
@@ -252,7 +258,13 @@ function ResponsiveDropdownMenuRadioItem({
   }
 
   return (
-    <MobileRadioItem value={value} icon={Icon} description={description} className={className}>
+    <MobileRadioItem
+      value={value}
+      icon={Icon}
+      description={description}
+      disabled={disabled}
+      className={className}
+    >
       {children}
     </MobileRadioItem>
   );
@@ -261,6 +273,7 @@ function ResponsiveDropdownMenuRadioItem({
 function MobileRadioItem({
   value,
   children,
+  disabled,
   icon: Icon,
   description,
   className,
@@ -274,6 +287,7 @@ function MobileRadioItem({
       type="button"
       role="radio"
       aria-checked={isSelected}
+      disabled={disabled}
       className={cn(
         'border-border flex w-full items-center gap-3 border-b px-4 py-3 text-left transition-colors',
         'active:bg-accent/50 min-h-[44px]',
@@ -281,6 +295,7 @@ function MobileRadioItem({
         className
       )}
       onClick={() => {
+        if (disabled) return;
         onValueChange?.(value);
         if (closeOnSelect) close();
       }}

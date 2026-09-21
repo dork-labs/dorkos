@@ -304,6 +304,15 @@ export const CONFIG_WRITE_POLICY = {
   'ui.shapes.autoFollowAgent': 'agent-writable',
   'ui.statusBar.pins': 'agent-writable',
   'ui.composer.richText': 'agent-writable',
+  // Preferences only: restoring a room always reauthorizes it server-side, so
+  // changing an ID cannot widen access or disclose the remembered destination.
+  'ui.communityNavigation.version': 'agent-writable',
+  'ui.communityNavigation.owners[].ownerKey': 'agent-writable',
+  'ui.communityNavigation.owners[].order': 'agent-writable',
+  'ui.communityNavigation.owners[].destinations[].ref': 'agent-writable',
+  'ui.communityNavigation.owners[].destinations[].roomId': 'agent-writable',
+  'ui.communityNavigation.owners[].destinations[].threadId': 'agent-writable',
+  'ui.communityNavigation.owners[].destinations[].scrollAnchorEntryId': 'agent-writable',
   // Which promo cards are hidden. A preference about what the sidebar's bottom
   // slot offers, exactly like `ui.sidebar.gettingStarted.retired` above; nothing
   // it gates is a security control.

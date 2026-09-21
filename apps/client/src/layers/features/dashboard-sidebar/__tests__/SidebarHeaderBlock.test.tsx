@@ -10,14 +10,17 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
+import { confirmCommunityAuthority, invalidateCommunityAuthority } from '@/layers/shared/lib';
+import { commitCommunityRouteEpoch } from '@/layers/shared/model';
 import type { SidebarMenuNode } from '@/layers/shared/ui';
 import { buildHeaderBlockMenuNodes } from '../ui/header-block-menu';
 import { SidebarHeaderBlock, teamNameFor } from '../ui/SidebarHeaderBlock';
+import { MobileCommunityContextSwitcher } from '../ui/context/CommunityContextSwitcher';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -30,6 +33,7 @@ let mockSelf: { id: string; displayName: string; isSelf: boolean } | null = {
 };
 /** Whether the roster read has answered yet — the header's one gate (D6). */
 let mockRosterPending = false;
+let mockIsMobile = false;
 vi.mock('@/layers/entities/team', () => ({
   useTeamRoster: () => ({
     data: mockRosterPending ? undefined : { members: mockSelf === null ? [] : [mockSelf] },
@@ -39,7 +43,31 @@ vi.mock('@/layers/entities/team', () => ({
 
 const mockOpenSettings = vi.fn();
 const mockOpenProfile = vi.fn();
+const mockOpenConnections = vi.fn();
+const mockNavigate = vi.fn((_options: { search?: { community?: string } }) => Promise.resolve());
+const mockResolveCommunityNavigation = vi.fn();
+const mockGetCommunityNavigation = vi.fn();
+const mockListRemoteCommunityRooms = vi.fn();
+const mockMoveCommunityNavigation = vi.fn();
 const mockSetGlobalPaletteOpen = vi.fn();
+let mockSearch: { community?: string } = {};
+let mockPathname = '/';
+let mockConnections: Array<{
+  ref: string;
+  remoteCommunityId: string;
+  label: string;
+  pinnedOrigin: string;
+  connectedHumanMemberId: string | null;
+  status: 'pending' | 'connected' | 'reconnect-required';
+  expiresAt: string | null;
+  attention?: {
+    state: 'verified' | 'stale' | 'unavailable';
+    unreadCount: number | null;
+    mentionCount: number | null;
+    verifiedAt: string | null;
+  };
+}> = [];
+let mockCommunityOrder: string[] = [];
 let mockConfig: { version?: string; latestVersion?: string | null; isDevMode?: boolean } = {
   version: '0.58.0',
   latestVersion: null,
@@ -53,13 +81,34 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
     ...actual,
-    useTransport: () => ({ getConfig: mockGetConfig }),
+    useTransport: () => ({
+      getConfig: mockGetConfig,
+      getCommunityNavigation: mockGetCommunityNavigation,
+      resolveCommunityNavigation: mockResolveCommunityNavigation,
+      listRemoteCommunityRooms: mockListRemoteCommunityRooms,
+    }),
     useSettingsDeepLink: () => ({ open: mockOpenSettings }),
     useProfileDeepLink: () => ({ open: mockOpenProfile }),
+    useOpenConnections: () => mockOpenConnections,
+    useIsMobile: () => mockIsMobile,
     useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
       selector({ setGlobalPaletteOpen: mockSetGlobalPaletteOpen }),
   };
 });
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-router')>();
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+    useRouterState: ({ select }: { select: (state: unknown) => unknown }) =>
+      select({ location: { pathname: mockPathname, search: mockSearch } }),
+  };
+});
+vi.mock('@/layers/entities/community', () => ({
+  useCommunityConnections: () => ({ data: mockConnections }),
+  useCommunityNavigation: () => ({ data: { ownerKey: 'owner-a', order: mockCommunityOrder } }),
+  useMoveCommunityNavigation: () => ({ mutate: mockMoveCommunityNavigation }),
+}));
 
 // The New menu is the header block's neighbour, not its subject: it reaches for
 // a router, a query client and the whole fleet, and `NewMenu.test.tsx` is where
@@ -93,6 +142,26 @@ beforeEach(() => {
   mockConfig = { version: '0.58.0', latestVersion: null, isDevMode: false };
   mockMenuNodes = null;
   mockRosterPending = false;
+  mockIsMobile = false;
+  mockPathname = '/';
+  mockSearch = {};
+  mockConnections = [];
+  mockCommunityOrder = [];
+  mockResolveCommunityNavigation.mockResolvedValue(null);
+  mockGetCommunityNavigation.mockResolvedValue({
+    ownerKey: 'owner-a',
+    installationDestination: { path: '/', search: {} },
+    order: [],
+    destinations: [],
+  });
+  mockListRemoteCommunityRooms.mockResolvedValue({
+    community: 'community-a',
+    rooms: [],
+    stale: false,
+  });
+  const authority = invalidateCommunityAuthority();
+  confirmCommunityAuthority(authority.epoch, 'owner-a');
+  commitCommunityRouteEpoch(`test:${authority.epoch}`);
 });
 
 afterEach(() => cleanup());
@@ -102,6 +171,16 @@ function renderBlock() {
   return render(
     <QueryClientProvider client={client}>
       <SidebarHeaderBlock />
+    </QueryClientProvider>
+  );
+}
+
+function renderMobileSwitcher() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  mockIsMobile = true;
+  return render(
+    <QueryClientProvider client={client}>
+      <MobileCommunityContextSwitcher />
     </QueryClientProvider>
   );
 }
@@ -214,6 +293,59 @@ describe('teamNameFor', () => {
 });
 
 describe('SidebarHeaderBlock', () => {
+  it('opens the shared destinations as a bottom sheet from phone top chrome', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    renderMobileSwitcher();
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Dorian’s team/ })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    expect(screen.getByRole('radio', { name: /Alpha/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Add community/ })).toBeInTheDocument();
+  });
+
+  it('adds phone search at eight communities and exposes keyboard-safe reorder actions', async () => {
+    mockSearch = { community: 'community-4' };
+    mockConnections = Array.from({ length: 8 }, (_, index) => ({
+      ref: `community-${index}`,
+      remoteCommunityId: `remote-${index}`,
+      label: `Community ${index}`,
+      pinnedOrigin: `https://community-${index}.example.com`,
+      connectedHumanMemberId: `person-${index}`,
+      status: 'connected' as const,
+      expiresAt: null,
+    }));
+    renderMobileSwitcher();
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    const search = await screen.findByRole('searchbox', { name: 'Find a community' });
+    expect(screen.getByRole('button', { name: 'Move Community 4 up' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Move Community 4 up' }));
+    expect(mockMoveCommunityNavigation).toHaveBeenCalledWith({
+      ref: 'community-4',
+      direction: 'up',
+    });
+
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    fireEvent.change(await screen.findByRole('searchbox', { name: 'Find a community' }), {
+      target: { value: 'Community 7' },
+    });
+    expect(screen.getByRole('radio', { name: /Community 7/ })).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: /Community 1/ })).not.toBeInTheDocument();
+    expect(search).not.toBeInTheDocument();
+  });
+
   it('is a button named after the operator, with the New button and the ⌘K pill beside it', () => {
     renderBlock();
     const block = screen.getByRole('button', { name: /Dorian’s team/ });
@@ -259,13 +391,420 @@ describe('SidebarHeaderBlock', () => {
     expect(await screen.findByRole('menuitem', { name: /v0\.58\.0 beta/ })).toBeInTheDocument();
   });
 
+  it('keeps the installed app first and orders communities by the owner preference', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+      {
+        ref: 'b',
+        remoteCommunityId: 'remote-b',
+        label: 'Beta',
+        pinnedOrigin: 'https://b.example.com',
+        connectedHumanMemberId: 'person-b',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockCommunityOrder = ['b', 'a'];
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    const items = await screen.findAllByRole('menuitemradio');
+    expect(items.slice(0, 3).map((item) => item.textContent)).toEqual([
+      expect.stringContaining('Dorian’s team'),
+      expect.stringContaining('Beta'),
+      expect.stringContaining('Alpha'),
+    ]);
+  });
+
+  it('reauthorizes the remembered destination before committing a Community route', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockResolvedValue({
+      ref: 'a',
+      roomId: 'general',
+      threadId: 'thread-1',
+      scrollAnchorEntryId: null,
+    });
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/channels',
+        search: { community: 'a', id: 'general', thread: 'thread-1' },
+      })
+    );
+    expect(mockListRemoteCommunityRooms).not.toHaveBeenCalled();
+  });
+
+  it('re-reads and restores the owner’s local route only on explicit installation selection', async () => {
+    mockSearch = { community: 'a' };
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockGetCommunityNavigation.mockResolvedValue({
+      ownerKey: 'owner-a',
+      installationDestination: { path: '/tasks', search: { view: 'board' } },
+      order: ['a'],
+      destinations: [],
+    });
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Dorian’s team/ }));
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith({ to: '/tasks', search: { view: 'board' } })
+    );
+    expect(mockGetCommunityNavigation).toHaveBeenCalledOnce();
+  });
+
+  it('discards a delayed installation route after the owner changes', async () => {
+    let resolveNavigation!: (value: {
+      ownerKey: string;
+      installationDestination: { path: '/tasks'; search: {} };
+      order: string[];
+      destinations: [];
+    }) => void;
+    mockSearch = { community: 'a' };
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockGetCommunityNavigation.mockReturnValue(
+      new Promise((resolve) => {
+        resolveNavigation = resolve;
+      })
+    );
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Dorian’s team/ }));
+    await waitFor(() => expect(mockGetCommunityNavigation).toHaveBeenCalledOnce());
+
+    const nextOwner = invalidateCommunityAuthority();
+    confirmCommunityAuthority(nextOwner.epoch, 'owner-b');
+    resolveNavigation({
+      ownerKey: 'owner-a',
+      installationDestination: { path: '/tasks', search: {} },
+      order: [],
+      destinations: [],
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
+    );
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('names and focuses the route-selected Community when the menu opens', async () => {
+    mockSearch = { community: 'a' };
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    renderBlock();
+    const trigger = screen.getByTestId('sidebar-header-block');
+    expect(trigger).toHaveAccessibleName('Alpha menu');
+    fireEvent.pointerDown(trigger);
+    const selected = await screen.findByRole('menuitemradio', { name: /Alpha/ });
+    expect(selected).toHaveAttribute('aria-checked', 'true');
+    await waitFor(() => expect(selected).toHaveFocus());
+  });
+
+  it('returns to the prior route when the target destination read fails', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockRejectedValue(new Error('offline'));
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+    expect(mockNavigate).toHaveBeenNthCalledWith(1, {
+      to: '/channels',
+      search: { community: 'a' },
+    });
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenNthCalledWith(2, {
+        to: '/',
+        search: {},
+        replace: true,
+      })
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('reenables selection when the initial qualified navigation rejects', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockNavigate.mockRejectedValueOnce(new Error('navigation interrupted'));
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() =>
+      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
+    );
+    expect(mockResolveCommunityNavigation).not.toHaveBeenCalled();
+  });
+
+  it('opens the remembered room after the qualified target commits', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockNavigate.mockImplementation(async ({ search }: { search?: { community?: string } }) => {
+      if (search?.community === 'a') commitCommunityRouteEpoch('community:a');
+    });
+    mockResolveCommunityNavigation.mockResolvedValue({
+      ref: 'a',
+      roomId: 'general',
+      threadId: 'thread-1',
+      scrollAnchorEntryId: 'entry-4',
+    });
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(2));
+    expect(mockNavigate).toHaveBeenLastCalledWith({
+      to: '/channels',
+      search: { community: 'a', id: 'general', thread: 'thread-1' },
+    });
+  });
+
+  it('opens from the global context shortcut without stealing text-entry keys', async () => {
+    renderBlock();
+    await act(async () => undefined);
+    fireEvent.keyDown(document.body, { key: 'K', metaKey: true, shiftKey: true });
+    expect(await screen.findByText('Switch context')).toBeVisible();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.focus();
+    fireEvent.keyDown(input, { key: 'K', metaKey: true, shiftKey: true });
+    expect(screen.queryByText('Switch context')).not.toBeInTheDocument();
+    input.remove();
+  });
+
+  it('announces mentions separately from other unread activity', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+        attention: {
+          state: 'verified',
+          unreadCount: 5,
+          mentionCount: 2,
+          verifiedAt: '2026-09-21T12:00:00.000Z',
+        },
+      },
+    ];
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    expect(await screen.findByLabelText('2 mentions')).toBeVisible();
+    expect(screen.getByLabelText('3 other unread')).toBeVisible();
+  });
+
+  it('discards a delayed destination after the local owner changes', async () => {
+    let resolveRemembered!: (value: {
+      ref: string;
+      roomId: string;
+      threadId: null;
+      scrollAnchorEntryId: null;
+    }) => void;
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRemembered = resolve;
+        })
+    );
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+
+    const nextOwner = invalidateCommunityAuthority();
+    confirmCommunityAuthority(nextOwner.epoch, 'owner-b');
+    resolveRemembered({
+      ref: 'a',
+      roomId: 'general',
+      threadId: null,
+      scrollAnchorEntryId: null,
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
+    );
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('discards a delayed destination after another route commits', async () => {
+    let resolveRemembered!: (value: null) => void;
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRemembered = resolve;
+        })
+    );
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+
+    commitCommunityRouteEpoch('test:other-route');
+    resolveRemembered(null);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
+    );
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('disables keyboard selection of the installation while a destination is pending', async () => {
+    let resolveRemembered!: (value: null) => void;
+    mockSearch = { community: 'b' };
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+      {
+        ref: 'b',
+        remoteCommunityId: 'remote-b',
+        label: 'Beta',
+        pinnedOrigin: 'https://b.example.com',
+        connectedHumanMemberId: 'person-b',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRemembered = resolve;
+        })
+    );
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    const installation = await screen.findByRole('menuitemradio', { name: /Dorian’s team/ });
+    expect(installation).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.keyDown(installation, { key: 'Enter' });
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+
+    resolveRemembered(null);
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/channels',
+      search: { community: 'a' },
+    });
+  });
+
   it('grows the menu without moving anything outside it (BC-43)', async () => {
     // Three rows.
     mockMenuNodes = rows(3);
     renderBlock();
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
     await screen.findByRole('menuitem', { name: 'Row 0' });
-    expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(3);
+    expect(document.querySelectorAll('[role^="menuitem"]')).toHaveLength(5);
     const short = blockMarkup();
     cleanup();
 
@@ -276,7 +815,7 @@ describe('SidebarHeaderBlock', () => {
     await screen.findByRole('menuitem', { name: 'Row 5' });
     // The menu really did get longer — otherwise the comparison below is a
     // comparison of two identical renders and proves nothing.
-    expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(6);
+    expect(document.querySelectorAll('[role^="menuitem"]')).toHaveLength(8);
 
     expect(blockMarkup()).toBe(short);
   });
@@ -319,7 +858,10 @@ describe('the team name while the roster is still coming (spec `sidebar-simplifi
     expect(screen.queryByText('Your team')).toBeNull();
     expect(screen.queryByText('Dorian’s team')).toBeNull();
     // …and the control is still named for a screen reader while it waits.
-    expect(screen.getByTestId('sidebar-header-block')).toHaveAttribute('aria-label', 'Team menu');
+    expect(screen.getByTestId('sidebar-header-block')).toHaveAttribute(
+      'aria-label',
+      'Context menu'
+    );
   });
 
   it('paints the name the moment the roster answers', () => {

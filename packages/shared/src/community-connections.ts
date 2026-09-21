@@ -7,7 +7,34 @@
  */
 import { z } from 'zod';
 import { CommunityRefSchema } from './community-adapter.js';
+import type {
+  CommunityNavigationMoveRequest,
+  CommunityNavigationState,
+} from './community-navigation.js';
+import type { CommunityNavigationDestination } from './config-schema.js';
+import type { CommunityInstallationDestination } from './config-schema.js';
 import { CommunityConnectionAccessSchema } from './community-wire.js';
+
+/**
+ * Activity state for one owner-scoped Community connection. A number is only
+ * present when it came from a current authorized Community response.
+ */
+export const CommunityConnectionAttentionSchema = z.discriminatedUnion('state', [
+  z.strictObject({
+    state: z.enum(['verified', 'stale']),
+    unreadCount: z.number().int().nonnegative(),
+    mentionCount: z.number().int().nonnegative(),
+    verifiedAt: z.iso.datetime(),
+  }),
+  z.strictObject({
+    state: z.literal('unavailable'),
+    unreadCount: z.null(),
+    mentionCount: z.null(),
+    verifiedAt: z.null(),
+  }),
+]);
+/** Owner-safe aggregate activity for one Community connection. */
+export type CommunityConnectionAttention = z.infer<typeof CommunityConnectionAttentionSchema>;
 
 /** A community connection visible to its local install owner. */
 export const CommunityConnectionDescriptorSchema = z
@@ -20,6 +47,7 @@ export const CommunityConnectionDescriptorSchema = z
     status: z.enum(['pending', 'connected', 'reconnect-required']),
     expiresAt: z.iso.datetime().nullable(),
     access: CommunityConnectionAccessSchema.nullable(),
+    attention: CommunityConnectionAttentionSchema.nullable(),
   })
   .superRefine((connection, context) => {
     if (connection.status === 'pending' && connection.access !== null) {
@@ -27,6 +55,25 @@ export const CommunityConnectionDescriptorSchema = z
     }
     if (connection.status !== 'pending' && connection.access === null) {
       context.addIssue({ code: 'custom', message: 'Established connections require access.' });
+    }
+    if (connection.status === 'pending' && connection.attention !== null) {
+      context.addIssue({ code: 'custom', message: 'Pending connections cannot have attention.' });
+    }
+    if (connection.status !== 'pending' && connection.attention === null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Established connections require attention state.',
+      });
+    }
+    if (
+      connection.attention?.state !== 'unavailable' &&
+      connection.attention !== null &&
+      connection.attention.mentionCount > connection.attention.unreadCount
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Mentions must be a subset of unread activity.',
+      });
     }
   });
 /** Browser-safe connection descriptor. */
@@ -81,4 +128,18 @@ export interface CommunityConnectionTransport {
   cancelCommunityConnection(ref: string): Promise<void>;
   /** Disconnect this installation and discard its local credentials and cached content. */
   disconnectCommunity(ref: string): Promise<void>;
+  /** Read and reconcile this owner's saved Community order and destinations. */
+  getCommunityNavigation(): Promise<CommunityNavigationState>;
+  /** Remember the last canonical route visited inside this owner's local installation. */
+  rememberCommunityInstallationDestination(
+    destination: CommunityInstallationDestination
+  ): Promise<CommunityNavigationState>;
+  /** Move one Community by one position without replacing the whole saved order. */
+  moveCommunityNavigation(input: CommunityNavigationMoveRequest): Promise<CommunityNavigationState>;
+  /** Remember the latest authorized room, thread and scroll anchor for one Community. */
+  rememberCommunityNavigation(
+    destination: CommunityNavigationDestination
+  ): Promise<CommunityNavigationState>;
+  /** Return a remembered destination only when the owner can still read its room. */
+  resolveCommunityNavigation(ref: string): Promise<CommunityNavigationDestination | null>;
 }
