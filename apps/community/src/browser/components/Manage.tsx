@@ -805,10 +805,14 @@ export function Manage({
                     onClick={() =>
                       void perform(
                         () =>
-                          request('/api/v1/owner/transfer', 'POST', {
-                            successorMemberId: successor,
-                            password,
-                          }),
+                          request<{ lifecycleVersion: number }>('/api/v1/settings').then(
+                            (settings) =>
+                              request('/api/v1/owner/transfer', 'POST', {
+                                successorMemberId: successor,
+                                password,
+                                lifecycleVersion: settings.lifecycleVersion,
+                              })
+                          ),
                         'Ownership transferred.'
                       )
                     }

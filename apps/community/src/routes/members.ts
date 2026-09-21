@@ -181,25 +181,49 @@ export function registerMemberRoutes(
     } catch {
       throw new ApiError(403, 'FORBIDDEN', 'Reauthentication failed.');
     }
-    await transaction(pool, async (client) => {
-      const current = await live(client, actor.id, actor.community_id);
+    const lifecycleVersion = await transaction(pool, async (client) => {
+      const community = await client.query<{ lifecycle: string; lifecycle_version: number }>(
+        'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR UPDATE',
+        [actor.community_id]
+      );
+      if (
+        community.rows[0]?.lifecycle !== 'active' ||
+        community.rows[0].lifecycle_version !== body.lifecycleVersion
+      )
+        throw new ApiError(409, 'STATE_CONFLICT', 'Community lifecycle changed.');
+      const lockedMembers = await client.query<Member>(
+        `SELECT id,user_id,display_name,role,community_id FROM members
+         WHERE community_id=$1 AND id=ANY($2::uuid[]) AND active ORDER BY id FOR UPDATE`,
+        [actor.community_id, [actor.id, body.successorMemberId]]
+      );
+      const current = lockedMembers.rows.find((member) => member.id === actor.id);
       if (!current || current.role !== 'owner')
         throw new ApiError(403, 'FORBIDDEN', 'Only the current owner can transfer ownership.');
       if (actor.id === body.successorMemberId)
         throw new ApiError(409, 'STATE_CONFLICT', 'Choose another member.');
-      const successor = await live(client, body.successorMemberId, actor.community_id);
+      const successor = lockedMembers.rows.find((member) => member.id === body.successorMemberId);
       if (!successor) throw new ApiError(404, 'NOT_FOUND', 'Successor not found.');
       if (successor.role === 'owner')
         throw new ApiError(409, 'STATE_CONFLICT', 'That member already owns this community.');
       await client.query("UPDATE members SET role='member' WHERE id=$1", [current.id]);
       await client.query("UPDATE members SET role='owner' WHERE id=$1", [successor.id]);
-      await client.query(
-        'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
-        [actor.community_id, actor.id, 'owner.transfer', successor.id]
+      const updated = await client.query<{ lifecycle_version: number }>(
+        `UPDATE communities SET lifecycle_version=lifecycle_version+1
+         WHERE id=$1 RETURNING lifecycle_version`,
+        [actor.community_id]
       );
+      await client.query(
+        `INSERT INTO audit_events(
+           community_id,actor_member_id,action,subject_id,prior_state,next_state,changed_fields
+         ) VALUES($1,$2,$3,$4,$5,$6,ARRAY['owner_member_id'])`,
+        [actor.community_id, actor.id, 'owner.transfer', successor.id, actor.id, successor.id]
+      );
+      return updated.rows[0].lifecycle_version;
     });
     return json(c, CommunityWireOwnerTransferResponseSchema, {
+      communityId: actor.community_id,
       ownerMemberId: body.successorMemberId,
+      lifecycleVersion,
     });
   });
 }

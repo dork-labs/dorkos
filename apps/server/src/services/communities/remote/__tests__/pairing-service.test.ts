@@ -139,6 +139,8 @@ beforeAll(async () => {
           memberId: 'human-id',
           installName: 'Test install',
           scopes: ['read', 'post', 'enroll-agent'],
+          lifecycle: 'active',
+          capabilities: { read: true, post: true, enrollAgent: true, stream: true },
           createdAt: new Date().toISOString(),
         },
       });

@@ -26,6 +26,7 @@ import { registerAgentRoutes } from './routes/agents.js';
 import { registerAttachmentRoutes } from './routes/attachments.js';
 import { registerExportRoutes } from './routes/exports.js';
 import { registerHostRoutes } from './routes/host.js';
+import { registerAdministrationRoutes } from './routes/administration.js';
 import { createBlobStore, type BlobStore } from './storage/index.js';
 import { DeliveryReceiptGate } from './delivery-receipt-gate.js';
 import { registerCommunityTestControlRoutes } from './routes/test-control.js';
@@ -43,6 +44,7 @@ export function createCommunityApp({
   hooks?: {
     afterSnapshotWatermark?: () => Promise<void>;
     afterEntryAttachmentLookup?: () => Promise<void>;
+    invitePreviewPeer?: (c: Parameters<typeof getConnInfo>[0]) => string;
   };
   blobStore?: BlobStore;
 }) {
@@ -233,6 +235,7 @@ export function createCommunityApp({
       await resolveCommunityContext(c, pool, {
         allowPendingOwner: true,
         allowSuspended: true,
+        allowDeletionPending: true,
       });
     }
     await next();
@@ -271,8 +274,18 @@ export function createCommunityApp({
     pool,
     auth,
     config,
-    limitPreview: (c) =>
-      limitAttempts(`invite-preview:${peer(c)}`, config.limits.invitePreviewAttemptsPerMinute),
+    limitPreviewPeer: (c) => {
+      limitAttempts(
+        `invite-preview-peer:${hooks?.invitePreviewPeer?.(c) ?? peer(c)}`,
+        config.limits.invitePreviewAttemptsPerMinute
+      );
+    },
+    limitPreviewIdentity: (token) => {
+      limitAttempts(
+        `invite-preview-identity:${hashSecret(token)}`,
+        config.limits.invitePreviewAttemptsPerMinute
+      );
+    },
   });
   registerMemberRoutes(communityApi, { pool, auth });
   registerPairingRoutes(communityApi, {
@@ -284,6 +297,7 @@ export function createCommunityApp({
   registerAgentRoutes(communityApi, { pool, auth, config });
   registerAttachmentRoutes(communityApi, { pool, auth, config, blobStore });
   registerExportRoutes(communityApi, { pool, auth, blobStore });
+  registerAdministrationRoutes(communityApi, { pool, auth, blobStore });
   app.route('/api/v1', communityApi);
   app.route('/api/v1/communities/:communityId', communityApi);
   return app;

@@ -22,7 +22,7 @@ export interface PutBlobInput {
   source: AsyncIterable<Uint8Array>;
   displayName: string;
   maxBytes: number;
-  kind?: 'attachment' | 'export';
+  kind?: 'attachment' | 'export' | 'icon';
   signal?: AbortSignal;
 }
 
@@ -128,7 +128,11 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'application/zip',
 ]);
 
-function detectedType(sample: Buffer, textValid: boolean, kind: 'attachment' | 'export'): string {
+function detectedType(
+  sample: Buffer,
+  textValid: boolean,
+  kind: 'attachment' | 'export' | 'icon'
+): string {
   if (kind === 'export') {
     if (sample.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) {
       return 'application/zip';
@@ -149,8 +153,9 @@ function detectedType(sample: Buffer, textValid: boolean, kind: 'attachment' | '
     sample.subarray(8, 12).toString('ascii') === 'WEBP'
   )
     return 'image/webp';
-  if (sample.subarray(0, 5).toString('ascii') === '%PDF-') return 'application/pdf';
-  if (textValid) return 'text/plain; charset=utf-8';
+  if (kind !== 'icon' && sample.subarray(0, 5).toString('ascii') === '%PDF-')
+    return 'application/pdf';
+  if (kind !== 'icon' && textValid) return 'text/plain; charset=utf-8';
   throw new BlobStoreError('BLOB_TYPE_REJECTED', 'File type is not allowed');
 }
 

@@ -123,12 +123,14 @@ export function registerInviteRoutes(
     pool,
     auth,
     config,
-    limitPreview,
+    limitPreviewPeer,
+    limitPreviewIdentity,
   }: {
     pool: Pool;
     auth: CommunityAuth;
     config: CommunityConfig;
-    limitPreview: (c: Context) => void;
+    limitPreviewPeer: (c: Context) => void;
+    limitPreviewIdentity: (token: string) => void;
   }
 ) {
   app.post('/invites', async (c) => {
@@ -193,8 +195,9 @@ export function registerInviteRoutes(
   });
 
   app.post('/invites/preview', async (c) => {
-    limitPreview(c);
+    limitPreviewPeer(c);
     const { token } = await readJson(c, CommunityWireInviteTokenRequestSchema);
+    limitPreviewIdentity(token);
     try {
       const { invite, communityName } = await validInvite(c, pool, token, config);
       if (invite.use_count >= invite.seat_limit) throw invalidInvitation();
@@ -210,8 +213,9 @@ export function registerInviteRoutes(
   });
 
   app.post('/invites/preflight', async (c) => {
-    limitPreview(c);
+    limitPreviewPeer(c);
     const { token } = await readJson(c, CommunityWireInviteTokenRequestSchema);
+    limitPreviewIdentity(token);
     const pending = randomToken();
     const expiresAt = new Date(Date.now() + 600_000);
     let preview: { communityName: string; inviterName: string; channelName: string | null };

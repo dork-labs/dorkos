@@ -334,7 +334,7 @@ export function registerAttachmentRoutes(
         throw new ApiError(403, 'FORBIDDEN', 'File access has ended.');
       const client = await pool.connect();
       try {
-        const channel = await lockChannel(client, attachment.channel_id, current);
+        const channel = await lockChannel(client, attachment.channel_id, current, 'read');
         requireJoined(channel);
         await lockPrincipalAuthority(client, current, 'read');
       } finally {

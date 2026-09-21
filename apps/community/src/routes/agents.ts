@@ -207,6 +207,27 @@ export function registerAgentRoutes(
       : undefined;
     const actor = grant?.member ?? (await requireMember(c, auth, pool));
     const id = uuid.parse(c.req.param('id'));
+    const preliminary = await pool.query<{
+      actor_role: Member['role'];
+      owner_member_id: string;
+      owner_role: Member['role'];
+    }>(
+      `SELECT actor.role AS actor_role,a.owner_member_id,owner.role AS owner_role
+       FROM members actor
+       JOIN agents a ON a.id=$1 AND a.community_id=actor.community_id AND a.active
+       JOIN members owner ON owner.id=a.owner_member_id AND owner.community_id=actor.community_id AND owner.active
+       WHERE actor.id=$2 AND actor.community_id=$3 AND actor.active`,
+      [id, actor.id, actor.community_id]
+    );
+    const observed = preliminary.rows[0];
+    if (
+      observed &&
+      observed.owner_member_id !== actor.id &&
+      (observed.actor_role === 'member' ||
+        (observed.actor_role === 'admin' && observed.owner_role !== 'member'))
+    ) {
+      throw new ApiError(403, 'FORBIDDEN', 'You cannot remove this agent.');
+    }
     await transaction(pool, async (client) => {
       if (grant)
         await assertConnectionGrantCurrent(

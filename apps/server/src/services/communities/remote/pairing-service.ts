@@ -201,17 +201,15 @@ export class RemoteCommunityPairingService {
         await this.store.disconnect(ref, ownerKey);
         throw new PinnedOriginError('REMOTE_RESPONSE');
       }
-      const exchanged = CommunityPairingExchangeSecretResponseSchema.parse(
-        await pinnedJson(
-          origin,
-          communityApiPath(connection.remoteCommunityId, COMMUNITY_API_V1_ROUTES.pairingExchange),
-          {
-            pairingId: connection.pairingId,
-            code: result.code,
-            verifier,
-          }
-        )
+      const exchangePayload = await pinnedJson(
+        origin,
+        communityApiPath(connection.remoteCommunityId, COMMUNITY_API_V1_ROUTES.pairingExchange),
+        { pairingId: connection.pairingId, code: result.code, verifier }
       );
+      const parsedExchange =
+        CommunityPairingExchangeSecretResponseSchema.safeParse(exchangePayload);
+      if (!parsedExchange.success) throw new PinnedOriginError('REMOTE_RESPONSE');
+      const exchanged = parsedExchange.data;
       if (
         !(['read', 'post', 'enroll-agent'] as const).every((scope) =>
           exchanged.grant.scopes.includes(scope)

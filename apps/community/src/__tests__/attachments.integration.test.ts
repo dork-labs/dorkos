@@ -418,7 +418,7 @@ describe('attachments over real HTTP and Postgres', () => {
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
       const response = await upload(channelId, ownerCookie, 'lifecycle-race');
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(503);
       expect(
         (
           await pool.query(

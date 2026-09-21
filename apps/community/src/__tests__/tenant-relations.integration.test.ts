@@ -228,7 +228,7 @@ it('contracts tenant ownership and enforces lifecycle owner invariants', async (
     .rows[0].id as string;
   await expect(
     pool.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [second])
-  ).rejects.toThrow('active or suspended community requires exactly one active owner');
+  ).rejects.toThrow('claimed community requires exactly one active owner');
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
