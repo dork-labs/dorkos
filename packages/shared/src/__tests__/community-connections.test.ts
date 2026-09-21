@@ -25,6 +25,12 @@ const connection = {
   status: 'connected',
   expiresAt: null,
   access,
+  attention: {
+    state: 'verified' as const,
+    unreadCount: 3,
+    mentionCount: 1,
+    verifiedAt: '2026-09-21T00:00:00.000Z',
+  },
 };
 
 describe('local community connection DTOs', () => {
@@ -57,6 +63,12 @@ describe('local community connection DTOs', () => {
           effective: { read: false, post: false, enrollAgent: false, stream: false },
           lastKnown: access.lastKnown,
         },
+        attention: {
+          state: 'unavailable',
+          unreadCount: null,
+          mentionCount: null,
+          verifiedAt: null,
+        },
       })
     ).toMatchObject({ status: 'reconnect-required' });
   });
@@ -69,6 +81,7 @@ describe('local community connection DTOs', () => {
         status: 'pending',
         expiresAt: '2026-09-21T00:10:00.000Z',
         access: null,
+        attention: null,
       })
     ).toMatchObject({ status: 'pending', access: null });
     expect(
@@ -79,6 +92,27 @@ describe('local community connection DTOs', () => {
         ...connection,
         status: 'pending',
         access,
+        attention: connection.attention,
+      }).success
+    ).toBe(false);
+  });
+
+  it('rejects a fabricated zero and a mention count outside unread activity', () => {
+    expect(
+      CommunityConnectionDescriptorSchema.safeParse({
+        ...connection,
+        attention: { state: 'unavailable', unreadCount: 0, mentionCount: 0, verifiedAt: null },
+      }).success
+    ).toBe(false);
+    expect(
+      CommunityConnectionDescriptorSchema.safeParse({
+        ...connection,
+        attention: {
+          state: 'verified',
+          unreadCount: 1,
+          mentionCount: 2,
+          verifiedAt: '2026-09-21T00:00:00.000Z',
+        },
       }).success
     ).toBe(false);
   });
