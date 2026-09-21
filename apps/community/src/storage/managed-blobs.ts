@@ -156,28 +156,44 @@ export async function discardManagedBlob(
         reservation.communityId,
       ]
     );
-    if (result.rowCount !== 1) return false;
+    if (result.rowCount !== 1) return null;
     await client.query(
       `INSERT INTO pending_blob_deletions(blob_key,attempts,next_attempt_at)
        VALUES($1,0,now())
        ON CONFLICT(blob_key) DO NOTHING`,
       [reservation.key]
     );
-    return true;
+    return { writerUncertain: stored === undefined };
   });
   if (!transitioned) return;
   try {
     await blobStore.delete(reservation.key);
   } catch (error) {
     await pool.query(
-      `UPDATE pending_blob_deletions
-       SET attempts=attempts+1,last_error_at=now(),next_attempt_at=now()+interval '1 minute'
-       WHERE blob_key=$1`,
+      transitioned.writerUncertain
+        ? `UPDATE pending_blob_deletions
+           SET attempts=attempts+1,next_attempt_at=now()+interval '1 minute'
+           WHERE blob_key=$1`
+        : `UPDATE pending_blob_deletions
+           SET attempts=attempts+1,last_error_at=now(),next_attempt_at=now()+interval '1 minute'
+           WHERE blob_key=$1`,
       [reservation.key]
     );
     console.error(
       'Community managed blob cleanup deferred',
       error instanceof Error ? error.name : 'unknown'
+    );
+    return;
+  }
+  // A provider write may reject or abort before it stops publishing bytes. When the writer did not
+  // return a StoredBlob, absence after this delete proves only this instant. Retain the NULL
+  // settlement marker and tenant-owned tombstone so every later sweep can remove a delayed publish.
+  if (transitioned.writerUncertain) {
+    await pool.query(
+      `UPDATE pending_blob_deletions
+       SET attempts=attempts+1,next_attempt_at=now()+interval '1 hour'
+       WHERE blob_key=$1`,
+      [reservation.key]
     );
     return;
   }

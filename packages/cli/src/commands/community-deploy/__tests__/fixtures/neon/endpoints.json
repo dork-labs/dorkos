@@ -1,0 +1,13 @@
+{
+  "endpoints": [
+    {
+      "id": "ep-example-123",
+      "project_id": "project-example",
+      "branch_id": "branch-example",
+      "region_id": "aws-us-east-2",
+      "host": "ep-example-123.us-east-2.aws.neon.tech",
+      "type": "read_write",
+      "current_state": "active"
+    }
+  ]
+}
