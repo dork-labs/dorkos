@@ -364,6 +364,7 @@ export const pendingAdmissions = pgTable(
   },
   (table) => [
     index('pending_admissions_community_idx').on(table.communityId),
+    index('pending_admissions_expires_at_idx').on(table.expiresAt, table.id),
     uniqueIndex('pending_admissions_community_id_unique').on(table.communityId, table.id),
     uniqueIndex('pending_admissions_account_binding_unique').on(
       table.communityId,

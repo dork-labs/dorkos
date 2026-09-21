@@ -1,10 +1,16 @@
 declare global {
   interface Window {
-    __takeDorkosInviteFragment?: () => string | null;
+    __readDorkosInviteFragment?: () => string | null;
+    __clearDorkosInviteFragment?: () => void;
   }
 }
 
-/** Consume the synchronously captured invitation from ephemeral page memory. */
-export function takeInviteFragment(): string | null {
-  return window.__takeDorkosInviteFragment?.() ?? null;
+/** Read the synchronously captured invitation while the same-page exchange may still retry. */
+export function readInviteFragment(): string | null {
+  return window.__readDorkosInviteFragment?.() ?? null;
+}
+
+/** Erase the invitation from ephemeral page memory after the server accepts preflight. */
+export function clearInviteFragment(): void {
+  window.__clearDorkosInviteFragment?.();
 }

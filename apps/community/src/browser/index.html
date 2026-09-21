@@ -12,16 +12,24 @@
         const fragment = new URLSearchParams(window.location.hash.slice(1));
         let invite = fragment.get('invite') ?? fragment.get('token');
         if (!invite) return;
-        Object.defineProperty(window, '__takeDorkosInviteFragment', {
-          value: () => {
-            const captured = invite;
-            invite = null;
-            delete window.__takeDorkosInviteFragment;
-            return captured;
+        const clear = () => {
+          invite = null;
+          delete window.__readDorkosInviteFragment;
+          delete window.__clearDorkosInviteFragment;
+        };
+        Object.defineProperties(window, {
+          __readDorkosInviteFragment: {
+            value: () => invite,
+            configurable: true,
+            enumerable: false,
+            writable: false,
           },
-          configurable: true,
-          enumerable: false,
-          writable: false,
+          __clearDorkosInviteFragment: {
+            value: clear,
+            configurable: true,
+            enumerable: false,
+            writable: false,
+          },
         });
         const tenant = window.location.pathname.match(/^\/c\/[^/]+/u)?.[0];
         const cleanPath = tenant ? `${tenant}/join` : window.location.pathname;

@@ -87,6 +87,24 @@ async function requirePairingMember(
   if (!member.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
 }
 
+async function lockRevocationMember(
+  client: PoolClient,
+  actor: Awaited<ReturnType<typeof requireMember>>
+): Promise<void> {
+  const community = await client.query<{ lifecycle: string }>(
+    `SELECT lifecycle FROM communities
+     WHERE id=$1 AND lifecycle IN ('active','archived','suspended','deletion_pending') FOR SHARE`,
+    [actor.community_id]
+  );
+  if (!community.rowCount)
+    throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is unavailable.');
+  const member = await client.query(
+    'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
+    [actor.id, actor.community_id]
+  );
+  if (!member.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
+}
+
 /** Register browser-approved, verifier-bound pairing and revocable personal grants. */
 export function registerPairingRoutes(
   app: Hono,
@@ -474,7 +492,10 @@ export function registerPairingRoutes(
   });
 
   app.delete('/me/grants/:id', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const actor = await requireMember(c, auth, pool, {
+      allowSuspended: true,
+      allowDeletionPending: true,
+    });
     const id = uuid.parse(c.req.param('id'));
     const result = await transaction(pool, async (client) => {
       const lifecycle = await lockPairingCommunity(client, actor.community_id, true);
@@ -490,7 +511,10 @@ export function registerPairingRoutes(
   });
 
   app.delete('/me/grants', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const actor = await requireMember(c, auth, pool, {
+      allowSuspended: true,
+      allowDeletionPending: true,
+    });
     const body = await readJson(c, CommunityWireDisconnectAllRequestSchema);
     try {
       await auth.api.verifyPassword({
@@ -501,7 +525,7 @@ export function registerPairingRoutes(
       throw new ApiError(403, 'FORBIDDEN', 'Reauthentication failed.');
     }
     await transaction(pool, async (client) => {
-      await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
+      await lockRevocationMember(client, actor);
       await client.query(
         `UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now())
          WHERE member_id=$1 AND community_id=$2 AND revoked_at IS NULL`,

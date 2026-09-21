@@ -11,6 +11,7 @@ CREATE UNIQUE INDEX pending_admissions_community_id_unique
   ON pending_admissions(community_id, id);
 CREATE UNIQUE INDEX pending_admissions_account_binding_unique
   ON pending_admissions(community_id, id, account_id);
+CREATE INDEX pending_admissions_expires_at_idx ON pending_admissions(expires_at, id);
 
 CREATE TABLE admission_receipts (
   admission_id uuid PRIMARY KEY REFERENCES pending_admissions(id) ON DELETE CASCADE,

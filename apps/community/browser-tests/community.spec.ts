@@ -602,10 +602,38 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       await expect.poll(() => urlAtPreflight).toBe(`${baseUrl}/c/${ids.communityId}/join`);
       releasePreflight();
       await continueAdmissionRequest;
+      await expect
+        .poll(() =>
+          oauthPage.evaluate(
+            (token) => ({
+              readHook: '__readDorkosInviteFragment' in window,
+              clearHook: '__clearDorkosInviteFragment' in window,
+              storage: [...Object.values(sessionStorage), ...Object.values(localStorage)].some(
+                (value) => value.includes(token)
+              ),
+              document: document.documentElement.textContent?.includes(token) ?? false,
+            }),
+            rawToken
+          )
+        )
+        .toEqual({ readHook: false, clearHook: false, storage: false, document: false });
       await oauthPage.getByRole('button', { name: 'Continue with Google' }).click();
       await expect.poll(() => callbackUrl).toBe(`${baseUrl}/c/${ids.communityId}/join`);
       expect(callbackUrl).not.toContain(rawToken);
       expect(await oauthPage.evaluate(() => location.hash)).toBe('');
+      expect(
+        await oauthPage.evaluate((token) => {
+          document.querySelector('#root')?.remove();
+          return {
+            readHook: '__readDorkosInviteFragment' in window,
+            clearHook: '__clearDorkosInviteFragment' in window,
+            storage: [...Object.values(sessionStorage), ...Object.values(localStorage)].some(
+              (value) => value.includes(token)
+            ),
+            document: document.documentElement.textContent?.includes(token) ?? false,
+          };
+        }, rawToken)
+      ).toEqual({ readHook: false, clearHook: false, storage: false, document: false });
     } finally {
       releasePreflight();
       await oauth.close();

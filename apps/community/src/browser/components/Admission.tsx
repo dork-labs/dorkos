@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createAuthClient } from 'better-auth/react';
 import { ArrowRight, Check, KeyRound, UsersRound } from 'lucide-react';
 import { describeError, RequestError, request } from '../api.js';
+import { clearInviteFragment } from '../invite-fragment.js';
 import type { Community } from '../types.js';
 
 type Props = {
@@ -9,6 +10,7 @@ type Props = {
   inviteToken: string | null;
   unadmitted: boolean;
   onAdmitted: () => void;
+  onInviteExchanged: () => void;
   hostSignIn?: boolean;
 };
 type Preview = { communityName: string; inviterName: string; channelName: string | null };
@@ -20,6 +22,7 @@ export function Admission({
   inviteToken,
   unadmitted,
   onAdmitted,
+  onInviteExchanged,
   hostSignIn = false,
 }: Props) {
   const [mode, setMode] = useState<'signup' | 'signin'>(
@@ -77,7 +80,9 @@ export function Admission({
         );
         setPreview(result);
         setPendingAdmission(true);
+        clearInviteFragment();
         setRawInvite(null);
+        onInviteExchanged();
         try {
           await request('/api/v1/invites/bind', 'POST', {});
           await request('/api/v1/invites/redeem', 'POST', {});

@@ -1,14 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Hash, Menu, Plus, Settings2, X } from 'lucide-react';
 import { Admission } from './components/Admission.js';
 import { ChannelView } from './components/Channel.js';
 import { Manage } from './components/Manage.js';
 import { rememberCommunity } from './components/CommunityChooser.js';
 import { describeError, RequestError, request } from './api.js';
-import { takeInviteFragment } from './invite-fragment.js';
+import { readInviteFragment } from './invite-fragment.js';
 import type { Channel, Community, Me } from './types.js';
-
-const initialInvite = takeInviteFragment();
 
 function isCommunityUnavailable(cause: unknown): cause is RequestError {
   return (
@@ -21,7 +19,8 @@ function isCommunityUnavailable(cause: unknown): cause is RequestError {
 
 /** Render the signed-in community shell or the admission path. */
 export function CommunityApp() {
-  const [inviteToken, setInviteToken] = useState(initialInvite);
+  const [inviteToken, setInviteToken] = useState(() => readInviteFragment());
+  const inviteTokenRef = useRef(inviteToken);
   const [community, setCommunity] = useState<Community | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [unadmitted, setUnadmitted] = useState(false);
@@ -39,6 +38,10 @@ export function CommunityApp() {
   );
   const returnToChooser = useCallback(() => {
     if (/^\/c\/[^/]+(?:\/|$)/u.test(window.location.pathname)) window.location.replace('/');
+  }, []);
+  const eraseInviteToken = useCallback(() => {
+    inviteTokenRef.current = null;
+    setInviteToken(null);
   }, []);
   const refreshChannels = useCallback(async () => {
     try {
@@ -83,13 +86,13 @@ export function CommunityApp() {
         rememberCommunity(metadata.id);
         if (window.location.pathname === '/' || window.location.pathname === '/join')
           window.history.replaceState(null, '', `/c/${metadata.id}`);
-        if (inviteToken && /\/join$/u.test(window.location.pathname)) {
+        if (inviteTokenRef.current && /\/join$/u.test(window.location.pathname)) {
           setMe(null);
           setUnadmitted(false);
           return;
         }
         try {
-          if (!inviteToken && /\/join$/u.test(window.location.pathname)) {
+          if (!inviteTokenRef.current && /\/join$/u.test(window.location.pathname)) {
             try {
               await request('/api/v1/invites/bind', 'POST', {});
               await request('/api/v1/invites/redeem', 'POST', {});
@@ -120,7 +123,7 @@ export function CommunityApp() {
                 setMe(null);
               }
             } else {
-              if (cause.status === 403 && !inviteToken) returnToChooser();
+              if (cause.status === 403 && !inviteTokenRef.current) returnToChooser();
               setMe(null);
               setUnadmitted(cause.status === 403);
             }
@@ -148,7 +151,7 @@ export function CommunityApp() {
     return () => {
       active = false;
     };
-  }, [revision, refreshChannels, returnToChooser, inviteToken]);
+  }, [revision, refreshChannels, returnToChooser]);
   const onChanged = useCallback(() => {
     void refreshChannels();
   }, [refreshChannels]);
@@ -182,12 +185,13 @@ export function CommunityApp() {
         hostSignIn={hostSignIn}
         inviteToken={inviteToken}
         unadmitted={unadmitted}
+        onInviteExchanged={eraseInviteToken}
         onAdmitted={() => {
           if (hostSignIn) {
             window.location.assign('/');
             return;
           }
-          setInviteToken(null);
+          eraseInviteToken();
           setRevision((old) => old + 1);
         }}
       />
