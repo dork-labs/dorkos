@@ -41,6 +41,9 @@ const lefthookText = readFileSync(path.join(repoRoot, 'lefthook.yml'), 'utf8');
 /** Path the lefthook command names, relative to the repo root it runs from. */
 const WATCHDOG_REL = 'scripts/pre-push-watchdog.sh';
 
+/** The machine-wide slot cap the same command runs under (DOR-2160). */
+const LOCK_REL = 'scripts/heavy-run-lock.sh';
+
 /**
  * The body of the `pre-push` hook, from its top-level key to the next one.
  *
@@ -70,6 +73,21 @@ function prePushBlock(yaml: string): string {
 
 const prePush = prePushBlock(lefthookText);
 
+/**
+ * The hook's block with its comment lines removed.
+ *
+ * Every ORDER assertion below has to read this rather than the raw block. The
+ * comments in `lefthook.yml` quote the commands they are explaining — the
+ * argument for the slot cap names `turbo test`, and the argument for the budget
+ * names the watchdog — so an `indexOf` over the raw text finds the prose, not
+ * the command, and would answer a question about nesting with a fact about
+ * paragraph order. Presence assertions may use either; order assertions may not.
+ */
+const prePushCode = prePush
+  .split('\n')
+  .filter((l) => !/^\s*#/.test(l))
+  .join('\n');
+
 describe('the pre-push test gate is bounded and visible', () => {
   it('finds the pre-push hook at all', () => {
     // Without this, every assertion below passes vacuously the day the hook is
@@ -81,7 +99,7 @@ describe('the pre-push test gate is bounded and visible', () => {
 
   it('runs the gate under the watchdog', () => {
     expect(
-      prePush.includes(WATCHDOG_REL),
+      prePushCode.includes(WATCHDOG_REL),
       `lefthook.yml's pre-push gate no longer routes through ${WATCHDOG_REL}. ` +
         'Nothing else in git -> lefthook -> turbo -> vitest has a timeout, so a ' +
         'suite that never exits blocks the push forever (DOR-473).'
@@ -112,14 +130,55 @@ describe('the pre-push test gate is bounded and visible', () => {
     // its cache with `pnpm test -- --run` and with CI, and every push pays for
     // a full re-run. Wrapping a command is exactly the kind of edit that
     // tempts someone to "just add a flag while I'm here".
-    expect(prePush).toContain('turbo test --affected --concurrency=1 -- --run');
+    expect(prePushCode).toContain('turbo test --affected --concurrency=1 -- --run');
+  });
+
+  it('gives the gate a wall-clock budget and lets a timeout pass (DOR-2160)', () => {
+    // Both halves or neither. A budget that FAILS reds a green tree several
+    // times a day on a box at load 500, and the answer to that is `--no-verify`,
+    // which also loses the two-second formatting check above. A pass policy
+    // with NO budget bounds nothing at all.
+    expect(
+      /DORKOS_PREPUSH_MAX_SECONDS="\$\{DORKOS_PREPUSH_MAX_SECONDS:-\d+\}"/.test(prePushCode),
+      "lefthook.yml's pre-push gate no longer sets a wall-clock budget. The " +
+        "watchdog's own default ceiling is 7200s, which bounds termination and " +
+        'nothing a person waits for (DOR-2160).'
+    ).toBe(true);
+    expect(
+      prePushCode.includes('DORKOS_PREPUSH_ON_TIMEOUT="${DORKOS_PREPUSH_ON_TIMEOUT:-pass}"'),
+      "lefthook.yml's pre-push gate no longer passes on a timeout. With a " +
+        '~2-minute budget and a fail-closed policy it reds green trees on a busy ' +
+        'machine, and the merge queue runs these same suites in full anyway.'
+    ).toBe(true);
+  });
+
+  it('runs the gate under the machine-wide slot cap', () => {
+    // Several agents each running a full suite on 14 cores is what produced
+    // load ~500 and a 22-minute push that died on a tree it never touched.
+    // Dropping this is invisible: every push still passes, a little sooner,
+    // right up until four of them collide again.
+    expect(prePushCode).toContain(LOCK_REL);
+    expect(existsSync(path.join(repoRoot, LOCK_REL))).toBe(true);
+  });
+
+  it('nests watchdog outside lock outside turbo, so waiting is inside the budget', () => {
+    // Order is the whole design. Lock outside watchdog would start the budget
+    // only after the wait, so the total could exceed it; and the watchdog's
+    // process-tree stop would no longer reach the lock script's release trap,
+    // leaving a slot behind on every timeout.
+    const watchdogAt = prePushCode.indexOf(WATCHDOG_REL);
+    const lockAt = prePushCode.indexOf(LOCK_REL);
+    const turboAt = prePushCode.indexOf('turbo test --affected');
+    expect(watchdogAt).toBeGreaterThan(-1);
+    expect(lockAt).toBeGreaterThan(watchdogAt);
+    expect(turboAt).toBeGreaterThan(lockAt);
   });
 
   it('puts the watchdog around turbo, not after it', () => {
     // `watchdog.sh; turbo ...` would satisfy a naive substring check while
     // bounding nothing at all.
-    const watchdogAt = prePush.indexOf(WATCHDOG_REL);
-    const turboAt = prePush.indexOf('turbo test --affected');
+    const watchdogAt = prePushCode.indexOf(WATCHDOG_REL);
+    const turboAt = prePushCode.indexOf('turbo test --affected');
     expect(watchdogAt).toBeGreaterThan(-1);
     expect(watchdogAt).toBeLessThan(turboAt);
   });
@@ -128,21 +187,34 @@ describe('the pre-push test gate is bounded and visible', () => {
 describe('the watchdog keeps the properties the gate depends on', () => {
   const watchdogText = readFileSync(path.join(repoRoot, WATCHDOG_REL), 'utf8');
 
-  it('fails the push on a timeout rather than waving it through', () => {
+  it('defaults to failing the push on a timeout rather than waving it through', () => {
     // The single most consequential line in the script, and the easiest to
     // "fix" in the wrong direction the first time a timeout is inconvenient.
-    // Exiting 0 here would hand back a green push over code no test ran, by
-    // default and in silence — strictly worse than the `--no-verify` habit
-    // this whole change exists to end, because at least that one is typed on
-    // purpose.
+    // A script that knows nothing about its caller must treat "the gate did
+    // not answer" as "no", because exiting 0 by default would hand back a
+    // green push over code no test ran, in silence — strictly worse than the
+    // `--no-verify` habit this whole change exists to end, since at least that
+    // one is typed on purpose.
     //
-    // The BEHAVIOURAL proof lives in the fixture suite, which runs a real stall
-    // through the real script and asserts the exit code is 124 — that is the
-    // assertion to trust, and it is the one that would catch a rewrite. This is
-    // only the cheap smoke that both timeout paths are still spelled that way,
-    // here so that a reader of this file is pointed at the right guarantee
-    // rather than assuming this one is it.
-    expect(watchdogText.match(/exit 124/g)).toHaveLength(2);
+    // DOR-2160 added `pass` as an OPT-IN for the pre-push caller, which has a
+    // merge queue behind it; the assertions below pin that it stayed opt-in
+    // and that 124 stayed the fail-closed code. They are deliberately NOT a
+    // search for the string `exit 124`: that string now appears twice in this
+    // script's own prose explaining the codes, so such a search would pass on
+    // the comments alone after a rewrite deleted the behaviour — a guard dying
+    // quietly, which is the thing this whole file exists to prevent.
+    expect(watchdogText).toMatch(/^ON_TIMEOUT="\$\{DORKOS_PREPUSH_ON_TIMEOUT:-fail\}"$/m);
+    expect(watchdogText).toMatch(/^TIMEOUT_EXIT=124$/m);
+    // Both timeout paths must go through the policy, not around it.
+    expect(watchdogText.match(/exit "\$TIMEOUT_EXIT"/g)).toHaveLength(2);
+  });
+
+  it('records a timeout it let through, because a silent pass is the only dishonest one', () => {
+    // The whole case for passing on a timeout is that it is never quiet: the
+    // block says the gate did not finish, and the note makes it a number in
+    // the daily report. Drop the note and the local gate can stop checking
+    // entirely without anything, anywhere, saying so.
+    expect(watchdogText.match(/ci_steward_note budget_exceeded/g)).toHaveLength(2);
   });
 
   it('stops the run when it is interrupted, not only when it times out', () => {

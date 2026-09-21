@@ -82,27 +82,36 @@
 # so it belongs far above any plausible real run, covering only the one shape
 # silence cannot see: something stuck in a loop that keeps talking.
 #
-# WHY A TIMEOUT FAILS THE PUSH (fail-closed)
+# WHAT A TIMEOUT DOES, AND WHO DECIDES
 #
-# Because "the gate did not answer" is not "the gate said yes". Exiting 0 on a
-# timeout would hand back a green push over code no test ever ran, and it would
-# do it silently and by default — which is a strictly worse version of the
-# `--no-verify` habit this script exists to end, since at least `--no-verify` is
-# typed on purpose and shows up in the reflog of a human's memory. The escape
-# hatch already exists and stays deliberate: `git push --no-verify`, or raise
-# the bound for one run with DORKOS_PREPUSH_STALL_SECONDS. The cost of
-# fail-closed is a re-run or an explicit bypass; the cost of fail-open is a
-# branch with no signal that nobody knows has no signal.
+# The default is fail-closed, exit 124 — the convention GNU `timeout` uses — so
+# "the tests failed" and "the tests never finished" are distinguishable by a
+# caller that cares, and are never confused for each other in a log. That is the
+# right default for a script that knows nothing about its caller: "the gate did
+# not answer" is not "the gate said yes", and a silent 0 would be a strictly
+# worse version of the `--no-verify` habit, since at least `--no-verify` is
+# typed on purpose.
 #
-# It exits 124 rather than 1 on a timeout — the convention GNU `timeout` uses —
-# so "the tests failed" and "the tests never finished" are distinguishable by a
-# caller that cares, and are never confused for each other in a log.
+# DORKOS_PREPUSH_ON_TIMEOUT=pass inverts it: the run is still stopped, still
+# diagnosed at the same length, and still recorded — but the caller gets 0. That
+# is not a softening of the argument above; it is the argument applied to a
+# different caller. The pre-push gate now runs on a ~2-minute budget against a
+# merge queue that runs the SAME suites, in full, on the real merged tree. On a
+# machine at load ~500 the budget is reached by honest runs, so failing there
+# would red a green tree several times a day and teach every agent to type
+# `--no-verify` permanently — losing the formatting check and everything else
+# with it. What makes `pass` honest rather than a lie is that it is never
+# silent: the block below says the gate did not finish, and `ci_steward_note
+# budget_exceeded` puts it in the local timings, so "how often does the local
+# gate stop checking?" is a number in the daily report rather than a feeling.
+# lefthook.yml is where that choice is made and argued; this script only obeys.
 #
 # ENVIRONMENT
 #   DORKOS_PREPUSH_STALL_SECONDS      quiet time that counts as a stall (300)
 #   DORKOS_PREPUSH_MAX_SECONDS        absolute ceiling on the whole run (7200)
 #   DORKOS_PREPUSH_HEARTBEAT_SECONDS  how often to report a quiet run (60)
 #   DORKOS_PREPUSH_POLL_SECONDS       how often to check on it (2)
+#   DORKOS_PREPUSH_ON_TIMEOUT         fail (default, exit 124) or pass (exit 0)
 # All four are read here and nowhere else; the fixture suite
 # (scripts/test-pre-push-watchdog.sh) drives every path through them with
 # second-scale values.
@@ -151,6 +160,26 @@ STALL_SECONDS="${DORKOS_PREPUSH_STALL_SECONDS:-300}"
 MAX_SECONDS="${DORKOS_PREPUSH_MAX_SECONDS:-7200}"
 HEARTBEAT_SECONDS="${DORKOS_PREPUSH_HEARTBEAT_SECONDS:-60}"
 POLL_SECONDS="${DORKOS_PREPUSH_POLL_SECONDS:-2}"
+ON_TIMEOUT="${DORKOS_PREPUSH_ON_TIMEOUT:-fail}"
+case "$ON_TIMEOUT" in
+  fail | pass) ;;
+  *)
+    echo "pre-push-watchdog.sh: DORKOS_PREPUSH_ON_TIMEOUT must be fail or pass, got '${ON_TIMEOUT}'" >&2
+    exit 2
+    ;;
+esac
+# 124 is GNU `timeout`'s "it did not finish"; 0 is "the caller has another gate".
+TIMEOUT_EXIT=124
+[ "$ON_TIMEOUT" = pass ] && TIMEOUT_EXIT=0
+
+# Recording a cut-short gate is best-effort and never fails the run. Outside a
+# lefthook command `ci_steward_note` is a no-op, so this stays usable by hand.
+watchdog_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=../packages/ci-steward/bin/time-wrap.sh
+if [ -r "$watchdog_dir/../packages/ci-steward/bin/time-wrap.sh" ]; then
+  . "$watchdog_dir/../packages/ci-steward/bin/time-wrap.sh"
+fi
+command -v ci_steward_note >/dev/null 2>&1 || ci_steward_note() { :; }
 
 # How long a TERMed process tree gets to exit before the survivors are KILLed.
 GRACE_SECONDS=5
@@ -309,16 +338,31 @@ report_timeout() {
       echo ""
     fi
     echo "  This is a stall, not a test failure — nothing said your code is"
-    echo "  broken, and nothing said it is fine either. The gate never"
-    echo "  finished, so the push is refused rather than waved through."
+    echo "  broken, and nothing said it is fine either."
     echo ""
-    echo "  What to do:"
-    echo "    * Push again — a stall under load often does not repeat."
-    echo "    * Run the suite named above on its own: pnpm vitest run <path>"
-    echo "    * Give it longer for one run:"
-    echo "        DORKOS_PREPUSH_STALL_SECONDS=900 git push"
-    echo "    * Bypass deliberately, having checked the packages you touched:"
-    echo "        git push --no-verify"
+    if [ "$ON_TIMEOUT" = pass ]; then
+      echo "  THE PUSH IS GOING AHEAD. This gate is a smell test on a budget,"
+      echo "  not the guarantee; the merge queue runs these suites in full on"
+      echo "  the merged tree and is what decides whether your change lands."
+      echo "  It is recorded as budget_exceeded in the local timings."
+      echo ""
+      echo "  Worth doing anyway:"
+      echo "    * Run the suite named above on its own: pnpm vitest run <path>"
+      echo "    * Watch the PR's checks rather than assuming this one covered you."
+      echo "    * Give it longer for one run:"
+      echo "        DORKOS_PREPUSH_MAX_SECONDS=900 git push"
+    else
+      echo "  The gate never finished, so the push is refused rather than"
+      echo "  waved through."
+      echo ""
+      echo "  What to do:"
+      echo "    * Push again — a stall under load often does not repeat."
+      echo "    * Run the suite named above on its own: pnpm vitest run <path>"
+      echo "    * Give it longer for one run:"
+      echo "        DORKOS_PREPUSH_STALL_SECONDS=900 git push"
+      echo "    * Bypass deliberately, having checked the packages you touched:"
+      echo "        git push --no-verify"
+    fi
     echo "──────────────────────────────────────────────────────────────"
   } >&2
 }
@@ -379,7 +423,8 @@ while kill -0 "$child" 2>/dev/null; do
     flush_output || true
     report_timeout "no output for ${quiet}s (DORKOS_PREPUSH_STALL_SECONDS=${STALL_SECONDS})" \
       "$elapsed" "$tree"
-    exit 124
+    ci_steward_note budget_exceeded "$elapsed"
+    exit "$TIMEOUT_EXIT"
   fi
 
   if [ "$elapsed" -ge "$MAX_SECONDS" ]; then
@@ -388,7 +433,8 @@ while kill -0 "$child" 2>/dev/null; do
     flush_output || true
     report_timeout "still running at the ceiling (DORKOS_PREPUSH_MAX_SECONDS=${MAX_SECONDS})" \
       "$elapsed" "$tree"
-    exit 124
+    ci_steward_note budget_exceeded "$elapsed"
+    exit "$TIMEOUT_EXIT"
   fi
 
   # A run that has gone quiet says so while it is still allowed to be quiet,

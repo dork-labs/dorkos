@@ -18,6 +18,8 @@ import { parse as parseYaml } from 'yaml';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadHandFiles } from '../load.ts';
 import { aggregateDays, rotateTimings } from '../local.ts';
+import { machineReading } from '../machine.ts';
+import type { LocalDay } from '../data.ts';
 import { hookRuns, parseTimings } from '../timings.ts';
 // @ts-expect-error -- plain .mjs, typed by its JSDoc, with no declaration file
 import { lastRunKilled, sessionLine } from '../../bin/session-line.mjs';
@@ -201,10 +203,15 @@ describe('hook runs from the timings file', () => {
     const runs = hookRuns(parseTimings(text), t0 + 3100, 600);
     const [day] = aggregateDays(runs, 'clone-x', '2026-09-19', '2026-09-19T01:00:00Z');
     expect(day!.hooks).toEqual({
-      'pre-commit': { durations: [[36000, 90]], killed: 0, failed: 1 },
-      'pre-push': { durations: [], killed: 1, failed: 0 },
+      'pre-commit': { durations: [[36000, 90]], killed: 0, failed: 1, notes: {} },
+      'pre-push': { durations: [], killed: 1, failed: 0, notes: {} },
     });
-    expect(day!.commands['pre-push.tests']).toEqual({ durations: [], killed: 1, failed: 0 });
+    expect(day!.commands['pre-push.tests']).toEqual({
+      durations: [],
+      killed: 1,
+      failed: 0,
+      notes: {},
+    });
     expect(aggregateDays(runs, 'clone-x', '2026-09-18', 'x')).toEqual([]);
   });
 
@@ -329,5 +336,211 @@ describe('the SessionStart line', () => {
       const last = runs.at(-1)!;
       expect(lastRunKilled(text, now / 1000, 7500) !== null, text).toBe(last.state === 'killed');
     }
+  });
+});
+
+/**
+ * The machine the hooks ran on, and how a run ended (DOR-2160).
+ *
+ * These three things exist because a local SLO reads mostly as a fact about
+ * somebody's box, and until this change nothing recorded the box: "my pushes
+ * are slow" was a feeling for months while the operator machine sat at load 512
+ * on 14 cores with 15.9 GB of a 17.4 GB swap file in use.
+ *
+ * The one that is easiest to lose and worst to lose is the third: a gate the
+ * pre-push budget cut short PASSES, so its exit status is 0 and it is
+ * indistinguishable from a gate that ran everything and was happy. That
+ * indistinguishability is the only thing that would make passing on a timeout
+ * dishonest, so the note that tells them apart is load-bearing.
+ */
+describe('the machine, and how a run ended', () => {
+  const t0 = Date.parse('2026-09-18T10:00:00Z') / 1000;
+  const line = (o: Record<string, unknown>) => JSON.stringify({ v: 1, ...o });
+
+  it('reads load per core, memory and swap off the event lines', () => {
+    const text = [
+      line({
+        e: 'S',
+        h: 'pre-push',
+        c: 'tests',
+        id: '1',
+        pp: 9,
+        t: t0,
+        l: 28,
+        n: 14,
+        m: 700,
+        s: 15881,
+      }),
+      line({
+        e: 'E',
+        h: 'pre-push',
+        c: 'tests',
+        id: '1',
+        pp: 9,
+        t: t0 + 60,
+        x: 0,
+        l: 42,
+        n: 14,
+        m: 300,
+        s: 16000,
+      }),
+    ].join('\n');
+    const [run] = hookRuns(parseTimings(text), t0 + 1000, 600);
+    expect(run!.machine).toEqual([
+      { t: t0, loadPerCore: 2, memAvailableMb: 700, swapUsedMb: 15881 },
+      { t: t0 + 60, loadPerCore: 3, memAvailableMb: 300, swapUsedMb: 16000 },
+    ]);
+  });
+
+  it('calls a load average with no core count unknown rather than raw', () => {
+    // A load of 28 means something different on 4 cores and on 64, so the ratio
+    // is null rather than a number that would be compared across machines.
+    const text = line({ e: 'S', h: 'pre-push', c: 'tests', id: '1', pp: 9, t: t0, l: 28, m: 700 });
+    const [run] = hookRuns(parseTimings(text), t0 + 10_000, 600);
+    expect(run!.machine[0]).toEqual({
+      t: t0,
+      loadPerCore: null,
+      memAvailableMb: 700,
+      swapUsedMb: null,
+    });
+  });
+
+  it('tells a run cut short by its budget from one that finished and one the OS killed', () => {
+    const run = (id: string, hook: string, pp: number, at: number, note?: string) => [
+      line({ e: 'S', h: hook, c: 'tests', id, pp, t: at }),
+      ...(note ? [line({ e: 'O', h: hook, c: 'tests', id, o: note, d: 121, t: at + 1 })] : []),
+      line({ e: 'E', h: hook, c: 'tests', id, pp, t: at + 5, x: 0 }),
+    ];
+    const text = [
+      ...run('a', 'pre-push', 10, t0),
+      ...run('b', 'pre-push', 20, t0 + 100, 'budget_exceeded'),
+      // SIGKILL runs no trap at all: a START with no END, past the ceiling.
+      line({ e: 'S', h: 'pre-push', c: 'tests', id: 'c', pp: 30, t: t0 + 200 }),
+    ].join('\n');
+    const runs = hookRuns(parseTimings(text), t0 + 5000, 600);
+    expect(runs.map((r) => r.outcome)).toEqual(['finished', 'budget', 'killed']);
+  });
+
+  it('counts a killed run as killed even when it also left a note', () => {
+    // The OS taking the process away is the more serious fact about the run,
+    // and a budget note on the same run must not soften it into "cut short".
+    const text = [
+      line({ e: 'S', h: 'pre-push', c: 'tests', id: 'a', pp: 10, t: t0 }),
+      line({ e: 'O', h: 'pre-push', c: 'tests', id: 'a', o: 'budget_exceeded', d: 121, t: t0 + 1 }),
+      line({ e: 'E', h: 'pre-push', c: 'tests', id: 'a', pp: 10, t: t0 + 2, x: 143 }),
+    ].join('\n');
+    expect(hookRuns(parseTimings(text), t0 + 5000, 600)[0]!.outcome).toBe('killed');
+  });
+
+  it('carries notes and machine readings into the day a clone exports', () => {
+    const text = [
+      line({
+        e: 'S',
+        h: 'pre-push',
+        c: 'tests',
+        id: 'a',
+        pp: 10,
+        t: t0,
+        l: 28,
+        n: 14,
+        m: 700,
+        s: 15881,
+      }),
+      line({ e: 'O', h: 'pre-push', c: 'tests', id: 'a', o: 'budget_exceeded', d: 121, t: t0 + 1 }),
+      line({ e: 'O', h: 'pre-push', c: 'tests', id: 'a', o: 'lock_wait', d: 30, t: t0 + 2 }),
+      line({
+        e: 'E',
+        h: 'pre-push',
+        c: 'tests',
+        id: 'a',
+        pp: 10,
+        t: t0 + 121,
+        x: 0,
+        l: 30,
+        n: 14,
+        m: 500,
+        s: 15900,
+      }),
+    ].join('\n');
+    const runs = hookRuns(parseTimings(text), t0 + 5000, 600);
+    const [day] = aggregateDays(runs, 'clone-x', '2026-09-19', '2026-09-19T01:00:00Z');
+    expect(day!.commands['pre-push.tests']!.notes).toEqual({ budget_exceeded: 1, lock_wait: 1 });
+    // The hook's own bucket carries its commands' notes, so a reader asking
+    // "how often did a push get cut short" never has to know the command name.
+    expect(day!.hooks['pre-push']!.notes).toEqual({ budget_exceeded: 1, lock_wait: 1 });
+    expect(day!.machine).toEqual({
+      load_per_core: [
+        [36_000, 2],
+        [36_121, 2.14],
+      ],
+      mem_available_mb: [
+        [36_000, 700],
+        [36_121, 500],
+      ],
+      swap_used_mb: [
+        [36_000, 15_881],
+        [36_121, 15_900],
+      ],
+    });
+  });
+
+  it('reads each machine statistic at its own bad end, and says null for what nobody measured', () => {
+    // "The average was fine" is how a saturated machine hides, so load is p90
+    // (the slow tail), memory p10 (the moment there was none) and swap p50
+    // (sustained, because a spike is a program starting).
+    const day = (over: Partial<NonNullable<LocalDay['machine']>>): LocalDay => ({
+      schema: 1,
+      clone: 'c',
+      date: '2026-09-19',
+      exported_at: 'x',
+      hooks: {},
+      commands: {},
+      machine: { load_per_core: [], mem_available_mb: [], swap_used_mb: [], ...over },
+    });
+    const at = (xs: number[]) => xs.map((v, i) => [i, v] as [number, number]);
+    const r = machineReading([
+      day({
+        load_per_core: at([1, 1, 1, 1, 1, 1, 1, 1, 30, 30]),
+        mem_available_mb: at([80, 900, 900, 900, 900]),
+      }),
+    ]);
+    // Eight quiet readings and two catastrophic ones: the mean is 6.8 and says
+    // "busy", the p90 is 30 and says "this machine cannot do its job".
+    expect(r.load_per_core_p90).toBe(30);
+    expect(r.mem_available_mb_p10).toBeLessThan(500);
+    expect(r.swap_used_mb_p50).toBeNull();
+    expect(machineReading([]).n).toBe(0);
+  });
+});
+
+/**
+ * The heavy-run slot cap's numbers live in `ci/config.yaml`, and the script that
+ * enforces them reads that file with `sed` because it runs before any
+ * node_modules exist. It also carries hardcoded fallbacks for a checkout where
+ * that read fails.
+ *
+ * A fallback that disagrees with the config is the worst kind of drift: nothing
+ * fails, the cap just quietly becomes a different number than the one the ledger
+ * entry argued for. Same reasoning as the `timings_file` pin above.
+ */
+describe('the heavy-run lock agrees with ci/config.yaml', () => {
+  const script = readFileSync(path.join(REPO, 'scripts', 'heavy-run-lock.sh'), 'utf8');
+  const { files } = loadHandFiles(REPO);
+
+  it.each([
+    ['SLOTS', 'heavy_run_slots'],
+    ['WAIT_SECONDS', 'heavy_lock_wait_seconds'],
+    ['MAX_HOLD_SECONDS', 'heavy_lock_max_hold_seconds'],
+  ] as const)('%s falls back to the configured %s', (variable, key) => {
+    const fallback = new RegExp(`^${variable}="\\$\\{${variable}:-(\\d+)\\}"$`, 'm').exec(script);
+    expect(fallback, `heavy-run-lock.sh has no literal fallback for ${variable}`).not.toBeNull();
+    expect(Number(fallback![1])).toBe(files!.config.local[key]);
+  });
+
+  it('reads the config keys it claims to read', () => {
+    // The sed expression takes the key name as an argument, so a renamed key
+    // would silently fall back rather than fail.
+    for (const key of ['heavy_run_slots', 'heavy_lock_wait_seconds', 'heavy_lock_max_hold_seconds'])
+      expect(script).toContain(`config_number ${key}`);
   });
 });

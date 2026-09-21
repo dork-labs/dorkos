@@ -251,6 +251,44 @@ triage:
   #     what would shorten that, not a smaller number here.
   canary_red_min_runs: 1
   canary_silent_hours: 18
+  # 12. A developer machine that is chronically saturated. Load average at hook
+  #     start divided by that machine's online cores, p90 over the window, per
+  #     clone. "My pushes are slow" was a feeling for months because nothing
+  #     recorded the one number that explains most of it.
+  #
+  #     4.0 means every core has four runnable processes queued at the moment a
+  #     gate starts — not a busy machine, a wedged one. 1.0 is fully busy and
+  #     perfectly normal on a box doing work; 2.0 is a second agent, which is
+  #     this repo's intended way of working and must not fire. The readings this
+  #     was set from: ~36 (load 512 on 14 cores) while pre-push p90 sat at 26.6
+  #     minutes. There is a lot of room between 4 and 36, deliberately — the
+  #     trigger is for "this machine cannot do its job", not for "it is busy".
+  #
+  #     min_n is hook runs, not days: a machine that ran three hooks all week
+  #     has a p90 of nothing in particular.
+  machine_load_per_core: 4.0
+  #
+  #     MEMORY IS THE SECOND ILLNESS AND, ON THIS BOX TODAY, THE BINDING ONE.
+  #     Load says the machine is busy; it does not say why three background
+  #     processes were killed with "running low on memory" while a 22-minute
+  #     push died on a tree it never touched. So two more arms, ORed with the
+  #     one above, and the trigger names which fired.
+  #
+  #     `machine_mem_available_mb` reads available memory at p10 — the low end,
+  #     where it hurt, not the average. 1024 MB is "the next `pnpm` fork is a
+  #     gamble". Measured here at the time of writing: 681 to 1276 MB, on a
+  #     48 GiB machine. Note the platform caveat in time-wrap.sh: on macOS this
+  #     is free pages only, so it understates on Linux terms and the swap arm is
+  #     the one that speaks first here.
+  #
+  #     `machine_swap_used_mb` reads swap at p50, because swap only means
+  #     anything SUSTAINED: a spike is a program starting, a median is a machine
+  #     thrashing, and thrashing is what turns a 2-minute suite into a 22-minute
+  #     one. 2048 MB is well clear of the few hundred MB macOS parks there on a
+  #     healthy day. Measured here: 15,881 MB of a 17,408 MB swap file.
+  machine_mem_available_mb: 1024
+  machine_swap_used_mb: 2048
+  machine_load_min_n: 20
   # The report says how long a trigger has been open once it reaches this.
   open_days_warning: 14
   # Days of history each sparkline in the daily report draws.
@@ -272,3 +310,33 @@ local:
   max_bytes: 5000000
   stale_after_days: 3
   retired_after_days: 14
+
+  # THE MACHINE-WIDE CAP ON HEAVY LOCAL RUNS (scripts/heavy-run-lock.sh,
+  # DOR-2160). Several agents and the operator's dev server share this box, and
+  # nothing coordinated their test runs: each `turbo test --affected
+  # --concurrency=1` runs one suite at a time but lets vitest keep a worker per
+  # core, so each gate is a whole machine's worth of work. Four at once measured
+  # a load average around 500 on 14 cores, with the kernel killing background
+  # processes for memory.
+  #
+  # THREE, on 14 cores, is a judgement with its arithmetic shown. One would be
+  # the tidiest cap and is wrong: the common case on this machine is a docs
+  # commit whose affected set is empty, which holds a slot for a second, and
+  # serialising those would add waiting to runs that cost nothing. Three allows
+  # roughly 3x oversubscription — bad, but a long way from the ~10x measured —
+  # and it leaves a slot free when one agent's pre-commit takes two (lint and
+  # typecheck run concurrently in that hook). Raise it only with a ledger entry
+  # and the load numbers from the daily report; lowering it is cheaper to try.
+  #
+  # The script reads these three with `sed`, because it runs before any
+  # node_modules exist; local.test.ts pins its fallbacks to the values here so
+  # the fallback can never quietly become the real number.
+  heavy_run_slots: 3
+  # How long a heavy command waits for a slot before running anyway, loudly.
+  # 45s against the pre-push gate's 120s budget: the wait is INSIDE the budget,
+  # so this is the most of it that may be spent queueing rather than testing.
+  heavy_lock_wait_seconds: 45
+  # A slot held longer than this is reclaimable even if its owner is alive. The
+  # slowest heavy command measured here is a pre-commit lint at 734s; 900 is
+  # above that and far below anything a healthy run reaches.
+  heavy_lock_max_hold_seconds: 900

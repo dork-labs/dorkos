@@ -427,6 +427,21 @@ jobs:
       - name: Pre-push watchdog fixtures
         run: bash scripts/test-pre-push-watchdog.sh
 
+      # heavy-run-lock.sh (DOR-2160) is the machine-wide cap on how many heavy
+      # local gates run at once — the answer to several agents each starting a
+      # full test sweep on one 14-core box, which measured a load average around
+      # 500 with the kernel killing processes for memory. It sits in the push
+      # path, so its dangerous failure is not "the cap is loose", it is "the push
+      # never returns": a holder SIGKILLed for memory runs no release trap and
+      # leaves its slot behind forever. The suite's centrepiece kills a holder
+      # with SIGKILL and asserts the next run gets through in seconds; the rest
+      # pin that it caps at all, that waiting is bounded, and that giving up runs
+      # the command rather than hanging or silently skipping it. Hermetic:
+      # throwaway git repos and `sleep`, no `pnpm install`, about fifteen
+      # seconds, almost all of it deliberate waiting on bounds.
+      - name: Heavy-run lock fixtures
+        run: bash scripts/test-heavy-run-lock.sh
+
       # run-credential-free.sh (DOR-2081) is the environment scrub behind the
       # `credential-free-build` check, and it is the only thing standing behind
       # this repo's promise that it clones, builds, tests and runs with no

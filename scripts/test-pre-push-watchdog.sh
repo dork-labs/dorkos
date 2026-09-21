@@ -382,6 +382,50 @@ check_contains 'a quiet run is reported while it is still allowed to be quiet' '
 check_contains 'the heartbeat names the command it is waiting on' 'sleep 3' "$out"
 
 echo ""
+echo "== the pre-push caller's policy: a timeout PASSES, loudly (DOR-2160) =="
+
+# The pre-push gate runs on a ~2-minute budget against a merge queue that runs
+# the same suites in full, so failing on the budget would red green trees
+# several times a day on a saturated box — and the thing an agent does about
+# that is `--no-verify`, which also loses the two-second formatting check.
+#
+# What makes the pass honest rather than a lie is that it is never quiet, so
+# these three assertions are one requirement in three parts: it exits 0, it says
+# the gate did not finish, and it does NOT print the fail-closed advice about
+# the push being refused. A rewrite that kept the exit code and dropped the
+# message would pass a substring-free test and silently turn the gate into a
+# no-op.
+out=$(
+  DORKOS_PREPUSH_STALL_SECONDS=30 DORKOS_PREPUSH_MAX_SECONDS=2 \
+    DORKOS_PREPUSH_HEARTBEAT_SECONDS=60 DORKOS_PREPUSH_POLL_SECONDS=0.2 \
+    DORKOS_PREPUSH_ON_TIMEOUT=pass \
+    bash "$CHECK" bash -c 'while :; do echo working; sleep 0.3; done' 2>&1
+)
+status=$?
+check_eq 'over budget in pass mode exits 0' 0 "$status"
+check_contains 'it still says the gate was stopped' 'pre-push gate stopped' "$out"
+check_contains 'it says the push is going ahead anyway' 'THE PUSH IS GOING AHEAD' "$out"
+check_contains 'it points at the gate that does guarantee something' 'merge queue' "$out"
+if printf '%s' "$out" | grep -q 'push is refused'; then
+  fail=$((fail + 1))
+  printf 'FAIL pass mode still printed the fail-closed advice about a refused push\n'
+else
+  pass=$((pass + 1))
+  printf 'ok   pass mode does not print the fail-closed advice\n'
+fi
+
+# The DEFAULT must stay fail-closed. This script knows nothing about its caller,
+# and any other caller that adopts it must get "the gate did not answer is not
+# the gate said yes" unless it opts out on purpose.
+run_watchdog 30 2 60 bash -c 'while :; do echo working; sleep 0.3; done'
+check_eq 'the default is still to fail the push on a timeout' 124 "$status"
+
+# A typo in the policy must not silently choose one of the two behaviours.
+out=$(DORKOS_PREPUSH_ON_TIMEOUT=maybe bash "$CHECK" true 2>&1)
+status=$?
+check_eq 'an unrecognised timeout policy is a usage error' 2 "$status"
+
+echo ""
 echo "== misuse must be loud =="
 
 # A wiring mistake in lefthook.yml that dropped the command must not silently

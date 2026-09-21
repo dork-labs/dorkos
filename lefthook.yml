@@ -9,6 +9,39 @@
 # ratchet `lefthook-time-wrap` (ci/ratchets.yaml) and a test in
 # packages/ci-steward keep the line on every command. CI_STEWARD_TIMINGS=0
 # switches it off for one run.
+#
+# WHAT THESE HOOKS ARE FOR, STATED ONCE (DOR-2160)
+#
+# They are a fast smell test, not a guarantee. The guarantee is the merge queue:
+# it builds your branch on top of `main` plus everything ahead of it, runs the
+# FULL monorepo suites plus lint, typecheck and the browser shards against that
+# combined tree, and merges only if they pass. Nothing you can do locally can
+# reproduce that, because the tree it tests does not exist on your machine.
+#
+# So the job of a local gate is not to repeat the queue. It is to catch, in
+# seconds, the handful of mistakes the queue is slow or unhelpful at telling you
+# about — a formatting miss that reds the required `lint` job twenty minutes
+# later, a type error in the package you just edited — and then to get out of
+# the way.
+#
+# That was not how they behaved. Measured on this machine from the time-wrap's
+# own records, 2026-09-19 to 2026-09-20, 49 pre-push runs: p90 26.6 minutes, one
+# run at 43 minutes, and two test commands killed outright; another agent's push
+# ran the hook for 22 minutes and died on a tree its change never touched. The
+# cause is not any one suite. It is that several agents plus the operator's dev
+# server share 14 cores and each gate runs `turbo test` with a full worker pool,
+# so the load average sat around 500 and the kernel was killing background
+# processes for memory. A gate that cannot finish while the machine is busy is
+# not a gate, it is a toll — and the toll is paid in `--no-verify`, which loses
+# the two-second checks along with the twenty-minute one.
+#
+# The two answers, both below: the heavy pre-push command is bounded in
+# wall-clock time and a timeout PASSES with a loud note
+# (`scripts/pre-push-watchdog.sh`), and every heavy command holds one of a small
+# number of machine-wide slots so several agents cannot all run a suite at once
+# (`scripts/heavy-run-lock.sh`). Both record what they did in the local timings,
+# so a gate that stopped checking is a number in the daily report and not a
+# feeling.
 pre-commit:
   commands:
     format:
@@ -78,15 +111,26 @@ pre-commit:
       # `typecheck` are required merge-queue checks and run unscoped there, so
       # a break that only appears once two branches combine is caught by the
       # queue rather than by this hook.
+      #
+      # UNDER THE MACHINE-WIDE SLOT CAP (DOR-2160), like every heavy local
+      # command. Affected-only made this cheap for a docs commit and left it
+      # expensive for a code one: measured p90 186s, worst 409s. Those are the
+      # runs that collide with three other agents' suites, and the cap is what
+      # stops four of them being in flight at once. It never refuses: waiting is
+      # bounded and a wait that runs out runs the command anyway, loudly
+      # (scripts/heavy-run-lock.sh). This hook is NOT time-bounded the way
+      # pre-push is — a commit is cheap to retry and nothing downstream repeats
+      # lint for you until the PR — so the cap is the whole of the change here.
       run: |
         [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-commit lint
-        TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" pnpm exec turbo lint --affected
+        TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" bash scripts/heavy-run-lock.sh pnpm exec turbo lint --affected
       fail_text: 'Lint failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
     typecheck:
-      # Affected-only against origin/main — see the lint command above for why.
+      # Affected-only against origin/main — see the lint command above for why,
+      # and for why this one holds a machine-wide slot too (p90 160s, worst 473s).
       run: |
         [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-commit typecheck
-        TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" pnpm exec turbo typecheck --affected
+        TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" bash scripts/heavy-run-lock.sh pnpm exec turbo typecheck --affected
       fail_text: 'Typecheck failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
 
 pre-push:
@@ -274,9 +318,44 @@ pre-push:
       # "the gate said yes"; the header of that script argues the case at
       # length, and `git push --no-verify` remains the deliberate way out.
       #
-      # It reads its bounds from DORKOS_PREPUSH_* and defaults them, so nothing
-      # is configured here. Its own fixture suite is scripts/test-pre-push-
-      # watchdog.sh, named in `test:scripts` and in scripts-test.yml.
+      # Its own fixture suite is scripts/test-pre-push-watchdog.sh, named in
+      # `test:scripts` and in scripts-test.yml.
+      #
+      # THE BUDGET, AND WHY A TIMEOUT NOW PASSES (DOR-2160). The watchdog's own
+      # defaults are a 300s silence bound and a 7200s ceiling, and a timeout
+      # fails the push. Both are right for a script that knows nothing about its
+      # caller, and both are wrong here, because this caller has a second gate
+      # behind it that is strictly better. Set here, argued here:
+      #
+      #   DORKOS_PREPUSH_MAX_SECONDS=120   a hard wall-clock budget, including
+      #     whatever the slot below cost. The measured p90 was 26.6 minutes and
+      #     the worst run 43; two minutes is not "the suites, faster", it is a
+      #     different promise — as much checking as two minutes buys.
+      #
+      #   DORKOS_PREPUSH_ON_TIMEOUT=pass   exceeding it is a PASS with a loud
+      #     block explaining that the gate did not finish. Failing instead would
+      #     red a green tree several times a day on a box at load ~500, and the
+      #     thing an agent does about a gate that reds green trees is type
+      #     `--no-verify` — which also skips the two-second formatting check
+      #     above, the one this gate is most useful for. The merge queue runs
+      #     these same suites in FULL on the real merged tree and refuses the
+      #     merge if they fail, so nothing reaches `main` on the strength of a
+      #     budget that ran out. What is lost is the local warning, not the
+      #     protection.
+      #
+      #     It is not silent, which is the whole condition on it being honest:
+      #     the watchdog writes a `budget_exceeded` note into the local timings,
+      #     `ci-steward local-export` carries it to the data branch, and the
+      #     daily report shows how often the gate stopped checking. If that
+      #     share climbs, the budget is wrong and the ledger entry says to
+      #     revert — see ci/ledger/260919-175505-pre-push-bounded-two-minutes.md
+      #     and its counter-metrics (queue-green, wasted-queue-builds).
+      #
+      # THE SLOT (scripts/heavy-run-lock.sh) sits between the watchdog and
+      # turbo, so waiting for it is inside the 120s budget rather than added to
+      # it, and so the watchdog's process-tree stop reaches the lock script and
+      # its release trap. Four agents' suites at once is what produced the load
+      # this change exists to bring down; the cap is what stops it.
       use_stdin: true
       run: |
         [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push tests
@@ -291,6 +370,10 @@ pre-push:
           exit 0
         fi
         export TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)"
-        VITEST_RETRY=2 bash scripts/pre-push-watchdog.sh \
+        VITEST_RETRY=2 \
+        DORKOS_PREPUSH_MAX_SECONDS="${DORKOS_PREPUSH_MAX_SECONDS:-120}" \
+        DORKOS_PREPUSH_ON_TIMEOUT="${DORKOS_PREPUSH_ON_TIMEOUT:-pass}" \
+          bash scripts/pre-push-watchdog.sh \
+          bash scripts/heavy-run-lock.sh \
           pnpm exec dotenv -- turbo test --affected --concurrency=1 -- --run
-      fail_text: 'Tests failed — fix them before pushing, or turbo could not resolve the diff base. A "pre-push gate stopped" block above instead means the run stalled and was cut short, not that a test went red.'
+      fail_text: 'Tests failed — fix them before pushing, or turbo could not resolve the diff base. A "pre-push gate stopped" block above is not a failure: the gate ran out of its two-minute budget and let the push through, and the merge queue runs the full suites anyway.'

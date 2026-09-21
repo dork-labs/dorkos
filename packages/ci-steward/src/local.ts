@@ -19,6 +19,9 @@ import type { LocalDay } from './data.ts';
 import { dayOf } from './time.ts';
 import { SIGNAL_STATUSES, type HookRun } from './timings.ts';
 
+/** Two decimal places: a load-per-core ratio is read, not computed with. */
+const round2 = (x: number) => Math.round(x * 100) / 100;
+
 /**
  * Aggregate hook runs into one `LocalDay` per UTC day of their START, for
  * days before `today` (a day still in progress is exported tomorrow).
@@ -34,11 +37,13 @@ export function aggregateDays(
   today: string,
   exportedAt: string
 ): LocalDay[] {
+  type Bucket = NonNullable<LocalDay['hooks']>[string];
   const days = new Map<string, LocalDay>();
-  const bucket = (
-    rec: Record<string, { durations: [number, number][]; killed: number; failed: number }>,
-    key: string
-  ) => (rec[key] ??= { durations: [], killed: 0, failed: 0 });
+  const bucket = (rec: Record<string, Bucket>, key: string) =>
+    (rec[key] ??= { durations: [], killed: 0, failed: 0, notes: {} });
+  const note = (b: Bucket, notes: Readonly<Record<string, number>>) => {
+    for (const [k, v] of Object.entries(notes)) (b.notes ??= {})[k] = ((b.notes ?? {})[k] ?? 0) + v;
+  };
   for (const r of runs) {
     const day = dayOf(new Date(r.start * 1000));
     if (day >= today || r.state === 'open') continue;
@@ -49,18 +54,32 @@ export function aggregateDays(
       exported_at: exportedAt,
       hooks: {},
       commands: {},
+      machine: { load_per_core: [], mem_available_mb: [], swap_used_mb: [] },
     };
     days.set(day, d);
+    const midnight = Date.parse(`${day}T00:00:00Z`) / 1000;
     const h = bucket(d.hooks, r.hook);
-    const sod = r.start - Date.parse(`${day}T00:00:00Z`) / 1000;
+    const sod = r.start - midnight;
     if (r.state === 'killed') h.killed += 1;
     else h.durations.push([sod, r.seconds!]);
     if (r.failed) h.failed += 1;
     for (const c of r.commands) {
       const b = bucket(d.commands, `${c.hook}.${c.command}`);
       if (c.end === null || (c.status !== null && SIGNAL_STATUSES.has(c.status))) b.killed += 1;
-      else b.durations.push([c.start - Date.parse(`${day}T00:00:00Z`) / 1000, c.end - c.start]);
+      else b.durations.push([c.start - midnight, c.end - c.start]);
       if (c.status !== null && c.status !== 0 && !SIGNAL_STATUSES.has(c.status)) b.failed += 1;
+      note(b, c.notes);
+      note(h, c.notes);
+    }
+    // Machine readings belong to the day, not to any one hook: what they answer
+    // is "what was this box doing", and every hook run is a sample of it.
+    // A reading is only dropped when its own probe was unavailable.
+    for (const s of r.machine) {
+      const at = s.t - midnight;
+      const m = (d.machine ??= { load_per_core: [], mem_available_mb: [], swap_used_mb: [] });
+      if (s.loadPerCore !== null) m.load_per_core.push([at, round2(s.loadPerCore)]);
+      if (s.memAvailableMb !== null) m.mem_available_mb.push([at, s.memAvailableMb]);
+      if (s.swapUsedMb !== null) m.swap_used_mb.push([at, s.swapUsedMb]);
     }
   }
   return [...days.values()].sort((a, b) => a.date.localeCompare(b.date));

@@ -5,26 +5,65 @@
  * every session start, inside a 500 ms budget shared with other checks.
  *
  * The file holds one JSON line per event: `S` (START) when a lefthook command
- * begins and `E` (END, with its exit status `x`) when its shell exits. One hook
- * run is every command of one hook under one lefthook process (`pp`), so a
- * whole-hook wall time is its last END minus its first START, whether the
- * commands ran in parallel (pre-commit) or one after another (pre-push).
+ * begins, `E` (END, with its exit status `x`) when its shell exits, and `O` (a
+ * NOTE, with a key `o` and an optional number `d`) for an outcome the exit
+ * status cannot carry. One hook run is every command of one hook under one
+ * lefthook process (`pp`), so a whole-hook wall time is its last END minus its
+ * first START, whether the commands ran in parallel (pre-commit) or one after
+ * another (pre-push).
  *
  * A run is killed when a command's END carries a signal status (the wrap's
  * INT/TERM/HUP trap writes 128+n), or when a START has no END and is older
  * than the ceiling (SIGKILL runs no trap). A younger unmatched START is
  * "running or killed", never "killed".
+ *
+ * HOW A RUN ENDED IS THREE ANSWERS, NOT TWO (DOR-2160). `finished` is the run
+ * that ran to a verdict. `budget` is the run its own wall-clock bound cut short
+ * and let through anyway — the pre-push gate passes on a timeout because the
+ * merge queue is the real gate, and that pass must be visible in the data
+ * rather than indistinguishable from a clean one; the watchdog writes a
+ * `budget_exceeded` note for it. `killed` is the operating system taking the
+ * process away, which on this machine means memory pressure, and is a different
+ * fact from either. `HookRun.outcome` below is where the three are told apart.
+ *
+ * Every event line also carries the machine at that instant — load average
+ * `l`, cores `n`, available memory `m` in MiB, swap in use `s` in MiB — because
+ * a hook's wall time here is mostly a fact about the machine. Any of them may
+ * be `null` where the platform will not say.
  */
 
 /** One line of the timings file. */
 export interface TimingEvent {
-  e: 'S' | 'E';
+  e: 'S' | 'E' | 'O';
   h: string;
   c: string;
   id: string;
   pp: number;
   t: number;
   x?: number;
+  /** A note's key, on an `O` line. */
+  o?: string;
+  /** A note's number, when it carries one. */
+  d?: number;
+  /** 1-minute load average. */
+  l?: number;
+  /** Online cores. */
+  n?: number;
+  /** Available memory, MiB. */
+  m?: number;
+  /** Swap in use, MiB. */
+  s?: number;
+}
+
+/** The machine as one event saw it. */
+export interface MachineSample {
+  t: number;
+  /** Load average divided by cores; `null` when either was unavailable. */
+  loadPerCore: number | null;
+  /** Available memory, MiB. */
+  memAvailableMb: number | null;
+  /** Swap in use, MiB. */
+  swapUsedMb: number | null;
 }
 
 /** One command's run: a START, and its END when there was one. */
@@ -35,7 +74,14 @@ interface CommandRun {
   start: number;
   end: number | null;
   status: number | null;
+  /** Note keys seen against this command, with how many times each. */
+  notes: Record<string, number>;
+  /** The machine as this command's own events saw it. */
+  machine: MachineSample[];
 }
+
+/** How a run ended, beyond its exit status. */
+export type RunOutcome = 'finished' | 'budget' | 'killed' | 'open';
 
 /** One hook run: its commands under one lefthook process. */
 export interface HookRun {
@@ -44,9 +90,16 @@ export interface HookRun {
   /** Wall seconds from the first START to the last END; `null` when killed or still open. */
   seconds: number | null;
   state: 'done' | 'killed' | 'open';
+  /** Finished, cut short by its own budget and passed, killed by the OS, or still running. */
+  outcome: RunOutcome;
   failed: boolean;
   commands: CommandRun[];
+  /** Every machine reading this run's events carried, oldest first. */
+  machine: MachineSample[];
 }
+
+/** The note the pre-push watchdog writes when its wall-clock budget ran out. */
+export const BUDGET_NOTE = 'budget_exceeded';
 
 /**
  * Parse the timings file's text, skipping lines that are not events.
@@ -59,8 +112,9 @@ export function parseTimings(text: string): TimingEvent[] {
     if (!line.trim()) continue;
     try {
       const v = JSON.parse(line) as Partial<TimingEvent>;
+      const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : undefined);
       if (
-        (v.e === 'S' || v.e === 'E') &&
+        (v.e === 'S' || v.e === 'E' || v.e === 'O') &&
         typeof v.h === 'string' &&
         typeof v.c === 'string' &&
         typeof v.id === 'string' &&
@@ -73,7 +127,13 @@ export function parseTimings(text: string): TimingEvent[] {
           id: v.id,
           pp: Number(v.pp ?? 0),
           t: v.t,
-          x: typeof v.x === 'number' ? v.x : undefined,
+          x: num(v.x),
+          o: typeof v.o === 'string' ? v.o : undefined,
+          d: num(v.d),
+          l: num(v.l),
+          n: num(v.n),
+          m: num(v.m),
+          s: num(v.s),
         });
       }
     } catch {
@@ -115,14 +175,27 @@ export function hookRuns(
         start: ev.t,
         end: null,
         status: null,
+        notes: {},
+        machine: [],
       });
-    else {
-      const c = cmds.get(key);
-      if (c) {
-        c.end = ev.t;
-        c.status = ev.x ?? null;
-      }
+    // A note or an END whose START has aged out of the file belongs to no run.
+    const c = cmds.get(key);
+    if (!c) continue;
+    if (ev.e === 'O') {
+      if (ev.o) c.notes[ev.o] = (c.notes[ev.o] ?? 0) + 1;
+    } else if (ev.e === 'E') {
+      c.end = ev.t;
+      c.status = ev.x ?? null;
     }
+    if (ev.l !== undefined || ev.m !== undefined || ev.s !== undefined)
+      c.machine.push({
+        t: ev.t,
+        // A load average without a core count says nothing comparable between
+        // machines, so the ratio is null rather than the raw number.
+        loadPerCore: ev.l !== undefined && ev.n ? ev.l / ev.n : null,
+        memAvailableMb: ev.m ?? null,
+        swapUsedMb: ev.s ?? null,
+      });
   }
   const sorted = [...cmds.values()].sort((a, b) => a.start - b.start);
   const groups: CommandRun[][] = [];
@@ -150,13 +223,19 @@ export function hookRuns(
           ? 'killed'
           : 'open';
     const end = Math.max(...g.map((c) => c.end ?? c.start));
+    const budget = g.some((c) => (c.notes[BUDGET_NOTE] ?? 0) > 0);
     return {
       hook: g[0]!.hook,
       start,
       seconds: state === 'done' ? end - start : null,
       state,
+      // A killed run is killed whatever notes it left: the OS took it away, and
+      // that is the more serious fact about it.
+      outcome:
+        state === 'killed' ? 'killed' : state === 'open' ? 'open' : budget ? 'budget' : 'finished',
       failed: g.some((c) => c.status !== null && c.status !== 0 && !SIGNAL_STATUSES.has(c.status)),
       commands: g,
+      machine: g.flatMap((c) => c.machine).sort((a, b) => a.t - b.t),
     };
   });
 }
