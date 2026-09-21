@@ -148,6 +148,18 @@ beforeAll(async () => {
       cancelled = true;
       res.statusCode = 204;
       res.end();
+    } else if (req.url === `${qualified}/me/connection-access`) {
+      send({
+        access: {
+          state: 'verified',
+          effective: { read: true, post: true, enrollAgent: true, stream: true },
+          lastKnown: {
+            lifecycle: 'active',
+            capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+            verifiedAt: new Date().toISOString(),
+          },
+        },
+      });
     } else if (req.url === `${qualified}/channels`) {
       send({
         channels: [
@@ -399,6 +411,13 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       'Adapter test'
     );
     expect((await service.poll(started.connection.ref, 'adapter-owner')).status).toBe('connected');
+    expect(await service.status(started.connection.ref, 'adapter-owner')).toMatchObject({
+      status: 'connected',
+      access: {
+        state: 'verified',
+        effective: { read: true, post: true, enrollAgent: true, stream: true },
+      },
+    });
     const adapter = new RemoteCommunityAdapter(started.connection.ref, 'adapter-owner', store);
     expect((await adapter.connect()).status).toBe('connected');
     expect((await adapter.listRooms()).map((item) => item.roomId)).toEqual([remoteRoomId]);
@@ -464,6 +483,65 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     await service.disconnect(started.connection.ref, 'adapter-owner');
     approved = false;
     pollCount = 0;
+  });
+
+  it('retains last-known access through an outage and fails closed after grant rejection', async () => {
+    approved = true;
+    const owner = 'access-owner';
+    const store = new RemoteConnectionStore(directory);
+    const revokeConnection = vi.fn(async () => undefined);
+    const accessAuthorityChanged = vi.fn();
+    const service = new RemoteCommunityPairingService(
+      store,
+      revokeConnection,
+      accessAuthorityChanged
+    );
+    const started = await service.start(owner, `${origin}/c/${remoteCommunityId}`, 'Access test');
+    const connected = await service.poll(started.connection.ref, owner);
+    expect(connected.connection?.access).toMatchObject({ state: 'verified' });
+
+    try {
+      rejectedAuthorization = `Bearer ${token}`;
+      rejectedPath = `${qualified}/me/connection-access`;
+      rejectedStatus = 503;
+      const unavailable = await service.status(started.connection.ref, owner);
+      expect(unavailable.access).toMatchObject({
+        state: 'unverified',
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: connected.connection?.access?.lastKnown,
+      });
+      expect(accessAuthorityChanged).toHaveBeenCalledOnce();
+
+      rejectedAuthorization = undefined;
+      rejectedPath = undefined;
+      await expect(service.status(started.connection.ref, owner)).resolves.toMatchObject({
+        access: { state: 'verified' },
+      });
+      expect(accessAuthorityChanged).toHaveBeenCalledTimes(2);
+      await service.status(started.connection.ref, owner);
+      expect(accessAuthorityChanged).toHaveBeenCalledTimes(2);
+
+      rejectedAuthorization = `Bearer ${token}`;
+      rejectedPath = `${qualified}/me/connection-access`;
+      rejectedStatus = 401;
+      const rejected = await service.status(started.connection.ref, owner);
+      expect(rejected).toMatchObject({
+        status: 'reconnect-required',
+        access: {
+          state: 'reconnect-required',
+          effective: { read: false, post: false, enrollAgent: false, stream: false },
+        },
+      });
+      expect(revokeConnection).toHaveBeenCalledWith(started.connection.ref, owner);
+      await expect(store.personalToken(started.connection.ref, owner)).rejects.toBeInstanceOf(
+        RemoteConnectionAuthorizationError
+      );
+    } finally {
+      await service.disconnect(started.connection.ref, owner);
+      rejectedAuthorization = undefined;
+      rejectedPath = undefined;
+      rejectedStatus = 403;
+    }
   });
   it('persists a reconnect-required state when the remote rejects the personal grant', async () => {
     approved = true;

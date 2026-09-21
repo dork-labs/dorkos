@@ -8,8 +8,10 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { CommunityRefSchema, type CommunityRef } from '@dorkos/shared/community-adapter';
 import {
   COMMUNITY_API_V1_ROUTES,
+  CommunityWireConnectionAccessResponseSchema,
   CommunityWireCommunitySchema,
   CommunityWirePairingStartResponseSchema,
+  type CommunityConnectionAccess,
 } from '@dorkos/shared/community-wire';
 import {
   CommunityPairingPollPrivateResponseSchema,
@@ -83,18 +85,92 @@ export class RemoteCommunityPairingService {
    *
    * @param store - Private encrypted local connection store.
    */
-  constructor(private readonly store: RemoteConnectionStore) {}
+  constructor(
+    private readonly store: RemoteConnectionStore,
+    private readonly onReconnectRequired?: (
+      communityRef: CommunityRef,
+      ownerKey: string
+    ) => Promise<void>,
+    private readonly onAccessAuthorityChanged?: (
+      communityRef: CommunityRef,
+      ownerKey: string
+    ) => void
+  ) {}
+
+  private notifyAccessAuthorityChanged(
+    ref: CommunityRef,
+    ownerKey: string,
+    before: CommunityConnectionAccess | null | undefined,
+    after: CommunityConnectionAccess
+  ): void {
+    if (
+      before?.state === after.state &&
+      before.effective.read === after.effective.read &&
+      before.effective.post === after.effective.post &&
+      before.effective.enrollAgent === after.effective.enrollAgent &&
+      before.effective.stream === after.effective.stream
+    )
+      return;
+    this.onAccessAuthorityChanged?.(ref, ownerKey);
+  }
+
+  private async requireReconnect(ref: CommunityRef, ownerKey: string): Promise<void> {
+    const results = await Promise.allSettled([
+      this.onReconnectRequired?.(ref, ownerKey) ?? Promise.resolve(),
+      this.store.requireReconnect(ref, ownerKey),
+    ]);
+    const failures = results.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason] : []
+    );
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(failures, 'Failed to revoke the rejected community connection');
+  }
 
   /** Read only the caller's non-secret connection status. */
   async list(ownerKey: string): Promise<RemoteConnectionDescriptor[]> {
     await this.store.sweepExpired(ownerKey, this.busy);
-    return this.store.list(ownerKey);
+    const connections = await this.store.list(ownerKey);
+    return Promise.all(connections.map((connection) => this.verify(connection.ref, ownerKey)));
   }
 
   /** Read one descriptor without exposing another local owner's connection. */
   async status(ref: CommunityRef, ownerKey: string): Promise<RemoteConnectionDescriptor> {
     await this.store.sweepExpired(ownerKey, this.busy);
-    return this.store.project(await this.store.get(ref, ownerKey));
+    return this.verify(ref, ownerKey);
+  }
+
+  private async verify(ref: CommunityRef, ownerKey: string): Promise<RemoteConnectionDescriptor> {
+    const record = await this.store.get(ref, ownerKey);
+    if (record.status !== 'connected') return this.store.project(record);
+    const authorization = await this.store.personalToken(ref, ownerKey);
+    let access: CommunityConnectionAccess;
+    try {
+      access = CommunityWireConnectionAccessResponseSchema.parse(
+        await pinnedJson(
+          parseCommunityOrigin(record.pinnedOrigin),
+          communityApiPath(record.remoteCommunityId, COMMUNITY_API_V1_ROUTES.connectionAccess),
+          undefined,
+          undefined,
+          { authorization }
+        )
+      ).access;
+    } catch (error) {
+      if (error instanceof PinnedHttpError && error.status === 401) {
+        await this.requireReconnect(ref, ownerKey);
+        return this.store.project(await this.store.get(ref, ownerKey));
+      }
+      const unavailable = await this.store.updateAccess(ref, ownerKey, {
+        state: 'unverified',
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: record.access?.lastKnown ?? null,
+      });
+      this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, unavailable.access!);
+      return unavailable;
+    }
+    const verified = await this.store.updateAccess(ref, ownerKey, access);
+    this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, verified.access!);
+    return verified;
   }
 
   /** Begin a ten-minute verifier-bound request at the checked deployment origin. */
@@ -220,7 +296,16 @@ export class RemoteCommunityPairingService {
         ref,
         ownerKey,
         exchanged.grant.memberId,
-        exchanged.token
+        exchanged.token,
+        {
+          state: 'verified',
+          effective: exchanged.grant.capabilities,
+          lastKnown: {
+            lifecycle: exchanged.grant.lifecycle,
+            capabilities: exchanged.grant.capabilities,
+            verifiedAt: new Date().toISOString(),
+          },
+        }
       );
       return { status: 'connected', connection: completed };
     } finally {

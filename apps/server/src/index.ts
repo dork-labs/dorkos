@@ -339,6 +339,7 @@ import {
 } from '@dorkos/db';
 import {
   getRemoteCommunityAdapter,
+  getRemotePairingService,
   publishRemoteCommunityDeliveryChanges,
   setRemoteCommunityDb,
   setRemoteCommunityDeliveryProjection,
@@ -1380,6 +1381,8 @@ async function start() {
     enrollments: remoteCommunityRuntime.enrollments,
     adapters: (communityRef, ownerAuthorId) =>
       getRemoteCommunityAdapter(communityRef, ownerAuthorId),
+    resolveConnectionAccess: async (communityRef, ownerAuthorId) =>
+      (await getRemotePairingService().status(communityRef, ownerAuthorId)).access,
     resolveLocalAgentAuthor: (localAgentId) =>
       resolveRemoteLocalAgent(localAgentId)?.authorId ?? null,
     isReady: () => meshStartupReconciled && meshCore !== undefined,
