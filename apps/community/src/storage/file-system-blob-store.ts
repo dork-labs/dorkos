@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { link, mkdir, open, rm, unlink } from 'node:fs/promises';
+import { link, mkdir, open, readdir, rm, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { BlobRead, BlobStore, PutBlobInput, StoredBlob } from './blob-store.js';
 import { assertNotAborted, BlobStoreError, stageBlob, validateBlobKey } from './blob-store.js';
@@ -55,6 +55,34 @@ export class FileSystemBlobStore implements BlobStore {
     } catch (error) {
       if (!isMissing(error)) throw error;
     }
+  }
+
+  /** Enumerate the complete local namespace without following directory entries. */
+  async listNamespace(options: { signal?: AbortSignal } = {}) {
+    assertNotAborted(options.signal);
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    let entries;
+    try {
+      entries = await readdir(this.directory, { withFileTypes: true });
+    } catch {
+      throw new BlobStoreError('BLOB_LIST_INCOMPLETE', 'Blob namespace listing failed');
+    }
+    const keys: string[] = [];
+    const temporaryKeys: string[] = [];
+    let unexpectedEntries = 0;
+    for (const entry of entries) {
+      assertNotAborted(options.signal);
+      if (entry.isFile() && /^[a-f0-9]{64}$/.test(entry.name)) {
+        keys.push(entry.name);
+      } else {
+        const temporary = /^\.([a-f0-9]{64})\.upload$/.exec(entry.name);
+        if (entry.isFile() && temporary) temporaryKeys.push(temporary[1]);
+        else unexpectedEntries++;
+      }
+    }
+    keys.sort();
+    temporaryKeys.sort();
+    return { keys, temporaryKeys, unexpectedEntries };
   }
 }
 

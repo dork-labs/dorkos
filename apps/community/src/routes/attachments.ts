@@ -213,12 +213,11 @@ export function registerAttachmentRoutes(
       throw new ApiError(400, 'STATE_CONFLICT', 'The declared file size does not match.');
     if (!c.req.raw.body) throw new ApiError(400, 'STATE_CONFLICT', 'File bytes are required.');
     const reservation = await transaction(pool, async (client) => {
-      const reserved = await reserveManagedBlob(client, principal.community_id, 'attachment');
       const channel = await lockChannel(client, c.req.param('id'), principal);
       requireJoined(channel);
       if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
       await lockPrincipalAuthority(client, principal);
-      return reserved;
+      return reserveManagedBlob(client, principal.community_id, 'attachment');
     });
     let stored;
     try {
@@ -244,7 +243,6 @@ export function registerAttachmentRoutes(
       .digest('hex');
     try {
       const result = await transaction(pool, async (client) => {
-        await prepareManagedBlobCommit(client, reservation, stored);
         const channel = await lockChannel(client, c.req.param('id'), principal);
         requireJoined(channel);
         if (channel.archived)
@@ -275,6 +273,7 @@ export function registerAttachmentRoutes(
           [principal.ownerMemberId, window, stored.byteSize, config.limits.uploadBytesPerDay]
         );
         if (!quota.rowCount) throw new ApiError(429, 'RATE_LIMITED', 'Daily upload limit reached.');
+        await prepareManagedBlobCommit(client, reservation, stored);
         const inserted = await client.query<AttachmentRow>(
           `INSERT INTO attachments(community_id,channel_id,uploader_member_id,uploader_agent_id,blob_key,display_name,content_type,byte_size,checksum,idempotency_key,request_hash)
            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
