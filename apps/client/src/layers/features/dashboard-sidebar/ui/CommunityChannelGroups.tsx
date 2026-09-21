@@ -9,7 +9,15 @@ import { useSafeSearch } from '@/layers/shared/model';
 export function CommunityChannelGroups() {
   const embedded = getPlatform().isEmbedded;
   const connections = useCommunityConnections(!embedded);
+  const search = useSafeSearch() as { community?: string };
   if (embedded) return null;
+  if (!search.community) return null;
+  if (connections.isPending)
+    return (
+      <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
+        Loading community…
+      </p>
+    );
   if (connections.isError)
     return (
       <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
@@ -19,15 +27,20 @@ export function CommunityChannelGroups() {
         </Button>
       </p>
     );
-  return (
-    <>
-      {connections.data
-        ?.filter((connection) => connection.status === 'connected')
-        .map((connection) => (
-          <CommunityChannels key={connection.ref} connection={connection} />
-        ))}
-    </>
-  );
+  const connection = connections.data?.find(({ ref }) => ref === search.community);
+  if (!connection)
+    return (
+      <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
+        This community is no longer connected.
+      </p>
+    );
+  if (connection.status !== 'connected')
+    return (
+      <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
+        Reconnect this community to open its channels.
+      </p>
+    );
+  return <CommunityChannels connection={connection} />;
 }
 
 function CommunityChannels({ connection }: { connection: CommunityConnectionDescriptor }) {

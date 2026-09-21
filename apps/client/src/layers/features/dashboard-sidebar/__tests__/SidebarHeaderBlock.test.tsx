@@ -39,7 +39,22 @@ vi.mock('@/layers/entities/team', () => ({
 
 const mockOpenSettings = vi.fn();
 const mockOpenProfile = vi.fn();
+const mockOpenConnections = vi.fn();
+const mockNavigate = vi.fn(() => Promise.resolve());
+const mockResolveCommunityNavigation = vi.fn();
+const mockListRemoteCommunityRooms = vi.fn();
 const mockSetGlobalPaletteOpen = vi.fn();
+let mockSearch: { community?: string } = {};
+let mockConnections: Array<{
+  ref: string;
+  remoteCommunityId: string;
+  label: string;
+  pinnedOrigin: string;
+  connectedHumanMemberId: string | null;
+  status: 'pending' | 'connected' | 'reconnect-required';
+  expiresAt: string | null;
+}> = [];
+let mockCommunityOrder: string[] = [];
 let mockConfig: { version?: string; latestVersion?: string | null; isDevMode?: boolean } = {
   version: '0.58.0',
   latestVersion: null,
@@ -53,13 +68,31 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
     ...actual,
-    useTransport: () => ({ getConfig: mockGetConfig }),
+    useTransport: () => ({
+      getConfig: mockGetConfig,
+      resolveCommunityNavigation: mockResolveCommunityNavigation,
+      listRemoteCommunityRooms: mockListRemoteCommunityRooms,
+    }),
     useSettingsDeepLink: () => ({ open: mockOpenSettings }),
     useProfileDeepLink: () => ({ open: mockOpenProfile }),
+    useOpenConnections: () => mockOpenConnections,
     useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
       selector({ setGlobalPaletteOpen: mockSetGlobalPaletteOpen }),
   };
 });
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-router')>();
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+    useRouterState: ({ select }: { select: (state: unknown) => unknown }) =>
+      select({ location: { search: mockSearch } }),
+  };
+});
+vi.mock('@/layers/entities/community', () => ({
+  useCommunityConnections: () => ({ data: mockConnections }),
+  useCommunityNavigation: () => ({ data: { ownerKey: 'owner-a', order: mockCommunityOrder } }),
+}));
 
 // The New menu is the header block's neighbour, not its subject: it reaches for
 // a router, a query client and the whole fleet, and `NewMenu.test.tsx` is where
@@ -93,6 +126,15 @@ beforeEach(() => {
   mockConfig = { version: '0.58.0', latestVersion: null, isDevMode: false };
   mockMenuNodes = null;
   mockRosterPending = false;
+  mockSearch = {};
+  mockConnections = [];
+  mockCommunityOrder = [];
+  mockResolveCommunityNavigation.mockResolvedValue(null);
+  mockListRemoteCommunityRooms.mockResolvedValue({
+    community: 'community-a',
+    rooms: [],
+    stale: false,
+  });
 });
 
 afterEach(() => cleanup());
@@ -259,13 +301,117 @@ describe('SidebarHeaderBlock', () => {
     expect(await screen.findByRole('menuitem', { name: /v0\.58\.0 beta/ })).toBeInTheDocument();
   });
 
+  it('keeps the installed app first and orders communities by the owner preference', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+      {
+        ref: 'b',
+        remoteCommunityId: 'remote-b',
+        label: 'Beta',
+        pinnedOrigin: 'https://b.example.com',
+        connectedHumanMemberId: 'person-b',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockCommunityOrder = ['b', 'a'];
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    const items = await screen.findAllByRole('menuitemradio');
+    expect(items.slice(0, 3).map((item) => item.textContent)).toEqual([
+      expect.stringContaining('Dorian’s team'),
+      expect.stringContaining('Beta'),
+      expect.stringContaining('Alpha'),
+    ]);
+  });
+
+  it('reauthorizes the remembered destination before committing a Community route', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockResolvedValue({
+      ref: 'a',
+      roomId: 'general',
+      threadId: 'thread-1',
+      scrollAnchorEntryId: null,
+    });
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/channels',
+        search: { community: 'a', id: 'general', thread: 'thread-1' },
+      })
+    );
+    expect(mockListRemoteCommunityRooms).not.toHaveBeenCalled();
+  });
+
+  it('names and focuses the route-selected Community when the menu opens', async () => {
+    mockSearch = { community: 'a' };
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    renderBlock();
+    const trigger = screen.getByTestId('sidebar-header-block');
+    expect(trigger).toHaveAccessibleName('Alpha menu');
+    fireEvent.pointerDown(trigger);
+    const selected = await screen.findByRole('menuitemradio', { name: /Alpha/ });
+    expect(selected).toHaveAttribute('aria-checked', 'true');
+    await waitFor(() => expect(selected).toHaveFocus());
+  });
+
+  it('leaves the committed route unchanged when target reauthorization fails', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockRejectedValue(new Error('offline'));
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Couldn’t open Alpha'));
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   it('grows the menu without moving anything outside it (BC-43)', async () => {
     // Three rows.
     mockMenuNodes = rows(3);
     renderBlock();
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
     await screen.findByRole('menuitem', { name: 'Row 0' });
-    expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(3);
+    expect(document.querySelectorAll('[role^="menuitem"]')).toHaveLength(5);
     const short = blockMarkup();
     cleanup();
 
@@ -276,7 +422,7 @@ describe('SidebarHeaderBlock', () => {
     await screen.findByRole('menuitem', { name: 'Row 5' });
     // The menu really did get longer — otherwise the comparison below is a
     // comparison of two identical renders and proves nothing.
-    expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(6);
+    expect(document.querySelectorAll('[role^="menuitem"]')).toHaveLength(8);
 
     expect(blockMarkup()).toBe(short);
   });
@@ -319,7 +465,10 @@ describe('the team name while the roster is still coming (spec `sidebar-simplifi
     expect(screen.queryByText('Your team')).toBeNull();
     expect(screen.queryByText('Dorian’s team')).toBeNull();
     // …and the control is still named for a screen reader while it waits.
-    expect(screen.getByTestId('sidebar-header-block')).toHaveAttribute('aria-label', 'Team menu');
+    expect(screen.getByTestId('sidebar-header-block')).toHaveAttribute(
+      'aria-label',
+      'Context menu'
+    );
   });
 
   it('paints the name the moment the roster answers', () => {

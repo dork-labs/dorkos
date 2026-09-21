@@ -45,6 +45,16 @@ export function ChannelsPage() {
       />
     );
 
+  if (community) {
+    return (
+      <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 p-10 text-center text-sm">
+        <MessagesSquare className="text-muted-foreground/50 size-10" aria-hidden />
+        <p className="text-foreground font-medium">No channel selected</p>
+        <p className="max-w-sm">Choose an available channel from this community.</p>
+      </div>
+    );
+  }
+
   // **Not yet sure whether this id is Home's room — so draw the room's own
   // loading state, not a blank pane.** This branch is taken by EVERY room on a
   // cold load, not just #team: the answer comes from the room list, and until

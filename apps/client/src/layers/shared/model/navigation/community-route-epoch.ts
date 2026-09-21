@@ -53,3 +53,16 @@ export function useCommunityRouteEpoch(): CommunityRouteEpoch {
   const current = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   return useMemo(() => routeEpoch(current), [current]);
 }
+
+/** Return the selected Community ref encoded in a committed route destination. */
+export function communityRefFromRouteDestination(destination: string): string | null {
+  if (destination === 'installation') return null;
+  try {
+    const decoded: unknown = JSON.parse(destination);
+    return Array.isArray(decoded) && decoded[0] === 'community' && typeof decoded[1] === 'string'
+      ? decoded[1]
+      : null;
+  } catch {
+    return null;
+  }
+}

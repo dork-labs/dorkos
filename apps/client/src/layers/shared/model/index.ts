@@ -60,6 +60,7 @@ export { useCommunityAuthority } from './use-community-authority';
 export {
   commitCommunityRouteEpoch,
   getCommunityRouteEpoch,
+  communityRefFromRouteDestination,
   useCommunityRouteEpoch,
   type CommunityRouteEpoch,
 } from './navigation/community-route-epoch';

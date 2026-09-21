@@ -48,7 +48,7 @@ const room = (community: string) =>
     lastRemoteSeq: 0,
   });
 
-function mount(failFirst = false) {
+function mount(community?: string, failFirst = false) {
   const transport = createMockTransport();
   vi.mocked(transport.listCommunityConnections).mockResolvedValue([
     connection('a'),
@@ -61,7 +61,9 @@ function mount(failFirst = false) {
   const root = createRootRoute({ component: CommunityChannelGroups, staticData: { header: null } });
   const router = createRouter({
     routeTree: root,
-    history: createMemoryHistory({ initialEntries: ['/'] }),
+    history: createMemoryHistory({
+      initialEntries: [community ? `/channels?community=${community}&id=same` : '/'],
+    }),
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -75,22 +77,28 @@ function mount(failFirst = false) {
 }
 
 describe('community channel discovery', () => {
-  it('addresses identical channel IDs with different community refs', async () => {
-    mount();
-    await waitFor(() => expect(screen.getAllByRole('link', { name: /general/ })).toHaveLength(2));
-    const links = screen.getAllByRole('link', { name: /general/ });
-    const addresses = links.map((link) => new URL(link.getAttribute('href')!, 'http://localhost'));
-    expect(addresses.map((url) => url.searchParams.get('community'))).toEqual(['a', 'b']);
-    expect(addresses.map((url) => url.searchParams.get('id'))).toEqual(['same', 'same']);
-    expect(screen.getAllByLabelText('2 unread messages')).toHaveLength(2);
+  it('shows only the route-selected community and keeps its room address qualified', async () => {
+    mount('b');
+    const link = await screen.findByRole('link', { name: /general/ });
+    const address = new URL(link.getAttribute('href')!, 'http://localhost');
+    expect(address.searchParams.get('community')).toBe('b');
+    expect(address.searchParams.get('id')).toBe('same');
+    expect(screen.getByRole('region', { name: 'Community b' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Community a' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('2 unread messages')).toBeInTheDocument();
   });
-  it('keeps a healthy community visible when another fails', async () => {
-    const transport = mount(true);
-    await waitFor(() => expect(transport.listRemoteCommunityRooms).toHaveBeenCalledWith('b'));
-    expect(await screen.findByRole('link', { name: /general/ })).toHaveAttribute(
-      'href',
-      expect.stringContaining('community=b')
-    );
+
+  it('renders no remote navigation while the installation route is selected', async () => {
+    const transport = mount();
+    await waitFor(() => expect(transport.listCommunityConnections).toHaveBeenCalled());
+    expect(transport.listRemoteCommunityRooms).not.toHaveBeenCalled();
+    expect(screen.queryByRole('link', { name: /general/ })).not.toBeInTheDocument();
+  });
+
+  it('contains a selected community failure without drawing another community', async () => {
+    const transport = mount('a', true);
+    await waitFor(() => expect(transport.listRemoteCommunityRooms).toHaveBeenCalledWith('a'));
     expect(await screen.findByText(/Community unavailable/)).toBeInTheDocument();
+    expect(transport.listRemoteCommunityRooms).not.toHaveBeenCalledWith('b');
   });
 });

@@ -56,6 +56,18 @@
 - Added a rapid A→B→A regression proving that an earlier A response cannot populate the returned A
   view even when owner authority never changes.
 
+**Task 2.1–2.2 in progress:** Expose the route-owned context in persistent navigation.
+
+- Extended the existing sidebar identity trigger into a keyboard-accessible context menu with the
+  installation fixed first and connected Communities in the owner's saved order.
+- Reauthorize a remembered room before navigation commits; a failed target read keeps the old
+  route, label, and content intact.
+- Render one contextual navigation body at a time. Installation routes retain Now/Today/Library;
+  Community routes show only the selected Community's loading, unavailable, reconnect, empty, or
+  channel state.
+- Preserve an explicit Community route even when it has no readable room so the content surface
+  shows a safe empty frame instead of falling back to local rooms.
+
 ## Files Modified/Created
 
 **Source files:**
@@ -72,6 +84,11 @@
 - `apps/client/src/layers/entities/community/model/use-remote-community-stream.ts`
 - `apps/client/src/layers/shared/model/navigation/community-route-epoch.ts`
 - `apps/client/src/router.tsx`
+- `apps/client/src/layers/features/dashboard-sidebar/ui/CommunityContextSwitcher.tsx`
+- `apps/client/src/layers/features/dashboard-sidebar/ui/CommunityChannelGroups.tsx`
+- `apps/client/src/layers/features/dashboard-sidebar/ui/SidebarHeaderBlock.tsx`
+- `apps/client/src/layers/features/dashboard-sidebar/ui/SidebarZones.tsx`
+- `apps/client/src/layers/widgets/room-view/ui/ChannelsPage.tsx`
 - `apps/client/src/layers/widgets/room-view/model/use-remote-community-drafts.ts`
 - `apps/client/src/layers/widgets/room-view/ui/RemoteCommunityAgents.tsx`
 - `apps/client/src/layers/widgets/room-view/ui/RemoteCommunitySurface.tsx`
@@ -87,8 +104,8 @@
 
 ## Known Issues
 
-- Task 1.3 still needs the visible switcher and target skeleton so the route-epoch boundary is
-  reflected in navigation rather than only protecting the existing room surface.
+- The desktop switcher and contextual body are present; the persistent phone trigger and full
+  bottom-sheet interaction remain in Task 2.3.
 - Effective `read`, `post`, and `enrollAgent` capabilities will come from the reviewed Community
   administration contract. The local app must consume that server projection rather than infer
   write access from lifecycle, membership, or a restored read-only connection.
@@ -113,3 +130,6 @@
 - Route-boundary verification on 2026-09-21: 33 focused tests passed, including rapid A→B→A query,
   stream, receipt, and draft fencing; client typecheck and changed-file lint completed with no new
   errors (the pre-existing stream effect warning remains).
+- Desktop context checkpoint on 2026-09-21: the focused header, contextual navigation, qualified
+  channel route, and authority suites passed; client typecheck passed. The switch waits for
+  destination reauthorization before committing and focuses the selected menu row when opened.

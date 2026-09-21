@@ -663,7 +663,7 @@ export function createAppRouter(queryClient: QueryClient, transport: Transport) 
       id?: unknown;
       thread?: unknown;
     };
-    if (typeof search.community !== 'string' || typeof search.id !== 'string') {
+    if (typeof search.community !== 'string') {
       commitCommunityRouteEpoch('installation');
       return;
     }
@@ -671,7 +671,7 @@ export function createAppRouter(queryClient: QueryClient, transport: Transport) 
       JSON.stringify([
         'community',
         search.community,
-        search.id,
+        typeof search.id === 'string' ? search.id : null,
         typeof search.thread === 'string' ? search.thread : null,
       ])
     );
