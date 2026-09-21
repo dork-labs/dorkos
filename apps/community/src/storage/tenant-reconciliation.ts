@@ -308,9 +308,10 @@ async function reconcileWithLock(
     const current = await client.query<{ generation: string }>(
       'SELECT generation FROM tenant_reconciliation WHERE singleton FOR UPDATE'
     );
-    if (Number(current.rows[0]?.generation) !== generation) {
+    const currentGeneration = Number(current.rows[0]?.generation);
+    if (currentGeneration !== generation) {
       await client.query('ROLLBACK');
-      return block(client, generation, counts, [
+      return block(client, currentGeneration, counts, [
         issue(
           'active_writes',
           1,

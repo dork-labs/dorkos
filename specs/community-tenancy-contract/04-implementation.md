@@ -45,6 +45,7 @@ Task 1.2 implementation reached VERIFY:
 - A durable singleton generation is invalidated by every interim inferred-owner insert, update, or delete and by unmanaged cleanup queue changes. Current attachment/export reservations share an advisory fence with reconciliation; operators must separately quiesce old instances before starting it.
 - Filesystem and S3 storage expose complete namespace snapshots; S3 exhausts pagination and returns no partial result after a page failure.
 - Reconciliation verifies referenced bytes and hashes, converts singleton cleanup only when a legacy queue row proves its origin, and records only the exact generation it validated. A valid-looking opaque key alone is not ownership proof; missing, ambiguous, incomplete, or unexpected objects remain untouched and return a redacted operator action.
+- The full namespace scan is reserved for the future second-community creation gate. Ordinary startup does not list or hash stored objects, and a dirty generation does not delay serving the existing single community.
 - This is an intermediate expand/backfill stage. Second-community creation remains unavailable until task 1.3 makes tenant keys non-null, validates composite constraints, removes the interim dirty-write triggers, and repeats the authoritative namespace check in its creation transaction.
 
 ### Session 4 - 2026-09-20

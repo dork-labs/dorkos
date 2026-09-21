@@ -392,9 +392,14 @@ it('rejects a stale listing when the readiness generation advances', async () =>
   };
 
   const result = await reconcileTenantNamespace(db, racingStore);
+  const gate = (await db.query('SELECT state,generation FROM tenant_reconciliation')).rows[0];
 
-  expect(result).toMatchObject({ ready: false, issues: [{ code: 'active_writes' }] });
-  expect((await db.query('SELECT state FROM tenant_reconciliation')).rows[0].state).toBe('dirty');
+  expect(result).toMatchObject({
+    ready: false,
+    generation: Number(gate.generation),
+    issues: [{ code: 'active_writes' }],
+  });
+  expect(gate.state).toBe('dirty');
 });
 
 it('rejects a legacy write that removes explicit tenant ownership', async () => {

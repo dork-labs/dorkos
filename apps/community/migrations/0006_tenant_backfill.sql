@@ -30,8 +30,6 @@ ALTER TABLE managed_blobs DROP CONSTRAINT managed_blobs_purpose_check;
 ALTER TABLE managed_blobs ADD CONSTRAINT managed_blobs_purpose
 CHECK (purpose IN ('attachment','export','legacy_cleanup'));
 
-SELECT set_config('dorkos.tenant_reconciliation','backfill',true);
-
 UPDATE invite_uses u SET community_id=i.community_id
 FROM invites i WHERE u.invite_id=i.id AND u.community_id IS NULL;
 UPDATE pending_admissions p SET community_id=i.community_id
