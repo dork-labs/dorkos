@@ -87,12 +87,15 @@ describe('Community creation executor', () => {
     expect(events).toEqual([
       'intent:fly',
       'create',
+      'intent:fly',
       'state:fly_app_created',
       'intent:neon',
       'create',
+      'intent:neon',
       'state:neon_project_created',
       'intent:tigris',
       'create',
+      'intent:tigris',
       'state:bucket_created',
     ]);
     expect(result.resources).toEqual({
@@ -170,6 +173,74 @@ describe('Community creation executor', () => {
       pendingIntent: null,
       lastSafeError: { category: 'transient', code: 'PROVIDER_UNAVAILABLE' },
     });
+  });
+
+  it.each(['AUTH_REQUIRED', 'PROVIDER_UNAVAILABLE'])(
+    'retains a returned identity when readback stops with %s so resume never creates twice',
+    async (code) => {
+      const harness = dependencies();
+      vi.mocked(harness.value.fly.inspect).mockRejectedValue(
+        Object.assign(new Error('safe readback failure'), { code })
+      );
+
+      await expect(
+        executeCommunityCreationPhase(plan, harness.persisted(), harness.value)
+      ).rejects.toEqual(new CommunityCreationUncertainError('fly'));
+      expect(harness.persisted()).toMatchObject({
+        state: 'uncertain',
+        pendingIntent: { provider: 'fly' },
+        resources: { flyAppId: 'app-id' },
+        lastSafeError: { category: 'uncertain', code: 'CREATION_OUTCOME_UNCERTAIN' },
+      });
+
+      await expect(
+        executeCommunityCreationPhase(plan, harness.persisted(), harness.value)
+      ).rejects.toEqual(new CommunityCreationUncertainError('fly'));
+      expect(harness.value.fly.create).toHaveBeenCalledTimes(1);
+      expect(harness.value.fly.inspect).toHaveBeenCalledTimes(2);
+    }
+  );
+
+  it('rejects topology drift when rechecking a completed Neon project', async () => {
+    const harness = dependencies();
+    const completed = journal({
+      state: 'neon_project_created',
+      resources: {
+        flyAppId: 'app-id',
+        neonProjectId: 'project-id',
+        neonBranchId: 'branch-id',
+        neonDatabaseId: 'database-id',
+        neonRoleId: 'role-id',
+        neonEndpointId: 'endpoint-id',
+      },
+      verifiedBindings: [
+        { kind: 'endpoint-to-project', sourceId: 'endpoint-id', targetId: 'project-id' },
+      ],
+      completedSteps: ['planned', 'fly_app_created', 'neon_project_created'],
+    });
+    vi.mocked(harness.value.neon.inspect).mockResolvedValue({
+      id: 'project-id',
+      organizationId: 'org-dorian',
+      name: 'dorkos-community-test',
+      relatedResources: {
+        neonBranchId: 'branch-id',
+        neonDatabaseId: 'database-id',
+        neonRoleId: 'role-id',
+        neonEndpointId: 'replacement-endpoint',
+      },
+      verifiedBindings: [
+        {
+          kind: 'endpoint-to-project',
+          sourceId: 'replacement-endpoint',
+          targetId: 'project-id',
+        },
+      ],
+    });
+
+    await expect(executeCommunityCreationPhase(plan, completed, harness.value)).rejects.toEqual(
+      new ProviderMutationError('INVALID_RESPONSE')
+    );
+    expect(harness.value.neon.create).not.toHaveBeenCalled();
   });
 
   it('finishes separate Tigris terms consent before recording a bucket intent', async () => {

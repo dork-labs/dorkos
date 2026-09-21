@@ -203,7 +203,11 @@ export function createDefaultCommunityCreationDependencies(input: {
           roleName: 'community_owner',
           postgresVersion: 17,
         });
-        return exactNeonProject(input.options, input.plan, project.id);
+        return {
+          id: project.id,
+          organizationId: project.organizationId,
+          name: project.name,
+        };
       },
       inspect: (id) => exactNeonProject(input.options, input.plan, id),
     },
@@ -232,9 +236,6 @@ export function createDefaultCommunityCreationDependencies(input: {
           })
         );
         const result = tigrisIdentity(created, input.plan, exactApp);
-        verifyTigrisSecretNames(
-          await readFlySecretInventory(input.options.fly, input.plan.fly.appName)
-        );
         return result;
       },
       inspect: async (id) => {

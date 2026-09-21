@@ -21,7 +21,7 @@
 
 ## Verification
 
-- 132 focused launcher and shared release-contract tests pass.
+- 137 focused launcher and shared release-contract tests pass.
 - The CLI package typecheck and lint pass with no new lint errors.
 - The production CLI bundle builds and runs `dorkos community deploy --help` without a repository working directory.
 - Service mutation tests use fake executables and local HTTP fixtures. Ordinary verification never contacts or mutates Fly, Neon, Tigris, GitHub, or another paid service.

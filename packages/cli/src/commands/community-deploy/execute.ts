@@ -11,7 +11,7 @@ type CreationService = 'fly' | 'neon' | 'tigris';
 type CreatedState = 'fly_app_created' | 'neon_project_created' | 'bucket_created';
 type ResourceKey = 'flyAppId' | 'neonProjectId' | 'tigrisBucketId';
 
-/** Non-secret identity returned by a create call and exact-ID readback. */
+/** Non-secret identity returned by a create response or exact-ID readback. */
 export interface CreatedResourceIdentity {
   /** Service-issued immutable identity. */
   id: string;
@@ -71,6 +71,7 @@ interface CreationStep {
   organizationId: string;
   resourceName: string;
   expectedBindingResourceKey?: ResourceKey;
+  relatedResourceKeys?: readonly (keyof LaunchJournal['resources'])[];
   boundary: CreationBoundary;
 }
 
@@ -130,63 +131,55 @@ async function executeCreationStep(
     if (!existingId) throw new ProviderMutationError('INVALID_RESPONSE');
     const inspected = await step.boundary.inspect(existingId);
     assertIdentity(step, inspected, expectedBindingId);
+    assertJournalIdentity(journal, step, inspected, expectedBindingId);
     return journal;
   }
-  if (journal.pendingIntent) {
+  if (journal.pendingIntent && (!existingId || journal.pendingIntent.provider !== step.service)) {
     throw new CommunityCreationUncertainError(journal.pendingIntent.provider);
   }
 
-  await step.boundary.prepare?.();
-
-  const current = await persistNext(dependencies, journal, {
-    pendingIntent: {
-      provider: step.service,
-      organizationId: step.organizationId,
-      resourceName: step.resourceName,
-    },
-    lastSafeError: null,
-  });
-
-  let created: CreatedResourceIdentity;
-  try {
-    created = await step.boundary.create();
-    assertIdentity(step, created, expectedBindingId);
-    const inspected = await step.boundary.inspect(created.id);
-    assertIdentity(step, inspected, expectedBindingId);
-    if (inspected.id !== created.id) throw new ProviderMutationError('INVALID_RESPONSE');
-    if (
-      JSON.stringify(inspected.relatedResources ?? {}) !==
-      JSON.stringify(created.relatedResources ?? {})
-    ) {
-      throw new ProviderMutationError('INVALID_RESPONSE');
-    }
-  } catch (error) {
-    const safeCode =
-      error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
-        ? error.code
-        : null;
-    if (
-      safeCode === 'PROVIDER_UNAVAILABLE' ||
-      safeCode === 'AUTH_REQUIRED' ||
-      safeCode === 'ACCESS_DENIED' ||
-      safeCode === 'TERMS_NOT_ACCEPTED'
-    ) {
-      const category =
-        safeCode === 'AUTH_REQUIRED'
-          ? 'authentication'
-          : safeCode === 'ACCESS_DENIED' || safeCode === 'TERMS_NOT_ACCEPTED'
-            ? 'authorization'
-            : 'transient';
-      await persistNext(dependencies, current, {
-        pendingIntent: null,
-        lastSafeError: { category, code: safeCode },
-      });
-      throw error;
-    }
-    await persistNext(dependencies, current, {
-      state: 'uncertain',
-      lastSafeError: { category: 'uncertain', code: 'CREATION_OUTCOME_UNCERTAIN' },
+  let current = journal;
+  let createdId = existingId;
+  if (!journal.pendingIntent) {
+    await step.boundary.prepare?.();
+    current = await persistNext(dependencies, journal, {
+      pendingIntent: {
+        provider: step.service,
+        organizationId: step.organizationId,
+        resourceName: step.resourceName,
+      },
+      lastSafeError: null,
     });
+
+    let created: CreatedResourceIdentity;
+    try {
+      created = await step.boundary.create();
+      assertIdentity(step, created, expectedBindingId);
+    } catch (error) {
+      const safeCode = safeErrorCode(error);
+      if (isCertifiedPreSubmitFailure(safeCode)) {
+        await persistNext(dependencies, current, {
+          pendingIntent: null,
+          lastSafeError: { category: safeErrorCategory(safeCode), code: safeCode },
+        });
+        throw error;
+      }
+      await persistUncertain(dependencies, current);
+      throw new CommunityCreationUncertainError(step.service);
+    }
+    createdId = created.id;
+    current = await persistNext(dependencies, current, {
+      resources: { ...current.resources, [step.resourceKey]: createdId },
+    });
+  }
+
+  let inspected: CreatedResourceIdentity;
+  try {
+    inspected = await step.boundary.inspect(createdId!);
+    assertIdentity(step, inspected, expectedBindingId);
+    if (inspected.id !== createdId) throw new ProviderMutationError('INVALID_RESPONSE');
+  } catch {
+    await persistUncertain(dependencies, current);
     throw new CommunityCreationUncertainError(step.service);
   }
 
@@ -195,19 +188,87 @@ async function executeCreationStep(
     pendingIntent: null,
     resources: {
       ...current.resources,
-      [step.resourceKey]: created.id,
-      ...(created.relatedResources ?? {}),
+      [step.resourceKey]: inspected.id,
+      ...(inspected.relatedResources ?? {}),
     },
     verifiedBindings: [
       ...current.verifiedBindings,
       ...(expectedBindingId === undefined
         ? []
-        : [{ kind: 'bucket-to-app' as const, sourceId: created.id, targetId: expectedBindingId }]),
-      ...(created.verifiedBindings ?? []),
+        : [
+            { kind: 'bucket-to-app' as const, sourceId: inspected.id, targetId: expectedBindingId },
+          ]),
+      ...(inspected.verifiedBindings ?? []),
     ],
     completedSteps: [...current.completedSteps, step.state],
     lastSafeError: null,
   });
+}
+
+function safeErrorCode(error: unknown): string | null {
+  return error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : null;
+}
+
+function isCertifiedPreSubmitFailure(
+  code: string | null
+): code is 'PROVIDER_UNAVAILABLE' | 'AUTH_REQUIRED' | 'ACCESS_DENIED' | 'TERMS_NOT_ACCEPTED' {
+  return (
+    code === 'PROVIDER_UNAVAILABLE' ||
+    code === 'AUTH_REQUIRED' ||
+    code === 'ACCESS_DENIED' ||
+    code === 'TERMS_NOT_ACCEPTED'
+  );
+}
+
+function safeErrorCategory(code: ReturnType<typeof safeErrorCode>) {
+  return code === 'AUTH_REQUIRED'
+    ? ('authentication' as const)
+    : code === 'ACCESS_DENIED' || code === 'TERMS_NOT_ACCEPTED'
+      ? ('authorization' as const)
+      : ('transient' as const);
+}
+
+async function persistUncertain(
+  dependencies: CommunityCreationDependencies,
+  current: LaunchJournal
+): Promise<void> {
+  await persistNext(dependencies, current, {
+    state: 'uncertain',
+    lastSafeError: { category: 'uncertain', code: 'CREATION_OUTCOME_UNCERTAIN' },
+  });
+}
+
+function assertJournalIdentity(
+  journal: LaunchJournal,
+  step: CreationStep,
+  inspected: CreatedResourceIdentity,
+  expectedBindingId: string | undefined
+): void {
+  if (inspected.id !== journal.resources[step.resourceKey]) {
+    throw new ProviderMutationError('INVALID_RESPONSE');
+  }
+  for (const key of step.relatedResourceKeys ?? []) {
+    if (!inspected.relatedResources || inspected.relatedResources[key] !== journal.resources[key]) {
+      throw new ProviderMutationError('INVALID_RESPONSE');
+    }
+  }
+  const expectedBindings = [
+    ...(expectedBindingId === undefined
+      ? []
+      : [{ kind: 'bucket-to-app' as const, sourceId: inspected.id, targetId: expectedBindingId }]),
+    ...(inspected.verifiedBindings ?? []),
+  ];
+  for (const expected of expectedBindings) {
+    if (
+      !journal.verifiedBindings.some(
+        (binding) => JSON.stringify(binding) === JSON.stringify(expected)
+      )
+    ) {
+      throw new ProviderMutationError('INVALID_RESPONSE');
+    }
+  }
 }
 
 /**
@@ -242,6 +303,7 @@ export async function executeCommunityCreationPhase(
       resourceKey: 'neonProjectId',
       organizationId: plan.neon.organizationId,
       resourceName: plan.neon.projectName,
+      relatedResourceKeys: ['neonBranchId', 'neonDatabaseId', 'neonRoleId', 'neonEndpointId'],
       boundary: dependencies.neon,
     },
     {
