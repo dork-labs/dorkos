@@ -69,8 +69,22 @@ export function aggregateDays(
       else b.durations.push([c.start - midnight, c.end - c.start]);
       if (c.status !== null && c.status !== 0 && !SIGNAL_STATUSES.has(c.status)) b.failed += 1;
       note(b, c.notes);
-      note(h, c.notes);
     }
+    // THE HOOK'S NOTES ARE PER RUN, THE COMMAND'S ARE PER COMMAND, and the
+    // difference is not cosmetic: one pre-commit run can leave two
+    // `lock_timeout` notes, because `lint` and `typecheck` run concurrently and
+    // can both give up waiting for a slot. Summing them into the hook bucket
+    // made a share whose numerator could exceed its denominator — the daily
+    // report printed "Of 1 hook runs ... 2 ran without waiting for a free slot"
+    // — while `ci/metrics.yaml` declares `tracked.gate-cut-short` a share of
+    // hook RUNS. So a key counts once for the run, however many of its commands
+    // recorded it; the per-command bucket above keeps the full tally.
+    note(
+      h,
+      Object.fromEntries(
+        [...new Set(r.commands.flatMap((c) => Object.keys(c.notes)))].map((k) => [k, 1])
+      )
+    );
     // Machine readings belong to the day, not to any one hook: what they answer
     // is "what was this box doing", and every hook run is a sample of it.
     // A reading is only dropped when its own probe was unavailable.

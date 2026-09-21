@@ -50,6 +50,20 @@
 # memory and swap are recorded in the local timings, so what this machine is
 # doing to these numbers is a figure in the daily report and not a feeling.
 pre-commit:
+  # STREAM THE OUTPUT AS IT ARRIVES, for the reason the `pre-push` block spells
+  # out at length: lefthook buffers a command's output and prints it only once
+  # the command has finished. Measured against lefthook 2.1.12, a command that
+  # echoes at t+0 and exits at t+8 shows everything at t+9.
+  #
+  # It matters MORE here than it ever did at push, because DOR-2160 put a wait
+  # in front of the two slow commands. A contended commit now spends up to
+  # `heavy_lock_wait_seconds` queueing and then runs lint (409 s worst) or
+  # typecheck (473 s worst), and without this the terminal is empty for all of
+  # it — which is precisely the "cannot tell compiling from wedged" state that
+  # taught everyone to reach for --no-verify in the first place. The lock's own
+  # "waiting up to Ns for a slot" line is written to be the thing you see, and
+  # it cannot be seen without this.
+  follow: true
   commands:
     format:
       glob: '*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,json,css,md,mdx,yml,yaml}'

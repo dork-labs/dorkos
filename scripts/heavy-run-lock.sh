@@ -329,9 +329,9 @@ while :; do
   if [ "$waited" -ge "$WAIT_SECONDS" ]; then
     ci_steward_note lock_timeout "$waited"
     {
-      echo "[heavy-run-lock] all ${SLOTS} heavy-run slots busy after ${waited}s — running anyway."
-      echo "                 The machine is saturated; this run adds to it. The gate above it"
-      echo "                 is time-bounded, so this is capped, and it is recorded as"
+      echo "[heavy-run-lock] all ${SLOTS} heavy-run slots busy after ${waited}s — running anyway,"
+      echo "                 uncapped. The machine is already saturated and this run adds to it;"
+      echo "                 nothing above this wrapper bounds how long it takes. Recorded as"
       echo "                 lock_timeout in the local timings."
     } >&2
     break

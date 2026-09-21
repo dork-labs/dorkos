@@ -532,3 +532,56 @@ describe('the heavy-run lock agrees with ci/config.yaml', () => {
       expect(script).toContain(`config_number ${key}`);
   });
 });
+
+/**
+ * A hook run's notes are counted once per RUN, its commands' once per COMMAND.
+ *
+ * `ci/metrics.yaml` declares `tracked.gate-cut-short` a share of hook runs, and
+ * one pre-commit run can leave two `lock_timeout` notes because `lint` and
+ * `typecheck` run concurrently and can both give up waiting for a slot. Summing
+ * them into the hook bucket made a numerator that could exceed its denominator,
+ * and the daily report printed "Of 1 hook runs ... 2 ran without waiting for a
+ * free slot" — a number that cannot happen, on the one surface a person reads.
+ */
+describe('note counting has the right denominator', () => {
+  const t0 = Date.parse('2026-09-18T10:00:00Z') / 1000;
+  const line = (o: Record<string, unknown>) => JSON.stringify({ v: 1, ...o });
+
+  it('counts one contended pre-commit as one run, not two', () => {
+    const cmd = (c: string, id: string) => [
+      line({ e: 'S', h: 'pre-commit', c, id, pp: 77, t: t0 }),
+      line({ e: 'O', h: 'pre-commit', c, id, o: 'lock_timeout', d: 45, t: t0 + 45 }),
+      line({ e: 'E', h: 'pre-commit', c, id, pp: 77, t: t0 + 200, x: 0 }),
+    ];
+    const text = [...cmd('lint', 'a'), ...cmd('typecheck', 'b')].join('\n');
+    const runs = hookRuns(parseTimings(text), t0 + 5000, 600);
+    expect(runs).toHaveLength(1);
+    const [day] = aggregateDays(runs, 'clone-x', '2026-09-19', 'x');
+
+    // One run, so the hook's count is 1 even though two commands recorded it.
+    expect(day!.hooks['pre-commit']!.durations).toHaveLength(1);
+    expect(day!.hooks['pre-commit']!.notes).toEqual({ lock_timeout: 1 });
+
+    // The per-command buckets keep the full tally: both commands really waited.
+    expect(day!.commands['pre-commit.lint']!.notes).toEqual({ lock_timeout: 1 });
+    expect(day!.commands['pre-commit.typecheck']!.notes).toEqual({ lock_timeout: 1 });
+  });
+
+  it('never lets the numerator exceed the denominator', () => {
+    // The property the report depends on, asserted directly rather than via the
+    // one arrangement above: a share over hook runs must be at most 1.
+    const cmds = ['lint', 'typecheck', 'format'].flatMap((c, i) => [
+      line({ e: 'S', h: 'pre-commit', c, id: `x${i}`, pp: 88, t: t0 }),
+      line({ e: 'O', h: 'pre-commit', c, id: `x${i}`, o: 'lock_timeout', d: 45, t: t0 + 1 }),
+      line({ e: 'E', h: 'pre-commit', c, id: `x${i}`, pp: 88, t: t0 + 10, x: 0 }),
+    ]);
+    const [day] = aggregateDays(
+      hookRuns(parseTimings(cmds.join('\n')), t0 + 5000, 600),
+      'c',
+      '2026-09-19',
+      'x'
+    );
+    const h = day!.hooks['pre-commit']!;
+    expect(h.notes!.lock_timeout).toBeLessThanOrEqual(h.durations.length + h.killed);
+  });
+});
