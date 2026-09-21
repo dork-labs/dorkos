@@ -9,6 +9,10 @@ import {
   CommunityConnectionPollResponseSchema,
   type CommunityConnectionTransport,
 } from '@dorkos/shared/community-connections';
+import {
+  CommunityNavigationResolveResponseSchema,
+  CommunityNavigationStateSchema,
+} from '@dorkos/shared/community-navigation';
 import { fetchJSON, fetchNoContent } from './http-client';
 
 /** Create owner-scoped community methods bound to the local API base URL. */
@@ -52,6 +56,35 @@ export function createCommunityMethods(baseUrl: string): CommunityConnectionTran
     },
     disconnectCommunity(ref) {
       return fetchNoContent(baseUrl, path(ref), { method: 'DELETE' });
+    },
+    async getCommunityNavigation() {
+      return CommunityNavigationStateSchema.parse(
+        await fetchJSON(baseUrl, '/community-connections/navigation')
+      );
+    },
+    async moveCommunityNavigation(input) {
+      return CommunityNavigationStateSchema.parse(
+        await fetchJSON(baseUrl, '/community-connections/navigation/move', {
+          method: 'POST',
+          body: JSON.stringify(input),
+        })
+      );
+    },
+    async rememberCommunityNavigation(destination) {
+      return CommunityNavigationStateSchema.parse(
+        await fetchJSON(baseUrl, '/community-connections/navigation/destination', {
+          method: 'PUT',
+          body: JSON.stringify(destination),
+        })
+      );
+    },
+    async resolveCommunityNavigation(ref) {
+      return CommunityNavigationResolveResponseSchema.parse(
+        await fetchJSON(
+          baseUrl,
+          `/community-connections/navigation/${encodeURIComponent(ref)}/destination`
+        )
+      ).destination;
     },
   };
 }

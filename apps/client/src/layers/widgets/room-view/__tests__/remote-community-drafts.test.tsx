@@ -168,4 +168,30 @@ describe('remote community delivery drafts', () => {
     });
     expect(transport.postRemoteCommunityEntry).toHaveBeenCalledTimes(2);
   });
+
+  it('hides another owner’s draft immediately and discards its late receipt', async () => {
+    const { transport, receipt, wrapper } = harness();
+    let resolve!: (value: RemoteCommunityEntry) => void;
+    vi.mocked(transport.postRemoteCommunityEntry).mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      })
+    );
+    const { result, rerender } = renderHook(
+      ({ owner }) => useRemoteCommunityDrafts('a', 'same', true, [], receipt, 'channel', owner),
+      { wrapper, initialProps: { owner: 'owner-a' } }
+    );
+    act(() => result.current.setText('owner a private draft'));
+    act(() => result.current.send());
+
+    rerender({ owner: 'owner-b' });
+    expect(result.current.text).toBe('');
+    expect(result.current.deliveries).toEqual([]);
+    act(() => result.current.setText('owner b draft'));
+    await act(async () => resolve(entry));
+
+    expect(receipt).not.toHaveBeenCalled();
+    expect(result.current.text).toBe('owner b draft');
+    expect(result.current.deliveries).toEqual([]);
+  });
 });

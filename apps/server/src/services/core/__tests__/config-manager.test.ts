@@ -63,6 +63,7 @@ import {
   seedHarnessRefusedHooks,
   seedRoomCanvasOps,
   retireToolOnlyReplies,
+  seedCommunityNavigationPrefs,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -992,6 +993,43 @@ describe('dropRetiredDorkosTools migration (tool-only-room-replies §A1, DOR-209
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('seedCommunityNavigationPrefs migration (community-switcher-navigation 1.2)', () => {
+  it('adds the versioned block without replacing existing ui preferences', () => {
+    let ui: unknown = { theme: 'dark', composer: { richText: false } };
+    const store = {
+      get: vi.fn(() => ui),
+      set: vi.fn((_key: string, value: unknown) => {
+        ui = value;
+      }),
+    };
+
+    seedCommunityNavigationPrefs(store);
+
+    expect(ui).toEqual({
+      theme: 'dark',
+      composer: { richText: false },
+      communityNavigation: { version: 1, owners: [] },
+    });
+    expect(store.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('is idempotent and preserves an existing owner history', () => {
+    const ui = {
+      theme: 'system',
+      communityNavigation: {
+        version: 1,
+        owners: [{ ownerKey: 'owner-a', order: ['community_a'], destinations: [] }],
+      },
+    };
+    const store = { get: vi.fn(() => ui), set: vi.fn() };
+
+    seedCommunityNavigationPrefs(store);
+    seedCommunityNavigationPrefs(store);
+
+    expect(store.set).not.toHaveBeenCalled();
   });
 });
 
@@ -3683,7 +3721,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(28);
+    expect(Object.keys(bodies)).toHaveLength(29);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

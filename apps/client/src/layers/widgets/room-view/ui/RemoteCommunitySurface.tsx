@@ -19,6 +19,7 @@ import {
   type ConversationTarget,
 } from '@/layers/features/conversation';
 import type { ComposerInputHandle } from '@/layers/features/composer';
+import { useCurrentUser } from '@/layers/features/auth';
 import { RemoteCommunityAgents } from './RemoteCommunityAgents';
 import { useRemoteCommunityDrafts } from '../model/use-remote-community-drafts';
 import { RemoteCommunityMessage } from './RemoteCommunityMessage';
@@ -48,6 +49,7 @@ export function RemoteCommunitySurface({
   onThread: (rootId?: string) => void;
 }) {
   const transport = useTransport();
+  const currentUser = useCurrentUser();
   const queries = useQueryClient();
   const roomQuery = useRemoteCommunityRoom(community, roomId);
   const [streamRevision, setStreamRevision] = useState(0);
@@ -104,7 +106,8 @@ export function RemoteCommunitySurface({
     canSend,
     entries,
     onReceipt,
-    threadId ?? 'channel'
+    threadId ?? 'channel',
+    currentUser?.id ?? 'local-owner'
   );
   const visible = entries.filter((entry) =>
     threadId ? entry.id === threadId || entry.threadRootEntryId === threadId : entry.depth === 0

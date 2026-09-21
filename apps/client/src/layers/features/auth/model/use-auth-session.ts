@@ -139,6 +139,12 @@ export function useSignOut(): AuthActionState<[]> {
       setError(err);
       return { ok: false, error: err };
     }
+    // Community descriptors and content are owner-private. Remove them before
+    // publishing the signed-out session so the next render cannot reuse the
+    // previous owner's same-browser cache while a refetch is still pending.
+    queryClient.removeQueries({
+      predicate: (query) => query.queryKey[0] === 'communities',
+    });
     queryClient.setQueryData<AuthSession | null>(authSessionKey, null);
     // Forget the sidebar's local memory, in the cache and on disk. It holds this
     // person's channels, agents and today's conversations, and the whole point

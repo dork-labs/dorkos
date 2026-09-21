@@ -125,7 +125,7 @@ Archived communities remain selectable for authorized read-only history and owne
 - Descriptor list unavailable: keep the route identity and show a contained retry state; never fall back to another community's cached descriptor/content.
 - Stale deep link: return the non-disclosing tenant/room result, then offer the authorized channel list or installation.
 - Switch request failure: remain in the old committed context with its old label and content; announce the failure.
-- Rapid A→B→A: only the final epoch may render; B can update only B's cache after it is no longer visible and while B's captured authorization generation remains valid.
+- Rapid A→B→A: only the final epoch may render. Late reads and SSE events from either earlier epoch are discarded even if their source-qualified cache still exists. Only an exact source-bound idempotent mutation receipt may settle after a switch, and only while its captured authorization generation remains valid.
 - Membership removal while open: invalidate A's authorization generation before canceling streams/queries and clearing state, then route away; delayed work from the old generation cannot repopulate A even after later A→B→A navigation.
 
 ## Accessibility and performance

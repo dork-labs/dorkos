@@ -1143,6 +1143,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     pollCommunityConnection: vi.fn(),
     cancelCommunityConnection: vi.fn().mockResolvedValue(undefined),
     disconnectCommunity: vi.fn().mockResolvedValue(undefined),
+    getCommunityNavigation: vi.fn().mockResolvedValue({ order: [], destinations: [] }),
+    moveCommunityNavigation: vi.fn().mockResolvedValue({ order: [], destinations: [] }),
+    rememberCommunityNavigation: vi.fn().mockResolvedValue({ order: [], destinations: [] }),
+    resolveCommunityNavigation: vi.fn().mockResolvedValue(null),
 
     // Cloud account link (accounts-and-auth P2)
     startCloudLink: vi.fn().mockResolvedValue({

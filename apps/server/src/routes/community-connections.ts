@@ -14,7 +14,14 @@ import {
   CommunityConnectionStatusResponseSchema,
   CommunityConnectionPollResponseSchema,
 } from '@dorkos/shared/community-connections';
+import {
+  CommunityNavigationMoveRequestSchema,
+  CommunityNavigationRememberRequestSchema,
+  CommunityNavigationResolveResponseSchema,
+  CommunityNavigationStateSchema,
+} from '@dorkos/shared/community-navigation';
 import { readOwnerAccount } from '../services/core/auth/index.js';
+import { configManager } from '../services/core/config-manager.js';
 import { getRoomService } from '../services/rooms/index.js';
 import { resolveCaller } from './room-caller.js';
 import { isLocalCaller, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
@@ -26,8 +33,15 @@ import {
   RemoteCommunityPairingService,
   RemotePairingBusyError,
 } from '../services/communities/remote/pairing-service.js';
-import { PinnedOriginError } from '../services/communities/remote/pinned-origin.js';
-import { getRemotePairingService } from '../services/communities/remote/state.js';
+import {
+  PinnedHttpError,
+  PinnedOriginError,
+} from '../services/communities/remote/pinned-origin.js';
+import {
+  getRemoteCommunityAdapter,
+  getRemotePairingService,
+} from '../services/communities/remote/state.js';
+import { CommunityNavigationPreferenceService } from '../services/communities/community-navigation-preferences.js';
 
 /** Resolve the only local human allowed to use a stored community connection. */
 export function resolveCommunityOwner(req: Request, res: Response): string | null {
@@ -80,7 +94,21 @@ function failure(res: Response, error: unknown): void {
 
 /** Build the production route or inject an isolated service in HTTP tests. */
 export function createCommunityConnectionsRouter(
-  connectionService: RemoteCommunityPairingService = getRemotePairingService()
+  connectionService: RemoteCommunityPairingService = getRemotePairingService(),
+  navigationService: CommunityNavigationPreferenceService = new CommunityNavigationPreferenceService(
+    configManager,
+    connectionService,
+    async (owner, ref, roomId) => {
+      try {
+        return (await getRemoteCommunityAdapter(ref, owner).getRoom(roomId)) !== null;
+      } catch (error) {
+        // A valid grant can still lack access to one private channel. Treat that
+        // exactly like a removed remembered room, without revealing which case.
+        if (error instanceof PinnedHttpError && error.status === 403) return false;
+        throw error;
+      }
+    }
+  )
 ): Router {
   const router = Router();
   router.get('/', async (req, res) => {
@@ -112,6 +140,67 @@ export function createCommunityConnectionsRouter(
             await connectionService.start(owner, parsed.data.url, parsed.data.installName)
           )
         );
+    } catch (error) {
+      failure(res, error);
+    }
+  });
+  router.get('/navigation', async (req, res) => {
+    const owner = resolveCommunityOwner(req, res);
+    if (!owner) return;
+    try {
+      res.json(CommunityNavigationStateSchema.parse(await navigationService.get(owner)));
+    } catch (error) {
+      failure(res, error);
+    }
+  });
+  router.post('/navigation/move', async (req, res) => {
+    const owner = resolveCommunityOwner(req, res);
+    if (!owner) return;
+    const parsed = CommunityNavigationMoveRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Choose a connected community and move direction.' });
+      return;
+    }
+    try {
+      res.json(
+        CommunityNavigationStateSchema.parse(
+          await navigationService.move(owner, parsed.data.ref, parsed.data.direction)
+        )
+      );
+    } catch (error) {
+      failure(res, error);
+    }
+  });
+  router.put('/navigation/destination', async (req, res) => {
+    const owner = resolveCommunityOwner(req, res);
+    if (!owner) return;
+    const parsed = CommunityNavigationRememberRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Choose a valid Community destination.' });
+      return;
+    }
+    try {
+      res.json(
+        CommunityNavigationStateSchema.parse(await navigationService.remember(owner, parsed.data))
+      );
+    } catch (error) {
+      failure(res, error);
+    }
+  });
+  router.get('/navigation/:ref/destination', async (req, res) => {
+    const owner = resolveCommunityOwner(req, res);
+    if (!owner) return;
+    const ref = CommunityRefSchema.safeParse(req.params.ref);
+    if (!ref.success) {
+      res.status(404).json({ error: 'Community connection not found.' });
+      return;
+    }
+    try {
+      res.json(
+        CommunityNavigationResolveResponseSchema.parse({
+          destination: await navigationService.resolve(owner, ref.data),
+        })
+      );
     } catch (error) {
       failure(res, error);
     }

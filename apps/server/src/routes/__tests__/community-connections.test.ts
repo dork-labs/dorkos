@@ -33,6 +33,12 @@ let directory: string;
 let app: ReturnType<typeof express>;
 let server: Server;
 const ref = CommunityRefSchema.parse('remote_owner_a');
+const navigation = {
+  get: vi.fn(async () => ({ order: [ref], destinations: [] })),
+  move: vi.fn(async () => ({ order: [ref], destinations: [] })),
+  remember: vi.fn(async () => ({ order: [ref], destinations: [] })),
+  resolve: vi.fn(async () => null),
+};
 
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'community-route-'));
@@ -53,7 +59,7 @@ beforeAll(async () => {
   app.use(express.json());
   app.use(
     '/api/community-connections',
-    createCommunityConnectionsRouter(new RemoteCommunityPairingService(store))
+    createCommunityConnectionsRouter(new RemoteCommunityPairingService(store), navigation as never)
   );
   server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -113,5 +119,30 @@ describe('local connection route authority and public projection', () => {
       (await request(server).get('/api/community-connections').set('x-test-author', 'author-a'))
         .body.connections
     ).toEqual([]);
+  });
+
+  it('keeps navigation state behind owner authority and static routes', async () => {
+    expect(
+      (
+        await request(server)
+          .get('/api/community-connections/navigation')
+          .set('x-test-author', 'author-b')
+      ).status
+    ).toBe(403);
+    const response = await request(server)
+      .get('/api/community-connections/navigation')
+      .set('x-test-author', 'author-a');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ order: [ref], destinations: [] });
+    expect(navigation.get).toHaveBeenCalledWith('author-a');
+
+    expect(
+      (
+        await request(server)
+          .post('/api/community-connections/navigation/move')
+          .set('x-test-author', 'author-a')
+          .send({ ref, direction: 'sideways' })
+      ).status
+    ).toBe(400);
   });
 });
