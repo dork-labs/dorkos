@@ -16,7 +16,7 @@ This plan implements the frozen tenant contract in four ordered phases. The cano
 Owned by DOR-2172, **Implement tenant-scoped persistence and authorization**.
 
 - [ ] **1.1 Add explicit tenant keys, host operators, and blob reservations.** Expand the schema without removing current safety constraints; reserve tenant ownership before attachment/export bytes are stored and recheck lifecycle before committing references.
-- [ ] **1.2 Backfill and validate zero- or one-community databases and the managed blob namespace.** Keep fresh installs bootstrap-ready, preserve every populated identity and file hash, drain or assign legacy objects, and fail closed on incomplete or ambiguous reconciliation before a second tenant can exist.
+- [ ] **1.2 Backfill and validate zero- or one-community databases and the managed blob namespace.** Keep fresh installs bootstrap-ready, preserve every populated identity and file hash, assign recognizable legacy objects, report unexplained objects without deleting them, and fail closed on incomplete or stale reconciliation before a second tenant can exist.
 - [ ] **1.3 Enforce tenant-consistent relational constraints.** Normalize mention and export-channel arrays, make tenant keys non-null, and let PostgreSQL reject cross-community relations.
 - [ ] **1.4 Prove the single-community backout gate.** Support rollback before multi-community use and refuse destructive downgrade later.
 

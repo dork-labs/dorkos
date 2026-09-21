@@ -22,6 +22,7 @@ import {
   type Verdict,
 } from './data.ts';
 import { floorValues, pickConstraint, updateFloors, type FloorRelease } from './floors.ts';
+import { machineReading } from './machine.ts';
 import type { Gh } from './gh.ts';
 import type { HandFiles } from './load.ts';
 import { renderReport } from './report.ts';
@@ -110,6 +111,7 @@ export function writeLatest(
     local_breaches: readings
       .filter((r) => LOCAL_SLOS.has(r.id) && r.status === 'breach')
       .map((r) => r.id),
+    machine: machineReading(loadLocalDays(dataDir, daysBetween(addDays(newest, -6), newest))),
     safeguards_ok:
       snap.health.data_rulesets.length > 0 && snap.health.data_rulesets.every((d) => d.ok),
   };

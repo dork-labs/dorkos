@@ -105,6 +105,31 @@ export const hostOperators = pgTable('host_operators', {
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
 });
 
+/** Durable singleton gate for legacy tenant and blob namespace reconciliation. */
+export const tenantReconciliation = pgTable(
+  'tenant_reconciliation',
+  {
+    singleton: boolean('singleton').primaryKey().default(true),
+    generation: bigint('generation', { mode: 'number' }).notNull().default(1),
+    validatedGeneration: bigint('validated_generation', { mode: 'number' }),
+    state: text('state').notNull().default('dirty'),
+    communityId: uuid('community_id').references(() => communities.id),
+    namespaceDigest: text('namespace_digest'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    invalidatedAt: timestamp('invalidated_at', { withTimezone: true }).notNull().defaultNow(),
+    reasonCode: text('reason_code').notNull().default('migration_pending'),
+  },
+  (table) => [
+    check('tenant_reconciliation_singleton', sql`${table.singleton}`),
+    check('tenant_reconciliation_generation', sql`${table.generation} > 0`),
+    check('tenant_reconciliation_state', sql`${table.state} IN ('dirty','ready')`),
+    check(
+      'tenant_reconciliation_ready',
+      sql`(${table.state} = 'dirty' AND ${table.completedAt} IS NULL) OR (${table.state} = 'ready' AND ${table.completedAt} IS NOT NULL AND ${table.validatedGeneration} = ${table.generation} AND ${table.namespaceDigest} ~ '^[a-f0-9]{64}$')`
+    ),
+  ]
+);
+
 /** Human admissions and their authority. */
 export const members = pgTable(
   'members',
@@ -516,7 +541,10 @@ export const managedBlobs = pgTable(
   (table) => [
     uniqueIndex('managed_blobs_community_key_unique').on(table.communityId, table.blobKey),
     index('managed_blobs_community_state_idx').on(table.communityId, table.state, table.createdAt),
-    check('managed_blobs_purpose', sql`${table.purpose} IN ('attachment','export')`),
+    check(
+      'managed_blobs_purpose',
+      sql`${table.purpose} IN ('attachment','export','legacy_cleanup')`
+    ),
     check('managed_blobs_key', sql`${table.blobKey} ~ '^[a-f0-9]{64}$'`),
     check(
       'managed_blobs_state',

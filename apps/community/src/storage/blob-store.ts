@@ -32,6 +32,16 @@ export interface BlobRead {
   byteSize: number;
 }
 
+/** Complete provider namespace snapshot used by the one-time tenant reconciliation gate. */
+export interface BlobNamespaceSnapshot {
+  /** Published opaque object keys. */
+  keys: string[];
+  /** Filesystem staging keys that may belong to an active reservation. */
+  temporaryKeys: string[];
+  /** Count of entries that cannot be attributed without exposing their names. */
+  unexpectedEntries: number;
+}
+
 /** Storage errors with stable codes for API mapping. */
 export class BlobStoreError extends Error {
   constructor(
@@ -39,6 +49,7 @@ export class BlobStoreError extends Error {
       | 'BLOB_ABORTED'
       | 'BLOB_EMPTY'
       | 'BLOB_INVALID_KEY'
+      | 'BLOB_LIST_INCOMPLETE'
       | 'BLOB_NOT_FOUND'
       | 'BLOB_TOO_LARGE'
       | 'BLOB_TYPE_REJECTED',
@@ -54,6 +65,8 @@ export interface BlobStore {
   put(input: PutBlobInput): Promise<StoredBlob>;
   get(key: BlobKey, options?: { signal?: AbortSignal }): Promise<BlobRead>;
   delete(key: BlobKey, options?: { signal?: AbortSignal }): Promise<void>;
+  /** Return one complete namespace snapshot or fail without returning a partial result. */
+  listNamespace(options?: { signal?: AbortSignal }): Promise<BlobNamespaceSnapshot>;
 }
 
 /** Validate an opaque key before it reaches a filesystem path or object-store request. */

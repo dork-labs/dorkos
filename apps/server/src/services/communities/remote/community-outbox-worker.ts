@@ -45,7 +45,8 @@ export interface CommunityOutboxRetryInput {
 }
 
 /** Result of asking the one worker to release a pending transient backoff. */
-export type CommunityOutboxRetryResult = 'retried' | 'missing' | 'terminal' | 'in-flight';
+export type CommunityOutboxRetryResult =
+  'retried' | 'queued' | 'missing' | 'terminal' | 'in-flight';
 
 /** One-process worker; remote I/O never runs inside the writer transaction. */
 export class CommunityOutboxWorker {

@@ -547,6 +547,55 @@ describe('community outbox', () => {
     await running;
   });
 
+  it.each([-1, 0])(
+    'accepts a pending retry due at a %i ms offset before the worker claims it',
+    async (dueOffset) => {
+      const harness = createRoomHarness({ agents: agentLookupFor({}) });
+      const outbox = new CommunityOutboxStore(harness.db);
+      const item = outboxItem({
+        ownerAuthorId: harness.human,
+        attempts: 2,
+        nextAttemptAt: new Date(NOW + dueOffset).toISOString(),
+        expiresAt: new Date(NOW + 300_000).toISOString(),
+      });
+      harness.db.transaction((tx) => outbox.enqueue(item, tx));
+      const delivery = vi.fn(async () => ({
+        kind: 'confirmed' as const,
+        remoteEntryId: 'remote-entry-a',
+      }));
+      const worker = new CommunityOutboxWorker(
+        outbox,
+        { canDeliver: () => true },
+        { deliver: delivery },
+        () => NOW
+      );
+
+      const retry = {
+        communityRef: REF,
+        remoteRoomId: item.remoteRoomId,
+        ownerAuthorId: harness.human,
+        idempotencyKey: item.idempotencyKey,
+      };
+      expect(worker.retryNow(retry)).toBe('queued');
+      expect(worker.retryNow(retry)).toBe('queued');
+      expect(
+        outbox.deliveryForOwner(REF, item.remoteRoomId, harness.human, item.idempotencyKey)
+      ).toMatchObject({
+        state: 'pending',
+        attempts: item.attempts,
+        nextAttemptAt: item.nextAttemptAt,
+        expiresAt: item.expiresAt,
+      });
+
+      await worker.runOnce();
+      await worker.runOnce();
+      expect(delivery).toHaveBeenCalledOnce();
+      expect(
+        outbox.deliveryForOwner(REF, item.remoteRoomId, harness.human, item.idempotencyKey)
+      ).toMatchObject({ state: 'confirmed' });
+    }
+  );
+
   it('releases a genuine backoff without changing its delivery identity or expiry', () => {
     const harness = createRoomHarness({ agents: agentLookupFor({}) });
     const outbox = new CommunityOutboxStore(harness.db);
@@ -629,6 +678,7 @@ describe('community outbox', () => {
       agents: agentLookupFor({ '/agents/a': { name: 'Agent A' } }),
     });
     const agent = harness.authors.resolveAgent('/agents/a', 'Agent A');
+    let isCurrent = true;
     const runtime = new CommunityOutboxRuntime({
       db: harness.db,
       roomStore: harness.store,
@@ -636,7 +686,7 @@ describe('community outbox', () => {
       attachmentRows: {} as never,
       attachmentBytes: {} as never,
       adapters: () => ({}) as never,
-      isLocalAgentCurrent: () => true,
+      isLocalAgentCurrent: () => isCurrent,
       now: () => NOW,
     });
     runtime.mirrors.ensureRoom({
@@ -674,6 +724,11 @@ describe('community outbox', () => {
       'missing'
     );
     expect(runtime.outbox.isPending(item.id)).toBe(true);
+
+    isCurrent = false;
+    await expect(runtime.retryNow(input)).resolves.toBe('terminal');
+    expect(runtime.outbox.isPending(item.id)).toBe(true);
+    isCurrent = true;
 
     runtime.mirrors.revokeAbsentRooms(REF, harness.human, new Set());
     await expect(runtime.retryNow(input)).resolves.toBe('terminal');

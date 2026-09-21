@@ -3,3 +3,4 @@ test-results/
 blob-report/
 playwright/.cache/
 playwright/.auth/
+.timing-proof-*/

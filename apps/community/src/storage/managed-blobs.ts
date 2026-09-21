@@ -21,6 +21,9 @@ export async function reserveManagedBlob(
   communityId: string,
   purpose: ManagedBlobReservation['purpose']
 ): Promise<ManagedBlobReservation> {
+  await client.query(
+    "SELECT pg_advisory_xact_lock_shared(hashtext('dorkos:tenant-reconciliation'))"
+  );
   const result = await client.query<{ lifecycle: string; lifecycle_version: number }>(
     'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR SHARE',
     [communityId]

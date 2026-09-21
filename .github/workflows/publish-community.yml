@@ -1,0 +1,174 @@
+name: Publish Community Image
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: publish-community-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: dork-labs/dorkos-community
+  MINIMUM_FLYCTL_VERSION: 0.4.104
+  MINIMUM_NEON_CLI_VERSION: 5.0.0
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: write
+      id-token: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install manifest generator dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-qemu-action@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Extract release metadata
+        id: release
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} is not a supported release version." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "manifest=community-release-v${version}.json" >> "$GITHUB_OUTPUT"
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha
+
+      - name: Build and push Community image
+        id: image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./apps/community/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=community-release
+          cache-to: type=gha,mode=max,scope=community-release
+
+      - name: Attest the immutable image digest
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+
+      - name: Inspect the pushed OCI index
+        run: |
+          set -euo pipefail
+          docker logout "$REGISTRY"
+          if ! docker buildx imagetools inspect \
+            "${REGISTRY}/${IMAGE_NAME}@${{ steps.image.outputs.digest }}" \
+            --raw > community-image-index.json; then
+            echo "::error::The Community GHCR package must be public before its first release can become ready." >&2
+            exit 1
+          fi
+
+      - name: Generate the release manifest
+        run: |
+          pnpm tsx scripts/generate-community-release-manifest.ts \
+            --version "${{ steps.release.outputs.version }}" \
+            --digest "${{ steps.image.outputs.digest }}" \
+            --index community-image-index.json \
+            --output "${{ steps.release.outputs.manifest }}" \
+            --migrations apps/community/migrations \
+            --workflow-ref "$GITHUB_WORKFLOW_REF" \
+            --minimum-flyctl "$MINIMUM_FLYCTL_VERSION" \
+            --minimum-neon-cli "$MINIMUM_NEON_CLI_VERSION"
+
+      - name: Attest the release manifest
+        id: manifest-attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ steps.release.outputs.manifest }}
+
+      - name: Verify both attestations before publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh attestation verify \
+            "${{ steps.release.outputs.manifest }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish-community.yml" \
+            --source-ref "$GITHUB_REF"
+          gh attestation verify \
+            "oci://${REGISTRY}/${IMAGE_NAME}@${{ steps.image.outputs.digest }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish-community.yml" \
+            --source-ref "$GITHUB_REF"
+
+      - name: Wait for the draft release and attach the signed manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          found=''
+          for attempt in $(seq 1 30); do
+            if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              found=1
+              break
+            fi
+            echo "Release $GITHUB_REF_NAME not found yet (attempt $attempt/30); waiting 20s…"
+            sleep 20
+          done
+          if [ -z "$found" ]; then
+            echo "::error::Release $GITHUB_REF_NAME does not exist; refusing to create a notes-less release." >&2
+            exit 1
+          fi
+          cp "${{ steps.manifest-attestation.outputs.bundle-path }}" \
+            "${{ steps.release.outputs.manifest }}.sigstore.json"
+          bash scripts/publish-community-release-assets.sh \
+            "$GITHUB_REF_NAME" \
+            "$GITHUB_REPOSITORY" \
+            "${{ steps.release.outputs.manifest }}" \
+            "${{ steps.release.outputs.manifest }}.sigstore.json" \
+            "$GITHUB_REPOSITORY/.github/workflows/publish-community.yml" \
+            "$GITHUB_REF"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: community-release-${{ steps.release.outputs.version }}
+          path: |
+            ${{ steps.release.outputs.manifest }}
+            ${{ steps.release.outputs.manifest }}.sigstore.json
+          if-no-files-found: error
+          retention-days: 90

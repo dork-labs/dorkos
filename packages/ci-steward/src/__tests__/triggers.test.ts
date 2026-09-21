@@ -812,3 +812,87 @@ describe('trigger state', () => {
     expect(t.open.map((x) => x.rule)).toEqual(['collector-health', 'slo-floor', 'repeat-ejection']);
   });
 });
+
+/**
+ * Rule 12: a developer machine that cannot do its job (DOR-2160).
+ *
+ * The operator's question was literally "is it CPU or RAM", so the assertions
+ * below are mostly about the trigger ANSWERING that rather than about it
+ * firing: a saturation alert that does not say which resource ran out sends
+ * whoever reads it to go and measure the thing the trigger already measured.
+ */
+describe('a saturated machine', () => {
+  const machine = (over: Partial<NonNullable<Latest['machine']>> = {}) => ({
+    n: 100,
+    clones: 1,
+    load_per_core_p90: 1,
+    mem_available_mb_p10: 8000,
+    swap_used_mb_p50: 100,
+    ...over,
+  });
+
+  it('says nothing about a machine that is merely busy', () => {
+    // One runnable process per core is a box doing work, and two is a second
+    // agent, which is how this repo is meant to be used. Firing there would
+    // train everyone to ignore the row.
+    const t = triage(input({ latest: latest({ machine: machine({ load_per_core_p90: 2 }) }) }));
+    expect(t.open.filter((x) => x.rule === 'machine-saturated')).toEqual([]);
+  });
+
+  it('fires amber on CPU alone and names the number', () => {
+    const t = triage(input({ latest: latest({ machine: machine({ load_per_core_p90: 36 }) }) }));
+    const fired = t.open.find((x) => x.rule === 'machine-saturated');
+    expect(fired?.severity).toBe('amber');
+    expect(fired?.what).toContain('CPU: load 36/core p90');
+    expect(fired?.what).not.toContain('RAM');
+  });
+
+  it('fires red on memory, because that is the one that kills processes', () => {
+    const t = triage(
+      input({ latest: latest({ machine: machine({ mem_available_mb_p10: 680 }) }) })
+    );
+    const fired = t.open.find((x) => x.rule === 'machine-saturated');
+    expect(fired?.severity).toBe('red');
+    expect(fired?.what).toContain('RAM: 680 MB free p10');
+  });
+
+  it('fires red on sustained swap, which is the honest thrashing signal', () => {
+    const t = triage(input({ latest: latest({ machine: machine({ swap_used_mb_p50: 15881 }) }) }));
+    const fired = t.open.find((x) => x.rule === 'machine-saturated');
+    expect(fired?.severity).toBe('red');
+    expect(fired?.what).toContain('swap: 15881 MB in use p50');
+  });
+
+  it('names every resource that ran out, not just the first', () => {
+    const t = triage(
+      input({
+        latest: latest({
+          machine: machine({
+            load_per_core_p90: 36,
+            mem_available_mb_p10: 680,
+            swap_used_mb_p50: 15881,
+          }),
+        }),
+      })
+    );
+    const what = t.open.find((x) => x.rule === 'machine-saturated')!.what;
+    for (const part of ['CPU', 'RAM', 'swap']) expect(what).toContain(part);
+  });
+
+  it('judges nothing on a thin sample, or before any machine was measured', () => {
+    for (const over of [{ machine: machine({ n: 3, load_per_core_p90: 36 }) }, {}])
+      expect(
+        triage(input({ latest: latest(over) })).open.filter((x) => x.rule === 'machine-saturated')
+      ).toEqual([]);
+  });
+
+  it('clears when the machine recovers', () => {
+    const { first, second } = fireThenClear(
+      { latest: latest({ machine: machine({ swap_used_mb_p50: 15881 }) }) },
+      { latest: latest({ machine: machine() }) }
+    );
+    expect(first.open.some((x) => x.rule === 'machine-saturated')).toBe(true);
+    expect(second.open.some((x) => x.rule === 'machine-saturated')).toBe(false);
+    expect(second.cleared.some((x) => x.rule === 'machine-saturated')).toBe(true);
+  });
+});

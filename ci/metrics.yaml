@@ -93,6 +93,30 @@ tracked:
   - id: tracked.canary-minutes
     unit: minutes
     definition: Runner minutes the main canary's own runs spent, per day. Reported, never charged to a merged PR.
+  - id: tracked.machine-load
+    unit: ratio
+    definition: >-
+      What the machines running the local hooks were doing while they ran, from
+      the time-wrap's own event lines: load average divided by online cores at
+      p90, available memory in MiB at p10, and swap in use in MiB at p50 — each
+      read at its own bad end, because "the average was fine" is how a saturated
+      machine hides. Reported, never scored: it is a fact about somebody's
+      laptop, not about the pipeline, and no pipeline change moves it. It is
+      here because local-commit and local-push are mostly a measurement of it,
+      and until DOR-2160 nothing recorded it at all. The memory figure means
+      MemAvailable on Linux and free pages on macOS (which compresses, so its
+      "inactive" pool is not availability); read it beside swap, not alone.
+  - id: tracked.gate-cut-short
+    unit: ratio
+    definition: >-
+      Share of local hook runs that did not run as intended, split by why: taken
+      away by the operating system (a signal END, or a START with no END past
+      the ceiling), or run with no machine-wide slot because the wait for one
+      ran out (the `lock_timeout` note scripts/heavy-run-lock.sh writes). Both
+      are invisible in every other number — a killed hook leaves no verdict to
+      count, and a command that ran uncapped looks exactly like one that had a
+      slot to itself, which is how a concurrency cap stops existing without
+      anybody noticing.
   - id: tracked.cache-hit-rate
     unit: ratio
     definition: Share of cache restore steps (pnpm store, Playwright, turbo) that hit an existing entry.

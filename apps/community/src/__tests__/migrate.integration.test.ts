@@ -53,6 +53,7 @@ it('creates all owner, conversation, credential and auth tables in fresh Postgre
       'audit_events',
       'host_operators',
       'managed_blobs',
+      'tenant_reconciliation',
     ]) {
       expect(names).toContain(name);
     }
@@ -109,7 +110,11 @@ it('upgrades a populated foundation database without changing human authors', as
         [entry]
       )
     ).rows[0];
-    expect(row).toEqual({ author_member_id: member, author_agent_id: null, community_id: null });
+    expect(row).toEqual({
+      author_member_id: member,
+      author_agent_id: null,
+      community_id: community,
+    });
     expect(
       (
         await db.query(
@@ -142,7 +147,7 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5]);
+    ).toEqual([1, 2, 3, 4, 5, 6]);
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();
@@ -230,7 +235,7 @@ it('expands a populated version-four database without changing files or cleanup 
           [attachment, archive]
         )
       ).rows[0]
-    ).toEqual({ attachment_community: null, export_community: null });
+    ).toEqual({ attachment_community: community, export_community: community });
     expect(
       (
         await db.query<{ indexname: string }>(
@@ -273,7 +278,61 @@ it('expands a populated version-four database without changing files or cleanup 
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5]);
+    ).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(
+      (
+        await db.query(
+          `SELECT state,community_id,generation,reason_code
+           FROM tenant_reconciliation WHERE singleton`
+        )
+      ).rows[0]
+    ).toEqual({
+      state: 'dirty',
+      community_id: community,
+      generation: '4',
+      reason_code: 'managed_blob_write',
+    });
+    expect(
+      (await db.query('SELECT user_id FROM host_operators WHERE user_id=$1', ['v4-user'])).rows
+    ).toEqual([{ user_id: 'v4-user' }]);
+    expect(
+      (
+        await db.query<{ count: number }>(
+          `SELECT count(*)::int AS count FROM pg_trigger
+           WHERE tgname IN (
+             'invite_uses_legacy_tenant_write','pending_admissions_legacy_tenant_write',
+             'connection_pairings_legacy_tenant_write','connection_grants_legacy_tenant_write',
+             'channel_members_legacy_tenant_write','agent_credentials_legacy_tenant_write',
+             'agent_channel_members_legacy_tenant_write','entries_legacy_tenant_write',
+             'attachments_legacy_tenant_write','export_archives_legacy_tenant_write',
+             'read_cursors_legacy_tenant_write','owner_quota_windows_legacy_tenant_write',
+             'pending_blob_deletions_unmanaged_write','managed_blobs_reconciliation_write'
+           ) AND tgdeferrable AND tginitdeferred`
+        )
+      ).rows[0]
+    ).toEqual({ count: 14 });
+    await db.query(
+      `UPDATE tenant_reconciliation
+       SET state='ready',validated_generation=generation,namespace_digest=$1,
+           completed_at=now(),reason_code='validated'
+       WHERE singleton`,
+      ['0'.repeat(64)]
+    );
+    await db.query("UPDATE attachments SET display_name='proof-renamed.txt' WHERE id=$1", [
+      attachment,
+    ]);
+    expect(
+      (
+        await db.query(
+          'SELECT state,generation,validated_generation,reason_code FROM tenant_reconciliation WHERE singleton'
+        )
+      ).rows[0]
+    ).toEqual({
+      state: 'dirty',
+      generation: '5',
+      validated_generation: null,
+      reason_code: 'legacy_tenant_write',
+    });
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();
