@@ -9,17 +9,24 @@ type Props = {
   inviteToken: string | null;
   unadmitted: boolean;
   onAdmitted: () => void;
+  hostSignIn?: boolean;
 };
 type Preview = { communityName: string; inviterName: string; channelName: string | null };
 const authClient = createAuthClient({ baseURL: window.location.origin });
 
 /** Guide owner setup or an invited human through admission. */
-export function Admission({ community, inviteToken, unadmitted, onAdmitted }: Props) {
+export function Admission({
+  community,
+  inviteToken,
+  unadmitted,
+  onAdmitted,
+  hostSignIn = false,
+}: Props) {
   const [mode, setMode] = useState<'signup' | 'signin'>(
-    community && !inviteToken ? 'signin' : 'signup'
+    hostSignIn || (community && !inviteToken) ? 'signin' : 'signup'
   );
   const [stage, setStage] = useState<'initial' | 'account'>(
-    community && !inviteToken ? 'account' : 'initial'
+    hostSignIn || (community && !inviteToken) ? 'account' : 'initial'
   );
   const [preview, setPreview] = useState<Preview | null>(null);
   const [email, setEmail] = useState('');
@@ -31,7 +38,7 @@ export function Admission({ community, inviteToken, unadmitted, onAdmitted }: Pr
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [providers, setProviders] = useState({ google: false, github: false });
-  const isOwner = !community;
+  const isOwner = !community && !hostSignIn;
 
   useEffect(() => {
     void request<{ google: boolean; github: boolean }>('/api/v1/auth-options')
@@ -43,10 +50,13 @@ export function Admission({ community, inviteToken, unadmitted, onAdmitted }: Pr
     setBusy(true);
     setError('');
     try {
-      if (inviteToken) sessionStorage.setItem('communityPendingInvite', inviteToken);
+      if (inviteToken) {
+        sessionStorage.setItem('communityPendingInvite', inviteToken);
+        sessionStorage.setItem('communityPendingInvitePath', window.location.pathname);
+      }
       const result = await authClient.signIn.social({
         provider,
-        callbackURL: window.location.origin + '/',
+        callbackURL: window.location.origin + window.location.pathname,
       });
       if (result.error) throw new Error(result.error.message ?? 'Sign in could not start.');
     } catch (cause) {
@@ -92,6 +102,7 @@ export function Admission({ community, inviteToken, unadmitted, onAdmitted }: Pr
       } else if (inviteToken)
         await request('/api/v1/invites/redeem', 'POST', { token: inviteToken });
       sessionStorage.removeItem('communityPendingInvite');
+      sessionStorage.removeItem('communityPendingInvitePath');
       onAdmitted();
     } catch (cause) {
       setError(describeError(cause));
@@ -113,7 +124,13 @@ export function Admission({ community, inviteToken, unadmitted, onAdmitted }: Pr
         <p className="text-sm text-[#aec4b1]">One community. Your channels. Your pace.</p>
       </div>
       <main className="auth-card">
-        <p className="eyebrow">{isOwner ? 'Set up your community' : `Join ${community.name}`}</p>
+        <p className="eyebrow">
+          {isOwner
+            ? 'Set up your community'
+            : hostSignIn
+              ? 'Your communities'
+              : `Join ${community?.name}`}
+        </p>
         <h1>{isOwner ? 'Make it yours.' : 'Come on in.'}</h1>
         <p className="muted mb-7">
           {isOwner
@@ -187,7 +204,7 @@ export function Admission({ community, inviteToken, unadmitted, onAdmitted }: Pr
               </div>
             )}
             <div className="row mb-5">
-              {(!community || inviteToken) && (
+              {(isOwner || inviteToken) && (
                 <button
                   type="button"
                   className={`button ${mode === 'signup' ? 'primary' : ''}`}

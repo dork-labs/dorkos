@@ -33,6 +33,8 @@ import {
 import {
   RemoteCommunityPairingService,
   RemotePairingBusyError,
+  RemoteCommunitySelectionRequiredError,
+  RemoteCommunityUpgradeRequiredError,
 } from '../services/communities/remote/pairing-service.js';
 import {
   PinnedHttpError,
@@ -80,6 +82,16 @@ export function resolveCommunityOwner(req: Request, res: Response): string | nul
 function failure(res: Response, error: unknown): void {
   if (error instanceof RemotePairingBusyError) {
     res.status(409).json({ error: 'This pairing is still finishing. Try again in a moment.' });
+  } else if (error instanceof RemoteCommunitySelectionRequiredError) {
+    res.status(409).json({
+      code: 'COMMUNITY_SELECTION_REQUIRED',
+      error: 'Choose a specific community from this host and use its community link.',
+    });
+  } else if (error instanceof RemoteCommunityUpgradeRequiredError) {
+    res.status(426).json({
+      code: 'COMMUNITY_UPGRADE_REQUIRED',
+      error: 'Upgrade this Community server before connecting it to DorkOS.',
+    });
   } else if (error instanceof RemoteConnectionAuthorizationError) {
     res.status(409).json({
       error: 'Reconnect this community to continue.',

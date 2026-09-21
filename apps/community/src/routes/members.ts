@@ -8,10 +8,17 @@ import {
   CommunityWireOwnerTransferResponseSchema,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
-import { requireLiveRole, requireMember, transaction, type Member } from '../data.js';
+import {
+  lockActiveCommunity,
+  requireLiveRole,
+  requireMember,
+  transaction,
+  type Member,
+} from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 
 async function live(client: PoolClient, id: string, communityId: string) {
+  await lockActiveCommunity(client, communityId);
   const result = await client.query<Member>(
     'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
     [id, communityId]
@@ -20,25 +27,30 @@ async function live(client: PoolClient, id: string, communityId: string) {
 }
 
 async function remove(client: PoolClient, target: Member, actorId: string, action: string) {
-  await client.query('UPDATE members SET active=false,removed_at=now() WHERE id=$1', [target.id]);
-  await client.query('DELETE FROM channel_members WHERE member_id=$1', [target.id]);
   await client.query(
-    'DELETE FROM agent_channel_members WHERE agent_id IN (SELECT id FROM agents WHERE owner_member_id=$1)',
-    [target.id]
+    'UPDATE members SET active=false,removed_at=now() WHERE id=$1 AND community_id=$2',
+    [target.id, target.community_id]
+  );
+  await client.query('DELETE FROM channel_members WHERE member_id=$1 AND community_id=$2', [
+    target.id,
+    target.community_id,
+  ]);
+  await client.query(
+    'DELETE FROM agent_channel_members WHERE community_id=$2 AND agent_id IN (SELECT id FROM agents WHERE owner_member_id=$1 AND community_id=$2)',
+    [target.id, target.community_id]
   );
   await client.query(
-    'UPDATE agents SET active=false,revoked_at=now() WHERE owner_member_id=$1 AND active',
-    [target.id]
+    'UPDATE agents SET active=false,revoked_at=now() WHERE owner_member_id=$1 AND community_id=$2 AND active',
+    [target.id, target.community_id]
   );
   await client.query(
-    'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id IN (SELECT id FROM agents WHERE owner_member_id=$1) AND revoked_at IS NULL',
-    [target.id]
+    'UPDATE agent_credentials SET revoked_at=now() WHERE community_id=$2 AND agent_id IN (SELECT id FROM agents WHERE owner_member_id=$1 AND community_id=$2) AND revoked_at IS NULL',
+    [target.id, target.community_id]
   );
   await client.query(
-    'UPDATE connection_grants SET revoked_at=now() WHERE member_id=$1 AND revoked_at IS NULL',
-    [target.id]
+    'UPDATE connection_grants SET revoked_at=now() WHERE member_id=$1 AND community_id=$2 AND revoked_at IS NULL',
+    [target.id, target.community_id]
   );
-  await client.query('DELETE FROM session WHERE "userId"=$1', [target.user_id]);
   await client.query(
     'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
     [target.community_id, actorId, action, target.id]
@@ -50,11 +62,11 @@ export function registerMemberRoutes(
   app: Hono,
   { pool, auth }: { pool: Pool; auth: CommunityAuth }
 ) {
-  app.get('/api/v1/me', async (c) => {
+  app.get('/me', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const result = await pool.query<Member & { handle: string; created_at: Date }>(
-      'SELECT id,user_id,display_name,role,community_id,handle,created_at FROM members WHERE id=$1 AND active',
-      [actor.id]
+      'SELECT id,user_id,display_name,role,community_id,handle,created_at FROM members WHERE id=$1 AND community_id=$2 AND active',
+      [actor.id, actor.community_id]
     );
     const row = result.rows[0];
     const current = await requireMember(c, auth, pool);
@@ -73,7 +85,7 @@ export function registerMemberRoutes(
     });
   });
 
-  app.get('/api/v1/members', async (c) => {
+  app.get('/members', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const query = CommunityWireMemberDirectoryQuerySchema.parse(
       Object.fromEntries(new URL(c.req.url).searchParams)
@@ -103,7 +115,7 @@ export function registerMemberRoutes(
     });
   });
 
-  app.delete('/api/v1/members/:id', async (c) => {
+  app.delete('/members/:id', async (c) => {
     const actor = await requireMember(c, auth, pool);
     await transaction(pool, async (client) => {
       const current = await live(client, actor.id, actor.community_id);
@@ -118,7 +130,7 @@ export function registerMemberRoutes(
     return c.body(null, 204);
   });
 
-  app.post('/api/v1/me/leave', async (c) => {
+  app.post('/me/leave', async (c) => {
     const actor = await requireMember(c, auth, pool);
     await transaction(pool, async (client) => {
       const current = await live(client, actor.id, actor.community_id);
@@ -130,7 +142,7 @@ export function registerMemberRoutes(
     return c.body(null, 204);
   });
 
-  app.post('/api/v1/owner/transfer', async (c) => {
+  app.post('/owner/transfer', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireOwnerTransferRequestSchema);
     try {
@@ -141,25 +153,49 @@ export function registerMemberRoutes(
     } catch {
       throw new ApiError(403, 'FORBIDDEN', 'Reauthentication failed.');
     }
-    await transaction(pool, async (client) => {
-      const current = await live(client, actor.id, actor.community_id);
+    const lifecycleVersion = await transaction(pool, async (client) => {
+      const community = await client.query<{ lifecycle: string; lifecycle_version: number }>(
+        'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR UPDATE',
+        [actor.community_id]
+      );
+      if (
+        community.rows[0]?.lifecycle !== 'active' ||
+        community.rows[0].lifecycle_version !== body.lifecycleVersion
+      )
+        throw new ApiError(409, 'STATE_CONFLICT', 'Community lifecycle changed.');
+      const lockedMembers = await client.query<Member>(
+        `SELECT id,user_id,display_name,role,community_id FROM members
+         WHERE community_id=$1 AND id=ANY($2::uuid[]) AND active ORDER BY id FOR UPDATE`,
+        [actor.community_id, [actor.id, body.successorMemberId]]
+      );
+      const current = lockedMembers.rows.find((member) => member.id === actor.id);
       if (!current || current.role !== 'owner')
         throw new ApiError(403, 'FORBIDDEN', 'Only the current owner can transfer ownership.');
       if (actor.id === body.successorMemberId)
         throw new ApiError(409, 'STATE_CONFLICT', 'Choose another member.');
-      const successor = await live(client, body.successorMemberId, actor.community_id);
+      const successor = lockedMembers.rows.find((member) => member.id === body.successorMemberId);
       if (!successor) throw new ApiError(404, 'NOT_FOUND', 'Successor not found.');
       if (successor.role === 'owner')
         throw new ApiError(409, 'STATE_CONFLICT', 'That member already owns this community.');
       await client.query("UPDATE members SET role='member' WHERE id=$1", [current.id]);
       await client.query("UPDATE members SET role='owner' WHERE id=$1", [successor.id]);
-      await client.query(
-        'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
-        [actor.community_id, actor.id, 'owner.transfer', successor.id]
+      const updated = await client.query<{ lifecycle_version: number }>(
+        `UPDATE communities SET lifecycle_version=lifecycle_version+1
+         WHERE id=$1 RETURNING lifecycle_version`,
+        [actor.community_id]
       );
+      await client.query(
+        `INSERT INTO audit_events(
+           community_id,actor_member_id,action,subject_id,prior_state,next_state,changed_fields
+         ) VALUES($1,$2,$3,$4,$5,$6,ARRAY['owner_member_id'])`,
+        [actor.community_id, actor.id, 'owner.transfer', successor.id, actor.id, successor.id]
+      );
+      return updated.rows[0].lifecycle_version;
     });
     return json(c, CommunityWireOwnerTransferResponseSchema, {
+      communityId: actor.community_id,
       ownerMemberId: body.successorMemberId,
+      lifecycleVersion,
     });
   });
 }

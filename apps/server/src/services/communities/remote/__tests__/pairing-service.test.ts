@@ -10,7 +10,12 @@ import {
   RemoteConnectionNotFoundError,
 } from '../connection-store.js';
 import { EncryptedFileCredentialStore } from '../../../core/credential-provider.js';
-import { RemoteCommunityPairingService, RemotePairingBusyError } from '../pairing-service.js';
+import {
+  RemoteCommunityPairingService,
+  RemoteCommunitySelectionRequiredError,
+  RemoteCommunityUpgradeRequiredError,
+  RemotePairingBusyError,
+} from '../pairing-service.js';
 import {
   RemoteCommunityAdapter,
   remoteOriginIdempotencyKeyOf,
@@ -18,6 +23,8 @@ import {
 } from '../remote-community-adapter.js';
 import {
   checkedAddress,
+  communityApiPath,
+  parseCommunityLink,
   parseCommunityOrigin,
   pinnedJson,
   PinnedOriginError,
@@ -32,6 +39,8 @@ let directory: string;
 let approved = false;
 let cancelled = false;
 let redirect = false;
+let requireExplicitCommunity = false;
+let legacySingletonServer = false;
 let pollCount = 0;
 let waitForPoll: (() => Promise<void>) | undefined;
 let waitForExchange: (() => Promise<void>) | undefined;
@@ -39,7 +48,13 @@ let rejectedAuthorization: string | undefined;
 let rejectedStatus = 403;
 let rejectedPath: string | undefined;
 const token = 'private-pairing-bearer-should-never-appear-in-dto';
+const remoteCommunityId = randomUUID();
+const secondRemoteCommunityId = randomUUID();
 const remoteAgentId = randomUUID();
+const remoteRoomId = randomUUID();
+const remoteAttachmentId = randomUUID();
+const qualified = `/api/v1/communities/${remoteCommunityId}`;
+const secondQualified = `/api/v1/communities/${secondRemoteCommunityId}`;
 const requests: Array<{ path: string; body: Record<string, string> }> = [];
 
 beforeAll(async () => {
@@ -47,7 +62,10 @@ beforeAll(async () => {
   server = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk as Buffer);
-    const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {};
+    const body =
+      chunks.length && req.headers['content-type'] === 'application/json'
+        ? JSON.parse(Buffer.concat(chunks).toString())
+        : {};
     requests.push({ path: req.url ?? '', body });
     res.setHeader('content-type', 'application/json');
     const send = (value: unknown, status = 200) => {
@@ -68,28 +86,51 @@ beforeAll(async () => {
       send({ error: 'Grant rejected' }, rejectedStatus);
       return;
     }
-    if (req.url === '/api/v1/community') {
+    if (req.url === `${secondQualified}/community`) {
       send({
-        id: 'same-remote-id',
-        name: 'Test community',
+        id: secondRemoteCommunityId,
+        name: 'Second community',
         description: null,
         createdAt: new Date().toISOString(),
       });
-    } else if (req.url === '/api/v1/pairings/start') {
+      return;
+    }
+    if (req.url === `${secondQualified}/pairings/start`) {
       const pairingId = randomUUID();
       send(
         {
           pairingId,
-          approvalUrl: `${origin}/pairing?pairingId=${pairingId}`,
+          approvalUrl: `${origin}/c/${secondRemoteCommunityId}/pairing?pairingId=${pairingId}`,
           expiresAt: new Date(Date.now() + 600_000).toISOString(),
         },
         201
       );
-    } else if (req.url === '/api/v1/pairings/poll') {
+      return;
+    }
+    if (req.url === '/api/v1/community' && requireExplicitCommunity) {
+      send({ code: 'COMMUNITY_SELECTION_REQUIRED', message: 'Choose a community.' }, 409);
+    } else if (req.url === '/api/v1/community' || req.url === `${qualified}/community`) {
+      send({
+        id: remoteCommunityId,
+        name: 'Test community',
+        description: null,
+        createdAt: new Date().toISOString(),
+      });
+    } else if (req.url === `${qualified}/pairings/start` && !legacySingletonServer) {
+      const pairingId = randomUUID();
+      send(
+        {
+          pairingId,
+          approvalUrl: `${origin}/c/${remoteCommunityId}/pairing?pairingId=${pairingId}`,
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        },
+        201
+      );
+    } else if (req.url === `${qualified}/pairings/poll`) {
       pollCount++;
       await waitForPoll?.();
       send(approved ? { status: 'approved', code: 'one-time-code' } : { status: 'pending' });
-    } else if (req.url === '/api/v1/pairings/exchange') {
+    } else if (req.url === `${qualified}/pairings/exchange`) {
       await waitForExchange?.();
       send({
         token,
@@ -98,18 +139,20 @@ beforeAll(async () => {
           memberId: 'human-id',
           installName: 'Test install',
           scopes: ['read', 'post', 'enroll-agent'],
+          lifecycle: 'active',
+          capabilities: { read: true, post: true, enrollAgent: true, stream: true },
           createdAt: new Date().toISOString(),
         },
       });
-    } else if (req.url === '/api/v1/pairings/cancel') {
+    } else if (req.url === `${qualified}/pairings/cancel`) {
       cancelled = true;
       res.statusCode = 204;
       res.end();
-    } else if (req.url === '/api/v1/channels') {
+    } else if (req.url === `${qualified}/channels`) {
       send({
         channels: [
           {
-            id: 'general',
+            id: remoteRoomId,
             name: 'General',
             description: null,
             visibility: 'public',
@@ -120,12 +163,12 @@ beforeAll(async () => {
           },
         ],
       });
-    } else if (req.url === '/api/v1/channels/general/entries') {
+    } else if (req.url === `${qualified}/channels/${remoteRoomId}/entries`) {
       send({
         entries: [
           {
             id: 'entry-1',
-            channelId: 'general',
+            channelId: remoteRoomId,
             seq: 1,
             authorMemberId: remoteAgentId,
             authorDisplayName: 'Test Agent',
@@ -139,7 +182,7 @@ beforeAll(async () => {
             cursor: 'resume-1',
             attachments: [
               {
-                id: 'attachment-1',
+                id: remoteAttachmentId,
                 name: 'shot.png',
                 contentType: 'image/png',
                 byteSize: 5,
@@ -151,9 +194,49 @@ beforeAll(async () => {
         ],
         nextCursor: null,
       });
-    } else if (req.url === '/api/v1/channels/general/read-cursor') {
+    } else if (req.url === `${qualified}/channels/${remoteRoomId}/read-cursor`) {
       send({ cursor: 'resume-1', unreadCount: 0 });
-    } else if (req.url === '/api/v1/agents') {
+    } else if (
+      req.url === `${qualified}/channels/${remoteRoomId}/attachments` &&
+      req.method === 'POST'
+    ) {
+      send(
+        {
+          attachment: {
+            id: remoteAttachmentId,
+            name: decodeURIComponent(String(req.headers['x-file-name'])),
+            contentType: req.headers['content-type'],
+            byteSize: Number(req.headers['x-file-size']),
+            checksum: 'checksum-upload',
+            createdAt: new Date().toISOString(),
+          },
+        },
+        201
+      );
+    } else if (req.url === `${qualified}/attachments/${remoteAttachmentId}`) {
+      res.setHeader('content-type', 'application/octet-stream');
+      res.end('hello');
+    } else if (req.url === `${qualified}/channels/${remoteRoomId}/events`) {
+      res.setHeader('content-type', 'text/event-stream');
+      res.end(
+        `data: ${JSON.stringify({
+          type: 'snapshot',
+          channel: {
+            id: remoteRoomId,
+            name: 'General',
+            description: null,
+            visibility: 'public',
+            archived: false,
+            createdAt: new Date().toISOString(),
+            joined: true,
+            unreadCount: 0,
+          },
+          entries: [],
+          capturedSeq: 0,
+          cursor: 'resume-1',
+        })}\n\n`
+      );
+    } else if (req.url === `${qualified}/agents`) {
       send(
         {
           token: 'private-agent-token',
@@ -190,6 +273,62 @@ afterAll(async () => {
 });
 
 describe('private remote pairing with real HTTP and encrypted local storage', () => {
+  it('creates distinct local connections for two canonical tenants at one origin', async () => {
+    const store = new RemoteConnectionStore(directory);
+    const service = new RemoteCommunityPairingService(store);
+    const first = await service.start(
+      'same-origin-owner',
+      `${origin}/c/${remoteCommunityId}`,
+      'First install'
+    );
+    const second = await service.start(
+      'same-origin-owner',
+      `${origin}/c/${secondRemoteCommunityId}`,
+      'Second install'
+    );
+    expect(first.connection).toMatchObject({
+      remoteCommunityId,
+      pinnedOrigin: origin,
+      label: 'Test community',
+    });
+    expect(second.connection).toMatchObject({
+      remoteCommunityId: secondRemoteCommunityId,
+      pinnedOrigin: origin,
+      label: 'Second community',
+    });
+    expect(first.connection.ref).not.toBe(second.connection.ref);
+  });
+
+  it('requires a canonical tenant link when singleton discovery is ambiguous', async () => {
+    const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+    requireExplicitCommunity = true;
+    try {
+      await expect(
+        service.start('multi-owner', origin, 'Ambiguous install')
+      ).rejects.toBeInstanceOf(RemoteCommunitySelectionRequiredError);
+      await expect(
+        service.start('multi-owner', `${origin}/c/${remoteCommunityId}`, 'Selected install')
+      ).resolves.toMatchObject({ connection: { remoteCommunityId } });
+    } finally {
+      requireExplicitCommunity = false;
+    }
+  });
+
+  it('requires an upgraded server after authoritative singleton discovery', async () => {
+    const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+    legacySingletonServer = true;
+    try {
+      await expect(service.start('legacy-owner', origin, 'Legacy install')).rejects.toBeInstanceOf(
+        RemoteCommunityUpgradeRequiredError
+      );
+      await expect(
+        service.start('legacy-owner', `${origin}/c/${remoteCommunityId}`, 'Invalid canonical link')
+      ).rejects.toMatchObject({ status: 404 });
+    } finally {
+      legacySingletonServer = false;
+    }
+  });
+
   it('closes a quiet generic room subscription without requiring a caller abort', async () => {
     const adapter = new RemoteCommunityAdapter(
       'remote-generic-return' as never,
@@ -253,27 +392,67 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     approved = true;
     const store = new RemoteConnectionStore(directory);
     const service = new RemoteCommunityPairingService(store);
-    const started = await service.start('adapter-owner', origin, 'Adapter test');
+    const requestStart = requests.length;
+    const started = await service.start(
+      'adapter-owner',
+      `${origin}/c/${remoteCommunityId}`,
+      'Adapter test'
+    );
     expect((await service.poll(started.connection.ref, 'adapter-owner')).status).toBe('connected');
     const adapter = new RemoteCommunityAdapter(started.connection.ref, 'adapter-owner', store);
     expect((await adapter.connect()).status).toBe('connected');
-    expect((await adapter.listRooms()).map((item) => item.roomId)).toEqual(['general']);
-    const history = await adapter.listEntries('general');
+    expect((await adapter.listRooms()).map((item) => item.roomId)).toEqual([remoteRoomId]);
+    const history = await adapter.listEntries(remoteRoomId);
     expect(history.entries).toHaveLength(1);
     expect(remoteOriginIdempotencyKeyOf(history.entries[0]!)).toBe('owner-wire-key');
     expect(history.entries[0]!.attachments).toEqual([
       {
-        id: 'attachment-1',
+        id: remoteAttachmentId,
         name: 'shot.png',
         contentType: 'image/png',
         byteSize: 5,
         checksum: 'checksum-1',
       },
     ]);
-    expect(await adapter.getReadCursor('general')).toBe('resume-1');
-    await adapter.setReadCursor('general', 'resume-1' as never);
+    expect(await adapter.getReadCursor(remoteRoomId)).toBe('resume-1');
+    await adapter.setReadCursor(remoteRoomId, 'resume-1' as never);
+    const upload = await adapter.uploadAttachment(remoteRoomId, {
+      idempotencyKey: 'qualified-upload',
+      name: 'proof.txt',
+      contentType: 'text/plain',
+      byteSize: 5,
+      bytes: (async function* () {
+        yield new TextEncoder().encode('hello');
+      })(),
+    });
+    expect(upload.id).toBe(remoteAttachmentId);
+    const download = await adapter.downloadAttachment(remoteRoomId, remoteAttachmentId);
+    const downloaded: Uint8Array[] = [];
+    for await (const chunk of download.bytes) downloaded.push(chunk);
+    expect(Buffer.concat(downloaded).toString()).toBe('hello');
+    const stream = adapter.subscribeNativeRoom(remoteRoomId)[Symbol.asyncIterator]();
+    await expect(stream.next()).resolves.toMatchObject({
+      value: { type: 'snapshot', room: { roomId: remoteRoomId } },
+    });
+    await stream.return?.();
     const agent = await adapter.admitAgent({ agentId: randomUUID(), displayName: 'Test Agent' });
     expect(agent.memberId).toBe(remoteAgentId);
+    expect(requests.slice(requestStart).map((request) => request.path)).toEqual(
+      expect.arrayContaining([
+        `${qualified}/community`,
+        `${qualified}/channels`,
+        `${qualified}/channels/${remoteRoomId}/entries`,
+        `${qualified}/channels/${remoteRoomId}/events`,
+        `${qualified}/channels/${remoteRoomId}/attachments`,
+        `${qualified}/attachments/${remoteAttachmentId}`,
+      ])
+    );
+    expect(
+      requests
+        .slice(requestStart)
+        .filter((request) => request.path.startsWith('/api/v1/'))
+        .every((request) => request.path.startsWith(qualified))
+    ).toBe(true);
     await expect(adapter.listRooms({ actingMemberId: randomUUID() })).rejects.toBeInstanceOf(
       RemoteConnectionNotFoundError
     );
@@ -501,7 +680,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     const adapter = new RemoteCommunityAdapter(started.connection.ref, 'read-only-owner', store);
     rejectedAuthorization = `Bearer ${token}`;
     rejectedStatus = 401;
-    rejectedPath = '/api/v1/agents';
+    rejectedPath = `${qualified}/agents`;
     try {
       await expect(
         adapter.admitAgent({ agentId: randomUUID(), displayName: 'Denied Agent' })
@@ -528,7 +707,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
         parseCommunityOrigin(origin.replace('127.0.0.1', 'localhost')),
         '/api/v1/community'
       )
-    ).toMatchObject({ id: 'same-remote-id' });
+    ).toMatchObject({ id: remoteCommunityId });
     expect(() => parseCommunityOrigin('http://192.168.1.9:4444')).toThrow(PinnedOriginError);
     await expect(checkedAddress(parseCommunityOrigin('https://192.168.1.9'))).rejects.toMatchObject(
       { code: 'UNSAFE_ADDRESS' }
@@ -551,6 +730,26 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     ).rejects.toMatchObject({ code: 'REMOTE_RESPONSE' });
     expect(redirectedRequests).toBe(0);
     redirect = false;
+  });
+
+  it('separates a canonical tenant link from its pinned socket origin', () => {
+    expect(parseCommunityLink(`${origin}/c/${remoteCommunityId}`)).toEqual({
+      origin: new URL(origin),
+      communityId: remoteCommunityId,
+    });
+    expect(communityApiPath(remoteCommunityId, '/api/v1/channels/room?cursor=opaque')).toBe(
+      `/api/v1/communities/${remoteCommunityId}/channels/room?cursor=opaque`
+    );
+    for (const invalid of [
+      `${origin}/c/${remoteCommunityId}/extra`,
+      `${origin}/c/%2F${remoteCommunityId}`,
+      `${origin}/c/not-a-uuid`,
+      `${origin}/c/${remoteCommunityId.toUpperCase()}`,
+      `${origin}/c/${remoteCommunityId}?select=other`,
+      `${origin}/api/v1/communities/${remoteCommunityId}`,
+    ]) {
+      expect(() => parseCommunityLink(invalid)).toThrow(PinnedOriginError);
+    }
   });
 
   it('isolates two refs with the same remote id, survives restart, and never returns secrets', async () => {

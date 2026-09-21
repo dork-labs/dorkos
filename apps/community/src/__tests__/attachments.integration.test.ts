@@ -418,7 +418,7 @@ describe('attachments over real HTTP and Postgres', () => {
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
       const response = await upload(channelId, ownerCookie, 'lifecycle-race');
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(503);
       expect(
         (
           await pool.query(
@@ -740,10 +740,10 @@ describe('attachments over real HTTP and Postgres', () => {
   });
 
   it('refuses another uploader or channel and allows only one parallel bind', async () => {
-    await pool.query('INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2)', [
-      channelId,
-      bobId,
-    ]);
+    await pool.query(
+      'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)',
+      [communityId, channelId, bobId]
+    );
     const uploaded = await upload(channelId, ownerCookie, 'bind-race', 'bind');
     expect(uploaded.status).toBe(201);
     const id = (await uploaded.json()).attachment.id;
@@ -796,14 +796,14 @@ describe('attachments over real HTTP and Postgres', () => {
     );
     const agentId = agent.rows[0].id;
     const token = 'agent-files-token';
-    await pool.query('INSERT INTO agent_credentials(agent_id,token_hash) VALUES($1,$2)', [
-      agentId,
-      hashSecret(token),
-    ]);
-    await pool.query('INSERT INTO agent_channel_members(channel_id,agent_id) VALUES($1,$2)', [
-      channelId,
-      agentId,
-    ]);
+    await pool.query(
+      'INSERT INTO agent_credentials(community_id,agent_id,token_hash) VALUES($1,$2,$3)',
+      [communityId, agentId, hashSecret(token)]
+    );
+    await pool.query(
+      'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3)',
+      [communityId, channelId, agentId]
+    );
     const agentUpload = await request(`/api/v1/channels/${channelId}/attachments`, {
       method: 'POST',
       headers: {
@@ -897,9 +897,7 @@ describe('attachments over real HTTP and Postgres', () => {
       await blocker.query('BEGIN');
       await blocker.query('SELECT 1 FROM members WHERE id=$1 FOR UPDATE', [ownerId]);
       const blockedExport = post('/api/v1/me/export', {}, ownerCookie);
-      await waitForBlockedQuery(
-        'SELECT id,user_id,display_name,role,community_id FROM members WHERE id='
-      );
+      await waitForBlockedQuery('SELECT role FROM members WHERE id=');
       const quotaWrite = await blocker.query(
         'UPDATE owner_quota_windows SET upload_bytes=upload_bytes WHERE owner_member_id=$1',
         [ownerId]
@@ -954,8 +952,8 @@ describe('attachments over real HTTP and Postgres', () => {
       releaseSecond();
       spy.mockRestore();
       await pool.query(
-        'INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-        [channelId, bobId]
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+        [communityId, channelId, bobId]
       );
     }
   });
@@ -978,14 +976,14 @@ describe('private archives and recoverable leave', () => {
     );
     const agentId = agent.rows[0].id;
     const token = 'agent-archive-token';
-    await pool.query('INSERT INTO agent_credentials(agent_id,token_hash) VALUES($1,$2)', [
-      agentId,
-      hashSecret(token),
-    ]);
-    await pool.query('INSERT INTO agent_channel_members(channel_id,agent_id) VALUES($1,$2)', [
-      id,
-      agentId,
-    ]);
+    await pool.query(
+      'INSERT INTO agent_credentials(community_id,agent_id,token_hash) VALUES($1,$2,$3)',
+      [communityId, agentId, hashSecret(token)]
+    );
+    await pool.query(
+      'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3)',
+      [communityId, id, agentId]
+    );
     await pool.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
       id,
       ownerId,
@@ -1060,8 +1058,8 @@ describe('private archives and recoverable leave', () => {
   it('exports only the requester’s posts and owned file bytes, with owner reauthentication for full archive', async () => {
     const { unzipSync, strFromU8 } = await import('fflate');
     await pool.query(
-      'INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-      [channelId, bobId]
+      'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+      [communityId, channelId, bobId]
     );
     const bobPost = await post(
       `/api/v1/channels/${channelId}/entries`,
@@ -1138,10 +1136,10 @@ describe('private archives and recoverable leave', () => {
     expect(
       (await request(`/api/v1/exports/${bobArchiveId}`, { headers: { cookie: bobCookie } })).status
     ).toBe(403);
-    await pool.query('INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2)', [
-      channelId,
-      bobId,
-    ]);
+    await pool.query(
+      'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)',
+      [communityId, channelId, bobId]
+    );
     await pool.query(
       "UPDATE export_archives SET expires_at=now()-interval '1 second' WHERE id=$1",
       [personalId]
@@ -1198,7 +1196,7 @@ describe('private archives and recoverable leave', () => {
   it('requires ownership transfer before leave, then revokes the former member’s session', async () => {
     expect((await post('/api/v1/me/leave', {}, ownerCookie)).status).toBe(403);
     expect((await post('/api/v1/me/leave', {}, bobCookie)).status).toBe(204);
-    expect((await post('/api/v1/me/export', {}, bobCookie)).status).toBe(401);
+    expect((await post('/api/v1/me/export', {}, bobCookie)).status).toBe(403);
     expect(
       (await request(`/api/v1/channels/${channelId}/entries`, { headers: { cookie: ownerCookie } }))
         .status
@@ -1241,10 +1239,10 @@ describe('private archives and recoverable leave', () => {
       expect(ownerUpload.status).toBe(201);
       const agent = await pool.query<{ id: string }>("SELECT id FROM agents WHERE handle='helper'");
       const token = 'agent-one-pool-token';
-      await pool.query('INSERT INTO agent_credentials(agent_id,token_hash) VALUES($1,$2)', [
-        agent.rows[0].id,
-        hashSecret(token),
-      ]);
+      await pool.query(
+        'INSERT INTO agent_credentials(community_id,agent_id,token_hash) VALUES($1,$2,$3)',
+        [communityId, agent.rows[0].id, hashSecret(token)]
+      );
       const agentUpload = await oneApp.request(`/api/v1/channels/${channelId}/attachments`, {
         method: 'POST',
         headers: {

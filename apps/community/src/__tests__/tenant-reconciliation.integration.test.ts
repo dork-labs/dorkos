@@ -47,26 +47,37 @@ afterAll(async () => {
 
 async function seedCommunity() {
   if (!pool) throw new Error('test database is unavailable');
-  const community = (
-    await pool.query("INSERT INTO communities(name) VALUES('Legacy') RETURNING id")
-  ).rows[0].id as string;
-  await pool.query(
-    "INSERT INTO \"user\"(id,name,email) VALUES('owner-user','Owner','owner@example.test')"
-  );
-  const member = (
-    await pool.query(
-      `INSERT INTO members(community_id,user_id,display_name,handle,role)
-       VALUES($1,'owner-user','Owner','owner','owner') RETURNING id`,
-      [community]
-    )
-  ).rows[0].id as string;
-  const channel = (
-    await pool.query(
-      "INSERT INTO channels(community_id,name,visibility) VALUES($1,'Files','private') RETURNING id",
-      [community]
-    )
-  ).rows[0].id as string;
-  return { community, member, channel };
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const community = (
+      await client.query("INSERT INTO communities(name) VALUES('Legacy') RETURNING id")
+    ).rows[0].id as string;
+    await client.query(
+      "INSERT INTO \"user\"(id,name,email) VALUES('owner-user','Owner','owner@example.test')"
+    );
+    const member = (
+      await client.query(
+        `INSERT INTO members(community_id,user_id,display_name,handle,role)
+         VALUES($1,'owner-user','Owner','owner','owner') RETURNING id`,
+        [community]
+      )
+    ).rows[0].id as string;
+    const channel = (
+      await client.query(
+        "INSERT INTO channels(community_id,name,visibility) VALUES($1,'Files','private') RETURNING id",
+        [community]
+      )
+    ).rows[0].id as string;
+    await client.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [community]);
+    await client.query('COMMIT');
+    return { community, member, channel };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function seedAttachment() {
@@ -101,11 +112,16 @@ async function seedAttachment() {
     kind: 'export',
     maxBytes: 100,
   });
-  await pool.query(
+  const archive = await pool.query<{ id: string }>(
     `INSERT INTO export_archives(
-       community_id,requester_member_id,scope,channel_ids,blob_key,byte_size,expires_at
-     ) VALUES($1,$2,'owner',ARRAY[$3::uuid],$4,$5,now()+interval '1 hour')`,
-    [owner.community, owner.member, owner.channel, exported.key, exported.byteSize]
+       community_id,requester_member_id,scope,blob_key,byte_size,expires_at
+     ) VALUES($1,$2,'owner',$3,$4,now()+interval '1 hour') RETURNING id`,
+    [owner.community, owner.member, exported.key, exported.byteSize]
+  );
+  await pool.query(
+    `INSERT INTO export_archive_channels(community_id,export_archive_id,channel_id,position)
+     VALUES($1,$2,$3,1)`,
+    [owner.community, archive.rows[0].id, owner.channel]
   );
   return { ...owner, attachment, stored, exported };
 }
@@ -411,7 +427,7 @@ it('does not reacquire managed inventory while deferred cleanup invalidation hol
   }
 });
 
-it('invalidates readiness through the complete legacy reference cleanup sequence', async () => {
+it('invalidates readiness through unmanaged cleanup after the tenant contract is enforced', async () => {
   if (!pool) throw new Error('test database is unavailable');
   const fixture = await seedAttachment();
   await expect(reconcileTenantNamespace(pool, store)).resolves.toMatchObject({ ready: true });
@@ -433,7 +449,7 @@ it('invalidates readiness through the complete legacy reference cleanup sequence
     ).rows[0]
   ).toEqual({
     state: 'dirty',
-    generation: String(generation + 3),
+    generation: String(generation + 2),
     validated_generation: null,
     namespace_digest: null,
     reason_code: 'unmanaged_blob_cleanup',
@@ -445,19 +461,19 @@ it('invalidates readiness through the complete legacy reference cleanup sequence
   await expect(store.get(fixture.stored.key)).rejects.toMatchObject({ code: 'BLOB_NOT_FOUND' });
 });
 
-it('rejects a stale listing when a legacy-shaped write advances the generation', async () => {
+it('rejects a stale listing when the readiness generation advances', async () => {
   if (!pool) throw new Error('test database is unavailable');
   const db = pool;
-  const fixture = await seedAttachment();
+  await seedAttachment();
   const racingStore: BlobStore = {
     put: (input) => store.put(input),
     get: (key, options) => store.get(key, options),
     delete: (key, options) => store.delete(key, options),
     listNamespace: async (options) => {
       const snapshot = await store.listNamespace(options);
-      await db.query("UPDATE attachments SET display_name='changed.txt' WHERE id=$1", [
-        fixture.attachment,
-      ]);
+      await db.query(
+        "UPDATE tenant_reconciliation SET generation=generation+1,state='dirty',validated_generation=NULL"
+      );
       return snapshot;
     },
   };
@@ -473,17 +489,13 @@ it('rejects a stale listing when a legacy-shaped write advances the generation',
   expect(gate.state).toBe('dirty');
 });
 
-it('does not revalidate a legacy write that removed explicit tenant ownership', async () => {
+it('rejects a legacy write that removes explicit tenant ownership', async () => {
   if (!pool) throw new Error('test database is unavailable');
   const fixture = await seedAttachment();
   await expect(reconcileTenantNamespace(pool, store)).resolves.toMatchObject({ ready: true });
 
-  await pool.query('UPDATE attachments SET community_id=NULL WHERE id=$1', [fixture.attachment]);
-  expect((await pool.query('SELECT state FROM tenant_reconciliation')).rows[0].state).toBe('dirty');
-
-  await expect(reconcileTenantNamespace(pool, store)).resolves.toMatchObject({
-    ready: false,
-    issues: [{ code: 'ambiguous_database', count: 1 }],
-  });
-  expect((await pool.query('SELECT state FROM tenant_reconciliation')).rows[0].state).toBe('dirty');
+  await expect(
+    pool.query('UPDATE attachments SET community_id=NULL WHERE id=$1', [fixture.attachment])
+  ).rejects.toMatchObject({ code: '23502' });
+  expect((await pool.query('SELECT state FROM tenant_reconciliation')).rows[0].state).toBe('ready');
 });

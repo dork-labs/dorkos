@@ -71,7 +71,7 @@ export function registerChannelRoutes(
   app: Hono,
   { pool, auth }: { pool: Pool; auth: CommunityAuth }
 ) {
-  app.get('/api/v1/channels', async (c) => {
+  app.get('/channels', async (c) => {
     const member = await requirePrincipal(c, auth, pool, 'read');
     const agent = member.kind === 'agent';
     const result = await pool.query<ChannelRow>(
@@ -89,7 +89,7 @@ export function registerChannelRoutes(
     return json(c, CommunityWireChannelListResponseSchema, { channels: result.rows.map(project) });
   });
 
-  app.post('/api/v1/channels', async (c) => {
+  app.post('/channels', async (c) => {
     const member = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireChannelCreateRequestSchema);
     const id = await transaction(pool, async (client) => {
@@ -99,17 +99,17 @@ export function registerChannelRoutes(
       );
       // A concurrent demotion may complete while INSERT waits; this check is inside the transaction.
       await requireLiveRole(client, member, ['owner', 'admin']);
-      await client.query('INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2)', [
-        row.rows[0].id,
-        member.id,
-      ]);
+      await client.query(
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)',
+        [member.community_id, row.rows[0].id, member.id]
+      );
       return row.rows[0].id;
     });
     const channel = await channelProjection(pool, id, member);
     return json(c, CommunityWireChannelResponseSchema, { channel }, 201);
   });
 
-  app.get('/api/v1/channels/:id', async (c) => {
+  app.get('/channels/:id', async (c) => {
     const member = await requirePrincipal(c, auth, pool, 'read');
     const channel = await channelProjection(pool, c.req.param('id'), member);
     await assertPrincipalCurrent(c, auth, pool, member, 'read');
@@ -118,7 +118,7 @@ export function registerChannelRoutes(
     });
   });
 
-  app.patch('/api/v1/channels/:id', async (c) => {
+  app.patch('/channels/:id', async (c) => {
     const member = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireChannelUpdateRequestSchema);
     await transaction(pool, async (client) => {
@@ -141,7 +141,7 @@ export function registerChannelRoutes(
     });
   });
 
-  app.post('/api/v1/channels/:id/join', async (c) => {
+  app.post('/channels/:id/join', async (c) => {
     const member = await requirePrincipal(c, auth, pool, 'post');
     if (member.kind !== 'human')
       throw new ApiError(403, 'FORBIDDEN', 'Agents cannot join channels themselves.');
@@ -153,8 +153,8 @@ export function registerChannelRoutes(
       if (channel.visibility === 'private' && !channel.joined)
         throw new ApiError(404, 'NOT_FOUND', 'Channel not found.');
       await client.query(
-        'INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-        [channel.id, member.id]
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+        [member.community_id, channel.id, member.id]
       );
     });
     return json(c, CommunityWireChannelResponseSchema, {
@@ -162,7 +162,7 @@ export function registerChannelRoutes(
     });
   });
 
-  app.post('/api/v1/channels/:id/leave', async (c) => {
+  app.post('/channels/:id/leave', async (c) => {
     const member = await requirePrincipal(c, auth, pool, 'post');
     if (member.kind !== 'human')
       throw new ApiError(403, 'FORBIDDEN', 'Agents cannot leave channels themselves.');
@@ -180,7 +180,7 @@ export function registerChannelRoutes(
     });
   });
 
-  app.get('/api/v1/channels/:id/members', async (c) => {
+  app.get('/channels/:id/members', async (c) => {
     const member = await requirePrincipal(c, auth, pool, 'read');
     const channel = await channelProjection(pool, c.req.param('id'), member);
     if (!channel.joined) throw new ApiError(403, 'FORBIDDEN', 'Join this channel first.');
@@ -219,7 +219,7 @@ export function registerChannelRoutes(
     });
   });
 
-  app.post('/api/v1/channels/:id/members', async (c) => {
+  app.post('/channels/:id/members', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireChannelMemberRequestSchema);
     await transaction(pool, async (client) => {
@@ -232,8 +232,8 @@ export function registerChannelRoutes(
       );
       if (!target.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
       await client.query(
-        'INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-        [channel.id, body.memberId]
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+        [actor.community_id, channel.id, body.memberId]
       );
     });
     return json(c, CommunityWireChannelResponseSchema, {
@@ -241,7 +241,7 @@ export function registerChannelRoutes(
     });
   });
 
-  app.delete('/api/v1/channels/:id/members/:memberId', async (c) => {
+  app.delete('/channels/:id/members/:memberId', async (c) => {
     const actor = await requireMember(c, auth, pool);
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
@@ -267,7 +267,7 @@ export function registerChannelRoutes(
     });
   });
 
-  app.patch('/api/v1/members/:id/role', async (c) => {
+  app.patch('/members/:id/role', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireMemberRoleUpdateRequestSchema);
     const member = await transaction(pool, async (client) => {

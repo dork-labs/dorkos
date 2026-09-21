@@ -6,6 +6,7 @@ import { migrate } from '../migrate.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { encodeCursor } from '../cursor.js';
+import { lockChannel, transaction, type Member } from '../data.js';
 import { CommunityWireCommunitySchema } from '@dorkos/shared/community-wire';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
@@ -167,6 +168,13 @@ describe('owner foundation over real HTTP and Postgres', () => {
     expect(
       (await pool.query("SELECT count(*)::int AS count FROM members WHERE role='owner' AND active"))
         .rows[0].count
+    ).toBe(1);
+    expect(
+      (
+        await pool.query<{ count: number }>(
+          'SELECT count(*)::int AS count FROM host_operators WHERE revoked_at IS NULL'
+        )
+      ).rows[0].count
     ).toBe(1);
     expect(
       (await post('/api/v1/bootstrap/preflight', { secret: config.bootstrapSecret })).status
@@ -400,13 +408,48 @@ describe('owner foundation over real HTTP and Postgres', () => {
       (await request(`/api/v1/channels/${channelId}/entries`, { headers: { cookie: bobCookie } }))
         .status
     ).toBe(200);
+    const mentionedAgent = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id)
+         VALUES($1,$2,'Proof Bot','proof.bot','proof-bot-local') RETURNING id`,
+        [communityId, ownerMemberId]
+      )
+    ).rows[0]!.id;
+    await pool.query(
+      'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3)',
+      [communityId, channelId, mentionedAgent]
+    );
     const mention = await post(
       `/api/v1/channels/${channelId}/entries`,
-      { text: 'hi @bob and @unknown', idempotencyKey: 'mention-bob' },
+      { text: 'hi @bob and @proof.bot and @unknown', idempotencyKey: 'mention-bob-agent' },
       ownerCookie
     );
     expect(mention.status).toBe(201);
-    expect((await mention.json()).entry.mentions).toEqual([bobMemberId]);
+    const mentionBody = await mention.json();
+    expect(mentionBody.entry.mentions).toEqual([bobMemberId, mentionedAgent]);
+    expect(
+      (
+        await pool.query(
+          `SELECT e.community_id,m.position,m.mentioned_member_id,m.mentioned_agent_id
+           FROM entries e JOIN entry_mentions m ON m.entry_id=e.id
+           WHERE e.id=$1 ORDER BY m.position`,
+          [mentionBody.entry.id]
+        )
+      ).rows
+    ).toEqual([
+      {
+        community_id: communityId,
+        position: 1,
+        mentioned_member_id: bobMemberId,
+        mentioned_agent_id: null,
+      },
+      {
+        community_id: communityId,
+        position: 2,
+        mentioned_member_id: null,
+        mentioned_agent_id: mentionedAgent,
+      },
+    ]);
     await pool.query("UPDATE members SET display_name='Robert' WHERE id=$1", [bobMemberId]);
     const stable = await post(
       `/api/v1/channels/${channelId}/entries`,
@@ -416,8 +459,13 @@ describe('owner foundation over real HTTP and Postgres', () => {
     const stableBody = await stable.json();
     expect(stableBody.entry.mentions).toEqual([bobMemberId]);
     expect(
-      (await pool.query('SELECT mentions FROM entries WHERE id=$1', [stableBody.entry.id])).rows[0]
-        .mentions
+      (
+        await pool.query(
+          `SELECT array_agg(COALESCE(mentioned_member_id,mentioned_agent_id) ORDER BY position) AS mentions
+           FROM entry_mentions WHERE entry_id=$1`,
+          [stableBody.entry.id]
+        )
+      ).rows[0].mentions
     ).toEqual([bobMemberId]);
     const roster = await request(`/api/v1/channels/${channelId}/members`, {
       headers: { cookie: ownerCookie },
@@ -568,18 +616,18 @@ describe('owner foundation over real HTTP and Postgres', () => {
        VALUES($1,$2,'Owner worker','owner-worker','owner-worker-local') RETURNING id`,
       [communityId, ownerMemberId]
     );
-    await pool.query('INSERT INTO agent_channel_members(channel_id,agent_id) VALUES($1,$2)', [
-      id,
-      agent.rows[0]!.id,
-    ]);
+    await pool.query(
+      'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3)',
+      [communityId, id, agent.rows[0]!.id]
+    );
     const sequence = await pool.query<{ last_seq: string }>(
       'UPDATE channels SET last_seq=last_seq+1 WHERE id=$1 RETURNING last_seq',
       [id]
     );
     await pool.query(
-      `INSERT INTO entries(channel_id,seq,author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,idempotency_key,payload_hash)
-       VALUES($1,$2,NULL,$3,'Owner worker','private correlation',ARRAY[]::uuid[],NULL,NULL,'owner-wire-key','test-hash')`,
-      [id, sequence.rows[0]!.last_seq, agent.rows[0]!.id]
+      `INSERT INTO entries(community_id,channel_id,seq,author_member_id,author_agent_id,author_display_name,text,parent_entry_id,thread_root_entry_id,idempotency_key,payload_hash)
+       VALUES($1,$2,$3,NULL,$4,'Owner worker','private correlation',NULL,NULL,'owner-wire-key','test-hash')`,
+      [communityId, id, sequence.rows[0]!.last_seq, agent.rows[0]!.id]
     );
 
     const [ownerHistory, bobHistory] = await Promise.all([
@@ -805,10 +853,12 @@ describe('owner foundation over real HTTP and Postgres', () => {
   it('does not emit an entry if access ends during attachment enrichment', async () => {
     const created = await post('/api/v1/channels', { name: 'Enrichment revocation' }, ownerCookie);
     const id = (await created.json()).channel.id;
-    await pool.query('INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2)', [
-      id,
-      bobMemberId,
-    ]);
+    const communityId = (await pool.query<{ id: string }>('SELECT id FROM communities')).rows[0]!
+      .id;
+    await pool.query(
+      'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)',
+      [communityId, id, bobMemberId]
+    );
     let entered!: () => void;
     let release!: () => void;
     const atEnrichment = new Promise<void>((resolve) => {
@@ -961,9 +1011,13 @@ describe('owner foundation over real HTTP and Postgres', () => {
       await client.query('BEGIN');
       await client.query('UPDATE channels SET last_seq=270 WHERE id=$1', [id]);
       await client.query(
-        `INSERT INTO entries(channel_id,seq,author_member_id,author_display_name,text,idempotency_key,payload_hash)
-         SELECT $1,n,$2,'Owner','bulk-'||n,'bulk-'||n,'test' FROM generate_series(2,270) AS n`,
-        [id, ownerMemberId]
+        `INSERT INTO entries(community_id,channel_id,seq,author_member_id,author_display_name,text,idempotency_key,payload_hash)
+         SELECT $1,$2,n,$3,'Owner','bulk-'||n,'bulk-'||n,'test' FROM generate_series(2,270) AS n`,
+        [
+          (await client.query<{ id: string }>('SELECT id FROM communities')).rows[0]!.id,
+          id,
+          ownerMemberId,
+        ]
       );
       await client.query('COMMIT');
     } finally {
@@ -1014,5 +1068,82 @@ describe('owner foundation over real HTTP and Postgres', () => {
         })
       ).status
     ).toBe(410);
+  });
+
+  it('uses canonical tenant routes and fails closed when the singleton alias is ambiguous', async () => {
+    const current = (
+      await pool.query<{ id: string }>(
+        "SELECT id FROM communities WHERE lifecycle='active' ORDER BY created_at LIMIT 1"
+      )
+    ).rows[0]!.id;
+    expect(
+      (
+        await request(`/api/v1/communities/${current}/channels`, {
+          headers: { cookie: ownerCookie },
+        })
+      ).status
+    ).toBe(200);
+    expect(
+      (
+        await request('/api/v1/communities/not-a-uuid/channels', {
+          headers: { cookie: ownerCookie },
+        })
+      ).status
+    ).toBe(404);
+
+    const pending = (
+      await pool.query<{ id: string }>(
+        "INSERT INTO communities(name,lifecycle) VALUES('Awaiting owner','pending_owner') RETURNING id"
+      )
+    ).rows[0]!.id;
+    try {
+      const ambiguous = await request('/api/v1/channels', { headers: { cookie: ownerCookie } });
+      expect(ambiguous.status).toBe(409);
+      expect(await ambiguous.json()).toMatchObject({ code: 'COMMUNITY_SELECTION_REQUIRED' });
+
+      expect(
+        (
+          await request(`/api/v1/communities/${current}/channels`, {
+            headers: { cookie: ownerCookie },
+          })
+        ).status
+      ).toBe(200);
+      const unavailable = await request(`/api/v1/communities/${pending}/channels`, {
+        headers: { cookie: ownerCookie },
+      });
+      expect(unavailable.status).toBe(409);
+      expect(await unavailable.json()).toMatchObject({ code: 'COMMUNITY_UNAVAILABLE' });
+
+      const exactDiscovery = await request(`/api/v1/communities/${pending}/community`);
+      expect(exactDiscovery.status).toBe(200);
+      expect(await exactDiscovery.json()).toMatchObject({ id: pending, name: 'Awaiting owner' });
+    } finally {
+      await pool.query('DELETE FROM communities WHERE id=$1', [pending]);
+    }
+  });
+
+  it('rechecks lifecycle inside a tenant mutation transaction', async () => {
+    const member = (
+      await pool.query<Member>(
+        'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1',
+        [ownerMemberId]
+      )
+    ).rows[0]!;
+    await pool.query(
+      `UPDATE communities SET lifecycle='suspended',suspended_from_state='active',suspended_at=now(),
+       lifecycle_version=lifecycle_version+1 WHERE id=$1`,
+      [member.community_id]
+    );
+    try {
+      await expect(
+        transaction(pool, (client) => lockChannel(client, channelId, member))
+      ).rejects.toMatchObject({ code: 'COMMUNITY_SUSPENDED' });
+    } finally {
+      await pool.query(
+        `UPDATE communities SET lifecycle='active',suspended_from_state=NULL,suspended_at=NULL,
+         lifecycle_version=lifecycle_version+1 WHERE id=$1`,
+        [member.community_id]
+      );
+    }
   });
 });

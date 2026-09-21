@@ -10,6 +10,7 @@
  * @module shared/community-wire
  */
 import { z } from 'zod';
+import { CommunityAdminLifecycleSchema } from './community-admin-wire.js';
 import { HANDLE_PATTERN } from './handle.js';
 
 const id = z.string().min(1);
@@ -33,6 +34,11 @@ export const COMMUNITY_API_V1_ROUTES = {
   community: '/api/v1/community',
   bootstrapPreflight: '/api/v1/bootstrap/preflight',
   bootstrapClaim: '/api/v1/bootstrap/claim',
+  ownerClaimPreflight: '/api/v1/owner-claims/preflight',
+  ownerClaim: '/api/v1/owner-claims/claim',
+  hostCommunities: '/api/v1/host/communities',
+  hostCommunityLifecycle: '/api/v1/host/communities/:id/lifecycle',
+  memberships: '/api/v1/memberships',
   invites: '/api/v1/invites',
   invitePreview: '/api/v1/invites/preview',
   inviteRedeem: '/api/v1/invites/redeem',
@@ -91,6 +97,55 @@ export const CommunityWireBootstrapClaimResponseSchema = z.strictObject({
   community: CommunityWireCommunitySchema,
   memberId: id,
 });
+
+/** Host-visible lifecycle metadata contains no membership or content data. */
+export const CommunityWireHostCommunitySchema = CommunityWireCommunitySchema.extend({
+  lifecycle: CommunityAdminLifecycleSchema,
+});
+/** Communities visible to a host operator as operational metadata. */
+export const CommunityWireHostCommunityListResponseSchema = z.strictObject({
+  communities: z.array(CommunityWireHostCommunitySchema),
+});
+/** One community the current host account may enter through its own membership. */
+export const CommunityWireMembershipSummarySchema = z.strictObject({
+  communityId: id,
+  name: z.string().min(1),
+  description: z.string().nullable(),
+  lifecycle: CommunityAdminLifecycleSchema,
+  memberId: id,
+  displayName: z.string().min(1),
+  role: z.enum(['owner', 'admin', 'member']),
+});
+/** Authenticated communities visible through the current account's own memberships. */
+export const CommunityWireMembershipListResponseSchema = z.strictObject({
+  memberships: z.array(CommunityWireMembershipSummarySchema),
+});
+/** Community selection row for the current host account. */
+export type CommunityWireMembershipSummary = z.infer<typeof CommunityWireMembershipSummarySchema>;
+/** A host operator creates a pending community before any membership exists. */
+export const CommunityWireHostCommunityCreateRequestSchema = z.strictObject({
+  name: z.string().min(1),
+});
+/** One-time owner claim returned only to the creating host operator. */
+export const CommunityWireHostCommunityCreateResponseSchema = z.strictObject({
+  community: CommunityWireHostCommunitySchema,
+  ownerClaimToken: id,
+  expiresAt: timestamp,
+});
+/** Host lifecycle controls can suspend or resume an existing claimed community. */
+export const CommunityWireHostCommunityLifecycleRequestSchema = z.strictObject({
+  lifecycle: z.enum(['active', 'suspended']),
+});
+/** A claim token is captured from memory and exchanged for an HTTP-only cookie. */
+export const CommunityWireOwnerClaimPreflightRequestSchema = z.strictObject({ token: id });
+/** Preflight exposes only the bound pending community and expiry. */
+export const CommunityWireOwnerClaimPreflightResponseSchema = z.strictObject({
+  granted: z.literal(true),
+  communityId: id,
+  expiresAt: timestamp,
+});
+/** Redeeming a claim needs no client-supplied community or role. */
+export const CommunityWireOwnerClaimRequestSchema = z.strictObject({});
 
 /** Human roles. Agent membership is a distinct kind, not an elevated role. */
 export const CommunityWireHumanRoleSchema = z.enum(['owner', 'admin', 'member']);
@@ -369,12 +424,80 @@ export const CommunityWirePairingExchangeRequestSchema = z.strictObject({
   code: id,
   verifier: id,
 });
+/** Effective operations granted to one local installation credential. */
+export const CommunityWireGrantCapabilitiesSchema = z.strictObject({
+  read: z.boolean(),
+  post: z.boolean(),
+  enrollAgent: z.boolean(),
+  stream: z.boolean(),
+});
+/** Current effective access and the most recently verified Community authority. */
+export const CommunityConnectionAccessSchema = z
+  .strictObject({
+    state: z.enum(['verified', 'unverified', 'reconnect-required']),
+    effective: CommunityWireGrantCapabilitiesSchema,
+    lastKnown: z
+      .strictObject({
+        lifecycle: z.enum(['active', 'archived', 'suspended', 'deletion_pending']),
+        capabilities: CommunityWireGrantCapabilitiesSchema,
+        verifiedAt: timestamp,
+      })
+      .nullable(),
+  })
+  .superRefine((access, context) => {
+    const effective = Object.values(access.effective);
+    if (access.state !== 'verified' && effective.some(Boolean)) {
+      context.addIssue({ code: 'custom', message: 'Only verified access can be effective.' });
+    }
+    if (access.state === 'verified' && !access.lastKnown) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Verified access requires a verification result.',
+      });
+    }
+    if (
+      access.state === 'verified' &&
+      access.lastKnown &&
+      (access.effective.read !== access.lastKnown.capabilities.read ||
+        access.effective.post !== access.lastKnown.capabilities.post ||
+        access.effective.enrollAgent !== access.lastKnown.capabilities.enrollAgent ||
+        access.effective.stream !== access.lastKnown.capabilities.stream)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Verified effective access must match the verification result.',
+      });
+    }
+    if (
+      access.lastKnown?.lifecycle === 'archived' &&
+      (!access.lastKnown.capabilities.read ||
+        access.lastKnown.capabilities.post ||
+        access.lastKnown.capabilities.enrollAgent ||
+        access.lastKnown.capabilities.stream)
+    ) {
+      context.addIssue({ code: 'custom', message: 'Archived access is history-only.' });
+    }
+    if (
+      (access.lastKnown?.lifecycle === 'suspended' ||
+        access.lastKnown?.lifecycle === 'deletion_pending') &&
+      Object.values(access.lastKnown.capabilities).some(Boolean)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Suspended or deleting access has no effective capabilities.',
+      });
+    }
+  });
+/** Current effective access and the most recently verified Community authority. */
+export type CommunityConnectionAccess = z.infer<typeof CommunityConnectionAccessSchema>;
 /** A grant description the member can inspect and revoke without seeing its token. */
 export const CommunityWireGrantSchema = z.strictObject({
   id,
   memberId: id,
   installName: z.string().min(1).max(120),
   scopes: z.array(z.enum(['read', 'post', 'enroll-agent'])),
+  lifecycle: z.enum(['active', 'archived']),
+  capabilities: CommunityWireGrantCapabilitiesSchema,
   createdAt: timestamp,
 });
 /** Current member's local-install grants. */
@@ -412,9 +535,14 @@ export const CommunityWireAgentListResponseSchema = z.strictObject({
 export const CommunityWireOwnerTransferRequestSchema = z.strictObject({
   successorMemberId: id,
   password: id,
+  lifecycleVersion: z.int().positive(),
 });
 /** Transfer receipt with the new current owner identity. */
-export const CommunityWireOwnerTransferResponseSchema = z.strictObject({ ownerMemberId: id });
+export const CommunityWireOwnerTransferResponseSchema = z.strictObject({
+  communityId: id,
+  ownerMemberId: id,
+  lifecycleVersion: z.int().positive(),
+});
 /** Owner export requires current password confirmation. */
 export const CommunityWireOwnerExportRequestSchema = z.strictObject({ password: id });
 /** Archive manifest metadata; archive bytes use an authorized download stream. */
@@ -437,6 +565,11 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'ATTACHMENT_TOO_LARGE',
   'UNSUPPORTED_ATTACHMENT_TYPE',
   'RATE_LIMITED',
+  'COMMUNITY_SELECTION_REQUIRED',
+  'COMMUNITY_UNAVAILABLE',
+  'COMMUNITY_ARCHIVED',
+  'COMMUNITY_SUSPENDED',
+  'COMMUNITY_DELETION_PENDING',
   'UNAVAILABLE',
 ]);
 /** Public error response; no database cause, credential or path is serialized. */

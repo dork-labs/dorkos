@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { migrate } from '../migrate.js';
+import { inspectBackout } from '../backout.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for real Postgres tests');
@@ -54,6 +55,14 @@ it('creates all owner, conversation, credential and auth tables in fresh Postgre
       'host_operators',
       'managed_blobs',
       'tenant_reconciliation',
+      'community_backout_fence',
+      'entry_mentions',
+      'export_archive_channels',
+      'community_creation_receipts',
+      'host_audit_events',
+      'community_deletion_jobs',
+      'community_deletion_blob_progress',
+      'community_deletion_tombstones',
     ]) {
       expect(names).toContain(name);
     }
@@ -104,6 +113,7 @@ it('upgrades a populated foundation database without changing human authors', as
       )
     ).rows[0].id;
     await migrate(upgradeUrl.toString());
+    expect(await inspectBackout(db)).toEqual({ eligible: true, reason: 'single-community' });
     const row = (
       await db.query(
         'SELECT author_member_id,author_agent_id,community_id FROM entries WHERE id=$1',
@@ -117,12 +127,11 @@ it('upgrades a populated foundation database without changing human authors', as
     });
     expect(
       (
-        await db.query(
-          'SELECT lifecycle,lifecycle_version,singleton FROM communities WHERE id=$1',
-          [community]
-        )
+        await db.query('SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1', [
+          community,
+        ])
       ).rows[0]
-    ).toEqual({ lifecycle: 'active', lifecycle_version: 1, singleton: true });
+    ).toEqual({ lifecycle: 'active', lifecycle_version: 1 });
     expect(
       (
         await db.query<{ column_name: string }>(
@@ -147,8 +156,83 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     await migrate(upgradeUrl.toString());
+  } finally {
+    await db.end();
+    await admin.query(`DROP DATABASE IF EXISTS ${upgradeName}`);
+  }
+});
+
+it('backfills legacy suspended communities before adding administration constraints', async () => {
+  const upgradeName = `community_suspended_upgrade_${randomUUID().replaceAll('-', '')}`;
+  const upgradeUrl = new URL(adminUrl);
+  upgradeUrl.pathname = `/${upgradeName}`;
+  await admin.query(`CREATE DATABASE ${upgradeName}`);
+  const db = new Pool({ connectionString: upgradeUrl.toString() });
+  try {
+    await db.query(
+      'CREATE TABLE community_migrations(version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())'
+    );
+    for (const [version, filename] of [
+      [1, '0001_foundation.sql'],
+      [2, '0002_admission.sql'],
+      [3, '0003_files.sql'],
+      [4, '0004_cleanup_backoff.sql'],
+      [5, '0005_tenant_expand.sql'],
+      [6, '0006_tenant_backfill.sql'],
+      [7, '0007_tenant_relations.sql'],
+      [8, '0008_tenant_contract.sql'],
+      [9, '0009_backout_fence.sql'],
+    ] as const) {
+      await db.query(
+        await readFile(
+          fileURLToPath(new URL(`../../migrations/${filename}`, import.meta.url)),
+          'utf8'
+        )
+      );
+      await db.query('INSERT INTO community_migrations(version) VALUES($1)', [version]);
+    }
+    const community = (
+      await db.query("INSERT INTO communities(name) VALUES('Legacy suspended') RETURNING id")
+    ).rows[0].id;
+    await db.query(
+      "INSERT INTO \"user\"(id,name,email) VALUES('legacy-suspended','Legacy','legacy-suspended@example.test')"
+    );
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO members(community_id,user_id,display_name,handle,role)
+         VALUES($1,'legacy-suspended','Legacy','legacy-suspended','owner')`,
+        [community]
+      );
+      await client.query("UPDATE communities SET lifecycle='suspended' WHERE id=$1", [community]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    await migrate(upgradeUrl.toString());
+
+    expect(
+      (
+        await db.query(
+          `SELECT lifecycle,activated_at IS NOT NULL AS activated,
+                  suspended_from_state,suspended_at IS NOT NULL AS suspended
+           FROM communities WHERE id=$1`,
+          [community]
+        )
+      ).rows[0]
+    ).toEqual({
+      lifecycle: 'suspended',
+      activated: true,
+      suspended_from_state: 'active',
+      suspended: true,
+    });
   } finally {
     await db.end();
     await admin.query(`DROP DATABASE IF EXISTS ${upgradeName}`);
@@ -245,7 +329,7 @@ it('expands a populated version-four database without changing files or cleanup 
            ORDER BY indexname`
         )
       ).rows.map((item) => item.indexname)
-    ).toEqual(['members_community_user_unique', 'members_user_id_key']);
+    ).toEqual(['members_community_user_unique']);
     await db.query(
       `INSERT INTO managed_blobs(blob_key,community_id,purpose,community_lifecycle_version,state)
        VALUES($1,$2,'attachment',1,'pending_delete')`,
@@ -278,7 +362,7 @@ it('expands a populated version-four database without changing files or cleanup 
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(
       (
         await db.query(
@@ -310,7 +394,7 @@ it('expands a populated version-four database without changing files or cleanup 
            ) AND tgdeferrable AND tginitdeferred`
         )
       ).rows[0]
-    ).toEqual({ count: 14 });
+    ).toEqual({ count: 2 });
     await db.query(
       `UPDATE tenant_reconciliation
        SET state='ready',validated_generation=generation,namespace_digest=$1,
@@ -328,10 +412,10 @@ it('expands a populated version-four database without changing files or cleanup 
         )
       ).rows[0]
     ).toEqual({
-      state: 'dirty',
-      generation: '5',
-      validated_generation: null,
-      reason_code: 'legacy_tenant_write',
+      state: 'ready',
+      generation: '4',
+      validated_generation: '4',
+      reason_code: 'validated',
     });
     await migrate(upgradeUrl.toString());
   } finally {
