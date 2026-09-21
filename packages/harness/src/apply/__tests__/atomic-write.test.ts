@@ -5,8 +5,11 @@
  * half-written. That is a claim about two processes, so one process cannot test
  * it: inside one Node process the write and the read are the same thread and the
  * window does not exist. This suite therefore spawns a real child that polls the
- * target in a tight loop while the parent rewrites it two hundred times, and
- * fails if the child ever saw anything but a complete version.
+ * target in a tight loop while the parent rewrites it at least two hundred
+ * times, and fails if the child ever saw anything but a complete version. The
+ * writer does not stop until the reader has sampled both versions more than two
+ * hundred times, so host load cannot turn the coverage floor into scheduler
+ * roulette.
  *
  * The two versions are deliberately different lengths AND different bytes
  * (`A…A` vs `B…B`), so a sample is checked by length, first byte and last byte
@@ -19,9 +22,10 @@
  * of ~1,400 samples the child caught 66 bad reads in 14 distinct shapes — 15 of
  * an EMPTY file (the truncate a plain write starts with), ten lengths of a write
  * caught in progress, and three whose head and tail came from DIFFERENT versions.
- * A real red, not a theoretical one. Nothing here is skipped when the machine is
- * busy: the child reports how many samples it took, and a run that sampled too
- * few fails rather than passing quietly.
+ * A real red, not a theoretical one. Nothing here is skipped when the machine
+ * is busy: the child reports how many samples it took, and the parent keeps
+ * rewriting until the reader proves the sample floor rather than accepting a
+ * run that barely sampled.
  *
  * @vitest-environment node
  */
@@ -45,7 +49,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ATOMIC_TMP_SUFFIX, writeFileAtomic } from '../atomic-write.js';
 
-/** How many times the parent rewrites the target while the child watches. */
+/** The minimum number of times the parent rewrites the target while the child watches. */
 const ROUNDS = 200;
 
 /**
@@ -76,6 +80,12 @@ let samples = 0;
 let missing = 0;
 fs.writeFileSync(process.env.READY_PATH, 'ready');
 const deadline = Date.now() + 60000;
+const sleeper = new Int32Array(new SharedArrayBuffer(4));
+while (!fs.existsSync(process.env.START_PATH)) {
+  if (Date.now() > deadline) throw new Error('the writer never started');
+  Atomics.wait(sleeper, 0, 0, 1);
+}
+Atomics.wait(sleeper, 0, 0, Number(process.env.START_DELAY_MS));
 for (;;) {
   // The stop file is checked in batches so the poll loop stays tight: one
   // extra syscall per read would halve the sampling rate.
@@ -88,6 +98,13 @@ for (;;) {
     } catch {
       missing++;
     }
+  }
+  if (
+    samples > Number(process.env.MIN_SAMPLES) &&
+    seen.size >= 2 &&
+    !fs.existsSync(process.env.SAMPLED_PATH)
+  ) {
+    fs.writeFileSync(process.env.SAMPLED_PATH, 'sampled');
   }
   if (fs.existsSync(process.env.STOP_PATH) || Date.now() > deadline) break;
 }
@@ -107,14 +124,14 @@ interface ReaderReport {
 /** Run writes while owning the reader process, settling it before surfacing a write failure. */
 async function writeWhileReaderRuns(
   ready: Promise<void>,
-  write: () => void,
+  write: () => void | Promise<void>,
   stop: () => void,
   exited: Promise<number>
 ): Promise<number> {
   let writeError: unknown;
   try {
     await ready;
-    write();
+    await write();
   } catch (error) {
     writeError = error;
   } finally {
@@ -198,6 +215,8 @@ describe('writeFileAtomic — what a concurrent reader can see', () => {
     const dir = makeTempDir('atomic-reader-');
     const target = join(dir, 'hooks.json');
     const readyPath = join(dir, 'ready');
+    const startPath = join(dir, 'start');
+    const sampledPath = join(dir, 'sampled');
     const stopPath = join(dir, 'stop');
     const outPath = join(dir, 'report.json');
 
@@ -213,8 +232,14 @@ describe('writeFileAtomic — what a concurrent reader can see', () => {
         ...process.env,
         TARGET_PATH: target,
         READY_PATH: readyPath,
+        START_PATH: startPath,
+        SAMPLED_PATH: sampledPath,
         STOP_PATH: stopPath,
         OUT_PATH: outPath,
+        MIN_SAMPLES: String(MIN_SAMPLES),
+        // Reproduce the scheduler gap that let the old fixed-round writer stop
+        // before a loaded reader got its third 64-read batch.
+        START_DELAY_MS: '500',
       },
       stdio: ['ignore', 'ignore', 'pipe'],
     });
@@ -229,9 +254,18 @@ describe('writeFileAtomic — what a concurrent reader can see', () => {
 
     const exitCode = await writeWhileReaderRuns(
       waitForReady(readyPath),
-      () => {
-        for (let round = 0; round < ROUNDS; round++) {
-          writeFileAtomic(target, round % 2 === 0 ? b.content : a.content);
+      async () => {
+        writeFileSync(startPath, 'start');
+        const deadline = Date.now() + 20_000;
+        let round = 0;
+        while (round < ROUNDS || !existsSync(sampledPath)) {
+          for (let batch = 0; batch < 16; batch++, round++) {
+            writeFileAtomic(target, round % 2 === 0 ? b.content : a.content);
+          }
+          if (Date.now() > deadline) {
+            throw new Error('the reader did not sample both versions enough times');
+          }
+          await new Promise<void>((resolve) => setImmediate(resolve));
         }
       },
       () => writeFileSync(stopPath, 'stop'),
