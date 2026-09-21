@@ -51,7 +51,7 @@ afterEach(async () => {
 });
 
 describe('Community launch journal', () => {
-  it('accepts every safe Fly GraphQL classification without provider response text', () => {
+  it('accepts every safe Fly and bounded-process classification without provider text', () => {
     expect(
       [
         'TERMS_VIEWER_MISSING',
@@ -59,6 +59,13 @@ describe('Community launch journal', () => {
         'INVALID_EXPECTED_BINDING',
         'BINDING_MISMATCH',
         'PUBLIC_BUCKET',
+        'INVALID_INPUT',
+        'MISSING_TIGRIS_SECRETS',
+        'CREDENTIAL_DISPOSED',
+        'SPAWN',
+        'TIMEOUT',
+        'OUTPUT_LIMIT',
+        'EXIT',
       ].map((code) => LaunchSafeErrorCodeSchema.parse(code))
     ).toEqual([
       'TERMS_VIEWER_MISSING',
@@ -66,6 +73,13 @@ describe('Community launch journal', () => {
       'INVALID_EXPECTED_BINDING',
       'BINDING_MISMATCH',
       'PUBLIC_BUCKET',
+      'INVALID_INPUT',
+      'MISSING_TIGRIS_SECRETS',
+      'CREDENTIAL_DISPOSED',
+      'SPAWN',
+      'TIMEOUT',
+      'OUTPUT_LIMIT',
+      'EXIT',
     ]);
   });
 

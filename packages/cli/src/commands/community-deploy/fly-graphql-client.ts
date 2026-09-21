@@ -16,13 +16,13 @@ import {
   type TigrisAddOnIdentity,
   type TigrisCreateInput,
 } from './fly-graphql-contract.js';
+import { SAFE_PROVIDER_IDENTIFIER_PATTERN } from './provider-identifiers.js';
 
 const FLY_GRAPHQL_ENDPOINT = 'https://api.fly.io/graphql';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 1024 * 1024;
 const MAX_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
-const SAFE_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/u;
 
 type FlyGraphqlFailureCode =
   | 'AUTH_REQUIRED'
@@ -182,7 +182,9 @@ export class FlyTigrisGraphqlClient {
 
   /** Read one Tigris add-on by its provider-issued exact ID. */
   async readTigris(addOnId: string): Promise<TigrisAddOnIdentity> {
-    if (!SAFE_IDENTIFIER.test(addOnId)) throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(addOnId)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
     return this.request(FLY_TIGRIS_READ_QUERY, { id: addOnId }, parseTigrisReadResponse, false);
   }
 

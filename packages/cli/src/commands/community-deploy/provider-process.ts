@@ -73,6 +73,11 @@ export function runProviderCommand<T>(
     let pendingError: ProviderCommandError | undefined;
     let terminationTimer: NodeJS.Timeout | undefined;
 
+    const scrubStdout = (): void => {
+      for (const chunk of stdout) chunk.fill(0);
+      stdout.length = 0;
+    };
+
     const failAfterClose = (error: ProviderCommandError): void => {
       if (settled || pendingError) return;
       pendingError = error;
@@ -108,12 +113,22 @@ export function runProviderCommand<T>(
       settled = true;
       clearTimeout(timer);
       clearTimeout(terminationTimer);
-      if (pendingError) return reject(pendingError);
-      if (code !== 0) return reject(new ProviderCommandError('EXIT'));
+      if (pendingError) {
+        scrubStdout();
+        return reject(pendingError);
+      }
+      if (code !== 0) {
+        scrubStdout();
+        return reject(new ProviderCommandError('EXIT'));
+      }
+      const output = Buffer.concat(stdout);
       try {
-        resolve({ value: options.parse(Buffer.concat(stdout).toString('utf8')) });
+        resolve({ value: options.parse(output.toString('utf8')) });
       } catch {
         reject(new ProviderCommandError('INVALID_RESPONSE'));
+      } finally {
+        output.fill(0);
+        scrubStdout();
       }
     });
     child.stdin.on('error', () => failAfterClose(new ProviderCommandError('EXIT')));

@@ -9,14 +9,15 @@ import { chmod, link, lstat, mkdir, open, readFile, rename, rm, unlink } from 'n
 import { basename, dirname, join } from 'node:path';
 import { withFileLock } from '@dorkos/shared/atomic-write';
 import { z } from 'zod';
+import { SAFE_PROVIDER_IDENTIFIER_PATTERN } from './provider-identifiers.js';
 
 const SafeIdentifierSchema = z
   .string()
   .trim()
   .min(1)
   .max(256)
-  .refine(
-    (value) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(value),
+  .regex(
+    SAFE_PROVIDER_IDENTIFIER_PATTERN,
     'Journal identifiers must use the provider id character set'
   );
 const Sha256DigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
@@ -66,6 +67,13 @@ export const LaunchSafeErrorCodeSchema = z.enum([
   'INVALID_EXPECTED_BINDING',
   'BINDING_MISMATCH',
   'PUBLIC_BUCKET',
+  'INVALID_INPUT',
+  'MISSING_TIGRIS_SECRETS',
+  'CREDENTIAL_DISPOSED',
+  'SPAWN',
+  'TIMEOUT',
+  'OUTPUT_LIMIT',
+  'EXIT',
   'JOURNAL_LOCKED',
 ]);
 
