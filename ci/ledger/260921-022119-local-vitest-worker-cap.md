@@ -113,3 +113,10 @@ number nobody can attribute.
 Any rise in flake beyond the two relay tests already named — that is, a third
 file going red on a capped run. The memory this buys is not worth a suite people
 stop believing.
+
+The two that are already known are written up in
+`ci/ledger/260921-023128-relay-deadline-sensitive-tests.md`, with the measurement
+that identifies the condition (3 of 8 capped runs red, 0 of 9 uncapped, 12/12 in
+isolation) and the fix direction. Read that before reverting: if the third red
+file turns out to be another wall-clock-deadline test, the cap is revealing a
+fragility rather than causing one, and the cheaper fix is that test.
