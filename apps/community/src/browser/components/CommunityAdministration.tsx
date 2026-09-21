@@ -245,6 +245,11 @@ export function CommunityAdministration({
           'These settings changed elsewhere. Your edits are still here; review them and save again.'
         );
       } else {
+        // A lifecycle conflict may omit a settings projection (for example after
+        // deletion started elsewhere). Refresh authority before offering retry.
+        if (dialog && cause instanceof RequestError && cause.code === 'STATE_CONFLICT') {
+          await refresh();
+        }
         setError(describeError(cause));
       }
     } finally {

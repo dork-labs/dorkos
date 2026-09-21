@@ -807,6 +807,9 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     const finalArchive = observerPage.getByRole('dialog', { name: 'Archive Gathering Place?' });
     await finalArchive.getByLabel('Type Gathering Place').fill('Gathering Place');
     await finalArchive.getByLabel('Password').fill('password1234');
+    await pool.query('UPDATE communities SET lifecycle_version=lifecycle_version+1 WHERE id=$1', [
+      ids.communityId,
+    ]);
     await observerPage.route(
       '**/owner/lifecycle',
       (route) =>
@@ -844,6 +847,9 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       .getByLabel(`Type the final eight characters: ${ids.communityId.slice(-8)}`)
       .fill(ids.communityId.slice(-8));
     await finalDeletion.getByLabel('Password').fill('password1234');
+    await pool.query('UPDATE communities SET lifecycle_version=lifecycle_version+1 WHERE id=$1', [
+      ids.communityId,
+    ]);
     await observerPage.route(
       '**/owner/deletion',
       (route) =>
@@ -873,6 +879,9 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       name: 'Cancel community deletion?',
     });
     await cancelDeletion.getByLabel('Password').fill('password1234');
+    await pool.query('UPDATE communities SET lifecycle_version=lifecycle_version+1 WHERE id=$1', [
+      ids.communityId,
+    ]);
     await observerPage.route(
       '**/owner/deletion/cancel',
       (route) =>
