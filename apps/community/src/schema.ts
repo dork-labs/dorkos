@@ -36,6 +36,17 @@ export const communities = pgTable(
   ]
 );
 
+/** Irreversible history used to refuse a single-community backout after multi-tenant use. */
+export const communityBackoutFence = pgTable(
+  'community_backout_fence',
+  {
+    singleton: boolean('singleton').primaryKey().default(true),
+    firstCommunityId: uuid('first_community_id'),
+    multipleCommunitiesUsed: boolean('multiple_communities_used').notNull().default(false),
+  },
+  (table) => [check('community_backout_fence_singleton_check', sql`${table.singleton}`)]
+);
+
 /** Better Auth core user table, using its native camelCase PostgreSQL columns. */
 export const users = pgTable('user', {
   id: text('id').primaryKey(),
