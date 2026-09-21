@@ -365,9 +365,17 @@ export class CommunityOutboxStore {
     ownerAuthorId: string,
     idempotencyKey: string,
     now: string
-  ): 'retried' | 'missing' | 'terminal' {
+  ): 'retried' | 'queued' | 'missing' | 'terminal' {
     const item = this.deliveryForOwner(communityRef, remoteRoomId, ownerAuthorId, idempotencyKey);
     if (!item) return 'missing';
+    if (
+      item.state === 'pending' &&
+      item.attempts > 0 &&
+      item.nextAttemptAt <= now &&
+      item.expiresAt > now
+    ) {
+      return 'queued';
+    }
     const changes = this.db
       .update(communityOutbox)
       .set({ nextAttemptAt: now })

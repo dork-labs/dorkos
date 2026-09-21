@@ -150,6 +150,11 @@ gates:
     source: .github/workflows/publish-docker.yml
     purpose: Mirrors the released image to Docker Hub when the mirror is switched on.
 
+  # --- publish-community.yml ---
+  - id: wf.publish-community.build-and-publish
+    source: .github/workflows/publish-community.yml
+    purpose: Publishes and attests the immutable Community image and its strict version-to-digest release manifest.
+
   # --- scripts-test.yml ---
   - id: wf.scripts-test.fixtures
     source: .github/workflows/scripts-test.yml
@@ -205,16 +210,13 @@ gates:
     purpose: Fails a commit that grows a directory to 25 or more files.
   - id: lefthook.pre-commit.lint
     source: lefthook.yml
-    purpose: Lints the packages the branch affects against origin/main.
+    purpose: Lints the packages the branch affects against origin/main, under the machine-wide heavy-run cap.
   - id: lefthook.pre-commit.typecheck
     source: lefthook.yml
-    purpose: Typechecks the packages the branch affects against origin/main.
+    purpose: Typechecks the packages the branch affects against origin/main, under the machine-wide heavy-run cap.
   - id: lefthook.pre-push.formatting
     source: lefthook.yml
     purpose: Fails a push whose changed files are not Prettier-clean, and prints the fix command.
-  - id: lefthook.pre-push.tests
-    source: lefthook.yml
-    purpose: Runs the affected packages' tests under a stall and time watchdog before a push leaves the machine.
 
   # --- .claude/settings.json ---
   - id: claude.PreToolUse.file-guard
