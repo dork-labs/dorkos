@@ -94,7 +94,12 @@ describe('community connection transport', () => {
     });
   });
   it('uses owner-scoped navigation endpoints without accepting a replacement order', async () => {
-    const state = { ownerKey: 'owner-a', order: ['community-a'], destinations: [] };
+    const state = {
+      ownerKey: 'owner-a',
+      installationDestination: { path: '/' as const, search: {} },
+      order: ['community-a'],
+      destinations: [],
+    };
     const fetch = answer(state);
     fetch.mockImplementation(async () => new Response(JSON.stringify(state)));
     const methods = createCommunityMethods('/api');
@@ -109,6 +114,10 @@ describe('community connection transport', () => {
       threadId: null,
       scrollAnchorEntryId: null,
     });
+    await methods.rememberCommunityInstallationDestination({
+      path: '/tasks',
+      search: { view: 'board' },
+    });
     fetch.mockResolvedValueOnce(
       new Response(JSON.stringify({ destination: state.destinations[0] ?? null }))
     );
@@ -117,6 +126,7 @@ describe('community connection transport', () => {
       ['/api/community-connections/navigation', 'GET'],
       ['/api/community-connections/navigation/move', 'POST'],
       ['/api/community-connections/navigation/destination', 'PUT'],
+      ['/api/community-connections/navigation/installation', 'PUT'],
       ['/api/community-connections/navigation/community-a/destination', 'GET'],
     ]);
   });

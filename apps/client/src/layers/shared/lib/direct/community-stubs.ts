@@ -17,6 +17,7 @@ export const communityStubs: CommunityConnectionTransport & RemoteCommunityTrans
   getCommunityNavigation: unavailable,
   moveCommunityNavigation: unavailable,
   rememberCommunityNavigation: unavailable,
+  rememberCommunityInstallationDestination: unavailable,
   resolveCommunityNavigation: unavailable,
   listRemoteCommunityRooms: unavailable,
   getRemoteCommunityRoom: unavailable,

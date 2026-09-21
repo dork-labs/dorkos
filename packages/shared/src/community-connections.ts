@@ -12,6 +12,7 @@ import type {
   CommunityNavigationState,
 } from './community-navigation.js';
 import type { CommunityNavigationDestination } from './config-schema.js';
+import type { CommunityInstallationDestination } from './config-schema.js';
 
 /** A community connection visible to its local install owner. */
 export const CommunityConnectionDescriptorSchema = z.strictObject({
@@ -77,6 +78,10 @@ export interface CommunityConnectionTransport {
   disconnectCommunity(ref: string): Promise<void>;
   /** Read and reconcile this owner's saved Community order and destinations. */
   getCommunityNavigation(): Promise<CommunityNavigationState>;
+  /** Remember the last canonical route visited inside this owner's local installation. */
+  rememberCommunityInstallationDestination(
+    destination: CommunityInstallationDestination
+  ): Promise<CommunityNavigationState>;
   /** Move one Community by one position without replacing the whole saved order. */
   moveCommunityNavigation(input: CommunityNavigationMoveRequest): Promise<CommunityNavigationState>;
   /** Remember the latest authorized room, thread and scroll anchor for one Community. */

@@ -51,14 +51,24 @@ describe('Community authority bootstrap', () => {
     });
     await waitFor(() => expect(getCommunityNavigation).toHaveBeenCalledTimes(2));
     await act(async () => {
-      first.resolve({ ownerKey: 'owner-a', order: [], destinations: [] });
+      first.resolve({
+        ownerKey: 'owner-a',
+        installationDestination: { path: '/', search: {} },
+        order: [],
+        destinations: [],
+      });
       await first.promise;
     });
     expect(getCommunityAuthority().ownerKey).toBeNull();
     expect(hook.result.current.data).toBeUndefined();
 
     await act(async () => {
-      second.resolve({ ownerKey: 'owner-b', order: [], destinations: [] });
+      second.resolve({
+        ownerKey: 'owner-b',
+        installationDestination: { path: '/', search: {} },
+        order: [],
+        destinations: [],
+      });
       await second.promise;
     });
     await waitFor(() => expect(hook.result.current.data?.ownerKey).toBe('owner-b'));

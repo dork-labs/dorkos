@@ -6,6 +6,7 @@ import {
   redirect,
 } from '@tanstack/react-router';
 import { QueryClient } from '@tanstack/react-query';
+import { CommunityInstallationDestinationSchema } from '@dorkos/shared/config-schema';
 import { z } from 'zod';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { AppShell } from './AppShell';
@@ -33,10 +34,17 @@ import {
   TitleBar,
   type RouteHeader,
 } from '@/layers/widgets/one-bar';
-import { DEFAULT_TEAM_VIEW, LEGACY_TABLE_VIEW, TEAM_VIEWS } from '@/layers/shared/lib';
+import {
+  DEFAULT_TEAM_VIEW,
+  LEGACY_TABLE_VIEW,
+  TEAM_VIEWS,
+  getCommunityAuthority,
+  isCommunityAuthorityCurrent,
+} from '@/layers/shared/lib';
+import { communityNavigationKeys } from '@/layers/entities/community';
 import { resolveSessionForCwd, SESSION_LOOKUP_FAILED_MESSAGE } from '@/layers/entities/session';
 import type { Transport } from '@dorkos/shared/transport';
-import { commitCommunityRouteEpoch } from '@/layers/shared/model';
+import { commitCommunityRouteEpoch, getCommunityRouteEpoch } from '@/layers/shared/model';
 
 // ── Router context ──────────────────────────────────────────
 interface RouterContext {
@@ -656,6 +664,28 @@ export function createAppRouter(queryClient: QueryClient, transport: Transport) 
   router.subscribe('onLoad', ({ toLocation }) => {
     if (toLocation.pathname !== '/channels') {
       commitCommunityRouteEpoch('installation');
+      const authority = getCommunityAuthority();
+      if (authority.ownerKey !== null) {
+        const captured = { epoch: authority.epoch, ownerKey: authority.ownerKey };
+        const route = getCommunityRouteEpoch();
+        const destination = CommunityInstallationDestinationSchema.safeParse({
+          path: toLocation.pathname,
+          search: toLocation.search,
+        });
+        if (destination.success)
+          void transport
+            .rememberCommunityInstallationDestination(destination.data)
+            .then((state) => {
+              if (
+                state.ownerKey !== captured.ownerKey ||
+                !isCommunityAuthorityCurrent(captured) ||
+                !route.isCurrent()
+              )
+                return;
+              queryClient.setQueryData(communityNavigationKeys.authority(captured.epoch), state);
+            })
+            .catch(() => undefined);
+      }
       return;
     }
     const search = toLocation.search as {

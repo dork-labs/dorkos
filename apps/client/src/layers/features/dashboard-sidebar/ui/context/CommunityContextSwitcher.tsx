@@ -3,6 +3,7 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp, ChevronDown, HardDrive, Plus, UsersRound } from 'lucide-react';
 import { toast } from 'sonner';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
+import { CommunityInstallationDestinationSchema } from '@dorkos/shared/config-schema';
 import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
 import type { SidebarMenuNode } from '@/layers/shared/ui';
 import {
@@ -153,10 +154,41 @@ export function CommunityContextSwitcher({
     }
   }
 
+  async function selectInstallation() {
+    if (selectedRef === undefined || pendingSelection.current) return;
+    const owner = getCommunityAuthority();
+    if (owner.ownerKey === null) return;
+    const capturedOwner = { epoch: owner.epoch, ownerKey: owner.ownerKey };
+    const capturedRoute = getCommunityRouteEpoch();
+    pendingSelection.current = true;
+    try {
+      const state = await transport.getCommunityNavigation();
+      if (
+        state.ownerKey !== capturedOwner.ownerKey ||
+        !isCommunityAuthorityCurrent(capturedOwner) ||
+        !capturedRoute.isCurrent()
+      )
+        return;
+      const destination = CommunityInstallationDestinationSchema.safeParse(
+        state.installationDestination
+      );
+      await navigate(
+        destination.success
+          ? ({ to: destination.data.path, search: destination.data.search } as never)
+          : { to: '/' }
+      );
+    } catch {
+      if (isCommunityAuthorityCurrent(capturedOwner) && capturedRoute.isCurrent())
+        await navigate({ to: '/' });
+    } finally {
+      pendingSelection.current = false;
+    }
+  }
+
   function selectDestination(value: string) {
     if (pendingSelection.current) return;
     if (value === 'installation') {
-      if (selectedRef !== undefined) void navigate({ to: '/' });
+      void selectInstallation();
       return;
     }
     const connection = destinations.find((item) => `community:${item.ref}` === value);

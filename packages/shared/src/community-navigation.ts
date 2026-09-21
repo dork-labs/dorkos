@@ -1,8 +1,10 @@
 /** Pure owner-qualified Community navigation preference operations. @module community-navigation */
 import {
   CommunityNavigationDestinationSchema,
+  CommunityInstallationDestinationSchema,
   CommunityNavigationPrefsSchema,
   type CommunityNavigationDestination,
+  type CommunityInstallationDestination,
   type CommunityNavigationOwnerPrefs,
   type CommunityNavigationPrefs,
 } from './config-schema.js';
@@ -119,6 +121,10 @@ export type CommunityNavigationDescriptorList = z.infer<
 /** Browser-safe preference state for the authenticated local owner. */
 export const CommunityNavigationStateSchema = z.strictObject({
   ownerKey: z.string().trim().min(1).max(200),
+  installationDestination: CommunityInstallationDestinationSchema.default({
+    path: '/',
+    search: {},
+  }),
   order: z.array(CommunityRefSchema).max(100),
   destinations: z.array(CommunityNavigationDestinationSchema).max(100),
 });
@@ -131,6 +137,11 @@ export const CommunityNavigationMoveRequestSchema = z.strictObject({
 
 /** Persist one already-authorized qualified destination. */
 export const CommunityNavigationRememberRequestSchema = CommunityNavigationDestinationSchema;
+
+/** Persist the last canonical route visited inside the local installation. */
+export const CommunityNavigationRememberInstallationRequestSchema = z.strictObject({
+  destination: CommunityInstallationDestinationSchema,
+});
 
 /** Resolve a remembered destination only after the server reauthorizes it. */
 export const CommunityNavigationResolveResponseSchema = z.strictObject({
@@ -167,10 +178,23 @@ export function communityNavigationForOwner(
   return (
     prefs.owners.find((owner) => owner.ownerKey === ownerKey) ?? {
       ownerKey,
+      installationDestination: { path: '/', search: {} },
       order: [],
       destinations: [],
     }
   );
+}
+
+/** Store the owner's last canonical local route without changing Community destinations. */
+export function rememberCommunityInstallationDestination(
+  prefs: CommunityNavigationPrefs,
+  ownerKey: string,
+  destination: CommunityInstallationDestination
+): CommunityNavigationPrefs {
+  return updateCommunityNavigationOwner(prefs, ownerKey, (owner) => ({
+    ...owner,
+    installationDestination: destination,
+  }));
 }
 
 /** Replace one owner's preferences without disturbing writes for any other owner. */

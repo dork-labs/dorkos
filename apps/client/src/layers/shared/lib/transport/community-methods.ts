@@ -78,6 +78,14 @@ export function createCommunityMethods(baseUrl: string): CommunityConnectionTran
         })
       );
     },
+    async rememberCommunityInstallationDestination(destination) {
+      return CommunityNavigationStateSchema.parse(
+        await fetchJSON(baseUrl, '/community-connections/navigation/installation', {
+          method: 'PUT',
+          body: JSON.stringify({ destination }),
+        })
+      );
+    },
     async resolveCommunityNavigation(ref) {
       return CommunityNavigationResolveResponseSchema.parse(
         await fetchJSON(

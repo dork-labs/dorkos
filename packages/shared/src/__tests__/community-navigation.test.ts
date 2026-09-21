@@ -6,6 +6,7 @@ import {
   reconcileCommunityNavigationOwner,
   reconcileCommunityOrder,
   rememberCommunityDestination,
+  rememberCommunityInstallationDestination,
   updateCommunityNavigationOwner,
 } from '../community-navigation.js';
 
@@ -128,6 +129,31 @@ describe('Community navigation preferences', () => {
 
     expect(communityNavigationForOwner(second, 'owner-a').order).toEqual(['community_a']);
     expect(communityNavigationForOwner(second, 'owner-b').order).toEqual(['community_b']);
+  });
+
+  it('keeps local destinations owner-scoped and rejects Community-qualified search', () => {
+    const first = rememberCommunityInstallationDestination(EMPTY, 'owner-a', {
+      path: '/tasks',
+      search: { view: 'board' },
+    });
+    const second = rememberCommunityInstallationDestination(first, 'owner-b', {
+      path: '/connections',
+      search: { tab: 'accounts' },
+    });
+
+    expect(communityNavigationForOwner(second, 'owner-a').installationDestination).toEqual({
+      path: '/tasks',
+      search: { view: 'board' },
+    });
+    expect(communityNavigationForOwner(second, 'owner-b').installationDestination.path).toBe(
+      '/connections'
+    );
+    expect(() =>
+      rememberCommunityInstallationDestination(second, 'owner-a', {
+        path: '/channels',
+        search: { nested: { community: 'remote-a' } },
+      })
+    ).toThrow();
   });
 
   it('prunes removed refs and their destinations only after an authoritative refresh', () => {

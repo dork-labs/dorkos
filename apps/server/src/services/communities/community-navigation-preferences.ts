@@ -5,12 +5,14 @@ import {
   communityNavigationForOwner,
   moveCommunityInOrder,
   reconcileCommunityNavigationOwner,
+  rememberCommunityInstallationDestination,
   rememberCommunityDestination,
   updateCommunityNavigationOwner,
   type CommunityNavigationState,
 } from '@dorkos/shared/community-navigation';
 import type {
   CommunityNavigationDestination,
+  CommunityInstallationDestination,
   CommunityNavigationPrefs,
 } from '@dorkos/shared/config-schema';
 import type { ConfigManager } from '../core/config-manager.js';
@@ -55,6 +57,21 @@ export class CommunityNavigationPreferenceService {
       const refs = await this.authorizedRefs(ownerKey);
       const prefs = this.config.get('ui').communityNavigation;
       const next = moveCommunityInOrder(prefs, ownerKey, ref, direction, refs);
+      this.persistIfChanged(prefs, next);
+      return this.publicState(next, ownerKey);
+    });
+  }
+
+  /** Save the latest validated local route for this server-confirmed owner. */
+  async rememberInstallation(
+    ownerKey: string,
+    destination: CommunityInstallationDestination
+  ): Promise<CommunityNavigationState> {
+    return this.serialized(async () => {
+      const refs = await this.authorizedRefs(ownerKey);
+      const prefs = this.config.get('ui').communityNavigation;
+      const reconciled = reconcileCommunityNavigationOwner(prefs, ownerKey, refs);
+      const next = rememberCommunityInstallationDestination(reconciled, ownerKey, destination);
       this.persistIfChanged(prefs, next);
       return this.publicState(next, ownerKey);
     });
@@ -121,6 +138,7 @@ export class CommunityNavigationPreferenceService {
     const owner = communityNavigationForOwner(prefs, ownerKey);
     return CommunityNavigationStateSchema.parse({
       ownerKey,
+      installationDestination: owner.installationDestination,
       order: owner.order,
       destinations: owner.destinations,
     });

@@ -18,6 +18,7 @@ import {
   CommunityNavigationMoveRequestSchema,
   CommunityNavigationRememberRequestSchema,
   CommunityNavigationResolveResponseSchema,
+  CommunityNavigationRememberInstallationRequestSchema,
   CommunityNavigationStateSchema,
 } from '@dorkos/shared/community-navigation';
 import { readOwnerAccount } from '../services/core/auth/index.js';
@@ -173,6 +174,25 @@ export function createCommunityConnectionsRouter(
       res.json(
         CommunityNavigationStateSchema.parse(
           await navigationService.move(owner, parsed.data.ref, parsed.data.direction)
+        )
+      );
+    } catch (error) {
+      failure(res, error);
+    }
+  });
+
+  router.put('/navigation/installation', async (req, res) => {
+    const owner = resolveCommunityOwner(req, res);
+    if (!owner) return;
+    const parsed = CommunityNavigationRememberInstallationRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Choose a valid local installation destination.' });
+      return;
+    }
+    try {
+      res.json(
+        CommunityNavigationStateSchema.parse(
+          await navigationService.rememberInstallation(owner, parsed.data.destination)
         )
       );
     } catch (error) {
