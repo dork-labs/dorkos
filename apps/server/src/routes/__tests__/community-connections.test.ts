@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 
 vi.mock('../room-caller.js', () => ({
@@ -23,6 +24,15 @@ vi.mock('../../services/core/auth/index.js', () => ({
 vi.mock('../../lib/caller-authority.js', () => ({
   isLocalCaller: () => true,
   requireOperatorCookieUnderLogin: () => undefined,
+}));
+
+const attentionMock = vi.hoisted(() => ({
+  read: vi.fn(),
+  adapter: vi.fn(),
+}));
+vi.mock('../../services/communities/remote/state.js', () => ({
+  getRemoteCommunityAdapter: attentionMock.adapter,
+  getRemotePairingService: vi.fn(),
 }));
 
 import { createCommunityConnectionsRouter } from '../community-connections.js';
@@ -176,4 +186,104 @@ describe('local connection route authority and public projection', () => {
         .body.connections
     ).toEqual([]);
   });
+});
+
+describe('owner-scoped attention projection', () => {
+  const unavailable = {
+    state: 'unavailable' as const,
+    unreadCount: null,
+    mentionCount: null,
+    verifiedAt: null,
+  };
+  const capabilities = { read: true, post: true, enrollAgent: true, stream: true };
+  function connected(): CommunityConnectionDescriptor {
+    return {
+      ref,
+      remoteCommunityId: 'remote-community',
+      label: 'Private group',
+      pinnedOrigin: 'https://community.example',
+      status: 'connected',
+      connectedHumanMemberId: 'member-a',
+      expiresAt: null,
+      access: {
+        state: 'verified',
+        effective: capabilities,
+        lastKnown: { lifecycle: 'active', capabilities, verifiedAt: new Date().toISOString() },
+      },
+      attention: unavailable,
+    };
+  }
+  async function probe(connection: CommunityConnectionDescriptor, path: string) {
+    const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+    vi.spyOn(service, 'list').mockResolvedValue([connection]);
+    vi.spyOn(service, 'status').mockResolvedValue(connection);
+    const testApp = express();
+    testApp.use('/api/community-connections', createCommunityConnectionsRouter(service));
+    const testServer = testApp.listen(0, '127.0.0.1');
+    await once(testServer, 'listening');
+    try {
+      return await request(testServer).get(path).set('x-test-author', 'author-a');
+    } finally {
+      testServer.closeAllConnections();
+      await new Promise<void>((resolve) => testServer.close(() => resolve()));
+    }
+  }
+  it.each(['/api/community-connections', `/api/community-connections/${ref}`])(
+    'projects verified counts with the trusted owner at %s',
+    async (path) => {
+      attentionMock.adapter.mockReset().mockReturnValue({ attention: attentionMock.read });
+      attentionMock.read.mockReset().mockResolvedValue({ unreadCount: 7, mentionCount: 2 });
+      const response = await probe(connected(), path);
+      expect(response.status).toBe(200);
+      expect(attentionMock.adapter).toHaveBeenCalledWith(ref, 'author-a');
+      const result = response.body.connection ?? response.body.connections[0];
+      expect(result.attention).toEqual({
+        state: 'verified',
+        unreadCount: 7,
+        mentionCount: 2,
+        verifiedAt: expect.any(String),
+      });
+    }
+  );
+  it('preserves unavailable attention when the remote request fails', async () => {
+    attentionMock.adapter.mockReset().mockReturnValue({ attention: attentionMock.read });
+    attentionMock.read.mockReset().mockRejectedValue(new Error('private upstream detail'));
+    const response = await probe(connected(), '/api/community-connections');
+    expect(response.status).toBe(200);
+    expect(response.body.connections[0].attention).toEqual(unavailable);
+    expect(JSON.stringify(response.body)).not.toContain('private upstream detail');
+  });
+  it.each(['pending', 'unverified', 'no-read'])(
+    'does not fetch counts for %s access',
+    async (state) => {
+      attentionMock.adapter.mockReset();
+      const connection = connected();
+      if (state === 'pending') {
+        connection.status = 'pending';
+        connection.access = null;
+        connection.attention = null;
+      } else if (state === 'unverified') {
+        connection.access = {
+          state: 'unverified',
+          effective: { read: false, post: false, enrollAgent: false, stream: false },
+          lastKnown: null,
+        };
+      } else {
+        connection.access!.effective = {
+          read: false,
+          post: false,
+          enrollAgent: false,
+          stream: false,
+        };
+        connection.access!.lastKnown!.capabilities = connection.access!.effective;
+        connection.access!.lastKnown!.lifecycle = 'suspended';
+      }
+      const response = await probe(connection, '/api/community-connections');
+      expect(response.status).toBe(200);
+      expect(attentionMock.adapter).not.toHaveBeenCalled();
+      expect(response.body.connections[0].attention).toEqual(
+        state === 'pending' ? null : unavailable
+      );
+    }
+  );
 });
