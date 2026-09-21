@@ -37,6 +37,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   ownerClaim: '/api/v1/owner-claims/claim',
   hostCommunities: '/api/v1/host/communities',
   hostCommunityLifecycle: '/api/v1/host/communities/:id/lifecycle',
+  memberships: '/api/v1/memberships',
   invites: '/api/v1/invites',
   invitePreview: '/api/v1/invites/preview',
   inviteRedeem: '/api/v1/invites/redeem',
@@ -104,6 +105,22 @@ export const CommunityWireHostCommunitySchema = CommunityWireCommunitySchema.ext
 export const CommunityWireHostCommunityListResponseSchema = z.strictObject({
   communities: z.array(CommunityWireHostCommunitySchema),
 });
+/** One community the current host account may enter through its own membership. */
+export const CommunityWireMembershipSummarySchema = z.strictObject({
+  communityId: id,
+  name: z.string().min(1),
+  description: z.string().nullable(),
+  lifecycle: z.enum(['pending_owner', 'active', 'suspended']),
+  memberId: id,
+  displayName: z.string().min(1),
+  role: z.enum(['owner', 'admin', 'member']),
+});
+/** Authenticated communities visible through the current account's own memberships. */
+export const CommunityWireMembershipListResponseSchema = z.strictObject({
+  memberships: z.array(CommunityWireMembershipSummarySchema),
+});
+/** Community selection row for the current host account. */
+export type CommunityWireMembershipSummary = z.infer<typeof CommunityWireMembershipSummarySchema>;
 /** A host operator creates a pending community before any membership exists. */
 export const CommunityWireHostCommunityCreateRequestSchema = z.strictObject({
   name: z.string().min(1),
