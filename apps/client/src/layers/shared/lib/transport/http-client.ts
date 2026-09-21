@@ -4,6 +4,7 @@
  * @module shared/lib/transport/http-client
  */
 import { setAuthRequired } from '../auth-signal';
+import { getCommunityAuthority, invalidateCommunityAuthority } from '../community-authority-state';
 
 /**
  * Default timeout for fetchJSON requests (ms).
@@ -39,15 +40,19 @@ async function request(
       ? AbortSignal.any([timeoutSignal, requestInit.signal])
       : timeoutSignal
     : requestInit.signal;
+  const headers = new Headers(requestInit.headers);
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  const communityOwner = getCommunityAuthority().ownerKey;
+  if (communityOwner) headers.set('X-DorkOS-Community-Owner', communityOwner);
 
   let res: Response;
   try {
     res = await fetch(`${baseUrl}${url}`, {
-      headers: { 'Content-Type': 'application/json' },
+      ...requestInit,
+      headers,
       // Ride the Better Auth session cookie on every API call (login enabled).
       // Harmless when auth is off; HttpTransport needs no constructor change.
       credentials: 'include',
-      ...requestInit,
       signal,
     });
   } catch (err) {
@@ -76,6 +81,9 @@ async function request(
     // app-wide auth-required state so the AuthGuard renders the login screen.
     if (res.status === 401 && error.code === 'AUTH_REQUIRED') {
       setAuthRequired(true);
+    }
+    if (res.status === 409 && error.code === 'COMMUNITY_OWNER_CHANGED') {
+      invalidateCommunityAuthority();
     }
     throw err;
   }

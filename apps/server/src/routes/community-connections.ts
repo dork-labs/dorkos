@@ -65,6 +65,14 @@ export function resolveCommunityOwner(req: Request, res: Response): string | nul
     res.status(403).json({ error: 'Only this install’s owner can manage community connections.' });
     return null;
   }
+  const expectedOwner = req.get('x-dorkos-community-owner');
+  if (expectedOwner && expectedOwner !== caller.id) {
+    res.status(409).json({
+      error: 'The local owner changed. Reload Community data for the current account.',
+      code: 'COMMUNITY_OWNER_CHANGED',
+    });
+    return null;
+  }
   return caller.id;
 }
 

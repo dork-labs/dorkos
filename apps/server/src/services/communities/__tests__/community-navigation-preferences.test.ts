@@ -65,8 +65,12 @@ describe('CommunityNavigationPreferenceService', () => {
       scrollAnchorEntryId: null,
     });
 
-    expect((await harness.service.get('owner-a')).destinations[0]?.threadId).toBe('thread-a');
-    expect((await harness.service.get('owner-b')).destinations[0]?.threadId).toBe('thread-b');
+    const ownerA = await harness.service.get('owner-a');
+    const ownerB = await harness.service.get('owner-b');
+    expect(ownerA.ownerKey).toBe('owner-a');
+    expect(ownerA.destinations[0]?.threadId).toBe('thread-a');
+    expect(ownerB.ownerKey).toBe('owner-b');
+    expect(ownerB.destinations[0]?.threadId).toBe('thread-b');
   });
 
   it('reauthorizes a remembered room and erases it when access is gone', async () => {

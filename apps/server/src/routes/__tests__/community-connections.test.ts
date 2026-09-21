@@ -5,8 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
+
+const owner = vi.hoisted(() => ({ id: 'author-a' }));
 
 vi.mock('../room-caller.js', () => ({
   resolveCaller: (req: { headers: Record<string, string> }) => {
@@ -15,10 +17,10 @@ vi.mock('../room-caller.js', () => ({
   },
 }));
 vi.mock('../../services/rooms/index.js', () => ({
-  getRoomService: () => ({ authorRegistry: { isOwner: (id: string) => id === 'author-a' } }),
+  getRoomService: () => ({ authorRegistry: { isOwner: (id: string) => id === owner.id } }),
 }));
 vi.mock('../../services/core/auth/index.js', () => ({
-  readOwnerAccount: () => ({ id: 'user-a' }),
+  readOwnerAccount: () => ({ id: owner.id }),
 }));
 vi.mock('../../lib/caller-authority.js', () => ({
   isLocalCaller: () => true,
@@ -34,9 +36,9 @@ let app: ReturnType<typeof express>;
 let server: Server;
 const ref = CommunityRefSchema.parse('remote_owner_a');
 const navigation = {
-  get: vi.fn(async () => ({ order: [ref], destinations: [] })),
-  move: vi.fn(async () => ({ order: [ref], destinations: [] })),
-  remember: vi.fn(async () => ({ order: [ref], destinations: [] })),
+  get: vi.fn(async () => ({ ownerKey: 'author-a', order: [ref], destinations: [] })),
+  move: vi.fn(async () => ({ ownerKey: 'author-a', order: [ref], destinations: [] })),
+  remember: vi.fn(async () => ({ ownerKey: 'author-a', order: [ref], destinations: [] })),
   resolve: vi.fn(async () => null),
 };
 
@@ -68,6 +70,9 @@ afterAll(async () => {
   server.closeAllConnections();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   if (directory) await rm(directory, { recursive: true, force: true });
+});
+afterEach(() => {
+  owner.id = 'author-a';
 });
 
 describe('local connection route authority and public projection', () => {
@@ -133,7 +138,7 @@ describe('local connection route authority and public projection', () => {
       .get('/api/community-connections/navigation')
       .set('x-test-author', 'author-a');
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ order: [ref], destinations: [] });
+    expect(response.body).toEqual({ ownerKey: 'author-a', order: [ref], destinations: [] });
     expect(navigation.get).toHaveBeenCalledWith('author-a');
 
     expect(
@@ -144,5 +149,19 @@ describe('local connection route authority and public projection', () => {
           .send({ ref, direction: 'sideways' })
       ).status
     ).toBe(400);
+  });
+
+  it('rejects a stale browser owner precondition before reading another owner’s data', async () => {
+    owner.id = 'author-b';
+    const response = await request(server)
+      .get('/api/community-connections')
+      .set('x-test-author', 'author-b')
+      .set('x-dorkos-community-owner', 'author-a');
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      error: 'The local owner changed. Reload Community data for the current account.',
+      code: 'COMMUNITY_OWNER_CHANGED',
+    });
   });
 });

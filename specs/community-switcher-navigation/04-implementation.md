@@ -32,6 +32,19 @@
 - Left remote projection integration behind DOR-2173/DOR-2175 rather than inferring tenant
   lifecycle or a zero count from the current singleton API.
 
+**Tasks 1.2–1.4 in progress:** Fence browser data at the local-owner boundary.
+
+- Added an opaque server-resolved owner key to the authenticated navigation bootstrap and made it a
+  compare-only request precondition, never caller-selected authority.
+- Invalidated the monotonic owner generation synchronously before sign-in, sign-up, sign-out, and
+  auth-required transitions; protected queries, streams, drafts, receipts, and connection UI now
+  stay unresolved until the server confirms the new owner.
+- Qualified Community content keys by confirmed owner and authorization generation, and discard
+  late reads, stream events, polling results, action results, and read-cursor completions after that
+  generation changes.
+- Added a cross-tab cookie-switch refusal so data returned for owner B cannot be stored under an
+  already confirmed owner-A namespace.
+
 ## Files Modified/Created
 
 **Source files:**
@@ -57,7 +70,11 @@
 ## Known Issues
 
 - Task 1.2 is not complete until the wider Community query/cache namespace participates in the
-  explicit owner and authorization-generation boundary required by tasks 1.3 and 1.4.
+  route-epoch boundary required by tasks 1.3 and 1.4; the owner/authorization generation is now
+  explicit, while rapid A→B→A route epochs remain to be wired.
+- Effective `read`, `post`, and `enrollAgent` capabilities will come from the reviewed Community
+  administration contract. The local app must consume that server projection rather than infer
+  write access from lifecycle, membership, or a restored read-only connection.
 - The implementation is stacked on accepted DOR-2191 head
   `1d3be34510d072831cb58d49052879332dc96c1c`; do not open a PR until that dependency lands and the
   branch is reconciled with current `main`.
@@ -73,3 +90,6 @@
 - The worktree has no local `.dork/flow/flow-state.json`; provenance is recorded here without writing to another checkout.
 - Focused verification on 2026-09-21: 54 tests passed; server, client, and shared typechecks passed;
   changed-file ESLint passed. Config-manager's complete targeted suite passed 359/359.
+- Owner-boundary verification on 2026-09-21: 71 focused tests passed after one test-fixture cache-key
+  correction; client and server typechecks passed; client, server, and shared lint completed with
+  no errors (existing repository warnings remain).

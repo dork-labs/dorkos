@@ -22,8 +22,8 @@ export function useRemoteCommunityDrafts(
   canSend: boolean,
   entries: RemoteCommunityEntry[],
   onReceipt: (entry: RemoteCommunityEntry) => void,
-  draftKey = 'channel',
-  ownerKey = 'local-owner'
+  ownerKey: string,
+  draftKey = 'channel'
 ) {
   const transport = useTransport();
   const address = JSON.stringify([ownerKey, ref, roomId]);

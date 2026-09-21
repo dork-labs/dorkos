@@ -4,7 +4,11 @@ import type {
   RemoteCommunityEnrollment,
   RemoteCommunityEjectionResponse,
 } from '@dorkos/shared/community-views';
-import { communityKeys, useRemoteCommunityAgents } from '@/layers/entities/community';
+import {
+  communityKeys,
+  useConfirmedCommunityAuthority,
+  useRemoteCommunityAgents,
+} from '@/layers/entities/community';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { useTransport } from '@/layers/shared/model';
 import {
@@ -39,6 +43,7 @@ export function RemoteCommunityAgents({
 }) {
   const transport = useTransport();
   const queries = useQueryClient();
+  const authority = useConfirmedCommunityAuthority();
   const agents = useRemoteCommunityAgents(community);
   const local = useRegisteredAgents();
   const [selected, setSelected] = useState('');
@@ -53,7 +58,8 @@ export function RemoteCommunityAgents({
       (agent) => !active.some((enrollment) => enrollment.localAgentId === agent.id)
     ) ?? [];
   async function refresh() {
-    await queries.invalidateQueries({ queryKey: communityKeys.remote(community) });
+    if (authority)
+      await queries.invalidateQueries({ queryKey: communityKeys.remote(authority, community) });
   }
   async function enroll(event: FormEvent) {
     event.preventDefault();

@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import type { CommunityDelivery } from '@dorkos/shared/community-deliveries';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RemoteCommunityEntry, RemoteCommunityRoom } from '@dorkos/shared/community-views';
+import { isCommunityAuthorityCurrent } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { communityKeys } from './use-community-connections';
+import { useConfirmedCommunityAuthority } from './use-community-navigation';
 
 interface StreamState {
   address: string;
@@ -41,7 +43,8 @@ export function useRemoteCommunityStream(
 ) {
   const transport = useTransport();
   const queries = useQueryClient();
-  const address = JSON.stringify([ref, roomId]);
+  const authority = useConfirmedCommunityAuthority(enabled);
+  const address = JSON.stringify([authority?.ownerKey, authority?.epoch, ref, roomId]);
   const [state, setState] = useState<StreamState>(() => ({
     address,
     room: null,
@@ -51,7 +54,8 @@ export function useRemoteCommunityStream(
   }));
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !authority) return;
+    const currentAuthority = authority;
     const controller = new AbortController();
     let retry: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
@@ -62,7 +66,7 @@ export function useRemoteCommunityStream(
     function removeAccess() {
       denied = true;
       since = undefined;
-      queries.removeQueries({ queryKey: communityKeys.remote(ref) });
+      queries.removeQueries({ queryKey: communityKeys.remote(currentAuthority, ref) });
       setState({ address, room: null, entries: [], deliveries: [], status: 'removed' });
     }
 
@@ -72,7 +76,12 @@ export function useRemoteCommunityStream(
           ref,
           roomId,
           (event) => {
-            if (controller.signal.aborted || denied) return;
+            if (
+              controller.signal.aborted ||
+              denied ||
+              !isCommunityAuthorityCurrent(currentAuthority)
+            )
+              return;
             if (event.type === 'closed') {
               if (event.reason === 'removed' || event.reason === 'revoked') removeAccess();
               return;
@@ -80,7 +89,7 @@ export function useRemoteCommunityStream(
             failures = 0;
             if (event.type === 'snapshot') {
               since = event.cursor ?? undefined;
-              queries.setQueryData(communityKeys.room(ref, roomId), event.room);
+              queries.setQueryData(communityKeys.room(currentAuthority, ref, roomId), event.room);
               setState((current) => ({
                 address,
                 room: event.room,
@@ -125,16 +134,19 @@ export function useRemoteCommunityStream(
           { since, signal: controller.signal }
         );
       } catch (error) {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || !isCommunityAuthorityCurrent(currentAuthority)) return;
         const status =
           error && typeof error === 'object' && 'status' in error ? error.status : undefined;
         if (status === 401 || status === 403 || status === 404) removeAccess();
         if (status === 410) since = undefined;
       }
-      if (controller.signal.aborted || denied) return;
-      const cachedRoom = queries.getQueryData<RemoteCommunityRoom>(communityKeys.room(ref, roomId));
+      if (controller.signal.aborted || denied || !isCommunityAuthorityCurrent(currentAuthority))
+        return;
+      const cachedRoom = queries.getQueryData<RemoteCommunityRoom>(
+        communityKeys.room(currentAuthority, ref, roomId)
+      );
       if (cachedRoom)
-        queries.setQueryData(communityKeys.room(ref, roomId), {
+        queries.setQueryData(communityKeys.room(currentAuthority, ref, roomId), {
           ...cachedRoom,
           stale: true,
           writable: false,
@@ -157,10 +169,10 @@ export function useRemoteCommunityStream(
       controller.abort();
       clearTimeout(retry);
     };
-  }, [address, ref, roomId, enabled, reconnectKey, queries, transport]);
+  }, [address, ref, roomId, enabled, reconnectKey, queries, transport, authority]);
 
   // A route change must never expose the previous community's history for even one render.
-  return state.address === address && enabled
+  return state.address === address && enabled && authority
     ? state
     : { address, room: null, entries: [], deliveries: [], status: 'connecting' as const };
 }

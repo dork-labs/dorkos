@@ -1,11 +1,13 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RemoteCommunityEntry } from '@dorkos/shared/community-views';
+import { isCommunityAuthorityCurrent } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import {
   communityKeys,
   mergeRemoteCommunityEntries,
+  useConfirmedCommunityAuthority,
   useRemoteCommunityHistory,
   useRemoteCommunityMembers,
   useRemoteCommunityRoom,
@@ -19,7 +21,6 @@ import {
   type ConversationTarget,
 } from '@/layers/features/conversation';
 import type { ComposerInputHandle } from '@/layers/features/composer';
-import { useCurrentUser } from '@/layers/features/auth';
 import { RemoteCommunityAgents } from './RemoteCommunityAgents';
 import { useRemoteCommunityDrafts } from '../model/use-remote-community-drafts';
 import { RemoteCommunityMessage } from './RemoteCommunityMessage';
@@ -49,7 +50,8 @@ export function RemoteCommunitySurface({
   onThread: (rootId?: string) => void;
 }) {
   const transport = useTransport();
-  const currentUser = useCurrentUser();
+  const authority = useConfirmedCommunityAuthority();
+  const authorityAddress = authority ? JSON.stringify([authority.ownerKey, authority.epoch]) : '';
   const queries = useQueryClient();
   const roomQuery = useRemoteCommunityRoom(community, roomId);
   const [streamRevision, setStreamRevision] = useState(0);
@@ -63,12 +65,24 @@ export function RemoteCommunitySurface({
     !removed && room?.readable === true
   );
   const roster = useRemoteCommunityMembers(community, roomId, !removed && room?.readable === true);
-  const [receipts, setReceipts] = useState<RemoteCommunityEntry[]>([]);
+  const [receiptState, setReceiptState] = useState<{
+    address: string;
+    entries: RemoteCommunityEntry[];
+  }>(() => ({ address: authorityAddress, entries: [] }));
+  const receipts = useMemo(
+    () => (receiptState.address === authorityAddress ? receiptState.entries : []),
+    [authorityAddress, receiptState]
+  );
   const [receiptRevision, setReceiptRevision] = useState(0);
   const [showMembers, setShowMembers] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [action, setAction] = useState<string | null>(null);
-  const marked = useRef<string | null>(null);
+  const [actionState, setActionState] = useState<{
+    address: string;
+    name: string | null;
+    error: string | null;
+  }>({ address: '', name: null, error: null });
+  const action = actionState.address === authorityAddress ? actionState.name : null;
+  const actionError = actionState.address === authorityAddress ? actionState.error : null;
+  const marked = useRef<{ address: string; cursor: string } | null>(null);
   const composer = useRef<ComposerInputHandle>(null);
   const timeline = useRef<ConversationTimelineHandle>(null);
   const canSend = !removed && stream.status === 'live' && room?.writable === true;
@@ -87,12 +101,18 @@ export function RemoteCommunitySurface({
   );
   const onReceipt = useCallback(
     (entry: RemoteCommunityEntry) => {
-      setReceipts((current) =>
-        mergeRemoteCommunityEntries(community, roomId, current, [entry]).slice(-500)
-      );
+      setReceiptState((current) => ({
+        address: authorityAddress,
+        entries: mergeRemoteCommunityEntries(
+          community,
+          roomId,
+          current.address === authorityAddress ? current.entries : [],
+          [entry]
+        ).slice(-500),
+      }));
       setReceiptRevision((current) => current + 1);
     },
-    [community, roomId]
+    [authorityAddress, community, roomId]
   );
   // A person who sends a message expects to see their confirmed post, even if
   // they were reading earlier history when it arrived. Incoming activity keeps
@@ -106,8 +126,8 @@ export function RemoteCommunitySurface({
     canSend,
     entries,
     onReceipt,
-    threadId ?? 'channel',
-    currentUser?.id ?? 'local-owner'
+    authorityAddress || 'unresolved',
+    threadId ?? 'channel'
   );
   const visible = entries.filter((entry) =>
     threadId ? entry.id === threadId || entry.threadRootEntryId === threadId : entry.depth === 0
@@ -142,18 +162,28 @@ export function RemoteCommunitySurface({
     },
   };
   async function perform(name: string, work: () => Promise<unknown>) {
-    if (action) return;
-    setAction(name);
-    setActionError(null);
+    if (action || !authority) return;
+    const captured = authority;
+    const address = authorityAddress;
+    setActionState({ address, name, error: null });
     try {
       await work();
+      if (!isCommunityAuthorityCurrent(captured)) return;
       if (name === 'join' || name === 'leave' || name.startsWith('retry:'))
         setStreamRevision((current) => current + 1);
-      await queries.invalidateQueries({ queryKey: communityKeys.remote(community) });
+      await queries.invalidateQueries({ queryKey: communityKeys.remote(captured, community) });
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : 'The action could not be completed.');
+      if (isCommunityAuthorityCurrent(captured))
+        setActionState({
+          address,
+          name,
+          error: cause instanceof Error ? cause.message : 'The action could not be completed.',
+        });
     } finally {
-      setAction(null);
+      if (isCommunityAuthorityCurrent(captured))
+        setActionState((current) =>
+          current.address === address ? { ...current, name: null } : current
+        );
     }
   }
   function markRead() {
@@ -164,17 +194,20 @@ export function RemoteCommunitySurface({
       history.hasNextPage ||
       !latest ||
       stream.status !== 'live' ||
-      marked.current === latest.cursor
+      (marked.current?.address === authorityAddress && marked.current.cursor === latest.cursor) ||
+      !authority
     )
       return;
-    marked.current = latest.cursor;
+    const captured = authority;
+    marked.current = { address: authorityAddress, cursor: latest.cursor };
     void transport
       .setRemoteCommunityReadCursor(community, roomId, latest.cursor)
       .then(() => {
-        void queries.invalidateQueries({ queryKey: communityKeys.rooms(community) });
+        if (isCommunityAuthorityCurrent(captured))
+          void queries.invalidateQueries({ queryKey: communityKeys.rooms(captured, community) });
       })
       .catch(() => {
-        marked.current = null;
+        if (marked.current?.address === authorityAddress) marked.current = null;
       });
   }
   return (
@@ -226,7 +259,10 @@ export function RemoteCommunitySurface({
               onClick={() =>
                 void perform('leave', async () => {
                   await transport.leaveRemoteCommunityRoom(community, roomId);
-                  queries.removeQueries({ queryKey: communityKeys.room(community, roomId) });
+                  if (authority)
+                    queries.removeQueries({
+                      queryKey: communityKeys.room(authority, community, roomId),
+                    });
                 })
               }
             >
@@ -292,6 +328,7 @@ export function RemoteCommunitySurface({
                   </div>
                 ))}
                 <RemoteCommunityAgents
+                  key={authorityAddress}
                   community={community}
                   roomId={roomId}
                   online={stream.status === 'live'}

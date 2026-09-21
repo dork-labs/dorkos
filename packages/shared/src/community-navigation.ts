@@ -118,6 +118,7 @@ export type CommunityNavigationDescriptorList = z.infer<
 
 /** Browser-safe preference state for the authenticated local owner. */
 export const CommunityNavigationStateSchema = z.strictObject({
+  ownerKey: z.string().trim().min(1).max(200),
   order: z.array(CommunityRefSchema).max(100),
   destinations: z.array(CommunityNavigationDestinationSchema).max(100),
 });

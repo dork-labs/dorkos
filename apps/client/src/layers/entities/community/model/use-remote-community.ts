@@ -1,15 +1,20 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import type { CommunityCursor } from '@dorkos/shared/community-adapter';
 import { useTransport } from '@/layers/shared/model';
-import { communityKeys } from './use-community-connections';
+import { communityKeys, withinCommunityAuthority } from './use-community-connections';
+import { useConfirmedCommunityAuthority } from './use-community-navigation';
 
 /** Discover one community independently so an outage cannot hide the other communities. */
 export function useRemoteCommunityRooms(ref: string, enabled = true) {
   const transport = useTransport();
+  const authority = useConfirmedCommunityAuthority(enabled);
   return useQuery({
-    queryKey: communityKeys.rooms(ref),
-    queryFn: () => transport.listRemoteCommunityRooms(ref),
-    enabled,
+    queryKey: authority
+      ? communityKeys.rooms(authority, ref)
+      : [...communityKeys.all, 'owner', 'unresolved', ref, 'rooms'],
+    queryFn: () =>
+      withinCommunityAuthority(authority!, () => transport.listRemoteCommunityRooms(ref)),
+    enabled: enabled && authority !== null,
     refetchInterval: 30_000,
   });
 }
@@ -17,10 +22,14 @@ export function useRemoteCommunityRooms(ref: string, enabled = true) {
 /** Current room permission is resolved by the local server, never inferred from the local operator role. */
 export function useRemoteCommunityRoom(ref: string, roomId: string, enabled = true) {
   const transport = useTransport();
+  const authority = useConfirmedCommunityAuthority(enabled);
   return useQuery({
-    queryKey: communityKeys.room(ref, roomId),
-    queryFn: () => transport.getRemoteCommunityRoom(ref, roomId),
-    enabled,
+    queryKey: authority
+      ? communityKeys.room(authority, ref, roomId)
+      : [...communityKeys.all, 'owner', 'unresolved', ref, 'room', roomId],
+    queryFn: () =>
+      withinCommunityAuthority(authority!, () => transport.getRemoteCommunityRoom(ref, roomId)),
+    enabled: enabled && authority !== null,
   });
 }
 
@@ -32,36 +41,49 @@ export function useRemoteCommunityHistory(
   enabled = true
 ) {
   const transport = useTransport();
+  const authority = useConfirmedCommunityAuthority(enabled);
   return useInfiniteQuery({
-    queryKey: communityKeys.entries(ref, roomId, threadRootId),
+    queryKey: authority
+      ? communityKeys.entries(authority, ref, roomId, threadRootId)
+      : [...communityKeys.all, 'owner', 'unresolved', ref, 'room', roomId, 'entries'],
     initialPageParam: undefined as CommunityCursor | undefined,
     queryFn: ({ pageParam }) =>
-      transport.listRemoteCommunityEntries(ref, roomId, {
-        cursor: pageParam,
-        threadRootId,
-        limit: 100,
-      }),
+      withinCommunityAuthority(authority!, () =>
+        transport.listRemoteCommunityEntries(ref, roomId, {
+          cursor: pageParam,
+          threadRootId,
+          limit: 100,
+        })
+      ),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
-    enabled,
+    enabled: enabled && authority !== null,
   });
 }
 
 /** Roster rows preserve immutable member IDs and the human who owns each agent. */
 export function useRemoteCommunityMembers(ref: string, roomId: string, enabled = true) {
   const transport = useTransport();
+  const authority = useConfirmedCommunityAuthority(enabled);
   return useQuery({
-    queryKey: communityKeys.members(ref, roomId),
-    queryFn: () => transport.listRemoteCommunityMembers(ref, roomId),
-    enabled,
+    queryKey: authority
+      ? communityKeys.members(authority, ref, roomId)
+      : [...communityKeys.all, 'owner', 'unresolved', ref, 'room', roomId, 'members'],
+    queryFn: () =>
+      withinCommunityAuthority(authority!, () => transport.listRemoteCommunityMembers(ref, roomId)),
+    enabled: enabled && authority !== null,
   });
 }
 
 /** Owner-scoped local agent enrollments for the selected community. */
 export function useRemoteCommunityAgents(ref: string, enabled = true) {
   const transport = useTransport();
+  const authority = useConfirmedCommunityAuthority(enabled);
   return useQuery({
-    queryKey: communityKeys.agents(ref),
-    queryFn: () => transport.listRemoteCommunityAgents(ref),
-    enabled,
+    queryKey: authority
+      ? communityKeys.agents(authority, ref)
+      : [...communityKeys.all, 'owner', 'unresolved', ref, 'agents'],
+    queryFn: () =>
+      withinCommunityAuthority(authority!, () => transport.listRemoteCommunityAgents(ref)),
+    enabled: enabled && authority !== null,
   });
 }

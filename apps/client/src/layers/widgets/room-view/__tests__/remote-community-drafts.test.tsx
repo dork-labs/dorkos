@@ -51,9 +51,10 @@ describe('remote community delivery drafts', () => {
     vi.mocked(transport.postRemoteCommunityEntry)
       .mockRejectedValueOnce(new Error('Lost response'))
       .mockResolvedValue(entry);
-    const { result } = renderHook(() => useRemoteCommunityDrafts('a', 'same', true, [], receipt), {
-      wrapper,
-    });
+    const { result } = renderHook(
+      () => useRemoteCommunityDrafts('a', 'same', true, [], receipt, 'owner-a'),
+      { wrapper }
+    );
     act(() => {
       result.current.setText('hello');
       result.current.attachments.add([new File(['data'], 'notes.txt')]);
@@ -85,7 +86,7 @@ describe('remote community delivery drafts', () => {
       })
     );
     const { result, rerender } = renderHook(
-      ({ entries }) => useRemoteCommunityDrafts('a', 'same', true, entries, receipt),
+      ({ entries }) => useRemoteCommunityDrafts('a', 'same', true, entries, receipt, 'owner-a'),
       {
         wrapper,
         initialProps: { entries: [] as RemoteCommunityEntry[] },
@@ -110,7 +111,7 @@ describe('remote community delivery drafts', () => {
       })
     );
     const { result, rerender } = renderHook(
-      ({ allowed }) => useRemoteCommunityDrafts('a', 'same', allowed, [], receipt),
+      ({ allowed }) => useRemoteCommunityDrafts('a', 'same', allowed, [], receipt, 'owner-a'),
       {
         wrapper,
         initialProps: { allowed: true },
@@ -129,7 +130,7 @@ describe('remote community delivery drafts', () => {
     const { transport, receipt, wrapper } = harness();
     vi.mocked(transport.postRemoteCommunityEntry).mockReturnValue(new Promise(() => {}));
     const { result, rerender } = renderHook(
-      ({ key }) => useRemoteCommunityDrafts('a', 'same', true, [], receipt, key),
+      ({ key }) => useRemoteCommunityDrafts('a', 'same', true, [], receipt, 'owner-a', key),
       {
         wrapper,
         initialProps: { key: 'channel' },
@@ -150,9 +151,10 @@ describe('remote community delivery drafts', () => {
     vi.mocked(transport.postRemoteCommunityEntry)
       .mockRejectedValueOnce(new Error('retry'))
       .mockReturnValue(new Promise(() => {}));
-    const { result } = renderHook(() => useRemoteCommunityDrafts('a', 'same', true, [], receipt), {
-      wrapper,
-    });
+    const { result } = renderHook(
+      () => useRemoteCommunityDrafts('a', 'same', true, [], receipt, 'owner-a'),
+      { wrapper }
+    );
     act(() =>
       result.current.attachments.add(Array.from({ length: 9 }, () => new File(['x'], 'x.txt')))
     );
@@ -178,7 +180,7 @@ describe('remote community delivery drafts', () => {
       })
     );
     const { result, rerender } = renderHook(
-      ({ owner }) => useRemoteCommunityDrafts('a', 'same', true, [], receipt, 'channel', owner),
+      ({ owner }) => useRemoteCommunityDrafts('a', 'same', true, [], receipt, owner),
       { wrapper, initialProps: { owner: 'owner-a' } }
     );
     act(() => result.current.setText('owner a private draft'));

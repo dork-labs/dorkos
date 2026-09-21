@@ -120,6 +120,7 @@ export class CommunityNavigationPreferenceService {
   private publicState(prefs: CommunityNavigationPrefs, ownerKey: string): CommunityNavigationState {
     const owner = communityNavigationForOwner(prefs, ownerKey);
     return CommunityNavigationStateSchema.parse({
+      ownerKey,
       order: owner.order,
       destinations: owner.destinations,
     });

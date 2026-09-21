@@ -56,6 +56,7 @@ export type {
   CoalescedInvalidationOptions,
 } from './query/use-coalesced-invalidation';
 export { useNow } from './use-now';
+export { useCommunityAuthority } from './use-community-authority';
 // "Has the read answered?" — `isLoading` corrected for the persisted cache. Read
 // its doc before reaching for `isLoading` on any surface that renders an
 // empty state.

@@ -18,6 +18,8 @@
  * @module shared/lib/auth-signal
  */
 
+import { invalidateCommunityAuthority } from './community-authority-state';
+
 type Listener = () => void;
 
 // ── auth-required signal ─────────────────────────────────────────────────────
@@ -33,6 +35,7 @@ export function getAuthRequired(): boolean {
 /** Flip the app-wide auth-required state (set true on a 401 AUTH_REQUIRED, false after sign-in). */
 export function setAuthRequired(value: boolean): void {
   if (authRequired === value) return;
+  if (value) invalidateCommunityAuthority();
   authRequired = value;
   authRequiredListeners.forEach((l) => l());
 }

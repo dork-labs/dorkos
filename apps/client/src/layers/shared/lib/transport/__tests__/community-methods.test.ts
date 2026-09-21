@@ -94,7 +94,7 @@ describe('community connection transport', () => {
     });
   });
   it('uses owner-scoped navigation endpoints without accepting a replacement order', async () => {
-    const state = { order: ['community-a'], destinations: [] };
+    const state = { ownerKey: 'owner-a', order: ['community-a'], destinations: [] };
     const fetch = answer(state);
     fetch.mockImplementation(async () => new Response(JSON.stringify(state)));
     const methods = createCommunityMethods('/api');
