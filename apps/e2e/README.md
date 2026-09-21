@@ -314,6 +314,28 @@ Local runs are never sharded — you always get the whole suite. If you need to
 reproduce one shard exactly, pass the same flag: `pnpm --filter @dorkos/e2e e2e
 --shard=2/3`.
 
+### Measure startup before changing the budget
+
+The JSON report includes `config.metadata.globalSetupTiming`: `startedAt`,
+`finishedAt`, `durationMs`, and `status`. Global setup starts after Playwright's
+web servers are ready and measures onboarding plus client warm-up. Use these
+boundaries with `stats.startTime` and the earliest test result's `startTime`:
+
+- Suite start to setup start: runner initialization and server startup together.
+- Setup start to finish: onboarding and client warm-up (`durationMs` uses a
+  monotonic clock).
+- Setup finish to first test: test loading and worker startup.
+- Individual result durations: test work, grouped by project and spec. Sum all
+  attempts separately from the collected test count; retries add work.
+
+Missing timing means setup was not observed. A `running` status means it did not
+finish before the report was written. Neither means zero cost. Keep failed runs
+in the comparison, check global errors and the suite exit code, and compare the
+same test census before treating a slower run as a regression. JSON success
+counts alone cannot excuse a global timeout. DOR-2189 and CI ledger
+`260921-040000` record the investigation; the measurements do not change any
+deadline or shard count.
+
 ## Common commands
 
 ```bash
