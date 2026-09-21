@@ -165,9 +165,8 @@ export function PersonalityPicker({
                     emoji={preset.emoji}
                     name={preset.name}
                     colors={preset.colors}
-                    active={activePreset?.id === preset.id}
-                    size={compact ? 'sm' : 'default'}
-                    glow
+                    size={compact ? 'sm' : 'md'}
+                    state={activePreset?.id === preset.id ? 'glowing' : 'rest'}
                     onClick={() => handlePresetSelect(preset)}
                   />
                 ))}

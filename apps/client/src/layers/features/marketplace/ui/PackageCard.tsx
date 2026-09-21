@@ -40,8 +40,16 @@ interface PackageCardProps {
    * so `onClick` (the card-level handler) will not also be triggered.
    */
   onInstallClick?: (e: React.MouseEvent) => void;
-  /** Card display variant. 'compact' hides author and install button, uses smaller padding. */
-  variant?: 'default' | 'compact';
+  /**
+   * Card density. `compact` hides author and install button, uses smaller
+   * padding.
+   *
+   * Deliberately not the `xs · sm · md · lg` scale: the axis is how much the
+   * card shows, not how big it is, so the steps are named for that
+   * (`.claude/rules/components.md`). `comfortable` replaced a step named
+   * `default`, which described nothing (DOR-1873).
+   */
+  variant?: 'comfortable' | 'compact';
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +90,7 @@ export function PackageCard({
   installed,
   onClick,
   onInstallClick,
-  variant = 'default',
+  variant = 'comfortable',
 }: PackageCardProps) {
   const packageType = pkg.type ?? 'plugin';
   const authorLabel = resolveAuthorLabel(pkg.author);
