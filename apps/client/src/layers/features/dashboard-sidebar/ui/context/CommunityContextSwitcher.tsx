@@ -5,7 +5,13 @@ import { toast } from 'sonner';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
 import type { SidebarMenuNode } from '@/layers/shared/ui';
-import { useIsMobile, useOpenConnections, useTransport } from '@/layers/shared/model';
+import {
+  getCommunityRouteEpoch,
+  useIsMobile,
+  useOpenConnections,
+  useTransport,
+} from '@/layers/shared/model';
+import { getCommunityAuthority, isCommunityAuthorityCurrent } from '@/layers/shared/lib';
 import {
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuContent,
@@ -93,6 +99,7 @@ export function CommunityContextSwitcher({
   );
   const selected = destinations.find((connection) => connection.ref === selectedRef) ?? null;
   const selectedItem = useRef<HTMLDivElement>(null);
+  const pendingSelection = useRef(false);
   const [pendingRef, setPendingRef] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const targetPending = selectedRef !== undefined && connections.data === undefined;
@@ -109,11 +116,16 @@ export function CommunityContextSwitcher({
     : -1;
 
   async function selectCommunity(connection: CommunityConnectionDescriptor) {
-    if (connection.ref === selectedRef || pendingRef !== null) return;
+    if (connection.ref === selectedRef || pendingSelection.current) return;
     if (connection.status !== 'connected') {
       openConnections('accounts');
       return;
     }
+    const owner = getCommunityAuthority();
+    if (owner.ownerKey === null) return;
+    const capturedOwner = { epoch: owner.epoch, ownerKey: owner.ownerKey };
+    const capturedRoute = getCommunityRouteEpoch();
+    pendingSelection.current = true;
     setPendingRef(connection.ref);
     try {
       const remembered = await transport.resolveCommunityNavigation(connection.ref);
@@ -123,6 +135,7 @@ export function CommunityContextSwitcher({
             (room) => room.readable && !room.archived
           ) ?? null);
       const roomId = remembered?.roomId ?? fallback?.roomId;
+      if (!isCommunityAuthorityCurrent(capturedOwner) || !capturedRoute.isCurrent()) return;
       await navigate({
         to: '/channels',
         search: {
@@ -132,13 +145,16 @@ export function CommunityContextSwitcher({
         },
       });
     } catch {
-      toast.error(`Couldn’t open ${connection.label}`);
+      if (isCommunityAuthorityCurrent(capturedOwner) && capturedRoute.isCurrent())
+        toast.error(`Couldn’t open ${connection.label}`);
     } finally {
+      pendingSelection.current = false;
       setPendingRef(null);
     }
   }
 
   function selectDestination(value: string) {
+    if (pendingSelection.current) return;
     if (value === 'installation') {
       if (selectedRef !== undefined) void navigate({ to: '/' });
       return;
@@ -198,8 +214,9 @@ export function CommunityContextSwitcher({
           <ResponsiveDropdownMenuRadioItem
             value="installation"
             icon={HardDrive}
+            disabled={pendingRef !== null}
             itemRef={selectedRef === undefined ? selectedItem : undefined}
-            className={pendingRef !== null ? 'pointer-events-none opacity-50' : undefined}
+            className={pendingRef !== null ? 'opacity-50' : undefined}
           >
             <span className="min-w-0 flex-1 truncate">{installationLabel}</span>
           </ResponsiveDropdownMenuRadioItem>
@@ -208,6 +225,7 @@ export function CommunityContextSwitcher({
               key={connection.ref}
               value={`community:${connection.ref}`}
               icon={UsersRound}
+              disabled={pendingRef !== null}
               itemRef={connection.ref === selectedRef ? selectedItem : undefined}
               description={
                 connection.status === 'pending'
@@ -216,7 +234,7 @@ export function CommunityContextSwitcher({
                     ? 'Reconnect'
                     : undefined
               }
-              className={pendingRef !== null ? 'pointer-events-none opacity-50' : undefined}
+              className={pendingRef !== null ? 'opacity-50' : undefined}
             >
               <span className="min-w-0 flex-1 truncate">{connection.label}</span>
             </ResponsiveDropdownMenuRadioItem>

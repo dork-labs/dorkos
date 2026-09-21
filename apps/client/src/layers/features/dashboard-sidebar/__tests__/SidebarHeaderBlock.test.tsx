@@ -15,6 +15,8 @@ import '@testing-library/jest-dom/vitest';
 import { Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
+import { confirmCommunityAuthority, invalidateCommunityAuthority } from '@/layers/shared/lib';
+import { commitCommunityRouteEpoch } from '@/layers/shared/model';
 import type { SidebarMenuNode } from '@/layers/shared/ui';
 import { buildHeaderBlockMenuNodes } from '../ui/header-block-menu';
 import { SidebarHeaderBlock, teamNameFor } from '../ui/SidebarHeaderBlock';
@@ -141,6 +143,9 @@ beforeEach(() => {
     rooms: [],
     stale: false,
   });
+  const authority = invalidateCommunityAuthority();
+  confirmCommunityAuthority(authority.epoch, 'owner-a');
+  commitCommunityRouteEpoch(`test:${authority.epoch}`);
 });
 
 afterEach(() => cleanup());
@@ -472,6 +477,133 @@ describe('SidebarHeaderBlock', () => {
     fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Couldn’t open Alpha'));
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('discards a delayed destination after the local owner changes', async () => {
+    let resolveRemembered!: (value: {
+      ref: string;
+      roomId: string;
+      threadId: null;
+      scrollAnchorEntryId: null;
+    }) => void;
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRemembered = resolve;
+        })
+    );
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+
+    const nextOwner = invalidateCommunityAuthority();
+    confirmCommunityAuthority(nextOwner.epoch, 'owner-b');
+    resolveRemembered({
+      ref: 'a',
+      roomId: 'general',
+      threadId: null,
+      scrollAnchorEntryId: null,
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
+    );
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('discards a delayed destination after another route commits', async () => {
+    let resolveRemembered!: (value: null) => void;
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRemembered = resolve;
+        })
+    );
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+
+    commitCommunityRouteEpoch('test:other-route');
+    resolveRemembered(null);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
+    );
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('disables keyboard selection of the installation while a destination is pending', async () => {
+    let resolveRemembered!: (value: null) => void;
+    mockSearch = { community: 'b' };
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+      {
+        ref: 'b',
+        remoteCommunityId: 'remote-b',
+        label: 'Beta',
+        pinnedOrigin: 'https://b.example.com',
+        connectedHumanMemberId: 'person-b',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRemembered = resolve;
+        })
+    );
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    const installation = await screen.findByRole('menuitemradio', { name: /Dorian’s team/ });
+    expect(installation).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.keyDown(installation, { key: 'Enter' });
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    resolveRemembered(null);
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/channels',
+      search: { community: 'a' },
+    });
   });
 
   it('grows the menu without moving anything outside it (BC-43)', async () => {
