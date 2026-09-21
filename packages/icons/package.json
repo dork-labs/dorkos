@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "lucide-react": "1.44.0"
+    "lucide-react": "1.47.0"
   },
   "peerDependencies": {
     "react": "^19.0.0"
