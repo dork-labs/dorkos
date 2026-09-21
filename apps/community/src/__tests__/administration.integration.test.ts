@@ -144,11 +144,15 @@ beforeAll(async () => {
   expect(memberSignup.status).toBe(200);
   memberCookie = `${grant}; ${cookieOf(memberSignup)}`;
   expect(
+    (await jsonRequest(`/api/v1/communities/${communityId}/invites/bind`, 'POST', {}, memberCookie))
+      .status
+  ).toBe(200);
+  expect(
     (
       await jsonRequest(
         `/api/v1/communities/${communityId}/invites/redeem`,
         'POST',
-        { token },
+        {},
         memberCookie
       )
     ).status
