@@ -112,6 +112,13 @@ const fixture = vi.hoisted(() => {
     adapter,
     uploadedBytes,
     lifecycle,
+    retryResult: 'retried' as 'retried' | 'missing' | 'terminal' | 'in-flight',
+    retryCalls: [] as Array<{
+      communityRef: string;
+      remoteRoomId: string;
+      ownerAuthorId: string;
+      idempotencyKey: string;
+    }>,
   };
 });
 
@@ -130,9 +137,9 @@ vi.mock('../../services/communities/remote/state.js', () => ({
     ref === fixture.ref && roomId === 'room-a' && owner === 'owner-a' && entryId === 'agent-echo-a'
       ? 'delivery-origin-a'
       : null,
-  getRemoteCommunityDeliverySnapshot: () => ({
-    community: fixture.ref,
-    roomId: 'room-a',
+  getRemoteCommunityDeliverySnapshot: (community: string, roomId: string) => ({
+    community,
+    roomId,
     deliveries: [
       {
         idempotencyKey: 'delivery-retry-a',
@@ -142,7 +149,7 @@ vi.mock('../../services/communities/remote/state.js', () => ({
         attachments: [],
         state: 'pending',
         failure: null,
-        retryable: true,
+        retryable: fixture.retryResult !== 'in-flight',
       },
     ],
   }),
@@ -163,7 +170,15 @@ vi.mock('../../services/communities/remote/state.js', () => ({
   }),
   getRemoteCommunityLifecycle: () => fixture.lifecycle,
   onRemoteCommunityDeliveryChange: () => () => undefined,
-  retryRemoteCommunityDelivery: () => 'retried',
+  retryRemoteCommunityDelivery: (request: {
+    communityRef: string;
+    remoteRoomId: string;
+    ownerAuthorId: string;
+    idempotencyKey: string;
+  }) => {
+    fixture.retryCalls.push(request);
+    return fixture.retryResult;
+  },
   resolveRemoteCommunityLocalAgent: (localAgentId: string) =>
     localAgentId === 'mesh-manifest-a'
       ? { authorId: 'opaque-local-author-a', displayName: 'Build Agent' }
@@ -205,6 +220,8 @@ describe('qualified remote community writes and live projections', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fixture.uploadedBytes.length = 0;
+    fixture.retryResult = 'retried';
+    fixture.retryCalls.length = 0;
   });
 
   it('posts only as the connected human and does not attach agent-only origin metadata', async () => {
@@ -512,6 +529,40 @@ describe('qualified remote community writes and live projections', () => {
       `/api/communities/bad%21/rooms/room-a/deliveries/delivery-retry-a/retry`
     );
     expect(malformed.status).toBe(400);
+  });
+
+  it('treats an already in-flight delivery as an idempotent accepted retry', async () => {
+    fixture.retryResult = 'in-flight';
+    const response = await request(testServer).post(
+      `/api/communities/${fixture.ref}/rooms/room-a/deliveries/delivery-retry-a/retry`
+    );
+    expect(response.status).toBe(202);
+    expect(response.body).toMatchObject({
+      community: fixture.ref,
+      roomId: 'room-a',
+      deliveries: [
+        {
+          idempotencyKey: 'delivery-retry-a',
+          state: 'pending',
+          retryable: false,
+        },
+      ],
+    });
+    expect(fixture.retryCalls).toEqual([
+      {
+        communityRef: fixture.ref,
+        remoteRoomId: 'room-a',
+        ownerAuthorId: 'owner-a',
+        idempotencyKey: 'delivery-retry-a',
+      },
+    ]);
+
+    fixture.retryResult = 'terminal';
+    const terminal = await request(testServer).post(
+      `/api/communities/${fixture.ref}/rooms/room-a/deliveries/delivery-retry-a/retry`
+    );
+    expect(terminal.status).toBe(409);
+    expect(terminal.body).toEqual({ error: 'Delivery cannot be retried.' });
   });
 
   it('stops local remote-room work through the owner-qualified lifecycle without a remote request', async () => {

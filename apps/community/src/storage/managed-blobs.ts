@@ -74,7 +74,7 @@ export async function prepareManagedBlobCommit(
      SET state='stored',byte_size=$2,checksum=$3,stored_at=now()
      WHERE blob_key=$1 AND community_id=$4 AND purpose=$5
        AND community_lifecycle_version=$6 AND state='reserved'
-       AND created_at>now()-interval '1 hour'`,
+       AND created_at>now()-($7 * interval '1 millisecond')`,
     [
       reservation.key,
       stored.byteSize,
@@ -82,6 +82,7 @@ export async function prepareManagedBlobCommit(
       reservation.communityId,
       reservation.purpose,
       reservation.lifecycleVersion,
+      MANAGED_BLOB_RESERVATION_TTL_MS,
     ]
   );
   if (updated.rowCount !== 1) {

@@ -9,9 +9,11 @@ import { serve } from '@hono/node-server';
 import { migrate } from '../migrate.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
+import { transaction } from '../data.js';
 import { sweepExpiredAttachments } from '../routes/attachments.js';
 import { sweepExpiredExports } from '../routes/exports.js';
 import { discardManagedBlob, FileSystemBlobStore } from '../storage/index.js';
+import { MANAGED_BLOB_RESERVATION_TTL_MS } from '../storage/managed-blobs.js';
 import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
 import { hashSecret } from '../security.js';
 
@@ -71,6 +73,20 @@ function upload(
     },
     body,
   });
+}
+
+async function waitForBlockedQuery(fragment: string) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const result = await pool.query<{ blocked: boolean }>(
+      `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+       WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE $1
+         AND cardinality(pg_blocking_pids(pid))>0) AS blocked`,
+      [`%${fragment}%`]
+    );
+    if (result.rows[0].blocked) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`Request did not block on ${fragment}`);
 }
 
 beforeAll(async () => {
@@ -147,6 +163,119 @@ afterAll(async () => {
 });
 
 describe('attachments over real HTTP and Postgres', () => {
+  it('locks the channel before reconciliation state so cursor writes cannot deadlock uploads', async () => {
+    const blocker = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT 1 FROM channels WHERE id=$1 FOR UPDATE', [channelId]);
+      const blockedUpload = upload(channelId, ownerCookie, 'cursor-lock-order');
+      await waitForBlockedQuery('SELECT c.* FROM channels');
+      await blocker.query(
+        `INSERT INTO read_cursors(community_id,channel_id,member_id,seq)
+         VALUES($1,$2,$3,1)
+         ON CONFLICT(channel_id,member_id) DO UPDATE SET seq=EXCLUDED.seq,updated_at=now()`,
+        [communityId, channelId, ownerId]
+      );
+      await blocker.query('COMMIT');
+      expect((await blockedUpload).status).toBe(201);
+      await pool.query('UPDATE owner_quota_windows SET upload_bytes=0 WHERE owner_member_id=$1', [
+        ownerId,
+      ]);
+    } finally {
+      await blocker.query('ROLLBACK');
+      blocker.release();
+    }
+  });
+
+  it('serializes an expiring reservation cleanup against its in-flight completion', async () => {
+    let storedReady!: () => void;
+    let releaseStored!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      storedReady = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      releaseStored = resolve;
+    });
+    const originalPut = blobStore.put.bind(blobStore);
+    const heldPut = vi.spyOn(blobStore, 'put').mockImplementation(async (input) => {
+      const stored = await originalPut(input);
+      storedReady();
+      await released;
+      return stored;
+    });
+    const channelBlocker = await pool.connect();
+    const cleanup = await pool.connect();
+    let reservationKey: string | undefined;
+    try {
+      const pendingUpload = upload(channelId, ownerCookie, 'lease-boundary', 'lease');
+      await ready;
+      const reservation = (
+        await pool.query<{ blob_key: string }>(
+          `SELECT blob_key FROM managed_blobs
+           WHERE state='reserved' AND purpose='attachment'
+           ORDER BY created_at DESC LIMIT 1`
+        )
+      ).rows[0];
+      expect(reservation).toBeDefined();
+      reservationKey = reservation.blob_key;
+      await pool.query(
+        `UPDATE managed_blobs
+         SET created_at=clock_timestamp()-($2 * interval '1 millisecond')+interval '500 milliseconds'
+         WHERE blob_key=$1`,
+        [reservation.blob_key, MANAGED_BLOB_RESERVATION_TTL_MS]
+      );
+
+      await channelBlocker.query('BEGIN');
+      await channelBlocker.query('SELECT 1 FROM channels WHERE id=$1 FOR UPDATE', [channelId]);
+      releaseStored();
+      await waitForBlockedQuery('SELECT c.* FROM channels');
+      await new Promise((resolve) => setTimeout(resolve, 650));
+
+      await cleanup.query('BEGIN');
+      await cleanup.query('SELECT 1 FROM managed_blobs WHERE blob_key=$1 FOR UPDATE', [
+        reservation.blob_key,
+      ]);
+      await channelBlocker.query('COMMIT');
+      await waitForBlockedQuery('UPDATE managed_blobs');
+      await cleanup.query(
+        "UPDATE managed_blobs SET state='pending_delete' WHERE blob_key=$1 AND state IN ('reserved','stored')",
+        [reservation.blob_key]
+      );
+      await cleanup.query(
+        `INSERT INTO pending_blob_deletions(blob_key,attempts,next_attempt_at)
+         VALUES($1,0,now()+interval '1 minute') ON CONFLICT(blob_key) DO NOTHING`,
+        [reservation.blob_key]
+      );
+      await cleanup.query('COMMIT');
+
+      expect((await pendingUpload).status).toBe(409);
+      expect(
+        (
+          await pool.query<{ state: string }>('SELECT state FROM managed_blobs WHERE blob_key=$1', [
+            reservation.blob_key,
+          ])
+        ).rows[0]
+      ).toEqual({ state: 'pending_delete' });
+    } finally {
+      releaseStored();
+      await channelBlocker.query('ROLLBACK').catch(() => undefined);
+      await cleanup.query('ROLLBACK').catch(() => undefined);
+      channelBlocker.release();
+      cleanup.release();
+      heldPut.mockRestore();
+      if (reservationKey) {
+        await blobStore.delete(reservationKey).catch(() => undefined);
+        await transaction(pool, async (client) => {
+          await client.query("SELECT set_config('dorkos.tenant_reconciliation','backfill',true)");
+          await client.query('DELETE FROM pending_blob_deletions WHERE blob_key=$1', [
+            reservationKey,
+          ]);
+          await client.query('DELETE FROM managed_blobs WHERE blob_key=$1', [reservationKey]);
+        });
+      }
+    }
+  });
+
   it('streams a verified upload, retries by bytes, binds once, and returns metadata in history', async () => {
     const first = await upload(channelId, ownerCookie, 'files-one');
     expect(first.status).toBe(201);
@@ -762,6 +891,26 @@ describe('attachments over real HTTP and Postgres', () => {
     }
   });
 
+  it('checks export authority before dirtying reconciliation state', async () => {
+    const blocker = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT 1 FROM members WHERE id=$1 FOR UPDATE', [ownerId]);
+      const blockedExport = post('/api/v1/me/export', {}, ownerCookie);
+      await waitForBlockedQuery('SELECT role FROM members WHERE id=');
+      const quotaWrite = await blocker.query(
+        'UPDATE owner_quota_windows SET upload_bytes=upload_bytes WHERE owner_member_id=$1',
+        [ownerId]
+      );
+      expect(quotaWrite.rowCount).toBeGreaterThan(0);
+      await blocker.query('COMMIT');
+      expect((await blockedExport).status).toBe(201);
+    } finally {
+      await blocker.query('ROLLBACK');
+      blocker.release();
+    }
+  });
+
   it('stops an in-flight download when channel membership is revoked', async () => {
     const file = (
       await pool.query<{ id: string; blob_key: string }>(
@@ -1047,7 +1196,7 @@ describe('private archives and recoverable leave', () => {
   it('requires ownership transfer before leave, then revokes the former member’s session', async () => {
     expect((await post('/api/v1/me/leave', {}, ownerCookie)).status).toBe(403);
     expect((await post('/api/v1/me/leave', {}, bobCookie)).status).toBe(204);
-    expect((await post('/api/v1/me/export', {}, bobCookie)).status).toBe(401);
+    expect((await post('/api/v1/me/export', {}, bobCookie)).status).toBe(403);
     expect(
       (await request(`/api/v1/channels/${channelId}/entries`, { headers: { cookie: ownerCookie } }))
         .status

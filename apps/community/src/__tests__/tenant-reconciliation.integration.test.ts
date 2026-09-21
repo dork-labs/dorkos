@@ -126,6 +126,21 @@ async function seedAttachment() {
   return { ...owner, attachment, stored, exported };
 }
 
+async function waitForBlockedQuery(fragment: string) {
+  if (!pool) throw new Error('test database is unavailable');
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const result = await pool.query<{ blocked: boolean }>(
+      `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+       WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE $1
+         AND cardinality(pg_blocking_pids(pid))>0) AS blocked`,
+      [`%${fragment}%`]
+    );
+    if (result.rows[0].blocked) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`Reconciliation did not block on ${fragment}`);
+}
+
 async function expectStored(key: string, byteSize: number) {
   const read = await store.get(key);
   read.body.destroy();
@@ -338,6 +353,78 @@ it('serializes a new reservation after validation and immediately dirties its ge
     validated_generation: null,
     reason_code: 'managed_blob_write',
   });
+});
+
+it('waits behind an active inventory writer before locking the reconciliation generation', async () => {
+  if (!pool) throw new Error('test database is unavailable');
+  const fixture = await seedAttachment();
+  await expect(reconcileTenantNamespace(pool, store)).resolves.toMatchObject({ ready: true });
+  const writer = await pool.connect();
+  try {
+    await writer.query('BEGIN');
+    await writer.query('UPDATE managed_blobs SET checksum=checksum WHERE blob_key=$1', [
+      fixture.stored.key,
+    ]);
+    const reconciliation = reconcileTenantNamespace(pool, store);
+    await waitForBlockedQuery('INSERT INTO managed_blobs');
+    await writer.query('COMMIT');
+    await expect(reconciliation).resolves.toMatchObject({
+      ready: false,
+      issues: [{ code: 'active_writes' }],
+    });
+    expect(
+      (
+        await pool.query<{ state: string; reason_code: string }>(
+          'SELECT state,reason_code FROM tenant_reconciliation'
+        )
+      ).rows[0]
+    ).toEqual({ state: 'dirty', reason_code: 'active_writes' });
+  } finally {
+    await writer.query('ROLLBACK').catch(() => undefined);
+    writer.release();
+  }
+});
+
+it('does not reacquire managed inventory while deferred cleanup invalidation holds generation', async () => {
+  if (!pool) throw new Error('test database is unavailable');
+  const fixture = await seedAttachment();
+  await expect(reconcileTenantNamespace(pool, store)).resolves.toMatchObject({ ready: true });
+  const inventoryWriter = await pool.connect();
+  const cleanupWriter = await pool.connect();
+  try {
+    await inventoryWriter.query('BEGIN');
+    await inventoryWriter.query('UPDATE managed_blobs SET checksum=checksum WHERE blob_key=$1', [
+      fixture.stored.key,
+    ]);
+    await cleanupWriter.query('BEGIN');
+    await cleanupWriter.query('DELETE FROM attachments WHERE id=$1', [fixture.attachment]);
+    await cleanupWriter.query('INSERT INTO pending_blob_deletions(blob_key) VALUES($1)', [
+      fixture.stored.key,
+    ]);
+
+    const cleanupCommit = cleanupWriter
+      .query('COMMIT')
+      .then(() => ({ status: 'fulfilled' as const }))
+      .catch((reason: unknown) => ({ status: 'rejected' as const, reason }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const inventoryCommit = inventoryWriter
+      .query('COMMIT')
+      .then(() => ({ status: 'fulfilled' as const }))
+      .catch((reason: unknown) => ({ status: 'rejected' as const, reason }));
+
+    expect(await Promise.all([cleanupCommit, inventoryCommit])).toEqual([
+      { status: 'fulfilled' },
+      { status: 'fulfilled' },
+    ]);
+    expect(
+      (await pool.query<{ state: string }>('SELECT state FROM tenant_reconciliation')).rows[0]
+    ).toEqual({ state: 'dirty' });
+  } finally {
+    await inventoryWriter.query('ROLLBACK').catch(() => undefined);
+    await cleanupWriter.query('ROLLBACK').catch(() => undefined);
+    inventoryWriter.release();
+    cleanupWriter.release();
+  }
 });
 
 it('invalidates readiness through unmanaged cleanup after the tenant contract is enforced', async () => {

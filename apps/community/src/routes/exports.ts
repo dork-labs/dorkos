@@ -322,7 +322,6 @@ export function registerExportRoutes(
     }
     try {
       return await transaction(pool, async (client) => {
-        await prepareManagedBlobCommit(client, reservation, stored);
         const live = await client.query<Member>(
           'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
           [member.id, member.community_id]
@@ -330,6 +329,7 @@ export function registerExportRoutes(
         if (!live.rows[0] || (scope === 'owner' && live.rows[0].role !== 'owner'))
           throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
         if (scope === 'personal') await requireCurrentChannels(client, member.id, data.channelIds);
+        await prepareManagedBlobCommit(client, reservation, stored);
         const result = await client.query<Omit<ExportArchiveRow, 'channel_ids'>>(
           `INSERT INTO export_archives(community_id,requester_member_id,scope,blob_key,byte_size,expires_at)
            VALUES($1,$2,$3,$4,$5,now()+interval '1 hour') RETURNING *`,

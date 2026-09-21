@@ -21,7 +21,11 @@ import { useSessionChatStore } from '../stream/session-chat-store';
 import { useSessionStreamStore } from '../stream/session-stream-store';
 import { useSessionListStore } from '../stream/session-list-store';
 
-/*
+/**
+ * The single copy of the session border colour map, shared with
+ * {@link useAgentHottestStatus} (`use-agent-hottest-status.ts`), which
+ * imports it rather than keeping its own copy.
+ *
  * Border color uses inline RGB values (not CSS custom properties) for states
  * that pulse, because Motion cannot interpolate CSS custom properties — it
  * needs concrete RGB values to tween `borderLeftColor`.
@@ -34,7 +38,7 @@ import { useSessionListStore } from '../stream/session-list-store';
  * Non-pulsing states (error, unseen) use CSS variables directly since
  * Motion never has to animate them.
  */
-const BORDER_COLORS = {
+export const BORDER_COLORS = {
   green: 'rgb(34, 197, 94)',
   greenDim: 'rgba(34, 197, 94, 0.15)',
   amber: 'rgb(245, 158, 11)',

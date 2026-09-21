@@ -39,7 +39,9 @@ import { sweepStrays } from '../sweep.js';
 import { liveDisposerCount } from '../interrupt.js';
 import type { EvalCase, EvalSandbox } from '../../types.js';
 import type { IsolationLauncher } from '../isolation/index.js';
+import { readManifest } from '@dorkos/shared/manifest';
 import { httpGetAssert } from '../../oracles/api.js';
+import { agentDir, seedRoomAgents } from '../../suite/rooms-setup.js';
 import { selfTestCase } from '../../suite/selftest.js';
 import { widgetRoundTripCase } from '../../suite/ui.js';
 import { BudgetTracker } from '../budget.js';
@@ -217,6 +219,53 @@ describe('runEval', () => {
     expect(result.error).toContain('--isolation child-process');
     // It refused BEFORE launching anything — that is what makes it fail closed.
     expect(dockerLauncher.launch).not.toHaveBeenCalled();
+  });
+
+  it("seats a case's seeded agent on the runtime the RUN asked for (DOR-2207)", async () => {
+    // The run-level half of the property: `--runtime` reaches a case's `seed`
+    // through the sandbox, and the real `seedRoomAgents` writes it into the
+    // manifest the server will read. Unit-testing the seeder alone would have
+    // left the wiring — `RunEvalOptions.runtime` → `createSandbox` →
+    // `EvalSandbox.runtime` — unasserted, and that wiring is the half a
+    // refactor can silently drop.
+    //
+    // On `test-mode`, deliberately: it is the only tier that boots free, and it
+    // registers none of the three runtimes, so the in-process server ignores
+    // what the manifest says and nothing here can reach a model. The manifest
+    // is read by an ORACLE rather than after the call because a passing eval
+    // tears its sandbox down.
+    const { runDir: dir, tracker } = await fixture();
+    const seededOn: (string | undefined)[] = [];
+    const roomsLike: EvalCase = {
+      ...selfTestCase,
+      id: 'rooms-runtime-wiring',
+      seed: (sandbox) =>
+        seedRoomAgents(sandbox, [
+          { slug: 'ada', displayName: 'Ada', description: 'answers questions in the room' },
+        ]),
+      oracles: [
+        async (ctx) => {
+          const manifest = await readManifest(agentDir(ctx.sandbox, 'ada'));
+          seededOn.push(manifest?.runtime);
+          return {
+            label: 'the seeded agent runs on the runtime the run asked for',
+            passed: manifest?.runtime === 'opencode',
+          };
+        },
+      ],
+    };
+
+    const result = await runEval(roomsLike, {
+      tier: 'test-mode',
+      runId: 'run-runtime',
+      runDir: dir,
+      tracker,
+      runtime: 'opencode',
+    });
+
+    expect(seededOn).toEqual(['opencode']);
+    expect(result.status).toBe('pass');
+    expect(result.runtime).toBe('opencode');
   });
 
   it('records the isolation the eval actually ran inside', async () => {

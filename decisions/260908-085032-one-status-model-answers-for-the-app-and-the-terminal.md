@@ -1,7 +1,7 @@
 ---
 id: 260908-085032
 title: One status model answers for the app and the terminal
-status: proposed
+status: accepted
 created: 2026-09-08
 spec: harness-sync-status
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed (extracted from spec: `harness-sync-status`, DOR-1852).
+Accepted (extracted from spec: `harness-sync-status`, DOR-1852).
 
 ## Context
 

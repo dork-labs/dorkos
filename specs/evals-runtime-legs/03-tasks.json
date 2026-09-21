@@ -1,0 +1,35 @@
+{
+  "spec": "specs/evals-runtime-legs/02-specification.md",
+  "slug": "evals-runtime-legs",
+  "generatedAt": "2026-09-20T23:05:00Z",
+  "mode": "full",
+  "lastDecomposeDate": "2026-09-20",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — room turns follow --runtime",
+      "subject": "[evals-runtime-legs] [P1] Seeded room agents carry the run's runtime",
+      "description": "Spec D1. Add `runtime?: EvalRuntime` to `EvalSandbox`, set it in run-eval.ts from the run options, and make `seedRoomAgents` write `runtime: sandbox.runtime ?? 'claude-code'` with a true comment replacing the stale one. Write the seeder unit test FIRST and show it red against the current code, then green. Add the run-level runtime assertion D1 describes, choosing the seam that is checkable without a paid run and saying which. Acceptance: the four-runtime seeder test passes; `pnpm vitest run packages/evals` green; `pnpm --filter @dorkos/evals typecheck` and lint green.",
+      "activeForm": "Making seeded room agents follow --runtime",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": "DOR-2207"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — the Codex money gate",
+      "subject": "[evals-runtime-legs] [P2] A Codex leg needs DORKOS_EVALS_PAID_CODEX beside CODEX_API_KEY",
+      "description": "Spec D2 and D3. Replace `spendsOnExternalProvider` with `paidPathFor` returning 'openrouter' | 'codex' | null; generalise `resolvePaidProviderCredential` and the three messages per path; docker refusal on the codex path; key forwarded via credential.env with a launcher test; cite the installed SDK line that reads CODEX_API_KEY. Extend paid-provider.test.ts (turbo walk + codex four-square + messages). Update bin/evals.ts header, packages/evals/README.md (codex recipe + runtime paragraph), and the AGENTS.md money table (six paths, eleven names). Add the changelog fragment with a `covers:` block. Acceptance: `pnpm vitest run packages/evals` green; evals typecheck + lint green; `scripts/check-banned-words.sh` and the vocab gate pass on AGENTS.md.",
+      "activeForm": "Adding the Codex money gate",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": [],
+      "issue": "DOR-2207"
+    }
+  ]
+}
