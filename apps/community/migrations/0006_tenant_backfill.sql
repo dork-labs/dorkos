@@ -107,22 +107,17 @@ BEGIN
 END $$;
 
 CREATE FUNCTION invalidate_unmanaged_blob_cleanup() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE
-  target_key text;
 BEGIN
   IF current_setting('dorkos.tenant_reconciliation',true) = 'backfill' THEN
     IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
   END IF;
-  target_key := CASE WHEN TG_OP = 'DELETE' THEN OLD.blob_key ELSE NEW.blob_key END;
-  IF NOT EXISTS(
-    SELECT 1 FROM managed_blobs WHERE blob_key=target_key AND state='pending_delete'
-  ) THEN
-    UPDATE tenant_reconciliation
-    SET generation=generation+1,state='dirty',validated_generation=NULL,
-        namespace_digest=NULL,completed_at=NULL,invalidated_at=now(),
-        reason_code='unmanaged_blob_cleanup'
-    WHERE singleton;
-  END IF;
+  -- Deferred invalidation must never wait on another domain or inventory row. Every trigger
+  -- reaches only the singleton generation row after the transaction has finished those writes.
+  UPDATE tenant_reconciliation
+  SET generation=generation+1,state='dirty',validated_generation=NULL,
+      namespace_digest=NULL,completed_at=NULL,invalidated_at=now(),
+      reason_code='unmanaged_blob_cleanup'
+  WHERE singleton;
   IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
 END $$;
 
@@ -139,34 +134,34 @@ BEGIN
   IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
 END $$;
 
-CREATE TRIGGER invite_uses_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON invite_uses
-FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
-CREATE TRIGGER pending_admissions_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON pending_admissions
-FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
-CREATE TRIGGER connection_pairings_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON connection_pairings
-FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
-CREATE TRIGGER connection_grants_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON connection_grants
-FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
-CREATE TRIGGER channel_members_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON channel_members
-FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
-CREATE TRIGGER agent_credentials_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON agent_credentials
-FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
-CREATE TRIGGER agent_channel_members_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON agent_channel_members
-FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
-CREATE TRIGGER entries_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON entries
-FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
-CREATE TRIGGER attachments_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON attachments
-FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
-CREATE TRIGGER export_archives_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON export_archives
-FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
-CREATE TRIGGER read_cursors_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON read_cursors
-FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
-CREATE TRIGGER owner_quota_windows_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON owner_quota_windows
-FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
-CREATE TRIGGER pending_blob_deletions_unmanaged_write AFTER INSERT OR UPDATE OR DELETE ON pending_blob_deletions
-FOR EACH ROW EXECUTE FUNCTION invalidate_unmanaged_blob_cleanup();
-CREATE TRIGGER managed_blobs_reconciliation_write AFTER INSERT OR UPDATE OR DELETE ON managed_blobs
-FOR EACH ROW EXECUTE FUNCTION invalidate_managed_blob_write();
+CREATE CONSTRAINT TRIGGER invite_uses_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON invite_uses
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
+CREATE CONSTRAINT TRIGGER pending_admissions_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON pending_admissions
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
+CREATE CONSTRAINT TRIGGER connection_pairings_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON connection_pairings
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
+CREATE CONSTRAINT TRIGGER connection_grants_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON connection_grants
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
+CREATE CONSTRAINT TRIGGER channel_members_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON channel_members
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
+CREATE CONSTRAINT TRIGGER agent_credentials_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON agent_credentials
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
+CREATE CONSTRAINT TRIGGER agent_channel_members_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON agent_channel_members
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
+CREATE CONSTRAINT TRIGGER entries_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON entries
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
+CREATE CONSTRAINT TRIGGER attachments_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON attachments
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
+CREATE CONSTRAINT TRIGGER export_archives_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON export_archives
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
+CREATE CONSTRAINT TRIGGER read_cursors_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON read_cursors
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
+CREATE CONSTRAINT TRIGGER owner_quota_windows_legacy_tenant_write AFTER INSERT OR UPDATE OR DELETE ON owner_quota_windows
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_tenant_reconciliation();
+CREATE CONSTRAINT TRIGGER pending_blob_deletions_unmanaged_write AFTER INSERT OR UPDATE OR DELETE ON pending_blob_deletions
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_unmanaged_blob_cleanup();
+CREATE CONSTRAINT TRIGGER managed_blobs_reconciliation_write AFTER INSERT OR UPDATE OR DELETE ON managed_blobs
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_managed_blob_write();
 
 UPDATE tenant_reconciliation r
 SET community_id=(SELECT id FROM communities LIMIT 1),reason_code='namespace_pending'

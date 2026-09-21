@@ -295,6 +295,22 @@ it('expands a populated version-four database without changing files or cleanup 
     expect(
       (await db.query('SELECT user_id FROM host_operators WHERE user_id=$1', ['v4-user'])).rows
     ).toEqual([{ user_id: 'v4-user' }]);
+    expect(
+      (
+        await db.query<{ count: number }>(
+          `SELECT count(*)::int AS count FROM pg_trigger
+           WHERE tgname IN (
+             'invite_uses_legacy_tenant_write','pending_admissions_legacy_tenant_write',
+             'connection_pairings_legacy_tenant_write','connection_grants_legacy_tenant_write',
+             'channel_members_legacy_tenant_write','agent_credentials_legacy_tenant_write',
+             'agent_channel_members_legacy_tenant_write','entries_legacy_tenant_write',
+             'attachments_legacy_tenant_write','export_archives_legacy_tenant_write',
+             'read_cursors_legacy_tenant_write','owner_quota_windows_legacy_tenant_write',
+             'pending_blob_deletions_unmanaged_write','managed_blobs_reconciliation_write'
+           ) AND tgdeferrable AND tginitdeferred`
+        )
+      ).rows[0]
+    ).toEqual({ count: 14 });
     await db.query(
       `UPDATE tenant_reconciliation
        SET state='ready',validated_generation=generation,namespace_digest=$1,

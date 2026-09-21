@@ -305,20 +305,6 @@ async function reconcileWithLock(
 
   await client.query('BEGIN');
   try {
-    const current = await client.query<{ generation: string }>(
-      'SELECT generation FROM tenant_reconciliation WHERE singleton FOR UPDATE'
-    );
-    const currentGeneration = Number(current.rows[0]?.generation);
-    if (currentGeneration !== generation) {
-      await client.query('ROLLBACK');
-      return block(client, currentGeneration, counts, [
-        issue(
-          'active_writes',
-          1,
-          'A database write raced reconciliation; retry from a fresh listing.'
-        ),
-      ]);
-    }
     if (community) {
       await client.query("SELECT set_config('dorkos.tenant_reconciliation','backfill',true)");
       for (const reference of references.rows) {
@@ -365,6 +351,23 @@ async function reconcileWithLock(
           [key]
         );
       }
+    }
+    // Database writers invalidate at commit after releasing neither domain nor inventory
+    // locks. Take the generation row only after reconciliation's own inventory writes so every
+    // transaction follows the same domain/inventory -> generation order.
+    const current = await client.query<{ generation: string }>(
+      'SELECT generation FROM tenant_reconciliation WHERE singleton FOR UPDATE'
+    );
+    const currentGeneration = Number(current.rows[0]?.generation);
+    if (currentGeneration !== generation) {
+      await client.query('ROLLBACK');
+      return block(client, currentGeneration, counts, [
+        issue(
+          'active_writes',
+          1,
+          'A database write raced reconciliation; retry from a fresh listing.'
+        ),
+      ]);
     }
     await client.query(
       `UPDATE tenant_reconciliation
