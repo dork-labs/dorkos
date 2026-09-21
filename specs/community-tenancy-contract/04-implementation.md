@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 3 / 12
+**Tasks Completed:** 4 / 12
 
 ## Tasks Completed
 
@@ -138,4 +138,6 @@ _(None yet)_
 - Stacked base: accepted reconciliation head `c211a0b6b1fa7bd89001423cb9aae4bd485ad26f` (PR #1968).
 - The contract migration validates and locks the normalized model before removing arrays, compatibility triggers, singleton/global uniqueness, and nullable ownership. Existing single-community behavior remains available while the schema can now represent independent tenant membership safely.
 - Targeted real-Postgres verification passes attachments 16/16, recovery 5/5, remote adapter 52/52 active checks, reconciliation 10/10, and admission 16/16. The corrected-head complete Community PostgreSQL run recorded 121 passes, 4 declared skips, and 2 timeouts: the populated migration case timed out at 30 seconds, and reconciliation cleanup timed out while ending its pool. Both cases passed alone, and both files passed together 13/13 with `maxWorkers=2` and unchanged limits. This receipt preserves that full-run result rather than treating the reruns as a retroactive all-green gate.
-- Next task: Task 1.4 proves the supported single-community rollback boundary before tenant-qualified HTTP routing begins.
+- Task 1.4 is complete: the supported backout is a coordinated pre-migration database/object restore into an isolated deployment of the original image. Migration 0009 permanently refuses backout after a second community has ever existed, even if later deleted. The read-only diagnostic cannot authorize or perform a restore.
+- Targeted PostgreSQL migration/backout verification passed 9/9. A durable-history mutation failed 1/6 with the latch removed and passed 6/6 after restoration. A real PostgreSQL 17 dump/restore rehearsal preserved every original public table row and matching file bytes while correctly excluding a post-backup write. Independent review accepted the exact Task 1.4 commit with 0 Important and 0 Nit findings.
+- Next task: tenant-qualified HTTP authorization and account-wide recovery complete Tasks 2.x before any multi-community rollout.
