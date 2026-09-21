@@ -63,7 +63,7 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
           managedRow.lease_expired;
         if (!queue.rows[0] && managedRow?.state !== 'pending_delete' && !staleReservation) return;
         const referenced = await client.query(
-          'SELECT 1 FROM attachments WHERE blob_key=$1 UNION ALL SELECT 1 FROM export_archives WHERE blob_key=$1 LIMIT 1',
+          'SELECT 1 FROM attachments WHERE blob_key=$1 UNION ALL SELECT 1 FROM export_archives WHERE blob_key=$1 UNION ALL SELECT 1 FROM communities WHERE icon_blob_key=$1 LIMIT 1',
           [candidate.blob_key]
         );
         if (referenced.rowCount) {

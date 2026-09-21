@@ -10,6 +10,7 @@
  * @module shared/community-wire
  */
 import { z } from 'zod';
+import { CommunityAdminLifecycleSchema } from './community-admin-wire.js';
 import { HANDLE_PATTERN } from './handle.js';
 
 const id = z.string().min(1);
@@ -59,6 +60,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   exportArchive: '/api/v1/exports/:id',
   agents: '/api/v1/agents',
   me: '/api/v1/me',
+  connectionAccess: '/api/v1/me/connection-access',
   members: '/api/v1/members',
   authOptions: '/api/v1/auth-options',
   memberRole: '/api/v1/members/:id/role',
@@ -99,7 +101,7 @@ export const CommunityWireBootstrapClaimResponseSchema = z.strictObject({
 
 /** Host-visible lifecycle metadata contains no membership or content data. */
 export const CommunityWireHostCommunitySchema = CommunityWireCommunitySchema.extend({
-  lifecycle: z.enum(['pending_owner', 'active', 'suspended']),
+  lifecycle: CommunityAdminLifecycleSchema,
 });
 /** Communities visible to a host operator as operational metadata. */
 export const CommunityWireHostCommunityListResponseSchema = z.strictObject({
@@ -110,7 +112,7 @@ export const CommunityWireMembershipSummarySchema = z.strictObject({
   communityId: id,
   name: z.string().min(1),
   description: z.string().nullable(),
-  lifecycle: z.enum(['pending_owner', 'active', 'suspended']),
+  lifecycle: CommunityAdminLifecycleSchema,
   memberId: id,
   displayName: z.string().min(1),
   role: z.enum(['owner', 'admin', 'member']),
@@ -423,12 +425,84 @@ export const CommunityWirePairingExchangeRequestSchema = z.strictObject({
   code: id,
   verifier: id,
 });
+/** Effective operations granted to one local installation credential. */
+export const CommunityWireGrantCapabilitiesSchema = z.strictObject({
+  read: z.boolean(),
+  post: z.boolean(),
+  enrollAgent: z.boolean(),
+  stream: z.boolean(),
+});
+/** Current effective access and the most recently verified Community authority. */
+export const CommunityConnectionAccessSchema = z
+  .strictObject({
+    state: z.enum(['verified', 'unverified', 'reconnect-required']),
+    effective: CommunityWireGrantCapabilitiesSchema,
+    lastKnown: z
+      .strictObject({
+        lifecycle: z.enum(['active', 'archived', 'suspended', 'deletion_pending']),
+        capabilities: CommunityWireGrantCapabilitiesSchema,
+        verifiedAt: timestamp,
+      })
+      .nullable(),
+  })
+  .superRefine((access, context) => {
+    const effective = Object.values(access.effective);
+    if (access.state !== 'verified' && effective.some(Boolean)) {
+      context.addIssue({ code: 'custom', message: 'Only verified access can be effective.' });
+    }
+    if (access.state === 'verified' && !access.lastKnown) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Verified access requires a verification result.',
+      });
+    }
+    if (
+      access.state === 'verified' &&
+      access.lastKnown &&
+      (access.effective.read !== access.lastKnown.capabilities.read ||
+        access.effective.post !== access.lastKnown.capabilities.post ||
+        access.effective.enrollAgent !== access.lastKnown.capabilities.enrollAgent ||
+        access.effective.stream !== access.lastKnown.capabilities.stream)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Verified effective access must match the verification result.',
+      });
+    }
+    if (
+      access.lastKnown?.lifecycle === 'archived' &&
+      (!access.lastKnown.capabilities.read ||
+        access.lastKnown.capabilities.post ||
+        access.lastKnown.capabilities.enrollAgent ||
+        access.lastKnown.capabilities.stream)
+    ) {
+      context.addIssue({ code: 'custom', message: 'Archived access is history-only.' });
+    }
+    if (
+      (access.lastKnown?.lifecycle === 'suspended' ||
+        access.lastKnown?.lifecycle === 'deletion_pending') &&
+      Object.values(access.lastKnown.capabilities).some(Boolean)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Suspended or deleting access has no effective capabilities.',
+      });
+    }
+  });
+/** Current effective access and the most recently verified Community authority. */
+export type CommunityConnectionAccess = z.infer<typeof CommunityConnectionAccessSchema>;
+/** Bearer-bound access for the exact installation grant making the request. */
+export const CommunityWireConnectionAccessResponseSchema = z.strictObject({
+  access: CommunityConnectionAccessSchema,
+});
 /** A grant description the member can inspect and revoke without seeing its token. */
 export const CommunityWireGrantSchema = z.strictObject({
   id,
   memberId: id,
   installName: z.string().min(1).max(120),
   scopes: z.array(z.enum(['read', 'post', 'enroll-agent'])),
+  lifecycle: z.enum(['active', 'archived']),
+  capabilities: CommunityWireGrantCapabilitiesSchema,
   createdAt: timestamp,
 });
 /** Current member's local-install grants. */
@@ -466,9 +540,14 @@ export const CommunityWireAgentListResponseSchema = z.strictObject({
 export const CommunityWireOwnerTransferRequestSchema = z.strictObject({
   successorMemberId: id,
   password: id,
+  lifecycleVersion: z.int().positive(),
 });
 /** Transfer receipt with the new current owner identity. */
-export const CommunityWireOwnerTransferResponseSchema = z.strictObject({ ownerMemberId: id });
+export const CommunityWireOwnerTransferResponseSchema = z.strictObject({
+  communityId: id,
+  ownerMemberId: id,
+  lifecycleVersion: z.int().positive(),
+});
 /** Owner export requires current password confirmation. */
 export const CommunityWireOwnerExportRequestSchema = z.strictObject({ password: id });
 /** Archive manifest metadata; archive bytes use an authorized download stream. */
@@ -493,6 +572,9 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'RATE_LIMITED',
   'COMMUNITY_SELECTION_REQUIRED',
   'COMMUNITY_UNAVAILABLE',
+  'COMMUNITY_ARCHIVED',
+  'COMMUNITY_SUSPENDED',
+  'COMMUNITY_DELETION_PENDING',
   'UNAVAILABLE',
 ]);
 /** Public error response; no database cause, credential or path is serialized. */

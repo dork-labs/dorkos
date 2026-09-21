@@ -1130,16 +1130,18 @@ describe('owner foundation over real HTTP and Postgres', () => {
       )
     ).rows[0]!;
     await pool.query(
-      "UPDATE communities SET lifecycle='suspended',lifecycle_version=lifecycle_version+1 WHERE id=$1",
+      `UPDATE communities SET lifecycle='suspended',suspended_from_state='active',suspended_at=now(),
+       lifecycle_version=lifecycle_version+1 WHERE id=$1`,
       [member.community_id]
     );
     try {
       await expect(
         transaction(pool, (client) => lockChannel(client, channelId, member))
-      ).rejects.toMatchObject({ code: 'COMMUNITY_UNAVAILABLE' });
+      ).rejects.toMatchObject({ code: 'COMMUNITY_SUSPENDED' });
     } finally {
       await pool.query(
-        "UPDATE communities SET lifecycle='active',lifecycle_version=lifecycle_version+1 WHERE id=$1",
+        `UPDATE communities SET lifecycle='active',suspended_from_state=NULL,suspended_at=NULL,
+         lifecycle_version=lifecycle_version+1 WHERE id=$1`,
         [member.community_id]
       );
     }

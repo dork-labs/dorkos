@@ -4,6 +4,7 @@ import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { HaltRoomResponseSchema } from '@dorkos/shared/room-schemas';
 import type { CommunityConnection, CommunityRef } from '@dorkos/shared/community-adapter';
+import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => {
@@ -35,6 +36,26 @@ const fixture = vi.hoisted(() => {
     attachments: [],
   };
   const uploadedBytes: Uint8Array[][] = [];
+  const capabilities = { read: true, post: true, enrollAgent: true, stream: true };
+  const access = {
+    state: 'verified' as const,
+    effective: capabilities,
+    lastKnown: {
+      lifecycle: 'active' as const,
+      capabilities,
+      verifiedAt: '2026-09-21T00:00:00.000Z',
+    },
+  };
+  const connectionStatus = vi.fn<() => Promise<CommunityConnectionDescriptor>>(async () => ({
+    ref,
+    remoteCommunityId: 'community-a',
+    label: 'Community A',
+    pinnedOrigin: 'https://community.example',
+    connectedHumanMemberId: 'human-a',
+    status: 'connected' as const,
+    expiresAt: null,
+    access,
+  }));
   const adapter = {
     connect: vi.fn<() => Promise<CommunityConnection>>(async () => ({
       status: 'connected' as const,
@@ -118,6 +139,8 @@ const fixture = vi.hoisted(() => {
     adapter,
     uploadedBytes,
     lifecycle,
+    access,
+    connectionStatus,
     retryResult: 'retried' as 'retried' | 'queued' | 'missing' | 'terminal' | 'in-flight',
     retryCalls: [] as Array<{
       communityRef: string;
@@ -133,7 +156,9 @@ vi.mock('../community-connections.js', () => ({
 }));
 vi.mock('../../services/communities/remote/state.js', () => ({
   getRemoteCommunityAdapter: () => fixture.adapter,
-  getRemoteConnectionStore: () => ({ get: async () => ({ remoteCommunityId: 'community-a' }) }),
+  getRemotePairingService: () => ({
+    status: fixture.connectionStatus,
+  }),
   getRemoteCommunityOriginIdempotencyKey: (
     ref: string,
     roomId: string,
@@ -227,12 +252,40 @@ async function* failingRoomStream(error: Error): AsyncGenerator<never, void, unk
   throw error;
 }
 
+function connectionWithAccess(
+  access: CommunityConnectionDescriptor['access']
+): CommunityConnectionDescriptor {
+  return {
+    ref: fixture.ref,
+    remoteCommunityId: 'community-a',
+    label: 'Community A',
+    pinnedOrigin: 'https://community.example',
+    connectedHumanMemberId: 'human-a',
+    status: 'connected',
+    expiresAt: null,
+    access,
+  };
+}
+
 describe('qualified remote community writes and live projections', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fixture.uploadedBytes.length = 0;
     fixture.retryResult = 'retried';
     fixture.retryCalls.length = 0;
+  });
+
+  it('projects the exact verified connection access on every listed room', async () => {
+    const response = await request(testServer).get(`/api/communities/${fixture.ref}/rooms`);
+    expect(response.status).toBe(200);
+    expect(response.body.rooms).toEqual([
+      expect.objectContaining({
+        roomId: 'room-a',
+        readable: true,
+        writable: true,
+        access: fixture.access,
+      }),
+    ]);
   });
 
   it('distinguishes a rejected remote grant from an unavailable community', async () => {
@@ -246,13 +299,161 @@ describe('qualified remote community writes and live projections', () => {
   });
 
   it('keeps a temporary connection failure distinct from a rejected grant', async () => {
-    fixture.adapter.connect.mockResolvedValueOnce({
-      status: 'unreachable',
-      error: 'The community returned HTTP 503.',
+    fixture.connectionStatus.mockResolvedValueOnce({
+      ref: fixture.ref,
+      remoteCommunityId: 'community-a',
+      label: 'Community A',
+      pinnedOrigin: 'https://community.example',
+      connectedHumanMemberId: 'human-a',
+      status: 'connected',
+      expiresAt: null,
+      access: {
+        state: 'unverified',
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: fixture.access.lastKnown,
+      },
     });
     const response = await request(testServer).get(`/api/communities/${fixture.ref}/rooms`);
     expect(response.status).toBe(502);
     expect(response.body).toEqual({ error: 'Community unavailable.' });
+  });
+
+  it('refuses a live stream when verified access is read-only', async () => {
+    fixture.connectionStatus.mockResolvedValueOnce({
+      ref: fixture.ref,
+      remoteCommunityId: 'community-a',
+      label: 'Community A',
+      pinnedOrigin: 'https://community.example',
+      connectedHumanMemberId: 'human-a',
+      status: 'connected',
+      expiresAt: null,
+      access: {
+        state: 'verified',
+        effective: { read: true, post: false, enrollAgent: false, stream: false },
+        lastKnown: {
+          lifecycle: 'archived',
+          capabilities: { read: true, post: false, enrollAgent: false, stream: false },
+          verifiedAt: '2026-09-21T00:00:00.000Z',
+        },
+      },
+    });
+    const response = await request(testServer).get(
+      `/api/communities/${fixture.ref}/rooms/room-a/events`
+    );
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('COMMUNITY_ACCESS_DENIED');
+    expect(fixture.adapter.subscribeRoom).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: 'temporarily unverified',
+      status: 502,
+      access: {
+        state: 'unverified' as const,
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: fixture.access.lastKnown,
+      },
+    },
+    {
+      label: 'verified archived read-only',
+      status: 403,
+      access: {
+        state: 'verified' as const,
+        effective: { read: true, post: false, enrollAgent: false, stream: false },
+        lastKnown: {
+          lifecycle: 'archived' as const,
+          capabilities: { read: true, post: false, enrollAgent: false, stream: false },
+          verifiedAt: '2026-09-21T00:00:00.000Z',
+        },
+      },
+    },
+  ])('blocks every disallowed live operation before adapter I/O when $label', async (gate) => {
+    const actions = [
+      () => request(testServer).post(`/api/communities/${fixture.ref}/rooms/room-a/membership`),
+      () => request(testServer).delete(`/api/communities/${fixture.ref}/rooms/room-a/membership`),
+      () =>
+        request(testServer)
+          .post(`/api/communities/${fixture.ref}/rooms/room-a/entries`)
+          .send({ text: 'blocked', idempotencyKey: 'blocked-post' }),
+      () =>
+        request(testServer)
+          .post(`/api/communities/${fixture.ref}/rooms/room-a/attachments`)
+          .set('content-type', 'application/octet-stream')
+          .set('x-file-name', 'blocked.txt')
+          .set('x-file-content-type', 'text/plain')
+          .set('x-file-size', '1')
+          .set('idempotency-key', 'blocked-upload')
+          .send(Buffer.from('x')),
+      () =>
+        request(testServer).post(
+          `/api/communities/${fixture.ref}/rooms/room-a/deliveries/blocked/retry`
+        ),
+      () => request(testServer).get(`/api/communities/${fixture.ref}/rooms/room-a/events`),
+      () => request(testServer).get(`/api/communities/${fixture.ref}/agents`),
+      () =>
+        request(testServer).post(`/api/communities/${fixture.ref}/agents/mesh-manifest-a/enroll`),
+      () =>
+        request(testServer).post(
+          `/api/communities/${fixture.ref}/rooms/room-a/agents/local-agent-a/membership`
+        ),
+      () =>
+        request(testServer).delete(
+          `/api/communities/${fixture.ref}/rooms/room-a/agents/local-agent-a/membership`
+        ),
+    ];
+    if (gate.status === 502) {
+      actions.push(
+        () => request(testServer).get(`/api/communities/${fixture.ref}/rooms/room-a/entries`),
+        () => request(testServer).get(`/api/communities/${fixture.ref}/rooms/room-a/read-cursor`),
+        () =>
+          request(testServer)
+            .put(`/api/communities/${fixture.ref}/rooms/room-a/read-cursor`)
+            .send({ cursor: 'cursor-a' }),
+        () => request(testServer).get(`/api/communities/${fixture.ref}/rooms/room-a/members`),
+        () =>
+          request(testServer).get(
+            `/api/communities/${fixture.ref}/rooms/room-a/attachments/attachment-a`
+          )
+      );
+    }
+
+    for (const action of actions) {
+      vi.clearAllMocks();
+      fixture.retryCalls.length = 0;
+      fixture.connectionStatus.mockResolvedValueOnce(connectionWithAccess(gate.access));
+      const response = await action();
+      expect(response.status).toBe(gate.status);
+      expect(
+        Object.values(fixture.adapter).some(
+          (method) => vi.isMockFunction(method) && method.mock.calls.length > 0
+        )
+      ).toBe(false);
+      expect(fixture.retryCalls).toEqual([]);
+      expect(fixture.lifecycle.revokeEnrollment).not.toHaveBeenCalled();
+      expect(fixture.lifecycle.leaveRoom).not.toHaveBeenCalled();
+    }
+  });
+
+  it('fences a local agent enrollment during an outage without remote cleanup', async () => {
+    fixture.connectionStatus.mockResolvedValueOnce(
+      connectionWithAccess({
+        state: 'unverified',
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: fixture.access.lastKnown,
+      })
+    );
+    const response = await request(testServer).delete(
+      `/api/communities/${fixture.ref}/agents/local-agent-a`
+    );
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ localRevoked: true, remoteRevoked: false });
+    expect(fixture.lifecycle.revokeEnrollment).toHaveBeenCalledWith(
+      fixture.ref,
+      'local-agent-a',
+      'owner-a'
+    );
+    expect(fixture.adapter.revokeAgent).not.toHaveBeenCalled();
   });
 
   it('posts only as the connected human and does not attach agent-only origin metadata', async () => {

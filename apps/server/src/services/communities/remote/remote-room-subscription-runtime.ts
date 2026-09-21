@@ -10,6 +10,7 @@ import type {
   CommunityRef,
   CommunityReadContext,
 } from '@dorkos/shared/community-adapter';
+import type { CommunityConnectionAccess } from '@dorkos/shared/community-wire';
 import {
   remoteAuthorOf,
   remoteOriginIdempotencyKeyOf,
@@ -43,6 +44,11 @@ export interface RemoteRoomSubscriptionRuntimeDeps {
     communityRef: CommunityRef,
     ownerAuthorId: string
   ) => RemoteRoomSubscriptionAdapter | null;
+  /** Refresh the exact owner's personal grant before any enrolled-agent remote I/O. */
+  resolveConnectionAccess: (
+    communityRef: CommunityRef,
+    ownerAuthorId: string
+  ) => Promise<CommunityConnectionAccess | null>;
   resolveLocalAgentAuthor: (localAgentId: string) => string | null;
   now?: () => number;
   retryMs?: number;
@@ -269,9 +275,22 @@ export class RemoteRoomSubscriptionRuntime {
     const membershipVersion = this.membershipVersion;
     const desired = new Map<string, DesiredSubscription>();
     for (const connection of this.deps.enrollments.activeConnections()) {
-      const adapter = this.deps.adapters(connection.communityRef, connection.ownerAuthorId);
-      if (!adapter) continue;
       try {
+        const access = await this.deps.resolveConnectionAccess(
+          connection.communityRef,
+          connection.ownerAuthorId
+        );
+        if (
+          access?.state !== 'verified' ||
+          !access.effective.read ||
+          !access.effective.enrollAgent ||
+          !access.effective.stream
+        ) {
+          this.deps.bridge.markStale(connection.communityRef, connection.ownerAuthorId);
+          continue;
+        }
+        const adapter = this.deps.adapters(connection.communityRef, connection.ownerAuthorId);
+        if (!adapter) continue;
         const rooms = new Map<string, DiscoveredRoom>();
         for (const enrollment of this.deps.enrollments.activeForOwner(
           connection.communityRef,

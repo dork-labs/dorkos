@@ -7,17 +7,28 @@
  */
 import { z } from 'zod';
 import { CommunityRefSchema } from './community-adapter.js';
+import { CommunityConnectionAccessSchema } from './community-wire.js';
 
 /** A community connection visible to its local install owner. */
-export const CommunityConnectionDescriptorSchema = z.strictObject({
-  ref: CommunityRefSchema,
-  remoteCommunityId: z.string().min(1),
-  label: z.string().min(1),
-  pinnedOrigin: z.url(),
-  connectedHumanMemberId: z.string().min(1).nullable(),
-  status: z.enum(['pending', 'connected', 'reconnect-required']),
-  expiresAt: z.iso.datetime().nullable(),
-});
+export const CommunityConnectionDescriptorSchema = z
+  .strictObject({
+    ref: CommunityRefSchema,
+    remoteCommunityId: z.string().min(1),
+    label: z.string().min(1),
+    pinnedOrigin: z.url(),
+    connectedHumanMemberId: z.string().min(1).nullable(),
+    status: z.enum(['pending', 'connected', 'reconnect-required']),
+    expiresAt: z.iso.datetime().nullable(),
+    access: CommunityConnectionAccessSchema.nullable(),
+  })
+  .superRefine((connection, context) => {
+    if (connection.status === 'pending' && connection.access !== null) {
+      context.addIssue({ code: 'custom', message: 'Pending connections cannot have access.' });
+    }
+    if (connection.status !== 'pending' && connection.access === null) {
+      context.addIssue({ code: 'custom', message: 'Established connections require access.' });
+    }
+  });
 /** Browser-safe connection descriptor. */
 export type CommunityConnectionDescriptor = z.infer<typeof CommunityConnectionDescriptorSchema>;
 
