@@ -112,7 +112,7 @@ const fixture = vi.hoisted(() => {
     adapter,
     uploadedBytes,
     lifecycle,
-    retryResult: 'retried' as 'retried' | 'missing' | 'terminal' | 'in-flight',
+    retryResult: 'retried' as 'retried' | 'queued' | 'missing' | 'terminal' | 'in-flight',
     retryCalls: [] as Array<{
       communityRef: string;
       remoteRoomId: string;
@@ -149,7 +149,7 @@ vi.mock('../../services/communities/remote/state.js', () => ({
         attachments: [],
         state: 'pending',
         failure: null,
-        retryable: fixture.retryResult !== 'in-flight',
+        retryable: fixture.retryResult !== 'in-flight' && fixture.retryResult !== 'queued',
       },
     ],
   }),
@@ -531,7 +531,7 @@ describe('qualified remote community writes and live projections', () => {
     expect(malformed.status).toBe(400);
   });
 
-  it('treats an already in-flight delivery as an idempotent accepted retry', async () => {
+  it('treats an already in-flight or queued delivery as an idempotent accepted retry', async () => {
     fixture.retryResult = 'in-flight';
     const response = await request(testServer).post(
       `/api/communities/${fixture.ref}/rooms/room-a/deliveries/delivery-retry-a/retry`
@@ -556,6 +556,17 @@ describe('qualified remote community writes and live projections', () => {
         idempotencyKey: 'delivery-retry-a',
       },
     ]);
+
+    fixture.retryResult = 'queued';
+    const queued = await request(testServer).post(
+      `/api/communities/${fixture.ref}/rooms/room-a/deliveries/delivery-retry-a/retry`
+    );
+    expect(queued.status).toBe(202);
+    expect(queued.body).toMatchObject({
+      community: fixture.ref,
+      roomId: 'room-a',
+      deliveries: [{ idempotencyKey: 'delivery-retry-a', state: 'pending', retryable: false }],
+    });
 
     fixture.retryResult = 'terminal';
     const terminal = await request(testServer).post(

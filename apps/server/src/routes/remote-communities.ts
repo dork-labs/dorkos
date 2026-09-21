@@ -449,7 +449,7 @@ export function createRemoteCommunitiesRouter(): Router {
       if (result === 'terminal')
         return res.status(409).json({ error: 'Delivery cannot be retried.' });
       res
-        .status(result === 'in-flight' ? 202 : 200)
+        .status(result === 'in-flight' || result === 'queued' ? 202 : 200)
         .json(getRemoteCommunityDeliverySnapshot(ref.data, roomId.data, owner));
     } catch (error) {
       fail(res, error);
