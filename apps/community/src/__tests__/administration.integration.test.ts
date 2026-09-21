@@ -170,6 +170,30 @@ afterAll(async () => {
   if (storagePath) await rm(storagePath, { recursive: true, force: true });
 });
 
+it('rejects suspended public discovery on qualified and singleton routes', async () => {
+  const path = `/api/v1/host/communities/${communityId}/lifecycle`;
+  const suspended = await jsonRequest(path, 'PATCH', { action: 'suspend', lifecycleVersion });
+  expect(suspended.status).toBe(200);
+  lifecycleVersion = (await suspended.json()).lifecycleVersion;
+  try {
+    for (const route of ['/api/v1/community', `/api/v1/communities/${communityId}/community`]) {
+      const response = await request(route);
+      expect(response.status, route).toBe(503);
+      expect(await response.json()).toEqual({
+        code: 'COMMUNITY_SUSPENDED',
+        message: 'This community is suspended.',
+      });
+    }
+    expect(
+      (await request('/api/v1/memberships', { headers: { cookie: ownerCookie } })).status
+    ).toBe(200);
+  } finally {
+    const resumed = await jsonRequest(path, 'PATCH', { action: 'resume', lifecycleVersion });
+    expect(resumed.status).toBe(200);
+    lifecycleVersion = (await resumed.json()).lifecycleVersion;
+  }
+});
+
 it('creates a pending tenant idempotently and rotates its private owner claim', async () => {
   const body = {
     idempotencyKey: 'create-second',
