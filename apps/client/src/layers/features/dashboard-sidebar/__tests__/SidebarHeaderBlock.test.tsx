@@ -44,7 +44,7 @@ vi.mock('@/layers/entities/team', () => ({
 const mockOpenSettings = vi.fn();
 const mockOpenProfile = vi.fn();
 const mockOpenConnections = vi.fn();
-const mockNavigate = vi.fn(() => Promise.resolve());
+const mockNavigate = vi.fn((_options: { search?: { community?: string } }) => Promise.resolve());
 const mockResolveCommunityNavigation = vi.fn();
 const mockGetCommunityNavigation = vi.fn();
 const mockListRemoteCommunityRooms = vi.fn();

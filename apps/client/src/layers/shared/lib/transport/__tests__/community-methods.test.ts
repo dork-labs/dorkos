@@ -11,6 +11,7 @@ const connection = {
   connectedHumanMemberId: null,
   status: 'pending',
   access: null,
+  attention: null,
   expiresAt: '2026-09-16T18:00:00.000Z',
 };
 afterEach(() => vi.unstubAllGlobals());
