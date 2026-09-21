@@ -206,6 +206,31 @@ describe('startChildProcessServer (isolation seam)', () => {
     await booted.dispose();
   });
 
+  it('injects no ANTHROPIC_MODEL on a Codex boot, so the sandbox names no model that did not answer', async () => {
+    // `ANTHROPIC_MODEL` is claude-code's selector and nothing else's. The codex
+    // environment projection strips it (`runtime-environment-catalog.ts`), so
+    // setting it here would leave a Haiku id in a retained sandbox that no code
+    // read and every reader would be misled by — the environment half of the
+    // same defect that put `claude-haiku-4-5` in a Codex run's `results.json`
+    // (DOR-2207).
+    const baseUrl = await startHealthyServer();
+    const fake = fakeLaunched(baseUrl);
+
+    const booted = await startChildProcessServer({
+      dorkHome: '/tmp/sandbox-dork',
+      runtime: 'codex',
+      model: DEFAULT_CHEAP_MODEL,
+      env: { ANTHROPIC_API_KEY: 'sk-test' },
+      launcher: fake.launcher,
+      readyTimeoutMs: 5_000,
+    });
+
+    expect(fake.spec()?.env.ANTHROPIC_MODEL).toBeUndefined();
+    // The credential still travels: this is about the model selector alone.
+    expect(fake.spec()?.env.ANTHROPIC_API_KEY).toBe('sk-test');
+    await booted.dispose();
+  });
+
   it('rejects — and kills the launch — when the server exits before becoming healthy', async () => {
     const baseUrl = await closedBaseUrl();
     const fake = fakeLaunched(baseUrl, {

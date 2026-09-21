@@ -95,6 +95,7 @@ export const CredentialSourceSchema = z.enum([
   'claude-oauth-token',
   'local-claude-login',
   'openrouter-api-key',
+  'codex-api-key',
 ]);
 
 /** Inferred type for {@link CredentialSourceSchema}. */
@@ -136,6 +137,36 @@ export const OPENROUTER_API_KEY_VAR = 'OPENROUTER_API_KEY';
  * `packages/evals/src/runner/__tests__/harness-server.test.ts`.
  */
 export const PAID_PROVIDER_OPT_IN_VAR = 'DORKOS_EVALS_PAID_PROVIDER';
+
+/**
+ * The key variable a `--runtime codex` leg reads, PINNED for the same reason
+ * {@link OPENROUTER_API_KEY_VAR} is, and kept apart from it because the two bill
+ * different accounts: Codex bills OpenAI, and a person who typed
+ * `--runtime codex` must never be told to set an OpenRouter key.
+ *
+ * `CODEX_API_KEY` rather than `OPENAI_API_KEY` because it is the name the
+ * installed `@openai/codex-sdk` (0.154.0) writes into the CLI's environment
+ * (`dist/index.js:258`), the name the runtime's own dependency check tells a
+ * person to set (`services/runtimes/codex/check-dependencies.ts:161`), and the
+ * name the codex auth profile inherits into a turn's child process
+ * (`services/runtimes/shared/runtime-environment-catalog.ts:138`).
+ *
+ * Deliberately NOT listed in `turbo.json`, exactly like its OpenRouter sibling.
+ */
+export const CODEX_API_KEY_VAR = 'CODEX_API_KEY';
+
+/**
+ * The deliberate-act flag a `--runtime codex` leg needs BESIDE
+ * {@link CODEX_API_KEY_VAR}.
+ *
+ * Its own flag, not a shared one: the eval sandbox pins `CODEX_HOME` to an empty
+ * directory, so the operator's ChatGPT login is invisible and a Codex leg can
+ * only reach OpenAI through a forwarded key. That is a bill on a different
+ * account from the OpenRouter one, and the money rule is per path — the flag is
+ * the decision, the key is the instrument, and a key alone arms nothing
+ * (DOR-2207).
+ */
+export const PAID_CODEX_OPT_IN_VAR = 'DORKOS_EVALS_PAID_CODEX';
 
 /**
  * The provider id the `real-provider` tier fronts today — the key into the
@@ -181,6 +212,7 @@ const CREDENTIAL_SOURCE_LABELS: Record<CredentialSource, string> = {
   'local-claude-login':
     'the Claude sign-in on this machine (billed to your own Claude subscription)',
   'openrouter-api-key': `the ${OPENROUTER_API_KEY_VAR} environment variable (billed to that OpenRouter account)`,
+  'codex-api-key': `the ${CODEX_API_KEY_VAR} environment variable (billed to that OpenAI account)`,
 };
 
 /**
@@ -260,6 +292,20 @@ export interface EvalSandbox {
   projectCwd: string;
   /** Fresh temporary `DORK_HOME` the runtime and oracles read/write. */
   dorkHome: string;
+  /**
+   * The runtime every session in this eval binds to, as the runner resolved it
+   * — the same value `RunEvalOptions.runtime` carries, handed to the sandbox so
+   * a case's `seed` can read it. Absent when the run resolved no runtime.
+   *
+   * A seed reads it because some state a case lays down before the boot DECIDES
+   * which runtime serves a turn: a room turn's session is minted by the room
+   * runner, so the only input `resolveAgentRuntimeType` reads is the seeded
+   * agent manifest on disk (file-first, ADR-0043). Without this field a rooms
+   * case could only ever be measured on whatever its seed hard-coded — which is
+   * exactly how `--suite rooms --runtime opencode` ran every turn on
+   * claude-code (DOR-2207).
+   */
+  runtime?: EvalRuntime;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

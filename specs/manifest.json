@@ -3063,6 +3063,14 @@
       "status": "specified",
       "project": "Community Membership Journeys",
       "linearIssue": "DOR-2179"
+    },
+    {
+      "id": "260920-230219",
+      "slug": "evals-runtime-legs",
+      "title": "The eval harness runs a rooms case on the runtime you asked for",
+      "created": "2026-09-20",
+      "status": "implemented",
+      "linearIssue": "DOR-2207"
     }
   ]
 }

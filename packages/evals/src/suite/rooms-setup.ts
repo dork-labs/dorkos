@@ -92,10 +92,21 @@ export async function seedRoomAgents(
       name: agent.slug,
       displayName: agent.displayName,
       description: agent.description,
-      // A runtime this harness does not register, so the session the room binds
-      // runs on the server DEFAULT — `test-mode` in-process, claude-code on the
-      // credentialed tier. The same manifest therefore drives both tiers.
-      runtime: 'claude-code',
+      // THE ONE INPUT THAT DECIDES WHICH RUNTIME SERVES THIS AGENT'S ROOM TURNS.
+      // A room turn's session is minted by the room runner, not by the harness,
+      // so there is no request for `--runtime` to ride; `resolveTurnRuntimeType`
+      // → `resolveAgentRuntimeType` reads this manifest and nothing else. Until
+      // DOR-2207 it said `claude-code` unconditionally, on a stale belief that
+      // the harness registers no such runtime and the server default would win —
+      // true on `test-mode`, false on every credentialed tier, where it pinned
+      // the whole rooms suite to claude-code and made `--runtime opencode` run
+      // turns with no sign-in at all inside the sandbox's empty CLAUDE_CONFIG_DIR.
+      //
+      // The fallback stays `'claude-code'` rather than `undefined` because that
+      // is the config schema's own default — the runtime a credentialed sandbox
+      // boots with — and because on `test-mode` none of the three is registered,
+      // so the server default (`test-mode`) wins whatever this says.
+      runtime: sandbox.runtime ?? 'claude-code',
       capabilities: [],
       behavior: { responseMode: agent.responseMode ?? 'engaged' },
       registeredAt: new Date().toISOString(),

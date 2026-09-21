@@ -19,7 +19,7 @@ import { mkdtemp, mkdir, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { seedControlledClaudeConfig } from './claude-config.js';
-import type { EvalSandbox } from '../types.js';
+import type { EvalRuntime, EvalSandbox } from '../types.js';
 
 /**
  * Prefix for every sandbox temp directory, so a stray one is identifiable — and
@@ -57,6 +57,12 @@ export interface CreateSandboxOptions {
    * to true.
    */
   retainOnFailure?: boolean;
+  /**
+   * The runtime the run named (`--runtime`), passed straight through to
+   * {@link EvalSandbox.runtime} so a case's seed can lay down state that decides
+   * which runtime serves its turns. Omitted on a run that named none.
+   */
+  runtime?: EvalRuntime;
 }
 
 /**
@@ -64,7 +70,8 @@ export interface CreateSandboxOptions {
  * a temp Claude config dir, each under the OS temp dir. All three directories
  * exist on return.
  *
- * @param opts - Retention behavior; see {@link CreateSandboxOptions}.
+ * @param opts - Retention behavior and the run's runtime; see
+ *   {@link CreateSandboxOptions}.
  * @returns A {@link Sandbox} with its three paths and a `cleanup` handle.
  */
 export async function createSandbox(opts: CreateSandboxOptions = {}): Promise<Sandbox> {
@@ -86,6 +93,7 @@ export async function createSandbox(opts: CreateSandboxOptions = {}): Promise<Sa
   return {
     dorkHome,
     projectCwd,
+    ...(opts.runtime ? { runtime: opts.runtime } : {}),
     claudeConfigDir,
     async cleanup(cleanupOpts = {}) {
       if (retainOnFailure && cleanupOpts.failed) return;

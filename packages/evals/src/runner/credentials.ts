@@ -35,16 +35,22 @@
  * portable credential and cannot use the local sign-in, and the fix is never to
  * mount host credentials into a container that runs model-driven code.
  *
- * ## A fourth source, for a different bill entirely
+ * ## Two more sources, for different bills entirely
  *
- * {@link resolvePaidProviderCredential} answers a separate question for the
- * `real-provider` tier: **may this run spend on an external provider, and with
- * what?** It is kept apart from the three above rather than appended to them,
- * because the three are all ways of reaching Anthropic — and any of them can be
- * true on a developer machine by accident. This one bills an OpenRouter account
- * and therefore needs TWO deliberate acts: the flag AND the key. Never fold it
- * into the ladder above; a tier that can be armed by a stray environment
- * variable is not gated.
+ * {@link resolvePaidProviderCredential} answers a separate question: **may this
+ * run spend outside a Claude subscription, and with what?** It is kept apart
+ * from the three above rather than appended to them, because the three are all
+ * ways of reaching Anthropic — and any of them can be true on a developer
+ * machine by accident. These bill somebody else's account and therefore need TWO
+ * deliberate acts each: the flag AND the key. Never fold them into the ladder
+ * above; a tier that can be armed by a stray environment variable is not gated.
+ *
+ * There are two such paths, one per bill, and {@link paidPathFor} says which one
+ * a run reaches: OpenRouter (the `real-provider` tier, `--runtime opencode`, or
+ * any named provider) and Codex (`--runtime codex`, which bills OpenAI). They
+ * are separate gates rather than one, because a person who typed
+ * `--runtime codex` must be told to set `CODEX_API_KEY` — naming the other
+ * path's key would send them to the wrong account entirely.
  *
  * ## Fail-closed
  *
@@ -64,8 +70,10 @@
 import { hasLocalClaudeLogin } from '@dorkos/server/services/runtimes/claude-code/auth-probe';
 import {
   API_KEY_VAR,
+  CODEX_API_KEY_VAR,
   OAUTH_TOKEN_VAR,
   OPENROUTER_API_KEY_VAR,
+  PAID_CODEX_OPT_IN_VAR,
   PAID_PROVIDER_OPT_IN_VAR,
   type CredentialSource,
 } from '../types.js';
@@ -163,7 +171,58 @@ export function noCredentialMessage(tier: string): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Whether somebody DECIDED to spend on an external provider in this process.
+ * A paid path a run can reach: which account gets billed, and therefore which
+ * flag+key pair gates it.
+ *
+ * One per BILL, never one per tier or per runtime. `openrouter` is reached by
+ * the `real-provider` tier, by `--runtime opencode` (the only runtime that
+ * fronts arbitrary providers — ADR-0308 + ADR-0315) and by any run that names a
+ * provider. `codex` is reached by `--runtime codex`, which bills OpenAI: the
+ * sandbox pins `CODEX_HOME` to an empty directory, so the operator's ChatGPT
+ * login is invisible and the only way in is a forwarded key.
+ */
+export type PaidPath = 'openrouter' | 'codex';
+
+/** The pinned pair, the credential, and the words a refusal uses, for one path. */
+interface PaidPathSpec {
+  /** The deliberate-act flag this path needs. */
+  optInVar: string;
+  /** The pinned key variable this path reads. */
+  keyVar: string;
+  /** The source a resolved credential on this path records. */
+  source: CredentialSource;
+  /** Whose account pays, in the words the refusal says it in. */
+  bill: string;
+  /** What the run has to reach over the network, for the docker refusal. */
+  reaches: string;
+}
+
+/**
+ * Every paid path, with its pinned pair. The names are LITERALS here, never
+ * caller input, for the reason the module docstring gives: a run that let its
+ * caller name which secret to read could be pointed at any secret on the machine
+ * and have it shipped to a third party as an auth header. A new paid path is a
+ * new entry here plus an arm in {@link paidPathFor} — never a new parameter.
+ */
+const PAID_PATHS: Record<PaidPath, PaidPathSpec> = {
+  openrouter: {
+    optInVar: PAID_PROVIDER_OPT_IN_VAR,
+    keyVar: OPENROUTER_API_KEY_VAR,
+    source: 'openrouter-api-key',
+    bill: 'an OpenRouter account',
+    reaches: 'openrouter.ai',
+  },
+  codex: {
+    optInVar: PAID_CODEX_OPT_IN_VAR,
+    keyVar: CODEX_API_KEY_VAR,
+    source: 'codex-api-key',
+    bill: 'an OpenAI account',
+    reaches: "OpenAI's API",
+  },
+};
+
+/**
+ * Whether somebody DECIDED to spend on each paid path, in this process.
  *
  * Read ONCE, at module scope, and that is the entire defense. A `vi.stubEnv` in
  * some other file cannot blank it afterwards, and a lazily-read flag would be
@@ -171,12 +230,16 @@ export function noCredentialMessage(tier: string): string {
  * same shape as `DORKOS_EVALS_CREDENTIALED` in
  * `runner/__tests__/harness-server.test.ts`, for the same reason.
  */
-// eslint-disable-next-line no-restricted-syntax -- the opt-in flag IS the spend gate; reading it here (once, at module scope) is what makes it un-stubbable.
-const PAID_PROVIDER_OPT_IN = process.env[PAID_PROVIDER_OPT_IN_VAR] === '1';
+const PAID_OPT_IN: Record<PaidPath, boolean> = {
+  // eslint-disable-next-line no-restricted-syntax -- the opt-in flag IS the spend gate; reading it here (once, at module scope) is what makes it un-stubbable.
+  openrouter: process.env[PAID_PROVIDER_OPT_IN_VAR] === '1',
+  // eslint-disable-next-line no-restricted-syntax -- same gate, same reason, for the path that bills OpenAI.
+  codex: process.env[PAID_CODEX_OPT_IN_VAR] === '1',
+};
 
 /**
- * Whether this run will hand a PAID EXTERNAL PROVIDER credential to a runtime —
- * the one question the spend gate may key on.
+ * WHICH paid path this run reaches, or `null` when it reaches none — the one
+ * question the spend gate may key on.
  *
  * **It deliberately does not ask about the tier.** Keying the gate on
  * `tier === 'real-provider'` was a hole, and the exact command that walked
@@ -196,37 +259,47 @@ const PAID_PROVIDER_OPT_IN = process.env[PAID_PROVIDER_OPT_IN_VAR] === '1';
  * bill on the way out.
  *
  * So the rule is the money, not the label: an OpenCode boot always names an
- * external provider (it is the only runtime that fronts one — ADR-0308 +
- * ADR-0315), and any run that names a provider at all is asking to spend
- * somebody's provider account. Both arms gate. A future runtime that fronts
- * providers must be added here in the same breath as its adapter.
+ * external provider, any run that names a provider at all is asking to spend
+ * somebody's provider account, and a Codex run bills OpenAI. All three arms
+ * gate. A future runtime that fronts providers must be added here in the same
+ * breath as its adapter.
+ *
+ * It answers WHICH rather than merely whether, because the two paths bill
+ * different accounts and the refusal has to name the right key. Codex is
+ * checked first: it fronts no providers of its own (no Codex provider knob
+ * exists), so a `--runtime codex` run spends at OpenAI whatever sits beside it.
  *
  * @param tier - The tier the run booted.
  * @param runtime - The agent runtime the run resolved, if any.
  * @param provider - The provider the run resolved, if any.
- * @returns True when the paid gate must be satisfied before anything boots.
+ * @returns The paid path this run reaches, or `null` when it reaches none.
  */
-export function spendsOnExternalProvider(
+export function paidPathFor(
   tier: string,
   runtime: string | undefined,
   provider: string | undefined
-): boolean {
-  return tier === 'real-provider' || runtime === 'opencode' || provider !== undefined;
+): PaidPath | null {
+  if (runtime === 'codex') return 'codex';
+  if (tier === 'real-provider' || runtime === 'opencode' || provider !== undefined) {
+    return 'openrouter';
+  }
+  return null;
 }
 
 /** Injectable seams for {@link resolvePaidProviderCredential}. */
 export interface ResolvePaidProviderDeps {
-  /** Environment to read {@link OPENROUTER_API_KEY_VAR} from. Defaults to `process.env`. */
+  /** Environment to read the path's pinned key variable from. Defaults to `process.env`. */
   env?: Record<string, string | undefined>;
   /**
-   * Whether the deliberate-act flag is set. Defaults to the module-scope read,
-   * which is the real gate — this seam exists so the unit tests can exercise all
-   * four squares of the (flag × key) truth table without setting a real one.
+   * Whether the deliberate-act flag is set. Defaults to the module-scope read
+   * for the path, which is the real gate — this seam exists so the unit tests
+   * can exercise all four squares of the (flag × key) truth table without
+   * setting a real one.
    */
   optIn?: boolean;
 }
 
-/** Why a `real-provider` run may not spend, or the credential that lets it. */
+/** Why a paid run may not spend, or the credential that lets it. */
 export type PaidProviderGate =
   /** Both deliberate acts are present; here is the credential to boot with. */
   | { ok: true; credential: ModelCredential }
@@ -244,100 +317,112 @@ export type PaidProviderGate =
   | { ok: false; reason: 'no-key'; message: string };
 
 /**
- * Decide whether this run may reach a PAID external provider, and with what.
+ * Decide whether this run may reach the given PAID path, and with what.
  *
  * Two independent deliberate acts, BOTH required, and the order of the checks is
  * the policy: the flag is asked for first, so a machine that merely has a key
  * exported never even reaches the question of whether the key is good. A key
  * alone is not a person asking to spend money.
  *
+ * @param path - The paid path this run reaches ({@link paidPathFor}).
  * @param deps - Injectable env + opt-in seams; both default to the real ones.
  * @returns The credential, or the refusal and why.
  */
 export function resolvePaidProviderCredential(
+  path: PaidPath,
   deps: ResolvePaidProviderDeps = {}
 ): PaidProviderGate {
-  const optIn = deps.optIn ?? PAID_PROVIDER_OPT_IN;
+  const spec = PAID_PATHS[path];
+  const optIn = deps.optIn ?? PAID_OPT_IN[path];
   if (!optIn) {
-    return { ok: false, reason: 'no-opt-in', message: paidProviderOptInMessage() };
+    return { ok: false, reason: 'no-opt-in', message: paidProviderOptInMessage(path) };
   }
 
   const env =
     deps.env ??
-    // eslint-disable-next-line no-restricted-syntax -- the paid tier's provider key is a runner secret read once here (the harness env carve-out pattern), not an app config value.
+    // eslint-disable-next-line no-restricted-syntax -- the paid path's key is a runner secret read once here (the harness env carve-out pattern), not an app config value.
     process.env;
-  const key = readVar(env, OPENROUTER_API_KEY_VAR);
+  const key = readVar(env, spec.keyVar);
   if (!key) {
-    return { ok: false, reason: 'no-key', message: paidProviderNoKeyMessage() };
+    return { ok: false, reason: 'no-key', message: paidProviderNoKeyMessage(path) };
   }
 
   return {
     ok: true,
     credential: {
-      source: 'openrouter-api-key',
-      env: { [OPENROUTER_API_KEY_VAR]: key },
+      source: spec.source,
+      env: { [spec.keyVar]: key },
       portable: true,
     },
   };
 }
 
 /**
- * The message a paid-provider run gets when nobody set the opt-in flag. Says
- * plainly that the run spends real money outside any Claude subscription, so the
- * person reading it can decide rather than guess.
+ * The message a paid run gets when nobody set the opt-in flag. Says plainly that
+ * the run spends real money outside any Claude subscription, so the person
+ * reading it can decide rather than guess.
  *
  * Deliberately says nothing about the TIER: the gate keys on what the run
- * reaches ({@link spendsOnExternalProvider}), and a message naming
- * `real-provider` would read as a non-sequitur to somebody who typed
- * `--tier claude-code-cheap --runtime opencode` — the exact command this gate
- * exists to stop.
+ * reaches ({@link paidPathFor}), and a message naming `real-provider` would read
+ * as a non-sequitur to somebody who typed `--tier claude-code-cheap --runtime
+ * opencode` — the exact command this gate exists to stop.
  *
+ * It names the pair for the PATH, and only that pair. Telling somebody who typed
+ * `--runtime codex` to set an OpenRouter key would send them to an account that
+ * will never be billed for this run.
+ *
+ * @param path - The paid path the run reaches.
  * @returns The refusal message.
  */
-export function paidProviderOptInMessage(): string {
+export function paidProviderOptInMessage(path: PaidPath): string {
+  const spec = PAID_PATHS[path];
   return (
-    `This run would spend real money on an external provider, so it needs you to say so: set ` +
-    `${PAID_PROVIDER_OPT_IN_VAR}=1 alongside ${OPENROUTER_API_KEY_VAR}.\n` +
+    `This run would spend real money on ${spec.bill}, so it needs you to say so: set ` +
+    `${spec.optInVar}=1 alongside ${spec.keyVar}.\n` +
     `A key on its own is deliberately not enough — plenty of people leave one exported, and ` +
     `having a key is not the same as deciding to spend. Nothing ran and nothing was billed.\n` +
-    `This is about what the run REACHES, not which --tier you typed: --runtime opencode and ` +
-    `--provider both spend on somebody's provider account whatever tier is beside them.`
+    `This is about what the run REACHES, not which --tier you typed: --runtime opencode, ` +
+    `--runtime codex and --provider each spend on somebody's account whatever tier is beside them.`
   );
 }
 
 /**
- * The message a paid-provider run gets when the flag is set and no key is
- * present. This one is a runner ERROR rather than a stop-before-starting: the
- * person asked for a paid run, so silence would look like coverage.
+ * The message a paid run gets when the flag is set and no key is present. This
+ * one is a runner ERROR rather than a stop-before-starting: the person asked for
+ * a paid run, so silence would look like coverage.
  *
+ * @param path - The paid path the run reaches.
  * @returns The runner-error message.
  */
-export function paidProviderNoKeyMessage(): string {
+export function paidProviderNoKeyMessage(path: PaidPath): string {
+  const spec = PAID_PATHS[path];
   return (
-    `This run was armed to spend with ${PAID_PROVIDER_OPT_IN_VAR}=1, but ` +
-    `${OPENROUTER_API_KEY_VAR} is not set, so there is nothing to reach a model with. ` +
-    `Set it to an OpenRouter API key. This is reported as an error rather than a skip on ` +
+    `This run was armed to spend with ${spec.optInVar}=1, but ` +
+    `${spec.keyVar} is not set, so there is nothing to reach a model with. ` +
+    `Set it to a key for ${spec.bill}. This is reported as an error rather than a skip on ` +
     `purpose: a run that claims to have covered these cases must never report a pass it did ` +
     `not earn.`
   );
 }
 
 /**
- * The message a paid-provider run gets when it is asked for the docker
- * isolation tier.
+ * The message a paid run gets when it is asked for the docker isolation tier.
  *
  * The docker tier's containers have NO network by design (ADR 260725-133222),
- * and this tier's whole job is to reach openrouter.ai. Refused loudly rather
- * than degraded quietly, because a silent fall back to child-process would give
- * an operator who asked for containment a turn that ran on the bare host.
+ * and a paid path's whole job is to reach somebody else's API. Refused loudly
+ * rather than degraded quietly, because a silent fall back to child-process
+ * would give an operator who asked for containment a turn that ran on the bare
+ * host.
  *
+ * @param path - The paid path the run reaches.
  * @returns The runner-error message.
  */
-export function paidProviderRefusesDockerMessage(): string {
+export function paidProviderRefusesDockerMessage(path: PaidPath): string {
+  const spec = PAID_PATHS[path];
   return (
     'A run that reaches a paid provider cannot use the docker isolation tier: eval containers have no ' +
-    'network at all (that is the containment they exist to provide), and this tier has to reach ' +
-    'openrouter.ai. Run it with `--isolation child-process`, which is what it uses by default.'
+    'network at all (that is the containment they exist to provide), and this run has to reach ' +
+    `${spec.reaches}. Run it with \`--isolation child-process\`, which is what it uses by default.`
   );
 }
 
