@@ -21,6 +21,7 @@ const config = parseConfig({
   COMMUNITY_STORAGE_PATH: '/tmp/community-admission-test-blobs',
   COMMUNITY_AGENTS_PER_OWNER: 2,
   COMMUNITY_POSTS_PER_TEN_MINUTES: 3,
+  COMMUNITY_SIGNUP_ATTEMPTS_PER_MINUTE: 100,
   COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE: 100,
 });
 let server: ReturnType<typeof serve>;
@@ -309,7 +310,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     });
     expect(start.status).toBe(201);
     const { pairingId, approvalUrl } = await start.json();
-    expect(approvalUrl).toContain(pairingId);
+    expect(approvalUrl).toBe(`${config.publicUrl}/pairing?pairingId=${pairingId}`);
     expect(
       (await call(`/api/v1/pairings/${pairingId}`, 'GET', undefined, ownerCookie)).status
     ).toBe(200);
@@ -904,7 +905,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect(
       (await call(`/api/v1/members/${ordinary.id}`, 'DELETE', undefined, admittedCookie)).status
     ).toBe(204);
-    expect((await call('/api/v1/channels', 'GET', undefined, ordinary.cookie)).status).toBe(401);
+    expect((await call('/api/v1/channels', 'GET', undefined, ordinary.cookie)).status).toBe(403);
     expect(
       (await call(`/api/v1/members/${admittedId}/role`, 'PATCH', { role: 'member' }, ownerCookie))
         .status
@@ -1070,7 +1071,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     const owners = await pool.query("SELECT id FROM members WHERE role='owner' AND active");
     expect(owners.rows.map((row) => row.id)).toEqual([admittedId]);
     expect((await call('/api/v1/me/leave', 'POST', {}, ownerCookie)).status).toBe(204);
-    expect((await call('/api/v1/channels', 'GET', undefined, ownerCookie)).status).toBe(401);
+    expect((await call('/api/v1/channels', 'GET', undefined, ownerCookie)).status).toBe(403);
     expect(
       (await bearerCall(`/api/v1/channels/${channelId}/entries`, 'GET', agentToken)).status
     ).toBe(401);
@@ -1162,5 +1163,301 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect(
       (await bearerCall(`/api/v1/channels/${channelId}/agents/${agentId}`, 'DELETE', full)).status
     ).toBe(401);
+  });
+
+  it('separates host operations from a pending community owner claim', async () => {
+    const before = await call('/api/v1/host/communities', 'GET', undefined, ownerCookie);
+    expect(before.status).toBe(200);
+    expect((await before.json()).communities).toHaveLength(1);
+
+    const created = await call(
+      '/api/v1/host/communities',
+      'POST',
+      { name: 'Second community' },
+      ownerCookie
+    );
+    expect(created.status).toBe(201);
+    const body = await created.json();
+    const secondId = body.community.id as string;
+    const claimToken = body.ownerClaimToken as string;
+    expect(body.community.lifecycle).toBe('pending_owner');
+
+    expect((await call('/api/v1/community', 'GET', undefined, admittedCookie)).status).toBe(409);
+    expect(
+      (await call(`/api/v1/communities/${secondId}/channels`, 'GET', undefined, admittedCookie))
+        .status
+    ).toBe(409);
+    expect(
+      (await call(`/api/v1/communities/${secondId}/channels`, 'GET', undefined, ownerCookie)).status
+    ).toBe(409);
+
+    const preflight = await call('/api/v1/owner-claims/preflight', 'POST', {
+      token: claimToken,
+    });
+    expect(preflight.status).toBe(200);
+    expect((await preflight.clone().json()).communityId).toBe(secondId);
+    const claimantCookie = await signup(
+      'Second owner',
+      'second-owner@admission.test',
+      cookieOf(preflight)
+    );
+    const claimed = await call('/api/v1/owner-claims/claim', 'POST', {}, claimantCookie);
+    expect(claimed.status).toBe(200);
+    expect((await claimed.json()).community.id).toBe(secondId);
+    const firstId = (
+      await pool.query<{ community_id: string }>('SELECT community_id FROM members WHERE id=$1', [
+        admittedId,
+      ])
+    ).rows[0].community_id;
+    const forbiddenClaim = randomBytes(32).toString('base64url');
+    await pool.query(
+      `INSERT INTO bootstrap_grants(token_hash,purpose,community_id,expires_at)
+       VALUES($1,'owner_claim',$2,now()+interval '10 minutes')`,
+      [createHash('sha256').update(forbiddenClaim).digest('hex'), secondId]
+    );
+
+    expect(
+      (await call(`/api/v1/communities/${secondId}/channels`, 'GET', undefined, ownerCookie)).status
+    ).toBe(403);
+    expect(
+      (await call(`/api/v1/communities/${secondId}/channels`, 'GET', undefined, claimantCookie))
+        .status
+    ).toBe(200);
+    expect(
+      (
+        await call(
+          `/api/v1/communities/${secondId}/channels/${channelId}`,
+          'GET',
+          undefined,
+          claimantCookie
+        )
+      ).status
+    ).toBe(404);
+
+    const verifier = randomBytes(32).toString('base64url');
+    const challenge = createHash('sha256').update(verifier).digest('base64url');
+    const pairing = await (
+      await localCall(`/api/v1/communities/${secondId}/pairings/start`, {
+        installName: 'Second community install',
+        challenge,
+        scopes: ['read'],
+      })
+    ).json();
+    expect(pairing.approvalUrl).toBe(
+      `${config.publicUrl}/c/${secondId}/pairing?pairingId=${pairing.pairingId}`
+    );
+    expect(
+      (
+        await localCall(`/api/v1/communities/${firstId}/pairings/poll`, {
+          pairingId: pairing.pairingId,
+          verifier,
+        })
+      ).status
+    ).toBe(403);
+    expect(
+      (
+        await call(
+          `/api/v1/communities/${firstId}/pairings/approve`,
+          'POST',
+          { pairingId: pairing.pairingId },
+          ownerCookie
+        )
+      ).status
+    ).toBe(403);
+    expect(
+      (
+        await call(
+          `/api/v1/communities/${secondId}/pairings/approve`,
+          'POST',
+          { pairingId: pairing.pairingId },
+          claimantCookie
+        )
+      ).status
+    ).toBe(200);
+    const pairingPoll = await localCall(`/api/v1/communities/${secondId}/pairings/poll`, {
+      pairingId: pairing.pairingId,
+      verifier,
+    });
+    const pairingCode = (await pairingPoll.json()).code;
+    const pairingExchange = await localCall(`/api/v1/communities/${secondId}/pairings/exchange`, {
+      pairingId: pairing.pairingId,
+      verifier,
+      code: pairingCode,
+    });
+    const secondGrant = (await pairingExchange.json()).token as string;
+    expect(
+      (
+        await bearerCall(
+          `/api/v1/communities/${firstId}/channels/${channelId}/entries`,
+          'GET',
+          secondGrant
+        )
+      ).status
+    ).toBe(401);
+
+    const firstInvite = await call(
+      `/api/v1/communities/${firstId}/invites`,
+      'POST',
+      { seats: 1 },
+      admittedCookie
+    );
+    const firstInviteToken = (await firstInvite.json()).token;
+    const firstPreflight = await call(`/api/v1/communities/${firstId}/invites/preflight`, 'POST', {
+      token: firstInviteToken,
+    });
+    const joinedFirst = await call(
+      `/api/v1/communities/${firstId}/invites/redeem`,
+      'POST',
+      { token: firstInviteToken },
+      `${claimantCookie}; ${cookieOf(firstPreflight)}`
+    );
+    expect(joinedFirst.status).toBe(200);
+    const claimantFirstMember = (await joinedFirst.json()).memberId;
+    expect(
+      (
+        await call(
+          `/api/v1/communities/${firstId}/members/${claimantFirstMember}`,
+          'DELETE',
+          undefined,
+          admittedCookie
+        )
+      ).status
+    ).toBe(204);
+    expect(
+      (await call(`/api/v1/communities/${secondId}/me`, 'GET', undefined, claimantCookie)).status
+    ).toBe(200);
+    expect(
+      (await call('/api/v1/owner-claims/preflight', 'POST', { token: claimToken })).status
+    ).toBe(403);
+    expect(
+      (await call('/api/v1/owner-claims/preflight', 'POST', { token: forbiddenClaim })).status
+    ).toBe(403);
+
+    const secondChannel = await call(
+      `/api/v1/communities/${secondId}/channels`,
+      'POST',
+      { name: 'Second general' },
+      claimantCookie
+    );
+    const secondChannelId = (await secondChannel.json()).channel.id as string;
+    const firstStream = await call(
+      `/api/v1/communities/${firstId}/channels/${channelId}/events`,
+      'GET',
+      undefined,
+      admittedCookie
+    );
+    const secondStream = await call(
+      `/api/v1/communities/${secondId}/channels/${secondChannelId}/events`,
+      'GET',
+      undefined,
+      claimantCookie
+    );
+    const firstReader = firstStream.body!.getReader();
+    const secondReader = secondStream.body!.getReader();
+    expect((await nextSse(firstReader)).type).toBe('snapshot');
+    expect((await nextSse(firstReader)).type).toBe('replay_complete');
+    expect((await nextSse(secondReader)).type).toBe('snapshot');
+    expect((await nextSse(secondReader)).type).toBe('replay_complete');
+    const blocker = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT 1 FROM channels WHERE id=$1 FOR UPDATE', [secondChannelId]);
+      const blockedPost = call(
+        `/api/v1/communities/${secondId}/channels/${secondChannelId}/entries`,
+        'POST',
+        { text: 'before suspension', idempotencyKey: 'before-suspension' },
+        claimantCookie
+      );
+      await waitForBlockedQuery('SELECT c.* FROM channels');
+      const suspended = call(
+        `/api/v1/host/communities/${secondId}/lifecycle`,
+        'PATCH',
+        { lifecycle: 'suspended' },
+        ownerCookie
+      );
+      await waitForBlockedQuery('SELECT id,name,description,lifecycle,created_at FROM communities');
+      await blocker.query('COMMIT');
+      expect((await blockedPost).status).toBe(201);
+      expect((await suspended).status).toBe(200);
+    } finally {
+      await blocker.query('ROLLBACK');
+      blocker.release();
+    }
+    expect(
+      (await call(`/api/v1/communities/${secondId}/channels`, 'GET', undefined, claimantCookie))
+        .status
+    ).toBe(409);
+    expect((await nextSse(secondReader)).type).toBe('closed');
+    expect(
+      (
+        await call(
+          `/api/v1/communities/${firstId}/channels/${channelId}/entries`,
+          'POST',
+          { text: 'first remains live', idempotencyKey: 'first-remains-live' },
+          admittedCookie
+        )
+      ).status
+    ).toBe(201);
+    expect((await nextSse(firstReader)).type).toBe('entry');
+    await firstReader.cancel();
+    await secondReader.cancel().catch(() => undefined);
+    expect(
+      (
+        await call(
+          `/api/v1/host/communities/${secondId}/lifecycle`,
+          'PATCH',
+          { lifecycle: 'active' },
+          ownerCookie
+        )
+      ).status
+    ).toBe(200);
+    expect(
+      (
+        await call(
+          '/api/v1/host/communities/not-a-uuid/lifecycle',
+          'PATCH',
+          { lifecycle: 'active' },
+          ownerCookie
+        )
+      ).status
+    ).toBe(404);
+
+    const third = await call(
+      '/api/v1/host/communities',
+      'POST',
+      { name: 'Contended community' },
+      ownerCookie
+    );
+    expect(third.status).toBe(201);
+    const thirdBody = await third.json();
+    const claimA = await call('/api/v1/owner-claims/preflight', 'POST', {
+      token: thirdBody.ownerClaimToken,
+    });
+    const claimB = await call('/api/v1/owner-claims/preflight', 'POST', {
+      token: thirdBody.ownerClaimToken,
+    });
+    const contenderA = await signup(
+      'Claim contender A',
+      'claim-a@admission.test',
+      cookieOf(claimA)
+    );
+    const contenderB = await signup(
+      'Claim contender B',
+      'claim-b@admission.test',
+      cookieOf(claimB)
+    );
+    const claims = await Promise.all([
+      call('/api/v1/owner-claims/claim', 'POST', {}, contenderA),
+      call('/api/v1/owner-claims/claim', 'POST', {}, contenderB),
+    ]);
+    expect(claims.map((response) => response.status).sort()).toEqual([200, 403]);
+    expect(
+      (
+        await pool.query(
+          "SELECT count(*)::int AS count FROM members WHERE community_id=$1 AND role='owner' AND active",
+          [thirdBody.community.id]
+        )
+      ).rows[0].count
+    ).toBe(1);
   });
 });

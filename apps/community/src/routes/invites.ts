@@ -15,6 +15,7 @@ import {
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
 import {
+  lockActiveCommunity,
   lockChannel,
   requireLiveRole,
   requireMember,
@@ -25,6 +26,7 @@ import { ApiError, json, readJson } from '../http.js';
 import { inspectInvite, issueInvite } from '../invites.js';
 import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../security.js';
 import { mintHandle } from '../handles.js';
+import { resolveCommunityContext } from '../tenant-context.js';
 
 interface InviteRow {
   id: string;
@@ -52,13 +54,17 @@ function projection(row: InviteRow) {
 }
 
 async function validInvite(
+  c: Context,
   client: PoolClient | Pool,
   token: string,
   config: CommunityConfig,
   lock = false
 ) {
+  const tenant = await resolveCommunityContext(c, client);
+  if (lock) await lockActiveCommunity(client as PoolClient, tenant.communityId);
   const community = await client.query<{ id: string; name: string }>(
-    'SELECT id,name FROM communities LIMIT 1'
+    'SELECT id,name FROM communities WHERE id=$1',
+    [tenant.communityId]
   );
   const communityId = community.rows[0]?.id;
   if (!communityId) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
@@ -72,8 +78,9 @@ async function validInvite(
     if (!issuer.rows[0])
       throw new ApiError(403, 'FORBIDDEN', 'This invitation is invalid or expired.');
     // Issuer authority is stable until this transaction commits; role changes take its row lock.
-    await client.query('SELECT 1 FROM members WHERE id=$1 FOR SHARE', [
+    await client.query('SELECT 1 FROM members WHERE id=$1 AND community_id=$2 FOR SHARE', [
       issuer.rows[0].issuer_member_id,
+      communityId,
     ]);
   }
   const result = await client.query<
@@ -109,7 +116,7 @@ export function registerInviteRoutes(
     limitPreview: (c: Context) => void;
   }
 ) {
-  app.post('/api/v1/invites', async (c) => {
+  app.post('/invites', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireInviteCreateRequestSchema);
     const result = await transaction(pool, async (client) => {
@@ -140,7 +147,7 @@ export function registerInviteRoutes(
     return json(c, CommunityWireInviteCreateResponseSchema, result, 201);
   });
 
-  app.get('/api/v1/invites', async (c) => {
+  app.get('/invites', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const invites = await transaction(pool, async (client) => {
       await requireLiveRole(client, actor, ['owner', 'admin']);
@@ -153,7 +160,7 @@ export function registerInviteRoutes(
     return json(c, CommunityWireInviteListResponseSchema, { invites });
   });
 
-  app.delete('/api/v1/invites/:id', async (c) => {
+  app.delete('/invites/:id', async (c) => {
     const actor = await requireMember(c, auth, pool);
     await transaction(pool, async (client) => {
       await requireLiveRole(client, actor, ['owner', 'admin']);
@@ -170,10 +177,10 @@ export function registerInviteRoutes(
     return c.body(null, 204);
   });
 
-  app.post('/api/v1/invites/preview', async (c) => {
+  app.post('/invites/preview', async (c) => {
     limitPreview(c);
     const { token } = await readJson(c, CommunityWireInviteTokenRequestSchema);
-    const { invite, communityName } = await validInvite(pool, token, config);
+    const { invite, communityName } = await validInvite(c, pool, token, config);
     if (invite.use_count >= invite.seat_limit)
       throw new ApiError(409, 'STATE_CONFLICT', 'This invitation has no seats left.');
     return json(c, CommunityWireInvitePreviewResponseSchema, {
@@ -183,16 +190,16 @@ export function registerInviteRoutes(
     });
   });
 
-  app.post('/api/v1/invites/preflight', async (c) => {
+  app.post('/invites/preflight', async (c) => {
     const { token } = await readJson(c, CommunityWireInviteTokenRequestSchema);
     const pending = randomToken();
     await transaction(pool, async (client) => {
-      const { invite } = await validInvite(client, token, config, true);
+      const { invite } = await validInvite(c, client, token, config, true);
       if (invite.use_count >= invite.seat_limit)
         throw new ApiError(409, 'STATE_CONFLICT', 'This invitation has no seats left.');
       await client.query(
-        'INSERT INTO pending_admissions(invite_id,token_hash,expires_at) VALUES($1,$2,$3)',
-        [invite.id, hashSecret(pending), new Date(Date.now() + 600_000)]
+        'INSERT INTO pending_admissions(community_id,invite_id,token_hash,expires_at) VALUES($1,$2,$3,$4)',
+        [invite.community_id, invite.id, hashSecret(pending), new Date(Date.now() + 600_000)]
       );
     });
     setCookie(c, 'community_admission', signValue(pending, config.authSecret), {
@@ -205,7 +212,7 @@ export function registerInviteRoutes(
     return json(c, CommunityWireInvitePreflightResponseSchema, { granted: true });
   });
 
-  app.post('/api/v1/invites/redeem', async (c) => {
+  app.post('/invites/redeem', async (c) => {
     const { token } = await readJson(c, CommunityWireInviteTokenRequestSchema);
     const user = await requireSessionUser(c, auth);
     const pending = verifyValue(
@@ -214,7 +221,7 @@ export function registerInviteRoutes(
     );
     if (!pending) throw new ApiError(403, 'FORBIDDEN', 'Start with an invitation before joining.');
     const memberId = await transaction(pool, async (client) => {
-      const { invite } = await validInvite(client, token, config, true);
+      const { invite } = await validInvite(c, client, token, config, true);
       const previous = await client.query(
         'SELECT 1 FROM invite_uses WHERE invite_id=$1 AND user_id=$2',
         [invite.id, user.id]
@@ -238,8 +245,8 @@ export function registerInviteRoutes(
           'This invitation has no seats left. Ask for a new link.'
         );
       let member = await client.query<{ id: string; active: boolean }>(
-        'SELECT id,active FROM members WHERE user_id=$1 FOR UPDATE',
-        [user.id]
+        'SELECT id,active FROM members WHERE community_id=$1 AND user_id=$2 FOR UPDATE',
+        [invite.community_id, user.id]
       );
       if (!member.rows[0]) {
         const handle = await mintHandle(client, invite.community_id, user.name);
@@ -259,14 +266,14 @@ export function registerInviteRoutes(
       }
       if (invite.channel_id)
         await client.query(
-          'INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-          [invite.channel_id, member.rows[0].id]
+          'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+          [invite.community_id, invite.channel_id, member.rows[0].id]
         );
       if (!previous.rowCount) {
-        await client.query('INSERT INTO invite_uses(invite_id,user_id) VALUES($1,$2)', [
-          invite.id,
-          user.id,
-        ]);
+        await client.query(
+          'INSERT INTO invite_uses(community_id,invite_id,user_id) VALUES($1,$2,$3)',
+          [invite.community_id, invite.id, user.id]
+        );
         await client.query('UPDATE invites SET use_count=use_count+1 WHERE id=$1', [invite.id]);
       }
       await client.query('DELETE FROM pending_admissions WHERE id=$1', [grant.rows[0].id]);

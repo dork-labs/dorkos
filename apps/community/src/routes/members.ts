@@ -8,10 +8,17 @@ import {
   CommunityWireOwnerTransferResponseSchema,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
-import { requireLiveRole, requireMember, transaction, type Member } from '../data.js';
+import {
+  lockActiveCommunity,
+  requireLiveRole,
+  requireMember,
+  transaction,
+  type Member,
+} from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 
 async function live(client: PoolClient, id: string, communityId: string) {
+  await lockActiveCommunity(client, communityId);
   const result = await client.query<Member>(
     'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
     [id, communityId]
@@ -20,25 +27,30 @@ async function live(client: PoolClient, id: string, communityId: string) {
 }
 
 async function remove(client: PoolClient, target: Member, actorId: string, action: string) {
-  await client.query('UPDATE members SET active=false,removed_at=now() WHERE id=$1', [target.id]);
-  await client.query('DELETE FROM channel_members WHERE member_id=$1', [target.id]);
   await client.query(
-    'DELETE FROM agent_channel_members WHERE agent_id IN (SELECT id FROM agents WHERE owner_member_id=$1)',
-    [target.id]
+    'UPDATE members SET active=false,removed_at=now() WHERE id=$1 AND community_id=$2',
+    [target.id, target.community_id]
+  );
+  await client.query('DELETE FROM channel_members WHERE member_id=$1 AND community_id=$2', [
+    target.id,
+    target.community_id,
+  ]);
+  await client.query(
+    'DELETE FROM agent_channel_members WHERE community_id=$2 AND agent_id IN (SELECT id FROM agents WHERE owner_member_id=$1 AND community_id=$2)',
+    [target.id, target.community_id]
   );
   await client.query(
-    'UPDATE agents SET active=false,revoked_at=now() WHERE owner_member_id=$1 AND active',
-    [target.id]
+    'UPDATE agents SET active=false,revoked_at=now() WHERE owner_member_id=$1 AND community_id=$2 AND active',
+    [target.id, target.community_id]
   );
   await client.query(
-    'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id IN (SELECT id FROM agents WHERE owner_member_id=$1) AND revoked_at IS NULL',
-    [target.id]
+    'UPDATE agent_credentials SET revoked_at=now() WHERE community_id=$2 AND agent_id IN (SELECT id FROM agents WHERE owner_member_id=$1 AND community_id=$2) AND revoked_at IS NULL',
+    [target.id, target.community_id]
   );
   await client.query(
-    'UPDATE connection_grants SET revoked_at=now() WHERE member_id=$1 AND revoked_at IS NULL',
-    [target.id]
+    'UPDATE connection_grants SET revoked_at=now() WHERE member_id=$1 AND community_id=$2 AND revoked_at IS NULL',
+    [target.id, target.community_id]
   );
-  await client.query('DELETE FROM session WHERE "userId"=$1', [target.user_id]);
   await client.query(
     'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
     [target.community_id, actorId, action, target.id]
@@ -50,11 +62,11 @@ export function registerMemberRoutes(
   app: Hono,
   { pool, auth }: { pool: Pool; auth: CommunityAuth }
 ) {
-  app.get('/api/v1/me', async (c) => {
+  app.get('/me', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const result = await pool.query<Member & { handle: string; created_at: Date }>(
-      'SELECT id,user_id,display_name,role,community_id,handle,created_at FROM members WHERE id=$1 AND active',
-      [actor.id]
+      'SELECT id,user_id,display_name,role,community_id,handle,created_at FROM members WHERE id=$1 AND community_id=$2 AND active',
+      [actor.id, actor.community_id]
     );
     const row = result.rows[0];
     const current = await requireMember(c, auth, pool);
@@ -73,7 +85,7 @@ export function registerMemberRoutes(
     });
   });
 
-  app.get('/api/v1/members', async (c) => {
+  app.get('/members', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const query = CommunityWireMemberDirectoryQuerySchema.parse(
       Object.fromEntries(new URL(c.req.url).searchParams)
@@ -103,7 +115,7 @@ export function registerMemberRoutes(
     });
   });
 
-  app.delete('/api/v1/members/:id', async (c) => {
+  app.delete('/members/:id', async (c) => {
     const actor = await requireMember(c, auth, pool);
     await transaction(pool, async (client) => {
       const current = await live(client, actor.id, actor.community_id);
@@ -118,7 +130,7 @@ export function registerMemberRoutes(
     return c.body(null, 204);
   });
 
-  app.post('/api/v1/me/leave', async (c) => {
+  app.post('/me/leave', async (c) => {
     const actor = await requireMember(c, auth, pool);
     await transaction(pool, async (client) => {
       const current = await live(client, actor.id, actor.community_id);
@@ -130,7 +142,7 @@ export function registerMemberRoutes(
     return c.body(null, 204);
   });
 
-  app.post('/api/v1/owner/transfer', async (c) => {
+  app.post('/owner/transfer', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireOwnerTransferRequestSchema);
     try {

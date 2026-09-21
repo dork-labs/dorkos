@@ -15,8 +15,8 @@ const scopeLabel = {
   'enroll-agent': 'Add your agents',
 };
 /** Review and decide on a verifier-bound local install request. */
-export function Pairing() {
-  const pairingId = new URLSearchParams(location.search).get('pairingId');
+export function Pairing({ search = location.search }: { search?: string }) {
+  const pairingId = new URLSearchParams(search).get('pairingId');
   const [status, setStatus] = useState<PairingStatus | null>(null);
   const [error, setError] = useState(pairingId ? '' : 'This approval link is incomplete.');
   const [busy, setBusy] = useState(false);

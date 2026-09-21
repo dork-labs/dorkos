@@ -8,7 +8,13 @@ import {
   CommunityWireOwnerExportRequestSchema,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
-import { requireMember, transaction, type Member } from '../data.js';
+import {
+  lockActiveCommunity,
+  requireLiveRole,
+  requireMember,
+  transaction,
+  type Member,
+} from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 import {
   BlobStoreError,
@@ -51,7 +57,9 @@ interface ExportArchiveRow {
   expires_at: Date;
 }
 
-async function snapshot(pool: Pool | PoolClient, member: Member, scope: 'personal' | 'owner') {
+async function snapshot(pool: PoolClient, member: Member, scope: 'personal' | 'owner') {
+  await lockActiveCommunity(pool, member.community_id);
+  await requireLiveRole(pool, member, scope === 'owner' ? ['owner'] : ['owner', 'admin', 'member']);
   const owner = scope === 'owner';
   const channels = await pool.query(
     owner
@@ -83,9 +91,9 @@ async function snapshot(pool: Pool | PoolClient, member: Member, scope: 'persona
   );
   const entries = await pool.query(
     owner
-      ? `SELECT e.id,e.channel_id,e.seq,e.author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at
+      ? `SELECT e.id,e.channel_id,e.seq,e.author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at
          FROM entries e JOIN channels c ON c.id=e.channel_id WHERE c.community_id=$1 ORDER BY e.channel_id,e.seq LIMIT $2`
-      : `SELECT e.id,e.channel_id,e.seq,e.author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at
+      : `SELECT e.id,e.channel_id,e.seq,e.author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at
          FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id
          WHERE e.channel_id=ANY($3::uuid[]) AND (e.author_member_id=$1 OR a.owner_member_id=$1)
          ORDER BY e.channel_id,e.seq LIMIT $2`,
@@ -280,15 +288,17 @@ export function registerExportRoutes(
 ) {
   const create = async (member: Member, scope: 'personal' | 'owner') => {
     const currentResult = await pool.query<Member>(
-      'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND active',
-      [member.id]
+      'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active',
+      [member.id, member.community_id]
     );
     const current = currentResult.rows[0];
     if (!current) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
     if (scope === 'owner' && current.role !== 'owner')
       throw new ApiError(403, 'FORBIDDEN', 'Only the owner can export the community.');
     const data = await transaction(pool, async (client) => {
-      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      // The snapshot also locks lifecycle and membership authority, so this
+      // repeatable-read transaction cannot be declared READ ONLY.
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
       return snapshot(client, current, scope);
     });
     const reservation = await transaction(pool, (client) =>
@@ -313,24 +323,30 @@ export function registerExportRoutes(
     try {
       return await transaction(pool, async (client) => {
         const live = await client.query<Member>(
-          'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND active FOR SHARE',
-          [member.id]
+          'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
+          [member.id, member.community_id]
         );
         if (!live.rows[0] || (scope === 'owner' && live.rows[0].role !== 'owner'))
           throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
         if (scope === 'personal') await requireCurrentChannels(client, member.id, data.channelIds);
         await prepareManagedBlobCommit(client, reservation, stored);
-        const result = await client.query<ExportArchiveRow>(
-          `INSERT INTO export_archives(community_id,requester_member_id,scope,channel_ids,blob_key,byte_size,expires_at)
-           VALUES($1,$2,$3,$4,$5,$6,now()+interval '1 hour') RETURNING *`,
-          [member.community_id, member.id, scope, data.channelIds, stored.key, stored.byteSize]
+        const result = await client.query<Omit<ExportArchiveRow, 'channel_ids'>>(
+          `INSERT INTO export_archives(community_id,requester_member_id,scope,blob_key,byte_size,expires_at)
+           VALUES($1,$2,$3,$4,$5,now()+interval '1 hour') RETURNING *`,
+          [member.community_id, member.id, scope, stored.key, stored.byteSize]
+        );
+        await client.query(
+          `INSERT INTO export_archive_channels(export_archive_id,position,community_id,channel_id)
+           SELECT $1,selected.position,$2,selected.channel_id
+           FROM unnest($3::uuid[]) WITH ORDINALITY AS selected(channel_id,position)`,
+          [result.rows[0].id, member.community_id, data.channelIds]
         );
         await client.query(
           'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
           [member.community_id, member.id, 'export.create', result.rows[0].id]
         );
         await completeManagedBlobCommit(client, reservation);
-        return result.rows[0];
+        return { ...result.rows[0], channel_ids: data.channelIds };
       });
     } catch (error) {
       await discardManagedBlob(pool, blobStore, reservation, stored).catch(
@@ -344,7 +360,7 @@ export function registerExportRoutes(
       throw error;
     }
   };
-  app.post('/api/v1/me/export', async (c) => {
+  app.post('/me/export', async (c) => {
     const member = await requireMember(c, auth, pool);
     const archive = await create(member, 'personal');
     return json(
@@ -359,7 +375,7 @@ export function registerExportRoutes(
     );
   });
 
-  app.post('/api/v1/owner/export', async (c) => {
+  app.post('/owner/export', async (c) => {
     const member = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireOwnerExportRequestSchema);
     try {
@@ -383,17 +399,22 @@ export function registerExportRoutes(
     );
   });
 
-  app.get('/api/v1/exports/:id', async (c) => {
+  app.get('/exports/:id', async (c) => {
     const member = await requireMember(c, auth, pool);
     const result = await pool.query<ExportArchiveRow>(
-      'SELECT * FROM export_archives WHERE id=$1 AND requester_member_id=$2 AND deleted_at IS NULL AND expires_at>now()',
-      [c.req.param('id'), member.id]
+      `SELECT archive.*,
+        COALESCE((SELECT array_agg(selected.channel_id ORDER BY selected.position)
+          FROM export_archive_channels selected WHERE selected.export_archive_id=archive.id),'{}'::uuid[]) AS channel_ids
+       FROM export_archives archive
+       WHERE archive.id=$1 AND archive.requester_member_id=$2 AND archive.community_id=$3
+         AND archive.deleted_at IS NULL AND archive.expires_at>now()`,
+      [c.req.param('id'), member.id, member.community_id]
     );
     const archive = result.rows[0];
     if (!archive) throw new ApiError(404, 'NOT_FOUND', 'Archive not found.');
     const live = await pool.query<Member>(
-      'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND active',
-      [member.id]
+      'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active',
+      [member.id, member.community_id]
     );
     if (!live.rows[0] || (archive.scope === 'owner' && live.rows[0].role !== 'owner'))
       throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');

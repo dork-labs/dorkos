@@ -11,11 +11,18 @@ export class RequestError extends Error {
   }
 }
 
+/** Bind a v1 browser request to the immutable tenant in the canonical browser path. */
+export function tenantApiPath(path: string, browserPath = window.location.pathname): string {
+  if (!path.startsWith('/api/v1/')) return path;
+  const tenant = browserPath.match(/^\/c\/([^/]+)(?:\/|$)/u)?.[1];
+  return tenant ? `/api/v1/communities/${tenant}${path.slice('/api/v1'.length)}` : path;
+}
+
 /** Make a same-origin JSON request and normalize expected failures. */
 export async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await fetch(tenantApiPath(path), {
       method,
       credentials: 'same-origin',
       headers: body === undefined ? undefined : { 'content-type': 'application/json' },
@@ -78,7 +85,7 @@ export function describeError(cause: unknown) {
 
 /** Download an authorized response using the browser save flow. */
 export async function download(path: string, fallbackName: string) {
-  const response = await fetch(path, { credentials: 'same-origin' });
+  const response = await fetch(tenantApiPath(path), { credentials: 'same-origin' });
   if (!response.ok)
     throw new RequestError(response.status, 'DOWNLOAD_FAILED', recovery(response.status));
   const blob = await response.blob();
@@ -101,7 +108,10 @@ export function upload(
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `/api/v1/channels/${encodeURIComponent(channelId)}/attachments`);
+    xhr.open(
+      'POST',
+      tenantApiPath(`/api/v1/channels/${encodeURIComponent(channelId)}/attachments`)
+    );
     xhr.withCredentials = true;
     xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
     xhr.setRequestHeader('Idempotency-Key', key);

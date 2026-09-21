@@ -198,7 +198,7 @@ export function registerAttachmentRoutes(
     blobStore,
   }: { pool: Pool; auth: CommunityAuth; config: CommunityConfig; blobStore: BlobStore }
 ) {
-  app.post('/api/v1/channels/:id/attachments', async (c) => {
+  app.post('/channels/:id/attachments', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'post');
     const openedSession = principal.credentialHash
       ? null
@@ -267,10 +267,16 @@ export function registerAttachmentRoutes(
         const window = new Date();
         window.setUTCHours(0, 0, 0, 0);
         const quota = await client.query<{ upload_bytes: string }>(
-          `INSERT INTO owner_quota_windows(owner_member_id,window_start,upload_bytes) VALUES($1,$2,$3)
+          `INSERT INTO owner_quota_windows(community_id,owner_member_id,window_start,upload_bytes) VALUES($1,$2,$3,$4)
            ON CONFLICT(owner_member_id,window_start) DO UPDATE SET upload_bytes=owner_quota_windows.upload_bytes+EXCLUDED.upload_bytes
-           WHERE owner_quota_windows.upload_bytes+EXCLUDED.upload_bytes<=$4 RETURNING upload_bytes`,
-          [principal.ownerMemberId, window, stored.byteSize, config.limits.uploadBytesPerDay]
+           WHERE owner_quota_windows.upload_bytes+EXCLUDED.upload_bytes<=$5 RETURNING upload_bytes`,
+          [
+            principal.community_id,
+            principal.ownerMemberId,
+            window,
+            stored.byteSize,
+            config.limits.uploadBytesPerDay,
+          ]
         );
         if (!quota.rowCount) throw new ApiError(429, 'RATE_LIMITED', 'Daily upload limit reached.');
         await prepareManagedBlobCommit(client, reservation, stored);
@@ -314,11 +320,11 @@ export function registerAttachmentRoutes(
     }
   });
 
-  app.get('/api/v1/attachments/:id', async (c) => {
+  app.get('/attachments/:id', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'read');
     const row = await pool.query<AttachmentRow>(
-      'SELECT * FROM attachments WHERE id=$1 AND entry_id IS NOT NULL',
-      [c.req.param('id')]
+      'SELECT * FROM attachments WHERE id=$1 AND community_id=$2 AND entry_id IS NOT NULL',
+      [c.req.param('id'), principal.community_id]
     );
     const attachment = row.rows[0];
     if (!attachment) throw new ApiError(404, 'NOT_FOUND', 'File not found.');

@@ -87,7 +87,7 @@ export function registerEventRoutes(
     };
   }
 ) {
-  app.get('/api/v1/channels/:id/read-cursor', async (c) => {
+  app.get('/channels/:id/read-cursor', async (c) => {
     const member = await requirePrincipal(c, auth, pool, 'read');
     if (member.kind !== 'human')
       throw new ApiError(403, 'FORBIDDEN', 'Agents do not have read cursors.');
@@ -112,7 +112,7 @@ export function registerEventRoutes(
     });
   });
 
-  app.put('/api/v1/channels/:id/read-cursor', async (c) => {
+  app.put('/channels/:id/read-cursor', async (c) => {
     const member = await requirePrincipal(c, auth, pool, 'read');
     if (member.kind !== 'human')
       throw new ApiError(403, 'FORBIDDEN', 'Agents do not have read cursors.');
@@ -139,10 +139,10 @@ export function registerEventRoutes(
       if (seq > Number(channel.last_seq))
         throw new ApiError(409, 'STATE_CONFLICT', 'The cursor is ahead of channel history.');
       const result = await client.query<{ seq: string }>(
-        `INSERT INTO read_cursors(channel_id,member_id,seq) VALUES($1,$2,$3)
+        `INSERT INTO read_cursors(community_id,channel_id,member_id,seq) VALUES($1,$2,$3,$4)
          ON CONFLICT(channel_id,member_id) DO UPDATE SET seq=GREATEST(read_cursors.seq,EXCLUDED.seq),updated_at=now()
          RETURNING seq`,
-        [channel.id, member.id, seq]
+        [member.community_id, channel.id, member.id, seq]
       );
       return { channel, current: Number(result.rows[0].seq) };
     });
@@ -164,7 +164,7 @@ export function registerEventRoutes(
     });
   });
 
-  app.get('/api/v1/channels/:id/events', async (c) => {
+  app.get('/channels/:id/events', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'read');
     const openedSession = principal.credentialHash
       ? null
@@ -192,9 +192,9 @@ export function registerEventRoutes(
     const snapshotRows = (
       await pool.query(
         resume
-          ? `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+          ? `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
              FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.channel_id=$1 AND e.seq>$2 AND e.seq<=$3 ORDER BY e.seq LIMIT 100`
-          : `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+          : `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
              FROM (SELECT * FROM entries WHERE channel_id=$1 AND seq<=$2 ORDER BY seq DESC LIMIT 100) e LEFT JOIN agents a ON a.id=e.author_agent_id ORDER BY e.seq`,
         resume ? [channel.id, position, capturedSeq] : [channel.id, position]
       )
@@ -276,12 +276,15 @@ export function registerEventRoutes(
       }>(
         principal.kind === 'agent'
           ? `SELECT (a.active AND owner.active) AS active,(cm.agent_id IS NOT NULL) AS joined,ch.archived,ch.epoch
-           FROM agents a JOIN members owner ON owner.id=a.owner_member_id JOIN channels ch ON ch.id=$2
+           FROM agents a JOIN members owner ON owner.id=a.owner_member_id
+           JOIN communities co ON co.id=a.community_id AND co.lifecycle='active'
+           JOIN channels ch ON ch.id=$2
            LEFT JOIN agent_channel_members cm ON cm.channel_id=ch.id AND cm.agent_id=a.id
            WHERE a.id=$1 AND a.community_id=$3 AND ch.community_id=$3
              AND a.owner_member_id=$5 AND ${credential}`
           : `SELECT m.active,(cm.member_id IS NOT NULL) AS joined,ch.archived,ch.epoch
-           FROM members m JOIN channels ch ON ch.id=$2
+           FROM members m JOIN communities co ON co.id=m.community_id AND co.lifecycle='active'
+           JOIN channels ch ON ch.id=$2
            LEFT JOIN channel_members cm ON cm.channel_id=ch.id AND cm.member_id=m.id
            WHERE m.id=$1 AND m.community_id=$3 AND ch.community_id=$3 AND ${credential}`,
         values
@@ -387,7 +390,7 @@ export function registerEventRoutes(
                 return;
               }
               const result = await pool.query(
-                `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+                `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
                FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.channel_id=$1 AND e.seq>$2 ORDER BY e.seq LIMIT 1`,
                 [channel.id, position]
               );

@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { setCookie } from 'hono/cookie';
 import type { Pool } from 'pg';
-import { drizzle } from 'drizzle-orm/node-postgres';
 import {
   CommunityWireBootstrapClaimRequestSchema,
   CommunityWireBootstrapClaimResponseSchema,
@@ -26,10 +25,11 @@ import { registerPairingRoutes } from './routes/pairings.js';
 import { registerAgentRoutes } from './routes/agents.js';
 import { registerAttachmentRoutes } from './routes/attachments.js';
 import { registerExportRoutes } from './routes/exports.js';
+import { registerHostRoutes } from './routes/host.js';
 import { createBlobStore, type BlobStore } from './storage/index.js';
-import { communities } from './schema.js';
 import { DeliveryReceiptGate } from './delivery-receipt-gate.js';
 import { registerCommunityTestControlRoutes } from './routes/test-control.js';
+import { resolveCommunityContext } from './tenant-context.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
@@ -49,7 +49,6 @@ export function createCommunityApp({
   const app = new Hono();
   const auth = createCommunityAuth(pool, config);
   const receiptGate = config.testRuntime ? new DeliveryReceiptGate() : undefined;
-  const db = drizzle(pool, { schema: { communities } });
   app.onError(handleError);
   app.get('/health', (c) => c.json({ status: 'ok' }));
   const attemptTimes = new Map<string, number[]>();
@@ -80,7 +79,7 @@ export function createCommunityApp({
       }
       // Bound JSON and auth requests before parsing, even for chunked or false-length bodies.
       if (
-        c.req.path.match(/^\/api\/v1\/channels\/[^/]+\/attachments$/) &&
+        c.req.path.match(/^\/api\/v1\/(?:communities\/[^/]+\/)?channels\/[^/]+\/attachments$/) &&
         c.req.method === 'POST'
       ) {
         await next();
@@ -134,12 +133,21 @@ export function createCommunityApp({
       const owner = await client.query(
         "SELECT 1 FROM members WHERE role='owner' AND active LIMIT 1"
       );
-      if (owner.rowCount)
-        throw new ApiError(409, 'STATE_CONFLICT', 'This community already has an owner.');
-      await client.query('INSERT INTO bootstrap_grants(token_hash,expires_at) VALUES($1,$2)', [
-        hashSecret(token),
-        expiry,
-      ]);
+      const communities = await client.query('SELECT 1 FROM communities LIMIT 1');
+      const operators = await client.query('SELECT 1 FROM host_operators LIMIT 1');
+      const members = await client.query('SELECT 1 FROM members LIMIT 1');
+      if (owner.rowCount || communities.rowCount || operators.rowCount || members.rowCount) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'First installation is unavailable on a host that already contains community state.'
+        );
+      }
+      await client.query(
+        `INSERT INTO bootstrap_grants(token_hash,purpose,community_id,expires_at)
+         VALUES($1,'first_install',NULL,$2)`,
+        [hashSecret(token), expiry]
+      );
     });
     setCookie(c, 'community_bootstrap', signValue(token, config.authSecret), {
       httpOnly: true,
@@ -166,16 +174,25 @@ export function createCommunityApp({
       const existing = await client.query(
         "SELECT 1 FROM members WHERE role='owner' AND active LIMIT 1"
       );
-      if (existing.rowCount)
-        throw new ApiError(409, 'STATE_CONFLICT', 'This community already has an owner.');
+      const communities = await client.query('SELECT 1 FROM communities LIMIT 1');
+      const operators = await client.query('SELECT 1 FROM host_operators LIMIT 1');
+      const members = await client.query('SELECT 1 FROM members LIMIT 1');
+      if (existing.rowCount || communities.rowCount || operators.rowCount || members.rowCount) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'First installation is unavailable on a host that already contains community state.'
+        );
+      }
       const community = await client.query<{
         id: string;
         name: string;
         description: null;
         created_at: Date;
-      }>('INSERT INTO communities(name) VALUES($1) RETURNING id,name,description,created_at', [
-        body.name,
-      ]);
+      }>(
+        "INSERT INTO communities(name,lifecycle) VALUES($1,'pending_owner') RETURNING id,name,description,created_at",
+        [body.name]
+      );
       const handle = await mintHandle(client, community.rows[0].id, user.name);
       const member = await client.query<{ id: string }>(
         `INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$3,$4,'owner') RETURNING id`,
@@ -185,6 +202,13 @@ export function createCommunityApp({
         'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',
         [community.rows[0].id, handle, member.rows[0].id]
       );
+      await client.query(
+        'INSERT INTO host_operators(user_id) VALUES($1) ON CONFLICT (user_id) DO UPDATE SET revoked_at=NULL',
+        [user.id]
+      );
+      await client.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [
+        community.rows[0].id,
+      ]);
       await client.query('UPDATE bootstrap_grants SET consumed_at=now() WHERE id=$1', [grantId]);
       return {
         community: {
@@ -199,43 +223,68 @@ export function createCommunityApp({
     return json(c, CommunityWireBootstrapClaimResponseSchema, result);
   });
 
-  app.get('/api/v1/community', async (c) => {
-    const [row] = await db.select().from(communities).limit(1);
-    if (!row) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+  const hostApi = new Hono();
+  registerHostRoutes(hostApi, { pool, auth, config, blobStore });
+  app.route('/api/v1', hostApi);
+
+  const communityApi = new Hono();
+  communityApi.use('*', async (c, next) => {
+    if (c.req.param('communityId')) {
+      await resolveCommunityContext(c, pool, {
+        allowPendingOwner: true,
+        allowSuspended: true,
+      });
+    }
+    await next();
+  });
+  communityApi.get('/community', async (c) => {
+    const tenant = await resolveCommunityContext(c, pool, {
+      allowPendingOwner: true,
+      allowSuspended: true,
+    });
+    const result = await pool.query<{
+      id: string;
+      name: string;
+      description: string | null;
+      created_at: Date;
+    }>('SELECT id,name,description,created_at FROM communities WHERE id=$1', [tenant.communityId]);
+    const row = result.rows[0];
     return json(c, CommunityWireCommunitySchema, {
       id: row.id,
       name: row.name,
       description: row.description,
-      createdAt: row.createdAt.toISOString(),
+      createdAt: row.created_at.toISOString(),
     });
   });
-  app.get('/api/v1/auth-options', (c) =>
+  communityApi.get('/auth-options', (c) =>
     json(c, CommunityWireAuthOptionsSchema, {
       google: Boolean(config.oauth.google),
       github: Boolean(config.oauth.github),
     })
   );
 
-  registerChannelRoutes(app, { pool, auth });
-  registerEntryRoutes(app, { pool, auth, config, receiptGate });
+  registerChannelRoutes(communityApi, { pool, auth });
+  registerEntryRoutes(communityApi, { pool, auth, config, receiptGate });
   if (receiptGate) registerCommunityTestControlRoutes(app, receiptGate);
-  registerEventRoutes(app, { pool, auth, config, hooks });
-  registerInviteRoutes(app, {
+  registerEventRoutes(communityApi, { pool, auth, config, hooks });
+  registerInviteRoutes(communityApi, {
     pool,
     auth,
     config,
     limitPreview: (c) =>
       limitAttempts(`invite-preview:${peer(c)}`, config.limits.invitePreviewAttemptsPerMinute),
   });
-  registerMemberRoutes(app, { pool, auth });
-  registerPairingRoutes(app, {
+  registerMemberRoutes(communityApi, { pool, auth });
+  registerPairingRoutes(communityApi, {
     pool,
     auth,
     config,
     limitStart: (c) => limitAttempts(`pairing:${peer(c)}`, config.limits.pairingAttemptsPerMinute),
   });
-  registerAgentRoutes(app, { pool, auth, config });
-  registerAttachmentRoutes(app, { pool, auth, config, blobStore });
-  registerExportRoutes(app, { pool, auth, blobStore });
+  registerAgentRoutes(communityApi, { pool, auth, config });
+  registerAttachmentRoutes(communityApi, { pool, auth, config, blobStore });
+  registerExportRoutes(communityApi, { pool, auth, blobStore });
+  app.route('/api/v1', communityApi);
+  app.route('/api/v1/communities/:communityId', communityApi);
   return app;
 }

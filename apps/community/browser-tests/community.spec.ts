@@ -459,10 +459,10 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       'INSERT INTO community_handles(community_id,handle,agent_id) VALUES($1,$2,$3)',
       [ids.communityId, 'browser-helper', seededAgent.rows[0].id]
     );
-    await pool.query('INSERT INTO agent_channel_members(channel_id,agent_id) VALUES($1,$2)', [
-      ids.channelId,
-      seededAgent.rows[0].id,
-    ]);
+    await pool.query(
+      'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3)',
+      [ids.communityId, ids.channelId, seededAgent.rows[0].id]
+    );
     await memberPage.getByRole('button', { name: 'Manage' }).click();
     await memberPage.getByRole('button', { name: 'Account' }).click();
     const exportDownload = memberPage.waitForEvent('download');

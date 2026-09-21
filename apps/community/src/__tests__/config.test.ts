@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFile } from 'node:fs/promises';
 import { parseConfig } from '../config.js';
 import { createBlobStore, FileSystemBlobStore, S3BlobStore } from '../storage/index.js';
 
@@ -12,6 +13,12 @@ const valid = {
 };
 
 describe('community startup config', () => {
+  it('keeps bulk tenant reconciliation out of ordinary startup', async () => {
+    const startup = await readFile(new URL('../main.ts', import.meta.url), 'utf8');
+
+    expect(startup).not.toContain('reconcileTenantNamespace');
+  });
+
   it('requires every deployment secret and storage setting', () => {
     expect(() => parseConfig({})).toThrow('COMMUNITY_DATABASE_URL');
     expect(() => parseConfig({ ...valid, COMMUNITY_BOOTSTRAP_SECRET: undefined })).toThrow(

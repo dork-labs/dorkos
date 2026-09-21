@@ -33,6 +33,10 @@ export const COMMUNITY_API_V1_ROUTES = {
   community: '/api/v1/community',
   bootstrapPreflight: '/api/v1/bootstrap/preflight',
   bootstrapClaim: '/api/v1/bootstrap/claim',
+  ownerClaimPreflight: '/api/v1/owner-claims/preflight',
+  ownerClaim: '/api/v1/owner-claims/claim',
+  hostCommunities: '/api/v1/host/communities',
+  hostCommunityLifecycle: '/api/v1/host/communities/:id/lifecycle',
   invites: '/api/v1/invites',
   invitePreview: '/api/v1/invites/preview',
   inviteRedeem: '/api/v1/invites/redeem',
@@ -91,6 +95,39 @@ export const CommunityWireBootstrapClaimResponseSchema = z.strictObject({
   community: CommunityWireCommunitySchema,
   memberId: id,
 });
+
+/** Host-visible lifecycle metadata contains no membership or content data. */
+export const CommunityWireHostCommunitySchema = CommunityWireCommunitySchema.extend({
+  lifecycle: z.enum(['pending_owner', 'active', 'suspended']),
+});
+/** Communities visible to a host operator as operational metadata. */
+export const CommunityWireHostCommunityListResponseSchema = z.strictObject({
+  communities: z.array(CommunityWireHostCommunitySchema),
+});
+/** A host operator creates a pending community before any membership exists. */
+export const CommunityWireHostCommunityCreateRequestSchema = z.strictObject({
+  name: z.string().min(1),
+});
+/** One-time owner claim returned only to the creating host operator. */
+export const CommunityWireHostCommunityCreateResponseSchema = z.strictObject({
+  community: CommunityWireHostCommunitySchema,
+  ownerClaimToken: id,
+  expiresAt: timestamp,
+});
+/** Host lifecycle controls can suspend or resume an existing claimed community. */
+export const CommunityWireHostCommunityLifecycleRequestSchema = z.strictObject({
+  lifecycle: z.enum(['active', 'suspended']),
+});
+/** A claim token is captured from memory and exchanged for an HTTP-only cookie. */
+export const CommunityWireOwnerClaimPreflightRequestSchema = z.strictObject({ token: id });
+/** Preflight exposes only the bound pending community and expiry. */
+export const CommunityWireOwnerClaimPreflightResponseSchema = z.strictObject({
+  granted: z.literal(true),
+  communityId: id,
+  expiresAt: timestamp,
+});
+/** Redeeming a claim needs no client-supplied community or role. */
+export const CommunityWireOwnerClaimRequestSchema = z.strictObject({});
 
 /** Human roles. Agent membership is a distinct kind, not an elevated role. */
 export const CommunityWireHumanRoleSchema = z.enum(['owner', 'admin', 'member']);
@@ -437,6 +474,8 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'ATTACHMENT_TOO_LARGE',
   'UNSUPPORTED_ATTACHMENT_TYPE',
   'RATE_LIMITED',
+  'COMMUNITY_SELECTION_REQUIRED',
+  'COMMUNITY_UNAVAILABLE',
   'UNAVAILABLE',
 ]);
 /** Public error response; no database cause, credential or path is serialized. */
