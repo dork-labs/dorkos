@@ -150,6 +150,11 @@ gates:
     source: .github/workflows/publish-docker.yml
     purpose: Mirrors the released image to Docker Hub when the mirror is switched on.
 
+  # --- publish-community.yml ---
+  - id: wf.publish-community.build-and-publish
+    source: .github/workflows/publish-community.yml
+    purpose: Publishes and attests the immutable Community image and its strict version-to-digest release manifest.
+
   # --- scripts-test.yml ---
   - id: wf.scripts-test.fixtures
     source: .github/workflows/scripts-test.yml
