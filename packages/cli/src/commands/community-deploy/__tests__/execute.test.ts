@@ -171,4 +171,19 @@ describe('Community creation executor', () => {
       lastSafeError: { category: 'transient', code: 'PROVIDER_UNAVAILABLE' },
     });
   });
+
+  it('finishes separate Tigris terms consent before recording a bucket intent', async () => {
+    const harness = dependencies();
+    harness.value.tigris.prepare = vi.fn().mockRejectedValue(new Error('terms declined'));
+
+    await expect(
+      executeCommunityCreationPhase(plan, harness.persisted(), harness.value)
+    ).rejects.toThrow('terms declined');
+    expect(harness.value.tigris.create).not.toHaveBeenCalled();
+    expect(harness.persisted()).toMatchObject({
+      state: 'neon_project_created',
+      pendingIntent: null,
+      resources: { flyAppId: 'app-id', neonProjectId: 'project-id' },
+    });
+  });
 });

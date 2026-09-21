@@ -67,7 +67,7 @@ async function ownerExists(origin: string): Promise<boolean> {
       headers: { accept: 'application/json' },
       signal: controller.signal,
     });
-    void response.body?.cancel().catch(() => undefined);
+    await response.body?.cancel().catch(() => undefined);
     if (response.status === 200) return true;
     if (response.status === 404) return false;
     throw new Error('Community owner status is unavailable');

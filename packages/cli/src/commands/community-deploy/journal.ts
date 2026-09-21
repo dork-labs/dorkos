@@ -122,6 +122,7 @@ export const LaunchJournalSchema = z
     secretBaseline: z
       .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/), SecretDigestSchema)
       .optional(),
+    ownerBootstrapRotated: z.boolean().optional(),
     verifiedBindings: z
       .array(
         z.discriminatedUnion('kind', [

@@ -152,4 +152,22 @@ describe('Community owner handoff', () => {
     expect(test.dependencies.stageBootstrap).not.toHaveBeenCalled();
     expect(test.dependencies.handoffSecret).not.toHaveBeenCalled();
   });
+
+  it('does not repeat the post-claim rotation while acceptance is pending', async () => {
+    const initial = journal({
+      state: 'owner_pending',
+      completedSteps: [...journal().completedSteps, 'owner_pending'],
+    });
+    const first = harness(initial);
+    vi.mocked(first.dependencies.ownerExists).mockResolvedValue(true);
+    vi.mocked(first.dependencies.confirmAcceptance).mockResolvedValue(false);
+    const pending = await executeCommunityOwnerHandoff(plan, initial, null, first.dependencies);
+    expect(pending.ownerBootstrapRotated).toBe(true);
+    expect(first.dependencies.stageBootstrap).toHaveBeenCalledOnce();
+
+    const resumed = harness(pending);
+    vi.mocked(resumed.dependencies.ownerExists).mockResolvedValue(true);
+    await executeCommunityOwnerHandoff(plan, pending, null, resumed.dependencies);
+    expect(resumed.dependencies.stageBootstrap).not.toHaveBeenCalled();
+  });
 });

@@ -140,6 +140,10 @@ export async function runCommunityDispatcher(
   const version = parsed.values.version ?? context.cliVersion;
   const runId = parsed.values.resume ?? randomUUID();
   const journalPath = launchJournalPath(context.dorkHome, runId);
+  const resumeJournal = parsed.values.resume ? await readLaunchJournal(journalPath) : null;
+  if (parsed.values.resume && !resumeJournal) {
+    throw new Error('The selected Community launch journal was not found');
+  }
   const selection: CommunityResumeSelection = {
     version,
     flyOrganization: required(parsed.values['fly-org'], '--fly-org'),
@@ -170,7 +174,17 @@ export async function runCommunityDispatcher(
   });
 
   await runCommunityDeploy(
-    { version, selection, dryRun: parsed.values['dry-run'] },
+    {
+      version,
+      selection,
+      dryRun: parsed.values['dry-run'],
+      resume: resumeJournal
+        ? {
+            flyAppId: resumeJournal.resources.flyAppId,
+            neonProjectId: resumeJournal.resources.neonProjectId,
+          }
+        : undefined,
+    },
     {
       resolveRelease: (requested) =>
         resolveExactCommunityRelease(requested, trusted, releaseSource, context.parseRelease).then(
@@ -191,8 +205,7 @@ export async function runCommunityDispatcher(
       execute: async (result) => {
         let latest: LaunchJournal;
         if (parsed.values.resume) {
-          const existing = await readLaunchJournal(journalPath);
-          if (!existing) throw new Error('The selected Community launch journal was not found');
+          const existing = resumeJournal!;
           assertCommunityLaunchPlanUnchanged(existing, result.plan);
           latest = existing;
         } else {

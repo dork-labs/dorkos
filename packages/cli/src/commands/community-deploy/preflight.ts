@@ -47,7 +47,14 @@ export interface CommunityPreflightInventory {
 /** One authoritative or explicitly unknown readiness check. */
 export interface CommunityReadinessCheck {
   /** Stable check identifier. */
-  id: 'fly-app-name' | 'fly-billing' | 'fly-quota' | 'neon-billing' | 'neon-quota';
+  id:
+    | 'fly-app-name'
+    | 'fly-role'
+    | 'fly-billing'
+    | 'fly-quota'
+    | 'neon-role'
+    | 'neon-billing'
+    | 'neon-quota';
   /** Read-only readiness result. */
   status: 'ready' | 'blocked' | 'unknown';
 }
@@ -60,6 +67,14 @@ export interface CommunityPreflightResult {
   planHash: string;
   /** Checks that cannot be inferred from names or local authentication. */
   readiness: readonly CommunityReadinessCheck[];
+}
+
+/** Exact recorded identities that may explain name collisions during resume. */
+export interface CommunityPreflightResume {
+  /** Previously journaled Fly app ID, when creation completed. */
+  flyAppId?: string;
+  /** Previously journaled Neon project ID, when creation completed. */
+  neonProjectId?: string;
 }
 
 /** Stable preflight rejection with no external response text. */
@@ -93,7 +108,8 @@ export class CommunityPreflightError extends Error {
 export function buildCommunityPreflight(
   release: CompatibleCommunityRelease,
   selection: CommunityPreflightSelection,
-  inventory: CommunityPreflightInventory
+  inventory: CommunityPreflightInventory,
+  resume: CommunityPreflightResume = {}
 ): CommunityPreflightResult {
   if (
     !release.image.platforms.some(
@@ -111,7 +127,11 @@ export function buildCommunityPreflight(
   if (!flyRegion || flyRegion.deprecated || !flyRegion.gatewayAvailable) {
     throw new CommunityPreflightError('FLY_REGION_UNAVAILABLE');
   }
-  if (inventory.flyApps.some(({ name }) => name === selection.appName)) {
+  const matchingFlyApps = inventory.flyApps.filter(({ name }) => name === selection.appName);
+  if (
+    matchingFlyApps.length > 0 &&
+    (matchingFlyApps.length !== 1 || matchingFlyApps[0]?.id !== resume.flyAppId)
+  ) {
     throw new CommunityPreflightError('FLY_APP_NAME_UNAVAILABLE');
   }
 
@@ -121,7 +141,13 @@ export function buildCommunityPreflight(
   if (!neonOrganization) throw new CommunityPreflightError('NEON_ORGANIZATION_NOT_FOUND');
   const neonRegion = inventory.neonRegions.find(({ id }) => id === selection.neonRegion);
   if (!neonRegion) throw new CommunityPreflightError('NEON_REGION_UNAVAILABLE');
-  if (inventory.neonProjects.some(({ name }) => name === selection.neonProjectName)) {
+  const matchingNeonProjects = inventory.neonProjects.filter(
+    ({ name }) => name === selection.neonProjectName
+  );
+  if (
+    matchingNeonProjects.length > 0 &&
+    (matchingNeonProjects.length !== 1 || matchingNeonProjects[0]?.id !== resume.neonProjectId)
+  ) {
     throw new CommunityPreflightError('NEON_PROJECT_NAME_AMBIGUOUS');
   }
 
@@ -149,8 +175,10 @@ export function buildCommunityPreflight(
     planHash: hashLaunchPlan(plan),
     readiness: [
       { id: 'fly-app-name', status: 'unknown' },
+      { id: 'fly-role', status: 'unknown' },
       { id: 'fly-billing', status: 'unknown' },
       { id: 'fly-quota', status: 'unknown' },
+      { id: 'neon-role', status: 'unknown' },
       { id: 'neon-billing', status: 'unknown' },
       { id: 'neon-quota', status: 'unknown' },
     ],

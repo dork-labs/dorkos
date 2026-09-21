@@ -66,7 +66,8 @@ function bootstrapDigest(
 
 async function replaceAndApplyBootstrap(
   journal: LaunchJournal,
-  dependencies: CommunityOwnerDependencies
+  dependencies: CommunityOwnerDependencies,
+  ownerClaimed = false
 ): Promise<{ journal: LaunchJournal; secret: string }> {
   const previousDigest = journal.secretDigests?.[BOOTSTRAP_SECRET_NAME];
   if (!previousDigest) throw new ProviderMutationError('INVALID_RESPONSE');
@@ -80,6 +81,7 @@ async function replaceAndApplyBootstrap(
   await dependencies.verifyRuntimeAndHealth();
   const current = await persist(dependencies, journal, {
     secretDigests: { ...journal.secretDigests, [BOOTSTRAP_SECRET_NAME]: deployedDigest },
+    ...(ownerClaimed ? { ownerBootstrapRotated: true } : {}),
     lastSafeError: null,
   });
   return { journal: current, secret };
@@ -135,8 +137,10 @@ export async function executeCommunityOwnerHandoff(
   ) {
     return current;
   }
-  const rotation = await replaceAndApplyBootstrap(current, dependencies);
-  current = rotation.journal;
+  if (!current.ownerBootstrapRotated) {
+    const rotation = await replaceAndApplyBootstrap(current, dependencies, true);
+    current = rotation.journal;
+  }
   if (!(await dependencies.confirmAcceptance(origin))) return current;
   return persist(dependencies, current, {
     state: 'complete',

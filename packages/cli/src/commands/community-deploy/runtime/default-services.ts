@@ -208,8 +208,7 @@ export function createDefaultCommunityCreationDependencies(input: {
       inspect: (id) => exactNeonProject(input.options, input.plan, id),
     },
     tigris: {
-      create: async () => {
-        const exactApp = await app();
+      prepare: async () => {
         const accepted = await useTigrisClient(input.options, (client) =>
           client.hasAcceptedTerms()
         );
@@ -220,6 +219,9 @@ export function createDefaultCommunityCreationDependencies(input: {
           );
           if (!confirmed) throw new FlyGraphqlClientError('TERMS_NOT_ACCEPTED');
         }
+      },
+      create: async () => {
+        const exactApp = await app();
         const created = await useTigrisClient(input.options, (client) =>
           client.createTigris({
             clientMutationId: input.latestJournal().runId,

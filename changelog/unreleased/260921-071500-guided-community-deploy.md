@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(cli): add guided Community deployment'
+  - 'feat(cli): wire guided Community setup'
 ---
 
 ### Added

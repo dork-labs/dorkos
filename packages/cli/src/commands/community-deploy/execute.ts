@@ -29,6 +29,8 @@ export interface CreatedResourceIdentity {
 
 /** One creation boundary with exact-identity readback. */
 export interface CreationBoundary {
+  /** Complete any read-only prerequisites before a creation intent is recorded. */
+  prepare?(): Promise<void>;
   /** Submit one create request. */
   create(): Promise<CreatedResourceIdentity>;
   /** Read the returned exact identity and reject any binding drift. */
@@ -133,6 +135,8 @@ async function executeCreationStep(
   if (journal.pendingIntent) {
     throw new CommunityCreationUncertainError(journal.pendingIntent.provider);
   }
+
+  await step.boundary.prepare?.();
 
   const current = await persistNext(dependencies, journal, {
     pendingIntent: {

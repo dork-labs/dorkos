@@ -7,23 +7,25 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 4 / 15
+**Tasks Completed:** 14 / 15
 
-## Tasks Completed
+## Implemented
 
-### Provider contracts and fixtures
+- The release workflow publishes a two-architecture Community image and attaches an attested, exact-version manifest only after immutable digest and anonymous-read checks pass. The packaged CLI uses the shared strict parser and its compiled migration-corpus fingerprint.
+- `dorkos community deploy` resolves and verifies the exact manifest and image attestations, checks pinned Fly and Neon CLI minimums, reads explicitly selected organizations and regions, renders the non-secret plan, supports a write-free dry run, and requires the operator to type the Fly app name before the first write.
+- The mode-`0600` durable journal records intent before creation, service-issued identities, exact bindings, non-secret secret digests, and safe errors. Creation never adopts a same-name resource or repeats a write after an unproved outcome.
+- The executor creates and re-reads the Fly app, separate Neon project topology, and private Tigris binding. Tigris terms require their own interactive acknowledgement. Database credentials, Fly session credentials, object-store credentials, and generated Community secrets remain in bounded memory and secret stdin paths.
+- Secret import uses a durable pre-write baseline. Resume can prove a complete staged set after an import-before-journal interruption without regenerating authentication or invitation secrets. Deployment uses the immutable image digest, one always-on Machine, Fly check readback, applied secret digests, and an independently bounded HTTPS health check.
+- Owner creation stays in Community's browser flow. A lost Setup secret is replaced and applied before handoff; successful claim rotates it again and proves the same pinned one-Machine deployment before completion. The operator must confirm one post and one private attachment round trip.
+- The Fly guide leads with guided setup and keeps the source-based manual path for recovery and audit. A built CLI was exercised from outside the checkout for its packaged help path; the fake-service suite covers exact release resolution and write-free planning.
 
-- Added sanitized Fly and Neon JSON fixtures plus destructive field mutations and a repository fixture scan that rejects credential shapes, secret URLs, and terminal controls.
-- Added typed Fly account, organization, region, app, Machine, release, address, and secret-version reads. App creation, staged secret import, immutable-image deployment with `--ha=false`, and exact app deletion run through the bounded subprocess boundary. Independent readback proves staged and applied secret digests, one healthy Machine, the expected image digest, a stable release, and a public address.
-- Added typed Neon organization, active-region, project, branch, database, role, and endpoint reads. Project creation always passes `--no-secrets`; exact-ID cleanup is bounded; project labels never establish provenance; and the direct TLS URL remains in a disposable in-memory wrapper bound to independently inventoried project, branch, region, endpoint, database, and role identities.
-- Added fixed minimal Fly GraphQL operations for Tigris terms, private creation, exact-ID readback, and exact-name cleanup. Creation checks accepted terms first, never requests public access or excluded secret fields, and requires independent private organization/app/provider binding plus the two expected Fly secret names.
-- Added exact release-resolution interfaces that bind the requested version, manifest attestation, image attestation, repository, workflow, and tag without a mutable fallback. The release workflow task owns the shared manifest parser and publication assets.
+## Verification
+
+- 132 focused launcher and shared release-contract tests pass.
+- The CLI package typecheck and lint pass with no new lint errors.
+- The production CLI bundle builds and runs `dorkos community deploy --help` without a repository working directory.
+- Service mutation tests use fake executables and local HTTP fixtures. Ordinary verification never contacts or mutates Fly, Neon, Tigris, GitHub, or another paid service.
 
 ## Remaining Work
 
-- Task 1.2 still owns packaged command dispatch, the concrete release-asset transport, shared manifest parsing, local CLI version compatibility, and Linux architecture selection.
-- Task 1.3 still owns read-only preflight policy, authoritative readiness/unknown classification, immutable plan construction, and typed interactive consent.
-- Phase 3 still owns orchestration. It must write creation intent before any mutation, use the wrappers in the frozen transition order, persist only verified identities, refuse blind retries after uncertain outcomes, render the temporary Fly configuration, generate secrets, and call the staged import and deploy boundaries.
-- Phase 4 still owns bootstrap rotation through an applied Fly secret deployment, owner handoff, packaged proof, and the separately armed credentialed cleanup gate. The cleanup methods in this slice do not authorize deletion and are not called by ordinary launch failures.
-
-No test in this slice contacts or mutates Fly, Neon, Tigris, or another paid service. All mutation coverage uses fake executables or local HTTP response fixtures.
+Task 4.3 remains separate: the explicitly armed credentialed release gate must exercise the exact published package and image in designated test organizations, induce and resume one interruption, verify meaningful Community behavior, and prove exact-identity cleanup. Until that gate passes, the release must not be described as guided-launch ready.

@@ -72,8 +72,10 @@ describe('Community deployment preflight', () => {
     });
     expect(first.readiness).toEqual([
       { id: 'fly-app-name', status: 'unknown' },
+      { id: 'fly-role', status: 'unknown' },
       { id: 'fly-billing', status: 'unknown' },
       { id: 'fly-quota', status: 'unknown' },
+      { id: 'neon-role', status: 'unknown' },
       { id: 'neon-billing', status: 'unknown' },
       { id: 'neon-quota', status: 'unknown' },
     ]);
@@ -115,5 +117,42 @@ describe('Community deployment preflight', () => {
         flyRegions: [{ ...inventory.flyRegions[0]!, deprecated: true }],
       })
     ).toThrowError(new CommunityPreflightError('FLY_REGION_UNAVAILABLE'));
+  });
+
+  it('allows only exact journaled resource identities to explain resume collisions', () => {
+    const existingInventory = {
+      ...inventory,
+      flyApps: [
+        {
+          id: 'app-recorded',
+          name: selection.appName,
+          organizationId: 'org-id',
+          organizationSlug: 'dork-labs',
+          organizationName: 'Dork Labs',
+          status: 'running',
+        },
+      ],
+      neonProjects: [
+        {
+          id: 'project-recorded',
+          organizationId: 'org-dorian',
+          name: selection.neonProjectName,
+          regionId: 'aws-us-east-2',
+          postgresVersion: 17,
+        },
+      ],
+    };
+    expect(() =>
+      buildCommunityPreflight(release, selection, existingInventory, {
+        flyAppId: 'app-recorded',
+        neonProjectId: 'project-recorded',
+      })
+    ).not.toThrow();
+    expect(() =>
+      buildCommunityPreflight(release, selection, existingInventory, {
+        flyAppId: 'app-foreign',
+        neonProjectId: 'project-recorded',
+      })
+    ).toThrowError(new CommunityPreflightError('FLY_APP_NAME_UNAVAILABLE'));
   });
 });

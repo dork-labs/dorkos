@@ -8,6 +8,7 @@ import {
   buildCommunityPreflight,
   type CommunityPreflightInventory,
   type CommunityPreflightResult,
+  type CommunityPreflightResume,
   type CommunityPreflightSelection,
 } from './preflight.js';
 
@@ -19,6 +20,8 @@ export interface CommunityDeployRequest {
   selection: CommunityPreflightSelection;
   /** Stop after the same release and read-only planning path. */
   dryRun: boolean;
+  /** Exact journal identities allowed to explain name collisions during resume. */
+  resume?: CommunityPreflightResume;
 }
 
 /** Side-effect boundaries used by the command after local argument parsing. */
@@ -48,7 +51,7 @@ export async function runCommunityDeploy(
 ): Promise<CommunityPreflightResult> {
   const release = await dependencies.resolveRelease(request.version);
   const inventory = await dependencies.readPreflight(request.selection);
-  const result = buildCommunityPreflight(release, request.selection, inventory);
+  const result = buildCommunityPreflight(release, request.selection, inventory, request.resume);
   dependencies.renderPreflight(result);
   if (request.dryRun) return result;
   await dependencies.consent(result.plan.fly.appName);

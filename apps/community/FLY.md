@@ -6,7 +6,40 @@ This guide describes the current server: **one community per deployment**. Conne
 
 This is a deployment recipe, not a claim that a production Fly deployment has been verified. Complete the acceptance checks below before inviting people.
 
-## Prepare the app
+## Use guided setup
+
+The packaged CLI can create and verify the Fly app, a separate Neon project, and a private Tigris bucket. It resolves an exact signed Community image, shows the full plan, and waits for you to type the planned app name before it creates anything.
+
+Install and sign in to the required command-line tools first:
+
+```sh
+gh auth login
+fly auth login
+neonctl auth
+dorkos community deploy --help
+```
+
+Choose the organizations and nearby regions yourself. The command does not silently select an account or region. Run a read-only preview first:
+
+```sh
+dorkos community deploy \
+  --fly-org your-fly-org \
+  --fly-region ord \
+  --neon-org your-neon-org-id \
+  --neon-region aws-us-east-2 \
+  --app-name your-community-app \
+  --dry-run
+```
+
+Remove `--dry-run` to start setup. The command creates a recovery journal under your DorkOS data directory and prints its path. If setup stops, it keeps every confirmed resource and prints a complete command with `--resume <run-id>`. It never deletes paid resources automatically.
+
+Fly may require you to accept the Tigris terms separately. The command checks the current terms state and pauses for an explicit second confirmation before creating the bucket. Owner signup remains in Community's own browser page. After signup, the command applies a replacement Setup secret and asks you to confirm one post and one private attachment round trip.
+
+An exact DorkOS release is available to this command only after its Community image and signed release manifest finish publishing. A not-ready version stops before the resource consent step. Use `--version X.Y.Z` to request an exact version; there is no mutable-tag fallback.
+
+The manual recipe below remains available for recovery and audit.
+
+## Prepare the app manually
 
 Install [flyctl](https://fly.io/docs/flyctl/install/), sign in with `fly auth login`, and choose the Fly organization that will own the app and bucket. You also need access to the PostgreSQL account you choose below. Each service bills its owning account.
 
