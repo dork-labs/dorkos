@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): project verified connection access'
+  - 'fix(community): enforce projected access everywhere'
 ---
 
 ### Fixed
