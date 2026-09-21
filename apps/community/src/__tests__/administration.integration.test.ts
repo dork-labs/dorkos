@@ -547,6 +547,146 @@ it.each(['active', 'archived'] as const)(
   }
 );
 
+it('rejects foreign private objects even when the signed-in person owns both communities', async () => {
+  const otherId = (
+    await pool.query<{ id: string }>(
+      "SELECT id FROM communities WHERE id<>$1 AND lifecycle='active' ORDER BY id LIMIT 1",
+      [communityId]
+    )
+  ).rows[0].id;
+  const own = `/api/v1/communities/${communityId}`;
+  const other = `/api/v1/communities/${otherId}`;
+  const created = await jsonRequest(`${other}/channels`, 'POST', {
+    name: 'Tenant isolation private',
+    visibility: 'private',
+  });
+  expect(created.status).toBe(201);
+  const channel = (await created.json()).channel.id;
+  const posted = await jsonRequest(`${other}/channels/${channel}/entries`, 'POST', {
+    text: 'Only in the other tenant',
+    idempotencyKey: 'isolation-positive-entry',
+  });
+  expect(posted.status).toBe(201);
+  const otherMember = (
+    await pool.query<{ id: string }>(
+      "SELECT id FROM members WHERE community_id=$1 AND role='owner'",
+      [otherId]
+    )
+  ).rows[0].id;
+  const archive = (
+    await pool.query<{ id: string }>(
+      'SELECT id FROM export_archives WHERE community_id=$1 LIMIT 1',
+      [otherId]
+    )
+  ).rows[0].id;
+  const upload = await request(`${other}/channels/${channel}/attachments`, {
+    method: 'POST',
+    headers: {
+      cookie: ownerCookie,
+      origin: 'http://localhost:6481',
+      'content-type': 'text/plain',
+      'x-file-name': 'isolation.txt',
+      'x-file-size': '5',
+      'idempotency-key': 'isolation-file',
+    },
+    body: 'proof',
+  });
+  expect(upload.status).toBe(201);
+  const attachment = (await upload.json()).attachment.id;
+  expect(
+    (
+      await jsonRequest(`${other}/channels/${channel}/entries`, 'POST', {
+        text: 'Committed private file',
+        idempotencyKey: 'isolation-file-entry',
+        attachmentIds: [attachment],
+      })
+    ).status
+  ).toBe(201);
+  const invitation = await jsonRequest(`${other}/invites`, 'POST', {
+    channelId: channel,
+    seats: 1,
+  });
+  expect(invitation.status).toBe(201);
+  const inviteId = (await invitation.json()).invite.id;
+  const pairing = await jsonRequest(`${other}/pairings/start`, 'POST', {
+    challenge: createHash('sha256').update('tenant-isolation-verifier').digest('base64url'),
+    installName: 'Isolation fixture',
+    scopes: ['read'],
+  });
+  expect(pairing.status).toBe(201);
+  const pairingId = (await pairing.json()).pairingId;
+  const readPaths = [
+    `/attachments/${attachment}`,
+    `/pairings/${pairingId}`,
+    `/channels/${channel}`,
+    `/channels/${channel}/entries`,
+    `/channels/${channel}/members`,
+    `/channels/${channel}/events`,
+    `/exports/${archive}`,
+  ];
+  // Positive controls ensure each object really exists and is accessible in its tenant.
+  for (const path of readPaths.filter((value) => !value.endsWith('/events'))) {
+    const response = await request(`${other}${path}`, { headers: { cookie: ownerCookie } });
+    expect(response.status, `positive control ${path}`).toBe(200);
+    await response.arrayBuffer();
+  }
+  const tables = (
+    await pool.query<{ table_name: string }>(
+      "SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='community_id' ORDER BY table_name"
+    )
+  ).rows;
+  async function snapshot() {
+    const result: Record<string, unknown> = {};
+    for (const { table_name } of tables) {
+      const quoted = '"' + table_name.replaceAll('"', '""') + '"';
+      result[table_name] = (
+        await pool.query(
+          `SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]') AS rows FROM ${quoted} t WHERE community_id=ANY($1::uuid[])`,
+          [[communityId, otherId]]
+        )
+      ).rows[0].rows;
+    }
+    return result;
+  }
+  const before = await snapshot();
+  for (const path of readPaths) {
+    const response = await request(`${own}${path}`, {
+      headers: { cookie: ownerCookie },
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(response.status, `foreign read ${path}`).toBe(404);
+    await response.arrayBuffer();
+  }
+  const mutations: Array<{ method: 'POST' | 'PATCH' | 'DELETE'; path: string; body: unknown }> = [
+    { method: 'DELETE', path: `/invites/${inviteId}`, body: {} },
+    { method: 'PATCH', path: `/channels/${channel}`, body: { name: 'Must not change' } },
+    {
+      method: 'POST',
+      path: `/channels/${channel}/entries`,
+      body: { text: 'Must not post', idempotencyKey: 'isolation-foreign-entry' },
+    },
+    { method: 'POST', path: `/channels/${channel}/join`, body: {} },
+    { method: 'POST', path: `/channels/${channel}/leave`, body: {} },
+    { method: 'POST', path: `/channels/${channel}/members`, body: { memberId: ownerMemberId } },
+    { method: 'DELETE', path: `/channels/${channel}/members/${otherMember}`, body: {} },
+    { method: 'PATCH', path: `/members/${otherMember}/role`, body: { role: 'admin' } },
+    { method: 'DELETE', path: `/members/${otherMember}`, body: {} },
+  ];
+  for (const operation of mutations) {
+    const response = await jsonRequest(`${own}${operation.path}`, operation.method, operation.body);
+    expect(response.status, `foreign ${operation.method} ${operation.path}`).toBe(404);
+    await response.arrayBuffer();
+  }
+  const foreignPairing = await jsonRequest(`${own}/pairings/approve`, 'POST', { pairingId });
+  const missingPairing = await jsonRequest(`${own}/pairings/approve`, 'POST', {
+    pairingId: randomUUID(),
+  });
+  expect(foreignPairing.status).toBe(409);
+  expect(missingPairing.status).toBe(409);
+  expect(await foreignPairing.json()).toEqual(await missingPairing.json());
+  expect(await snapshot()).toEqual(before);
+});
+
 it('archives with immediate credential revocation and restores without revival', async () => {
   const channel = await jsonRequest(`/api/v1/communities/${communityId}/channels`, 'POST', {
     name: 'Archive history',

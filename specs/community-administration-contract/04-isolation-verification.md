@@ -15,4 +15,12 @@ Verification:
 - The first expiry fixture changed only its expiry and correctly failed the database constraint. The corrected fixture preserves the required thirty-day relationship; the final suite passes.
 - The owned local PostgreSQL container was stopped after verification.
 
-Remaining: independent review, composed acceptance with the final membership/navigation changes, the complete permission/upgrade matrix, and a coordinated backup/restore rehearsal. No live deployment or production data was changed by this proof.
+Independent review of the deletion proof at `b0b9d87c6f1e5971244c1147527f8fa3334d7efa`: zero Important findings and zero Nits.
+
+Remaining: composed acceptance with the final membership/navigation changes, the complete permission/upgrade matrix, and a coordinated backup/restore rehearsal. No live deployment or production data was changed by this proof.
+
+## Foreign-object matrix
+
+Refs DOR-2174 and DOR-2178. The administration suite also exercises one authenticated person who owns two active communities. Positive controls first read the second community's private channel, history, roster, committed attachment, export, and pairing through its correct qualified URL. Requests for those same objects through the first community return 404, including its event stream. Foreign channel edits, posts, joins, leaves, roster changes, member removal/role changes, and invitation deletion return 404. Foreign pairing approval returns the exact same generic 409 response as a nonexistent pairing.
+
+A before/after snapshot of every tenant-keyed table for both communities proves that all rejected operations leave both unchanged. Final PostgreSQL administration run: **13 passed**. This extends the deletion proof; it does not yet claim the complete credential-family or populated-upgrade acceptance matrix.
