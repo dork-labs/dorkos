@@ -17,7 +17,7 @@ const publisher = join(root, 'scripts/publish-community-release-assets.sh');
 describe('Community release workflow', () => {
   it('rejects dot-separated version suffixes before building the image', () => {
     const metadataStep = workflow.match(
-      /      - name: Extract release metadata[\s\S]*?        run: \|\n([\s\S]*?)(?=\n      - name:)/
+      / {6}- name: Extract release metadata[\s\S]*? {8}run: \|\n([\s\S]*?)(?=\n {6}- name:)/
     )?.[1];
     expect(metadataStep).toBeTruthy();
     const script = metadataStep!
