@@ -6,6 +6,20 @@
 import { LaunchJournalSchema, type LaunchJournal } from './journal.js';
 import { hashLaunchPlan, type LaunchPlan } from './plan.js';
 
+function recoveryContextForPlan(plan: LaunchPlan): NonNullable<LaunchJournal['recoveryContext']> {
+  return {
+    version: plan.dorkosVersion,
+    flyOrganization: plan.fly.organizationId,
+    flyRegion: plan.fly.region,
+    appName: plan.fly.appName,
+    machineSize: plan.fly.machineSize,
+    neonOrganization: plan.neon.organizationId,
+    neonRegion: plan.neon.region,
+    neonProjectName: plan.neon.projectName,
+    bucketName: plan.tigris.bucketName,
+  };
+}
+
 /** Stable refusal when a saved run no longer matches the requested plan. */
 export class CommunityLaunchPlanDriftError extends Error {
   /** Create a secret-free plan drift refusal. */
@@ -34,6 +48,7 @@ export function createInitialCommunityLaunchJournal(
     revision: 0,
     planHash: hashLaunchPlan(plan),
     releaseDigest: plan.imageDigest,
+    recoveryContext: recoveryContextForPlan(plan),
     state: 'planned',
     pendingIntent: null,
     resources: {},
@@ -53,7 +68,12 @@ export function createInitialCommunityLaunchJournal(
  * @param plan - Newly resolved and planned request.
  */
 export function assertCommunityLaunchPlanUnchanged(journal: LaunchJournal, plan: LaunchPlan): void {
-  if (journal.planHash !== hashLaunchPlan(plan) || journal.releaseDigest !== plan.imageDigest) {
+  if (
+    journal.planHash !== hashLaunchPlan(plan) ||
+    journal.releaseDigest !== plan.imageDigest ||
+    (journal.recoveryContext !== undefined &&
+      JSON.stringify(journal.recoveryContext) !== JSON.stringify(recoveryContextForPlan(plan)))
+  ) {
     throw new CommunityLaunchPlanDriftError();
   }
 }

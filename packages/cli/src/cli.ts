@@ -345,6 +345,8 @@ if (process.argv[2] === 'community') {
         'WINDIR',
         'APPDATA',
         'XDG_CONFIG_HOME',
+        'XDG_RUNTIME_DIR',
+        'WAYLAND_DISPLAY',
         'FLY_CONFIG_DIR',
         'GH_CONFIG_DIR',
       ].flatMap((name) => {

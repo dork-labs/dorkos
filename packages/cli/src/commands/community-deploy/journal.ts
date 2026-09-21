@@ -103,6 +103,20 @@ export const LaunchJournalSchema = z
     revision: z.number().int().nonnegative(),
     planHash: HexHashSchema,
     releaseDigest: Sha256DigestSchema,
+    recoveryContext: z
+      .object({
+        version: SafeIdentifierSchema,
+        flyOrganization: SafeIdentifierSchema,
+        flyRegion: SafeIdentifierSchema,
+        appName: SafeIdentifierSchema,
+        machineSize: SafeIdentifierSchema,
+        neonOrganization: SafeIdentifierSchema,
+        neonRegion: SafeIdentifierSchema,
+        neonProjectName: SafeIdentifierSchema,
+        bucketName: SafeIdentifierSchema,
+      })
+      .strict()
+      .optional(),
     state: LaunchStateSchema,
     pendingIntent: z
       .object({

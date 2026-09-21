@@ -36,9 +36,31 @@ describe('Community launch resume', () => {
       revision: 0,
       state: 'planned',
       releaseDigest: plan.imageDigest,
+      recoveryContext: {
+        flyOrganization: 'dork-labs',
+        appName: 'dorkos-community-test',
+        neonOrganization: 'org-dorian',
+      },
       completedSteps: ['planned'],
     });
     expect(() => assertCommunityLaunchPlanUnchanged(journal, plan)).not.toThrow();
+  });
+
+  it('rejects a saved recovery target that diverges from the hashed plan', () => {
+    const journal = createInitialCommunityLaunchJournal(
+      '11111111-1111-4111-8111-111111111111',
+      plan,
+      '2026-09-21T00:00:00.000Z'
+    );
+    expect(() =>
+      assertCommunityLaunchPlanUnchanged(
+        {
+          ...journal,
+          recoveryContext: { ...journal.recoveryContext!, flyOrganization: 'wrong-org' },
+        },
+        plan
+      )
+    ).toThrowError(new CommunityLaunchPlanDriftError());
   });
 
   it('rejects organization, region, resource, topology, or release drift before writes', () => {

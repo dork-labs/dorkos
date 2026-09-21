@@ -48,11 +48,22 @@ else if (name === 'neonctl' && args[0] === 'orgs') value = [{id:'org-dorian',nam
 else if (name === 'neonctl' && args[0] === 'api' && args[1] === '/regions') value = {regions:[{region_id:'aws-us-east-2',name:'AWS US East 2',default:false,geo_lat:40.4,geo_long:-82.9}]};
 else if (name === 'neonctl' && args[0] === 'projects') value = [];
 else if (name === 'neonctl' && args[0] === '--version') { process.stdout.write('5.0.0'); process.exit(0); }
-else if (['open','pbcopy','xdg-open','wl-copy'].includes(name)) process.exit(0);
+else if (['open','pbcopy','pbpaste','xdg-open','wl-copy','clip.exe','powershell.exe'].includes(name)) process.exit(0);
 else process.exit(2);
 process.stdout.write(JSON.stringify(value));
 `;
-  for (const name of ['gh', 'fly', 'neonctl', 'open', 'pbcopy', 'xdg-open', 'wl-copy']) {
+  for (const name of [
+    'gh',
+    'fly',
+    'neonctl',
+    'open',
+    'pbcopy',
+    'pbpaste',
+    'xdg-open',
+    'wl-copy',
+    'clip.exe',
+    'powershell.exe',
+  ]) {
     const executable = join(root, name);
     await writeFile(executable, source(name));
     await chmod(executable, 0o755);
@@ -68,6 +79,11 @@ afterEach(async () => {
 describe('Community command dispatcher', () => {
   it('runs packaged dry-run resolution and read-only planning with fake services', async () => {
     const path = await fixtureBin();
+    await Promise.all([
+      rm(join(path, 'pbcopy')),
+      rm(join(path, 'pbpaste')),
+      rm(join(path, 'open')),
+    ]);
     const dorkHome = await mkdtemp(join(tmpdir(), 'dorkos-community-home-'));
     roots.push(dorkHome);
     const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
@@ -220,6 +236,10 @@ describe('Community command dispatcher', () => {
     ).rejects.toThrow('FLY_ORGANIZATION_NOT_FOUND');
     const rendered = errorOutput.mock.calls.map(([value]) => String(value)).join('');
     expect(rendered).toContain('Fly app app-retained');
+    expect(rendered).toContain('owner dork-labs');
+    expect(rendered).not.toContain('owner wrong-org');
+    expect(rendered).toContain('--fly-org dork-labs');
+    expect(rendered).not.toContain('--fly-org wrong-org');
     expect(rendered).toContain('may incur charges');
     expect(rendered).toContain(`--resume ${runId}`);
   });
@@ -253,19 +273,7 @@ describe('Community command dispatcher', () => {
         tigrisBucketId: 'bucket-id',
       },
     };
-    const selection = {
-      version: '0.76.0',
-      flyOrganization: 'dork-labs',
-      flyRegion: 'ord',
-      appName: 'dorkos-community-test',
-      machineSize: 'shared-cpu-1x',
-      neonOrganization: 'org-dorian',
-      neonRegion: 'aws-us-east-2',
-      neonProjectName: 'dorkos-community-test',
-      bucketName: 'dorkos-community-test',
-    };
-
-    const recovery = formatCommunityRecovery(journal, selection);
+    const recovery = formatCommunityRecovery(journal);
     expect(recovery).toContain('owner dork-labs');
     expect(recovery).toContain('may incur charges');
     expect(recovery).toContain('database data may exist');
@@ -303,28 +311,15 @@ describe('Community command dispatcher', () => {
       plan,
       '2026-09-21T00:00:00.000Z'
     );
-    const recovery = formatCommunityRecovery(
-      {
-        ...base,
-        state: 'uncertain',
-        pendingIntent: {
-          provider: 'neon',
-          organizationId: 'org-dorian',
-          resourceName: 'dorkos-community-test',
-        },
+    const recovery = formatCommunityRecovery({
+      ...base,
+      state: 'uncertain',
+      pendingIntent: {
+        provider: 'neon',
+        organizationId: 'org-dorian',
+        resourceName: 'dorkos-community-test',
       },
-      {
-        version: '0.76.0',
-        flyOrganization: 'dork-labs',
-        flyRegion: 'ord',
-        appName: 'dorkos-community-test',
-        machineSize: 'shared-cpu-1x',
-        neonOrganization: 'org-dorian',
-        neonRegion: 'aws-us-east-2',
-        neonProjectName: 'dorkos-community-test',
-        bucketName: 'dorkos-community-test',
-      }
-    );
+    });
     expect(recovery).toContain('Manual reconciliation required');
     expect(recovery).toContain('neonctl projects list --org-id org-dorian');
     expect(recovery).toContain('Do not create or adopt a name match');

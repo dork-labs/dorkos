@@ -3,7 +3,7 @@
  *
  * @module commands/community-deploy/runtime/default-owner
  */
-import { access, constants } from 'node:fs/promises';
+import { access, constants, stat } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -34,17 +34,23 @@ type HandoffPlatform = 'darwin' | 'linux' | 'win32';
 
 function handoffCommands(system: NodeJS.Platform): {
   clipboard: { executable: string; args: string[] };
+  probe?: { executable: string; args: string[] };
   browser: { executable: string; args(origin: string): string[] };
 } {
   if (system === 'darwin') {
     return {
       clipboard: { executable: 'pbcopy', args: [] },
+      probe: { executable: 'pbpaste', args: [] },
       browser: { executable: 'open', args: (origin) => [origin] },
     };
   }
   if (system === 'win32') {
     return {
       clipboard: { executable: 'clip.exe', args: [] },
+      probe: {
+        executable: 'powershell.exe',
+        args: ['-NoProfile', '-NonInteractive', '-Command', 'Get-Clipboard -Raw'],
+      },
       browser: { executable: 'cmd.exe', args: (origin) => ['/c', 'start', '', origin] },
     };
   }
@@ -68,7 +74,7 @@ async function executableOnPath(executable: string, path: string): Promise<boole
 
 /** Prove the non-printing owner-secret handoff is locally available before provider writes. */
 export async function assertOwnerHandoffPrerequisites(
-  path: string,
+  env: Readonly<Record<string, string>>,
   system: NodeJS.Platform = platform()
 ): Promise<void> {
   if (!(['darwin', 'linux', 'win32'] as const).includes(system as HandoffPlatform)) {
@@ -77,12 +83,15 @@ export async function assertOwnerHandoffPrerequisites(
     );
   }
   const commands = handoffCommands(system);
+  const path = env.PATH ?? '';
   const missing = (
     await Promise.all(
-      [commands.clipboard.executable, commands.browser.executable].map(async (executable) => ({
-        executable,
-        found: await executableOnPath(executable, path),
-      }))
+      [commands.clipboard.executable, ...(commands.probe ? [commands.probe.executable] : [])].map(
+        async (executable) => ({
+          executable,
+          found: await executableOnPath(executable, path),
+        })
+      )
     )
   ).filter(({ found }) => !found);
   if (missing.length > 0) {
@@ -90,6 +99,37 @@ export async function assertOwnerHandoffPrerequisites(
       `Owner handoff needs ${missing.map(({ executable }) => executable).join(' and ')} before setup can create resources. See https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md`
     );
   }
+  if (system === 'linux') {
+    const runtimeDirectory = env.XDG_RUNTIME_DIR;
+    const display = env.WAYLAND_DISPLAY;
+    if (!runtimeDirectory || !display || display.includes('/')) {
+      throw new Error(
+        'Owner handoff needs an active Wayland clipboard session before setup can create resources. See https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md'
+      );
+    }
+    const socketAvailable = await stat(join(runtimeDirectory, display)).then(
+      (value) => value.isSocket(),
+      () => false
+    );
+    if (!socketAvailable) {
+      throw new Error(
+        'Owner handoff needs an active Wayland clipboard session before setup can create resources. See https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md'
+      );
+    }
+    return;
+  }
+  if (!commands.probe) return;
+  await runProviderCommand({
+    ...commands.probe,
+    env,
+    timeoutMs: 5_000,
+    maxBytes: 1024 * 1024,
+    parse: () => undefined,
+  }).catch(() => {
+    throw new Error(
+      'Owner handoff cannot access this desktop clipboard session. See https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md'
+    );
+  });
 }
 
 async function clipboard(
@@ -120,6 +160,20 @@ async function openOrigin(
     timeoutMs: 10_000,
     parse: () => undefined,
   });
+}
+
+/** Try the optional browser opener without making owner handoff depend on desktop launch support. */
+export async function tryOpenOwnerOrigin(
+  origin: string,
+  env: Readonly<Record<string, string>>,
+  system: NodeJS.Platform = platform()
+): Promise<boolean> {
+  try {
+    await openOrigin(origin, env, system);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function ownerExists(origin: string): Promise<boolean> {
@@ -182,7 +236,12 @@ export function createDefaultCommunityOwnerDependencies(input: {
         throw new Error('Setup-secret handoff was cancelled');
       }
       const system = input.platform ?? platform();
-      await openOrigin(origin, input.env, system);
+      stdout.write(`Owner setup: ${origin}\n`);
+      if (!(await tryOpenOwnerOrigin(origin, input.env, system))) {
+        stdout.write(
+          'The browser could not be opened automatically. Open the owner setup URL above.\n'
+        );
+      }
       await clipboard(secret, input.env, system);
       stdout.write(
         'The setup secret is on your clipboard. Clipboard managers may retain it after DorkOS clears the current clipboard.\n'

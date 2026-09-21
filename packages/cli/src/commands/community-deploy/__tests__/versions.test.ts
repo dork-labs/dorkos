@@ -16,13 +16,13 @@ describe('Community provider preflight guidance', () => {
     ).toThrow('https://neon.com/docs/reference/neon-cli');
   });
 
-  it('maps a failed authenticated read to a provider-specific sign-in action', () => {
+  it('keeps ambiguous command exits unavailable instead of claiming authentication failed', () => {
     expect(() =>
       classifyCommunityProviderPreflightFailure('fly', new ProviderCommandError('EXIT'))
-    ).toThrow('fly auth login');
+    ).toThrowError(new CommunityProviderPreflightError('fly', 'PROVIDER_UNAVAILABLE'));
     expect(() =>
       classifyCommunityProviderPreflightFailure('neon', new ProviderCommandError('EXIT'))
-    ).toThrow('neonctl auth');
+    ).toThrow('Check provider status, CLI compatibility, and sign-in with neonctl auth');
   });
 
   it('links old-version failures to the official update instructions', () => {

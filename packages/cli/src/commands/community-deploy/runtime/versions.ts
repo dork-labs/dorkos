@@ -41,7 +41,7 @@ export class CommunityProviderPreflightError extends Error {
         ? `${provider === 'fly' ? 'Fly CLI' : 'Neon CLI'} is required. Install it from ${help.install}`
         : code === 'AUTH_REQUIRED'
           ? `${provider === 'fly' ? 'Fly' : 'Neon'} sign-in is required. Run ${help.command}, then retry. ${help.auth}`
-          : `${provider === 'fly' ? 'Fly' : 'Neon'} preflight is unavailable. Check the provider and retry. ${help.auth}`;
+          : `${provider === 'fly' ? 'Fly' : 'Neon'} preflight is unavailable. Check provider status, CLI compatibility, and sign-in with ${help.command}, then retry. ${help.install}`;
     super(message);
     this.name = 'CommunityProviderPreflightError';
     this.provider = provider;
@@ -58,7 +58,6 @@ export function classifyCommunityProviderPreflightFailure(
   if (error instanceof ProviderCommandError) {
     if (error.code === 'SPAWN')
       throw new CommunityProviderPreflightError(provider, 'CLI_NOT_FOUND');
-    if (error.code === 'EXIT') throw new CommunityProviderPreflightError(provider, 'AUTH_REQUIRED');
   }
   throw new CommunityProviderPreflightError(provider, 'PROVIDER_UNAVAILABLE');
 }

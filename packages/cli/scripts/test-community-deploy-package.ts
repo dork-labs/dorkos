@@ -216,6 +216,7 @@ try {
     ['gh', ghFixture],
     ['open', harmlessFixture],
     ['pbcopy', harmlessFixture],
+    ['pbpaste', harmlessFixture],
   ] as const) {
     const path = join(fakeBin, name);
     await writeFile(path, source);

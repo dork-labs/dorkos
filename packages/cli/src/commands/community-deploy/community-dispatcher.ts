@@ -85,7 +85,9 @@ interface CommunityResumeSelection extends CommunityPreflightSelection {
   version: string;
 }
 
-function resumeCommand(plan: LaunchJournal, selection: CommunityResumeSelection): string {
+function resumeCommand(plan: LaunchJournal): string | null {
+  const selection = plan.recoveryContext;
+  if (!selection) return null;
   return [
     'dorkos community deploy',
     `--resume ${plan.runId}`,
@@ -113,19 +115,23 @@ export function formatIncompleteLaunches(journals: readonly LaunchJournal[]): st
 }
 
 /** Render resource ownership, possible charges/data, read-only inspection, and exact resume. */
-export function formatCommunityRecovery(
-  journal: LaunchJournal,
-  selection: CommunityResumeSelection
-): string {
+export function formatCommunityRecovery(journal: LaunchJournal): string {
+  const selection = journal.recoveryContext;
   const rows = [
     journal.resources.flyAppId
-      ? `  Fly app ${journal.resources.flyAppId} — owner ${selection.flyOrganization}; may incur charges; Machine filesystem is disposable.\n    Inspect: fly machine list --app ${selection.appName} --json\n    Console: https://fly.io/apps/${selection.appName}`
+      ? selection
+        ? `  Fly app ${journal.resources.flyAppId} — owner ${selection.flyOrganization}; may incur charges; Machine filesystem is disposable.\n    Inspect: fly machine list --app ${selection.appName} --json\n    Console: https://fly.io/apps/${selection.appName}`
+        : `  Fly app ${journal.resources.flyAppId} — saved owner and app name unavailable; may incur charges; Machine filesystem is disposable.`
       : null,
     journal.resources.neonProjectId
-      ? `  Neon project ${journal.resources.neonProjectId} — owner ${selection.neonOrganization}; may incur charges; database data may exist.\n    Inspect: neonctl projects get ${journal.resources.neonProjectId} --output json\n    Console: https://console.neon.tech`
+      ? selection
+        ? `  Neon project ${journal.resources.neonProjectId} — owner ${selection.neonOrganization}; may incur charges; database data may exist.\n    Inspect: neonctl projects get ${journal.resources.neonProjectId} --output json\n    Console: https://console.neon.tech`
+        : `  Neon project ${journal.resources.neonProjectId} — saved owner unavailable; may incur charges; database data may exist.`
       : null,
     journal.resources.tigrisBucketId
-      ? `  Tigris bucket ${journal.resources.tigrisBucketId} — owner ${selection.flyOrganization}; may incur charges; private files may exist.\n    Inspect: fly storage status ${selection.bucketName} --app ${selection.appName}\n    Console: https://fly.io/apps/${selection.appName}`
+      ? selection
+        ? `  Tigris bucket ${journal.resources.tigrisBucketId} — owner ${selection.flyOrganization}; may incur charges; private files may exist.\n    Inspect: fly storage status ${selection.bucketName} --app ${selection.appName}\n    Console: https://fly.io/apps/${selection.appName}`
+        : `  Tigris bucket ${journal.resources.tigrisBucketId} — saved owner unavailable; may incur charges; private files may exist.`
       : null,
   ].filter((row): row is string => row !== null);
   const pending = journal.pendingIntent;
@@ -136,14 +142,16 @@ export function formatCommunityRecovery(
         ? `Unresolved Neon creation intent for ${pending.resourceName} in ${pending.organizationId}. Do not create or adopt a name match. Inspect: neonctl projects list --org-id ${pending.organizationId} --output json\nConsole: https://console.neon.tech`
         : `Unresolved Tigris creation intent for ${pending.resourceName} in ${pending.organizationId}. Do not create or adopt a name match. Inspect: fly storage list --org ${pending.organizationId}\nConsole: https://fly.io/dashboard/${pending.organizationId}`
     : null;
+  const command = resumeCommand(journal);
   return [
     'Confirmed retained resources:',
     rows.length ? rows.join('\n') : '  No resource identity has been confirmed.',
     `Journal state: ${journal.state}`,
     ...(reconciliation ? ['Manual reconciliation required:', reconciliation] : []),
     'Automatic cleanup was not attempted.',
-    'Resume with:',
-    `  ${resumeCommand(journal, selection)}`,
+    ...(command
+      ? ['Resume with:', `  ${command}`]
+      : ['Resume command unavailable because this older journal has no saved plan context.']),
   ].join('\n');
 }
 
@@ -246,6 +254,7 @@ export async function runCommunityDispatcher(
   });
 
   try {
+    if (!parsed.values['dry-run']) await assertOwnerHandoffPrerequisites(childEnv);
     await runCommunityDeploy(
       {
         version,
@@ -272,10 +281,7 @@ export async function runCommunityDispatcher(
             });
             return release;
           }),
-        readPreflight: async (requested) => {
-          await assertOwnerHandoffPrerequisites(childEnv.PATH ?? '');
-          return readDefaultCommunityPreflight(serviceOptions, requested);
-        },
+        readPreflight: (requested) => readDefaultCommunityPreflight(serviceOptions, requested),
         renderPreflight: (result) => {
           process.stdout.write(`${formatCommunityPreflight(result)}\nJournal: ${journalPath}\n`);
         },
@@ -356,7 +362,7 @@ export async function runCommunityDispatcher(
           process.stdout.write(
             latest.state === 'complete'
               ? `${formatCommunityCompletion(`https://${result.plan.fly.appName}.fly.dev`)}\n`
-              : `Community setup is waiting for owner completion.\n${formatCommunityRecovery(latest, selection)}\n`
+              : `Community setup is waiting for owner completion.\n${formatCommunityRecovery(latest)}\n`
           );
         },
       }
@@ -378,9 +384,7 @@ export async function runCommunityDispatcher(
       latest = cancelled;
     }
     if (latest) {
-      process.stderr.write(
-        `Community setup stopped.\n${formatCommunityRecovery(latest, selection)}\n`
-      );
+      process.stderr.write(`Community setup stopped.\n${formatCommunityRecovery(latest)}\n`);
     }
     throw error;
   } finally {

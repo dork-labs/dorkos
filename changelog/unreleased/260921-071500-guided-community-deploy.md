@@ -5,6 +5,7 @@ covers:
   - 'fix(cli): retain Community creation identity'
   - 'fix(cli): complete Community launch recovery'
   - 'fix(cli): make Community launch failures recoverable'
+  - 'fix(cli): bind Community recovery to saved launch'
 ---
 
 ### Added
