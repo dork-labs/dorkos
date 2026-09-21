@@ -566,6 +566,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       return response.json() as Promise<{ token: string }>;
     }, ids.communityId);
     const oauth = await browser.newContext();
+    let releasePreflight = () => {};
     try {
       const oauthPage = await oauth.newPage();
       await oauthPage.route('**/auth-options', (route) =>
@@ -577,9 +578,12 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
         await route.fulfill({ status: 400, json: { message: 'Test-owned OAuth boundary' } });
       });
       let urlAtPreflight = '';
+      const preflightBarrier = new Promise<void>((resolve) => {
+        releasePreflight = resolve;
+      });
       await oauthPage.route('**/invites/preflight', async (route) => {
         urlAtPreflight = oauthPage.url();
-        await new Promise((resolve) => setTimeout(resolve, 250));
+        await preflightBarrier;
         await route.continue();
       });
       const rawToken = createdInvite.token;
@@ -594,13 +598,16 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
         }, rawToken)
       ).toBe(false);
       const continueAdmission = oauthPage.getByRole('button', { name: 'Continue', exact: true });
-      await continueAdmission.click();
+      const continueAdmissionRequest = continueAdmission.click();
       await expect.poll(() => urlAtPreflight).toBe(`${baseUrl}/c/${ids.communityId}/join`);
+      releasePreflight();
+      await continueAdmissionRequest;
       await oauthPage.getByRole('button', { name: 'Continue with Google' }).click();
       await expect.poll(() => callbackUrl).toBe(`${baseUrl}/c/${ids.communityId}/join`);
       expect(callbackUrl).not.toContain(rawToken);
       expect(await oauthPage.evaluate(() => location.hash)).toBe('');
     } finally {
+      releasePreflight();
       await oauth.close();
     }
 
