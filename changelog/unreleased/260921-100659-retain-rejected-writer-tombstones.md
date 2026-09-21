@@ -5,6 +5,5 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- Retain rejected writer tombstones
+- Community cleanup keeps checking a failed upload until it is certain no delayed private file can
+  appear after deletion.
