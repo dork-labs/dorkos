@@ -1425,10 +1425,17 @@ describe('signed admission over real HTTP and Postgres', () => {
       await blocker.query('ROLLBACK');
       blocker.release();
     }
-    expect(
-      (await call(`/api/v1/communities/${secondId}/channels`, 'GET', undefined, claimantCookie))
-        .status
-    ).toBe(409);
+    const suspendedChannels = await call(
+      `/api/v1/communities/${secondId}/channels`,
+      'GET',
+      undefined,
+      claimantCookie
+    );
+    expect(suspendedChannels.status).toBe(503);
+    expect(await suspendedChannels.json()).toEqual({
+      code: 'COMMUNITY_SUSPENDED',
+      message: 'This community is suspended.',
+    });
     expect(
       (await (await call('/api/v1/memberships', 'GET', undefined, claimantCookie)).json())
         .memberships
