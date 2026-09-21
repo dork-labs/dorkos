@@ -73,6 +73,20 @@ function upload(
   });
 }
 
+async function waitForBlockedQuery(fragment: string) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const result = await pool.query<{ blocked: boolean }>(
+      `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+       WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE $1
+         AND cardinality(pg_blocking_pids(pid))>0) AS blocked`,
+      [`%${fragment}%`]
+    );
+    if (result.rows[0].blocked) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`Request did not block on ${fragment}`);
+}
+
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'community-files-'));
   blobStore = new FileSystemBlobStore(directory);
@@ -147,6 +161,30 @@ afterAll(async () => {
 });
 
 describe('attachments over real HTTP and Postgres', () => {
+  it('locks the channel before reconciliation state so cursor writes cannot deadlock uploads', async () => {
+    const blocker = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT 1 FROM channels WHERE id=$1 FOR UPDATE', [channelId]);
+      const blockedUpload = upload(channelId, ownerCookie, 'cursor-lock-order');
+      await waitForBlockedQuery('SELECT c.* FROM channels');
+      await blocker.query(
+        `INSERT INTO read_cursors(community_id,channel_id,member_id,seq)
+         VALUES($1,$2,$3,1)
+         ON CONFLICT(channel_id,member_id) DO UPDATE SET seq=EXCLUDED.seq,updated_at=now()`,
+        [communityId, channelId, ownerId]
+      );
+      await blocker.query('COMMIT');
+      expect((await blockedUpload).status).toBe(201);
+      await pool.query('UPDATE owner_quota_windows SET upload_bytes=0 WHERE owner_member_id=$1', [
+        ownerId,
+      ]);
+    } finally {
+      await blocker.query('ROLLBACK');
+      blocker.release();
+    }
+  });
+
   it('streams a verified upload, retries by bytes, binds once, and returns metadata in history', async () => {
     const first = await upload(channelId, ownerCookie, 'files-one');
     expect(first.status).toBe(201);
@@ -759,6 +797,28 @@ describe('attachments over real HTTP and Postgres', () => {
     } finally {
       failOnce.mockRestore();
       errorLog.mockRestore();
+    }
+  });
+
+  it('checks export authority before dirtying reconciliation state', async () => {
+    const blocker = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT 1 FROM members WHERE id=$1 FOR UPDATE', [ownerId]);
+      const blockedExport = post('/api/v1/me/export', {}, ownerCookie);
+      await waitForBlockedQuery(
+        'SELECT id,user_id,display_name,role,community_id FROM members WHERE id='
+      );
+      const quotaWrite = await blocker.query(
+        'UPDATE owner_quota_windows SET upload_bytes=upload_bytes WHERE owner_member_id=$1',
+        [ownerId]
+      );
+      expect(quotaWrite.rowCount).toBeGreaterThan(0);
+      await blocker.query('COMMIT');
+      expect((await blockedExport).status).toBe(201);
+    } finally {
+      await blocker.query('ROLLBACK');
+      blocker.release();
     }
   });
 
