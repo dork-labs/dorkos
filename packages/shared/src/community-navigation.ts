@@ -11,6 +11,110 @@ import { z } from 'zod';
 
 const MAX_OWNERS = 16;
 const MAX_DESTINATIONS = 100;
+const MAX_ATTENTION_COUNT = 999;
+
+/** Presentation identity that never grants access or exposes a remote storage URL. */
+export const CommunityNavigationIconSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('installation') }),
+  z.strictObject({ kind: z.literal('community'), ref: CommunityRefSchema }),
+]);
+
+/** The local installation is always the first navigation destination. */
+export const InstallationNavigationDescriptorSchema = z.strictObject({
+  kind: z.literal('installation'),
+  key: z.literal('installation'),
+  label: z.string().trim().min(1).max(120),
+  icon: z.strictObject({ kind: z.literal('installation') }),
+});
+
+/** One owner-authorized Community destination with independent state axes. */
+export const CommunityNavigationDescriptorSchema = z
+  .strictObject({
+    kind: z.literal('community'),
+    key: z.string().min(1),
+    ref: CommunityRefSchema,
+    remoteCommunityId: z.uuid(),
+    label: z.string().trim().min(1).max(120),
+    icon: z.strictObject({ kind: z.literal('community'), ref: CommunityRefSchema }),
+    pinnedOrigin: z.url(),
+    membershipState: z.enum([
+      'pending',
+      'active',
+      'archived',
+      'suspended',
+      'deletion-pending',
+      'removed',
+    ]),
+    connectionState: z.enum(['pending', 'connected', 'reconnect-required', 'disconnected']),
+    availability: z.enum(['online', 'offline', 'unknown']),
+    unreadCount: z.number().int().min(0).max(MAX_ATTENTION_COUNT),
+    mentionCount: z.number().int().min(0).max(MAX_ATTENTION_COUNT),
+  })
+  .superRefine((descriptor, context) => {
+    if (descriptor.key !== `community:${descriptor.ref}`) {
+      context.addIssue({
+        code: 'custom',
+        path: ['key'],
+        message: 'Community navigation key must be derived from its local connection ref',
+      });
+    }
+    if (descriptor.icon.kind !== 'community' || descriptor.icon.ref !== descriptor.ref) {
+      context.addIssue({
+        code: 'custom',
+        path: ['icon'],
+        message: 'Community icon identity must be qualified by the same local connection ref',
+      });
+    }
+    if (descriptor.mentionCount > descriptor.unreadCount) {
+      context.addIssue({
+        code: 'custom',
+        path: ['mentionCount'],
+        message: 'Mention count must be a subset of unread count',
+      });
+    }
+  });
+
+/** Browser-safe destination list returned only inside the authenticated owner boundary. */
+export const CommunityNavigationDescriptorListSchema = z
+  .strictObject({
+    installation: InstallationNavigationDescriptorSchema,
+    communities: z.array(CommunityNavigationDescriptorSchema).max(100),
+  })
+  .superRefine(({ communities }, context) => {
+    if (new Set(communities.map(({ key }) => key)).size !== communities.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['communities'],
+        message: 'Community navigation destinations must have distinct local keys',
+      });
+    }
+    if (
+      new Set(
+        communities.map(
+          ({ remoteCommunityId, pinnedOrigin }) => `${pinnedOrigin}:${remoteCommunityId}`
+        )
+      ).size !== communities.length
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['communities'],
+        message: 'A remote community may appear only once per pinned host',
+      });
+    }
+  });
+
+/** Presentation-only navigation identity. */
+export type CommunityNavigationIcon = z.infer<typeof CommunityNavigationIconSchema>;
+/** Local installation destination. */
+export type InstallationNavigationDescriptor = z.infer<
+  typeof InstallationNavigationDescriptorSchema
+>;
+/** Owner-authorized Community destination and bounded aggregate attention. */
+export type CommunityNavigationDescriptor = z.infer<typeof CommunityNavigationDescriptorSchema>;
+/** Complete browser-safe navigation descriptor response. */
+export type CommunityNavigationDescriptorList = z.infer<
+  typeof CommunityNavigationDescriptorListSchema
+>;
 
 /** Browser-safe preference state for the authenticated local owner. */
 export const CommunityNavigationStateSchema = z.strictObject({

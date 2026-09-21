@@ -23,6 +23,15 @@
   data before publishing sign-out.
 - Corrected the stale rapid A→B→A failure bullet to match the accepted epoch contract.
 
+**Task 1.1 in progress:** Define the browser-safe navigation descriptor contract.
+
+- Added stable installation and `community:<local-ref>` identities without exposing remote storage
+  URLs through icon metadata.
+- Kept membership lifecycle, local connection state, and network availability as independent axes.
+- Bounded aggregate attention and enforced that direct mentions are a subset of unread activity.
+- Left remote projection integration behind DOR-2173/DOR-2175 rather than inferring tenant
+  lifecycle or a zero count from the current singleton API.
+
 ## Files Modified/Created
 
 **Source files:**
