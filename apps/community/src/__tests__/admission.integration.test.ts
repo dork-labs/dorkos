@@ -352,6 +352,18 @@ describe('signed admission over real HTTP and Postgres', () => {
       grant.id,
     ]);
     expect(persisted.rows[0].token_hash).not.toContain(token);
+    const access = await bearerCall('/api/v1/me/connection-access', 'GET', token);
+    expect(access.status).toBe(200);
+    expect(await access.json()).toMatchObject({
+      access: {
+        state: 'verified',
+        effective: { read: true, post: true, enrollAgent: true, stream: true },
+        lastKnown: {
+          lifecycle: 'active',
+          capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+        },
+      },
+    });
     const listed = await call('/api/v1/me/grants', 'GET', undefined, ownerCookie);
     expect(listed.status).toBe(200);
     expect(JSON.stringify(await listed.json())).not.toContain(token);
@@ -364,6 +376,7 @@ describe('signed admission over real HTTP and Postgres', () => {
       expect(
         (await call(`/api/v1/me/grants/${grant.id}`, 'DELETE', undefined, ownerCookie)).status
       ).toBe(204);
+      expect((await bearerCall('/api/v1/me/connection-access', 'GET', token)).status).toBe(401);
       // Another admitted person commits after revocation. The old connection
       // must close rather than deliver even this otherwise-visible entry.
       expect(

@@ -77,8 +77,10 @@ export async function requireConnectionGrant(
   if (!token) throw new ApiError(401, 'UNAUTHENTICATED', 'A connected local install is required.');
   const tenant = await resolveCommunityContext(c, pool);
   const tokenHash = hashSecret(token);
-  const result = await pool.query<Member & { scopes: string[]; grant_id: string }>(
-    `SELECT m.id,m.user_id,m.display_name,m.role,m.community_id,g.scopes,g.id AS grant_id
+  const result = await pool.query<
+    Member & { scopes: string[]; grant_id: string; history_only: boolean }
+  >(
+    `SELECT m.id,m.user_id,m.display_name,m.role,m.community_id,g.scopes,g.id AS grant_id,g.history_only
      FROM connection_grants g JOIN members m ON m.id=g.member_id
      WHERE g.token_hash=$1 AND g.community_id=$2 AND m.community_id=$2
        AND g.revoked_at IS NULL AND m.active`,
@@ -92,7 +94,11 @@ export async function requireConnectionGrant(
   await pool.query('UPDATE connection_grants SET last_used_at=now() WHERE id=$1', [
     member.grant_id,
   ]);
-  return { member, tokenHash };
+  return {
+    member,
+    tokenHash,
+    lifecycle: tenant.lifecycle === 'archived' ? ('archived' as const) : ('active' as const),
+  };
 }
 
 /** Recheck a personal grant on the mutation connection after it waited on a channel lock. */

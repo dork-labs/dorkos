@@ -8,6 +8,17 @@ import {
   RemoteCommunityRoomSchema,
 } from '../community-views.js';
 
+const capabilities = { read: true, post: true, enrollAgent: true, stream: true };
+const access = {
+  state: 'verified' as const,
+  effective: capabilities,
+  lastKnown: {
+    lifecycle: 'active' as const,
+    capabilities,
+    verifiedAt: '2026-09-21T00:00:00.000Z',
+  },
+};
+
 const room = {
   community: 'community_a',
   roomId: 'same-room-id',
@@ -27,6 +38,7 @@ const room = {
   stale: false,
   cacheCursor: 'opaque:not-a-number',
   lastRemoteSeq: 27,
+  access,
 };
 const entry = {
   community: 'community_a',

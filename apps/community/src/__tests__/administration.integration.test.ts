@@ -573,6 +573,20 @@ it('archives with immediate credential revocation and restores without revival',
     lifecycle: 'archived',
     capabilities: { read: true, post: false, enrollAgent: false, stream: false },
   });
+  const archivedAccess = await request(`/api/v1/communities/${communityId}/me/connection-access`, {
+    headers: { authorization: `Bearer ${readToken}` },
+  });
+  expect(archivedAccess.status).toBe(200);
+  expect(await archivedAccess.json()).toMatchObject({
+    access: {
+      state: 'verified',
+      effective: { read: true, post: false, enrollAgent: false, stream: false },
+      lastKnown: {
+        lifecycle: 'archived',
+        capabilities: { read: true, post: false, enrollAgent: false, stream: false },
+      },
+    },
+  });
   expect(
     (
       await pool.query(

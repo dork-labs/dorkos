@@ -19,6 +19,15 @@ const a: CommunityConnectionDescriptor = {
   connectedHumanMemberId: 'person',
   status: 'connected',
   expiresAt: null,
+  access: {
+    state: 'verified',
+    effective: { read: true, post: true, enrollAgent: true, stream: true },
+    lastKnown: {
+      lifecycle: 'active',
+      capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+      verifiedAt: '2026-09-21T12:00:00.000Z',
+    },
+  },
 };
 const b = {
   ...a,
@@ -44,7 +53,12 @@ function mount(transport: Transport) {
 describe('community pairing controls', () => {
   it('connects through Transport and shows the public browser approval link', async () => {
     const user = userEvent.setup();
-    const pending = { ...a, status: 'pending' as const, connectedHumanMemberId: null };
+    const pending = {
+      ...a,
+      status: 'pending' as const,
+      connectedHumanMemberId: null,
+      access: null,
+    };
     const list = vi.fn().mockResolvedValueOnce([]).mockResolvedValue([pending]);
     const transport = createMockTransport({
       listCommunityConnections: list,

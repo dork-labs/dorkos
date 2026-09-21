@@ -3,6 +3,7 @@ import type { Context, Hono } from 'hono';
 import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import {
+  CommunityWireConnectionAccessResponseSchema,
   CommunityWireGrantListResponseSchema,
   CommunityWirePairingApproveRequestSchema,
   CommunityWirePairingApproveResponseSchema,
@@ -21,7 +22,7 @@ import {
 } from '@dorkos/shared/community-private-wire';
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
-import { requireLiveRole, requireMember, transaction } from '../data.js';
+import { requireConnectionGrant, requireLiveRole, requireMember, transaction } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 import { equalSecret, hashSecret, randomToken } from '../security.js';
 import { resolveCommunityContext } from '../tenant-context.js';
@@ -95,6 +96,27 @@ export function registerPairingRoutes(
     limitStart,
   }: { pool: Pool; auth: CommunityAuth; config: CommunityConfig; limitStart: (c: Context) => void }
 ) {
+  app.get('/me/connection-access', async (c) => {
+    const { member: grant, lifecycle } = await requireConnectionGrant(c, pool, 'read');
+    const capabilities = {
+      read: true,
+      post: grant.scopes.includes('post') && !grant.history_only,
+      enrollAgent: grant.scopes.includes('enroll-agent') && !grant.history_only,
+      stream: !grant.history_only,
+    };
+    return json(c, CommunityWireConnectionAccessResponseSchema, {
+      access: {
+        state: 'verified',
+        effective: capabilities,
+        lastKnown: {
+          lifecycle,
+          capabilities,
+          verifiedAt: new Date().toISOString(),
+        },
+      },
+    });
+  });
+
   app.post('/pairings/start', async (c) => {
     limitStart(c);
     const body = await readJson(c, CommunityWirePairingStartRequestSchema);
