@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): track tenant blob ownership'
+  - 'fix(community): share blob reservation lease'
 ---
 
 ### Added
