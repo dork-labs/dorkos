@@ -38,6 +38,15 @@
 - Replaced the preauthenticated browser fixtures with real signed-out journeys for both URL shapes. The narrow case begins with keyboard focus in the sign-in form, signs in, reviews an escaped hostile installation name, and declines the request.
 - Task 2.3 remains open for the broader account controls and final journey proof.
 
+### Session 4 - 2026-09-21
+
+**Worker:** `/root/membership_finish_terra`
+
+- Advanced DOR-2181 Task 2.1 for archived memberships. The chooser now labels archived memberships as “Read history,” opens their canonical tenant route, and keeps them available alongside active memberships.
+- The tenant shell refreshes authoritative host membership lifecycle before rendering. An archived community has no live stream, channel join, composer, attachment, membership, agent, invitation, or leave controls; history, personal export, and owner restore/deletion controls remain available at their intended scopes.
+- Composed the reviewed administration recovery changes: lifecycle-conflict errors stay in their active dialog, deletion recovery resolves actual owner membership from the host before revealing controls, and a retry refreshes lifecycle authority so it uses the current version.
+- Admission now pauses after a successful invitation so people can choose “Open community” or follow the separate installation connection path in DorkOS. Host administration distinguishes creating a community on this host from deploying a separate host and links to deployment help.
+
 ## Files Modified/Created
 
 **Source files:**
@@ -70,9 +79,10 @@
 - Membership correction independent review at exact `4b3f29b3364281e28218bfa433cbda0a83abb9ed`: **0 Important / 0 Nit**.
 - Combined membership plus atomic first-host composition at exact `89d22693405b360ffc0d51909bea87d920790e68`: focused admission/first-host Postgres passed **26/26**, Community typecheck and normal hooks passed, and independent composition review found **0 Important / 0 Nit**.
 - Signed-out pairing entry checkpoint: Community production build and the two real browser journeys passed **2/2** with one worker. The canonical case retained the exact approval URL through sign-in; the singleton narrow case proved keyboard entry, escaped display, and cancellation.
+- Archived chooser and administration-retry composition: Community production build passed and the real PostgreSQL browser journey passed **1/1**, including archive, chooser return, read-only history without a stream or composer, and stale lifecycle-version retry for archive, deletion, and cancellation.
 
 ## Remaining Work
 
-- DOR-2181 owns the broader entry experience: later-community creation/claim, invitation entry UI, and the separate host-deployment choice remain open.
+- DOR-2181 owns the broader entry experience: later-community creation/claim, invitation entry UI, and the separate host-deployment choice remain open. Task 2.1 remains open until its remaining sign-in, zero-membership, and unavailable-state proof converges with those paths.
 - DOR-2182 owns packaged Desktop and cross-device journey proof.
 - DOR-2181 Task 2.3 remains partial until the wider membership/account controls and entry journey review converge.

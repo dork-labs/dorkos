@@ -20,9 +20,18 @@ export function tenantApiPath(path: string, browserPath = window.location.pathna
 
 /** Make a same-origin JSON request and normalize expected failures. */
 export async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+  return requestAt(tenantApiPath(path), method, body);
+}
+
+/** Make an origin-wide account request without adding the selected tenant path. */
+export async function hostRequest<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+  return requestAt(path, method, body);
+}
+
+async function requestAt<T>(path: string, method: string, body?: unknown): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(tenantApiPath(path), {
+    response = await fetch(path, {
       method,
       credentials: 'same-origin',
       headers: body === undefined ? undefined : { 'content-type': 'application/json' },

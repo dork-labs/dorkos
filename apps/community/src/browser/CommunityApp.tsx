@@ -4,9 +4,10 @@ import { Admission } from './components/Admission.js';
 import { ChannelView } from './components/Channel.js';
 import { Manage } from './components/Manage.js';
 import { rememberCommunity } from './components/CommunityChooser.js';
-import { describeError, RequestError, request } from './api.js';
+import { describeError, hostRequest, RequestError, request } from './api.js';
 import { readInviteFragment } from './invite-fragment.js';
-import type { Channel, Community, Me } from './types.js';
+import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
+import type { Channel, Community, CommunityLifecycle, Me } from './types.js';
 
 function isCommunityUnavailable(cause: unknown): cause is RequestError {
   return (
@@ -22,9 +23,11 @@ export function CommunityApp() {
   const [inviteToken, setInviteToken] = useState(() => readInviteFragment());
   const inviteTokenRef = useRef(inviteToken);
   const [community, setCommunity] = useState<Community | null>(null);
+  const [communityLifecycle, setCommunityLifecycle] = useState<CommunityLifecycle | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [unadmitted, setUnadmitted] = useState(false);
   const [hostSignIn, setHostSignIn] = useState(false);
+  const [admissionComplete, setAdmissionComplete] = useState(false);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [settings, setSettings] = useState(false);
@@ -67,13 +70,40 @@ export function CommunityApp() {
     setMe(current);
     return current.member;
   }, []);
+  const refreshCommunityLifecycle = useCallback(
+    async (communityId: string) => {
+      const body = await hostRequest<{ memberships: CommunityWireMembershipSummary[] }>(
+        '/api/v1/memberships'
+      );
+      const membership = body.memberships.find(
+        (candidate) => candidate.communityId === communityId
+      );
+      if (!membership) {
+        returnToChooser();
+        return null;
+      }
+      if (membership.lifecycle !== 'active' && membership.lifecycle !== 'archived') {
+        returnToChooser();
+        return null;
+      }
+      setCommunityLifecycle(membership.lifecycle);
+      return membership.lifecycle;
+    },
+    [returnToChooser]
+  );
   useEffect(() => {
-    if (!me) return;
+    if (!me || !community) return;
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void refreshChannels();
+      if (document.visibilityState === 'visible') {
+        void refreshCommunityLifecycle(community.id).catch((cause: unknown) => {
+          if (cause instanceof RequestError && cause.status === 401) returnToChooser();
+          else setError(describeError(cause));
+        });
+        void refreshChannels();
+      }
     }, 5_000);
     return () => window.clearInterval(timer);
-  }, [me?.member.memberId, refreshChannels]);
+  }, [community, me?.member.memberId, refreshChannels, refreshCommunityLifecycle]);
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -106,6 +136,8 @@ export function CommunityApp() {
           }
           const current = await request<Me>('/api/v1/me');
           if (!active) return;
+          const lifecycle = await refreshCommunityLifecycle(metadata.id);
+          if (!active || !lifecycle) return;
           setMe(current);
           setUnadmitted(false);
           await refreshChannels();
@@ -151,10 +183,15 @@ export function CommunityApp() {
     return () => {
       active = false;
     };
-  }, [revision, refreshChannels, returnToChooser]);
+  }, [revision, refreshChannels, refreshCommunityLifecycle, returnToChooser]);
   const onChanged = useCallback(() => {
+    if (community)
+      void refreshCommunityLifecycle(community.id).catch((cause: unknown) => {
+        if (cause instanceof RequestError && cause.status === 401) returnToChooser();
+        else setError(describeError(cause));
+      });
     void refreshChannels();
-  }, [refreshChannels]);
+  }, [community, refreshChannels, refreshCommunityLifecycle, returnToChooser]);
   if (loading)
     return (
       <main className="grid min-h-dvh place-items-center">
@@ -178,6 +215,34 @@ export function CommunityApp() {
         </div>
       </main>
     );
+  if (admissionComplete && community)
+    return (
+      <main className="grid min-h-dvh place-items-center p-5">
+        <section className="panel max-w-md p-6" aria-labelledby="community-joined-title">
+          <p className="eyebrow">Membership added</p>
+          <h1 id="community-joined-title">You’re in {community.name}.</h1>
+          <p className="muted">
+            Open the community now, or connect a DorkOS installation as a separate next step.
+          </p>
+          <button
+            className="button primary"
+            onClick={() => {
+              setAdmissionComplete(false);
+              setRevision((old) => old + 1);
+            }}
+          >
+            Open community
+          </button>
+          <div className="notice mt-4">
+            <strong>Connect this DorkOS installation</strong>
+            <p className="small muted mb-0">
+              In the DorkOS app, open Connections, then Messaging, then Communities. Each
+              installation needs its own approval.
+            </p>
+          </div>
+        </section>
+      </main>
+    );
   if (!me)
     return (
       <Admission
@@ -186,13 +251,14 @@ export function CommunityApp() {
         inviteToken={inviteToken}
         unadmitted={unadmitted}
         onInviteExchanged={eraseInviteToken}
-        onAdmitted={() => {
+        onAdmitted={(joined) => {
           if (hostSignIn) {
             window.location.assign('/');
             return;
           }
           eraseInviteToken();
-          setRevision((old) => old + 1);
+          if (joined) setAdmissionComplete(true);
+          else setRevision((old) => old + 1);
         }}
       />
     );
@@ -201,6 +267,7 @@ export function CommunityApp() {
     setSettings(false);
     setMobileOpen(false);
   };
+  const readOnly = communityLifecycle === 'archived';
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobileOpen ? 'open' : ''}`} aria-label="Community channels">
@@ -236,7 +303,7 @@ export function CommunityApp() {
                 )}
               </button>
             ))}
-          {channels.some((channel) => !channel.joined) && (
+          {!readOnly && channels.some((channel) => !channel.joined) && (
             <>
               <p className="sidebar-section">Explore</p>
               {channels
@@ -289,11 +356,13 @@ export function CommunityApp() {
             </button>
             <div>
               <p className="eyebrow mb-0">
-                {settings
-                  ? 'Settings'
-                  : selected?.visibility === 'private'
-                    ? 'Private channel'
-                    : 'Channel'}
+                {readOnly
+                  ? 'Archived community'
+                  : settings
+                    ? 'Settings'
+                    : selected?.visibility === 'private'
+                      ? 'Private channel'
+                      : 'Channel'}
               </p>
               <h2>{settings ? 'Your space' : selected ? `# ${selected.name}` : 'Welcome'}</h2>
             </div>
@@ -332,9 +401,15 @@ export function CommunityApp() {
             onLeft={() => {
               window.location.assign('/');
             }}
+            readOnly={readOnly}
           />
         ) : selected ? (
-          <ChannelView key={selected.id} channel={selected} onChanged={onChanged} />
+          <ChannelView
+            key={selected.id}
+            channel={selected}
+            onChanged={onChanged}
+            readOnly={readOnly}
+          />
         ) : (
           <div className="settings">
             <div className="panel p-8">

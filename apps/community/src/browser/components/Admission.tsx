@@ -9,7 +9,7 @@ type Props = {
   community: Community | null;
   inviteToken: string | null;
   unadmitted: boolean;
-  onAdmitted: () => void;
+  onAdmitted: (joined: boolean) => void;
   onInviteExchanged: () => void;
   hostSignIn?: boolean;
 };
@@ -86,7 +86,7 @@ export function Admission({
         try {
           await request('/api/v1/invites/bind', 'POST', {});
           await request('/api/v1/invites/redeem', 'POST', {});
-          onAdmitted();
+          onAdmitted(true);
           return;
         } catch (cause) {
           if (!(cause instanceof RequestError) || cause.status !== 401) throw cause;
@@ -127,7 +127,7 @@ export function Admission({
         await request('/api/v1/invites/bind', 'POST', {});
         await request('/api/v1/invites/redeem', 'POST', {});
       }
-      onAdmitted();
+      onAdmitted(!isOwner);
     } catch (cause) {
       setError(describeError(cause));
     } finally {
