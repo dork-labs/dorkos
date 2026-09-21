@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): bind invitations to browser accounts'
+  - 'fix(community): bind admission receipts to accounts'
 ---
 
 ### Changed
