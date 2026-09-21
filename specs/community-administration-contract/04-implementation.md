@@ -73,3 +73,10 @@
 - Combined the accepted access projection and administration implementation with native participation based on merged tenant authorization. Conflict resolutions retain the reviewed API superset; production source remains identical to the accepted access composition.
 - Fresh full PostgreSQL run after composition: **13 files passed, 162 passed, 4 declared skips**. The owned `dorkos-admin-composition-pg` container was stopped immediately afterward.
 - Final independent composition review remains open; no claim is made yet that the full administration programme or its browser proof is complete.
+
+### Administration UI composition
+
+- Root resumed the independently reviewed UI head `b5a2a95dc9789d6cccc32606caa58ea87b175512` after explicit sole-writer handoff, then composed final API `074d159a3c261f4bd88649c2cbdac20b83d95018`. UI source is unchanged from the accepted head; backend source is the accepted API.
+- Fresh production build and all three Community browser scenarios passed using installed Chrome: the owner/member administration journey, desktop pairing approval, and narrow keyboard pairing. The run used one worker, no retries, unchanged deadlines, and an isolated PostgreSQL database; its container was stopped afterward.
+- These pairing fixtures begin authenticated. The reported signed-out approval page dead end is explicitly outside this proof and is being corrected under DOR-2181 with a fresh no-cookie browser case.
+- The UI remains pending final composition review and merge; DOR-2178 owns the wider permission/concurrency proof matrix.

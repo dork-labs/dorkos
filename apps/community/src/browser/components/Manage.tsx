@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Copy, Download, KeyRound, Plus, Shield, Trash2, UserPlus } from 'lucide-react';
 import { describeError, download, request } from '../api.js';
+import { CommunityAdministration } from './CommunityAdministration.js';
 import type { Agent, Channel, Member } from '../types.js';
 
 type Invite = {
@@ -37,7 +38,9 @@ export function Manage({
   onLeft,
 }: Props) {
   const moderator = me.role === 'owner' || me.role === 'admin';
-  const [tab, setTab] = useState<'community' | 'members' | 'agents' | 'account'>('community');
+  const [tab, setTab] = useState<'community' | 'members' | 'agents' | 'account' | 'settings'>(
+    'community'
+  );
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -189,7 +192,10 @@ export function Manage({
         <h2>Make room for your people.</h2>
         <p className="muted">Manage channels and access without leaving the conversation.</p>
         <nav className="row mb-6" aria-label="Settings sections">
-          {(['community', 'members', 'agents', 'account'] as const).map((item) => (
+          {(moderator
+            ? (['community', 'members', 'agents', 'account', 'settings'] as const)
+            : (['community', 'members', 'agents', 'account'] as const)
+          ).map((item) => (
             <button
               key={item}
               className={`button ${tab === item ? 'primary' : ''}`}
@@ -213,6 +219,13 @@ export function Manage({
           <div className="notice success mb-4" role="status">
             {message}
           </div>
+        )}
+        {tab === 'settings' && (
+          <CommunityAdministration
+            memberRole={me.role}
+            onChanged={onChanged}
+            onOpenPeople={() => setTab('members')}
+          />
         )}
         {tab === 'community' && (
           <div className="settings-grid">

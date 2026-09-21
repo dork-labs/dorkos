@@ -390,6 +390,36 @@ p {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
 }
+.admin-full-width {
+  grid-column: 1 / -1;
+}
+.admin-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(11, 15, 13, 0.62);
+}
+.admin-dialog {
+  width: min(100%, 34rem);
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  padding: 1.25rem;
+  box-shadow: var(--shadow);
+}
+.community-icon-preview {
+  width: 4rem;
+  height: 4rem;
+  border-radius: 1rem;
+  object-fit: cover;
+  background: var(--panel-alt);
+}
+.button.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
 .settings .panel {
   padding: 1.2rem;
 }
