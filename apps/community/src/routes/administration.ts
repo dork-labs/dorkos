@@ -21,6 +21,7 @@ import {
   reserveManagedBlob,
   type BlobStore,
 } from '../storage/index.js';
+import { prepareCommunityDeletionInventory } from '../deletion-worker.js';
 import { resolveCommunityContext } from '../tenant-context.js';
 import { revokeTenantAccess } from './host.js';
 
@@ -446,6 +447,13 @@ export function registerAdministrationRoutes(
     const actor = await requireMember(c, auth, pool, { allowDeletionPending: true });
     const body = await readJson(c, CommunityAdminDeletionRequestSchema);
     await verifyPassword(auth, c.req.raw, body.password);
+    if (!(await prepareCommunityDeletionInventory(pool, blobStore, actor.community_id))) {
+      throw new ApiError(
+        409,
+        'STATE_CONFLICT',
+        'Storage ownership must be reconciled before deleting this community.'
+      );
+    }
     const result = await transaction(pool, async (client) => {
       const current = await lockSettings(client, actor.community_id);
       const currentActor = await lockMember(client, actor, ['owner']);
