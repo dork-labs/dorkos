@@ -2,6 +2,9 @@
 covers:
   - 'fix(community): retain uncertain blob tombstones during deletion (DOR-2176)'
   - 'fix(community): reconcile legacy blobs before deletion'
+  - 'fix(community): defer reconciliation invalidation'
+  - 'fix(community): prevent blob lock-order deadlocks'
+  - 'feat(community): reconcile legacy tenant storage'
 ---
 
 ### Fixed
