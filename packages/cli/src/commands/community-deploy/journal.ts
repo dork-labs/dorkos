@@ -5,21 +5,34 @@
  */
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { chmod, link, lstat, mkdir, open, readFile, rename, rm, unlink } from 'node:fs/promises';
+import {
+  chmod,
+  link,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  unlink,
+} from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { withFileLock } from '@dorkos/shared/atomic-write';
 import { z } from 'zod';
+import { SAFE_PROVIDER_IDENTIFIER_PATTERN } from './provider-identifiers.js';
 
 const SafeIdentifierSchema = z
   .string()
   .trim()
   .min(1)
   .max(256)
-  .refine(
-    (value) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(value),
+  .regex(
+    SAFE_PROVIDER_IDENTIFIER_PATTERN,
     'Journal identifiers must use the provider id character set'
   );
 const Sha256DigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
+const SecretDigestSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:+/=_-]{0,255}$/);
 const HexHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const JournalLockSchema = z
   .object({ ownerId: z.uuid(), pid: z.number().int().positive(), createdAt: z.iso.datetime() })
@@ -55,13 +68,31 @@ export const LaunchErrorCategorySchema = z.enum([
 export const LaunchSafeErrorCodeSchema = z.enum([
   'AUTH_REQUIRED',
   'ACCESS_DENIED',
+  'TERMS_NOT_ACCEPTED',
   'BILLING_BLOCKED',
   'QUOTA_EXCEEDED',
   'NAME_CONFLICT',
   'PROVIDER_UNAVAILABLE',
   'INVALID_RESPONSE',
   'CREATION_OUTCOME_UNCERTAIN',
+  'TERMS_VIEWER_MISSING',
+  'ADD_ON_MISSING',
+  'INVALID_EXPECTED_BINDING',
+  'BINDING_MISMATCH',
+  'PUBLIC_BUCKET',
+  'INVALID_INPUT',
+  'MISSING_TIGRIS_SECRETS',
+  'CREDENTIAL_DISPOSED',
+  'SPAWN',
+  'TIMEOUT',
+  'OUTPUT_LIMIT',
+  'EXIT',
+  'COMMUNITY_RELEASE_NOT_READY',
+  'COMMUNITY_RELEASE_INVALID',
+  'COMMUNITY_RELEASE_VERSION_MISMATCH',
+  'COMMUNITY_RELEASE_PROVENANCE_MISMATCH',
   'JOURNAL_LOCKED',
+  'CANCELLED',
 ]);
 
 /** Canonical schema for a launch recovery journal. */
@@ -72,6 +103,20 @@ export const LaunchJournalSchema = z
     revision: z.number().int().nonnegative(),
     planHash: HexHashSchema,
     releaseDigest: Sha256DigestSchema,
+    recoveryContext: z
+      .object({
+        version: SafeIdentifierSchema,
+        flyOrganization: SafeIdentifierSchema,
+        flyRegion: SafeIdentifierSchema,
+        appName: SafeIdentifierSchema,
+        machineSize: SafeIdentifierSchema,
+        neonOrganization: SafeIdentifierSchema,
+        neonRegion: SafeIdentifierSchema,
+        neonProjectName: SafeIdentifierSchema,
+        bucketName: SafeIdentifierSchema,
+      })
+      .strict()
+      .optional(),
     state: LaunchStateSchema,
     pendingIntent: z
       .object({
@@ -97,20 +142,31 @@ export const LaunchJournalSchema = z
         tigrisBucketId: SafeIdentifierSchema.optional(),
       })
       .strict(),
+    secretDigests: z
+      .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/), SecretDigestSchema)
+      .optional(),
+    secretBaseline: z
+      .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/), SecretDigestSchema)
+      .optional(),
+    ownerBootstrapRotated: z.boolean().optional(),
     verifiedBindings: z
       .array(
-        z
-          .object({
-            kind: z.enum([
-              'bucket-to-app',
-              'endpoint-to-project',
-              'machine-to-release',
-              'secret-version-to-machine',
-            ]),
-            sourceId: SafeIdentifierSchema,
-            targetId: SafeIdentifierSchema,
-          })
-          .strict()
+        z.discriminatedUnion('kind', [
+          z
+            .object({
+              kind: z.enum(['bucket-to-app', 'endpoint-to-project', 'machine-to-release']),
+              sourceId: SafeIdentifierSchema,
+              targetId: SafeIdentifierSchema,
+            })
+            .strict(),
+          z
+            .object({
+              kind: z.literal('secret-version-to-machine'),
+              sourceId: SecretDigestSchema,
+              targetId: SafeIdentifierSchema,
+            })
+            .strict(),
+        ])
       )
       .max(64),
     completedSteps: z.array(LaunchStateSchema).max(16),
@@ -364,6 +420,28 @@ export async function readLaunchJournal(filePath: string): Promise<LaunchJournal
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
   }
+}
+
+/** List validated incomplete launch journals without following directory or file symlinks. */
+export async function listIncompleteLaunchJournals(dorkHome: string): Promise<LaunchJournal[]> {
+  const directory = join(dorkHome, 'launches', 'community');
+  await rejectSymlink(dirname(directory));
+  await rejectSymlink(directory);
+  let filenames: string[];
+  try {
+    filenames = await readdir(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+  const journals: LaunchJournal[] = [];
+  for (const filename of filenames.filter((name) => name.endsWith('.json')).sort()) {
+    const runId = filename.slice(0, -'.json'.length);
+    const filePath = launchJournalPath(dorkHome, runId);
+    const journal = await readLaunchJournal(filePath);
+    if (journal && journal.state !== 'complete') journals.push(journal);
+  }
+  return journals.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 /**

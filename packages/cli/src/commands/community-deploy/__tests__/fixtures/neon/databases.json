@@ -1,0 +1,8 @@
+[
+  {
+    "id": "db_fixture_01",
+    "branch_id": "br-fixture-01",
+    "name": "community",
+    "owner_name": "community_owner"
+  }
+]

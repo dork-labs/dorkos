@@ -1,0 +1,11 @@
+{
+  "regions": [
+    {
+      "region_id": "aws-us-east-2",
+      "name": "AWS US East 2",
+      "default": true,
+      "geo_lat": "39.96",
+      "geo_long": "-83.00"
+    }
+  ]
+}
