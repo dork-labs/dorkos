@@ -59,6 +59,12 @@ let mockConnections: Array<{
   connectedHumanMemberId: string | null;
   status: 'pending' | 'connected' | 'reconnect-required';
   expiresAt: string | null;
+  attention?: {
+    state: 'verified' | 'stale' | 'unavailable';
+    unreadCount: number | null;
+    mentionCount: number | null;
+    verifiedAt: string | null;
+  };
 }> = [];
 let mockCommunityOrder: string[] = [];
 let mockConfig: { version?: string; latestVersion?: string | null; isDevMode?: boolean } = {
@@ -574,6 +580,30 @@ describe('SidebarHeaderBlock', () => {
     fireEvent.keyDown(input, { key: 'K', metaKey: true, shiftKey: true });
     expect(screen.queryByText('Switch context')).not.toBeInTheDocument();
     input.remove();
+  });
+
+  it('announces mentions separately from other unread activity', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+        attention: {
+          state: 'verified',
+          unreadCount: 5,
+          mentionCount: 2,
+          verifiedAt: '2026-09-21T12:00:00.000Z',
+        },
+      },
+    ];
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    expect(await screen.findByLabelText('2 mentions')).toBeVisible();
+    expect(screen.getByLabelText('3 other unread')).toBeVisible();
   });
 
   it('discards a delayed destination after the local owner changes', async () => {

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp, ChevronDown, HardDrive, Plus, UsersRound } from 'lucide-react';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
-import type { CommunityNavigationDescriptor } from '@dorkos/shared/community-navigation';
 import { CommunityInstallationDestinationSchema } from '@dorkos/shared/config-schema';
 import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
 import type { SidebarMenuNode } from '@/layers/shared/ui';
@@ -69,9 +68,7 @@ function orderedConnections(
   });
 }
 
-function navigationDescriptor(
-  connection: CommunityConnectionDescriptor
-): CommunityNavigationDescriptor {
+function navigationDescriptor(connection: CommunityConnectionDescriptor) {
   const lifecycle = connection.access?.lastKnown?.lifecycle;
   return {
     kind: 'community',
@@ -92,8 +89,9 @@ function navigationDescriptor(
         : connection.access?.state === 'unverified'
           ? 'offline'
           : 'unknown',
-    unreadCount: 0,
-    mentionCount: 0,
+    unreadCount: connection.attention?.unreadCount ?? null,
+    mentionCount: connection.attention?.mentionCount ?? null,
+    attentionStale: connection.attention?.state === 'stale',
   };
 }
 
@@ -320,6 +318,15 @@ export function CommunityContextSwitcher({
                 : descriptor.availability !== 'online'
                   ? descriptor.availability
                   : undefined;
+            const mentions = descriptor.mentionCount ?? 0;
+            const otherUnread = Math.max(0, (descriptor.unreadCount ?? 0) - mentions);
+            const attention = [
+              mentions > 0 ? `${mentions} ${mentions === 1 ? 'mention' : 'mentions'}` : null,
+              otherUnread > 0 ? `${otherUnread} other unread` : null,
+              descriptor.attentionStale && descriptor.unreadCount !== null ? 'last checked' : null,
+            ]
+              .filter(Boolean)
+              .join(', ');
             return (
               <ResponsiveDropdownMenuRadioItem
                 key={connection.ref}
@@ -328,11 +335,32 @@ export function CommunityContextSwitcher({
                 disabled={pendingRef !== null}
                 itemRef={connection.ref === selectedRef ? selectedItem : undefined}
                 description={
-                  connection.status === 'reconnect-required' ? 'Reconnect required' : state
+                  [
+                    connection.status === 'reconnect-required' ? 'Reconnect required' : state,
+                    attention,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || undefined
                 }
                 className={pendingRef !== null ? 'opacity-50' : undefined}
               >
                 <span className="min-w-0 flex-1 truncate">{connection.label}</span>
+                {mentions > 0 && (
+                  <span
+                    className="bg-primary text-primary-foreground rounded-full px-1.5 text-xs"
+                    aria-label={`${mentions} ${mentions === 1 ? 'mention' : 'mentions'}`}
+                  >
+                    @{mentions}
+                  </span>
+                )}
+                {otherUnread > 0 && (
+                  <span
+                    className="bg-muted text-muted-foreground rounded-full px-1.5 text-xs"
+                    aria-label={`${otherUnread} other unread`}
+                  >
+                    {otherUnread}
+                  </span>
+                )}
               </ResponsiveDropdownMenuRadioItem>
             );
           })}
