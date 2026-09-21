@@ -72,6 +72,53 @@ export async function reconcileTenantNamespace(
   }
 }
 
+/**
+ * Reconcile and run the second-community admission transaction under the same writer fence.
+ *
+ * The callback runs only after a complete ready result and must recheck the durable generation
+ * inside its transaction before inserting the second community.
+ */
+export async function withReconciledTenantNamespace<T>(
+  pool: Pool,
+  blobStore: BlobStore,
+  operation: (client: PoolClient, reconciliation: TenantReconciliationResult) => Promise<T>
+): Promise<{ reconciliation: TenantReconciliationResult; value?: T }> {
+  const client = await pool.connect();
+  try {
+    await client.query(`SELECT pg_advisory_lock(${RECONCILIATION_LOCK})`);
+    const reconciliation = await reconcileWithLock(client, blobStore);
+    if (!reconciliation.ready) return { reconciliation };
+    await client.query('BEGIN');
+    try {
+      const gate = await client.query<{
+        generation: string;
+        validated_generation: string | null;
+        state: string;
+      }>(
+        `SELECT generation,validated_generation,state
+         FROM tenant_reconciliation WHERE singleton FOR UPDATE`
+      );
+      const current = gate.rows[0];
+      if (
+        current?.state !== 'ready' ||
+        Number(current.generation) !== reconciliation.generation ||
+        Number(current.validated_generation) !== reconciliation.generation
+      ) {
+        throw new Error('Tenant reconciliation changed before community creation');
+      }
+      const value = await operation(client, reconciliation);
+      await client.query('COMMIT');
+      return { reconciliation, value };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
+  } finally {
+    await client.query(`SELECT pg_advisory_unlock(${RECONCILIATION_LOCK})`).catch(() => {});
+    client.release();
+  }
+}
+
 async function reconcileWithLock(
   client: PoolClient,
   blobStore: BlobStore

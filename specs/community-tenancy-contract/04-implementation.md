@@ -141,3 +141,19 @@ _(None yet)_
 - Task 1.4 is complete: the supported backout is a coordinated pre-migration database/object restore into an isolated deployment of the original image. Migration 0009 permanently refuses backout after a second community has ever existed, even if later deleted. The read-only diagnostic cannot authorize or perform a restore.
 - Targeted PostgreSQL migration/backout verification passed 9/9. A durable-history mutation failed 1/6 with the latch removed and passed 6/6 after restoration. A real PostgreSQL 17 dump/restore rehearsal preserved every original public table row and matching file bytes while correctly excluding a post-backup write. Independent review accepted the exact Task 1.4 commit with 0 Important and 0 Nit findings.
 - Next task: tenant-qualified HTTP authorization and account-wide recovery complete Tasks 2.x before any multi-community rollout.
+
+### Session 5 - 2026-09-20
+
+**Workers:** _(none — implementation remains in this owning session)_
+
+Tasks 2.1 through 2.3 reached VERIFY:
+
+- Canonical `/c/:communityId` browser paths and `/api/v1/communities/:communityId` APIs select one immutable UUID. The compatibility alias works for one community and returns `COMMUNITY_SELECTION_REQUIRED` as soon as a second row exists.
+- Cookie, personal-grant, and agent principals carry tenant identity through member, channel, entry, attachment, export, invitation, pairing, cursor, quota, cleanup, recovery, and SSE paths. Mutations recheck the selected active lifecycle and exact credential on their transaction connection.
+- Removing one membership keeps the host session and another community membership. Cross-community object IDs return `404`, and a bearer issued in one community is rejected in another.
+- First installation now requires zero communities, members, and host operators under the bootstrap lock. It atomically creates the first pending community, owner membership, active lifecycle, and host operator; pending-only or operator-residue hosts fail closed instead of minting a replacement owner.
+- Host operators can list only operational community metadata, create a pending community, and suspend or resume a claimed community. They gain no content access. Second-community creation repeats authoritative namespace reconciliation while holding the current-writer fence; later creation stays tenant-qualified.
+- Owner-claim grants bind one pre-created pending community. Sign-up and redemption both recheck that lifecycle; concurrent claimants produce one owner and one refusal. Active or suspended communities reject ordinary owner claims, and no online lost-owner repair endpoint exists.
+- Password recovery remains host-wide: it revokes host sessions and membership-derived credentials across every community and writes a tenant-scoped audit receipt without reactivating membership.
+- Community lint and typecheck pass. Fresh PostgreSQL 17 bootstrap and admission files pass 18/18, including concurrent owner claims, operator suspension serialized against a blocked member post, same-account membership removal with the other community session preserved, cross-tenant bearer/object refusals, and first-install corruption guards.
+- The branch composes the independently accepted Task 1.4 backout commit and receipt exactly. Seven of twelve tasks are complete; DOR-2173 owns tenant-qualified discovery/native participation next, while final isolation and upgrade proof remain in DOR-2174.

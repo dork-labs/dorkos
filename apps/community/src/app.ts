@@ -25,6 +25,7 @@ import { registerPairingRoutes } from './routes/pairings.js';
 import { registerAgentRoutes } from './routes/agents.js';
 import { registerAttachmentRoutes } from './routes/attachments.js';
 import { registerExportRoutes } from './routes/exports.js';
+import { registerHostRoutes } from './routes/host.js';
 import { createBlobStore, type BlobStore } from './storage/index.js';
 import { DeliveryReceiptGate } from './delivery-receipt-gate.js';
 import { registerCommunityTestControlRoutes } from './routes/test-control.js';
@@ -132,12 +133,21 @@ export function createCommunityApp({
       const owner = await client.query(
         "SELECT 1 FROM members WHERE role='owner' AND active LIMIT 1"
       );
-      if (owner.rowCount)
-        throw new ApiError(409, 'STATE_CONFLICT', 'This community already has an owner.');
-      await client.query('INSERT INTO bootstrap_grants(token_hash,expires_at) VALUES($1,$2)', [
-        hashSecret(token),
-        expiry,
-      ]);
+      const communities = await client.query('SELECT 1 FROM communities LIMIT 1');
+      const operators = await client.query('SELECT 1 FROM host_operators LIMIT 1');
+      const members = await client.query('SELECT 1 FROM members LIMIT 1');
+      if (owner.rowCount || communities.rowCount || operators.rowCount || members.rowCount) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'First installation is unavailable on a host that already contains community state.'
+        );
+      }
+      await client.query(
+        `INSERT INTO bootstrap_grants(token_hash,purpose,community_id,expires_at)
+         VALUES($1,'first_install',NULL,$2)`,
+        [hashSecret(token), expiry]
+      );
     });
     setCookie(c, 'community_bootstrap', signValue(token, config.authSecret), {
       httpOnly: true,
@@ -164,8 +174,16 @@ export function createCommunityApp({
       const existing = await client.query(
         "SELECT 1 FROM members WHERE role='owner' AND active LIMIT 1"
       );
-      if (existing.rowCount)
-        throw new ApiError(409, 'STATE_CONFLICT', 'This community already has an owner.');
+      const communities = await client.query('SELECT 1 FROM communities LIMIT 1');
+      const operators = await client.query('SELECT 1 FROM host_operators LIMIT 1');
+      const members = await client.query('SELECT 1 FROM members LIMIT 1');
+      if (existing.rowCount || communities.rowCount || operators.rowCount || members.rowCount) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'First installation is unavailable on a host that already contains community state.'
+        );
+      }
       const community = await client.query<{
         id: string;
         name: string;
@@ -204,6 +222,10 @@ export function createCommunityApp({
     });
     return json(c, CommunityWireBootstrapClaimResponseSchema, result);
   });
+
+  const hostApi = new Hono();
+  registerHostRoutes(hostApi, { pool, auth, config, blobStore });
+  app.route('/api/v1', hostApi);
 
   const communityApi = new Hono();
   communityApi.use('*', async (c, next) => {

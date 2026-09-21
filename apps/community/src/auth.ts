@@ -10,8 +10,24 @@ export function createCommunityAuth(pool: Pool, config: CommunityConfig) {
     const grant = verifyValue(readCookie(cookieHeader, 'community_bootstrap'), config.authSecret);
     if (grant) {
       const result = await pool.query(
-        `SELECT 1 FROM bootstrap_grants WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>now()
-         AND NOT EXISTS (SELECT 1 FROM members WHERE role='owner' AND active)`,
+        `SELECT 1 FROM bootstrap_grants g
+         WHERE g.token_hash=$1 AND g.consumed_at IS NULL AND g.expires_at>now()
+           AND (
+             (g.purpose='first_install' AND g.community_id IS NULL
+               AND NOT EXISTS (SELECT 1 FROM communities)
+               AND NOT EXISTS (SELECT 1 FROM host_operators)
+               AND NOT EXISTS (SELECT 1 FROM members))
+             OR
+             (g.purpose='owner_claim' AND g.community_id IS NOT NULL
+               AND EXISTS (
+                 SELECT 1 FROM communities c
+                 WHERE c.id=g.community_id AND c.lifecycle='pending_owner'
+                   AND NOT EXISTS (
+                     SELECT 1 FROM members m
+                     WHERE m.community_id=c.id AND m.role='owner' AND m.active
+                   )
+               ))
+           )`,
         [hashSecret(grant)]
       );
       if (result.rowCount) return true;
@@ -21,9 +37,10 @@ export function createCommunityAuth(pool: Pool, config: CommunityConfig) {
       const result = await pool.query(
         `SELECT 1 FROM pending_admissions p JOIN invites i ON i.id=p.invite_id
          JOIN members m ON m.id=i.issuer_member_id
+         JOIN communities c ON c.id=i.community_id
          WHERE p.token_hash=$1 AND p.expires_at>now() AND i.expires_at>now()
            AND i.revoked_at IS NULL
-           AND m.active AND m.role IN ('owner','admin')`,
+           AND c.lifecycle='active' AND m.active AND m.role IN ('owner','admin')`,
         [hashSecret(pending)]
       );
       if (result.rowCount) return true;

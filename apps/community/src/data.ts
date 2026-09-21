@@ -314,6 +314,23 @@ export async function bootstrapGrant(
   return result.rows[0].id;
 }
 
+/** Assert that a host account currently holds operational authority. */
+export async function requireHostOperator(
+  c: Context,
+  auth: CommunityAuth,
+  pool: Pool
+): Promise<{ userId: string; name: string }> {
+  const user = await requireSessionUser(c, auth);
+  const operator = await pool.query(
+    'SELECT 1 FROM host_operators WHERE user_id=$1 AND revoked_at IS NULL',
+    [user.id]
+  );
+  if (!operator.rowCount) {
+    throw new ApiError(403, 'FORBIDDEN', 'Host operator access is required.');
+  }
+  return { userId: user.id, name: user.name };
+}
+
 /** Lock a channel before a post or membership change and hide unauthorized private rooms. */
 export async function lockChannel(
   client: PoolClient,
