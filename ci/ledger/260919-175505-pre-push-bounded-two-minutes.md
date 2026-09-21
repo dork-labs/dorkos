@@ -8,7 +8,7 @@ gates:
   - lefthook.pre-push.formatting
   - lefthook.pre-commit.lint
   - lefthook.pre-commit.typecheck
-prs: []
+prs: [1969]
 hypothesis:
   metric: 'local-push'
   slo: 'local-push'

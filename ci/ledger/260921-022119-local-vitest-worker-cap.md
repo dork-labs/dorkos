@@ -7,7 +7,7 @@ actor: agent
 gates:
   - lefthook.pre-commit.lint
   - lefthook.pre-commit.typecheck
-prs: []
+prs: [1969]
 hypothesis:
   metric: 'local-commit'
   slo: 'local-commit'
