@@ -56,6 +56,7 @@ export const LaunchErrorCategorySchema = z.enum([
 export const LaunchSafeErrorCodeSchema = z.enum([
   'AUTH_REQUIRED',
   'ACCESS_DENIED',
+  'TERMS_NOT_ACCEPTED',
   'BILLING_BLOCKED',
   'QUOTA_EXCEEDED',
   'NAME_CONFLICT',
@@ -74,6 +75,10 @@ export const LaunchSafeErrorCodeSchema = z.enum([
   'TIMEOUT',
   'OUTPUT_LIMIT',
   'EXIT',
+  'COMMUNITY_RELEASE_NOT_READY',
+  'COMMUNITY_RELEASE_INVALID',
+  'COMMUNITY_RELEASE_VERSION_MISMATCH',
+  'COMMUNITY_RELEASE_PROVENANCE_MISMATCH',
   'JOURNAL_LOCKED',
 ]);
 

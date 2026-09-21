@@ -19,10 +19,10 @@ This plan implements the frozen launcher contract in four ordered phases. The ca
 
 ## Phase 2 — Provider Contracts and Fixtures
 
-- [ ] **2.1 Build the provider contract harness and sanitized fixtures.** Pin every trusted CLI and minimal Fly GraphQL response, then mutate each field the launcher relies on.
-- [ ] **2.2 Implement the Fly app, secret, Machine and release wrapper.** Return typed stable identities and prove the running digest and applied secret version.
-- [ ] **2.3 Implement the Neon project and direct TLS wrapper.** Record exact topology IDs while keeping the database URL in memory only.
-- [ ] **2.4 Implement the private Tigris creation and binding wrapper.** Use minimal Fly GraphQL operations, keep the local session token and raw response in the secret sink, and prove the private bucket's exact app binding independently.
+- [x] **2.1 Build the provider contract harness and sanitized fixtures.** Pin every trusted CLI and minimal Fly GraphQL response, then mutate each field the launcher relies on.
+- [x] **2.2 Implement the Fly app, secret, Machine and release wrapper.** Return typed stable identities and prove the running digest and applied secret version.
+- [x] **2.3 Implement the Neon project and direct TLS wrapper.** Record exact topology IDs while keeping the database URL in memory only.
+- [x] **2.4 Implement the private Tigris creation and binding wrapper.** Use minimal Fly GraphQL operations, keep the local session token and raw response in the secret sink, and prove the private bucket's exact app binding independently.
 
 ## Phase 3 — Resumable Provisioning
 

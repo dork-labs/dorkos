@@ -52,6 +52,7 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
   it('returns only the sanitized create and exact-ID read identities', async () => {
     const request = vi
       .fn()
+      .mockResolvedValueOnce(json({ data: { viewer: { agreedToProviderTos: true } } }))
       .mockResolvedValueOnce(json({ data: { createAddOn: { addOn: identity } } }))
       .mockResolvedValueOnce(json({ data: { node: identity } }));
     const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
@@ -64,9 +65,9 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
       addOnId: identity.id,
       organizationSlug: identity.organization.slug,
     });
-    const createBody = JSON.parse(String(request.mock.calls[0][1]?.body));
+    const createBody = JSON.parse(String(request.mock.calls[1][1]?.body));
     expect(createBody.variables.input).toEqual({ ...createInput(), type: 'tigris' });
-    expect(JSON.parse(String(request.mock.calls[1][1]?.body)).variables).toEqual({
+    expect(JSON.parse(String(request.mock.calls[2][1]?.body)).variables).toEqual({
       id: identity.id,
     });
   });
@@ -75,7 +76,10 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     const canary = 'CANARY_PROVIDER_RESPONSE_SECRET';
     const client = new FlyTigrisGraphqlClient({
       accessToken: 'token',
-      fetch: async () => json({ errors: [{ message: canary }] }),
+      fetch: vi
+        .fn()
+        .mockResolvedValueOnce(json({ data: { viewer: { agreedToProviderTos: true } } }))
+        .mockResolvedValueOnce(json({ errors: [{ message: canary }] })),
     });
 
     await expect(client.createTigris(createInput())).rejects.toMatchObject({
@@ -153,9 +157,11 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
   });
 
   it('classifies transport failure by whether the operation could have created a resource', async () => {
-    const request = vi.fn(async () => {
-      throw new Error('CANARY_NETWORK_SECRET');
-    });
+    const request = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('CANARY_NETWORK_SECRET'))
+      .mockResolvedValueOnce(json({ data: { viewer: { agreedToProviderTos: true } } }))
+      .mockRejectedValueOnce(new Error('CANARY_NETWORK_SECRET'));
     const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
 
     await expect(client.hasAcceptedTerms()).rejects.toMatchObject({
@@ -169,7 +175,7 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
 
   it('bounds the complete response, including a body that never arrives', async () => {
     const cancel = vi.fn();
-    const request = vi.fn(async () => {
+    const stalled = async () => {
       const body = new ReadableStream({
         start() {
           return undefined;
@@ -177,7 +183,12 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
         cancel,
       });
       return new Response(body, { status: 200 });
-    });
+    };
+    const request = vi
+      .fn()
+      .mockImplementationOnce(stalled)
+      .mockResolvedValueOnce(json({ data: { viewer: { agreedToProviderTos: true } } }))
+      .mockImplementationOnce(stalled);
     const client = new FlyTigrisGraphqlClient({
       accessToken: 'token',
       timeoutMs: 10,
@@ -192,5 +203,25 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
       code: 'CREATION_OUTCOME_UNCERTAIN',
     });
     expect(cancel).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses creation before accepted terms and bounds exact-name deletion', async () => {
+    const refused = new FlyTigrisGraphqlClient({
+      accessToken: 'token',
+      fetch: async () => json({ data: { viewer: { agreedToProviderTos: false } } }),
+    });
+    await expect(refused.createTigris(createInput())).rejects.toMatchObject({
+      code: 'TERMS_NOT_ACCEPTED',
+    });
+
+    const request = vi.fn(async (_input: string | URL, _init?: RequestInit) =>
+      json({ data: { deleteAddOn: { deletedAddOnName: identity.name } } })
+    );
+    const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
+    await expect(client.deleteTigris(identity.name)).resolves.toBe(identity.name);
+    expect(JSON.parse(String(request.mock.calls[0][1]?.body)).variables).toEqual({
+      name: identity.name,
+      provider: 'tigris',
+    });
   });
 });

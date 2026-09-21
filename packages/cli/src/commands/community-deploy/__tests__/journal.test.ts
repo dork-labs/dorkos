@@ -55,6 +55,7 @@ describe('Community launch journal', () => {
     expect(
       [
         'TERMS_VIEWER_MISSING',
+        'TERMS_NOT_ACCEPTED',
         'ADD_ON_MISSING',
         'INVALID_EXPECTED_BINDING',
         'BINDING_MISMATCH',
@@ -66,9 +67,14 @@ describe('Community launch journal', () => {
         'TIMEOUT',
         'OUTPUT_LIMIT',
         'EXIT',
+        'COMMUNITY_RELEASE_NOT_READY',
+        'COMMUNITY_RELEASE_INVALID',
+        'COMMUNITY_RELEASE_VERSION_MISMATCH',
+        'COMMUNITY_RELEASE_PROVENANCE_MISMATCH',
       ].map((code) => LaunchSafeErrorCodeSchema.parse(code))
     ).toEqual([
       'TERMS_VIEWER_MISSING',
+      'TERMS_NOT_ACCEPTED',
       'ADD_ON_MISSING',
       'INVALID_EXPECTED_BINDING',
       'BINDING_MISMATCH',
@@ -80,6 +86,10 @@ describe('Community launch journal', () => {
       'TIMEOUT',
       'OUTPUT_LIMIT',
       'EXIT',
+      'COMMUNITY_RELEASE_NOT_READY',
+      'COMMUNITY_RELEASE_INVALID',
+      'COMMUNITY_RELEASE_VERSION_MISMATCH',
+      'COMMUNITY_RELEASE_PROVENANCE_MISMATCH',
     ]);
   });
 

@@ -1,0 +1,9 @@
+[
+  {
+    "ID": "release_fixture_01",
+    "ImageRef": "ghcr.io/dork-labs/dorkos-community@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "Status": "complete",
+    "Stable": false,
+    "Version": 1
+  }
+]

@@ -5,10 +5,12 @@
  */
 import {
   FLY_TIGRIS_CREATE_MUTATION,
+  FLY_TIGRIS_DELETE_MUTATION,
   FLY_TIGRIS_READ_QUERY,
   FLY_TIGRIS_TERMS_QUERY,
   createTigrisVariables,
   parseTigrisCreateResponse,
+  parseTigrisDeleteResponse,
   parseTigrisReadResponse,
   parseTigrisTermsResponse,
   FlyGraphqlContractError,
@@ -27,6 +29,7 @@ const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 type FlyGraphqlFailureCode =
   | 'AUTH_REQUIRED'
   | 'ACCESS_DENIED'
+  | 'TERMS_NOT_ACCEPTED'
   | 'PROVIDER_UNAVAILABLE'
   | 'INVALID_RESPONSE'
   | 'CREATION_OUTCOME_UNCERTAIN';
@@ -177,6 +180,9 @@ export class FlyTigrisGraphqlClient {
     } catch {
       throw new FlyGraphqlClientError('INVALID_RESPONSE');
     }
+    if (!(await this.hasAcceptedTerms())) {
+      throw new FlyGraphqlClientError('TERMS_NOT_ACCEPTED');
+    }
     return this.request(FLY_TIGRIS_CREATE_MUTATION, variables, parseTigrisCreateResponse, true);
   }
 
@@ -186,6 +192,19 @@ export class FlyTigrisGraphqlClient {
       throw new FlyGraphqlClientError('INVALID_RESPONSE');
     }
     return this.request(FLY_TIGRIS_READ_QUERY, { id: addOnId }, parseTigrisReadResponse, false);
+  }
+
+  /** Delete one exact Tigris name after the caller independently reverified its journal binding. */
+  async deleteTigris(addOnName: string): Promise<string> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(addOnName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(
+      FLY_TIGRIS_DELETE_MUTATION,
+      { name: addOnName, provider: 'tigris' },
+      (response) => parseTigrisDeleteResponse(response, addOnName),
+      true
+    );
   }
 
   private async request<T>(
