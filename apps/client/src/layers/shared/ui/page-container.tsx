@@ -11,7 +11,7 @@ import { cn } from '@/layers/shared/lib/utils';
  * different widths depending on which view it was showing. Baked in here, it
  * cannot be forgotten by the next page.
  */
-const pageContainerVariants = cva('mx-auto w-full px-4 py-6 sm:px-6', {
+export const pageContainerVariants = cva('mx-auto w-full px-4 py-6 sm:px-6', {
   variants: {
     width: {
       full: '',

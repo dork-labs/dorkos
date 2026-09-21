@@ -1,0 +1,8 @@
+[
+  {
+    "ID": "app_fixture_01",
+    "Name": "community-fixture",
+    "Status": "running",
+    "Organization": { "ID": "org_fixture_01", "Slug": "dork-labs", "Name": "Dork Labs" }
+  }
+]
