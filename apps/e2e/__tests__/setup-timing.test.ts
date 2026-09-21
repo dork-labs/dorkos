@@ -1,14 +1,13 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const cli = require.resolve('@playwright/test/cli');
-const timingModule = resolve(here, '../setup-timing.ts');
 
 describe('global setup timing in real Playwright reports', () => {
   it.each(['passed', 'failed', 'interrupted'] as const)(
@@ -24,7 +23,7 @@ describe('global setup timing in real Playwright reports', () => {
         writeFileSync(
           join(fixture, 'setup.ts'),
           `
-        import { measureGlobalSetup } from ${JSON.stringify(timingModule)};
+        import { measureGlobalSetup } from '../setup-timing.ts';
         export default async function setup(config) {
           await measureGlobalSetup(config, async () => {
             ${outcome === 'failed' ? "throw new Error('intentional setup failure');" : outcome === 'interrupted' ? 'await new Promise(() => {});' : 'await Promise.resolve();'}
@@ -39,7 +38,6 @@ describe('global setup timing in real Playwright reports', () => {
         test('runner proof needs no browser', () => expect(true).toBe(true));
       `
         );
-        const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
         writeFileSync(
           join(fixture, 'playwright.config.ts'),
           `
@@ -49,7 +47,7 @@ describe('global setup timing in real Playwright reports', () => {
           globalSetup: './setup.ts', metadata: { retained: 'existing metadata' },
           reporter: [['json', { outputFile: './results.json' }]],
           webServer: {
-            command: ${JSON.stringify(`${quote(process.execPath)} server.cjs`)},
+            command: 'node server.cjs',
             cwd: ${JSON.stringify(fixture)}, wait: { stdout: /TIMING_READY/ },
             timeout: 10000,
           },
@@ -64,7 +62,14 @@ describe('global setup timing in real Playwright reports', () => {
             encoding: 'utf8',
             timeout: 20_000,
             // This tiny runner loads no app, auth, inference, or user configuration.
-            env: { PATH: process.env.PATH, HOME: fixture, CI: '1' },
+            env: {
+              // Avoid POSIX-only shell quoting on Windows while selecting this Node install.
+              PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`,
+              HOME: fixture,
+              USERPROFILE: fixture,
+              SystemRoot: process.env.SystemRoot,
+              CI: '1',
+            },
           }
         );
         expect(result.error).toBeUndefined();
