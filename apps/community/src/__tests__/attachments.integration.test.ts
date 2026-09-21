@@ -11,7 +11,7 @@ import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { sweepExpiredAttachments } from '../routes/attachments.js';
 import { sweepExpiredExports } from '../routes/exports.js';
-import { FileSystemBlobStore } from '../storage/index.js';
+import { discardManagedBlob, FileSystemBlobStore } from '../storage/index.js';
 import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
 import { hashSecret } from '../security.js';
 
@@ -30,6 +30,7 @@ let bobCookie: string;
 let channelId: string;
 let ownerId: string;
 let bobId: string;
+let communityId: string;
 let blobStore: FileSystemBlobStore;
 let app: ReturnType<typeof createCommunityApp>;
 let config: ReturnType<typeof parseConfig>;
@@ -126,6 +127,7 @@ beforeAll(async () => {
     "SELECT id,community_id FROM members WHERE role='owner'"
   );
   ownerId = owner.rows[0].id;
+  communityId = owner.rows[0].community_id;
   const bob = await pool.query<{ id: string }>(
     `INSERT INTO members(community_id,user_id,display_name,handle,role)
      SELECT $1,id,name,'bob','member' FROM "user" WHERE email='files-bob@example.test' RETURNING id`,
@@ -151,6 +153,37 @@ describe('attachments over real HTTP and Postgres', () => {
     const metadata = (await first.json()).attachment;
     expect(metadata.name).toBe('notes.txt');
     expect(metadata.contentType).toBe('text/plain; charset=utf-8');
+    expect(
+      (
+        await pool.query(
+          `SELECT m.state,m.community_id,m.purpose
+           FROM managed_blobs m JOIN attachments a ON a.blob_key=m.blob_key WHERE a.id=$1`,
+          [metadata.id]
+        )
+      ).rows[0]
+    ).toEqual({ state: 'committed', community_id: communityId, purpose: 'attachment' });
+    const committedKey = (
+      await pool.query<{ blob_key: string }>('SELECT blob_key FROM attachments WHERE id=$1', [
+        metadata.id,
+      ])
+    ).rows[0].blob_key;
+    await pool.query(
+      `INSERT INTO pending_blob_deletions(blob_key,next_attempt_at)
+       VALUES($1,now()-interval '1 second')`,
+      [committedKey]
+    );
+    expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 0, failed: 0 });
+    expect(
+      (
+        await pool.query(
+          'SELECT count(*)::int AS count FROM pending_blob_deletions WHERE blob_key=$1',
+          [committedKey]
+        )
+      ).rows[0].count
+    ).toBe(0);
+    const committedBlob = await blobStore.get(committedKey);
+    expect(committedBlob.byteSize).toBe(5);
+    committedBlob.body.destroy();
     const originalDelete = blobStore.delete.bind(blobStore);
     const failDelete = vi
       .spyOn(blobStore, 'delete')
@@ -170,6 +203,13 @@ describe('attachments over real HTTP and Postgres', () => {
           )
         ).rows[0]
       ).toEqual({ attempts: 1, delayed: true });
+      expect(
+        (
+          await pool.query(
+            "SELECT count(*)::int AS count FROM managed_blobs WHERE state='pending_delete'"
+          )
+        ).rows[0].count
+      ).toBe(1);
     } finally {
       failDelete.mockRestore();
       errorLog.mockRestore();
@@ -177,6 +217,13 @@ describe('attachments over real HTTP and Postgres', () => {
     expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 0, failed: 0 });
     await pool.query("UPDATE pending_blob_deletions SET next_attempt_at=now()-interval '1 second'");
     expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 1, failed: 0 });
+    expect(
+      (
+        await pool.query(
+          "SELECT count(*)::int AS count FROM managed_blobs WHERE state='pending_delete'"
+        )
+      ).rows[0].count
+    ).toBe(0);
     expect((await upload(channelId, ownerCookie, 'files-one', 'world')).status).toBe(409);
     const posted = await post(
       `/api/v1/channels/${channelId}/entries`,
@@ -215,6 +262,252 @@ describe('attachments over real HTTP and Postgres', () => {
       (await request(`/api/v1/attachments/${metadata.id}`, { headers: { cookie: bobCookie } }))
         .status
     ).toBe(403);
+  });
+
+  it('reclaims a stored upload when the community lifecycle changes before metadata commit', async () => {
+    const originalPut = blobStore.put.bind(blobStore);
+    const originalDelete = blobStore.delete.bind(blobStore);
+    const put = vi.spyOn(blobStore, 'put').mockImplementationOnce(async (input) => {
+      expect(
+        (
+          await pool.query('SELECT state,community_id FROM managed_blobs WHERE blob_key=$1', [
+            input.key,
+          ])
+        ).rows[0]
+      ).toEqual({ state: 'reserved', community_id: communityId });
+      const stored = await originalPut(input);
+      await pool.query(
+        "UPDATE communities SET lifecycle='suspended',lifecycle_version=lifecycle_version+1 WHERE id=$1",
+        [communityId]
+      );
+      return stored;
+    });
+    const remove = vi
+      .spyOn(blobStore, 'delete')
+      .mockRejectedValueOnce(new Error('cleanup interrupted after storage'))
+      .mockImplementation(originalDelete);
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const response = await upload(channelId, ownerCookie, 'lifecycle-race');
+      expect(response.status).toBe(409);
+      expect(
+        (
+          await pool.query(
+            "SELECT state,community_id FROM managed_blobs WHERE state='pending_delete'"
+          )
+        ).rows[0]
+      ).toEqual({ state: 'pending_delete', community_id: communityId });
+      expect(
+        (
+          await pool.query(
+            "SELECT count(*)::int AS count FROM attachments WHERE idempotency_key='lifecycle-race'"
+          )
+        ).rows[0].count
+      ).toBe(0);
+    } finally {
+      put.mockRestore();
+      remove.mockRestore();
+      errorLog.mockRestore();
+      await pool.query(
+        "UPDATE communities SET lifecycle='active',lifecycle_version=lifecycle_version+1 WHERE id=$1",
+        [communityId]
+      );
+    }
+    await pool.query("UPDATE pending_blob_deletions SET next_attempt_at=now()-interval '1 second'");
+    expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 1, failed: 0 });
+    expect(
+      (
+        await pool.query(
+          "SELECT count(*)::int AS count FROM managed_blobs WHERE state<>'committed'"
+        )
+      ).rows[0].count
+    ).toBe(0);
+  });
+
+  it('keeps active reservations and repeatedly reconciles an uncertain expired writer', async () => {
+    const key = 'd'.repeat(64);
+    const lifecycle = (
+      await pool.query<{ lifecycle_version: number }>(
+        'SELECT lifecycle_version FROM communities WHERE id=$1',
+        [communityId]
+      )
+    ).rows[0].lifecycle_version;
+    await pool.query(
+      `INSERT INTO managed_blobs(blob_key,community_id,purpose,community_lifecycle_version)
+       VALUES($1,$2,'attachment',$3)`,
+      [key, communityId, lifecycle]
+    );
+    const stored = await blobStore.put({
+      key,
+      source: Readable.from([Buffer.from('reserved bytes')]),
+      displayName: 'reserved.txt',
+      maxBytes: 1024,
+    });
+
+    expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 0, failed: 0 });
+    expect(
+      (await pool.query('SELECT state FROM managed_blobs WHERE blob_key=$1', [key])).rows[0]
+    ).toEqual({ state: 'reserved' });
+    const active = await blobStore.get(key);
+    active.body.destroy();
+
+    await pool.query(
+      `CREATE FUNCTION reject_pending_blob_test_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+       BEGIN RAISE EXCEPTION 'test queue failure'; END $$`
+    );
+    await pool.query(
+      `CREATE TRIGGER reject_pending_blob_test_insert
+       BEFORE INSERT ON pending_blob_deletions
+       FOR EACH ROW EXECUTE FUNCTION reject_pending_blob_test_insert()`
+    );
+    await expect(
+      discardManagedBlob(
+        pool,
+        blobStore,
+        { key, communityId, purpose: 'attachment', lifecycleVersion: lifecycle },
+        stored
+      )
+    ).rejects.toThrow('test queue failure');
+    expect(
+      (await pool.query('SELECT state FROM managed_blobs WHERE blob_key=$1', [key])).rows[0]
+    ).toEqual({ state: 'reserved' });
+    await pool.query('DROP TRIGGER reject_pending_blob_test_insert ON pending_blob_deletions');
+    await pool.query('DROP FUNCTION reject_pending_blob_test_insert()');
+
+    await pool.query(
+      "UPDATE managed_blobs SET created_at=now()-interval '2 hours' WHERE blob_key=$1",
+      [key]
+    );
+    expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 0, failed: 0 });
+    expect(
+      (
+        await pool.query<{ state: string; delayed: boolean }>(
+          `SELECT m.state,p.next_attempt_at>now() AS delayed
+           FROM managed_blobs m JOIN pending_blob_deletions p USING(blob_key)
+           WHERE m.blob_key=$1`,
+          [key]
+        )
+      ).rows[0]
+    ).toEqual({ state: 'pending_delete', delayed: true });
+    const quarantined = await blobStore.get(key);
+    quarantined.body.destroy();
+
+    await pool.query(
+      "UPDATE pending_blob_deletions SET next_attempt_at=now()-interval '1 second' WHERE blob_key=$1",
+      [key]
+    );
+    const originalDelete = blobStore.delete.bind(blobStore);
+    const failDelete = vi
+      .spyOn(blobStore, 'delete')
+      .mockRejectedValueOnce(new Error('uncertain cleanup interruption'))
+      .mockImplementation(originalDelete);
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 0, failed: 1 });
+      expect(
+        (
+          await pool.query<{ attempts: number; outcome_uncertain: boolean; delayed: boolean }>(
+            `SELECT attempts,last_error_at IS NULL AS outcome_uncertain,
+                    next_attempt_at>now() AS delayed
+             FROM pending_blob_deletions WHERE blob_key=$1`,
+            [key]
+          )
+        ).rows[0]
+      ).toEqual({ attempts: 1, outcome_uncertain: true, delayed: true });
+    } finally {
+      failDelete.mockRestore();
+      errorLog.mockRestore();
+    }
+    await pool.query(
+      "UPDATE pending_blob_deletions SET next_attempt_at=now()-interval '1 second' WHERE blob_key=$1",
+      [key]
+    );
+    expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 0, failed: 0 });
+    await expect(blobStore.get(key)).rejects.toMatchObject({ code: 'BLOB_NOT_FOUND' });
+    expect(
+      (
+        await pool.query<{ state: string; delayed: boolean }>(
+          `SELECT m.state,p.next_attempt_at>now() AS delayed
+           FROM managed_blobs m JOIN pending_blob_deletions p USING(blob_key)
+           WHERE m.blob_key=$1`,
+          [key]
+        )
+      ).rows[0]
+    ).toEqual({ state: 'pending_delete', delayed: true });
+
+    await blobStore.put({
+      key,
+      source: Readable.from([Buffer.from('late reserved bytes')]),
+      displayName: 'late-reserved.txt',
+      maxBytes: 1024,
+    });
+    await pool.query(
+      "UPDATE pending_blob_deletions SET next_attempt_at=now()-interval '1 second' WHERE blob_key=$1",
+      [key]
+    );
+    expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 0, failed: 0 });
+    await expect(blobStore.get(key)).rejects.toMatchObject({ code: 'BLOB_NOT_FOUND' });
+    expect(
+      (await pool.query('SELECT 1 FROM managed_blobs WHERE blob_key=$1', [key])).rowCount
+    ).toBe(1);
+    await pool.query('DELETE FROM pending_blob_deletions WHERE blob_key=$1', [key]);
+    await pool.query('DELETE FROM managed_blobs WHERE blob_key=$1', [key]);
+  });
+
+  it('refuses a late reference commit after the reservation lease expires', async () => {
+    const originalPut = blobStore.put.bind(blobStore);
+    const put = vi.spyOn(blobStore, 'put').mockImplementationOnce(async (input) => {
+      const stored = await originalPut(input);
+      await pool.query(
+        "UPDATE managed_blobs SET created_at=now()-interval '2 hours' WHERE blob_key=$1",
+        [input.key]
+      );
+      return stored;
+    });
+    try {
+      expect((await upload(channelId, ownerCookie, 'expired-reservation')).status).toBe(409);
+      expect(
+        (
+          await pool.query(
+            "SELECT count(*)::int AS count FROM attachments WHERE idempotency_key='expired-reservation'"
+          )
+        ).rows[0].count
+      ).toBe(0);
+    } finally {
+      put.mockRestore();
+    }
+    await pool.query("UPDATE pending_blob_deletions SET next_attempt_at=now()-interval '1 second'");
+    await sweepPendingBlobDeletions(pool, blobStore);
+  });
+
+  it('discovers pending cleanup inventory even when its queue write was interrupted', async () => {
+    const key = 'e'.repeat(64);
+    const lifecycle = (
+      await pool.query<{ lifecycle_version: number }>(
+        'SELECT lifecycle_version FROM communities WHERE id=$1',
+        [communityId]
+      )
+    ).rows[0].lifecycle_version;
+    await pool.query(
+      `INSERT INTO managed_blobs(blob_key,community_id,purpose,community_lifecycle_version,state)
+       VALUES($1,$2,'attachment',$3,'pending_delete')`,
+      [key, communityId, lifecycle]
+    );
+
+    expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 0, failed: 0 });
+    expect(
+      (await pool.query('SELECT 1 FROM managed_blobs WHERE blob_key=$1', [key])).rowCount
+    ).toBe(1);
+    expect(
+      (
+        await pool.query<{ delayed: boolean }>(
+          'SELECT next_attempt_at>now() AS delayed FROM pending_blob_deletions WHERE blob_key=$1',
+          [key]
+        )
+      ).rows[0]
+    ).toEqual({ delayed: true });
+    await pool.query('DELETE FROM pending_blob_deletions WHERE blob_key=$1', [key]);
+    await pool.query('DELETE FROM managed_blobs WHERE blob_key=$1', [key]);
   });
 
   it('lets due blob cleanup work pass an older backed-off row', async () => {
@@ -628,6 +921,15 @@ describe('private archives and recoverable leave', () => {
     const personal = await post('/api/v1/me/export', {}, ownerCookie);
     expect(personal.status).toBe(201);
     const personalId = (await personal.json()).archiveId;
+    expect(
+      (
+        await pool.query(
+          `SELECT m.state,m.community_id,m.purpose FROM managed_blobs m
+           JOIN export_archives e ON e.blob_key=m.blob_key WHERE e.id=$1`,
+          [personalId]
+        )
+      ).rows[0]
+    ).toEqual({ state: 'committed', community_id: communityId, purpose: 'export' });
     const download = await request(`/api/v1/exports/${personalId}`, {
       headers: { cookie: ownerCookie },
     });
@@ -694,6 +996,15 @@ describe('private archives and recoverable leave', () => {
       [personalId]
     );
     expect(await sweepExpiredExports(pool, blobStore)).toEqual({ deleted: 1, failed: 0 });
+    expect(
+      (
+        await pool.query(
+          `SELECT count(*)::int AS count FROM managed_blobs m
+           JOIN export_archives e ON e.blob_key=m.blob_key WHERE e.id=$1`,
+          [personalId]
+        )
+      ).rows[0].count
+    ).toBe(0);
     expect(
       (await request(`/api/v1/exports/${personalId}`, { headers: { cookie: ownerCookie } })).status
     ).toBe(404);

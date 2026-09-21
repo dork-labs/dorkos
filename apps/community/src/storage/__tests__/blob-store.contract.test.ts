@@ -49,6 +49,19 @@ function contract(
       await expect(fixture.store.get(stored.key)).rejects.toThrow();
     });
 
+    it('publishes bytes under an already reserved opaque key', async () => {
+      const key = 'd'.repeat(64);
+      const stored = await fixture.store.put({
+        key,
+        source: Readable.from([png]),
+        displayName: 'reserved.png',
+        maxBytes: png.length,
+      });
+      expect(stored.key).toBe(key);
+      expect(await readAll((await fixture.reopen().get(key)).body)).toEqual(png);
+      await fixture.store.delete(key);
+    });
+
     it('rejects an over-limit stream, active content, and invalid keys without persisting them', async () => {
       await expect(
         fixture.store.put({ source: Readable.from([png]), displayName: 'big.png', maxBytes: 10 })

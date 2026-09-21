@@ -17,6 +17,8 @@ export interface StoredBlob {
 
 /** Input limits and identity for a streaming blob write. */
 export interface PutBlobInput {
+  /** Pre-reserved server key. Persistent callers reserve it before storage I/O. */
+  key?: BlobKey;
   source: AsyncIterable<Uint8Array>;
   displayName: string;
   maxBytes: number;
@@ -147,7 +149,8 @@ export async function stageBlob(directory: string, input: PutBlobInput) {
   }
   assertNotAborted(input.signal);
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  const key = randomBytes(32).toString('hex');
+  const key = input.key ?? randomBytes(32).toString('hex');
+  validateBlobKey(key);
   const tempPath = join(directory, `.${key}.upload`);
   const handle = await open(tempPath, 'wx', 0o600);
   const hash = createHash('sha256');

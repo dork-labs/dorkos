@@ -17,8 +17,17 @@ import {
   transaction,
 } from '../data.js';
 import { ApiError, json } from '../http.js';
-import { BlobStoreError, downloadHeaders, type BlobStore } from '../storage/index.js';
-import { cleanupBackoffSql, deleteUnreferencedBlob } from '../storage/pending-deletions.js';
+import {
+  BlobStoreError,
+  completeManagedBlobCommit,
+  discardManagedBlob,
+  downloadHeaders,
+  managedBlobWriteSignal,
+  prepareManagedBlobCommit,
+  reserveManagedBlob,
+  type BlobStore,
+} from '../storage/index.js';
+import { cleanupBackoffSql } from '../storage/pending-deletions.js';
 
 interface AttachmentRow {
   id: string;
@@ -153,6 +162,9 @@ export async function sweepExpiredAttachments(
         await client.query('DELETE FROM attachments WHERE id=$1 AND entry_id IS NULL', [
           candidate.id,
         ]);
+        await client.query('DELETE FROM managed_blobs WHERE blob_key=$1', [
+          result.rows[0].blob_key,
+        ]);
         attempt.outcome = 'deleted';
       });
     } catch (error) {
@@ -200,25 +212,29 @@ export function registerAttachmentRoutes(
     if (declaredLength && Number(declaredLength) !== metadata.byteSize)
       throw new ApiError(400, 'STATE_CONFLICT', 'The declared file size does not match.');
     if (!c.req.raw.body) throw new ApiError(400, 'STATE_CONFLICT', 'File bytes are required.');
-    await transaction(pool, async (client) => {
+    const reservation = await transaction(pool, async (client) => {
+      const reserved = await reserveManagedBlob(client, principal.community_id, 'attachment');
       const channel = await lockChannel(client, c.req.param('id'), principal);
       requireJoined(channel);
       if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
       await lockPrincipalAuthority(client, principal);
+      return reserved;
     });
     let stored;
     try {
       stored = await blobStore.put({
+        key: reservation.key,
         source: requestBytes(c.req.raw.body),
         displayName: metadata.name,
         maxBytes: config.limits.attachmentBytes,
-        signal: c.req.raw.signal,
+        signal: managedBlobWriteSignal(c.req.raw.signal),
       });
     } catch (error) {
+      await discardManagedBlob(pool, blobStore, reservation).catch(() => undefined);
       mapBlobError(error);
     }
     if (stored.byteSize !== metadata.byteSize) {
-      await deleteUnreferencedBlob(pool, blobStore, stored.key);
+      await discardManagedBlob(pool, blobStore, reservation, stored);
       throw new ApiError(400, 'STATE_CONFLICT', 'The file size does not match its bytes.');
     }
     const requestHash = createHash('sha256')
@@ -228,6 +244,7 @@ export function registerAttachmentRoutes(
       .digest('hex');
     try {
       const result = await transaction(pool, async (client) => {
+        await prepareManagedBlobCommit(client, reservation, stored);
         const channel = await lockChannel(client, c.req.param('id'), principal);
         requireJoined(channel);
         if (channel.archived)
@@ -259,9 +276,10 @@ export function registerAttachmentRoutes(
         );
         if (!quota.rowCount) throw new ApiError(429, 'RATE_LIMITED', 'Daily upload limit reached.');
         const inserted = await client.query<AttachmentRow>(
-          `INSERT INTO attachments(channel_id,uploader_member_id,uploader_agent_id,blob_key,display_name,content_type,byte_size,checksum,idempotency_key,request_hash)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+          `INSERT INTO attachments(community_id,channel_id,uploader_member_id,uploader_agent_id,blob_key,display_name,content_type,byte_size,checksum,idempotency_key,request_hash)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
           [
+            principal.community_id,
             channel.id,
             principal.kind === 'human' ? principal.id : null,
             principal.kind === 'agent' ? principal.id : null,
@@ -274,9 +292,10 @@ export function registerAttachmentRoutes(
             requestHash,
           ]
         );
+        await completeManagedBlobCommit(client, reservation);
         return { attachment: attachmentProjection(inserted.rows[0]), repeated: false };
       });
-      if (result.repeated) await deleteUnreferencedBlob(pool, blobStore, stored.key);
+      if (result.repeated) await discardManagedBlob(pool, blobStore, reservation, stored);
       return json(
         c,
         CommunityWireAttachmentUploadResponseSchema,
@@ -284,12 +303,14 @@ export function registerAttachmentRoutes(
         result.repeated ? 200 : 201
       );
     } catch (error) {
-      await deleteUnreferencedBlob(pool, blobStore, stored.key).catch((cleanupError: unknown) => {
-        console.error(
-          'Community blob cleanup could not be queued',
-          cleanupError instanceof Error ? cleanupError.name : 'unknown'
-        );
-      });
+      await discardManagedBlob(pool, blobStore, reservation, stored).catch(
+        (cleanupError: unknown) => {
+          console.error(
+            'Community blob cleanup could not be queued',
+            cleanupError instanceof Error ? cleanupError.name : 'unknown'
+          );
+        }
+      );
       throw error;
     }
   });
