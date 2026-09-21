@@ -19,7 +19,6 @@ const admin = new Pool({ connectionString: adminUrl });
 let pool: Pool;
 let server: ReturnType<typeof serve>;
 let baseUrl: string;
-let ownerCookies: { name: string; value: string; url: string }[];
 let communityId: string;
 
 async function freePort() {
@@ -108,12 +107,6 @@ test.beforeAll(async () => {
   );
   expect(completed.status).toBe(201);
   communityId = (await completed.json()).community.id;
-  const signIn = await post('/api/auth/sign-in/email', {
-    email: 'owner@browser.test',
-    password: 'password1234',
-  });
-  expect(signIn.status).toBe(200);
-  ownerCookies = cookies(signIn);
 });
 
 test.afterAll(async () => {
@@ -126,7 +119,6 @@ test.afterAll(async () => {
 test.describe('Community pairing approval @smoke', () => {
   test('shows install and scopes, approves, and keeps code and bearer out of the browser', async ({
     page,
-    context,
   }) => {
     const { pairingId, approvalUrl, verifier } = await pairing('Kai’s laptop', communityId);
     expect(new URL(approvalUrl).pathname).toMatch(/^\/c\/[0-9a-f-]+\/pairing$/);
@@ -135,17 +127,20 @@ test.describe('Community pairing approval @smoke', () => {
       if (response.url().includes('/api/v1/pairings/')) browserResponses.push(response.url());
     });
     await page.goto(approvalUrl);
-    await expect(page.getByRole('alert')).toContainText('Sign in to approve');
+    await expect(page.getByText('Sign in to review this connection.')).toBeVisible();
+    await expect(page.getByLabel('Email')).toBeFocused();
     await expect(page.getByRole('button', { name: 'Approve connection' })).toHaveCount(0);
-    await context.addCookies(ownerCookies);
     const statusResponse = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname.endsWith(`/pairings/${pairingId}`) &&
         response.status() === 200
     );
-    await page.reload();
+    await page.getByLabel('Email').fill('owner@browser.test');
+    await page.getByLabel('Password').fill('password1234');
+    await page.getByRole('button', { name: 'Sign in and review' }).click();
     const statusBody = await (await statusResponse).text();
     expect(statusBody).not.toMatch(/"(?:code|token)"\s*:/);
+    expect(page.url()).toBe(approvalUrl);
     await expect(page.getByRole('heading', { name: 'Connect a local install' })).toBeVisible();
     await expect(page.getByText('Kai’s laptop')).toBeVisible();
     await expect(page.getByText('Read channels')).toBeVisible();
@@ -189,16 +184,16 @@ test.describe('Community pairing approval @smoke', () => {
     expect(browserResponses.every((url) => !url.includes('exchange'))).toBe(true);
   });
 
-  test('declines from a narrow viewport with keyboard-accessible controls', async ({
-    page,
-    context,
-  }) => {
-    await context.addCookies(ownerCookies);
+  test('declines from a narrow viewport with keyboard-accessible controls', async ({ page }) => {
     const hostileName = '<img src=x onerror=window.__pairingXss=1>';
     const { pairingId, approvalUrl, verifier } = await pairing(hostileName);
     expect(new URL(approvalUrl).pathname).toBe('/pairing');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(approvalUrl);
+    await expect(page.getByLabel('Email')).toBeFocused();
+    await page.getByLabel('Email').fill('owner@browser.test');
+    await page.getByLabel('Password').fill('password1234');
+    await page.getByLabel('Password').press('Enter');
     await expect(page.getByText(hostileName)).toBeVisible();
     expect(
       await page.evaluate(() => (window as Window & { __pairingXss?: number }).__pairingXss)
