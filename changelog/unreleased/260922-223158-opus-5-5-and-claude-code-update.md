@@ -14,6 +14,6 @@ covers:
 
 ### Fixed
 
-- A session's cost total stays correct after you resume it. Before, it started again from zero whenever the session restarted.
+- A session's cost total now carries on after the session restarts in the background, instead of starting again from zero. This holds from the first message you send after updating.
 - Each turn's token and cost figures in your own traces now cover that turn alone. Before, from the second turn on, they counted the whole session so far.
 - A tool from another server that borrows DorkOS's name no longer skips the approval prompt. DorkOS now checks which server actually runs the tool, not just its name.

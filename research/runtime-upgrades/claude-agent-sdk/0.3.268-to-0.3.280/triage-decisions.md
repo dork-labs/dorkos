@@ -55,11 +55,28 @@ A two-turn streaming-input query on haiku, then a resume of the same session in 
   path would have reported the whole session on every turn.
 - **A transcript written by 0.3.268, resumed at 0.3.280, restarts at zero** (observed: 3616
   input tokens on a session that had spent 7699). The ledger treats any drop as a restart.
+- **An old transcript gains saved totals after its first 0.3.280 turn.** A second 0.3.268
+  session resumed twice at 0.3.280 read 3599, then 7276 (3599 + 3677). So the "drop means
+  restart" rule is needed only for that one transition turn and for `/clear`; the ambiguous
+  case (a new lifetime whose first turn is bigger than the old totals) cannot recur per turn.
 - **Unknown baseline** (a resumed session this process holds no ledger for, e.g. after a
-  server restart): no turn figure is emitted for that one turn. `turnCostUsd` is also absent
-  there, so the observability seam falls back to the running `costUsd` for that turn only.
+  server restart): no turn figure is emitted for that one turn, and no cost either:
+  `observability/ai-metadata.ts` never falls back to a running-cost runtime's `costUsd`.
+- **Zeroed crash results** (the SDK: "may carry zeroed usage"), and error results whose
+  totals went backwards, make the baseline unknown instead of resetting it, so the next real
+  result is not reported as the whole history (found in review).
 - The session's running `costUsd` (the Usage & cost item) is unchanged and now continues
   across resumes instead of restarting at zero.
+
+## Provenance: the evidence and its limit
+
+- The 0.3.280 binary builds provenance as `source ?? (plugin-owned ? "plugin" : serverType
+=== "sdk" ? "sdk" : scope ?? "dynamic")` (read in review), so DorkOS's `createSdkMcpServer`
+  server reads `sdk`. A plugin claiming the key `dorkos` would make DorkOS's own tools read
+  `plugin` and ask instead of auto-allowing: safe, a false block.
+- Not covered: a saved "Always allow" rule for an `mcp__dorkos__*` name is matched by the CLI
+  before `canUseTool` runs, so it would also allow a foreign server's tool of that name. Out of
+  this PR's scope.
 
 ## Empty queued results: the evidence
 

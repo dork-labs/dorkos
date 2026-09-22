@@ -54,10 +54,13 @@ export interface TurnUsage {
 
 /** What {@link advanceUsageLedger} derives from one `result`. */
 export interface TurnUsageStep {
-  /** This turn's usage; undefined when the baseline was unknown. */
+  /** This turn's usage; undefined when it cannot honestly be derived. */
   turn?: TurnUsage;
-  /** The ledger to hold for the next turn: always this result's totals. */
-  ledger: UsageLedger;
+  /**
+   * The ledger to hold for the next turn: this result's totals, or undefined
+   * when they cannot serve as a baseline (see {@link advanceUsageLedger}).
+   */
+  ledger?: UsageLedger;
 }
 
 /**
@@ -100,6 +103,13 @@ function totalsWentBackwards(current: UsageLedger, baseline: UsageLedger): boole
   return false;
 }
 
+/** Whether every count in these totals is zero — a zeroed crash result's shape. */
+function allZero(totals: UsageLedger): boolean {
+  return Object.values(totals).every(
+    (t) => t.inputTokens === 0 && t.outputTokens === 0 && t.costUsd === 0
+  );
+}
+
 /**
  * Derive one turn's usage from a result's running totals, and advance the ledger.
  *
@@ -107,8 +117,14 @@ function totalsWentBackwards(current: UsageLedger, baseline: UsageLedger): boole
  *   of a resumed session this process holds no ledger for may carry every
  *   earlier turn, and there is nothing to subtract, so reporting it as one turn
  *   would be the over-count this module exists to prevent.
- * - **Totals went backwards**: a new lifetime began, so the whole result is this
- *   turn's.
+ * - **Zeroed totals, or an ERROR result whose totals went backwards**: no turn
+ *   figure, and the baseline becomes unknown. The SDK says "crash/startup-error
+ *   results may carry zeroed usage", and those zeros are not a new lifetime: the
+ *   next real result still carries the full running total. Adopting the zeros
+ *   as the baseline would report that whole history as one turn.
+ * - **Totals went backwards on a success**: a new lifetime began (a `/clear`, or
+ *   the first turn on a transcript that saved no totals), so the whole result
+ *   is this turn's.
  * - **Otherwise**: the difference, per model, summed.
  *
  * Thinking is summed only over models that reported it this result, and a
@@ -117,13 +133,20 @@ function totalsWentBackwards(current: UsageLedger, baseline: UsageLedger): boole
  *
  * @param current - This result's running totals ({@link readModelUsageTotals}).
  * @param baseline - The session's ledger before this result, if known.
+ * @param isError - Whether the result is an error result (any non-success subtype).
  */
 export function advanceUsageLedger(
   current: UsageLedger,
-  baseline: UsageLedger | undefined
+  baseline: UsageLedger | undefined,
+  isError = false
 ): TurnUsageStep {
+  // A zeroed result against a KNOWN-empty baseline changes nothing: the session
+  // has spent nothing yet, so its zero baseline stays true.
+  if (allZero(current)) return baseline && Object.keys(baseline).length === 0 ? { ledger: {} } : {};
   if (baseline === undefined) return { ledger: current };
-  const from = totalsWentBackwards(current, baseline) ? {} : baseline;
+  const backwards = totalsWentBackwards(current, baseline);
+  if (backwards && isError) return {};
+  const from = backwards ? {} : baseline;
 
   let inputTokens = 0;
   let outputTokens = 0;

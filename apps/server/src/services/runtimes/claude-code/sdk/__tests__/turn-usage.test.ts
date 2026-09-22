@@ -76,4 +76,22 @@ describe('advanceUsageLedger', () => {
     );
     expect(step.turn?.inputTokens).toBe(500);
   });
+
+  it('treats a zeroed (crash) result as unknown, never as a restart', () => {
+    // The SDK: "crash/startup-error results may carry zeroed usage". Adopting
+    // the zeros would make the next real running total look like one turn.
+    const zeroed = ledger(0, 0, 0);
+    expect(advanceUsageLedger(zeroed, ledger(100, 10, 1))).toEqual({});
+    expect(advanceUsageLedger(zeroed, ledger(100, 10, 1), true)).toEqual({});
+    // …and the real result after it is not reported as the whole history.
+    expect(advanceUsageLedger(ledger(250, 30, 2.5), undefined).turn).toBeUndefined();
+  });
+
+  it('keeps a known-empty baseline through a zeroed result', () => {
+    expect(advanceUsageLedger(ledger(0, 0, 0), {})).toEqual({ ledger: {} });
+  });
+
+  it('treats an ERROR result whose totals went backwards as unknown', () => {
+    expect(advanceUsageLedger(ledger(60, 5, 0.3), ledger(100, 10, 1), true)).toEqual({});
+  });
 });

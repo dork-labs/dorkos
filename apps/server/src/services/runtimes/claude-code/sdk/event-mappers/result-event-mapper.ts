@@ -195,7 +195,11 @@ export async function* mapResultEvent(
     // not think" — a claim nobody made.
     let turn: TurnUsage | undefined;
     if (modelUsageMap && Object.keys(modelUsageMap).length > 0) {
-      const step = advanceUsageLedger(readModelUsageTotals(modelUsageMap), session.usageLedger);
+      const step = advanceUsageLedger(
+        readModelUsageTotals(modelUsageMap),
+        session.usageLedger,
+        result.subtype !== 'success'
+      );
       session.usageLedger = step.ledger;
       turn = step.turn;
     }

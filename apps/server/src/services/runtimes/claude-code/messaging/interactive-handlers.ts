@@ -1043,7 +1043,13 @@ export function createCanUseTool(
       // it — which is exactly the stop the host-context note exists to remove.
       // Only `auto`: every other mode asks by design, so counting its cards
       // would bury the signal under the modes that are supposed to produce them.
-      if (session.permissionMode === 'auto' && toolName.startsWith(IN_SESSION_TOOL_PREFIX)) {
+      if (
+        session.permissionMode === 'auto' &&
+        toolName.startsWith(IN_SESSION_TOOL_PREFIX) &&
+        // A configured server wearing the `dorkos` name is not a DorkOS tool,
+        // and its stops are not the ones this measurement counts.
+        isHostServedOrUnattributed(context.mcpServer)
+      ) {
         recordAutoModeStop({ sessionId: session.sdkSessionId ?? 'unknown', toolName });
       }
       // info, not debug: from here the turn makes no progress until a person

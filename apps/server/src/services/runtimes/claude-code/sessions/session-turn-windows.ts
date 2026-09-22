@@ -1769,13 +1769,12 @@ export class SessionTurnWindows {
    * `result` that names the steer closes the window instead and the held one is
    * never emitted. One turn, one terminal, both answers inside it.
    *
-   * The held `result`'s own accounting is the cost of that merge: two CLI turns
-   * become one DorkOS turn, and the `done` carries the LAST result's totals. So
-   * the first CLI turn's per-turn `modelUsage` token split does not reach the
-   * observability event. Cost is not lost with it — the SDK reports
-   * `total_cost_usd` as a session running total, so the surviving `result`
-   * carries both turns' spend. Attributing the second turn to nobody was the
-   * alternative.
+   * The held `result`'s own accounting merges with it: two CLI turns become one
+   * DorkOS turn, and the `done` carries the LAST result's totals. Nothing is
+   * lost. `modelUsage` and `total_cost_usd` are session running totals, and a
+   * replaced `result` never reaches the mapper, so the per-turn figures
+   * `sdk/turn-usage.ts` derives for the surviving one span both CLI turns.
+   * Attributing the second turn to nobody was the alternative.
    *
    * **The held `result` is never discarded while this window lives.** It is
    * this window's terminal until something better replaces it, which is what

@@ -74,6 +74,13 @@ export function isAiObservabilityActive(): boolean {
   return isTracingEnabled() || bridge !== null;
 }
 
+/**
+ * Runtimes whose `session_status.costUsd` is the session's RUNNING cost, never
+ * one turn's, and which report a turn's own share as `turnCostUsd` instead.
+ * Keyed by runtime id because the status carries no other way to say so.
+ */
+const RUNNING_COST_RUNTIMES: ReadonlySet<string> = new Set(['claude-code']);
+
 /** Mutable accumulator for the harvest loop; the last-seen value of each field wins. */
 interface HarvestState {
   model?: string;
@@ -152,14 +159,13 @@ export async function* observeRuntimeTurn(
     throw err;
   } finally {
     const latencyMs = Date.now() - startedAt;
-    // The turn's own cost when the runtime reports it apart from the session's
-    // running cost (`costUsd`), which is what a runtime without that split puts
-    // on its status. A running figure reported as one turn's cost is the
-    // over-count the split exists to prevent. The fallback keeps that residue in
-    // one case: a Claude Code turn whose baseline was unknown (the first result
-    // of a resumed session after a restart, `sdk/turn-usage.ts`) carries no
-    // split, so its cost here is the session's running figure.
-    const costUsd = state.turnCostUsd ?? state.costUsd;
+    // The turn's own cost when the runtime reports it apart from the status
+    // `costUsd`. For a runtime whose `costUsd` is a session RUNNING total there
+    // is no fallback: a turn whose share could not be derived (the first result
+    // of a resumed session after a restart, `sdk/turn-usage.ts`) reports no cost
+    // rather than the whole session's.
+    const costUsd =
+      state.turnCostUsd ?? (RUNNING_COST_RUNTIMES.has(runtimeType) ? undefined : state.costUsd);
     if (span) {
       span.setAttr(ATTR.EVENT_COUNT, count);
       span.setAttr(ATTR.GEN_AI_SYSTEM, runtimeType);
