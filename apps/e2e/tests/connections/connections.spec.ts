@@ -132,6 +132,12 @@ test('a revoked community grant gives a direct remove-and-reconnect path', async
                       verifiedAt: '2026-09-21T12:00:00.000Z',
                     },
                   },
+                  attention: {
+                    state: 'unavailable',
+                    unreadCount: null,
+                    mentionCount: null,
+                    verifiedAt: null,
+                  },
                 },
               ],
         }),
