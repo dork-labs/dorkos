@@ -91,7 +91,7 @@ describe('AgentCommandItem', () => {
     );
 
     const item = container.querySelector('[data-slot="command-item"]');
-    const avatar = item?.querySelector('[data-slot="agent-avatar"]');
+    const avatar = item?.querySelector('[data-slot="identity-avatar"]');
     expect(avatar).toBeInTheDocument();
     // AgentAvatar uses color-mix with the override color (jsdom converts hex to rgb)
     expect((avatar as HTMLElement).style.backgroundColor).toContain('99, 102, 241');
@@ -112,7 +112,7 @@ describe('AgentCommandItem', () => {
     );
 
     const item = container.querySelector('[data-slot="command-item"]');
-    const avatar = item?.querySelector('[data-slot="agent-avatar"]');
+    const avatar = item?.querySelector('[data-slot="identity-avatar"]');
     expect(avatar).toBeInTheDocument();
     // Should have some background color (hash-based via color-mix)
     const style = (avatar as HTMLElement).style.backgroundColor;
@@ -126,7 +126,7 @@ describe('AgentCommandItem', () => {
     );
 
     const item = container.querySelector('[data-slot="command-item"]');
-    const avatar = item?.querySelector('[data-slot="agent-avatar"]');
+    const avatar = item?.querySelector('[data-slot="identity-avatar"]');
     expect(avatar).toBeInTheDocument();
     expect(avatar?.textContent).toBeTruthy();
   });

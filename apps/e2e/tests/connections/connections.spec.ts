@@ -123,6 +123,11 @@ test('a revoked community grant gives a direct remove-and-reconnect path', async
                   connectedHumanMemberId: 'member-revoked',
                   status: 'reconnect-required',
                   expiresAt: null,
+                  access: {
+                    state: 'reconnect-required',
+                    effective: { read: false, post: false, enrollAgent: false, stream: false },
+                    lastKnown: null,
+                  },
                 },
               ],
         }),
