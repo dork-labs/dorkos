@@ -571,7 +571,7 @@ describe('ScheduleRow', () => {
         </Wrapper>
       );
 
-      const disc = container.querySelector('[data-slot="agent-avatar"]');
+      const disc = container.querySelector('[data-slot="identity-avatar"]');
       expect(disc).toBeTruthy();
       // The three things the hand-rolled dot could not say: agents are square,
       // they are filled with their own colour, and they carry the Bot mark.

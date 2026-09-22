@@ -149,7 +149,6 @@ export function RoomAvatar({
     return (
       <IdentityAvatar
         aria-hidden
-        data-slot="room-avatar"
         // A direct message's counterpart is an agent by construction — that is
         // what `dmCounterpart` looks for and all a DM can be with. Saying so
         // here is what makes the sidebar row, the room masthead and the command
@@ -191,7 +190,6 @@ export function RoomAvatar({
   return (
     <IdentityAvatar
       aria-hidden
-      data-slot="room-avatar"
       // Only when there IS a counterpart: it is an agent, and the same DM must
       // not change shape depending on whether its face happened to resolve.
       // With no counterpart this is the room's own letter and nobody's face, so

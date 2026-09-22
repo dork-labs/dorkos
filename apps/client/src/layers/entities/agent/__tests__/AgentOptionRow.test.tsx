@@ -60,7 +60,7 @@ describe('AgentOptionRow', () => {
 
   it('renders the agent avatar', () => {
     const { container } = render(<AgentOptionRow agent={AGENT} />);
-    expect(container.querySelector('[data-slot="agent-avatar"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="identity-avatar"]')).toBeInTheDocument();
   });
 
   it('gives the name a floor the path beside it cannot push through', () => {
