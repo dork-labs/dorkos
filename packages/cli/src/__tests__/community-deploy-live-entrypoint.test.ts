@@ -44,4 +44,22 @@ describe('credentialed live gate entrypoint', () => {
     expect(result.stderr).toContain('Community live gate is not armed');
     await expect(readFile(marker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   });
+
+  // The capture socket is opened mid-run and was closed only where the run
+  // succeeded, so every throw after it opened leaked a listening server for the
+  // life of the process. A real run needs both arms and a paid provider, so the
+  // cheap guard is the shape of the code: opened into a binding declared
+  // outside the try, and closed in the finally that already wipes the secret.
+  it('closes the capture socket on every path out of the run', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const opens = [...source.matchAll(/await receiveClipboard\(/gu)];
+    expect(opens).toHaveLength(1);
+    expect(source).toMatch(/let clipboard: Awaited<ReturnType<typeof receiveClipboard>> \| null/u);
+    expect(source).toMatch(/\(clipboard = await receiveClipboard\(/u);
+    const finallyBlock = source.slice(source.lastIndexOf('} finally {'));
+    expect(finallyBlock).toMatch(/await clipboard\?\.close\(\)/u);
+  });
 });

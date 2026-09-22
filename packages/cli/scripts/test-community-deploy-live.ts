@@ -174,6 +174,8 @@ async function main(): Promise<void> {
   const receiptPath = join(receiptDirectory, `${appName}.json`);
   let bootstrap: string | null = null;
   let recoveryCommand: string | null = null;
+  // Held outside the try so a throw on any path still closes the capture socket.
+  let clipboard: Awaited<ReturnType<typeof receiveClipboard>> | null = null;
   try {
     // Every profile and network operation occurs after all arms have been checked above.
     const published = JSON.parse(
@@ -202,7 +204,7 @@ async function main(): Promise<void> {
     if (!help.includes('Guided setup') && !help.includes('Guide a standalone'))
       throw new CommunityLiveGateError('published-launcher');
 
-    const capture = await receiveClipboard(socketPath);
+    const capture = (clipboard = await receiveClipboard(socketPath));
     const shimDirectory = join(runDirectory, 'shim');
     await mkdir(shimDirectory, { mode: 0o700 });
     await writePrivateClipboardShim(shimDirectory, socketPath);
@@ -376,6 +378,9 @@ async function main(): Promise<void> {
     throw error;
   } finally {
     if (bootstrap) Buffer.from(bootstrap).fill(0);
+    // Closing twice is harmless; the success path closes it as soon as the
+    // last secret has arrived rather than waiting for the run to finish.
+    await clipboard?.close();
     await rm(runDirectory, { recursive: true, force: true });
   }
 }
