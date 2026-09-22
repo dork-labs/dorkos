@@ -1,10 +1,10 @@
 ---
 covers:
   - 'fix(community): fence delayed context selection'
+  - 'fix(client): fence switcher navigation retries'
+  - 'fix(client): restore prior context after failed switch'
 ---
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- Fence delayed context selection
+- A slow community switch no longer pulls you back after you've already moved on, and a switch that fails leaves you where you were.

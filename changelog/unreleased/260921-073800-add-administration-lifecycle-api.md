@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): manage community settings and lifecycle'
+  - 'feat(community): add administration lifecycle API'
 ---
 
 ### Added

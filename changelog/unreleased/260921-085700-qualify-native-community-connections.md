@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): qualify native connections and membership chooser'
+  - 'feat(community): qualify native community connections'
 ---
 
 ### Added

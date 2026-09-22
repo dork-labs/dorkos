@@ -3,6 +3,8 @@ covers:
   - 'feat(community): project verified connection access'
   - 'fix(community): enforce projected access everywhere'
   - 'fix(community): refresh streams when access changes'
+  - 'fix(community): reconcile revoked connection grants'
+  - 'fix(community): render revoked stream state immediately'
 ---
 
 ### Fixed
