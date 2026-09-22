@@ -43,7 +43,7 @@ describe('AgentPreviewPanel', () => {
 
     expect(screen.getByText('api-bot')).toBeTruthy();
 
-    const disc = container.querySelector('[data-slot="agent-avatar"]');
+    const disc = container.querySelector('[data-slot="identity-avatar"]');
     expect(disc).toBeTruthy();
     // Square, filled with the agent's own colour, and wearing the Bot mark —
     // the three things the hand-rolled `<span>` dot + emoji could not say.
@@ -60,6 +60,6 @@ describe('AgentPreviewPanel', () => {
     // is free to revisit (`sm` today, a step up from the palette rows' `xs`),
     // so it is deliberately NOT pinned to a CVA class string here — a test that
     // reds on a tasteful resize teaches people to stop reading test failures.
-    expect(container.querySelectorAll('[data-slot="agent-avatar"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-slot="identity-avatar"]')).toHaveLength(1);
   });
 });

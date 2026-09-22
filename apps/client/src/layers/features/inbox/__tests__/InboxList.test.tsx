@@ -469,7 +469,7 @@ describe('InboxList faces', () => {
     });
 
     await screen.findByText('alpha finished');
-    expect(document.querySelector('[data-slot="agent-avatar"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="identity-avatar"]')).toBeInTheDocument();
   });
 
   it('falls back to the kind glyph when the roster does not know the agent', async () => {
@@ -483,6 +483,6 @@ describe('InboxList faces', () => {
     });
 
     await screen.findByText('alpha finished');
-    expect(document.querySelector('[data-slot="agent-avatar"]')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-slot="identity-avatar"]')).not.toBeInTheDocument();
   });
 });

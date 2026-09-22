@@ -195,7 +195,7 @@ describe('ExecutionExceptionsStrip — an injected fleet (showcase path)', () =>
     renderInjected([colourless]);
 
     const disc = await screen.findByTestId('execution-exceptions-strip');
-    const avatar = disc.querySelector('[data-slot="agent-avatar"]') as HTMLElement;
+    const avatar = disc.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
     const resolved = resolveAgentVisual(colourless.agent);
 
     expect(resolved.color).not.toBe('#888');

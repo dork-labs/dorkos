@@ -164,7 +164,7 @@ jobs:
             "$GITHUB_REF"
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: community-release-${{ steps.release.outputs.version }}
           path: |

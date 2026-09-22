@@ -73,7 +73,6 @@ export function AgentAvatar({
 }: AgentAvatarProps) {
   return (
     <IdentityAvatar
-      data-slot="agent-avatar"
       aria-hidden
       kind="agent"
       color={color}
