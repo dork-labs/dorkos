@@ -93,13 +93,24 @@ process.stdout.write(JSON.stringify({ args, journal }));
       "DORK_HOME='/retained/home' npx --yes 'dorkos@1.2.3' community deploy '--app-name' 'dorkos-gate-012345abcdef' --resume 'run-1'"
     );
   });
+  it('arms the fixture with exactly the names the parser requires', () => {
+    // The per-name refusals below iterate the parser's own list; this pins the fixture to it, so a
+    // name added to the parser without a fixture value fails here rather than passing vacuously.
+    expect(Object.keys(armed).sort()).toEqual([...COMMUNITY_LIVE_GATE_ENV].sort());
+  });
+
   it.each(COMMUNITY_LIVE_GATE_ENV)('refuses before a boundary when %s is absent', (name) => {
     const boundary = vi.fn();
     const environment = { ...armed, [name]: undefined };
-    expect(() => {
-      const config = parseCommunityLiveGateConfig(environment);
-      boundary(config);
-    }).toThrow(CommunityLiveGateNotArmedError);
+    let refusal: unknown;
+    try {
+      boundary(parseCommunityLiveGateConfig(environment));
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(CommunityLiveGateNotArmedError);
+    // Names exactly the one missing variable, so the list and the parser check the same names.
+    expect((refusal as CommunityLiveGateNotArmedError).fields).toEqual([name]);
     expect(boundary).not.toHaveBeenCalled();
   });
 

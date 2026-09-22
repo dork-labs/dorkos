@@ -61,5 +61,9 @@ describe('credentialed live gate entrypoint', () => {
     expect(source).toMatch(/\(clipboard = await receiveClipboard\(/u);
     const finallyBlock = source.slice(source.lastIndexOf('} finally {'));
     expect(finallyBlock).toMatch(/await clipboard\?\.close\(\)/u);
+    // The same holds for the launcher's PTY: a failed owner proof must not leave it waiting on a
+    // prompt for the rest of its twelve-minute timeout.
+    expect(source).toMatch(/let launcher: LauncherRun \| null/u);
+    expect(finallyBlock).toMatch(/launcher\?\.kill\(\)/u);
   });
 });

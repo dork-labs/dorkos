@@ -7,8 +7,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { chmod, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -19,6 +18,12 @@ import {
   parseCommunityLiveGateConfig,
 } from './community-deploy-live-config.js';
 import { runCommunityLiveOwnerProof } from './community-deploy-live-proof.js';
+import {
+  CommunityLiveGateError,
+  receiveClipboard,
+  whileLauncherRuns,
+  writePrivateClipboardShim,
+} from './community-deploy-live-capture.js';
 import {
   cleanupCommunityLiveGate,
   type CommunityLiveGateJournal,
@@ -31,17 +36,11 @@ import { FlyTigrisGraphqlClient } from '../src/commands/community-deploy/fly-gra
 import { readFlySessionCredential } from '../src/commands/community-deploy/tigris-session.js';
 
 const TIMEOUT_MS = 12 * 60_000;
-
-/** A redacted command failure. Provider output is never reproduced in the receipt. */
-class CommunityLiveGateError extends Error {
-  constructor(
-    readonly step: string,
-    readonly recoveryCommand: string | null = null
-  ) {
-    super(`Community live gate failed (${step})`);
-    this.name = 'CommunityLiveGateError';
-  }
-}
+/**
+ * How long the gate waits for the first secret after the interrupted launcher has exited. The
+ * launcher copied it before prompting, so it is already sent or lost; this only covers delivery.
+ */
+const DELIVERED_CAPTURE_MS = 30_000;
 
 async function command(
   executable: string,
@@ -66,63 +65,32 @@ async function command(
   });
 }
 
-async function receiveClipboard(
-  socketPath: string
-): Promise<{ next(): Promise<string>; close(): Promise<void> }> {
-  const secrets: string[] = [];
-  const waiting: Array<{ resolve(value: string): void; reject(reason: Error): void }> = [];
-  const server = createServer((connection) => {
-    const chunks: Buffer[] = [];
-    connection.on('data', (chunk: Buffer) => chunks.push(chunk));
-    connection.on('end', () => {
-      const secret = Buffer.concat(chunks).toString('utf8');
-      for (const chunk of chunks) chunk.fill(0);
-      const next = waiting.shift();
-      if (!/^[A-Za-z0-9_-]{32,}$/u.test(secret))
-        next?.reject(new CommunityLiveGateError('bootstrap-capture'));
-      else if (next) next.resolve(secret);
-      else secrets.push(secret);
-    });
-  });
-  await new Promise<void>((resolve, reject) =>
-    server.once('error', reject).listen(socketPath, resolve)
-  );
-  return {
-    next: () => {
-      const secret = secrets.shift();
-      if (secret) return Promise.resolve(secret);
-      return new Promise((resolve, reject) => waiting.push({ resolve, reject }));
-    },
-    close: () => new Promise((resolve) => server.close(() => resolve())),
-  };
-}
-
-async function writePrivateClipboardShim(directory: string, socketPath: string): Promise<string> {
-  const path = join(directory, 'pbcopy');
-  // The value crosses a private local socket only. It is neither logged nor written to disk.
-  const source = `#!${process.execPath}\nconst net=require('node:net');const chunks=[];process.stdin.on('data',c=>chunks.push(c));process.stdin.on('end',()=>{const value=Buffer.concat(chunks);if(!/^[A-Za-z0-9_-]{32,}$/.test(value.toString('utf8')))return;const c=net.createConnection(${JSON.stringify(socketPath)},()=>c.end(value));c.on('error',()=>process.exit(1));});\n`;
-  await writeFile(path, source, { mode: 0o700, flag: 'wx' });
-  await chmod(path, 0o700);
-  return path;
+/** A launcher running in a PTY: its exit, and a way to stop it from the gate's finally. */
+interface LauncherRun {
+  /** Resolves on a clean (or deliberately interrupted) exit; rejects on any other. */
+  exited: Promise<void>;
+  /** Kill the launcher if it is still running. Safe after exit. */
+  kill(): void;
 }
 
 /** Run the installed package in a real PTY and answer only the launcher prompts. */
-async function runLauncherPty(input: {
+function runLauncherPty(input: {
   binary: string;
   args: string[];
   environment: Record<string, string>;
   appName: string;
   ownerClaimed: Promise<void>;
   interruptAtOwnerPending?: boolean;
-}): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const terminal = pty.spawn(input.binary, input.args, {
-      name: 'xterm-256color',
-      cols: 120,
-      rows: 40,
-      cwd: process.cwd(),
-      env: input.environment,
-    });
+}): LauncherRun {
+  const terminal = pty.spawn(input.binary, input.args, {
+    name: 'xterm-256color',
+    cols: 120,
+    rows: 40,
+    cwd: process.cwd(),
+    env: input.environment,
+  });
+  let running = true;
+  const exited = new Promise<void>((resolve, reject) => {
     let transcript = '';
     let promptedForBootstrap = false;
     let ownerPrompted = false;
@@ -156,11 +124,18 @@ async function runLauncherPty(input: {
       if (transcript.includes('Type complete when both work:')) terminal.write('complete\r');
     });
     terminal.onExit(({ exitCode }) => {
+      running = false;
       clearTimeout(timeout);
       if (exitCode === 0 || interrupted) resolve();
       else reject(new CommunityLiveGateError('published-launcher'));
     });
   });
+  return {
+    exited,
+    kill: () => {
+      if (running) terminal.kill();
+    },
+  };
 }
 
 /** Execute only when every arm is explicit. No ordinary test task imports this entrypoint. */
@@ -176,6 +151,32 @@ async function main(): Promise<void> {
   let recoveryCommand: string | null = null;
   // Held outside the try so a throw on any path still closes the capture socket.
   let clipboard: Awaited<ReturnType<typeof receiveClipboard>> | null = null;
+  // Likewise the launcher, so a failure elsewhere never leaves its PTY waiting on a prompt.
+  let launcher: LauncherRun | null = null;
+  const journalDirectory = join(durableHome, 'launches', 'community');
+  const launchArgs = [
+    'community',
+    'deploy',
+    '--version',
+    config.version,
+    '--fly-org',
+    config.flyOrganization,
+    '--fly-region',
+    config.flyRegion,
+    '--neon-org',
+    config.neonOrganization,
+    '--neon-region',
+    config.neonRegion,
+    '--app-name',
+    appName,
+  ];
+  /** The run's journal id, once the launcher has written exactly one; null before that. */
+  const readRunId = async (): Promise<string | null> => {
+    const journals = (await readdir(journalDirectory)).filter((name) => name.endsWith('.json'));
+    return journals.length === 1 ? journals[0]!.slice(0, -'.json'.length) : null;
+  };
+  const recoveryFor = (runId: string) =>
+    communityLiveGateRecoveryCommand(config.version, launchArgs.slice(2), runId, durableHome);
   try {
     // Every profile and network operation occurs after all arms have been checked above.
     const published = JSON.parse(
@@ -235,25 +236,9 @@ async function main(): Promise<void> {
         (item) => item.id
       ),
     };
-    const launchArgs = [
-      'community',
-      'deploy',
-      '--version',
-      config.version,
-      '--fly-org',
-      config.flyOrganization,
-      '--fly-region',
-      config.flyRegion,
-      '--neon-org',
-      config.neonOrganization,
-      '--neon-region',
-      config.neonRegion,
-      '--app-name',
-      appName,
-    ];
     // Interrupt only after the first process has persisted owner_pending. The resumed process must
     // replace the unavailable in-memory bootstrap secret before it can hand ownership over.
-    await runLauncherPty({
+    launcher = runLauncherPty({
       binary,
       args: launchArgs,
       environment,
@@ -261,20 +246,15 @@ async function main(): Promise<void> {
       ownerClaimed: new Promise<void>(() => undefined),
       interruptAtOwnerPending: true,
     });
-    const discardedBootstrap = await capture.next();
+    await launcher.exited;
+    const runId = await readRunId();
+    if (!runId) throw new CommunityLiveGateError('launch-journal');
+    recoveryCommand = recoveryFor(runId);
+    const discardedBootstrap = await capture.next(DELIVERED_CAPTURE_MS);
     Buffer.from(discardedBootstrap).fill(0);
-    const journalDirectory = join(environment.DORK_HOME, 'launches', 'community');
-    const journals = (await readdir(journalDirectory)).filter((name) => name.endsWith('.json'));
-    if (journals.length !== 1) throw new CommunityLiveGateError('launch-journal');
-    const runId = journals[0]!.slice(0, -'.json'.length);
-    recoveryCommand = communityLiveGateRecoveryCommand(
-      config.version,
-      launchArgs.slice(2),
-      runId,
-      durableHome
-    );
+    const journalPath = join(journalDirectory, `${runId}.json`);
     const initialJournal = JSON.parse(
-      await readFile(join(journalDirectory, journals[0]!), 'utf8')
+      await readFile(journalPath, 'utf8')
     ) as CommunityLiveGateJournal;
     const initialBootstrapDigest = initialJournal.secretDigests?.COMMUNITY_BOOTSTRAP_SECRET;
     if (!initialBootstrapDigest)
@@ -283,26 +263,30 @@ async function main(): Promise<void> {
     const ownerClaimed = new Promise<void>((resolve) => {
       markOwnerClaimed = resolve;
     });
-    const launcher = runLauncherPty({
+    launcher = runLauncherPty({
       binary,
       args: [...launchArgs, '--resume', runId],
       environment,
       appName,
       ownerClaimed,
     });
-    bootstrap = await capture.next();
+    // Every wait while the resumed launcher runs is raced against it, so a launcher that dies
+    // ends the wait with a gate error instead of an unhandled rejection that skips recovery.
+    const resumed = launcher.exited;
+    bootstrap = await whileLauncherRuns(resumed, capture.next(TIMEOUT_MS));
     await capture.close();
-    const proof = await runCommunityLiveOwnerProof({
-      appName,
-      bootstrapSecret: bootstrap,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
+    const proof = await whileLauncherRuns(
+      resumed,
+      runCommunityLiveOwnerProof({
+        appName,
+        bootstrapSecret: bootstrap,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      })
+    );
     markOwnerClaimed!();
     bootstrap = null;
-    await launcher;
-    const journal = JSON.parse(
-      await readFile(join(journalDirectory, journals[0]!), 'utf8')
-    ) as CommunityLiveGateJournal;
+    await resumed;
+    const journal = JSON.parse(await readFile(journalPath, 'utf8')) as CommunityLiveGateJournal;
     const bootstrapDigest = journal.secretDigests?.COMMUNITY_BOOTSTRAP_SECRET;
     if (
       !journal.ownerBootstrapRotated ||
@@ -374,10 +358,21 @@ async function main(): Promise<void> {
     );
     await rm(durableHome, { recursive: true, force: true });
   } catch (error) {
-    if (recoveryCommand) throw new CommunityLiveGateError('execution', recoveryCommand);
+    // A launcher that failed before the gate read its journal may still have written one, and
+    // may already have created resources. Find it now rather than stay silent about them.
+    recoveryCommand ??= await readRunId().then(
+      (runId) => (runId ? recoveryFor(runId) : null),
+      () => null
+    );
+    if (recoveryCommand)
+      throw new CommunityLiveGateError(
+        error instanceof CommunityLiveGateError ? error.step : 'execution',
+        recoveryCommand
+      );
     throw error;
   } finally {
     if (bootstrap) Buffer.from(bootstrap).fill(0);
+    launcher?.kill();
     // Closing twice is harmless; the success path closes it as soon as the
     // last secret has arrived rather than waiting for the run to finish.
     await clipboard?.close();

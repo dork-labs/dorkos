@@ -340,7 +340,7 @@ describe('turbo never hands a spend flag or a model key to any task', () => {
 
   /**
    * Every name that arms or pays for a real-money path, from AGENTS.md's table.
-   * All eleven, not just the keys: a flag reaching a task is half of an armed
+   * All seventeen, not just the keys: a flag reaching a task is half of an armed
    * gate, and the table in AGENTS.md claims none of them is here.
    *
    * The last two joined on DOR-1856, when `scripts/harness-smoke/run.sh` became
@@ -368,6 +368,17 @@ describe('turbo never hands a spend flag or a model key to any task', () => {
     // through the key the sandbox forwards into the server it launches.
     PAID_CODEX_OPT_IN_VAR,
     CODEX_API_KEY_VAR,
+    // The seventh: the Community live gate (`packages/cli/scripts/test-community-deploy-live.ts`),
+    // which creates throwaway Fly, Neon and Tigris resources. It pays through the operator's
+    // signed-in `fly` and `neonctl` profiles, so there is no key variable to list; these are its
+    // six arms, every one required. Spelled out rather than imported: evals does not depend on
+    // the CLI, and the names are what AGENTS.md's table promises.
+    'DORKOS_COMMUNITY_LIVE_GATE',
+    'DORKOS_COMMUNITY_LIVE_FLY_WRITES',
+    'DORKOS_COMMUNITY_LIVE_NEON_WRITES',
+    'DORKOS_COMMUNITY_LIVE_TIGRIS_WRITES',
+    'DORKOS_COMMUNITY_LIVE_CLEANUP',
+    'DORKOS_COMMUNITY_LIVE_CHARGE_ACKNOWLEDGEMENT',
   ];
 
   /**

@@ -12,20 +12,38 @@ const IdentifierSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/u);
 const RegionSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u);
 const VersionSchema = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u);
 
-/** Environment names that must never be passed to ordinary test or CI tasks. */
-export const COMMUNITY_LIVE_GATE_ENV = [
+/** The `=1` arms. Each is a separate decision to let the gate write, or clean up, somewhere. */
+export const COMMUNITY_LIVE_GATE_ARMS = [
   'DORKOS_COMMUNITY_LIVE_GATE',
   'DORKOS_COMMUNITY_LIVE_FLY_WRITES',
   'DORKOS_COMMUNITY_LIVE_NEON_WRITES',
   'DORKOS_COMMUNITY_LIVE_TIGRIS_WRITES',
   'DORKOS_COMMUNITY_LIVE_CLEANUP',
-  'DORKOS_COMMUNITY_LIVE_CHARGE_ACKNOWLEDGEMENT',
-  'DORKOS_COMMUNITY_LIVE_BUDGET_USD',
-  'DORKOS_COMMUNITY_LIVE_VERSION',
-  'DORKOS_COMMUNITY_LIVE_FLY_ORG',
-  'DORKOS_COMMUNITY_LIVE_FLY_REGION',
-  'DORKOS_COMMUNITY_LIVE_NEON_ORG',
-  'DORKOS_COMMUNITY_LIVE_NEON_REGION',
+] as const;
+
+/** Must hold the exact charge-acknowledgement phrase, not merely be set. */
+export const COMMUNITY_LIVE_GATE_CHARGE_ACKNOWLEDGEMENT_ENV =
+  'DORKOS_COMMUNITY_LIVE_CHARGE_ACKNOWLEDGEMENT';
+
+/** The non-secret choices for one run, keyed by the config field each one fills. */
+const SETTINGS_ENV = {
+  version: 'DORKOS_COMMUNITY_LIVE_VERSION',
+  flyOrganization: 'DORKOS_COMMUNITY_LIVE_FLY_ORG',
+  flyRegion: 'DORKOS_COMMUNITY_LIVE_FLY_REGION',
+  neonOrganization: 'DORKOS_COMMUNITY_LIVE_NEON_ORG',
+  neonRegion: 'DORKOS_COMMUNITY_LIVE_NEON_REGION',
+  budgetUsd: 'DORKOS_COMMUNITY_LIVE_BUDGET_USD',
+} as const;
+
+/**
+ * Every environment name the gate requires, and so every name that must never be passed to
+ * ordinary test or CI tasks. Built from the same constants {@link parseCommunityLiveGateConfig}
+ * reads, so the list and the parser cannot disagree.
+ */
+export const COMMUNITY_LIVE_GATE_ENV = [
+  ...COMMUNITY_LIVE_GATE_ARMS,
+  COMMUNITY_LIVE_GATE_CHARGE_ACKNOWLEDGEMENT_ENV,
+  ...Object.values(SETTINGS_ENV),
 ] as const;
 
 /** Validated, non-secret choices for one disposable live run. */
@@ -75,33 +93,27 @@ export function parseCommunityLiveGateConfig(
   environment: Readonly<Record<string, string | undefined>>
 ): CommunityLiveGateConfig {
   const invalid: string[] = [];
-  for (const name of [
-    'DORKOS_COMMUNITY_LIVE_GATE',
-    'DORKOS_COMMUNITY_LIVE_FLY_WRITES',
-    'DORKOS_COMMUNITY_LIVE_NEON_WRITES',
-    'DORKOS_COMMUNITY_LIVE_TIGRIS_WRITES',
-    'DORKOS_COMMUNITY_LIVE_CLEANUP',
-  ] as const) {
+  for (const name of COMMUNITY_LIVE_GATE_ARMS) {
     if (environment[name] !== ENABLED) invalid.push(name);
   }
-  if (environment.DORKOS_COMMUNITY_LIVE_CHARGE_ACKNOWLEDGEMENT !== CHARGE_ACKNOWLEDGEMENT) {
-    invalid.push('DORKOS_COMMUNITY_LIVE_CHARGE_ACKNOWLEDGEMENT');
+  if (environment[COMMUNITY_LIVE_GATE_CHARGE_ACKNOWLEDGEMENT_ENV] !== CHARGE_ACKNOWLEDGEMENT) {
+    invalid.push(COMMUNITY_LIVE_GATE_CHARGE_ACKNOWLEDGEMENT_ENV);
   }
 
-  const version = VersionSchema.safeParse(environment.DORKOS_COMMUNITY_LIVE_VERSION);
-  const flyOrganization = IdentifierSchema.safeParse(environment.DORKOS_COMMUNITY_LIVE_FLY_ORG);
-  const flyRegion = RegionSchema.safeParse(environment.DORKOS_COMMUNITY_LIVE_FLY_REGION);
-  const neonOrganization = IdentifierSchema.safeParse(environment.DORKOS_COMMUNITY_LIVE_NEON_ORG);
-  const neonRegion = RegionSchema.safeParse(environment.DORKOS_COMMUNITY_LIVE_NEON_REGION);
-  if (!version.success) invalid.push('DORKOS_COMMUNITY_LIVE_VERSION');
-  if (!flyOrganization.success) invalid.push('DORKOS_COMMUNITY_LIVE_FLY_ORG');
-  if (!flyRegion.success) invalid.push('DORKOS_COMMUNITY_LIVE_FLY_REGION');
-  if (!neonOrganization.success) invalid.push('DORKOS_COMMUNITY_LIVE_NEON_ORG');
-  if (!neonRegion.success) invalid.push('DORKOS_COMMUNITY_LIVE_NEON_REGION');
+  const version = VersionSchema.safeParse(environment[SETTINGS_ENV.version]);
+  const flyOrganization = IdentifierSchema.safeParse(environment[SETTINGS_ENV.flyOrganization]);
+  const flyRegion = RegionSchema.safeParse(environment[SETTINGS_ENV.flyRegion]);
+  const neonOrganization = IdentifierSchema.safeParse(environment[SETTINGS_ENV.neonOrganization]);
+  const neonRegion = RegionSchema.safeParse(environment[SETTINGS_ENV.neonRegion]);
+  if (!version.success) invalid.push(SETTINGS_ENV.version);
+  if (!flyOrganization.success) invalid.push(SETTINGS_ENV.flyOrganization);
+  if (!flyRegion.success) invalid.push(SETTINGS_ENV.flyRegion);
+  if (!neonOrganization.success) invalid.push(SETTINGS_ENV.neonOrganization);
+  if (!neonRegion.success) invalid.push(SETTINGS_ENV.neonRegion);
 
-  const budgetUsd = Number(environment.DORKOS_COMMUNITY_LIVE_BUDGET_USD);
+  const budgetUsd = Number(environment[SETTINGS_ENV.budgetUsd]);
   if (!Number.isFinite(budgetUsd) || budgetUsd <= 0 || budgetUsd > 25) {
-    invalid.push('DORKOS_COMMUNITY_LIVE_BUDGET_USD');
+    invalid.push(SETTINGS_ENV.budgetUsd);
   }
   if (
     invalid.length > 0 ||
