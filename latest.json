@@ -1,26 +1,25 @@
 {
  "schema": 1,
- "date": "2026-09-20",
- "collected_at": "2026-09-21T10:13:19.123Z",
- "snapshot": "snapshots/2026-09-20.json",
+ "date": "2026-09-21",
+ "collected_at": "2026-09-22T09:48:40.152Z",
+ "snapshot": "snapshots/2026-09-21.json",
  "report_ref": "reports/2026-W38.md",
  "healthy": true,
  "failures": [],
  "warnings": [
-  "19 of 28 days missing to 2026-09-20 (2026-08-24 to 09-11).",
-  "14 of 28 days missing to 2026-09-20 (2026-08-29 to 09-11)."
+  "10 of 28 days missing to 2026-09-21 (2026-09-02 to 09-11)."
  ],
  "api_calls": 700,
  "slos": [
   {
    "id": "headroom",
    "kind": "tripwire",
-   "from": "2026-09-14",
-   "to": "2026-09-20",
-   "n": 8172,
+   "from": "2026-09-15",
+   "to": "2026-09-21",
+   "n": 10761,
    "min_n": 10,
    "stats": {
-    "p95_over_timeout": 0.659
+    "p95_over_timeout": 0.653
    },
    "status": "ok",
    "excess_hours": null,
@@ -29,12 +28,12 @@
   {
    "id": "queue-green",
    "kind": "quality",
-   "from": "2026-09-14",
-   "to": "2026-09-20",
-   "n": 184,
+   "from": "2026-09-15",
+   "to": "2026-09-21",
+   "n": 231,
    "min_n": 30,
    "stats": {
-    "share": 0.6739
+    "share": 0.6494
    },
    "status": "breach",
    "excess_hours": null
@@ -42,25 +41,25 @@
   {
    "id": "wasted-queue-builds",
    "kind": "quality",
-   "from": "2026-09-14",
-   "to": "2026-09-20",
-   "n": 184,
+   "from": "2026-09-15",
+   "to": "2026-09-21",
+   "n": 231,
    "min_n": 30,
    "stats": {
-    "share": 0.1685
+    "share": 0.1515
    },
    "status": "ok",
-   "excess_hours": 42.83
+   "excess_hours": 77.85
   },
   {
    "id": "flaky-test-runs",
    "kind": "quality",
-   "from": "2026-09-14",
-   "to": "2026-09-20",
-   "n": 488244,
+   "from": "2026-09-15",
+   "to": "2026-09-21",
+   "n": 954082,
    "min_n": 1000,
    "stats": {
-    "share": 0.0002
+    "share": 0.0001
    },
    "status": "met",
    "excess_hours": null,
@@ -69,13 +68,13 @@
   {
    "id": "main-green",
    "kind": "quality",
-   "from": "2026-08-24",
-   "to": "2026-09-20",
-   "n": 246,
+   "from": "2026-08-25",
+   "to": "2026-09-21",
+   "n": 289,
    "min_n": 1,
    "stats": {
-    "red_episodes": 7,
-    "restore_p90": 87.2
+    "red_episodes": 6,
+    "restore_p90": 73.2
    },
    "status": "breach",
    "excess_hours": null
@@ -83,12 +82,12 @@
   {
    "id": "review-completes",
    "kind": "quality",
-   "from": "2026-09-14",
-   "to": "2026-09-20",
-   "n": 100,
+   "from": "2026-09-15",
+   "to": "2026-09-21",
+   "n": 139,
    "min_n": 30,
    "stats": {
-    "share": 0.91
+    "share": 0.9281
    },
    "status": "ok",
    "excess_hours": null
@@ -96,107 +95,106 @@
   {
    "id": "review-recovery",
    "kind": "quality",
-   "from": "2026-09-14",
-   "to": "2026-09-20",
-   "n": 5,
+   "from": "2026-09-15",
+   "to": "2026-09-21",
+   "n": 6,
    "min_n": 5,
    "stats": {
-    "p90": 27
+    "p90": 189.5
    },
-   "status": "met",
+   "status": "breach",
    "excess_hours": null
   },
   {
    "id": "pr-feedback",
    "kind": "speed",
-   "from": "2026-09-14",
-   "to": "2026-09-20",
-   "n": 92,
+   "from": "2026-09-15",
+   "to": "2026-09-21",
+   "n": 117,
    "min_n": 30,
    "stats": {
     "p50": 7.7,
-    "p90": 44.5
+    "p90": 47.8
    },
    "status": "breach",
-   "excess_hours": 10.43
+   "excess_hours": 18.38
   },
   {
    "id": "queue-build",
    "kind": "speed",
-   "from": "2026-09-14",
-   "to": "2026-09-20",
-   "n": 75,
+   "from": "2026-09-15",
+   "to": "2026-09-21",
+   "n": 82,
    "min_n": 20,
    "stats": {
-    "p50": 30,
-    "p90": 52.4
+    "p50": 30.3,
+    "p90": 62.7
    },
-   "status": "ok",
-   "excess_hours": 20.46
+   "status": "breach",
+   "excess_hours": 29.1
   },
   {
    "id": "lead-time",
    "kind": "speed",
-   "from": "2026-09-14",
-   "to": "2026-09-20",
-   "n": 105,
+   "from": "2026-09-15",
+   "to": "2026-09-21",
+   "n": 117,
    "min_n": 30,
    "stats": {
-    "p50": 69.1,
-    "p90": 184.1
+    "p50": 87.5,
+    "p90": 376.1
    },
    "status": "breach",
-   "excess_hours": 90.85
+   "excess_hours": 182.18
   },
   {
    "id": "local-commit",
    "kind": "speed",
-   "from": "2026-09-14",
-   "to": "2026-09-20",
-   "n": 72,
+   "from": "2026-09-15",
+   "to": "2026-09-21",
+   "n": 332,
    "min_n": 20,
    "stats": {
-    "p90": 313.2,
-    "killed_share": 0
+    "p90": 212,
+    "killed_share": 0.009
    },
    "status": "breach",
-   "excess_hours": 1.39
+   "excess_hours": 7.11
   },
   {
    "id": "local-push",
    "kind": "speed",
-   "from": "2026-09-14",
-   "to": "2026-09-20",
-   "n": 52,
+   "from": "2026-09-15",
+   "to": "2026-09-21",
+   "n": 222,
    "min_n": 20,
    "stats": {
-    "p90": 1410,
-    "killed_share": 0.0385
+    "p90": 66.2,
+    "killed_share": 0.0135
    },
-   "status": "breach",
-   "excess_hours": 4.5
+   "status": "ok",
+   "excess_hours": 7.85
   }
  ],
  "constraint": {
   "tier": "quality",
   "id": "queue-green",
-  "reason": "Merge-queue builds come back green: share 0.6739 breaches its floor."
+  "reason": "Merge-queue builds come back green: share 0.6494 breaches its floor."
  },
  "local_breaches": [
-  "local-commit",
-  "local-push"
+  "local-commit"
  ],
  "machine": {
-  "n": 9,
+  "n": 3930,
   "clones": 1,
-  "load_per_core_p90": 34.71,
-  "mem_available_mb_p10": null,
-  "swap_used_mb_p50": null
+  "load_per_core_p90": 20.66,
+  "mem_available_mb_p10": 887.6,
+  "swap_used_mb_p50": 7036
  },
  "safeguards_ok": true,
  "triggers": {
-  "red": 2,
-  "amber": 11,
-  "top": "main-green under floor: red_episodes 7, restore_p90 87.2 (n=246, 2026-08-24 to 2026-09-20)."
+  "red": 4,
+  "amber": 9,
+  "top": "The machine running the hooks is saturated — CPU: load 20.66/core p90; RAM: 887.6 MB free p10; swap: 7036 MB in use p50."
  }
 }

@@ -1,7 +1,12 @@
 {
  "schema": 1,
- "updated_at": "2026-09-21T10:35:20.639Z",
+ "updated_at": "2026-09-22T09:48:40.152Z",
  "days": [
+  {
+   "date": "2026-09-21",
+   "light": "red",
+   "headline": "The machine running the hooks is saturated — CPU: load 20.66/core p90; RAM: 887.6 MB free p10; swap: 7036 MB in use p50."
+  },
   {
    "date": "2026-09-20",
    "light": "red",

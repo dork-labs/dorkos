@@ -1,31 +1,53 @@
 {
  "schema": 1,
- "date": "2026-09-20",
- "computed_at": "2026-09-21T10:35:20.639Z",
+ "date": "2026-09-21",
+ "computed_at": "2026-09-22T09:48:40.152Z",
  "constraint": "queue-green",
- "canary_since": null,
+ "canary_since": "2026-09-21T05:17:15Z",
  "open": [
+  {
+   "id": "machine-saturated",
+   "rule": "machine-saturated",
+   "severity": "red",
+   "scope": "",
+   "what": "The machine running the hooks is saturated — CPU: load 20.66/core p90; RAM: 887.6 MB free p10; swap: 7036 MB in use p50.",
+   "action": "Run fewer suites at once (ci/config.yaml local.heavy_run_slots), or close what is holding the memory. No pipeline change helps.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-21",
+   "last_fired": "2026-09-21"
+  },
   {
    "id": "slo-floor:main-green",
    "rule": "slo-floor",
    "severity": "red",
    "scope": "main-green",
-   "what": "main-green under floor: red_episodes 7, restore_p90 87.2 (n=246, 2026-08-24 to 2026-09-20).",
+   "what": "main-green under floor: red_episodes 6, restore_p90 73.2 (n=289, 2026-08-25 to 2026-09-21).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260919-175509",
    "first_fired": "2026-09-20",
-   "last_fired": "2026-09-20"
+   "last_fired": "2026-09-21"
   },
   {
    "id": "slo-floor:queue-green",
    "rule": "slo-floor",
    "severity": "red",
    "scope": "queue-green",
-   "what": "queue-green under floor: 67.4% (n=184, 2026-09-14 to 2026-09-20).",
+   "what": "queue-green under floor: 64.9% (n=231, 2026-09-15 to 2026-09-21).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260919-175500",
    "first_fired": "2026-09-20",
-   "last_fired": "2026-09-20"
+   "last_fired": "2026-09-21"
+  },
+  {
+   "id": "slo-floor:review-recovery",
+   "rule": "slo-floor",
+   "severity": "red",
+   "scope": "review-recovery",
+   "what": "review-recovery under floor: p90 189.5 (n=6, 2026-09-15 to 2026-09-21).",
+   "action": "Take its path from ci/slos.yaml.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-21",
+   "last_fired": "2026-09-21"
   },
   {
    "id": "main-red:13fd2bb1bd59",
@@ -36,8 +58,98 @@
    "action": "Why did the queue miss it? If nothing did, this one is history.",
    "ledger_entry": "260919-175509",
    "first_fired": "2026-09-20",
-   "last_fired": "2026-09-20"
+   "last_fired": "2026-09-21"
   },
+  {
+   "id": "slo-floor:lead-time",
+   "rule": "slo-floor",
+   "severity": "amber",
+   "scope": "lead-time",
+   "what": "lead-time under floor: p50 87.5, p90 376.1 (n=117, 2026-09-15 to 2026-09-21).",
+   "action": "Take its path from ci/slos.yaml.",
+   "ledger_entry": "260919-204500",
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-21"
+  },
+  {
+   "id": "slo-floor:local-commit",
+   "rule": "slo-floor",
+   "severity": "amber",
+   "scope": "local-commit",
+   "what": "local-commit under floor: p90 212, 0.9% (n=332, 2026-09-15 to 2026-09-21).",
+   "action": "Take its path from ci/slos.yaml.",
+   "ledger_entry": "260919-175506",
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-21"
+  },
+  {
+   "id": "slo-floor:pr-feedback",
+   "rule": "slo-floor",
+   "severity": "amber",
+   "scope": "pr-feedback",
+   "what": "pr-feedback under floor: p50 7.7, p90 47.8 (n=117, 2026-09-15 to 2026-09-21).",
+   "action": "Take its path from ci/slos.yaml.",
+   "ledger_entry": "260919-175502",
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-21"
+  },
+  {
+   "id": "slo-floor:queue-build",
+   "rule": "slo-floor",
+   "severity": "amber",
+   "scope": "queue-build",
+   "what": "queue-build under floor: p50 30.3, p90 62.7 (n=82, 2026-09-15 to 2026-09-21).",
+   "action": "Take its path from ci/slos.yaml.",
+   "ledger_entry": "260919-175501",
+   "first_fired": "2026-09-21",
+   "last_fired": "2026-09-21"
+  },
+  {
+   "id": "repeat-ejection:wf.browser-test.browser-test",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "wf.browser-test.browser-test",
+   "what": "wf.browser-test.browser-test (with wf.browser-test.browser-shard) failed on 15 of 42 queue ejections in 7d; 2 real.",
+   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-21"
+  },
+  {
+   "id": "repeat-ejection:wf.credential-free-build.credential-free-build",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "wf.credential-free-build.credential-free-build",
+   "what": "wf.credential-free-build.credential-free-build failed on 6 of 42 queue ejections in 7d; 1 real.",
+   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
+   "ledger_entry": "260919-175501",
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-21"
+  },
+  {
+   "id": "repeat-ejection:wf.test.test",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "wf.test.test",
+   "what": "wf.test.test (with wf.test.community-packaged and wf.test.community-pg and wf.test.test-shard) failed on 25 of 42 queue ejections in 7d; 3 real.",
+   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-21"
+  },
+  {
+   "id": "stale-ledger:260830-213616",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "queue-build",
+   "what": "260830-213616 due 2026-09-13, no verdict: Queue test sweep split across four shards (#1391)",
+   "action": "Check its PR numbers are in the entry and its days were collected.",
+   "ledger_entry": "260919-175501",
+   "first_fired": "2026-09-21",
+   "last_fired": "2026-09-21"
+  }
+ ],
+ "cleared": [
   {
    "id": "main-red:6b13262116c5",
    "rule": "main-red",
@@ -46,28 +158,6 @@
    "what": "main red 27 min (6b13262).",
    "action": "Why did the queue miss it? If nothing did, this one is history.",
    "ledger_entry": "260919-175509",
-   "first_fired": "2026-09-20",
-   "last_fired": "2026-09-20"
-  },
-  {
-   "id": "slo-floor:lead-time",
-   "rule": "slo-floor",
-   "severity": "amber",
-   "scope": "lead-time",
-   "what": "lead-time under floor: p50 69.1, p90 184.1 (n=105, 2026-09-14 to 2026-09-20).",
-   "action": "Take its path from ci/slos.yaml.",
-   "ledger_entry": "260919-204500",
-   "first_fired": "2026-09-20",
-   "last_fired": "2026-09-20"
-  },
-  {
-   "id": "slo-floor:local-commit",
-   "rule": "slo-floor",
-   "severity": "amber",
-   "scope": "local-commit",
-   "what": "local-commit under floor: p90 313.2, 0% (n=72, 2026-09-14 to 2026-09-20).",
-   "action": "Take its path from ci/slos.yaml.",
-   "ledger_entry": "260919-175506",
    "first_fired": "2026-09-20",
    "last_fired": "2026-09-20"
   },
@@ -83,17 +173,6 @@
    "last_fired": "2026-09-20"
   },
   {
-   "id": "slo-floor:pr-feedback",
-   "rule": "slo-floor",
-   "severity": "amber",
-   "scope": "pr-feedback",
-   "what": "pr-feedback under floor: p50 7.7, p90 44.5 (n=92, 2026-09-14 to 2026-09-20).",
-   "action": "Take its path from ci/slos.yaml.",
-   "ledger_entry": "260919-175502",
-   "first_fired": "2026-09-20",
-   "last_fired": "2026-09-20"
-  },
-  {
    "id": "repeat-ejection:unattributed",
    "rule": "repeat-ejection",
    "severity": "amber",
@@ -101,28 +180,6 @@
    "what": "Checks the collector could not identify failed on 3 of 38 queue ejections in 7d; 2 real.",
    "action": "Find which job fails these. An ejection with nothing to blame cannot be fixed.",
    "ledger_entry": null,
-   "first_fired": "2026-09-20",
-   "last_fired": "2026-09-20"
-  },
-  {
-   "id": "repeat-ejection:wf.browser-test.browser-test",
-   "rule": "repeat-ejection",
-   "severity": "amber",
-   "scope": "wf.browser-test.browser-test",
-   "what": "wf.browser-test.browser-test (with wf.browser-test.browser-shard) failed on 16 of 38 queue ejections in 7d; 3 real.",
-   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-20",
-   "last_fired": "2026-09-20"
-  },
-  {
-   "id": "repeat-ejection:wf.credential-free-build.credential-free-build",
-   "rule": "repeat-ejection",
-   "severity": "amber",
-   "scope": "wf.credential-free-build.credential-free-build",
-   "what": "wf.credential-free-build.credential-free-build failed on 5 of 38 queue ejections in 7d; 1 real.",
-   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
-   "ledger_entry": "260919-175501",
    "first_fired": "2026-09-20",
    "last_fired": "2026-09-20"
   },
@@ -136,18 +193,6 @@
    "ledger_entry": null,
    "first_fired": "2026-09-20",
    "last_fired": "2026-09-20"
-  },
-  {
-   "id": "repeat-ejection:wf.test.test",
-   "rule": "repeat-ejection",
-   "severity": "amber",
-   "scope": "wf.test.test",
-   "what": "wf.test.test (with wf.test.community-packaged and wf.test.community-pg and wf.test.test-shard) failed on 19 of 38 queue ejections in 7d; 2 real.",
-   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-20",
-   "last_fired": "2026-09-20"
   }
- ],
- "cleared": []
+ ]
 }

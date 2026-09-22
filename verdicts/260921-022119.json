@@ -3,7 +3,7 @@
  "id": "260921-022119",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-10-05T04:14:37Z; the verdict is computed on 2026-10-06.",
- "computed_at": "2026-09-21T10:35:20.639Z",
+ "computed_at": "2026-09-22T09:48:40.152Z",
  "hypothesis_hash": "1c62f1d4459cfb87",
  "metric": "local-commit",
  "anchor": "2026-09-21T04:14:37Z",
@@ -11,8 +11,8 @@
   1969
  ],
  "baseline": {
-  "value": 354,
-  "source": "ledger"
+  "value": 313.2,
+  "source": "before-window"
  },
  "target": 240,
  "min_n": 20,
