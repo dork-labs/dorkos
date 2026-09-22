@@ -16,7 +16,7 @@ beforeEach(() => {
 describe('AgentAvatar', () => {
   /** The disc this wrapper drew. */
   const avatarOf = (container: HTMLElement) =>
-    container.querySelector('[data-slot="agent-avatar"]') as HTMLElement;
+    container.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
 
   it('renders emoji inside a filled square wearing the Bot mark', () => {
     // Square, filled and badged is what an agent looks like, and this wrapper
@@ -140,7 +140,7 @@ describe('AgentIdentity', () => {
 
   it('renders avatar + name', () => {
     const { container } = render(<AgentIdentity {...baseProps} />);
-    expect(container.querySelector('[data-slot="agent-avatar"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="identity-avatar"]')).toBeInTheDocument();
     expect(screen.getByText('code-reviewer')).toBeInTheDocument();
   });
 
@@ -154,7 +154,7 @@ describe('AgentIdentity', () => {
     // Scoped to the label beside the avatar: the disc has muted-foreground of
     // its own on the Bot badge's plate, which is not a detail line.
     const label = container.querySelector(
-      '[data-slot="agent-identity"] [data-slot="agent-avatar"] ~ span'
+      '[data-slot="agent-identity"] [data-slot="identity-avatar"] ~ span'
     )!;
     expect(label.querySelectorAll('[class*="muted-foreground"]')).toHaveLength(0);
   });
@@ -176,7 +176,7 @@ describe('AgentIdentity', () => {
     // The narrowest tier of the status line's width budget shows the avatar alone.
     // The name stays announced — and keeps naming the button — rather than vanishing.
     const { container } = render(<AgentIdentity {...baseProps} nameHidden onClick={vi.fn()} />);
-    expect(container.querySelector('[data-slot="agent-avatar"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="identity-avatar"]')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'code-reviewer' })).toBeInTheDocument();
     expect(screen.getByText('code-reviewer').className).toContain('sr-only');
   });
@@ -189,7 +189,7 @@ describe('AgentIdentity', () => {
       // @ts-expect-error — `healthStatus` is no longer part of AgentIdentityProps.
       <AgentIdentity {...baseProps} healthStatus="active" />
     );
-    const avatar = container.querySelector('[data-slot="agent-avatar"]')!;
+    const avatar = container.querySelector('[data-slot="identity-avatar"]')!;
 
     expect(avatar.className).not.toContain('ring-2');
     expect(avatar.querySelector('.animate-ping')).not.toBeInTheDocument();
@@ -241,7 +241,7 @@ describe('AgentIdentity', () => {
       const { container } = render(<AgentIdentity {...baseProps} onClick={vi.fn()} />);
 
       expect(screen.getByRole('button').className).not.toContain('opacity-80');
-      expect(container.querySelector('[data-slot="agent-avatar"]')!.className).not.toContain(
+      expect(container.querySelector('[data-slot="identity-avatar"]')!.className).not.toContain(
         'opacity-80'
       );
     });
@@ -256,7 +256,7 @@ describe('AgentIdentity', () => {
 
     it('rings the disc in the agent’s own colour, on hover and on focus alike', () => {
       const { container } = render(<AgentIdentity {...baseProps} onClick={vi.fn()} />);
-      const avatar = container.querySelector('[data-slot="agent-avatar"]')!;
+      const avatar = container.querySelector('[data-slot="identity-avatar"]')!;
 
       // A NAMED group on the control is what carries both states to the disc.
       expect(screen.getByRole('button').className.split(' ')).toContain('group/identity');
@@ -275,7 +275,7 @@ describe('AgentIdentity', () => {
         <AgentIdentity {...baseProps} onAvatarClick={vi.fn()} avatarLabel="Open profile" />
       );
       const face = container.querySelector('[data-slot="agent-identity-face"]')!;
-      const avatar = container.querySelector('[data-slot="agent-avatar"]')!;
+      const avatar = container.querySelector('[data-slot="identity-avatar"]')!;
 
       expect(face.className.split(' ')).not.toContain('group');
       expect(avatar.className).not.toMatch(/(^|\s)group-hover:/);
@@ -290,14 +290,14 @@ describe('AgentIdentity', () => {
       const { container } = render(<AgentIdentity {...baseProps} onClick={vi.fn()} />);
 
       expect(screen.getByRole('button').className).not.toContain('hover:bg-accent');
-      expect(container.querySelector('[data-slot="agent-avatar"]')!.className).toContain(
+      expect(container.querySelector('[data-slot="identity-avatar"]')!.className).toContain(
         'group-hover/identity:ring-2'
       );
     });
 
     it('leaves an inert lockup with no states to promise', () => {
       const { container } = render(<AgentIdentity {...baseProps} />);
-      const avatar = container.querySelector('[data-slot="agent-avatar"]')!;
+      const avatar = container.querySelector('[data-slot="identity-avatar"]')!;
 
       expect(avatar.className).not.toContain('group-hover/identity:ring-2');
       expect(container.querySelector('[data-slot="agent-identity"]')!.className).not.toContain(
@@ -314,7 +314,7 @@ describe('AgentIdentity', () => {
       expect(face.className).not.toContain('opacity-80');
       // 0.94, not 0.98: one press number cannot fit a 300px card and a 24px disc.
       expect(face.className).toContain('active:scale-[0.94]');
-      expect(container.querySelector('[data-slot="agent-avatar"]')!.className).toContain(
+      expect(container.querySelector('[data-slot="identity-avatar"]')!.className).toContain(
         'group-hover/identity:ring-2'
       );
     });

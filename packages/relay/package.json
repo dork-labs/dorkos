@@ -26,13 +26,13 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@chat-adapter/telegram": "^4.39.0",
+    "@chat-adapter/telegram": "^4.41.0",
     "@dorkos/db": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@grammyjs/auto-retry": "^2.0.2",
     "@slack/bolt": "^5.1.0",
     "@slack/web-api": "^8.1.1",
-    "chat": "^4.39.0",
+    "chat": "^4.41.0",
     "chokidar": "^5.0.0",
     "drizzle-orm": "^0.45.2",
     "grammy": "^1.46.0",
