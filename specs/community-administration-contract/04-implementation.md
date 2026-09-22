@@ -74,8 +74,22 @@
 - Fresh full PostgreSQL run after composition: **13 files passed, 162 passed, 4 declared skips**. The owned `dorkos-admin-composition-pg` container was stopped immediately afterward.
 - Final independent composition review remains open; no claim is made yet that the full administration programme or its browser proof is complete.
 
+### Administration UI composition
+
+- Root resumed the independently reviewed UI head `b5a2a95dc9789d6cccc32606caa58ea87b175512` after explicit sole-writer handoff, then composed final API `074d159a3c261f4bd88649c2cbdac20b83d95018`. UI source is unchanged from the accepted head; backend source is the accepted API.
+- Fresh production build and all three Community browser scenarios passed using installed Chrome: the owner/member administration journey, desktop pairing approval, and narrow keyboard pairing. The run used one worker, no retries, unchanged deadlines, and an isolated PostgreSQL database; its container was stopped afterward.
+- These pairing fixtures begin authenticated. The reported signed-out approval page dead end is explicitly outside this proof and is being corrected under DOR-2181 with a fresh no-cookie browser case.
+- The UI remains pending final composition review and merge; DOR-2178 owns the wider permission/concurrency proof matrix.
+
 ### Standalone API browser compatibility
 
 - CI passed all 162 PostgreSQL assertions but exposed a browser fixture that created an invalid suspended state. Updated the fixture with the required prior lifecycle and timestamp.
 - The causal rerun then exposed a real compatibility gap: the pre-administration browser only recognized `COMMUNITY_UNAVAILABLE`, while the API now distinguishes suspension and pending deletion. Moved the already-reviewed administration UI lifecycle-error helper into this API slice so it can land independently.
 - Fresh production build and the complete three-case browser suite now pass (one worker, no retries, unchanged deadlines). The suspension case returns the affected member to the chooser. The owned PostgreSQL container was stopped after verification.
+
+### Administration review corrections
+
+- Confirmation dialogs now announce failed archive, restore, deletion, and cancellation attempts inside the modal while retaining retry inputs. Lifecycle conflicts refresh authoritative state; browser tests advance the persisted version before the first refusal and prove the real retry succeeds.
+- Direct deletion recovery checks the signed-in account's host membership before rendering owner controls. Community export has one home under Settings; Account retains personal export.
+- Exact corrections `1a474607f37e40eb1cacc1d17e96a53d5174c859` and `ea455da765caca73cc54a5d54cbd94297aa94a9f` independently accepted. Final correction browser run: **3 passed**, no retries, unchanged deadlines. The API parent supplies the required access fields in client test fixtures; all five affected files pass **36 tests**.
+- API and UI PRs remain held in dependency order. These results do not complete the wider cross-tenant or packaged Desktop acceptance matrix, or deploy the signed-out pairing correction.

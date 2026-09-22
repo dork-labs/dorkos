@@ -25,6 +25,7 @@ const access = {
     verifiedAt: '2026-09-16T10:00:00Z',
   },
 } as const;
+
 const connection = (ref: string) =>
   CommunityConnectionDescriptorSchema.parse({
     ref,

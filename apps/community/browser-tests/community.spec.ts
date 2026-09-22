@@ -60,7 +60,14 @@ test.beforeAll(async () => {
   const app = createCommunityApp({ config, pool });
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
   app.use('/assets/*', serveStatic({ root: staticRoot }));
-  for (const path of ['/', '/join', '/pairing', '/c/:communityId'])
+  for (const path of [
+    '/',
+    '/host',
+    '/join',
+    '/pairing',
+    '/c/:communityId',
+    '/c/:communityId/deletion',
+  ])
     app.get(
       path,
       serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
@@ -104,8 +111,69 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await expect(ownerPage.getByRole('heading', { name: '# general' })).toBeVisible({
       timeout: 15000,
     });
+    await ownerPage.route(
+      '**/api/v1/host/communities',
+      (route) =>
+        route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'UNAVAILABLE',
+            message: 'Host list is temporarily unavailable.',
+          }),
+        }),
+      { times: 1 }
+    );
+    await ownerPage.goto(`${baseUrl}/host`);
+    await expect(ownerPage.getByRole('alert')).toContainText('temporarily unavailable');
+    await expect(ownerPage.getByText('No communities are available.')).toHaveCount(0);
+    await ownerPage.getByRole('button', { name: 'Try again' }).click();
+    await expect(ownerPage.getByRole('heading', { name: 'Communities' })).toBeVisible();
+    await expect(ownerPage.getByLabel('Gathering Place community')).toContainText('Owner assigned');
+    await expect(ownerPage.getByText('Community members')).toHaveCount(0);
+    await ownerPage
+      .getByLabel('Gathering Place community')
+      .getByRole('button', { name: 'Suspend' })
+      .click();
+    const suspendDialog = ownerPage.getByRole('dialog', { name: 'Suspend Gathering Place?' });
+    await expect(suspendDialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await ownerPage.keyboard.press('Escape');
+    await expect(suspendDialog).toBeHidden();
+    await ownerPage.goto(baseUrl);
+    await expect(ownerPage.getByRole('heading', { name: '# general' })).toBeVisible({
+      timeout: 15000,
+    });
     await ownerPage.screenshot({ path: '/tmp/community-owner-desktop.png', fullPage: true });
+    await ownerPage.route(
+      '**/settings',
+      async (route) => {
+        if (route.request().method() === 'GET') {
+          await route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              code: 'UNAVAILABLE',
+              message: 'Settings are temporarily unavailable.',
+            }),
+          });
+          return;
+        }
+        await route.continue();
+      },
+      { times: 1 }
+    );
     await ownerPage.getByRole('button', { name: 'Manage' }).click();
+    await ownerPage
+      .getByRole('navigation', { name: 'Settings sections' })
+      .getByRole('button', { name: 'Settings', exact: true })
+      .click();
+    await expect(ownerPage.getByRole('alert')).toContainText('temporarily unavailable');
+    await ownerPage.getByRole('button', { name: 'Try again' }).click();
+    await expect(ownerPage.getByRole('heading', { name: 'Presentation' })).toBeVisible();
+    await ownerPage
+      .getByRole('navigation', { name: 'Settings sections' })
+      .getByRole('button', { name: 'Community' })
+      .click();
     await ownerPage.locator('#invite-channel').selectOption({ label: '#general' });
     await ownerPage.getByRole('button', { name: 'Create invite' }).click();
     const inviteLink = await ownerPage.getByLabel('One-time invite link').inputValue();
@@ -134,6 +202,100 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await expect(
       memberPage.getByRole('complementary', { name: 'Community channels' })
     ).not.toHaveClass(/open/);
+    await ownerPage
+      .getByRole('navigation', { name: 'Settings sections' })
+      .getByRole('button', { name: 'Settings', exact: true })
+      .click();
+    await expect(ownerPage.getByRole('heading', { name: 'Presentation' })).toBeVisible();
+    await expect(ownerPage.getByRole('heading', { name: 'Access' })).toBeVisible();
+    await expect(ownerPage.getByRole('heading', { name: 'People', exact: true })).toBeVisible();
+    await expect(ownerPage.getByRole('heading', { name: 'Export' })).toBeVisible();
+    await expect(ownerPage.getByRole('heading', { name: 'Danger zone' })).toBeVisible();
+    const settingsCommunityId = await ownerPage.evaluate(async () => {
+      const response = await fetch('/api/v1/community');
+      return ((await response.json()) as { id: string }).id;
+    });
+    await ownerPage.getByLabel('Name', { exact: true }).fill('My unsaved name');
+    await ownerPage.getByLabel('Description').fill('My unsaved description');
+    await ownerPage.route(
+      '**/settings',
+      (route) =>
+        route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'STATE_CONFLICT',
+            message: 'Community settings changed.',
+            current: {
+              communityId: settingsCommunityId,
+              name: 'Gathering Place',
+              description: 'Saved elsewhere',
+              admissionPolicy: 'invite_only',
+              hasIcon: false,
+              settingsVersion: 1,
+              lifecycle: 'active',
+              lifecycleVersion: 1,
+            },
+          }),
+        }),
+      { times: 1 }
+    );
+    await ownerPage.getByRole('button', { name: 'Save presentation' }).click();
+    await expect(ownerPage.getByRole('alert')).toContainText('Your edits are still here');
+    await expect(ownerPage.getByLabel('Name', { exact: true })).toHaveValue('My unsaved name');
+    await expect(ownerPage.getByLabel('Description')).toHaveValue('My unsaved description');
+    await ownerPage.getByLabel('Name', { exact: true }).fill('Gathering Place');
+    await ownerPage.getByLabel('Description').fill('Draft survives icon changes');
+    await ownerPage.getByLabel('Admission policy').selectOption('closed');
+    await ownerPage.getByLabel('Upload icon').setInputFiles({
+      name: 'community.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        'base64'
+      ),
+    });
+    await expect(ownerPage.getByAltText('Current community icon')).toBeVisible();
+    await expect(ownerPage.getByLabel('Name', { exact: true })).toHaveValue('Gathering Place');
+    await expect(ownerPage.getByLabel('Description')).toHaveValue('Draft survives icon changes');
+    await expect(ownerPage.getByLabel('Admission policy')).toHaveValue('closed');
+    await ownerPage.getByLabel('Replace icon').setInputFiles({
+      name: 'community.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('not an image'),
+    });
+    await expect(ownerPage.getByRole('alert')).toContainText('Use a PNG, JPEG, GIF, or WebP icon.');
+    await expect(ownerPage.getByAltText('Current community icon')).toBeVisible();
+    await expect(ownerPage.getByLabel('Name', { exact: true })).toHaveValue('Gathering Place');
+    await ownerPage.getByRole('button', { name: 'Remove icon' }).click();
+    await expect(ownerPage.getByAltText('Current community icon')).toHaveCount(0);
+    await expect(ownerPage.getByLabel('Name', { exact: true })).toHaveValue('Gathering Place');
+    await expect(ownerPage.getByLabel('Description')).toHaveValue('Draft survives icon changes');
+    await expect(ownerPage.getByLabel('Admission policy')).toHaveValue('closed');
+    const exportPanel = ownerPage.getByRole('heading', { name: 'Export' }).locator('..');
+    await exportPanel.getByLabel('Password').fill('password1234');
+    const settingsExport = ownerPage.waitForEvent('download');
+    await exportPanel.getByRole('button', { name: 'Export community' }).click();
+    expect((await settingsExport).suggestedFilename()).toBe('community-export.zip');
+    await ownerPage.setViewportSize({ width: 390, height: 844 });
+    await ownerPage.getByRole('button', { name: 'Schedule deletion' }).click();
+    const deletionDialog = ownerPage.getByRole('dialog', {
+      name: 'Permanently delete Gathering Place?',
+    });
+    await expect(deletionDialog).toBeVisible();
+    await expect(deletionDialog.getByLabel('Type Gathering Place')).toBeFocused();
+    await deletionDialog.getByRole('button', { name: 'Cancel' }).focus();
+    await ownerPage.keyboard.press('Tab');
+    await expect(deletionDialog.getByLabel('Type Gathering Place')).toBeFocused();
+    await ownerPage.keyboard.press('Escape');
+    await expect(deletionDialog).toBeHidden();
+    await ownerPage.getByRole('button', { name: 'Archive community' }).click();
+    const archiveDialog = ownerPage.getByRole('dialog', { name: 'Archive Gathering Place?' });
+    await expect(archiveDialog.getByText('History stays available.')).toBeVisible();
+    await archiveDialog.getByRole('button', { name: 'Cancel' }).click();
+    await ownerPage.getByRole('button', { name: 'Open people' }).click();
+    await expect(ownerPage.getByRole('heading', { name: 'Community members' })).toBeVisible();
+    await ownerPage.setViewportSize({ width: 1440, height: 900 });
     const closeSettings = ownerPage.getByRole('button', { name: 'Close' });
     await closeSettings.focus();
     await expect(closeSettings).toBeFocused();
@@ -491,6 +653,25 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await ownerPage.getByRole('button', { name: 'Transfer ownership' }).click();
     await expect(ownerPage.getByRole('button', { name: 'Leave community' })).toBeVisible();
     await expect(ownerPage.getByText('Community export')).toHaveCount(0);
+    await expect(
+      ownerPage
+        .getByRole('navigation', { name: 'Settings sections' })
+        .getByRole('button', { name: 'Settings', exact: true })
+    ).toHaveCount(0);
+    await pool.query("UPDATE members SET role='admin' WHERE id=$1", [ids.ownerMemberId]);
+    await ownerPage.reload();
+    await ownerPage.getByRole('button', { name: 'Manage' }).click();
+    await ownerPage
+      .getByRole('navigation', { name: 'Settings sections' })
+      .getByRole('button', { name: 'Settings', exact: true })
+      .click();
+    await expect(ownerPage.getByRole('heading', { name: 'Presentation' })).toBeVisible();
+    await expect(ownerPage.getByLabel('Description')).toBeVisible();
+    await expect(ownerPage.getByLabel('Name', { exact: true })).toHaveCount(0);
+    await expect(ownerPage.getByRole('heading', { name: 'Access' })).toHaveCount(0);
+    await expect(ownerPage.getByRole('heading', { name: 'Export' })).toHaveCount(0);
+    await expect(ownerPage.getByRole('heading', { name: 'Danger zone' })).toHaveCount(0);
+    await ownerPage.getByRole('button', { name: 'Account' }).click();
     ownerPage.once('dialog', (dialog) => void dialog.accept());
     await ownerPage.getByRole('button', { name: 'Leave community' }).click();
     await expect(ownerPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
@@ -615,6 +796,150 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     const suspendedChoice = observerPage.getByRole('button', { name: /Second Place/ });
     await expect(suspendedChoice).toBeDisabled();
     await expect(suspendedChoice).toContainText('Suspended');
+
+    await observerPage.getByRole('button', { name: /Gathering Place/ }).click();
+    await observerPage.getByRole('button', { name: 'Manage' }).click();
+    await observerPage
+      .getByRole('navigation', { name: 'Settings sections' })
+      .getByRole('button', { name: 'Settings', exact: true })
+      .click();
+    await observerPage.getByRole('button', { name: 'Archive community' }).click();
+    const finalArchive = observerPage.getByRole('dialog', { name: 'Archive Gathering Place?' });
+    await finalArchive.getByLabel('Type Gathering Place').fill('Gathering Place');
+    await finalArchive.getByLabel('Password').fill('password1234');
+    await pool.query('UPDATE communities SET lifecycle_version=lifecycle_version+1 WHERE id=$1', [
+      ids.communityId,
+    ]);
+    await observerPage.route(
+      '**/owner/lifecycle',
+      (route) =>
+        route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'STATE_CONFLICT',
+            message: 'Review the latest state and try again.',
+          }),
+        }),
+      { times: 1 }
+    );
+    await finalArchive.getByRole('button', { name: 'Archive community' }).click();
+    await expect(finalArchive.getByRole('alert')).toContainText(
+      'Review the latest state and try again.'
+    );
+    await expect(finalArchive.getByLabel('Password')).toHaveValue('password1234');
+    await finalArchive.getByRole('button', { name: 'Archive community' }).click();
+    await expect(observerPage.getByRole('heading', { name: 'Archived' })).toBeVisible();
+    await expect(observerPage.getByText('Fresh read-only connections are available')).toBeVisible();
+    await observerPage.reload();
+    await expect(observerPage).toHaveURL(`${baseUrl}/c/${ids.communityId}`);
+    await observerPage.getByRole('button', { name: 'Manage' }).click();
+    await observerPage
+      .getByRole('navigation', { name: 'Settings sections' })
+      .getByRole('button', { name: 'Settings', exact: true })
+      .click();
+    await observerPage.getByRole('button', { name: 'Schedule deletion' }).click();
+    const finalDeletion = observerPage.getByRole('dialog', {
+      name: 'Permanently delete Gathering Place?',
+    });
+    await finalDeletion.getByLabel('Type Gathering Place').fill('Gathering Place');
+    await finalDeletion
+      .getByLabel(`Type the final eight characters: ${ids.communityId.slice(-8)}`)
+      .fill(ids.communityId.slice(-8));
+    await finalDeletion.getByLabel('Password').fill('password1234');
+    await pool.query('UPDATE communities SET lifecycle_version=lifecycle_version+1 WHERE id=$1', [
+      ids.communityId,
+    ]);
+    await observerPage.route(
+      '**/owner/deletion',
+      (route) =>
+        route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'STATE_CONFLICT',
+            message: 'Review the latest state and try again.',
+          }),
+        }),
+      { times: 1 }
+    );
+    await finalDeletion.getByRole('button', { name: 'Schedule permanent deletion' }).click();
+    await expect(finalDeletion.getByRole('alert')).toContainText(
+      'Review the latest state and try again.'
+    );
+    await expect(finalDeletion.getByLabel('Password')).toHaveValue('password1234');
+    await finalDeletion.getByRole('button', { name: 'Schedule permanent deletion' }).click();
+    await expect(observerPage.getByRole('heading', { name: 'Deletion scheduled' })).toBeVisible();
+    await expect(observerPage.getByRole('timer')).toContainText('remaining');
+    await observerPage.reload();
+    await expect(observerPage).toHaveURL(`${baseUrl}/c/${ids.communityId}/deletion`);
+    await expect(observerPage.getByRole('heading', { name: 'Deletion scheduled' })).toBeVisible();
+    await observerPage.getByRole('button', { name: 'Cancel deletion' }).click();
+    const cancelDeletion = observerPage.getByRole('dialog', {
+      name: 'Cancel community deletion?',
+    });
+    await cancelDeletion.getByLabel('Password').fill('password1234');
+    await pool.query('UPDATE communities SET lifecycle_version=lifecycle_version+1 WHERE id=$1', [
+      ids.communityId,
+    ]);
+    await observerPage.route(
+      '**/owner/deletion/cancel',
+      (route) =>
+        route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'STATE_CONFLICT',
+            message: 'Review the latest state and try again.',
+          }),
+        }),
+      { times: 1 }
+    );
+    await cancelDeletion.getByRole('button', { name: 'Cancel deletion' }).click();
+    await expect(cancelDeletion.getByRole('alert')).toContainText(
+      'Review the latest state and try again.'
+    );
+    await expect(cancelDeletion.getByLabel('Password')).toHaveValue('password1234');
+    await cancelDeletion.getByRole('button', { name: 'Cancel deletion' }).click();
+    await expect(observerPage.getByRole('heading', { name: 'Archived' })).toBeVisible();
+
+    await memberPage.goto(`${baseUrl}/c/${ids.communityId}/deletion`);
+    await expect(memberPage.getByRole('alert')).toContainText(
+      'only available to this community’s owner'
+    );
+    await expect(memberPage.getByRole('button', { name: 'Schedule deletion' })).toHaveCount(0);
+    await expect(memberPage.getByRole('button', { name: 'Cancel deletion' })).toHaveCount(0);
+
+    await pool.query(
+      "INSERT INTO communities(name,lifecycle) VALUES('Unclaimed Place','pending_owner')"
+    );
+    await ownerPage.goto(`${baseUrl}/host`);
+    const unclaimed = ownerPage.getByLabel('Unclaimed Place community');
+    await unclaimed.getByRole('button', { name: 'Abandon unclaimed community' }).click();
+    const abandonDialog = ownerPage.getByRole('dialog', { name: 'Abandon Unclaimed Place?' });
+    await expect(abandonDialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await expect(abandonDialog).toContainText('permanently removes the empty community');
+    await abandonDialog.getByRole('button', { name: 'Cancel' }).click();
+
+    let committedCreateWasDropped = false;
+    await ownerPage.route('**/api/v1/host/communities', async (route) => {
+      if (route.request().method() !== 'POST' || committedCreateWasDropped) {
+        await route.continue();
+        return;
+      }
+      committedCreateWasDropped = true;
+      await route.fetch();
+      await route.abort('connectionfailed');
+    });
+    await ownerPage.getByLabel('Name', { exact: true }).fill('Retry Community');
+    await ownerPage.getByLabel('Description').fill('Created once after a lost response');
+    await ownerPage.getByRole('button', { name: 'Create community' }).click();
+    await expect(ownerPage.getByRole('alert')).toBeVisible();
+    await ownerPage.getByRole('button', { name: 'Create community' }).click();
+    await expect(ownerPage.getByLabel('Retry Community community')).toHaveCount(1);
+    await expect(ownerPage.getByRole('status')).toContainText('Use Reissue owner claim');
+    await expect(ownerPage.getByLabel('Claim token')).toHaveCount(0);
+    await ownerPage.unroute('**/api/v1/host/communities');
   } finally {
     await owner.close();
     await member.close();
