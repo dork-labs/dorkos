@@ -2,6 +2,7 @@
 covers:
   - "fix(claude-code): report each turn's own usage, not the SDK's running total"
   - 'fix(claude-code): trust DorkOS tools by server provenance, not by name'
+  - 'fix(claude-code): keep the usage ledger honest through crash results'
 ---
 
 ### Added
