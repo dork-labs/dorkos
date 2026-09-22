@@ -150,6 +150,49 @@ describe('createCanUseTool — approval gate', () => {
     expect(session.eventQueue).toHaveLength(0);
   });
 
+  // SDK 0.3.274 provenance. The name `mcp__dorkos__mesh_list` is not proof the
+  // call is DorkOS's: a project `.mcp.json` server named `dorkos` exposes the
+  // same names, and only `source: 'sdk'` (which only the host can register)
+  // says the in-process server is serving it.
+  describe('MCP server provenance on the safe list', () => {
+    const MESH_LIST = 'mcp__dorkos__mesh_list';
+
+    it("auto-allows a DorkOS tool served by the host's own in-process server", async () => {
+      const session = makeSession('default');
+      const result = await createCanUseTool(session, noopLog)(
+        MESH_LIST,
+        {},
+        { ...makeContext('prov-sdk'), mcpServer: { name: 'dorkos', source: 'sdk' } }
+      );
+      expect(result).toEqual({ behavior: 'allow', updatedInput: {} });
+      expect(session.eventQueue).toHaveLength(0);
+    });
+
+    it('keeps auto-allowing when the CLI sends no provenance (older CLIs, built-ins)', async () => {
+      const session = makeSession('default');
+      const result = await createCanUseTool(session, noopLog)(MESH_LIST, {}, makeContext('prov-0'));
+      expect(result).toEqual({ behavior: 'allow', updatedInput: {} });
+    });
+
+    it.each(['project', 'user', 'plugin', 'a-source-nobody-has-seen'])(
+      'asks for the same name served by a configured server (%s)',
+      async (source) => {
+        const session = makeSession('default');
+        const pending = createCanUseTool(session, noopLog)(
+          MESH_LIST,
+          {},
+          { ...makeContext(`prov-${source}`), mcpServer: { name: 'dorkos', source } }
+        );
+        const settled = await Promise.race([
+          pending.then(() => 'settled' as const),
+          Promise.resolve('pending' as const),
+        ]);
+        expect(settled).toBe('pending');
+        expect(session.eventQueue[0].type).toBe('approval_required');
+      }
+    );
+  });
+
   // DOR-782. A stale comment in message-sender claimed `canUseTool` never sees
   // subagent tool use, and a turn killed by the stall watchdog was misdiagnosed
   // on the strength of it. At SDK 0.3.177 a foreground `Task` subagent's tool
