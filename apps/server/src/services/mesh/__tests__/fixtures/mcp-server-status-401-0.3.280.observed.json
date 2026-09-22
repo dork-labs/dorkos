@@ -1,0 +1,58 @@
+{
+  "$comment": "Verbatim output of the two-server 401 harness against @anthropic-ai/claude-agent-sdk 0.3.280 (2026-09-22), plus a third always-401 server declared in the cwd .mcp.json (source project) to observe the 0.3.274 first-turn wait change. firstInit is the system/init mcp_servers rows; status is query.mcpServerStatus() after the turn. The machine's own servers were removed; the rows kept are unedited.",
+  "firstInit": [
+    {
+      "name": "probe-project",
+      "status": "failed",
+      "source": "project"
+    },
+    {
+      "name": "probe-bearer",
+      "status": "failed",
+      "source": "dynamic"
+    },
+    {
+      "name": "probe-tokenless",
+      "status": "failed",
+      "source": "dynamic"
+    }
+  ],
+  "status": [
+    {
+      "name": "probe-project",
+      "status": "failed",
+      "error": "Dynamic Client Registration rejected (HTTP 401): {\"error\":\"unauthorized\"}",
+      "config": {
+        "type": "http",
+        "url": "http://127.0.0.1:52440/mcp"
+      },
+      "scope": "project",
+      "source": "project"
+    },
+    {
+      "name": "probe-bearer",
+      "status": "failed",
+      "error": "Server rejected the configured Authorization header (HTTP 401). Check that the token is valid for this MCP endpoint — OAuth fallback is disabled when headers.Authorization is set.",
+      "config": {
+        "type": "http",
+        "url": "http://127.0.0.1:52440/mcp",
+        "headers": {
+          "Authorization": "Bearer dead-token-xyz"
+        }
+      },
+      "scope": "dynamic",
+      "source": "dynamic"
+    },
+    {
+      "name": "probe-tokenless",
+      "status": "failed",
+      "error": "Dynamic Client Registration rejected (HTTP 401): {\"error\":\"unauthorized\"}",
+      "config": {
+        "type": "http",
+        "url": "http://127.0.0.1:52440/mcp"
+      },
+      "scope": "dynamic",
+      "source": "dynamic"
+    }
+  ]
+}

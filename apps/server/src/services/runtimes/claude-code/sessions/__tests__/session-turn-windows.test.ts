@@ -652,6 +652,40 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     expect(h.opened[1]!.ids).toEqual([]);
   });
 
+  // SDK 0.3.274: queued background-task completions share ONE model call, and
+  // every completion but the last gets a `result` of its own with nothing
+  // behind it. The shape below is the one observed live on 0.3.280 (2026-09-22,
+  // two background Bash tasks finishing together after the person's turn had
+  // closed): `num_turns: 0`, `result: ''`, and no `user_message_uuid(s)` at all,
+  // followed by the real answer, also unnamed. Each lands on row 2 with no
+  // window open, so each is a runtime turn; the empty one carries no content
+  // and — being runtime-origin — raises no "did not respond" error.
+  it('gives an empty queued-completion result (SDK 0.3.274) a quiet runtime turn of its own', async () => {
+    const h = harness();
+
+    await h.dispatch([{ content: 'start two background tasks', messageId: 'm1' }]);
+    h.live().emit(resultMessage('m1'));
+    await settled(h, 1);
+
+    h.live().emit(resultMessage(undefined, { num_turns: 0, result: '', result_index: 1 }));
+    await settled(h, 2);
+    h.live().emit(textDeltaMessage('Both background tasks completed'));
+    h.live().emit(resultMessage(undefined, { num_turns: 1, result_index: 2 }));
+    await settled(h, 3);
+
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(3);
+    expect(windows[1]!.origin).toBe('runtime');
+    expect(windows[1]!.events.some((e) => e.type === 'text_delta')).toBe(false);
+    expect(windows[1]!.events.some((e) => e.type === 'error')).toBe(false);
+    expect(windows[2]!.origin).toBe('runtime');
+    expect(windows[2]!.events).toContainEqual(
+      expect.objectContaining({ type: 'text_delta', text: 'Both background tasks completed' })
+    );
+    expect(h.windows.openWindow).toBeUndefined();
+    expect(h.pump.state).toBe('warm');
+  });
+
   // Row 2 of the module's table. Treating a result that names nothing as
   // uncorrelated would strand the open window forever — which, before SDK
   // 0.3.268 declared `user_message_uuid` on the error result, meant stranding it
