@@ -52,14 +52,14 @@ A successful archive command is not a recovery test. Rehearse this process befor
 
 ### Run the local proof
 
-For a repeatable local rehearsal, build this checkout and run the guarded proof below. It starts two disposable PostgreSQL containers and two private local Community processes. It never contacts a hosted service. The command makes one populated private channel, a reply, a file, and a removed member; it archives the database and files, restores them into fresh storage, then checks a fresh sign-in, stable history IDs, the reply, exact file bytes, and the removed member's denial.
+For a repeatable local rehearsal, build this checkout and run the guarded proof below. It starts two disposable PostgreSQL containers and two private local Community processes. Its only network use is Docker downloading the `postgres:17-alpine` image from Docker Hub when your machine does not have it yet. The Community processes always store files in private temporary folders: the command ignores any `COMMUNITY_STORAGE_DRIVER`, S3 or other Community settings in your shell, so it never reads or writes a real bucket. The command makes one populated private channel, a reply, a file, and a removed member; it archives the database and files, restores them into fresh storage, then checks a fresh sign-in, stable history IDs, the reply, exact file bytes, and the removed member's denial.
 
 ```bash
 pnpm --filter @dorkos/community build
 DORKOS_COMMUNITY_BACKUP_REHEARSAL=1 pnpm --filter @dorkos/community test:backup-restore
 ```
 
-The command removes its containers, databases, blob directories, and generated secrets. It prints the temporary path of a small non-secret proof manifest that records source revision and the verified stable IDs. Treat a failure as a failed rehearsal: the command removes private fixtures but leaves no production resources to recover.
+The command removes its containers, databases, blob directories, and generated secrets, including when you stop it with Ctrl-C. It removes only the containers it started. It prints the temporary path of a small non-secret proof manifest that records source revision and the verified stable IDs. Treat a failure as a failed rehearsal: the command removes private fixtures but leaves no production resources to recover.
 
 ## Upgrade and roll back
 

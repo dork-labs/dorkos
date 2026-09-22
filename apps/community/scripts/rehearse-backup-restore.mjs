@@ -7,7 +7,7 @@
 import { randomBytes } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { access, cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -26,9 +26,17 @@ const secrets = {
   COMMUNITY_INVITE_SECRET: randomBytes(32).toString('hex'),
   COMMUNITY_BOOTSTRAP_SECRET: randomBytes(32).toString('hex'),
 };
+/**
+ * The only inherited variables a child Community server may see. Everything else, above all any
+ * exported `COMMUNITY_*` storage or S3 setting and the AWS credential chain, is dropped so the
+ * rehearsal can only ever read and write its own private blob directories.
+ */
+const INHERITED_ENV = ['PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'TZ'];
 let sourceProcess;
 let restoreProcess;
 let runDirectory;
+/** Containers this run started, by name; cleanup never touches any other container. */
+const ownedContainers = new Set();
 
 function fail(message) {
   throw new Error(`Community backup rehearsal: ${message}`);
@@ -63,6 +71,7 @@ async function freePort() {
 }
 
 async function startDatabase(name) {
+  ownedContainers.add(name);
   await execute('docker', [
     'run',
     '--rm',
@@ -98,9 +107,15 @@ function startCommunity(databaseUrl, blobDirectory, port) {
     cwd: community,
     stdio: ['ignore', 'ignore', 'pipe'],
     env: {
-      ...process.env,
+      ...Object.fromEntries(
+        INHERITED_ENV.filter((name) => process.env[name] !== undefined).map((name) => [
+          name,
+          process.env[name],
+        ])
+      ),
       ...secrets,
       COMMUNITY_DATABASE_URL: databaseUrl,
+      COMMUNITY_STORAGE_DRIVER: 'filesystem',
       COMMUNITY_STORAGE_PATH: blobDirectory,
       COMMUNITY_PUBLIC_URL: `http://127.0.0.1:${port}`,
       COMMUNITY_PORT: String(port),
@@ -128,7 +143,7 @@ async function waitForHealth(baseUrl) {
 }
 
 async function stopOwned(child) {
-  if (!child || child.exitCode !== null) return;
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
   child.kill('SIGTERM');
   await new Promise((resolvePromise) => child.once('exit', resolvePromise));
 }
@@ -245,6 +260,7 @@ async function seed(baseUrl) {
   const invitePreflight = await json(baseUrl, '/api/v1/invites/preflight', 'POST', {
     token: invite.value.token,
   });
+  if (!invitePreflight.response.ok) fail('revoked-member invite preflight failed');
   const revokedGrant = cookies(invitePreflight.response);
   const revokedSignup = await json(
     baseUrl,
@@ -274,6 +290,7 @@ async function seed(baseUrl) {
   return {
     channelId,
     rootId,
+    replyId: reply.value.entry.id,
     attachmentId: uploaded.attachment.id,
     attachmentBytes: bytes.toString('base64'),
   };
@@ -295,6 +312,46 @@ async function streamDump(container, destination) {
       code === 0 ? resolvePromise() : reject(new Error(`pg_dump failed: ${error.slice(-500)}`))
     );
   });
+}
+
+/**
+ * Prove the file archive holds the seeded attachment before anything is restored from it: an
+ * empty archive would otherwise let a restore that read blobs from somewhere else pass.
+ */
+async function assertArchiveHoldsAttachment(blobDirectory, archive, bytes) {
+  const names = (await readdir(blobDirectory, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && !entry.name.startsWith('.'))
+    .map((entry) => entry.name);
+  let attachmentFile;
+  for (const name of names) {
+    if (Buffer.compare(await readFile(join(blobDirectory, name)), bytes) === 0) {
+      attachmentFile = name;
+      break;
+    }
+  }
+  if (!attachmentFile) fail('the source blob directory does not hold the seeded attachment');
+  const archived = (await execute('tar', ['-tzf', archive]))
+    .split('\n')
+    .map((line) => line.replace(/^\.\//u, ''))
+    .filter((line) => line && !line.endsWith('/'));
+  if (archived.length === 0) fail('the blob archive is empty');
+  if (!archived.includes(attachmentFile)) fail('the blob archive is missing the seeded attachment');
+}
+
+async function stopOwnedContainers() {
+  await Promise.allSettled(
+    [...ownedContainers].map((name) => execute('docker', ['rm', '-f', name]))
+  );
+}
+
+async function interrupted(signal) {
+  process.stderr.write(
+    `Community backup rehearsal: ${signal} received, removing owned resources\n`
+  );
+  await Promise.allSettled([stopOwned(sourceProcess), stopOwned(restoreProcess)]);
+  await stopOwnedContainers();
+  if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
+  process.exit(130);
 }
 
 async function main() {
@@ -319,6 +376,11 @@ async function main() {
   const archive = join(backup, 'blobs.tar.gz');
   await streamDump(sourceContainer, dump);
   await execute('tar', ['-C', sourceBlobs, '-czf', archive, '.']);
+  await assertArchiveHoldsAttachment(
+    sourceBlobs,
+    archive,
+    Buffer.from(seeded.attachmentBytes, 'base64')
+  );
   const sourceRevision = (await execute('git', ['rev-parse', 'HEAD'])).trim();
   await writeFile(join(backup, 'source-revision.txt'), `${sourceRevision}\n`, { mode: 0o600 });
   const restoredDb = await startDatabase(restoreContainer);
@@ -340,6 +402,7 @@ async function main() {
     );
     let error = '';
     input.stderr.on('data', (chunk) => (error += chunk));
+    input.once('error', reject);
     createReadStream(dump).pipe(input.stdin);
     input.once('close', (code) =>
       code === 0 ? resolvePromise() : reject(new Error(`pg_restore failed: ${error.slice(-500)}`))
@@ -372,7 +435,12 @@ async function main() {
     undefined,
     ownerCookie
   );
-  if (!thread.response.ok || thread.value.entries.length !== 2)
+  const threadIds = thread.response.ok ? thread.value.entries.map((entry) => entry.id) : [];
+  if (
+    threadIds.length !== 2 ||
+    !threadIds.includes(seeded.rootId) ||
+    !threadIds.includes(seeded.replyId)
+  )
     fail('restored thread is not intact');
   const download = await globalThis.fetch(
     `${restoredUrl}/api/v1/attachments/${seeded.attachmentId}`,
@@ -406,6 +474,7 @@ async function main() {
     restoreContainer: basename(restoreContainer),
     channelId: seeded.channelId,
     rootEntryId: seeded.rootId,
+    replyEntryId: seeded.replyId,
     attachmentId: seeded.attachmentId,
     verified: [
       'fresh-sign-in',
@@ -423,6 +492,9 @@ async function main() {
   );
 }
 
+process.once('SIGINT', () => void interrupted('SIGINT'));
+process.once('SIGTERM', () => void interrupted('SIGTERM'));
+
 main()
   .catch((error) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
@@ -430,10 +502,7 @@ main()
   })
   .finally(async () => {
     await Promise.allSettled([stopOwned(sourceProcess), stopOwned(restoreProcess)]);
-    await Promise.allSettled([
-      execute('docker', ['rm', '-f', sourceContainer]),
-      execute('docker', ['rm', '-f', restoreContainer]),
-    ]);
+    await stopOwnedContainers();
     // Preserve only the non-secret proof manifest. All database dumps, blob copies and generated secrets stay in the private fixture directory.
     if (runDirectory) {
       const proof = join(runDirectory, 'proof.json');
