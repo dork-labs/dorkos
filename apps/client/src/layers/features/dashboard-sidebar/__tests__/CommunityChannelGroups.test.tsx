@@ -36,6 +36,7 @@ const connection = (ref: string) =>
     status: 'connected',
     expiresAt: null,
     access,
+    attention: { state: 'unavailable', unreadCount: null, mentionCount: null, verifiedAt: null },
   });
 const room = (community: string) =>
   RemoteCommunityRoomSchema.parse({

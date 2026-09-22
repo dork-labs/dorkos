@@ -28,6 +28,12 @@ const a: CommunityConnectionDescriptor = {
       verifiedAt: '2026-09-21T12:00:00.000Z',
     },
   },
+  attention: {
+    state: 'verified',
+    unreadCount: 0,
+    mentionCount: 0,
+    verifiedAt: '2026-09-21T12:00:00.000Z',
+  },
 };
 const b = {
   ...a,
@@ -58,6 +64,7 @@ describe('community pairing controls', () => {
       status: 'pending' as const,
       connectedHumanMemberId: null,
       access: null,
+      attention: null,
     };
     const list = vi.fn().mockResolvedValueOnce([]).mockResolvedValue([pending]);
     const transport = createMockTransport({
