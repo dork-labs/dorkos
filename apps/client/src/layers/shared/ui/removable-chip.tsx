@@ -38,7 +38,6 @@ export interface RemovableChipProps {
 function RemovableChip({ children, onRemove, removeLabel, className }: RemovableChipProps) {
   return (
     <Badge
-      data-slot="removable-chip"
       shape="pill"
       variant="outline"
       className={cn('border-muted bg-muted/50 text-muted-foreground h-6 gap-1', className)}

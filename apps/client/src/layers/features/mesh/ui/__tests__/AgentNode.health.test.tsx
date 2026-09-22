@@ -156,7 +156,7 @@ describe('AgentNode health signal', () => {
       // identity hover ring needs, and a diagnostic that changed colour under
       // the pointer read as a hover state.
       const { container } = render(<AgentNode {...makeMockProps({ healthStatus: 'active' })} />);
-      const disc = container.querySelector('[data-slot="agent-avatar"]')!;
+      const disc = container.querySelector('[data-slot="identity-avatar"]')!;
 
       expect(disc.className).not.toContain('ring-2');
       expect(disc.querySelector('[data-slot="identity-status-dot"]')).not.toBeInTheDocument();

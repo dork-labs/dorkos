@@ -74,7 +74,7 @@ describe('RoomAvatar', () => {
       <RoomAvatar room={{ id: 'dm-1', kind: 'dm', title: 'Ana' }} participants={[YOU, ANA]} />
     );
 
-    const disc = container.querySelector('[data-slot="room-avatar"]') as HTMLElement;
+    const disc = container.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
     expect(disc.textContent).toBe('🐙');
     expect(disc.style.backgroundColor).toBe(fill('#7c3aed'));
   });
@@ -128,7 +128,7 @@ describe('RoomAvatar', () => {
         visuals={[{ color: '#7c3aed', emoji: '🐙' }]}
       />
     );
-    const singleDisc = single.querySelector('[data-slot="room-avatar"]') as HTMLElement;
+    const singleDisc = single.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
     square(singleDisc);
     expect(singleDisc.style.backgroundColor).toBe(fill('#7c3aed'));
 
@@ -151,7 +151,7 @@ describe('RoomAvatar', () => {
         participants={[YOU, { id: 'author-bo', kind: 'agent', displayName: 'Bo', handle: null }]}
       />
     );
-    const letterDisc = letter.querySelector('[data-slot="room-avatar"]') as HTMLElement;
+    const letterDisc = letter.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
     expect(letterDisc.textContent).toBe('B');
     square(letterDisc);
   });
@@ -163,7 +163,7 @@ describe('RoomAvatar', () => {
       <RoomAvatar room={{ id: 'dm-1', kind: 'dm', title: 'Ana' }} participants={[YOU]} />
     );
 
-    const disc = container.querySelector('[data-slot="room-avatar"]') as HTMLElement;
+    const disc = container.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
     expect(disc.textContent).toBe('A');
     expect(disc.style.backgroundColor).toBe(tint(hashToHslColor('dm-1')));
   });
@@ -171,7 +171,7 @@ describe('RoomAvatar', () => {
   it('falls back the same way when the caller knows no roster at all', () => {
     const { container } = render(<RoomAvatar room={{ id: 'dm-1', kind: 'dm', title: 'Bo' }} />);
 
-    const disc = container.querySelector('[data-slot="room-avatar"]') as HTMLElement;
+    const disc = container.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
     expect(disc.textContent).toBe('B');
     expect(disc.style.backgroundColor).toBe(tint(hashToHslColor('dm-1')));
   });
@@ -189,7 +189,7 @@ describe('RoomAvatar', () => {
     );
 
     expect(channel.querySelector('[data-slot="room-avatar"]')).toHaveClass('size-3.5');
-    expect(dm.querySelector('[data-slot="room-avatar"]')).toHaveClass('size-[18px]');
+    expect(dm.querySelector('[data-slot="identity-avatar"]')).toHaveClass('size-[18px]');
   });
 
   it('scales both marks together when a size is named', () => {
@@ -201,7 +201,7 @@ describe('RoomAvatar', () => {
     );
 
     expect(channel.querySelector('[data-slot="room-avatar"]')).toHaveClass('size-5');
-    expect(dm.querySelector('[data-slot="room-avatar"]')).toHaveClass('size-7');
+    expect(dm.querySelector('[data-slot="identity-avatar"]')).toHaveClass('size-7');
   });
 
   it('keeps the # for a channel even when participants are handed to it', () => {

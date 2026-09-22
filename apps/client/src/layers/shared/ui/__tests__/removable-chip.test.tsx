@@ -32,7 +32,7 @@ describe('RemovableChip', () => {
         Status: running
       </RemovableChip>
     );
-    const chip = container.querySelector('[data-slot="removable-chip"]');
+    const chip = container.querySelector('[data-slot="badge"]');
     expect(chip).toHaveClass('rounded-full');
   });
 });

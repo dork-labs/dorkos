@@ -30,12 +30,7 @@ export function ActorBadge({ actorType, actorLabel, agentColor, className }: Act
 
   if (actorType === 'user') {
     return (
-      <Badge
-        data-slot="actor-badge"
-        shape="pill"
-        variant="outline"
-        className={cn('text-muted-foreground', className)}
-      >
+      <Badge shape="pill" variant="outline" className={cn('text-muted-foreground', className)}>
         {actorLabel}
       </Badge>
     );

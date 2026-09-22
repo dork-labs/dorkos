@@ -145,7 +145,10 @@ function renderBar(overrides: Partial<Transport>) {
 
 /** What the room's mark drew — the glyph, not the element. */
 function markGlyph(): string {
-  return document.querySelector('[data-slot="room-avatar"]')?.textContent ?? '';
+  return (
+    document.querySelector('[data-slot="room-avatar"], [data-slot="identity-avatar"]')
+      ?.textContent ?? ''
+  );
 }
 
 describe('the bar’s room mark, joined for real', () => {
