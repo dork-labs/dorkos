@@ -13,6 +13,7 @@ import {
   CommunityConnectionListResponseSchema,
   CommunityConnectionStatusResponseSchema,
   CommunityConnectionPollResponseSchema,
+  CommunityConnectionDescriptorSchema,
   type CommunityConnectionDescriptor,
 } from '@dorkos/shared/community-connections';
 import { readOwnerAccount } from '../services/core/auth/index.js';
@@ -94,7 +95,14 @@ function failure(res: Response, error: unknown): void {
   }
 }
 
-/** Add current attention only after the local owner and remote read grant are verified. */
+/**
+ * Add current attention only after the local owner and remote read grant are verified.
+ *
+ * Remote counts are untrusted. Any failure — transport, or counts that break a
+ * descriptor rule — leaves this one connection on the store's `unavailable`
+ * fallback, so a single broken Community can never fail the whole list and
+ * hide the Remove control the owner needs to drop it.
+ */
 async function withAttention(
   connection: CommunityConnectionDescriptor,
   owner: string
@@ -104,10 +112,11 @@ async function withAttention(
   if (!connection.access.effective.read) return connection;
   try {
     const attention = await getRemoteCommunityAdapter(connection.ref, owner).attention();
-    return {
+    const enriched = CommunityConnectionDescriptorSchema.safeParse({
       ...connection,
       attention: { ...attention, state: 'verified', verifiedAt: new Date().toISOString() },
-    };
+    });
+    return enriched.success ? enriched.data : connection;
   } catch {
     return connection;
   }
