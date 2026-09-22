@@ -148,6 +148,22 @@ describe('ai-metadata — the opt-in bridge (Plane 1 Tier 2)', () => {
     }
   });
 
+  it("reports the turn's own cost, not the session's running cost, when the runtime splits them", async () => {
+    const seen: AiTurnMetadata[] = [];
+    setAiMetadataBridge((m) => seen.push(m));
+
+    async function* splitTurn(): AsyncGenerator<StreamEvent> {
+      yield {
+        type: 'session_status',
+        data: { sessionId: 's', costUsd: 0.008059, turnCostUsd: 0.003597, turnInputTokens: 3432 },
+      } as unknown as StreamEvent;
+      yield { type: 'done', data: { sessionId: 's' } } as unknown as StreamEvent;
+    }
+    await drain(observeRuntimeTurn('claude-code', 's', splitTurn()));
+
+    expect(seen[0].costUsd).toBe(0.003597);
+  });
+
   it('omits unknown fields when the runtime reports no model/tokens/cost', async () => {
     const seen: AiTurnMetadata[] = [];
     setAiMetadataBridge((m) => seen.push(m));

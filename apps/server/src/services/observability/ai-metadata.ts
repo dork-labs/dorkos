@@ -81,6 +81,8 @@ interface HarvestState {
   outputTokens?: number;
   thinkingTokens?: number;
   costUsd?: number;
+  /** The turn's own cost, when the runtime separates it from the running cost. */
+  turnCostUsd?: number;
 }
 
 /**
@@ -100,12 +102,14 @@ function harvestEvent(event: StreamEvent, state: HarvestState): void {
     turnInputTokens?: unknown;
     turnOutputTokens?: unknown;
     turnThinkingTokens?: unknown;
+    turnCostUsd?: unknown;
   };
   if (typeof data.model === 'string') state.model = data.model;
   if (typeof data.costUsd === 'number') state.costUsd = data.costUsd;
   if (typeof data.turnInputTokens === 'number') state.inputTokens = data.turnInputTokens;
   if (typeof data.turnOutputTokens === 'number') state.outputTokens = data.turnOutputTokens;
   if (typeof data.turnThinkingTokens === 'number') state.thinkingTokens = data.turnThinkingTokens;
+  if (typeof data.turnCostUsd === 'number') state.turnCostUsd = data.turnCostUsd;
 }
 
 /**
@@ -148,6 +152,14 @@ export async function* observeRuntimeTurn(
     throw err;
   } finally {
     const latencyMs = Date.now() - startedAt;
+    // The turn's own cost when the runtime reports it apart from the session's
+    // running cost (`costUsd`), which is what a runtime without that split puts
+    // on its status. A running figure reported as one turn's cost is the
+    // over-count the split exists to prevent. The fallback keeps that residue in
+    // one case: a Claude Code turn whose baseline was unknown (the first result
+    // of a resumed session after a restart, `sdk/turn-usage.ts`) carries no
+    // split, so its cost here is the session's running figure.
+    const costUsd = state.turnCostUsd ?? state.costUsd;
     if (span) {
       span.setAttr(ATTR.EVENT_COUNT, count);
       span.setAttr(ATTR.GEN_AI_SYSTEM, runtimeType);
@@ -165,7 +177,7 @@ export async function* observeRuntimeTurn(
       // a field read.
       if (state.thinkingTokens !== undefined)
         span.setAttr(ATTR.GEN_AI_THINKING_TOKENS, state.thinkingTokens);
-      if (state.costUsd !== undefined) span.setAttr(ATTR.GEN_AI_COST_USD, state.costUsd);
+      if (costUsd !== undefined) span.setAttr(ATTR.GEN_AI_COST_USD, costUsd);
       span.end();
     }
     if (bridge) {
@@ -174,7 +186,7 @@ export async function* observeRuntimeTurn(
         ...(state.model !== undefined ? { model: state.model } : {}),
         ...(state.inputTokens !== undefined ? { inputTokens: state.inputTokens } : {}),
         ...(state.outputTokens !== undefined ? { outputTokens: state.outputTokens } : {}),
-        ...(state.costUsd !== undefined ? { costUsd: state.costUsd } : {}),
+        ...(costUsd !== undefined ? { costUsd } : {}),
         latencyMs,
       });
     }
