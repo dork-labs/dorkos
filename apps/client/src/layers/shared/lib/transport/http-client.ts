@@ -41,7 +41,13 @@ async function request(
       : timeoutSignal
     : requestInit.signal;
   const headers = new Headers(requestInit.headers);
-  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  // JSON is the default only for a JSON string or no body. FormData, Blob,
+  // URLSearchParams and binary bodies need `fetch` to write their own type:
+  // a multipart body under a JSON header has no boundary, so the server
+  // finds no file (the avatar upload answered AVATAR_MISSING).
+  const body = requestInit.body;
+  const jsonBody = body === undefined || body === null || typeof body === 'string';
+  if (jsonBody && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const communityOwner = getCommunityAuthority().ownerKey;
   if (communityOwner) headers.set('X-DorkOS-Community-Owner', communityOwner);
 

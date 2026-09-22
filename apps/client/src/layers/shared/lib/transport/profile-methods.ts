@@ -28,14 +28,11 @@ export function createProfileMethods(baseUrl: string) {
     uploadProfileAvatar(file: Blob, filename: string): Promise<ProfileAvatarResponse> {
       const body = new FormData();
       body.append(AVATAR_FIELD, file, filename);
-      // `headers: {}` is load-bearing, not tidiness: `fetchJSON` defaults to
-      // `Content-Type: application/json`, and a multipart body sent under that
-      // header has no boundary for the parser to find, so the route sees no
-      // file and answers `AVATAR_MISSING`. Clearing it lets `fetch` write the
-      // `multipart/form-data; boundary=…` header itself.
+      // No Content-Type here: `fetchJSON` leaves a FormData body untyped so
+      // `fetch` writes `multipart/form-data; boundary=…` itself. Under a JSON
+      // header the parser finds no boundary and answers `AVATAR_MISSING`.
       return fetchJSON<ProfileAvatarResponse>(baseUrl, '/profile/avatar', {
         method: 'POST',
-        headers: {},
         body,
       });
     },

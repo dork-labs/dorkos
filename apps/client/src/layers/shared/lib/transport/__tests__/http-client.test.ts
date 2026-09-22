@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fetchJSON, fetchNoContent, buildQueryString } from '../http-client';
+import { createProfileMethods } from '../profile-methods';
 import { getAuthRequired, setAuthRequired } from '../../auth-signal';
 import {
   confirmCommunityAuthority,
@@ -30,6 +31,33 @@ describe('fetchJSON', () => {
     await fetchJSON(BASE_URL, '/api/test');
 
     expect(fetchSpy.mock.calls[0][1]?.credentials).toBe('include');
+  });
+
+  it('defaults a JSON string body to application/json', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+    await fetchJSON(BASE_URL, '/api/test', { method: 'POST', body: '{}' });
+
+    expect(new Headers(fetchSpy.mock.calls[0][1]?.headers).get('Content-Type')).toBe(
+      'application/json'
+    );
+  });
+
+  it('leaves the avatar upload untyped so fetch writes its multipart boundary', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ avatarUrl: '/a.png' }), { status: 200 }));
+
+    await createProfileMethods(BASE_URL).uploadProfileAvatar(
+      new Blob(['png'], { type: 'image/png' }),
+      'me.png'
+    );
+
+    const init = fetchSpy.mock.calls[0][1];
+    expect(init?.body).toBeInstanceOf(FormData);
+    expect(new Headers(init?.headers).has('Content-Type')).toBe(false);
   });
 
   it('sends the confirmed owner as a compare-only precondition', async () => {
