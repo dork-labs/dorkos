@@ -216,15 +216,24 @@ describe('DOR-329 — a menu that opens something does not blur it on the way ou
    * Every menu in this feature that renders `SidebarMenuNodes` into its own
    * `DropdownMenuContent` rather than through `SidebarMenuSurface`.
    *
-   * `SidebarMenuSurface` arms the close-focus guard for its callers. These two
-   * do not go through it, so each has to arm it itself — and the cost of
+   * `SidebarMenuSurface` arms the close-focus guard for its callers. This one
+   * does not go through it, so it has to arm the guard itself — and the cost of
    * forgetting is invisible in a unit test and silent in review: Radix's
    * focus restore lands a commit after the item runs and blurs whatever it
    * opened, so the inline group-name field appeared and vanished with nothing
    * logged. The browser suite is what caught it; this is the cheap guard that
    * would have caught it first.
    */
-  const OWN_MENU_CONTENT = ['ui/NewMenu.tsx', 'ui/SidebarHeaderBlock.tsx'];
+  const OWN_MENU_CONTENT = ['ui/NewMenu.tsx'];
+
+  /**
+   * The header's menu lives in the context switcher, which renders a node list
+   * it is handed rather than one it builds. The guard is armed where the nodes
+   * are built — the header — so the check follows the hand-off across both
+   * files instead of expecting one file to hold all of it.
+   */
+  const HEADER = 'ui/SidebarHeaderBlock.tsx';
+  const SWITCHER = 'ui/context/CommunityContextSwitcher.tsx';
 
   /**
    * The rule is about the mechanism, not the file.
@@ -261,10 +270,28 @@ describe('DOR-329 — a menu that opens something does not blur it on the way ou
     expect(text).toMatch(/useGuardedMenuNodes/);
   });
 
+  it('hands the context switcher only the guarded list and its close handler', () => {
+    const header = SOURCE.get(HEADER) ?? '';
+    const switcher = SOURCE.get(SWITCHER) ?? '';
+    // The header builds the nodes, guards them, and passes both halves down.
+    expect(header).toMatch(/useGuardedMenuNodes/);
+    const handoffs = count(header, /<CommunityContextSwitcher\b/);
+    expect(handoffs).toBeGreaterThan(0);
+    expect(count(header, /footerNodes=\{guarded\.nodes\}/)).toBe(handoffs);
+    expect(count(header, /onCloseAutoFocus=\{guarded\.onCloseAutoFocus\}/)).toBe(handoffs);
+    // The switcher renders exactly what it was handed, into content that
+    // restores focus through the handler it was handed.
+    const contents = count(switcher, /<ResponsiveDropdownMenuContent\b/);
+    expect(contents).toBeGreaterThan(0);
+    expect(count(switcher, /onCloseAutoFocus=\{onCloseAutoFocus\}/)).toBe(contents);
+    expect(count(switcher, /<SidebarMenuNodes\b/)).toBe(contents);
+    expect(count(switcher, /nodes=\{footerNodes\}/)).toBe(contents);
+  });
+
   it('finds no unguarded node list anywhere else in the feature', () => {
     // If a third menu renders a node list into its own content, it lands here
     // and has to be added above — with the guard armed.
-    expect(filesMatching(RENDERS_NODE_LISTS)).toEqual([...OWN_MENU_CONTENT].sort());
+    expect(filesMatching(RENDERS_NODE_LISTS)).toEqual([...OWN_MENU_CONTENT, SWITCHER].sort());
   });
 });
 

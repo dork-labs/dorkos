@@ -313,6 +313,8 @@ export const CONFIG_WRITE_POLICY = {
   'ui.communityNavigation.owners[].destinations[].roomId': 'agent-writable',
   'ui.communityNavigation.owners[].destinations[].threadId': 'agent-writable',
   'ui.communityNavigation.owners[].destinations[].scrollAnchorEntryId': 'agent-writable',
+  'ui.communityNavigation.owners[].installationDestination.path': 'agent-writable',
+  'ui.communityNavigation.owners[].installationDestination.search': 'agent-writable',
   // Which promo cards are hidden. A preference about what the sidebar's bottom
   // slot offers, exactly like `ui.sidebar.gettingStarted.retired` above; nothing
   // it gates is a security control.

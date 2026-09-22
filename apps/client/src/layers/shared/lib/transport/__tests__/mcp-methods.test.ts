@@ -67,9 +67,9 @@ describe('addAgentMcpServer', () => {
     stubFetch([{ name: 'fs', enabled: true }], 200);
     await setup().addAgentMcpServer(input, { approvalToken: 't-1' });
     const [, init] = lastCall();
-    const headers = init.headers as Record<string, string>;
-    expect(headers['X-DorkOS-Approval']).toBe('t-1');
-    expect(headers['Content-Type']).toBe('application/json');
+    const headers = new Headers(init.headers);
+    expect(headers.get('X-DorkOS-Approval')).toBe('t-1');
+    expect(headers.get('Content-Type')).toBe('application/json');
   });
 
   it('sets no approval header on the first (unconfirmed) call', async () => {
@@ -77,9 +77,9 @@ describe('addAgentMcpServer', () => {
     await setup().addAgentMcpServer(input);
     const [, init] = lastCall();
     // fetchJSON supplies its own default Content-Type; no approval header rides along.
-    const headers = init.headers as Record<string, string>;
-    expect(headers['Content-Type']).toBe('application/json');
-    expect(headers['X-DorkOS-Approval']).toBeUndefined();
+    const headers = new Headers(init.headers);
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(headers.has('X-DorkOS-Approval')).toBe(false);
   });
 });
 
@@ -106,7 +106,7 @@ describe('importAgentMcpServer', () => {
     stubFetch([{ name: 'filesystem', enabled: true }], 200);
     await setup().importAgentMcpServer(input, { approvalToken: 't-1' });
     const [, init] = lastCall();
-    expect((init.headers as Record<string, string>)['X-DorkOS-Approval']).toBe('t-1');
+    expect(new Headers(init.headers).get('X-DorkOS-Approval')).toBe('t-1');
   });
 });
 

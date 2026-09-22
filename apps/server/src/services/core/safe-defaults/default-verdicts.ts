@@ -108,6 +108,17 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.sidebar.muted[].kind',
   'ui.sidebar.muted[].path',
   'ui.sidebar.muted[].roomId',
+  // Where the app last was, per community owner. Restoring a room reauthorizes
+  // it server-side, so a default here opens nothing the owner could not.
+  'ui.communityNavigation.version',
+  'ui.communityNavigation.owners[].ownerKey',
+  'ui.communityNavigation.owners[].installationDestination.path',
+  'ui.communityNavigation.owners[].installationDestination.search',
+  'ui.communityNavigation.owners[].order',
+  'ui.communityNavigation.owners[].destinations[].ref',
+  'ui.communityNavigation.owners[].destinations[].roomId',
+  'ui.communityNavigation.owners[].destinations[].threadId',
+  'ui.communityNavigation.owners[].destinations[].scrollAnchorEntryId',
   'ui.sidebar.gettingStarted.retired',
   'ui.sidebar.digest.lastShownDate',
   'ui.promos.dismissedIds',

@@ -295,6 +295,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'ui.communityNavigation.owners[].destinations[].roomId',
       'ui.communityNavigation.owners[].destinations[].scrollAnchorEntryId',
       'ui.communityNavigation.owners[].destinations[].threadId',
+      'ui.communityNavigation.owners[].installationDestination.path',
+      'ui.communityNavigation.owners[].installationDestination.search',
       'ui.communityNavigation.owners[].order',
       'ui.communityNavigation.owners[].ownerKey',
       'ui.communityNavigation.version',
