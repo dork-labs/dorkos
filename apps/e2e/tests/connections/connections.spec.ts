@@ -128,6 +128,12 @@ test('a revoked community grant gives a direct remove-and-reconnect path', async
                     effective: { read: false, post: false, enrollAgent: false, stream: false },
                     lastKnown: null,
                   },
+                  attention: {
+                    state: 'unavailable',
+                    unreadCount: null,
+                    mentionCount: null,
+                    verifiedAt: null,
+                  },
                 },
               ],
         }),
