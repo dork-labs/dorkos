@@ -289,7 +289,7 @@ export function registerEntryRoutes(
       Object.fromEntries(new URL(c.req.url).searchParams)
     );
     const page = await transaction(pool, async (client) => {
-      const channel = await lockChannel(client, c.req.param('id'), principal);
+      const channel = await lockChannel(client, c.req.param('id'), principal, 'read');
       requireJoined(channel);
       await assertPrincipalCurrentInTransaction(
         client,

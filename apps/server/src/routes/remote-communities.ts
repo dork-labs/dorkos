@@ -33,7 +33,7 @@ import {
 import { resolveCommunityOwner } from './community-connections.js';
 import {
   getRemoteCommunityAdapter,
-  getRemoteConnectionStore,
+  getRemotePairingService,
   getRemoteCommunityDeliverySnapshot,
   getRemoteCommunityEnrollmentStore,
   getRemoteCommunityLifecycle,
@@ -104,6 +104,10 @@ async function* requestBytes(req: import('express').Request): AsyncIterable<Uint
 }
 
 function fail(res: import('express').Response, error: unknown): void {
+  if (error instanceof RemoteConnectionCapabilityError) {
+    res.status(403).json({ code: 'COMMUNITY_ACCESS_DENIED', error: error.message });
+    return;
+  }
   if (error instanceof RemoteConnectionAuthorizationError) {
     res.status(409).json({
       code: 'COMMUNITY_RECONNECT_REQUIRED',
@@ -118,19 +122,47 @@ function fail(res: import('express').Response, error: unknown): void {
   res.status(502).json({ error: 'Community unavailable.' });
 }
 
-function remoteRoom(room: CommunityRoom, remoteCommunityId: string) {
-  const access = remoteRoomAccessOf(room);
-  if (!access) throw new Error('Native remote room lost visibility metadata');
+class RemoteConnectionCapabilityError extends Error {
+  constructor() {
+    super('This community connection does not allow that action.');
+    this.name = 'RemoteConnectionCapabilityError';
+  }
+}
+
+async function verifiedConnection(
+  ref: import('@dorkos/shared/community-adapter').CommunityRef,
+  owner: string,
+  capability: 'read' | 'post' | 'enrollAgent' | 'stream'
+) {
+  const connection = await getRemotePairingService().status(ref, owner);
+  if (connection.status === 'reconnect-required') throw new RemoteConnectionAuthorizationError();
+  if (!connection.access || connection.access.state !== 'verified')
+    throw new Error('Community unavailable');
+  if (!connection.access.effective[capability]) throw new RemoteConnectionCapabilityError();
+  return connection;
+}
+
+function remoteRoom(
+  room: CommunityRoom,
+  remoteCommunityId: string,
+  connectionAccess: NonNullable<
+    import('@dorkos/shared/community-connections').CommunityConnectionDescriptor['access']
+  >
+) {
+  const roomAccess = remoteRoomAccessOf(room);
+  if (!roomAccess) throw new Error('Native remote room lost visibility metadata');
   return {
     ...room,
     remoteCommunityId,
-    visibility: access.visibility,
-    readable: access.visibility === 'public' || access.joined,
-    writable: access.joined && !room.archived,
-    joined: access.joined,
+    visibility: roomAccess.visibility,
+    readable:
+      connectionAccess.effective.read && (roomAccess.visibility === 'public' || roomAccess.joined),
+    writable: connectionAccess.effective.post && roomAccess.joined && !room.archived,
+    joined: roomAccess.joined,
     stale: false,
     cacheCursor: null,
     lastRemoteSeq: 0,
+    access: connectionAccess,
   };
 }
 
@@ -165,14 +197,13 @@ export function createRemoteCommunitiesRouter(): Router {
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!owner || !ref.success) return;
     try {
-      const store = getRemoteConnectionStore();
-      const connection = await store.get(ref.data, owner);
+      const connection = await verifiedConnection(ref.data, owner, 'read');
       const adapter = getRemoteCommunityAdapter(ref.data, owner);
       const connected = await adapter.connect();
       if (connected.status === 'unauthorized') throw new RemoteConnectionAuthorizationError();
       if (connected.status !== 'connected') throw new Error('Community unavailable');
       const rooms = (await adapter.listRooms()).map((room) =>
-        remoteRoom(room, connection.remoteCommunityId)
+        remoteRoom(room, connection.remoteCommunityId, connection.access!)
       );
       res.json(
         RemoteCommunityRoomsResponseSchema.parse({ community: ref.data, rooms, stale: false })
@@ -186,13 +217,12 @@ export function createRemoteCommunitiesRouter(): Router {
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!owner || !ref.success) return;
     try {
-      const store = getRemoteConnectionStore();
-      const connection = await store.get(ref.data, owner);
+      const connection = await verifiedConnection(ref.data, owner, 'read');
       const room = await getRemoteCommunityAdapter(ref.data, owner).getRoom(req.params.roomId);
       if (!room) return res.status(404).json({ error: 'Room not found.' });
       res.json(
         RemoteCommunityRoomResponseSchema.parse({
-          room: remoteRoom(room, connection.remoteCommunityId),
+          room: remoteRoom(room, connection.remoteCommunityId, connection.access!),
         })
       );
     } catch (error) {
@@ -207,6 +237,7 @@ export function createRemoteCommunitiesRouter(): Router {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       return res.status(400).json({ error: 'Use a history limit from 1 through 100.' });
     try {
+      await verifiedConnection(ref.data, owner, 'read');
       const page = await getRemoteCommunityAdapter(ref.data, owner).listEntriesWithThreadRoot(
         req.params.roomId,
         {
@@ -236,6 +267,7 @@ export function createRemoteCommunitiesRouter(): Router {
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!owner || !ref.success) return;
     try {
+      await verifiedConnection(ref.data, owner, 'read');
       const adapter = getRemoteCommunityAdapter(ref.data, owner);
       const [cursor, room] = await Promise.all([
         adapter.getReadCursor(req.params.roomId),
@@ -256,6 +288,7 @@ export function createRemoteCommunitiesRouter(): Router {
     if (!owner || !ref.success) return;
     if (!cursor) return res.status(400).json({ error: 'A cursor is required.' });
     try {
+      await verifiedConnection(ref.data, owner, 'read');
       const adapter = getRemoteCommunityAdapter(ref.data, owner);
       await adapter.setReadCursor(req.params.roomId, cursor as never);
       const room = await adapter.getRoom(req.params.roomId);
@@ -272,11 +305,11 @@ export function createRemoteCommunitiesRouter(): Router {
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!owner || !ref.success) return;
     try {
-      const connection = await getRemoteConnectionStore().get(ref.data, owner);
+      const connection = await verifiedConnection(ref.data, owner, 'post');
       const room = await getRemoteCommunityAdapter(ref.data, owner).joinRoom(req.params.roomId);
       res.json(
         RemoteCommunityRoomResponseSchema.parse({
-          room: remoteRoom(room, connection.remoteCommunityId),
+          room: remoteRoom(room, connection.remoteCommunityId, connection.access!),
         })
       );
     } catch (error) {
@@ -288,6 +321,7 @@ export function createRemoteCommunitiesRouter(): Router {
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!owner || !ref.success) return;
     try {
+      await verifiedConnection(ref.data, owner, 'post');
       await getRemoteCommunityAdapter(ref.data, owner).leaveRoom(req.params.roomId);
       res.status(204).end();
     } catch (error) {
@@ -299,6 +333,7 @@ export function createRemoteCommunitiesRouter(): Router {
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!owner || !ref.success) return;
     try {
+      await verifiedConnection(ref.data, owner, 'read');
       const members = await getRemoteCommunityAdapter(ref.data, owner).listMembers(
         req.params.roomId
       );
@@ -324,6 +359,7 @@ export function createRemoteCommunitiesRouter(): Router {
       return;
     }
     try {
+      await verifiedConnection(ref.data, owner, 'post');
       const entry = await getRemoteCommunityAdapter(ref.data, owner).postEntry(
         req.params.roomId,
         input.data
@@ -345,6 +381,7 @@ export function createRemoteCommunitiesRouter(): Router {
       return;
     }
     try {
+      await verifiedConnection(ref.data, owner, 'post');
       const attachment = await getRemoteCommunityAdapter(ref.data, owner).uploadAttachment(
         req.params.roomId,
         { ...input, bytes: requestBytes(req) }
@@ -359,6 +396,7 @@ export function createRemoteCommunitiesRouter(): Router {
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!owner || !ref.success) return;
     try {
+      await verifiedConnection(ref.data, owner, 'read');
       const download = await getRemoteCommunityAdapter(ref.data, owner).downloadAttachment(
         req.params.roomId,
         req.params.attachmentId
@@ -377,6 +415,13 @@ export function createRemoteCommunitiesRouter(): Router {
     const owner = resolveCommunityOwner(req, res);
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!owner || !ref.success) return;
+    let connection;
+    try {
+      connection = await verifiedConnection(ref.data, owner, 'stream');
+    } catch (error) {
+      fail(res, error);
+      return;
+    }
     const abort = new AbortController();
     req.once('close', () => abort.abort());
     res.status(200);
@@ -401,11 +446,10 @@ export function createRemoteCommunitiesRouter(): Router {
         abort.signal
       )) {
         if (event.type === 'snapshot') {
-          const connection = await getRemoteConnectionStore().get(ref.data, owner);
           const entries = event.entries.map((entry) => remoteEntry(entry, owner));
           writeEvent(res, {
             type: 'snapshot',
-            room: remoteRoom(event.room, connection.remoteCommunityId),
+            room: remoteRoom(event.room, connection.remoteCommunityId, connection.access!),
             entries,
             cursor: event.cursor,
             lastRemoteSeq: entries.at(-1)?.remoteSeq ?? 0,
@@ -451,6 +495,7 @@ export function createRemoteCommunitiesRouter(): Router {
       return;
     }
     try {
+      await verifiedConnection(ref.data, owner, 'post');
       const result = await retryRemoteCommunityDelivery({
         communityRef: ref.data,
         remoteRoomId: roomId.data,
@@ -504,6 +549,7 @@ export function createRemoteCommunitiesRouter(): Router {
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!owner || !ref.success) return;
     try {
+      await verifiedConnection(ref.data, owner, 'enrollAgent');
       const [agents, bindings] = await Promise.all([
         getRemoteCommunityAdapter(ref.data, owner).listEnrolledAgents(),
         Promise.resolve(getRemoteCommunityEnrollmentStore().activeForOwner(ref.data, owner)),
@@ -560,6 +606,7 @@ export function createRemoteCommunitiesRouter(): Router {
       return;
     }
     try {
+      await verifiedConnection(ref.data, owner, 'enrollAgent');
       const localAgent = resolveRemoteCommunityLocalAgent(req.params.localAgentId);
       if (!localAgent) return res.status(404).json({ error: 'Local agent not found.' });
       const adapter = getRemoteCommunityAdapter(ref.data, owner);
@@ -606,9 +653,17 @@ export function createRemoteCommunitiesRouter(): Router {
         req.params.localAgentId,
         owner
       );
-      let remoteRevoked = true;
+      let remoteRevoked = false;
       try {
-        await getRemoteCommunityAdapter(ref.data, owner).revokeAgent(binding.remoteMemberId);
+        const connection = await getRemotePairingService().status(ref.data, owner);
+        if (
+          connection.status === 'connected' &&
+          connection.access?.state === 'verified' &&
+          connection.access.effective.enrollAgent
+        ) {
+          await getRemoteCommunityAdapter(ref.data, owner).revokeAgent(binding.remoteMemberId);
+          remoteRevoked = true;
+        }
       } catch {
         remoteRevoked = false;
       }
@@ -623,6 +678,7 @@ export function createRemoteCommunitiesRouter(): Router {
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!owner || !ref.success) return;
     try {
+      await verifiedConnection(ref.data, owner, 'enrollAgent');
       const binding = getRemoteCommunityEnrollmentStore().findRemoteMember(
         ref.data,
         req.params.localAgentId,
@@ -644,6 +700,7 @@ export function createRemoteCommunitiesRouter(): Router {
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!owner || !ref.success) return;
     try {
+      await verifiedConnection(ref.data, owner, 'enrollAgent');
       const binding = getRemoteCommunityEnrollmentStore().findRemoteMember(
         ref.data,
         req.params.localAgentId,

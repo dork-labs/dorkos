@@ -29,6 +29,7 @@ let pool: Pool;
 let baseUrl: string;
 let ownerCookie: string;
 let ownerId: string;
+let communityId: string;
 let channelId: string;
 let admittedCookie: string;
 let admittedId: string;
@@ -168,6 +169,7 @@ beforeAll(async () => {
       )
     ).status
   ).toBe(200);
+  communityId = (await pool.query('SELECT id FROM communities')).rows[0].id;
   ownerId = (await pool.query("SELECT id FROM members WHERE role='owner'")).rows[0].id;
   const channel = await call('/api/v1/channels', 'POST', { name: 'General' }, ownerCookie);
   expect(channel.status).toBe(201);
@@ -350,6 +352,18 @@ describe('signed admission over real HTTP and Postgres', () => {
       grant.id,
     ]);
     expect(persisted.rows[0].token_hash).not.toContain(token);
+    const access = await bearerCall('/api/v1/me/connection-access', 'GET', token);
+    expect(access.status).toBe(200);
+    expect(await access.json()).toMatchObject({
+      access: {
+        state: 'verified',
+        effective: { read: true, post: true, enrollAgent: true, stream: true },
+        lastKnown: {
+          lifecycle: 'active',
+          capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+        },
+      },
+    });
     const listed = await call('/api/v1/me/grants', 'GET', undefined, ownerCookie);
     expect(listed.status).toBe(200);
     expect(JSON.stringify(await listed.json())).not.toContain(token);
@@ -362,6 +376,7 @@ describe('signed admission over real HTTP and Postgres', () => {
       expect(
         (await call(`/api/v1/me/grants/${grant.id}`, 'DELETE', undefined, ownerCookie)).status
       ).toBe(204);
+      expect((await bearerCall('/api/v1/me/connection-access', 'GET', token)).status).toBe(401);
       // Another admitted person commits after revocation. The old connection
       // must close rather than deliver even this otherwise-visible entry.
       expect(
@@ -926,6 +941,10 @@ describe('signed admission over real HTTP and Postgres', () => {
         [createHash('sha256').update(agentToken).digest('hex')]
       )
     ).rows[0].agent_id;
+    const initialLifecycleVersion = Number(
+      (await pool.query('SELECT lifecycle_version FROM communities WHERE id=$1', [communityId]))
+        .rows[0].lifecycle_version
+    );
     const blocker = await pool.connect();
     try {
       await blocker.query('BEGIN');
@@ -936,6 +955,7 @@ describe('signed admission over real HTTP and Postgres', () => {
         {
           successorMemberId: admittedId,
           password: 'password1234',
+          lifecycleVersion: initialLifecycleVersion,
         },
         ownerCookie
       );
@@ -949,6 +969,10 @@ describe('signed admission over real HTTP and Postgres', () => {
       await blocker.query('COMMIT');
       expect((await transfer).status).toBe(200);
       expect((await ejection).status).toBe(403);
+      const returnLifecycleVersion = Number(
+        (await pool.query('SELECT lifecycle_version FROM communities WHERE id=$1', [communityId]))
+          .rows[0].lifecycle_version
+      );
       expect(
         (
           await call(
@@ -957,6 +981,7 @@ describe('signed admission over real HTTP and Postgres', () => {
             {
               successorMemberId: ownerId,
               password: 'password1234',
+              lifecycleVersion: returnLifecycleVersion,
             },
             admittedCookie
           )
@@ -1030,6 +1055,10 @@ describe('signed admission over real HTTP and Postgres', () => {
   });
 
   it('requires owner reauthentication for transfer and preserves one active owner', async () => {
+    const currentLifecycleVersion = Number(
+      (await pool.query('SELECT lifecycle_version FROM communities WHERE id=$1', [communityId]))
+        .rows[0].lifecycle_version
+    );
     expect((await call('/api/v1/me/leave', 'POST', {}, ownerCookie)).status).toBe(403);
     const wrong = await call(
       '/api/v1/owner/transfer',
@@ -1037,6 +1066,7 @@ describe('signed admission over real HTTP and Postgres', () => {
       {
         successorMemberId: admittedId,
         password: 'wrong-password',
+        lifecycleVersion: currentLifecycleVersion,
       },
       ownerCookie
     );
@@ -1049,6 +1079,7 @@ describe('signed admission over real HTTP and Postgres', () => {
           {
             successorMemberId: admittedId,
             password: 'password1234',
+            lifecycleVersion: currentLifecycleVersion,
           },
           admittedCookie
         )
@@ -1062,12 +1093,13 @@ describe('signed admission over real HTTP and Postgres', () => {
           {
             successorMemberId: admittedId,
             password: 'password1234',
+            lifecycleVersion: currentLifecycleVersion,
           },
           ownerCookie
         )
       )
     );
-    expect(transfers.map((response) => response.status).sort()).toEqual([200, 403]);
+    expect(transfers.map((response) => response.status).sort()).toEqual([200, 409]);
     const owners = await pool.query("SELECT id FROM members WHERE role='owner' AND active");
     expect(owners.rows.map((row) => row.id)).toEqual([admittedId]);
     expect((await call('/api/v1/me/leave', 'POST', {}, ownerCookie)).status).toBe(204);
@@ -1173,12 +1205,13 @@ describe('signed admission over real HTTP and Postgres', () => {
     const created = await call(
       '/api/v1/host/communities',
       'POST',
-      { name: 'Second community' },
+      { idempotencyKey: 'admission-second-community', name: 'Second community' },
       ownerCookie
     );
     expect(created.status).toBe(201);
     const body = await created.json();
     const secondId = body.community.id as string;
+    let resumeLifecycleVersion: number;
     const claimToken = body.ownerClaimToken as string;
     expect(body.community.lifecycle).toBe('pending_owner');
 
@@ -1204,6 +1237,10 @@ describe('signed admission over real HTTP and Postgres', () => {
     const claimed = await call('/api/v1/owner-claims/claim', 'POST', {}, claimantCookie);
     expect(claimed.status).toBe(200);
     expect((await claimed.json()).community.id).toBe(secondId);
+    const secondLifecycleVersion = Number(
+      (await pool.query('SELECT lifecycle_version FROM communities WHERE id=$1', [secondId]))
+        .rows[0].lifecycle_version
+    );
     const firstId = (
       await pool.query<{ community_id: string }>('SELECT community_id FROM members WHERE id=$1', [
         admittedId,
@@ -1388,28 +1425,53 @@ describe('signed admission over real HTTP and Postgres', () => {
       const suspended = call(
         `/api/v1/host/communities/${secondId}/lifecycle`,
         'PATCH',
-        { lifecycle: 'suspended' },
+        { action: 'suspend', lifecycleVersion: secondLifecycleVersion },
         ownerCookie
       );
-      await waitForBlockedQuery('SELECT id,name,description,lifecycle,created_at FROM communities');
+      await waitForBlockedQuery('SELECT c.id,c.name,c.description,c.lifecycle');
       await blocker.query('COMMIT');
       expect((await blockedPost).status).toBe(201);
-      expect((await suspended).status).toBe(200);
+      const suspendedResponse = await suspended;
+      expect(suspendedResponse.status).toBe(200);
+      resumeLifecycleVersion = (await suspendedResponse.json()).lifecycleVersion;
     } finally {
       await blocker.query('ROLLBACK');
       blocker.release();
     }
-    expect(
-      (await call(`/api/v1/communities/${secondId}/channels`, 'GET', undefined, claimantCookie))
-        .status
-    ).toBe(409);
+    const suspendedChannels = await call(
+      `/api/v1/communities/${secondId}/channels`,
+      'GET',
+      undefined,
+      claimantCookie
+    );
+    expect(suspendedChannels.status).toBe(503);
+    expect(await suspendedChannels.json()).toEqual({
+      code: 'COMMUNITY_SUSPENDED',
+      message: 'This community is suspended.',
+    });
     expect(
       (await (await call('/api/v1/memberships', 'GET', undefined, claimantCookie)).json())
         .memberships
     ).toEqual([
       expect.objectContaining({ communityId: secondId, role: 'owner', lifecycle: 'suspended' }),
     ]);
-    expect((await nextSse(secondReader)).type).toBe('closed');
+    // Commit order does not promise delivery order: the stream rechecks live
+    // authority and can close before draining an already committed entry.
+    expect(
+      (
+        await pool.query('SELECT text FROM entries WHERE channel_id=$1 AND idempotency_key=$2', [
+          secondChannelId,
+          'before-suspension',
+        ])
+      ).rows
+    ).toEqual([{ text: 'before suspension' }]);
+    const finalEvent = await nextSse(secondReader);
+    if (finalEvent.type === 'entry') {
+      expect(finalEvent).toMatchObject({ type: 'entry', entry: { text: 'before suspension' } });
+      expect((await nextSse(secondReader)).type).toBe('closed');
+    } else {
+      expect(finalEvent.type).toBe('closed');
+    }
     expect(
       (
         await call(
@@ -1428,7 +1490,7 @@ describe('signed admission over real HTTP and Postgres', () => {
         await call(
           `/api/v1/host/communities/${secondId}/lifecycle`,
           'PATCH',
-          { lifecycle: 'active' },
+          { action: 'resume', lifecycleVersion: resumeLifecycleVersion },
           ownerCookie
         )
       ).status
@@ -1438,7 +1500,7 @@ describe('signed admission over real HTTP and Postgres', () => {
         await call(
           '/api/v1/host/communities/not-a-uuid/lifecycle',
           'PATCH',
-          { lifecycle: 'active' },
+          { action: 'resume', lifecycleVersion: resumeLifecycleVersion },
           ownerCookie
         )
       ).status
@@ -1447,7 +1509,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     const third = await call(
       '/api/v1/host/communities',
       'POST',
-      { name: 'Contended community' },
+      { idempotencyKey: 'admission-contended-community', name: 'Contended community' },
       ownerCookie
     );
     expect(third.status).toBe(201);

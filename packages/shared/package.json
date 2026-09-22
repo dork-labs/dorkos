@@ -153,6 +153,10 @@
       "types": "./src/community-wire.ts",
       "default": "./dist/community-wire.js"
     },
+    "./community-admin-wire": {
+      "types": "./src/community-admin-wire.ts",
+      "default": "./dist/community-admin-wire.js"
+    },
     "./community-private-wire": {
       "types": "./src/community-private-wire.ts",
       "default": "./dist/community-private-wire.js"

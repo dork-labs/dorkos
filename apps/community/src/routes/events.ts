@@ -123,7 +123,7 @@ export function registerEventRoutes(
       throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
     const body = await readJson(c, CommunityWireReadCursorRequestSchema);
     const { channel, current } = await transaction(pool, async (client) => {
-      const channel = await lockChannel(client, c.req.param('id'), member);
+      const channel = await lockChannel(client, c.req.param('id'), member, 'read');
       requireJoined(channel);
       await assertPrincipalCurrentInTransaction(client, member, 'read', openedSession?.session.id);
       const seq = decodeCursor(
@@ -166,6 +166,8 @@ export function registerEventRoutes(
 
   app.get('/channels/:id/events', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'read');
+    if (principal.credentialKind === 'grant' && principal.historyOnly)
+      throw new ApiError(403, 'FORBIDDEN', 'This read-only connection cannot open live updates.');
     const openedSession = principal.credentialHash
       ? null
       : await auth.api.getSession({ headers: c.req.raw.headers });
@@ -255,7 +257,7 @@ export function registerEventRoutes(
           : principal.credentialKind === 'grant'
             ? `EXISTS (SELECT 1 FROM connection_grants g WHERE g.member_id=m.id
                AND g.token_hash=$4 AND g.revoked_at IS NULL
-               AND g.scopes @> ARRAY['read']::text[])`
+               AND g.scopes @> ARRAY['read']::text[] AND NOT g.history_only)`
             : `EXISTS (SELECT 1 FROM session s WHERE s.id=$4 AND s."userId"=m.user_id
                AND s."userId"=$5 AND s.token=$6 AND s."expiresAt">now())`;
       const cookie = !principal.credentialHash;

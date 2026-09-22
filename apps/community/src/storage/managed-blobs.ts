@@ -11,15 +11,17 @@ export const MANAGED_BLOB_RESERVATION_TTL_MS = 60 * 60 * 1000;
 export interface ManagedBlobReservation {
   key: string;
   communityId: string;
-  purpose: 'attachment' | 'export';
+  purpose: 'attachment' | 'export' | 'icon';
   lifecycleVersion: number;
+  allowArchived?: boolean;
 }
 
 /** Reserve one opaque key against the community's current active lifecycle. */
 export async function reserveManagedBlob(
   client: PoolClient,
   communityId: string,
-  purpose: ManagedBlobReservation['purpose']
+  purpose: ManagedBlobReservation['purpose'],
+  options: { allowArchived?: boolean } = {}
 ): Promise<ManagedBlobReservation> {
   await client.query(
     "SELECT pg_advisory_xact_lock_shared(hashtext('dorkos:tenant-reconciliation'))"
@@ -29,7 +31,11 @@ export async function reserveManagedBlob(
     [communityId]
   );
   const community = result.rows[0];
-  if (!community || community.lifecycle !== 'active') {
+  const allowArchived = purpose === 'export' && options.allowArchived === true;
+  if (
+    !community ||
+    (community.lifecycle !== 'active' && !(allowArchived && community.lifecycle === 'archived'))
+  ) {
     throw new ApiError(409, 'STATE_CONFLICT', 'This community is not accepting new files.');
   }
   const reservation = {
@@ -37,6 +43,7 @@ export async function reserveManagedBlob(
     communityId,
     purpose,
     lifecycleVersion: community.lifecycle_version,
+    allowArchived,
   };
   await client.query(
     `INSERT INTO managed_blobs(blob_key,community_id,purpose,community_lifecycle_version,state)
@@ -60,7 +67,8 @@ export async function prepareManagedBlobCommit(
   const community = result.rows[0];
   if (
     !community ||
-    community.lifecycle !== 'active' ||
+    (community.lifecycle !== 'active' &&
+      !(reservation.allowArchived && community.lifecycle === 'archived')) ||
     community.lifecycle_version !== reservation.lifecycleVersion
   ) {
     throw new ApiError(
@@ -109,6 +117,25 @@ export async function completeManagedBlobCommit(
   if (updated.rowCount !== 1) throw new Error('Managed blob metadata did not commit');
 }
 
+/** Queue a formerly referenced committed blob after its replacement is durable. */
+export async function queueCommittedBlobDeletion(
+  client: PoolClient,
+  communityId: string,
+  key: string
+): Promise<void> {
+  const updated = await client.query(
+    `UPDATE managed_blobs SET state='pending_delete'
+     WHERE blob_key=$1 AND community_id=$2 AND state='committed'`,
+    [key, communityId]
+  );
+  if (updated.rowCount !== 1) throw new Error('Managed blob replacement ownership is missing');
+  await client.query(
+    `INSERT INTO pending_blob_deletions(blob_key,attempts,next_attempt_at)
+     VALUES($1,0,now()) ON CONFLICT(blob_key) DO NOTHING`,
+    [key]
+  );
+}
+
 /** Delete an uncommitted object or retain tenant-qualified retry work on failure. */
 export async function discardManagedBlob(
   pool: Pool,
@@ -129,28 +156,44 @@ export async function discardManagedBlob(
         reservation.communityId,
       ]
     );
-    if (result.rowCount !== 1) return false;
+    if (result.rowCount !== 1) return null;
     await client.query(
       `INSERT INTO pending_blob_deletions(blob_key,attempts,next_attempt_at)
        VALUES($1,0,now())
        ON CONFLICT(blob_key) DO NOTHING`,
       [reservation.key]
     );
-    return true;
+    return { writerUncertain: stored === undefined };
   });
   if (!transitioned) return;
   try {
     await blobStore.delete(reservation.key);
   } catch (error) {
     await pool.query(
-      `UPDATE pending_blob_deletions
-       SET attempts=attempts+1,last_error_at=now(),next_attempt_at=now()+interval '1 minute'
-       WHERE blob_key=$1`,
+      transitioned.writerUncertain
+        ? `UPDATE pending_blob_deletions
+           SET attempts=attempts+1,next_attempt_at=now()+interval '1 minute'
+           WHERE blob_key=$1`
+        : `UPDATE pending_blob_deletions
+           SET attempts=attempts+1,last_error_at=now(),next_attempt_at=now()+interval '1 minute'
+           WHERE blob_key=$1`,
       [reservation.key]
     );
     console.error(
       'Community managed blob cleanup deferred',
       error instanceof Error ? error.name : 'unknown'
+    );
+    return;
+  }
+  // A provider write may reject or abort before it stops publishing bytes. When the writer did not
+  // return a StoredBlob, absence after this delete proves only this instant. Retain the NULL
+  // settlement marker and tenant-owned tombstone so every later sweep can remove a delayed publish.
+  if (transitioned.writerUncertain) {
+    await pool.query(
+      `UPDATE pending_blob_deletions
+       SET attempts=attempts+1,next_attempt_at=now()+interval '1 hour'
+       WHERE blob_key=$1`,
+      [reservation.key]
     );
     return;
   }

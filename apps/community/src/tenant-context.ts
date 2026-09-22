@@ -6,7 +6,8 @@ import { ApiError } from './http.js';
 const CommunityIdSchema = z.uuid();
 
 /** Community lifecycle states that determine whether member traffic may run. */
-export type CommunityLifecycle = 'pending_owner' | 'active' | 'suspended';
+export type CommunityLifecycle =
+  'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
 
 /** Immutable tenant selection resolved from a canonical path or singleton alias. */
 export interface CommunityContext {
@@ -29,7 +30,11 @@ type Queryable = Pick<Pool | PoolClient, 'query'>;
 export async function resolveCommunityContext(
   c: Context,
   db: Queryable,
-  options: { allowPendingOwner?: boolean; allowSuspended?: boolean } = {}
+  options: {
+    allowPendingOwner?: boolean;
+    allowSuspended?: boolean;
+    allowDeletionPending?: boolean;
+  } = {}
 ): Promise<CommunityContext> {
   const requested = c.req.param('communityId');
   const result = requested
@@ -56,7 +61,10 @@ export async function resolveCommunityContext(
     throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is not ready yet.');
   }
   if (community.lifecycle === 'suspended' && !options.allowSuspended) {
-    throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is unavailable.');
+    throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This community is suspended.');
+  }
+  if (community.lifecycle === 'deletion_pending' && !options.allowDeletionPending) {
+    throw new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This community is being deleted.');
   }
   return {
     communityId: community.id,

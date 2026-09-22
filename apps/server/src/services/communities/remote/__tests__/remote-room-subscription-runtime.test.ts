@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { MeshCore } from '@dorkos/mesh';
 import type { CommunityEntry, CommunityRef, CommunityRoom } from '@dorkos/shared/community-adapter';
+import type { CommunityConnectionAccess } from '@dorkos/shared/community-wire';
 import { describe, expect, it, vi } from 'vitest';
 import {
   agentLookupFor,
@@ -28,6 +29,16 @@ import type { RemoteNativeRoomEvent } from '../remote-community-adapter.js';
 
 const REF = 'remote_owner_a' as CommunityRef;
 const ROOM_ID = 'room-a';
+
+const VERIFIED_AGENT_ACCESS = {
+  state: 'verified',
+  effective: { read: true, post: true, enrollAgent: true, stream: true },
+  lastKnown: {
+    lifecycle: 'active',
+    capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+    verifiedAt: '2026-09-21T12:00:00.000Z',
+  },
+} as const;
 
 function entry(seq: number, mentions: string[] = ['remote-ana']): CommunityEntry {
   return {
@@ -284,6 +295,7 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       subscriptions = new RemoteRoomSubscriptionRuntime({
         bridge,
         enrollments: deliveryRuntime.enrollments,
+        resolveConnectionAccess: async () => VERIFIED_AGENT_ACCESS,
         adapters: () => ({
           listRooms: async () => [room],
           subscribeNativeRoom: (_roomId, _cursor, signal) =>
@@ -374,6 +386,7 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     const runtime = new RemoteRoomSubscriptionRuntime({
       bridge,
       enrollments,
+      resolveConnectionAccess: async () => VERIFIED_AGENT_ACCESS,
       adapters: () => ({
         listRooms: async () => {
           releaseDirectory();
@@ -399,6 +412,112 @@ describe('RemoteRoomSubscriptionRuntime', () => {
 
     expect(subscribeNativeRoom).not.toHaveBeenCalled();
     expect(mirrors.localRoomIdForOwner(REF, ROOM_ID, harness.human)).toBeNull();
+  });
+
+  it('does not reopen enrolled-agent remote work after restart while owner access is unavailable', async () => {
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
+    });
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF,
+      localAgentId: agent.mintedForManifestId!,
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    const bridge = new RemoteRoomSubscriptionBridge(
+      new RemoteMirrorStore(harness.db, harness.store, harness.authors),
+      harness.service,
+      enrollments,
+      () => agent.id
+    );
+    const adapters = vi.fn();
+    const unavailableAccess = [
+      null,
+      {
+        state: 'unverified' as const,
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: VERIFIED_AGENT_ACCESS.lastKnown,
+      },
+    ];
+
+    for (const access of unavailableAccess) {
+      const resolveConnectionAccess = vi.fn(async () => access);
+      const runtime = new RemoteRoomSubscriptionRuntime({
+        bridge,
+        enrollments,
+        resolveConnectionAccess,
+        adapters,
+        resolveLocalAgentAuthor: () => agent.id,
+        retryMs: 1,
+      });
+      runtime.start();
+      await vi.waitFor(() => expect(resolveConnectionAccess).toHaveBeenCalledOnce());
+      runtime.stop();
+    }
+
+    expect(adapters).not.toHaveBeenCalled();
+  });
+
+  it('aborts an enrolled-agent stream when refreshed owner access becomes unverified', async () => {
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
+    });
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF,
+      localAgentId: agent.mintedForManifestId!,
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    const bridge = new RemoteRoomSubscriptionBridge(
+      new RemoteMirrorStore(harness.db, harness.store, harness.authors),
+      harness.service,
+      enrollments,
+      () => agent.id
+    );
+    const room = testRoom();
+    let access: CommunityConnectionAccess = VERIFIED_AGENT_ACCESS;
+    let streamAborted = false;
+    const subscribeNativeRoom = vi.fn(
+      (_roomId: string, _cursor?: CommunityEntry['cursor'], signal?: AbortSignal) =>
+        (async function* () {
+          yield snapshot(room, [], 0);
+          yield { type: 'replay_complete' as const, capturedSeq: 0 };
+          await new Promise<void>((resolve) =>
+            signal?.addEventListener(
+              'abort',
+              () => {
+                streamAborted = true;
+                resolve();
+              },
+              { once: true }
+            )
+          );
+        })()
+    );
+    const runtime = new RemoteRoomSubscriptionRuntime({
+      bridge,
+      enrollments,
+      resolveConnectionAccess: async () => access,
+      adapters: () => ({ listRooms: async () => [room], subscribeNativeRoom }),
+      resolveLocalAgentAuthor: () => agent.id,
+      isRoomJoined: () => true,
+      retryMs: 60_000,
+    });
+
+    runtime.start();
+    await vi.waitFor(() => expect(subscribeNativeRoom).toHaveBeenCalledOnce());
+    access = {
+      state: 'unverified',
+      effective: { read: false, post: false, enrollAgent: false, stream: false },
+      lastKnown: VERIFIED_AGENT_ACCESS.lastKnown,
+    };
+    runtime.refreshSubscriptions();
+    await settleUntil(() => streamAborted, 'the unverified connection stream aborts');
+    runtime.stop();
   });
 
   it('preserves persisted grants and pending work until Mesh becomes authoritative after restart', async () => {
@@ -459,6 +578,7 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     const runtime = new RemoteRoomSubscriptionRuntime({
       bridge,
       enrollments,
+      resolveConnectionAccess: async () => VERIFIED_AGENT_ACCESS,
       adapters: () => ({
         listRooms: async () => [],
         subscribeNativeRoom: () => (async function* () {})(),
@@ -539,6 +659,7 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     const runtime = new RemoteRoomSubscriptionRuntime({
       bridge,
       enrollments,
+      resolveConnectionAccess: async () => VERIFIED_AGENT_ACCESS,
       adapters: () => adapter,
       resolveLocalAgentAuthor: (localAgentId) => (localAgentId === agent.id ? agent.id : null),
       isRoomJoined: () => true,
@@ -623,6 +744,7 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     const runtime = new RemoteRoomSubscriptionRuntime({
       bridge,
       enrollments,
+      resolveConnectionAccess: async () => VERIFIED_AGENT_ACCESS,
       adapters: () => adapter,
       resolveLocalAgentAuthor: (localAgentId) =>
         localAgentId === ana.id || localAgentId === bob.id ? localAgentId : null,
@@ -686,6 +808,7 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     const runtime = new RemoteRoomSubscriptionRuntime({
       bridge,
       enrollments,
+      resolveConnectionAccess: async () => VERIFIED_AGENT_ACCESS,
       adapters: () => adapter,
       resolveLocalAgentAuthor: (localAgentId) =>
         localAgentId === 'mesh-manifest-ana' ? agent.id : null,
@@ -758,6 +881,7 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     const runtime = new RemoteRoomSubscriptionRuntime({
       bridge,
       enrollments,
+      resolveConnectionAccess: async () => VERIFIED_AGENT_ACCESS,
       adapters: () => ({
         listRooms: async () => {
           calls += 1;
@@ -917,6 +1041,7 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     const runtime = new RemoteRoomSubscriptionRuntime({
       bridge,
       enrollments,
+      resolveConnectionAccess: async () => VERIFIED_AGENT_ACCESS,
       adapters: () => adapter,
       resolveLocalAgentAuthor: () => agent.id,
       isRoomJoined: () => true,
@@ -998,6 +1123,7 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     const runtime = new RemoteRoomSubscriptionRuntime({
       bridge,
       enrollments,
+      resolveConnectionAccess: async () => VERIFIED_AGENT_ACCESS,
       adapters: () => adapter,
       resolveLocalAgentAuthor: (localAgentId) =>
         localAgentId === 'mesh-manifest-ana'
@@ -1130,6 +1256,7 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     const runtime = new RemoteRoomSubscriptionRuntime({
       bridge,
       enrollments,
+      resolveConnectionAccess: async () => VERIFIED_AGENT_ACCESS,
       adapters: () => adapter,
       resolveLocalAgentAuthor: (localAgentId) => (localAgentId === agent.id ? agent.id : null),
       isRoomJoined: () => true,

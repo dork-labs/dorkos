@@ -23,16 +23,52 @@ export const communities = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
     description: text('description'),
+    admissionPolicy: text('admission_policy').notNull().default('invite_only'),
+    settingsVersion: integer('settings_version').notNull().default(1),
+    iconBlobKey: text('icon_blob_key'),
+    iconContentType: text('icon_content_type'),
     lifecycle: text('lifecycle').notNull().default('pending_owner'),
     lifecycleVersion: integer('lifecycle_version').notNull().default(1),
+    suspendedFromState: text('suspended_from_state'),
+    activatedAt: timestamp('activated_at', { withTimezone: true }),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    suspendedAt: timestamp('suspended_at', { withTimezone: true }),
+    deleteRequestedAt: timestamp('delete_requested_at', { withTimezone: true }),
+    deleteAfter: timestamp('delete_after', { withTimezone: true }),
+    deleteRequestedBy: uuid('delete_requested_by'),
     createdAt: time('created_at'),
   },
   (table) => [
     check(
       'communities_lifecycle',
-      sql`${table.lifecycle} IN ('pending_owner','active','suspended')`
+      sql`${table.lifecycle} IN ('pending_owner','active','archived','suspended','deletion_pending')`
     ),
     check('communities_lifecycle_version', sql`${table.lifecycleVersion} > 0`),
+    check('communities_settings_version', sql`${table.settingsVersion} > 0`),
+    check(
+      'communities_admission_policy',
+      sql`${table.admissionPolicy} IN ('invite_only','closed')`
+    ),
+    check(
+      'communities_name_length',
+      sql`${table.name} = btrim(${table.name}) AND char_length(${table.name}) BETWEEN 1 AND 80`
+    ),
+    check(
+      'communities_description_length',
+      sql`${table.description} IS NULL OR char_length(${table.description}) <= 1000`
+    ),
+    check(
+      'communities_icon_metadata',
+      sql`(${table.iconBlobKey} IS NULL AND ${table.iconContentType} IS NULL) OR (${table.iconBlobKey} IS NOT NULL AND ${table.iconContentType} IS NOT NULL AND ${table.iconContentType} IN ('image/png','image/jpeg','image/gif','image/webp'))`
+    ),
+    check(
+      'communities_suspension_state',
+      sql`(${table.lifecycle} = 'suspended' AND ${table.suspendedFromState} IS NOT NULL AND ${table.suspendedFromState} IN ('active','archived') AND ${table.suspendedAt} IS NOT NULL) OR (${table.lifecycle} <> 'suspended' AND ${table.suspendedFromState} IS NULL AND ${table.suspendedAt} IS NULL)`
+    ),
+    check(
+      'communities_deletion_state',
+      sql`(${table.lifecycle} = 'deletion_pending' AND ${table.deleteRequestedAt} IS NOT NULL AND ${table.deleteAfter} IS NOT NULL AND ${table.deleteRequestedBy} IS NOT NULL AND ${table.deleteAfter} = ${table.deleteRequestedAt} + interval '7 days') OR (${table.lifecycle} <> 'deletion_pending' AND ${table.deleteRequestedAt} IS NULL AND ${table.deleteAfter} IS NULL AND ${table.deleteRequestedBy} IS NULL)`
+    ),
   ]
 );
 
@@ -115,6 +151,32 @@ export const hostOperators = pgTable('host_operators', {
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
 });
 
+/** Metadata-only audit log for actions performed with host authority. */
+export const hostAuditEvents = pgTable(
+  'host_audit_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    actorUserId: text('actor_user_id')
+      .notNull()
+      .references(() => users.id),
+    communityId: uuid('community_id'),
+    action: text('action').notNull(),
+    priorState: text('prior_state'),
+    nextState: text('next_state'),
+    changedFields: text('changed_fields').array().notNull().default([]),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    index('host_audit_events_community_created_idx').on(
+      table.communityId,
+      table.createdAt,
+      table.id
+    ),
+    check('host_audit_events_action', sql`${table.action} ~ '^[a-z][a-z0-9_.]{0,79}$'`),
+    check('host_audit_events_changed_fields', sql`cardinality(${table.changedFields}) <= 16`),
+  ]
+);
+
 /** Durable singleton gate for legacy tenant and blob namespace reconciliation. */
 export const tenantReconciliation = pgTable(
   'tenant_reconciliation',
@@ -176,6 +238,8 @@ export const bootstrapGrants = pgTable(
     communityId: uuid('community_id').references(() => communities.id),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedBy: text('revoked_by').references(() => users.id),
     createdAt: time('created_at'),
   },
   (table) => [
@@ -184,6 +248,41 @@ export const bootstrapGrants = pgTable(
       sql`(${table.purpose} = 'first_install' AND ${table.communityId} IS NULL) OR (${table.purpose} = 'owner_claim' AND ${table.communityId} IS NOT NULL)`
     ),
     index('bootstrap_grants_community_idx').on(table.communityId),
+    check(
+      'bootstrap_grants_revocation',
+      sql`(${table.revokedAt} IS NULL AND ${table.revokedBy} IS NULL) OR (${table.revokedAt} IS NOT NULL AND ${table.revokedBy} IS NOT NULL)`
+    ),
+  ]
+);
+
+/** Non-secret idempotency receipt for host-created pending communities. */
+export const communityCreationReceipts = pgTable(
+  'community_creation_receipts',
+  {
+    idempotencyKey: text('idempotency_key').primaryKey(),
+    operatorUserId: text('operator_user_id')
+      .notNull()
+      .references(() => hostOperators.userId),
+    payloadHash: text('payload_hash').notNull(),
+    communityId: uuid('community_id')
+      .notNull()
+      .unique()
+      .references(() => communities.id),
+    ownerClaimGrantId: uuid('owner_claim_grant_id')
+      .notNull()
+      .unique()
+      .references(() => bootstrapGrants.id),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    check(
+      'community_creation_receipts_idempotency_key_check',
+      sql`char_length(${table.idempotencyKey}) BETWEEN 1 AND 200`
+    ),
+    check(
+      'community_creation_receipts_payload_hash_check',
+      sql`${table.payloadHash} ~ '^[a-f0-9]{64}$'`
+    ),
   ]
 );
 
@@ -312,6 +411,7 @@ export const connectionGrants = pgTable(
     tokenHash: text('token_hash').notNull().unique(),
     installName: text('install_name').notNull(),
     scopes: text('scopes').array().notNull(),
+    historyOnly: boolean('history_only').notNull().default(false),
     createdAt: time('created_at'),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
@@ -764,7 +864,7 @@ export const managedBlobs = pgTable(
     index('managed_blobs_community_state_idx').on(table.communityId, table.state, table.createdAt),
     check(
       'managed_blobs_purpose',
-      sql`${table.purpose} IN ('attachment','export','legacy_cleanup')`
+      sql`${table.purpose} IN ('attachment','export','icon','legacy_cleanup')`
     ),
     check('managed_blobs_key', sql`${table.blobKey} ~ '^[a-f0-9]{64}$'`),
     check(
@@ -779,6 +879,103 @@ export const managedBlobs = pgTable(
     check(
       'managed_blobs_commit_timestamp',
       sql`(${table.state} <> 'committed' OR ${table.committedAt} IS NOT NULL) AND (${table.committedAt} IS NULL OR ${table.state} IN ('committed','pending_delete'))`
+    ),
+  ]
+);
+
+/** Durable bounded cleanup state for one tenant deletion request. */
+export const communityDeletionJobs = pgTable(
+  'community_deletion_jobs',
+  {
+    communityId: uuid('community_id')
+      .primaryKey()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+    requestedByMemberId: uuid('requested_by_member_id').notNull(),
+    lifecycleVersion: integer('lifecycle_version').notNull(),
+    state: text('state').notNull().default('waiting'),
+    deleteAfter: timestamp('delete_after', { withTimezone: true }).notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull(),
+    lastErrorClass: text('last_error_class'),
+    createdAt: time('created_at'),
+    updatedAt: time('updated_at'),
+  },
+  (table) => [
+    foreignKey({
+      name: 'community_deletion_jobs_requester_tenant_fk',
+      columns: [table.communityId, table.requestedByMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    index('community_deletion_jobs_due_idx').on(table.nextAttemptAt, table.communityId),
+    check('community_deletion_jobs_lifecycle_version', sql`${table.lifecycleVersion} > 0`),
+    check('community_deletion_jobs_attempts_check', sql`${table.attempts} >= 0`),
+    check(
+      'community_deletion_jobs_state_check',
+      sql`${table.state} IN ('waiting','deleting','retrying')`
+    ),
+    check(
+      'community_deletion_jobs_last_error_class_check',
+      sql`${table.lastErrorClass} IS NULL OR ${table.lastErrorClass} ~ '^[A-Z][A-Z0-9_]{0,63}$'`
+    ),
+  ]
+);
+
+/** Per-object retry state retained until the tenant database transaction completes. */
+export const communityDeletionBlobProgress = pgTable(
+  'community_deletion_blob_progress',
+  {
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+    blobKey: text('blob_key').notNull(),
+    state: text('state').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+    lastErrorClass: text('last_error_class'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.communityId, table.blobKey] }),
+    index('community_deletion_blob_progress_due_idx').on(
+      table.communityId,
+      table.nextAttemptAt,
+      table.blobKey
+    ),
+    check('community_deletion_blob_progress_key_check', sql`${table.blobKey} ~ '^[a-f0-9]{64}$'`),
+    check('community_deletion_blob_progress_attempts_check', sql`${table.attempts} >= 0`),
+    check(
+      'community_deletion_blob_progress_state_check',
+      sql`${table.state} IN ('pending','deleted','retrying')`
+    ),
+    check(
+      'community_deletion_blob_progress_error_check',
+      sql`${table.lastErrorClass} IS NULL OR ${table.lastErrorClass} ~ '^[A-Z][A-Z0-9_]{0,63}$'`
+    ),
+    check(
+      'community_deletion_blob_progress_deleted_check',
+      sql`(${table.state} = 'deleted') = (${table.deletedAt} IS NOT NULL)`
+    ),
+  ]
+);
+
+/** Content-free, expiring proof that a tenant deletion completed. */
+export const communityDeletionTombstones = pgTable(
+  'community_deletion_tombstones',
+  {
+    communityId: uuid('community_id').primaryKey(),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }).notNull(),
+    outcome: text('outcome').notNull(),
+    retryCount: integer('retry_count').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('community_deletion_tombstones_expiry_idx').on(table.expiresAt, table.communityId),
+    check('community_deletion_tombstones_outcome_check', sql`${table.outcome} = 'deleted'`),
+    check('community_deletion_tombstones_retry_count_check', sql`${table.retryCount} >= 0`),
+    check(
+      'community_deletion_tombstones_times_check',
+      sql`${table.completedAt} >= ${table.requestedAt} AND ${table.expiresAt} = ${table.completedAt} + interval '30 days'`
     ),
   ]
 );
@@ -848,6 +1045,10 @@ export const auditEvents = pgTable(
     actorMemberId: uuid('actor_member_id').references(() => members.id),
     action: text('action').notNull(),
     subjectId: text('subject_id'),
+    actorKind: text('actor_kind').notNull().default('member'),
+    priorState: text('prior_state'),
+    nextState: text('next_state'),
+    changedFields: text('changed_fields').array().notNull().default([]),
     createdAt: time('created_at'),
   },
   (table) => [
@@ -857,5 +1058,7 @@ export const auditEvents = pgTable(
       columns: [table.communityId, table.actorMemberId],
       foreignColumns: [members.communityId, members.id],
     }),
+    check('audit_events_actor_kind', sql`${table.actorKind} IN ('member','system')`),
+    check('audit_events_changed_fields', sql`cardinality(${table.changedFields}) <= 16`),
   ]
 );

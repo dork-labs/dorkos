@@ -1,6 +1,8 @@
-import { ZodError, type ZodType } from 'zod';
+import { ZodError, type ZodType, type output } from 'zod';
 import type { Context } from 'hono';
 import { CommunityWireErrorSchema, type CommunityWireError } from '@dorkos/shared/community-wire';
+
+import { CommunityAdminSettingsConflictSchema } from '@dorkos/shared/community-admin-wire';
 
 type Code = CommunityWireError['code'];
 
@@ -12,6 +14,19 @@ export class ApiError extends Error {
     message: string
   ) {
     super(message);
+  }
+}
+
+/** An authorized administrative edit conflicted with the current safe settings. */
+export class AdminSettingsConflict extends ApiError {
+  constructor(
+    public readonly current: output<typeof CommunityAdminSettingsConflictSchema>['current']
+  ) {
+    super(
+      409,
+      'STATE_CONFLICT',
+      'Community settings changed. Review the current values and try again.'
+    );
   }
 }
 
@@ -33,6 +48,18 @@ export function json<T>(c: Context, schema: ZodType<T>, value: T, status = 200):
 
 /** Map expected failures to the shared public error shape. */
 export function handleError(error: unknown, c: Context): Response {
+  if (error instanceof AdminSettingsConflict) {
+    c.header('ETag', `"${error.current.settingsVersion}"`);
+    c.header('Cache-Control', 'no-store');
+    return c.json(
+      CommunityAdminSettingsConflictSchema.parse({
+        code: error.code,
+        message: error.message,
+        current: error.current,
+      }),
+      409
+    );
+  }
   if (error instanceof ApiError) {
     return c.json(
       CommunityWireErrorSchema.parse({ code: error.code, message: error.message }),

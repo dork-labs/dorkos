@@ -14,6 +14,16 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { RemoteCommunitySurface } from '../ui/RemoteCommunitySurface';
 
 afterEach(cleanup);
+const access = {
+  state: 'verified',
+  effective: { read: true, post: true, enrollAgent: true, stream: true },
+  lastKnown: {
+    lifecycle: 'active',
+    capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+    verifiedAt: '2026-09-16T10:00:00Z',
+  },
+} as const;
+
 const room = RemoteCommunityRoomSchema.parse({
   community: 'a',
   roomId: 'same',
@@ -33,6 +43,7 @@ const room = RemoteCommunityRoomSchema.parse({
   stale: false,
   cacheCursor: null,
   lastRemoteSeq: 0,
+  access,
 });
 const ownerEntry = RemoteCommunityEntrySchema.parse({
   community: 'a',
