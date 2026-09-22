@@ -1,10 +1,16 @@
-import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { migrate } from '../migrate.js';
 import { inspectBackout } from '../backout.js';
+import { createCommunityApp } from '../app.js';
+import { parseConfig } from '../config.js';
+import { FileSystemBlobStore } from '../storage/index.js';
+import { hashSecret } from '../security.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for real Postgres tests');
@@ -21,6 +27,27 @@ afterAll(async () => {
   await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
   await admin.end();
 });
+
+/** Build the schema a version-four host shipped with, recorded as already migrated. */
+async function applyVersionFourSchema(db: Pool): Promise<void> {
+  await db.query(
+    'CREATE TABLE community_migrations(version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())'
+  );
+  for (const [version, filename] of [
+    [1, '0001_foundation.sql'],
+    [2, '0002_admission.sql'],
+    [3, '0003_files.sql'],
+    [4, '0004_cleanup_backoff.sql'],
+  ] as const) {
+    await db.query(
+      await readFile(
+        fileURLToPath(new URL(`../../migrations/${filename}`, import.meta.url)),
+        'utf8'
+      )
+    );
+    await db.query('INSERT INTO community_migrations(version) VALUES($1)', [version]);
+  }
+}
 
 it('creates all owner, conversation, credential and auth tables in fresh Postgres', async () => {
   await migrate(testUrl.toString());
@@ -246,23 +273,7 @@ it('expands a populated version-four database without changing files or cleanup 
   await admin.query(`CREATE DATABASE ${upgradeName}`);
   const db = new Pool({ connectionString: upgradeUrl.toString() });
   try {
-    await db.query(
-      'CREATE TABLE community_migrations(version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())'
-    );
-    for (const [version, filename] of [
-      [1, '0001_foundation.sql'],
-      [2, '0002_admission.sql'],
-      [3, '0003_files.sql'],
-      [4, '0004_cleanup_backoff.sql'],
-    ] as const) {
-      await db.query(
-        await readFile(
-          fileURLToPath(new URL(`../../migrations/${filename}`, import.meta.url)),
-          'utf8'
-        )
-      );
-      await db.query('INSERT INTO community_migrations(version) VALUES($1)', [version]);
-    }
+    await applyVersionFourSchema(db);
     const community = (
       await db.query("INSERT INTO communities(name) VALUES('Version Four') RETURNING id")
     ).rows[0].id;
@@ -421,5 +432,257 @@ it('expands a populated version-four database without changing files or cleanup 
   } finally {
     await db.end();
     await admin.query(`DROP DATABASE IF EXISTS ${upgradeName}`);
+  }
+});
+
+/**
+ * Rows a version-four host holds that people would notice losing: every column that existed
+ * before the upgrade, in a fixed order, so a lost, reordered, rewritten or dropped row shows
+ * up as a diff rather than as a count that happens to still match.
+ */
+const versionFourSnapshot = {
+  members: 'SELECT id,user_id,display_name,handle,role FROM members ORDER BY id',
+  channels: 'SELECT id,name,visibility,last_seq FROM channels ORDER BY id',
+  entries: `SELECT id,channel_id,seq,author_member_id,author_agent_id,author_display_name,text,
+              parent_entry_id,thread_root_entry_id,idempotency_key,payload_hash,created_at
+            FROM entries ORDER BY channel_id,seq`,
+  attachments: `SELECT id,channel_id,uploader_member_id,entry_id,blob_key,display_name,content_type,
+                  byte_size,checksum
+                FROM attachments ORDER BY id`,
+  agents:
+    'SELECT id,owner_member_id,display_name,handle,local_agent_id,active FROM agents ORDER BY id',
+  agentCredentials: 'SELECT id,agent_id,token_hash,revoked_at FROM agent_credentials ORDER BY id',
+  connectionGrants:
+    'SELECT id,member_id,token_hash,scopes,revoked_at FROM connection_grants ORDER BY id',
+} as const;
+
+async function snapshotVersionFourRows(db: Pool) {
+  const snapshot: Record<string, unknown[]> = {};
+  for (const [name, sql] of Object.entries(versionFourSnapshot)) {
+    snapshot[name] = (await db.query(sql)).rows;
+  }
+  return snapshot;
+}
+
+/** The payload hash the current post route computes, so a pre-upgrade key can be replayed. */
+function entryPayloadHash(text: string): string {
+  return createHash('sha256')
+    .update(JSON.stringify({ text, mentions: [], parentEntryId: null, attachmentIds: [] }))
+    .digest('hex');
+}
+
+it('serves a populated version-four community through the current HTTP contract after upgrade', async () => {
+  const upgradeName = `community_v4_acceptance_${randomUUID().replaceAll('-', '')}`;
+  const upgradeUrl = new URL(adminUrl);
+  upgradeUrl.pathname = `/${upgradeName}`;
+  const blobs = await mkdtemp(join(tmpdir(), 'community-v4-upgrade-blobs-'));
+  await admin.query(`CREATE DATABASE ${upgradeName}`);
+  const db = new Pool({ connectionString: upgradeUrl.toString() });
+  try {
+    await applyVersionFourSchema(db);
+    const community = (
+      await db.query("INSERT INTO communities(name) VALUES('V4 acceptance') RETURNING id")
+    ).rows[0].id;
+    await db.query(
+      `INSERT INTO "user"(id,name,email) VALUES
+         ('v4-owner','V4 Owner','v4-owner@example.test'),
+         ('v4-reader','V4 Reader','v4-reader@example.test')`
+    );
+    const owner = (
+      await db.query(
+        "INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,'v4-owner','V4 Owner','v4-owner','owner') RETURNING id",
+        [community]
+      )
+    ).rows[0].id;
+    const reader = (
+      await db.query(
+        "INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,'v4-reader','V4 Reader','v4-reader','member') RETURNING id",
+        [community]
+      )
+    ).rows[0].id;
+    const channel = (
+      await db.query(
+        "INSERT INTO channels(community_id,name,visibility,last_seq) VALUES($1,'private-upgrade','private',4) RETURNING id",
+        [community]
+      )
+    ).rows[0].id;
+    await db.query('INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2),($1,$3)', [
+      channel,
+      owner,
+      reader,
+    ]);
+    const agent = (
+      await db.query(
+        "INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id) VALUES($1,$2,'V4 Agent','v4-agent','local-v4-agent') RETURNING id",
+        [community, owner]
+      )
+    ).rows[0].id;
+    await db.query('INSERT INTO community_handles(community_id,handle,agent_id) VALUES($1,$2,$3)', [
+      community,
+      'v4-agent',
+      agent,
+    ]);
+    await db.query('INSERT INTO agent_channel_members(channel_id,agent_id) VALUES($1,$2)', [
+      channel,
+      agent,
+    ]);
+
+    // Rows go in out of sequence order, so history served by insertion time, id, or
+    // anything but seq comes back in the wrong order.
+    const insertEntry = async (
+      seq: number,
+      author: { member?: string; agent?: string },
+      text: string,
+      idempotencyKey: string,
+      parent: string | null = null
+    ): Promise<string> =>
+      (
+        await db.query(
+          `INSERT INTO entries(channel_id,seq,author_member_id,author_agent_id,author_display_name,text,parent_entry_id,thread_root_entry_id,idempotency_key,payload_hash)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$7,$8,$9) RETURNING id`,
+          [
+            channel,
+            seq,
+            author.member ?? null,
+            author.agent ?? null,
+            author.agent ? 'V4 Agent' : 'V4 Owner',
+            text,
+            parent,
+            idempotencyKey,
+            entryPayloadHash(text),
+          ]
+        )
+      ).rows[0].id;
+    const last = await insertEntry(4, { member: reader }, 'last preserved', 'v4-last');
+    const first = await insertEntry(1, { member: owner }, 'first preserved', 'v4-first');
+    const reply = await insertEntry(3, { member: owner }, 'reply preserved', 'v4-reply', first);
+    const agentPost = await insertEntry(2, { agent }, 'agent preserved', 'v4-agent-origin');
+
+    // Every byte value, so a text round-trip or an encoding step cannot pass by accident.
+    const bytes = Buffer.from(Array.from({ length: 256 }, (_, index) => 255 - index));
+    const blobKey = createHash('sha256').update(bytes).digest('hex');
+    await writeFile(join(blobs, blobKey), bytes);
+    const attachment = (
+      await db.query(
+        `INSERT INTO attachments(channel_id,uploader_member_id,entry_id,blob_key,display_name,content_type,byte_size,checksum,idempotency_key,request_hash)
+         VALUES($1,$2,$3,$4,'upgrade.bin','application/octet-stream',$5,$4,'v4-file','v4-file-hash') RETURNING id`,
+        [channel, owner, reply, blobKey, bytes.byteLength]
+      )
+    ).rows[0].id;
+    await db.query('INSERT INTO agent_credentials(agent_id,token_hash) VALUES($1,$2),($1,$3)', [
+      agent,
+      hashSecret('v4-agent-token'),
+      hashSecret('v4-revoked-agent-token'),
+    ]);
+    await db.query('UPDATE agent_credentials SET revoked_at=now() WHERE token_hash=$1', [
+      hashSecret('v4-revoked-agent-token'),
+    ]);
+    await db.query(
+      "INSERT INTO connection_grants(member_id,token_hash,scopes) VALUES($1,$2,ARRAY['read','post']),($3,$4,ARRAY['read','post'])",
+      [owner, hashSecret('v4-owner-token'), reader, hashSecret('v4-reader-token')]
+    );
+    const before = await snapshotVersionFourRows(db);
+
+    await migrate(upgradeUrl.toString());
+
+    expect(await snapshotVersionFourRows(db)).toEqual(before);
+    const app = createCommunityApp({
+      config: parseConfig({
+        COMMUNITY_DATABASE_URL: upgradeUrl.toString(),
+        COMMUNITY_AUTH_SECRET: 'a'.repeat(32),
+        COMMUNITY_INVITE_SECRET: 'b'.repeat(32),
+        COMMUNITY_BOOTSTRAP_SECRET: 'c'.repeat(32),
+        COMMUNITY_PUBLIC_URL: 'http://localhost:6481',
+        COMMUNITY_STORAGE_PATH: blobs,
+      }),
+      pool: db,
+      blobStore: new FileSystemBlobStore(blobs),
+    });
+    const get = (path: string, token: string) =>
+      app.request(path, { headers: { authorization: `Bearer ${token}` } });
+    const post = (path: string, token: string, body: unknown, origin?: string) =>
+      app.request(path, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          ...(origin ? { origin } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+    type Page = {
+      entries: { id: string; seq: number; text: string; originIdempotencyKey?: string }[];
+    };
+    const history = async (token: string, query = '') => {
+      const response = await get(`/api/v1/channels/${channel}/entries${query}`, token);
+      expect(response.status).toBe(200);
+      return ((await response.json()) as Page).entries;
+    };
+
+    // Every pre-upgrade credential still opens the same history, in seq order.
+    const expectedTop = [
+      { id: first, seq: 1, text: 'first preserved' },
+      { id: agentPost, seq: 2, text: 'agent preserved' },
+      { id: last, seq: 4, text: 'last preserved' },
+    ];
+    for (const token of ['v4-owner-token', 'v4-reader-token', 'v4-agent-token']) {
+      expect((await history(token)).map(({ id, seq, text }) => ({ id, seq, text }))).toEqual(
+        expectedTop
+      );
+    }
+    expect((await history('v4-owner-token', `?thread=${first}`)).map((entry) => entry.id)).toEqual([
+      first,
+      reply,
+    ]);
+    expect((await get('/api/v1/channels', 'v4-revoked-agent-token')).status).toBe(401);
+
+    // The agent's pre-upgrade post key stays bound to its origin: the agent and its owner
+    // see it, another member does not, and replaying it still deduplicates.
+    const originKey = async (token: string) =>
+      (await history(token)).find((entry) => entry.id === agentPost)?.originIdempotencyKey;
+    expect(await originKey('v4-agent-token')).toBe('v4-agent-origin');
+    expect(await originKey('v4-owner-token')).toBe('v4-agent-origin');
+    expect(await originKey('v4-reader-token')).toBeUndefined();
+    const replay = await post(`/api/v1/channels/${channel}/entries`, 'v4-agent-token', {
+      text: 'agent preserved',
+      idempotencyKey: 'v4-agent-origin',
+    });
+    expect(replay.status).toBe(200);
+    expect(((await replay.json()) as { entry: { id: string } }).entry.id).toBe(agentPost);
+    expect(
+      (
+        await post(`/api/v1/channels/${channel}/entries`, 'v4-agent-token', {
+          text: 'different content',
+          idempotencyKey: 'v4-agent-origin',
+        })
+      ).status
+    ).toBe(409);
+    expect(
+      (
+        await post(
+          `/api/v1/channels/${channel}/entries`,
+          'v4-agent-token',
+          { text: 'from an untrusted site', idempotencyKey: 'v4-cross-site' },
+          'https://untrusted.test'
+        )
+      ).status
+    ).toBe(403);
+
+    const downloaded = await get(`/api/v1/attachments/${attachment}`, 'v4-reader-token');
+    expect(downloaded.status).toBe(200);
+    expect(Buffer.from(await downloaded.arrayBuffer()).equals(bytes)).toBe(true);
+
+    // The upgraded host is still a single-community host that can be backed out, until a
+    // second community is created.
+    expect(await inspectBackout(db)).toEqual({ eligible: true, reason: 'single-community' });
+    await db.query("INSERT INTO communities(name) VALUES('Second upgraded community')");
+    expect(await inspectBackout(db)).toEqual({
+      eligible: false,
+      reason: 'multiple-communities-used',
+    });
+  } finally {
+    await db.end();
+    await admin.query(`DROP DATABASE IF EXISTS ${upgradeName} WITH (FORCE)`);
+    await rm(blobs, { recursive: true, force: true });
   }
 });
