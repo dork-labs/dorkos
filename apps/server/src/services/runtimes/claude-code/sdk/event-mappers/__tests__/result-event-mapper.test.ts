@@ -253,6 +253,35 @@ describe('mapResultEvent — turn-total token metadata (AI observability, DOR-31
     expect(data.turnCostUsd).toBeCloseTo(0.003786, 9);
   });
 
+  it('does not report the whole history after an error result with lower (zeroed) totals', async () => {
+    const session = makeSession({
+      usageLedger: { haiku: { inputTokens: 7684, outputTokens: 75, costUsd: 0.008059 } },
+    });
+    const crashed = msg({
+      type: 'result',
+      subtype: 'error_during_execution',
+      errors: ['crash'],
+      modelUsage: {
+        haiku: { inputTokens: 10, outputTokens: 0, costUSD: 0, contextWindow: 200000 },
+      },
+    });
+    expect(
+      'turnInputTokens' in statusData(await drain(mapResultEvent(crashed, session, SESSION_ID)))!
+    ).toBe(false);
+
+    const next = statusData(
+      await drain(
+        mapResultEvent(
+          runningTotals({ haiku: { inputTokens: 11196, outputTokens: 106, costUSD: 0.011726 } }),
+          session,
+          SESSION_ID
+        )
+      )
+    )!;
+    expect('turnInputTokens' in next).toBe(false);
+    expect('turnCostUsd' in next).toBe(false);
+  });
+
   it('omits the turn figures when the baseline is unknown, then counts from the next turn', async () => {
     // A resumed session this process holds no ledger for: the first result may
     // carry every earlier turn, and there is nothing to subtract.
