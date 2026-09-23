@@ -117,7 +117,15 @@ docker compose -f apps/community/compose.yml run --rm --no-deps -T community \
 
 Failed key attempts are limited per network address (`COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`). The server sees the address that connected to it, so behind a reverse proxy every caller shares the proxy's address and one limit. A program that keeps sending a wrong key can then briefly block other programs' failed attempts; programs with a valid key are never blocked.
 
+Wrong passwords work differently. Leaving, disconnecting all installations, transferring ownership, exporting, archiving, deleting, and issuing or replacing a host key all ask for the person's password. Wrong passwords count per account, not per address (`COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`). After too many in a minute, that account must wait the rest of the minute, even with the right password. Everyone else behind the same proxy is unaffected.
+
 Keys belong to the host, not to the person who made them. Removing a host operator does not stop the keys that operator created. When someone leaves, open **API keys**, find the keys that show their name, and replace or revoke them. **Replace** gives a new key with the same permissions and keeps the old one working for up to a day, so a program can switch over without downtime.
+
+## Community limits
+
+Each community record on the host page has **Limits**: the most active members and the most file space, each shown beside what the community uses now. Leave a field empty for no limit. A lower limit never removes anyone or anything; it only stops new members or new files once the community is at the limit, and people see "This community is full" or "out of file space" instead of a retry. Exports never count, so an owner can always take their data out.
+
+Agents are limited per person by `COMMUNITY_AGENTS_PER_OWNER` (20 by default, at most 100). A program with a `communities:write` key can raise or lower that for one member, up to 1,000, with `PUT /api/v1/host/communities/:id/members/:memberId/limits`. Ask the member or owner for the member id; no host route lists members.
 
 ## Storage and hosting choices
 

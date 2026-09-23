@@ -5,25 +5,28 @@
  * falls back to giget (tarball download) with a 30-second timeout.
  * Parses clone progress from git stderr for real-time feedback.
  *
- * Two surfaces live here, and only one of them takes a person's address:
+ * {@link downloadTemplate} is the workspace-template flow behind
+ * `POST /api/agents/create`. Its `source` is free-form, so it asks
+ * {@link isSupportedTemplateSource} before either strategy runs (DOR-1825).
+ * The marketplace fetches packages itself (`services/marketplace/lib/git-tree.ts`)
+ * and confines its addresses with `services/marketplace/source-url-policy.ts`,
+ * whose accepted set is deliberately different (it fetches from `ssh://`; this
+ * file cannot), so the two doors stay two doors rather than one shared
+ * predicate applied twice.
  *
- * - {@link downloadTemplate} — the workspace-template flow behind
- *   `POST /api/agents/create`. Its `source` is free-form, so it asks
- *   {@link isSupportedTemplateSource} before either strategy runs (DOR-1825).
- * - {@link cloneRepository} — the primitive the marketplace install pipeline
- *   injects. Its addresses are confined upstream by
- *   `services/marketplace/source-url-policy.ts`, whose accepted set is
- *   deliberately different (it clones from `ssh://`; this file cannot), so the
- *   two doors stay two doors rather than one shared predicate applied twice.
- *
- * Both surfaces share one credential rule, and it is not about addresses but
+ * Both share one credential rule, and it is not about addresses but
  * about what travels to them: the operator's GitHub token goes to GitHub and
- * nowhere else (DOR-1833). There are exactly two places anything is ever
+ * nowhere else (DOR-1833). There are exactly three places anything is ever
  * attached, and each guards itself, because each can be reached without the
- * other:
+ * others:
  *
- * - {@link execGitClone}'s `x-access-token@` URL rewrite, gated on
- *   {@link isGitHubCredentialHost} — the host it is about to clone from.
+ * - the `x-access-token@` URL rewrite, {@link withGitHubToken}, gated on
+ *   {@link isGitHubCredentialHost} — the host `git` is about to reach. Used by
+ *   {@link execGitClone}, and by the marketplace's package fetch on git
+ *   older than 2.31.
+ * - {@link gitHubAuthConfig}, the header the marketplace's package fetch hands
+ *   git through its environment on git 2.31 and later, gated on the same
+ *   predicate.
  * - the `auth` option handed to giget, gated on the stricter
  *   {@link gigetTarballHostIsGitHub} — because giget sends the token to a
  *   tarball URL that, for every source but the `github:` shorthand, the remote
@@ -329,6 +332,60 @@ export function isGitHubCredentialHost(url: string): boolean {
 }
 
 /**
+ * `url` with the operator's GitHub token embedded as `x-access-token` when,
+ * and only when, `url` is a GitHub host ({@link isGitHubCredentialHost});
+ * otherwise `url` unchanged.
+ *
+ * {@link execGitClone} always authenticates this way; the marketplace's
+ * package fetch does only on git older than 2.31, which cannot read
+ * {@link gitHubAuthConfig}'s header from the environment. The result carries
+ * a live credential: never log it, and run anything git prints through
+ * {@link redactAuthTokens}.
+ *
+ * @param url - The clone or fetch address.
+ * @param auth - The token, from {@link resolveGitAuth}; `undefined` sends none.
+ * @returns The address to hand to `git`.
+ */
+export function withGitHubToken(url: string, auth: string | undefined): string {
+  // Two questions, both needed. `isGitHubCredentialHost` is the semantic one —
+  // may this token go to this host at all. The literal `https://` prefix is the
+  // mechanical one: the rewrite below is a string replace, and an address
+  // spelled `HTTPS://` would pass the first question while the replace matched
+  // nothing, leaving a clone that only looks authenticated.
+  return auth && url.startsWith('https://') && isGitHubCredentialHost(url)
+    ? url.replace('https://', `https://x-access-token:${auth}@`)
+    : url;
+}
+
+/**
+ * The git config that authenticates a request to `url` with the operator's
+ * GitHub token — `http.<origin>/.extraHeader` set to an `Authorization: Basic`
+ * header, the form GitHub documents for `x-access-token` — or `undefined` when
+ * `url` is not a GitHub host ({@link isGitHubCredentialHost}) or there is no
+ * token.
+ *
+ * The marketplace's package fetch hands this to git through the environment
+ * (`GIT_CONFIG_COUNT`, read by git 2.31 and later; older git gets
+ * {@link withGitHubToken} instead), so the token is on no command line (`ps`
+ * shows every process's argv) and in no `.git/config`. The key is scoped to the URL's own
+ * origin, so git sends the header to that origin and nowhere else, redirects
+ * included.
+ *
+ * @param url - The fetch address.
+ * @param auth - The token, from {@link resolveGitAuth}; `undefined` sends none.
+ * @returns The config key and value, or `undefined`.
+ */
+export function gitHubAuthConfig(
+  url: string,
+  auth: string | undefined
+): { key: string; value: string } | undefined {
+  if (!auth || !isGitHubCredentialHost(url)) return undefined;
+  const { origin } = new URL(url);
+  const basic = Buffer.from(`x-access-token:${auth}`).toString('base64');
+  return { key: `http.${origin}/.extraHeader`, value: `Authorization: Basic ${basic}` };
+}
+
+/**
  * True when the tarball giget downloads for `source` is fetched from a GitHub
  * URL that **giget itself constructs**, and so may carry the operator's token.
  *
@@ -437,15 +494,7 @@ export async function execGitClone(
   auth?: string,
   onProgress?: ProgressCallback
 ): Promise<void> {
-  // Two questions, both needed. `isGitHubCredentialHost` is the semantic one —
-  // may this token go to this host at all. The literal `https://` prefix is the
-  // mechanical one: the rewrite below is a string replace, and an address
-  // spelled `HTTPS://` would pass the first question while the replace matched
-  // nothing, leaving a clone that only looks authenticated.
-  const cloneUrl =
-    auth && url.startsWith('https://') && isGitHubCredentialHost(url)
-      ? url.replace('https://', `https://x-access-token:${auth}@`)
-      : url;
+  const cloneUrl = withGitHubToken(url, auth);
 
   return new Promise<void>((resolve, reject) => {
     const proc = spawn(
@@ -596,47 +645,3 @@ export async function downloadTemplate(
     );
   }
 }
-
-/**
- * Generic git-clone primitive for callers that need to clone an arbitrary
- * repository into a specific directory without the template-shaped pre/post
- * processing of {@link downloadTemplate}. Used by the marketplace install
- * pipeline to fetch packages into the content-addressable cache.
- *
- * Marketplace `url` sources are deliberately open — Azure DevOps, a self-hosted
- * Gitea, anything a package author names — so the token resolved here reaches
- * the clone only if {@link execGitClone} finds a GitHub host to give it to.
- *
- * @param gitUrl - Fully-qualified git URL (no shorthand resolution)
- * @param destDir - Local directory to clone into (must not exist)
- * @param _ref - Optional ref/branch (currently unused — depth-1 single-branch clone always pulls the default branch)
- */
-export async function cloneRepository(
-  gitUrl: string,
-  destDir: string,
-  _ref?: string
-): Promise<void> {
-  const auth = resolveGitAuth();
-  await execGitClone(gitUrl, destDir, auth);
-}
-
-/**
- * Dependency-injection surface for callers (e.g. the marketplace install
- * pipeline) that want to swap out the real git clone with a test double.
- * Mirrors only the `cloneRepository` primitive — `downloadTemplate` is not
- * part of this interface because the marketplace pipeline never invokes the
- * shorthand-template flow.
- */
-export interface TemplateDownloader {
-  cloneRepository(gitUrl: string, destDir: string, ref?: string): Promise<void>;
-}
-
-/**
- * Default `TemplateDownloader` binding backed by the real `cloneRepository`
- * function. Production callers (e.g. `apps/server/src/index.ts`) should pass
- * this when constructing the marketplace `PackageFetcher`; tests should pass
- * a `vi.fn()` stub instead.
- */
-export const defaultTemplateDownloader: TemplateDownloader = {
-  cloneRepository,
-};

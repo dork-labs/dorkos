@@ -29,12 +29,65 @@ export const CommunityAdminHostProjectionSchema = z.strictObject({
   createdAt: timestamp,
 });
 
+const maxActiveMembers = z.int().min(1).max(1_000_000).nullable();
+const maxStorageBytes = z.int().min(0).max(Number.MAX_SAFE_INTEGER).nullable();
+const bytes = z.int().min(0).max(Number.MAX_SAFE_INTEGER);
+
+/** Host-set community limits. null means no limit. */
+export const CommunityAdminLimitsSchema = z.strictObject({
+  maxActiveMembers,
+  maxStorageBytes,
+  limitsVersion: version,
+});
+/** Replace a community's limits. The first write uses `limitsVersion: 1`. */
+export const CommunityAdminLimitsUpdateRequestSchema = z.strictObject({
+  limitsVersion: version,
+  maxActiveMembers,
+  maxStorageBytes,
+});
+/** Set or clear (`null`) one member's agents-per-person limit. */
+export const CommunityAdminMemberLimitsRequestSchema = z.strictObject({
+  agentsPerMember: z.int().min(1).max(1_000).nullable(),
+});
+/** Only the override: never a name, handle, email, or role. */
+export const CommunityAdminMemberLimitsSchema = z.strictObject({
+  communityId: id,
+  memberId: id,
+  agentsPerMember: z.int().min(1).max(1_000).nullable(),
+  effectiveAgentsPerMember: z.int().min(1).max(1_000),
+});
+/** Aggregate usage for one community. No content-derived detail. */
+export const CommunityAdminUsageSchema = z.strictObject({
+  communityId: id,
+  measuredAt: timestamp,
+  activeMembers: z.int().nonnegative(),
+  activeAgents: z.int().nonnegative(),
+  storage: z.strictObject({
+    attachmentBytes: bytes,
+    iconBytes: bytes,
+    exportBytes: bytes,
+    importStagingBytes: bytes,
+    pendingDeleteBytes: bytes,
+    countedBytes: bytes,
+  }),
+  limits: CommunityAdminLimitsSchema,
+  /** UTC day of the newest message, never a time. */
+  lastPostDate: z.iso.date().nullable(),
+});
+/** One page of community usage in id order. */
+export const CommunityAdminUsagePageSchema = z.strictObject({
+  items: z.array(CommunityAdminUsageSchema).max(100),
+  next: id.nullable(),
+});
+
 /** Idempotent host request for one unclaimed Community. */
 export const CommunityAdminCreateRequestSchema = z.strictObject({
   idempotencyKey: z.string().min(1).max(200),
   name: z.string().trim().min(1).max(80),
   description: z.string().max(1_000).nullable().optional(),
   admissionPolicy: CommunityAdminAdmissionPolicySchema.optional(),
+  /** Set in the same transaction and part of the idempotency key's payload. */
+  limits: CommunityAdminLimitsUpdateRequestSchema.omit({ limitsVersion: true }).optional(),
 });
 /** Private creation handoff. A retry returns the receipt without replaying its one-time secret. */
 export const CommunityAdminCreateResponseSchema = z.strictObject({

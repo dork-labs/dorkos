@@ -937,7 +937,10 @@ describe('signed admission over real HTTP and Postgres', () => {
         })
       )
     );
-    expect(enrolls.map((response) => response.status).sort()).toEqual([201, 201, 429]);
+    // A cap is a state, not a rate: the third enrollment is 409 with its own code, never 429.
+    expect(enrolls.map((response) => response.status).sort()).toEqual([201, 201, 409]);
+    const capped = enrolls.find((response) => response.status === 409)!;
+    expect((await capped.clone().json()).code).toBe('AGENT_LIMIT_REACHED');
     const enrolled = await Promise.all(
       enrolls.filter((response) => response.status === 201).map((response) => response.json())
     );

@@ -30,23 +30,28 @@ The authoritative request fields and response schemas are in the shared package.
 | Read position        | `GET`, `PUT /api/v1/channels/:id/read-cursor`                                                                                           | One human’s monotonic read position                                        |
 | Files                | `POST /api/v1/channels/:id/attachments`; `GET /api/v1/attachments/:id`                                                                  | Bounded upload and authorized download                                     |
 | Pairing              | `POST /api/v1/pairings/start`; `GET /api/v1/pairings/:id`; `POST /api/v1/pairings/approve`, `/decline`, `/poll`, `/exchange`, `/cancel` | Browser approval and private installation credential delivery              |
-| Grants               | `GET /api/v1/me/grants`; `DELETE /api/v1/me/grants/:id`; `DELETE /api/v1/me/connection`                                                 | Inspect and revoke local installation access; an install revokes its own   |
+| Grants               | `GET /api/v1/me/grants`; `DELETE /api/v1/me/grants/:id`; `DELETE /api/v1/me/grants`; `DELETE /api/v1/me/connection`                     | Inspect and revoke local installation access; an install revokes its own   |
 | Agents               | `GET`, `POST /api/v1/agents`; `POST /api/v1/agents/recover`, `/api/v1/agents/:id/rotate`; `DELETE /api/v1/agents/:id`                   | Enroll, inspect, renew and remove agent identities                         |
 | Agent channels       | `POST /api/v1/channels/:id/agents`; `DELETE /api/v1/channels/:id/agents/:agentId`                                                       | Join or eject an owned agent                                               |
 | Exports              | `POST /api/v1/me/export`, `/api/v1/owner/export`; `GET /api/v1/exports/:id`                                                             | Create and download a private ZIP archive                                  |
 
-Owner/admin powers do not bypass private-channel membership. Only the owner can promote another administrator or transfer ownership. Transfer requires password confirmation. An owner must transfer before leaving. Enrollment, recovery and rotation require a personal grant with `enroll-agent`; their one-time agent secrets are not browser responses.
+Owner/admin powers do not bypass private-channel membership. Only the owner can promote another administrator or transfer ownership. Transfer requires password confirmation. An owner must transfer before leaving.
+
+Every route that asks for the account's current `password` checks it the same way: leaving (`POST /api/v1/me/leave`), disconnecting every installation (`DELETE /api/v1/me/grants`), ownership transfer (`POST /api/v1/owner/transfer`), the community export (`POST /api/v1/owner/export`), archive and restore (`POST /api/v1/owner/lifecycle`), deletion and its cancellation (`POST /api/v1/owner/deletion`, `/cancel`), and issuing or rotating a host API key (`POST /api/v1/host/api-keys`, `/:id/rotate`). A wrong password is `403 REAUTH_FAILED`; any other `403` is a different refusal, such as an ended membership or an owner who must transfer first, and says so. Attempts on all of these routes share one count per account (`COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`); a correct password gives its attempt back. Each attempt is counted before its password is checked, so requests sent all at once cannot get past the count. Once it is spent, every one of these routes answers that account `429 RATE_LIMITED` without checking the password, even a correct one, until the minute passes. The count ignores the caller's address, so behind a reverse proxy one account's wrong passwords never lock out another.
+
+Enrollment, recovery and rotation require a personal grant with `enroll-agent`; their one-time agent secrets are not browser responses.
 
 ## Host routes and host API keys
 
 Host routes manage communities as records. They never return channels, messages, files, members, invitations, or the community's own audit trail. A host operator's browser session holds every host permission. A program uses a host API key instead, sent as `Authorization: Bearer dkh_…`.
 
-| Area                | Routes                                                                                                                                                            | Permission              |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| Community records   | `GET /api/v1/host/communities`, `GET /api/v1/host/communities/:id`                                                                                                | `communities:read`      |
-| Unclaimed community | `POST /api/v1/host/communities`; `POST /api/v1/host/communities/:id/owner-claims/reissue`, `/owner-claims/:grantId/revoke`; `DELETE /api/v1/host/communities/:id` | `communities:write`     |
-| Suspension          | `PATCH /api/v1/host/communities/:id/lifecycle`                                                                                                                    | `communities:lifecycle` |
-| API keys            | `GET`, `POST /api/v1/host/api-keys`; `POST /api/v1/host/api-keys/:id/rotate`, `/revoke`                                                                           | session only            |
+| Area                | Routes                                                                                                                                                                                              | Permission                                             |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Community records   | `GET /api/v1/host/communities`, `GET /api/v1/host/communities/:id`                                                                                                                                  | `communities:read`                                     |
+| Unclaimed community | `POST /api/v1/host/communities`; `POST /api/v1/host/communities/:id/owner-claims/reissue`, `/owner-claims/:grantId/revoke`; `DELETE /api/v1/host/communities/:id`                                   | `communities:write`                                    |
+| Suspension          | `PATCH /api/v1/host/communities/:id/lifecycle`                                                                                                                                                      | `communities:lifecycle`                                |
+| Limits and usage    | `PUT /api/v1/host/communities/:id/limits`, `PUT /api/v1/host/communities/:id/members/:memberId/limits`; `GET /api/v1/host/communities/:id/usage`, `GET /api/v1/host/usage?after=<id>&limit=<1-100>` | `communities:write` to set, `communities:read` to read |
+| API keys            | `GET`, `POST /api/v1/host/api-keys`; `POST /api/v1/host/api-keys/:id/rotate`, `/revoke`                                                                                                             | session only                                           |
 
 A key is `dkh_` followed by 43 random characters. The server keeps only its SHA-256 hash, so the full key is shown once, in the response that creates it, with `Cache-Control: no-store`. The first 10 characters are kept as a `prefix` so people can tell keys apart.
 
@@ -54,6 +59,20 @@ A key is `dkh_` followed by 43 random characters. The server keeps only its SHA-
 - **Rotate.** `POST /api/v1/host/api-keys/:id/rotate` with `overlapMinutes` (0 to 1,440) and `password` returns a replacement with the same label and permissions. The old key keeps working until `previousKeyExpiresAt`.
 - **Revoke.** `POST /api/v1/host/api-keys/:id/revoke` with `{}` stops the key at once. It cannot be undone.
 - **Offline.** `node dist-server/host-keys.js issue --label <text> --scope <scope>… [--expires-in-days <n>]`, `list`, and `revoke <id>` run against `COMMUNITY_DATABASE_URL` without the web app. `issue` prints only the key on standard output. See [the operations guide](OPERATIONS.md#host-api-keys).
+
+### Limits and usage
+
+A host can cap how many active members a community has and how many bytes of attachments and icons it stores, and can raise or lower one member's active agents from the host-wide `COMMUNITY_AGENTS_PER_OWNER` (1 to 1,000). A cap is a state, not a rate, so reaching one is `409` with its own code, never `429`:
+
+| Code                    | When                                                    |
+| ----------------------- | ------------------------------------------------------- |
+| `MEMBER_LIMIT_REACHED`  | Joining or rejoining would pass the member limit        |
+| `STORAGE_LIMIT_REACHED` | An attachment or icon would pass the file-space limit   |
+| `AGENT_LIMIT_REACHED`   | Enrolling an agent would pass that person's agent limit |
+
+`PUT …/limits` takes `limitsVersion` (the first write uses `1`), `maxActiveMembers` and `maxStorageBytes`, each `null` for no limit; a stale version is `409 STATE_CONFLICT`. Lowering a limit below current use removes nothing. Exports never count against file space. Posted attachments stay for the life of the community; the one file an owner or admin can remove is the community icon, and a removed or replaced icon stops counting at once, before its bytes are deleted. Replacing an icon with one no larger always works, even over the limit. `POST /api/v1/host/communities` also accepts `limits`, which is part of the creation key's payload. The member route answers with only the override and the effective limit, and `404` for anyone outside that community.
+
+Usage returns counts of active members and agents, bytes by kind, the limits, and the UTC day of the newest message. It carries no names, text, files, or per-person numbers. Pages come in id order with a `next` cursor.
 
 When a request carries an `Authorization` header, a host route considers only the key and ignores any session cookie. A missing, unknown, revoked, or expired key is `401 UNAUTHENTICATED`; each failure counts against the caller's address (`COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`, then `429`). A key without the route's permission is `403 FORBIDDEN`. Every community route refuses a `dkh_` bearer with `401` before it looks at anything else. A revocation that lands while a request waits for a community is honored: the request fails with `401` and changes nothing. Each host change writes one host audit row naming the person, the key, or the offline command, with the names of the changed fields and never their values.
 

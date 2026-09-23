@@ -9,7 +9,7 @@ export type PendingAdmission = CommunityWireInvitePending;
  * person to do something outside this page, so they are said in words rather than faked as
  * controls.
  */
-export type AdmissionRecovery = 'retry' | 'new-invitation' | 'reopen';
+export type AdmissionRecovery = 'retry' | 'new-invitation' | 'reopen' | 'wait-for-room';
 
 /** What the person reads when joining stops short of a membership. */
 export type AdmissionFailure = {
@@ -29,13 +29,15 @@ export type AdmissionFailureContext = {
 
 const NEW_INVITATION = 'Ask the person who invited you for a new invitation link.';
 const REOPEN = 'Open your invitation link again in this browser.';
+const WAIT_FOR_ROOM = 'Your invitation still works. Open it again once the owner has made room.';
 
 /**
  * Explain a failed invitation step without revealing why an invitation is unusable.
  *
- * Every refused invitation reads the same, so a guessed or stolen link learns nothing. The
- * one reason that is shown is a community closed to new members, which the server itself
- * reveals only to a genuinely signed link.
+ * Every refused invitation reads the same, so a guessed or stolen link learns nothing. Two
+ * reasons are shown, because the server itself reveals them only to a genuinely signed link: a
+ * community closed to new members, and a community that is full. A full community is not a
+ * dead link: the same invitation works again once there is room.
  */
 export function describeAdmissionFailure(
   cause: unknown,
@@ -45,6 +47,8 @@ export function describeAdmissionFailure(
     ? 'Your account was created, but membership was not added.'
     : 'Membership was not added.';
   if (cause instanceof RequestError) {
+    if (cause.status === 409 && cause.code === 'MEMBER_LIMIT_REACHED')
+      return { title, detail: cause.message, recovery: 'wait-for-room' };
     if (cause.status === 409 && cause.message === 'This community is closed to new members.')
       return { title, detail: cause.message, recovery: 'new-invitation' };
     if (cause.status === 403 && context.phase === 'join') {
@@ -77,6 +81,7 @@ export function describeAdmissionFailure(
 export function recoveryInstruction(recovery: AdmissionRecovery): string | null {
   if (recovery === 'new-invitation') return NEW_INVITATION;
   if (recovery === 'reopen') return REOPEN;
+  if (recovery === 'wait-for-room') return WAIT_FOR_ROOM;
   return null;
 }
 

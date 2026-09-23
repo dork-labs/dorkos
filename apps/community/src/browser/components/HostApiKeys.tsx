@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { describeError, request } from '../api.js';
+import { describeReauthenticationError } from '../account-controls.js';
 import { FocusDialog } from './CommunityAdministration.js';
 
 type Scope =
@@ -24,12 +25,13 @@ const SCOPES: { scope: Scope; label: string; detail: string }[] = [
   {
     scope: 'communities:read',
     label: 'Read community records',
-    detail: 'List communities and read their status.',
+    detail: 'List communities and read their status and how much they use.',
   },
   {
     scope: 'communities:write',
     label: 'Create communities',
-    detail: 'Create unclaimed communities, send owner claims, and abandon unclaimed ones.',
+    detail:
+      'Create unclaimed communities, send owner claims, abandon unclaimed ones, and set limits.',
   },
   {
     scope: 'communities:lifecycle',
@@ -144,7 +146,7 @@ export function HostApiKeys() {
       setPassword('');
       await refresh();
     } catch (cause) {
-      setError(describeError(cause));
+      setError(describeReauthenticationError(cause, 'No key was created.'));
     } finally {
       setBusy(false);
     }
@@ -177,7 +179,11 @@ export function HostApiKeys() {
       closeConfirmation();
       await refresh();
     } catch (cause) {
-      setDialogError(describeError(cause));
+      setDialogError(
+        action === 'rotate'
+          ? describeReauthenticationError(cause, 'The key was not replaced.')
+          : describeError(cause)
+      );
     } finally {
       setBusy(false);
     }

@@ -1,0 +1,22 @@
+flowchart TB
+  accTitle: Community and optional Cloud hosting management
+  accDescr: The Community host implements tenant content and a separate host administration API. Cloud hosting orchestration, local start and move flows, and optional shared sign-in are planned paths at this snapshot. Cloud management does not access messages, files or the host database.
+  app["Local DorkOS app + server<br/>Agents execute here"]
+  cloud["Optional Cloud hosting management<br/>Public /v1/communities contract<br/>Orchestration and launch in progress"]
+  subgraph host["Community host · independently runnable"]
+    admin["Host administration API · implemented<br/>Scoped machine keys · owner claims<br/>Lifecycle · limits · usage counts"]
+    content["Tenant content API · implemented<br/>Membership · channels · posts · files"]
+    auth["Host-wide sign-in<br/>Separate community memberships"]
+    data[("PostgreSQL + tenant-owned blobs<br/>Community is content authority")]
+    admin -->|"Manage containers; no content access"| data
+    content --> data
+    auth -->|"Authenticate; check tenant membership"| content
+  end
+  browser["Community browser"]
+  browser <-->|"HTTP + SSE"| content
+  app <-->|"Approved connection<br/>Qualified HTTP + SSE"| content
+  app -.->|"Planned start / move<br/>Local server relays Cloud requests"| cloud
+  cloud -.->|"Planned host API client<br/>HTTPS + scoped host key"| admin
+  cloud -.->|"Later: optional OIDC sign-in<br/>Generic issuer; separate work"| auth
+  classDef planned fill:#fff5e4,stroke:#a87720,color:#49320c
+  class cloud planned

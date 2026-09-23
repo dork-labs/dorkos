@@ -1,10 +1,12 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { MessagesSquare } from 'lucide-react';
 import { useIsMobile } from '@/layers/shared/model';
+import { PageHeading } from '@/layers/shared/ui';
 import { useTeamRoomRedirect } from '../model/use-team-room-redirect';
 import { RoomHistorySkeleton } from './RoomFlow';
 import { RoomSurface } from './RoomSurface';
 import { RemoteCommunitySurface } from './RemoteCommunitySurface';
+import { CommunityPageHeading } from './CommunityPageHeading';
 
 /**
  * The `/channels` page — one room's history, addressed by search param.
@@ -22,8 +24,29 @@ import { RemoteCommunitySurface } from './RemoteCommunitySurface';
  * room at a second address, so it is sent to Home instead of drawn here — see
  * {@link useTeamRoomRedirect} for why that is a redirect rather than a duplicate
  * (spec §3.5). Every other id is unaffected.
+ *
+ * **The heading sits outside the body, so it survives the body changing.** A
+ * Community switch lands on `?community=` first and on its channel a moment
+ * later; one heading element across both is what keeps focus on it when the
+ * switcher has put it there. A local room's heading is its name in the channel
+ * bar (`ChannelsBar`), so none is added here for one.
  */
 export function ChannelsPage() {
+  const { id, community } = useSearch({ from: '/_shell/channels' });
+  return (
+    <>
+      {community ? (
+        <CommunityPageHeading community={community} roomId={id} />
+      ) : (
+        id === undefined && <PageHeading>Channels</PageHeading>
+      )}
+      <ChannelsPageBody />
+    </>
+  );
+}
+
+/** The room, or the state that stands in for one. */
+function ChannelsPageBody() {
   const { id, thread, entry, community } = useSearch({ from: '/_shell/channels' });
   const navigate = useNavigate();
   const teamRoom = useTeamRoomRedirect(community ? undefined : id, thread, entry);

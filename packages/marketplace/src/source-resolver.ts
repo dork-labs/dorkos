@@ -35,10 +35,13 @@ export type GitSourceDescriptor = Extract<
 
 /**
  * The ref a git source is fetched at when it names neither a `sha` nor a
- * `ref`. Defined here and nowhere else: every resolver and the update check's
- * commit lookup take it from {@link sourceKeyOf}.
+ * `ref`: `HEAD`, the repository's default branch, as Claude Code resolves it.
+ * Not `main`: the fetch honours the ref (DOR-2248), so a `main` default would
+ * fail on every repository whose default branch is called something else.
+ * Defined here and nowhere else: every resolver and the update check's commit
+ * lookup take it from {@link sourceKeyOf}.
  */
-const DEFAULT_REF = 'main';
+const DEFAULT_REF = 'HEAD';
 
 /**
  * The exact place a package is fetched from, normalized so two can be
@@ -50,7 +53,7 @@ export interface SourceKey {
   cloneUrl: string;
   /** The package's directory inside the repository; `''` for a whole-repo source. */
   subpath: string;
-  /** The effective ref: `sha ?? ref ?? 'main'`. */
+  /** The effective ref: `sha ?? ref ?? 'HEAD'`. */
   ref: string;
 }
 
@@ -83,7 +86,7 @@ export function sourceKeyOf(source: ResolvedSourceDescriptor): SourceKey | undef
   }
 }
 
-/** Pin precedence for a git source: `sha > ref > 'main'`. */
+/** Pin precedence for a git source: `sha > ref > 'HEAD'`. */
 function effectiveRef(source: { ref?: string; sha?: string }): string {
   return source.sha ?? source.ref ?? DEFAULT_REF;
 }

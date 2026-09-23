@@ -405,7 +405,8 @@ export class UpdateFlow {
     if (!recorded?.installedFrom && recorded?.sourceRepo) {
       // No "apply reinstalls from the default branch" note: both direct forms
       // (`name@url`, `github:`) resolve to a ref-less url source, so a recorded
-      // key is always `ref: 'main'`, `subpath: ''` and apply matches it.
+      // key is always the default branch (`ref: 'HEAD'`; `'main'` in sidecars
+      // written before DOR-2248), `subpath: ''`, and apply matches it.
       return recorded.sourceKey
         ? { kind: 'direct', source: recorded.sourceKey.cloneUrl }
         : { kind: 'direct', source: recorded.sourceRepo, note: DEFAULT_BRANCH_NOTE };

@@ -2,13 +2,21 @@ import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import type { Logger } from '@dorkos/shared/logger';
 import type { MarketplaceJson } from '@dorkos/marketplace';
 import { initBoundary } from '../../../lib/boundary.js';
 import { PackageFetcher } from '../package-fetcher.js';
-import type { MarketplaceCache, CachedPackage, CachedMarketplace } from '../marketplace-cache.js';
-import type { TemplateDownloader } from '../../core/template-downloader.js';
+import { MarketplaceCache, type CachedMarketplace } from '../marketplace-cache.js';
+import {
+  GitFetchError,
+  GitRefNotFoundError,
+  GitRemoteUnreachableError,
+  type GitTreeSource,
+  type RemoteRef,
+  type TreeRequest,
+} from '../lib/git-tree.js';
+import { UnsupportedSourceUrlError } from '../source-url-policy.js';
 import type { MarketplaceSource } from '../types.js';
 
 /** Construct a fake logger that records calls for later assertion. */
@@ -26,42 +34,45 @@ function buildLogger(): Logger & { calls: { level: string; args: unknown[] }[] }
 /** Construct a MarketplaceCache mock with overridable method spies. */
 function buildCacheMock(overrides?: {
   getPackage?: ReturnType<typeof vi.fn>;
-  putPackage?: ReturnType<typeof vi.fn>;
   materializePackage?: ReturnType<typeof vi.fn>;
   readMarketplace?: ReturnType<typeof vi.fn>;
   writeMarketplace?: ReturnType<typeof vi.fn>;
 }): MarketplaceCache {
   return {
     getPackage: overrides?.getPackage ?? vi.fn().mockResolvedValue(null),
-    putPackage:
-      overrides?.putPackage ??
-      vi.fn().mockImplementation(async (name: string, sha: string) => `/tmp/cache/${name}@${sha}`),
-    // Default fake: clone into a temp dir, then return the final cache path,
-    // mirroring the real cache's clone-to-temp-then-rename contract.
-    materializePackage:
-      overrides?.materializePackage ??
-      vi
-        .fn()
-        .mockImplementation(
-          async (name: string, sha: string, clone: (tempDir: string) => Promise<void>) => {
-            const tempDir = `/tmp/cache/.tmp-clone-${name}@${sha}`;
-            await clone(tempDir);
-            return `/tmp/cache/${name}@${sha}`;
-          }
-        ),
+    materializePackage: overrides?.materializePackage ?? vi.fn(),
     readMarketplace: overrides?.readMarketplace ?? vi.fn().mockResolvedValue(null),
     writeMarketplace: overrides?.writeMarketplace ?? vi.fn().mockResolvedValue(undefined),
   } as unknown as MarketplaceCache;
 }
 
-/** Construct a TemplateDownloader mock exposing a cloneRepository spy. */
-function buildDownloaderMock(
-  cloneImpl?: (url: string, dest: string, ref?: string) => Promise<void>
-): TemplateDownloader {
+/** A full commit id made of one repeated hex digit. */
+const sha = (digit: string): string => digit.repeat(40);
+
+/**
+ * A fake git: `lookup` answers `lookedUp`, and `fetch` writes a marker into the
+ * directory it is given and reports `fetched` (the looked-up commit by default).
+ */
+function buildGitMock(opts?: {
+  lookedUp?: RemoteRef;
+  fetched?: string;
+  fetchImpl?: (req: TreeRequest) => Promise<string>;
+}): GitTreeSource & { lookup: ReturnType<typeof vi.fn>; fetch: ReturnType<typeof vi.fn> } {
+  const lookedUp = opts?.lookedUp ?? {
+    kind: 'found',
+    commitSha: sha('a'),
+    refName: 'refs/heads/main',
+  };
   return {
-    cloneRepository:
-      cloneImpl !== undefined ? vi.fn(cloneImpl) : vi.fn().mockResolvedValue(undefined),
-  } as unknown as TemplateDownloader;
+    lookup: vi.fn().mockResolvedValue(lookedUp),
+    fetch: vi.fn(
+      opts?.fetchImpl ??
+        (async (req: TreeRequest) => {
+          await writeFile(path.join(req.destDir, 'marker'), 'tree\n');
+          return opts?.fetched ?? req.commitSha;
+        })
+    ),
+  };
 }
 
 /** Minimal valid MarketplaceJson document for fetchMarketplaceJson tests. */
@@ -95,104 +106,206 @@ describe('PackageFetcher', () => {
     vi.restoreAllMocks();
   });
 
-  describe('fetchFromGit', () => {
-    it('returns cached path without cloning when cache hit', async () => {
-      const cachedPackage: CachedPackage = {
-        packageName: 'my-plugin',
-        commitSha: 'tmp-cached',
-        path: '/tmp/cache/my-plugin@tmp-cached',
-        cachedAt: new Date(),
-      };
-      const cache = buildCacheMock({
-        getPackage: vi.fn().mockResolvedValue(cachedPackage),
-      });
-      const downloader = buildDownloaderMock();
-      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+  /**
+   * The one path every git tree takes (DOR-2248), against a REAL cache so the
+   * key an entry lands under is what is asserted, not what a mock was told.
+   */
+  describe('git trees', () => {
+    let dorkHome: string;
+    let cache: MarketplaceCache;
 
-      const result = await fetcher.fetchFromGit({
-        packageName: 'my-plugin',
-        gitUrl: 'https://github.com/example/my-plugin.git',
-      });
-
-      expect(result.fromCache).toBe(true);
-      expect(result.path).toBe(cachedPackage.path);
-      expect(downloader.cloneRepository).not.toHaveBeenCalled();
-      expect(cache.putPackage).not.toHaveBeenCalled();
+    beforeEach(async () => {
+      dorkHome = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-git-'));
+      cache = new MarketplaceCache(dorkHome);
     });
 
-    it('materializes into the cache path on cache miss, cloning into a temp dir', async () => {
-      const finalPath = '/tmp/cache/my-plugin@tmp-abc';
-      const tempDir = '/tmp/cache/.tmp-clone-xyz';
-      const materializePackage = vi
-        .fn()
-        .mockImplementation(
-          async (_name: string, _sha: string, clone: (dir: string) => Promise<void>) => {
-            await clone(tempDir);
-            return finalPath;
-          }
-        );
-      const cache = buildCacheMock({
-        getPackage: vi.fn().mockResolvedValue(null),
-        materializePackage,
-      });
-      const downloader = buildDownloaderMock();
-      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+    afterEach(async () => {
+      await rm(dorkHome, { recursive: true, force: true });
+    });
 
-      const result = await fetcher.fetchFromGit({
+    const fetchMain = (fetcher: PackageFetcher, force?: boolean) =>
+      fetcher.fetchFromGit({
         packageName: 'my-plugin',
-        gitUrl: 'https://github.com/example/my-plugin.git',
+        gitUrl: 'https://gitlab.example.com/example/my-plugin.git',
         ref: 'main',
+        force,
       });
 
-      expect(result.fromCache).toBe(false);
-      expect(result.path).toBe(finalPath);
-      expect(materializePackage).toHaveBeenCalledWith(
-        'my-plugin',
-        expect.any(String),
-        expect.any(Function)
-      );
-      // The clone targets the isolated temp dir, never the final cache path:
-      // this is what prevents two concurrent clones from colliding.
-      expect(downloader.cloneRepository).toHaveBeenCalledWith(
-        'https://github.com/example/my-plugin.git',
-        tempDir,
+    it('fetches the looked-up commit and caches it under that commit', async () => {
+      // Purpose: a miss fetches exactly the commit the lookup named, by id.
+      const git = buildGitMock();
+      const result = await fetchMain(new PackageFetcher(cache, git, buildLogger()));
+
+      expect(git.lookup).toHaveBeenCalledWith(
+        'https://gitlab.example.com/example/my-plugin.git',
         'main'
       );
+      expect(git.fetch).toHaveBeenCalledWith(
+        expect.objectContaining({ commitSha: sha('a'), refName: 'refs/heads/main', subpath: '' })
+      );
+      expect(result).toEqual({
+        path: path.join(cache.cacheRoot, 'trees', `my-plugin@${sha('a')}`),
+        commitSha: sha('a'),
+        fromCache: false,
+      });
     });
 
-    it('bypasses the cache hit when force: true is supplied', async () => {
-      const cachedPackage: CachedPackage = {
-        packageName: 'my-plugin',
-        commitSha: 'tmp-cached',
-        path: '/tmp/cache/my-plugin@tmp-cached',
-        cachedAt: new Date(),
+    it('serves a cached tree for the looked-up commit without fetching', async () => {
+      const git = buildGitMock();
+      const fetcher = new PackageFetcher(cache, git, buildLogger());
+      await fetchMain(fetcher);
+      git.fetch.mockClear();
+
+      const again = await fetchMain(fetcher);
+      expect(again.fromCache).toBe(true);
+      expect(again.commitSha).toBe(sha('a'));
+      expect(git.fetch).not.toHaveBeenCalled();
+    });
+
+    it('records and keys the commit that arrived when the ref moved mid-fetch', async () => {
+      // Purpose: the regression. A push between lookup and fetch used to land
+      // the new tree under the old key; now key and record follow the tree.
+      const git = buildGitMock({ fetched: sha('b') });
+      const result = await fetchMain(new PackageFetcher(cache, git, buildLogger()));
+
+      expect(result.commitSha).toBe(sha('b'));
+      expect(result.path).toBe(path.join(cache.cacheRoot, 'trees', `my-plugin@${sha('b')}`));
+      expect(await cache.getPackage('my-plugin', sha('a'), '')).toBeNull();
+    });
+
+    it('fails plainly, fetching nothing, when the ref does not exist', async () => {
+      // Purpose: a typo'd ref used to fall back to a placeholder and clone the
+      // default branch; now it is an error a person can act on.
+      const git = buildGitMock({ lookedUp: { kind: 'missing' } });
+      const error = await fetchMain(new PackageFetcher(cache, git, buildLogger())).catch((e) => e);
+
+      expect(error).toBeInstanceOf(GitRefNotFoundError);
+      expect(error.message).toBe(
+        'There\'s no branch or tag named "main" in gitlab.example.com/example/my-plugin.'
+      );
+      expect(git.fetch).not.toHaveBeenCalled();
+    });
+
+    it('says an empty repository has no commits, rather than no branch named HEAD', async () => {
+      // Purpose: a ref-less source on an empty repository misses `HEAD`;
+      // "no branch or tag named HEAD" is true and useless.
+      const git = buildGitMock({ lookedUp: { kind: 'missing' } });
+      await expect(
+        new PackageFetcher(cache, git, buildLogger()).fetchFromGit({
+          packageName: 'x',
+          gitUrl: 'https://gitlab.example.com/o/empty.git',
+        })
+      ).rejects.toThrow('gitlab.example.com/o/empty has no commits yet.');
+    });
+
+    it('fails plainly, fetching nothing, when the remote cannot be reached', async () => {
+      // Purpose: "never a placeholder masquerading as a commit" — an
+      // unreachable remote no longer yields a `tmp-` key.
+      const git = buildGitMock({
+        lookedUp: { kind: 'unreachable', reason: 'Could not resolve host' },
+      });
+      await expect(fetchMain(new PackageFetcher(cache, git, buildLogger()))).rejects.toThrow(
+        new GitRemoteUnreachableError(
+          'https://gitlab.example.com/example/my-plugin.git',
+          'Could not resolve host'
+        )
+      );
+      expect(git.fetch).not.toHaveBeenCalled();
+      expect(await cache.listPackages()).toEqual([]);
+    });
+
+    it('refuses an unsafe address before any git runs', async () => {
+      const git = buildGitMock();
+      await expect(
+        new PackageFetcher(cache, git, buildLogger()).fetchFromGit({
+          packageName: 'x',
+          gitUrl: "ext::sh -c 'id'",
+        })
+      ).rejects.toBeInstanceOf(UnsupportedSourceUrlError);
+      expect(git.lookup).not.toHaveBeenCalled();
+    });
+
+    it('asks for HEAD when a bare git URL names no ref', async () => {
+      // Purpose: the default is the repository's default branch, not `main`.
+      const git = buildGitMock();
+      await new PackageFetcher(cache, git, buildLogger()).fetchFromGit({
+        packageName: 'x',
+        gitUrl: 'https://gitlab.example.com/o/r.git',
+      });
+      expect(git.lookup).toHaveBeenCalledWith('https://gitlab.example.com/o/r.git', 'HEAD');
+    });
+
+    it('two concurrent fetches of one package both succeed and fetch exactly once', async () => {
+      // The regression for the failing `flow` install: a UI preview and an
+      // install fire together, and two git processes must never share a dir.
+      const git = buildGitMock({
+        fetchImpl: async (req) => {
+          await new Promise((r) => setTimeout(r, 25));
+          await writeFile(path.join(req.destDir, 'marker'), 'tree\n');
+          return req.commitSha;
+        },
+      });
+      const fetcher = new PackageFetcher(cache, git, buildLogger());
+      const source = {
+        source: 'git-subdir' as const,
+        url: 'https://github.com/dork-labs/marketplace.git',
+        path: 'plugins/flow',
       };
-      const finalPath = '/tmp/cache/my-plugin@tmp-forced';
-      const materializePackage = vi
-        .fn()
-        .mockImplementation(
-          async (_name: string, _sha: string, clone: (dir: string) => Promise<void>) => {
-            await clone('/tmp/cache/.tmp-clone-forced');
-            return finalPath;
-          }
-        );
-      const cache = buildCacheMock({
-        getPackage: vi.fn().mockResolvedValue(cachedPackage),
-        materializePackage,
-      });
-      const downloader = buildDownloaderMock();
-      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
 
-      const result = await fetcher.fetchFromGit({
-        packageName: 'my-plugin',
-        gitUrl: 'https://github.com/example/my-plugin.git',
-        force: true,
-      });
+      const [a, b] = await Promise.all([
+        fetcher.fetchPackage({ packageName: 'flow', source }),
+        fetcher.fetchPackage({ packageName: 'flow', source }),
+      ]);
 
-      expect(result.fromCache).toBe(false);
-      expect(result.path).toBe(finalPath);
-      expect(downloader.cloneRepository).toHaveBeenCalled();
+      const expected = path.join(
+        (await cache.getPackage('flow', sha('a'), 'plugins/flow'))!.path,
+        'plugins/flow'
+      );
+      expect(a.path).toBe(expected);
+      expect(b.path).toBe(expected);
+      expect(git.fetch).toHaveBeenCalledTimes(1);
+      expect(git.fetch).toHaveBeenCalledWith(expect.objectContaining({ subpath: 'plugins/flow' }));
     });
+
+    it('surfaces the real fetch failure and leaves nothing cached', async () => {
+      // A git failure must reach the person as itself, never as a later
+      // "manifest missing" read from an empty directory.
+      const git = buildGitMock({
+        fetchImpl: async (req) => {
+          throw new GitFetchError(req.cloneUrl, "repository 'x' not found");
+        },
+      });
+      await expect(fetchMain(new PackageFetcher(cache, git, buildLogger()))).rejects.toThrow(
+        /repository 'x' not found/
+      );
+      expect(await cache.listPackages()).toEqual([]);
+    });
+  });
+
+  describe('lookupCommitSha', () => {
+    it('answers with the same lookup a fetch uses', async () => {
+      const git = buildGitMock();
+      const fetcher = new PackageFetcher(buildCacheMock(), git, buildLogger());
+      expect(await fetcher.lookupCommitSha('https://gitlab.example.com/o/r.git', 'v1')).toBe(
+        sha('a')
+      );
+      expect(git.lookup).toHaveBeenCalledWith('https://gitlab.example.com/o/r.git', 'v1');
+    });
+
+    it.each<RemoteRef>([{ kind: 'missing' }, { kind: 'unreachable', reason: 'offline' }])(
+      'returns a placeholder isRealCommitSha rejects when the lookup is %j',
+      async (lookedUp) => {
+        // Purpose: the update check's contract — a failed lookup is never a commit.
+        const fetcher = new PackageFetcher(
+          buildCacheMock(),
+          buildGitMock({ lookedUp }),
+          buildLogger()
+        );
+        expect(await fetcher.lookupCommitSha('https://gitlab.example.com/o/r.git', 'main')).toMatch(
+          /^tmp-\d+$/
+        );
+      }
+    );
   });
 
   describe('fetchMarketplaceJson', () => {
@@ -206,8 +319,7 @@ describe('PackageFetcher', () => {
       vi.stubGlobal('fetch', fetchMock);
 
       const cache = buildCacheMock();
-      const downloader = buildDownloaderMock();
-      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
 
       const result = await fetcher.fetchMarketplaceJson(buildSource());
 
@@ -231,9 +343,8 @@ describe('PackageFetcher', () => {
       const cache = buildCacheMock({
         readMarketplace: vi.fn().mockResolvedValue(cached),
       });
-      const downloader = buildDownloaderMock();
       const logger = buildLogger();
-      const fetcher = new PackageFetcher(cache, downloader, logger);
+      const fetcher = new PackageFetcher(cache, buildGitMock(), logger);
 
       const result = await fetcher.fetchMarketplaceJson(buildSource());
 
@@ -250,8 +361,7 @@ describe('PackageFetcher', () => {
       const cache = buildCacheMock({
         readMarketplace: vi.fn().mockResolvedValue(null),
       });
-      const downloader = buildDownloaderMock();
-      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
 
       await expect(fetcher.fetchMarketplaceJson(buildSource())).rejects.toThrow(/network down/);
     });
@@ -274,8 +384,7 @@ describe('PackageFetcher', () => {
       const fetchMock = vi.fn();
       vi.stubGlobal('fetch', fetchMock);
       const cache = buildCacheMock();
-      const downloader = buildDownloaderMock();
-      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
 
       const result = await fetcher.fetchMarketplaceJson(
         buildSource({ name: 'personal', source: pathToFileURL(workDir).href })
@@ -301,8 +410,7 @@ describe('PackageFetcher', () => {
       const fetchMock = vi.fn();
       vi.stubGlobal('fetch', fetchMock);
       const cache = buildCacheMock();
-      const downloader = buildDownloaderMock();
-      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
 
       const result = await fetcher.fetchMarketplaceJson(
         buildSource({ name: 'dork-labs', source: pathToFileURL(workDir).href })
@@ -328,8 +436,7 @@ describe('PackageFetcher', () => {
       const fetchMock = vi.fn();
       vi.stubGlobal('fetch', fetchMock);
       const cache = buildCacheMock();
-      const downloader = buildDownloaderMock();
-      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
 
       const result = await fetcher.fetchMarketplaceJson(
         buildSource({ name: 'root-wins', source: pathToFileURL(workDir).href })
@@ -344,8 +451,7 @@ describe('PackageFetcher', () => {
       // Note: do not seed marketplace.json at either the root or .claude-plugin/ on purpose.
 
       const cache = buildCacheMock();
-      const downloader = buildDownloaderMock();
-      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
 
       const sourceUrl = pathToFileURL(workDir).href;
       await expect(
@@ -361,8 +467,7 @@ describe('PackageFetcher', () => {
       await writeFile(path.join(workDir, 'marketplace.json'), '{ not valid json', 'utf-8');
 
       const cache = buildCacheMock();
-      const downloader = buildDownloaderMock();
-      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
 
       await expect(
         fetcher.fetchMarketplaceJson(
@@ -383,8 +488,7 @@ describe('PackageFetcher', () => {
       await mkdir(pkgDir, { recursive: true });
 
       const cache = buildCacheMock();
-      const downloader = buildDownloaderMock();
-      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
 
       const result = await fetcher.fetchFromGit({
         packageName: 'my-plugin',
@@ -395,8 +499,7 @@ describe('PackageFetcher', () => {
       expect(result.commitSha).toBe('local');
       expect(result.path).toBe(pkgDir);
       expect(cache.getPackage).not.toHaveBeenCalled();
-      expect(cache.putPackage).not.toHaveBeenCalled();
-      expect(downloader.cloneRepository).not.toHaveBeenCalled();
+      expect(cache.materializePackage).not.toHaveBeenCalled();
     });
 
     it('fetchFromGit decodes a file:// path whose directory name contains a space', async () => {
@@ -409,8 +512,7 @@ describe('PackageFetcher', () => {
       await mkdir(pkgDir, { recursive: true });
 
       const cache = buildCacheMock();
-      const downloader = buildDownloaderMock();
-      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
 
       const result = await fetcher.fetchFromGit({
         packageName: 'my-plugin',

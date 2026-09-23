@@ -188,14 +188,16 @@ describe('resolvePluginSource — object-form sources ignore pluginRoot', () => 
 });
 
 describe('sourceKeyOf', () => {
-  it("gives a github source resolvePluginSource's .git clone URL and the 'main' default ref", () => {
+  it("gives a github source resolvePluginSource's .git clone URL and the default branch", () => {
     // Purpose: install and the update check must name the same place; the
     // github form's URL is built once, in resolvePluginSource, with `.git`.
+    // No ref means the repository's default branch (`HEAD`), never an assumed
+    // `main` (DOR-2248).
     const descriptor = resolvePluginSource({ source: 'github', repo: 'o/r' }, {});
     expect(sourceKeyOf(descriptor)).toEqual({
       cloneUrl: 'https://github.com/o/r.git',
       subpath: '',
-      ref: 'main',
+      ref: 'HEAD',
     });
   });
 

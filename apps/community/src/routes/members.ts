@@ -16,6 +16,7 @@ import {
   transaction,
   type Member,
 } from '../data.js';
+import type { ConfirmPassword } from '../password-confirmation.js';
 import { ApiError, json, readJson } from '../http.js';
 
 async function live(client: PoolClient, id: string, communityId: string) {
@@ -73,7 +74,11 @@ async function remove(client: PoolClient, target: Member, actorId: string, actio
 /** Register member removal, leave and password-confirmed ownership transfer. */
 export function registerMemberRoutes(
   app: Hono,
-  { pool, auth }: { pool: Pool; auth: CommunityAuth }
+  {
+    pool,
+    auth,
+    confirmPassword,
+  }: { pool: Pool; auth: CommunityAuth; confirmPassword: ConfirmPassword }
 ) {
   app.get('/me', async (c) => {
     const actor = await requireMember(c, auth, pool);
@@ -146,14 +151,7 @@ export function registerMemberRoutes(
   app.post('/me/leave', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireMemberLeaveRequestSchema);
-    try {
-      await auth.api.verifyPassword({
-        headers: c.req.raw.headers,
-        body: { password: body.password },
-      });
-    } catch {
-      throw new ApiError(403, 'FORBIDDEN', 'Reauthentication failed.');
-    }
+    await confirmPassword(c, actor.user_id, body.password);
     await transaction(pool, async (client) => {
       const current = await live(client, actor.id, actor.community_id);
       if (!current) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
@@ -173,14 +171,7 @@ export function registerMemberRoutes(
   app.post('/owner/transfer', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireOwnerTransferRequestSchema);
-    try {
-      await auth.api.verifyPassword({
-        headers: c.req.raw.headers,
-        body: { password: body.password },
-      });
-    } catch {
-      throw new ApiError(403, 'FORBIDDEN', 'Reauthentication failed.');
-    }
+    await confirmPassword(c, actor.user_id, body.password);
     const lifecycleVersion = await transaction(pool, async (client) => {
       const community = await client.query<{ lifecycle: string; lifecycle_version: number }>(
         'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR UPDATE',

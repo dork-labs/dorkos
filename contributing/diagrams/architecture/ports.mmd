@@ -10,7 +10,7 @@ flowchart LR
   connector --> backends["Composio · Nango · raw MCP<br/>Managed Cloud backend"]
   rooms["Local registry / remote consumers"] --> community{{"CommunityAdapter"}}
   community --> local["LocalCommunityAdapter<br/>Wraps local RoomService"]
-  community --> remote["RemoteCommunityAdapter<br/>Owner-qualified, lazy instance<br/>Qualified HTTP + SSE"]
+  community --> remote["RemoteCommunityAdapter<br/>Owner-qualified, lazy instance<br/>Pinned host + community UUID<br/>Qualified HTTP + SSE"]
   community -.-> buzz["Buzz implementation<br/>Not wired"]
   notes["Agent memory"] --> memory{{"MemoryProvider"}}
   memory --> files["Built-in MEMORY.md store<br/>Optional registered backends"]

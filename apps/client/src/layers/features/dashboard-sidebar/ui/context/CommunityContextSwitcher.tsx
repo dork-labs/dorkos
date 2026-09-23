@@ -30,6 +30,7 @@ import {
   ResponsiveDropdownMenuRadioItem,
   ResponsiveDropdownMenuSeparator,
   ResponsiveDropdownMenuTrigger,
+  focusPageHeading,
   Input,
   SidebarMenuNodes,
   Skeleton,
@@ -61,6 +62,35 @@ export interface CommunityContextSwitcherProps {
    * in the trigger's accessible name and in the menu it opens.
    */
   compact?: boolean;
+}
+
+/**
+ * Notice whether the person presses or types anywhere until stopped.
+ *
+ * A phone switch to a remote Community can take seconds. Focus moving in that
+ * time is not enough to say the person moved it — a composer takes focus on
+ * mount by itself — so what counts is their own hand on a key or the screen.
+ *
+ * **Any key counts, on purpose** — Shift, Tab and arrows included, not only
+ * keys that type. A person pressing Tab is steering focus themselves, and one
+ * holding Shift is mid-way to doing something; either way the switcher yanking
+ * focus to the heading would fight them. Missing a heading announcement is the
+ * cheaper mistake.
+ */
+function watchPersonInput(): { acted: () => boolean; stop: () => void } {
+  let acted = false;
+  const mark = () => {
+    acted = true;
+  };
+  document.addEventListener('pointerdown', mark, true);
+  document.addEventListener('keydown', mark, true);
+  return {
+    acted: () => acted,
+    stop: () => {
+      document.removeEventListener('pointerdown', mark, true);
+      document.removeEventListener('keydown', mark, true);
+    },
+  };
 }
 
 function orderedConnections(
@@ -106,16 +136,6 @@ function navigationDescriptor(connection: CommunityConnectionDescriptor) {
   };
 }
 
-function focusPageHeading() {
-  requestAnimationFrame(() => {
-    const heading = document.querySelector<HTMLElement>('main h1, [role="main"] h1');
-    if (heading) {
-      heading.tabIndex = -1;
-      heading.focus();
-    }
-  });
-}
-
 /**
  * Select the local installation or one owner-authorized Community.
  *
@@ -154,6 +174,13 @@ export function CommunityContextSwitcher({
   const selectedItem = useRef<HTMLDivElement>(null);
   const pendingSelection = useRef(false);
   const returnFocus = useRef<HTMLElement | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  /**
+   * A phone choice is in flight, so the sheet must not hand focus back to the
+   * trigger as it closes: where focus goes is decided when the switch settles
+   * ({@link settlePhoneFocus}), and the sheet can close before or after that.
+   */
+  const holdCloseFocus = useRef(false);
   const [pendingRef, setPendingRef] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [open, setOpen] = useState(false);
@@ -221,6 +248,37 @@ export function CommunityContextSwitcher({
     setOpen(true);
   });
 
+  /**
+   * Put focus where a finished phone choice leaves the person.
+   *
+   * "Selecting closes the sheet, commits navigation, and moves focus to the
+   * new page heading" (spec, Phone and narrow widths). Only a switch that
+   * landed moves it there. One that failed or was overtaken lets go of the
+   * close hold instead, and if focus has already dropped to the page body
+   * with nowhere to be, it goes back to the trigger — what the sheet would
+   * have done — but never away from anything the person has since focused.
+   * Desktop keeps the popover's own focus return, so this is phone-only.
+   *
+   * A remote Community can take seconds to answer. If the person has
+   * pressed or typed somewhere in that time — the message box, a link — their
+   * focus stays where they put it. Focus the app moved by itself (a composer
+   * taking it on mount) is not theirs, and the heading still wins over it.
+   */
+  function settlePhoneFocus(landed: boolean, personActed: boolean) {
+    if (!isMobile) return;
+    if (!landed) holdCloseFocus.current = false;
+    if (personActed) return;
+    if (landed) {
+      // The heading may still be waiting for its full name; the person can act
+      // during that wait too, and wins if they do.
+      const late = watchPersonInput();
+      void focusPageHeading({ cancelled: late.acted }).finally(late.stop);
+      return;
+    }
+    const active = document.activeElement;
+    if (active === null || active === document.body) trigger.current?.focus();
+  }
+
   async function selectCommunity(connection: CommunityConnectionDescriptor) {
     if (connection.ref === selectedRef || pendingSelection.current) return;
     if (connection.status !== 'connected') {
@@ -231,6 +289,10 @@ export function CommunityContextSwitcher({
     if (owner.ownerKey === null) return;
     const capturedOwner = { epoch: owner.epoch, ownerKey: owner.ownerKey };
     const previousLocation = { pathname: location.pathname, search: location.search };
+    // Set before the first await, so it is in place by the time the sheet,
+    // closing on this same press, asks where focus should go.
+    holdCloseFocus.current = isMobile;
+    const person = watchPersonInput();
     pendingSelection.current = true;
     setPendingRef(connection.ref);
     let targetCommitted = false;
@@ -239,7 +301,6 @@ export function CommunityContextSwitcher({
       await navigate({ to: '/channels', search: { community: connection.ref } });
       targetCommitted = true;
       capturedRoute = getCommunityRouteEpoch();
-      if (isMobile) focusPageHeading();
       const remembered = await transport.resolveCommunityNavigation(connection.ref);
       const fallback = remembered
         ? null
@@ -247,7 +308,10 @@ export function CommunityContextSwitcher({
             (room) => room.readable && !room.archived
           ) ?? null);
       const roomId = remembered?.roomId ?? fallback?.roomId;
-      if (!isCommunityAuthorityCurrent(capturedOwner) || !capturedRoute.isCurrent()) return;
+      if (!isCommunityAuthorityCurrent(capturedOwner) || !capturedRoute.isCurrent()) {
+        settlePhoneFocus(false, person.acted());
+        return;
+      }
       if (roomId)
         await navigate({
           to: '/channels',
@@ -257,7 +321,9 @@ export function CommunityContextSwitcher({
             ...(remembered?.threadId ? { thread: remembered.threadId } : {}),
           },
         });
+      settlePhoneFocus(true, person.acted());
     } catch {
+      settlePhoneFocus(false, person.acted());
       // A target may render its labelled skeleton before its remote destination
       // resolves, but a failed read cannot leave it selected. Restore only while
       // this exact route and owner remain current; a newer choice always wins.
@@ -284,6 +350,7 @@ export function CommunityContextSwitcher({
           });
       }
     } finally {
+      person.stop();
       pendingSelection.current = false;
       setPendingRef(null);
     }
@@ -295,6 +362,8 @@ export function CommunityContextSwitcher({
     if (owner.ownerKey === null) return;
     const capturedOwner = { epoch: owner.epoch, ownerKey: owner.ownerKey };
     const capturedRoute = getCommunityRouteEpoch();
+    holdCloseFocus.current = isMobile;
+    const person = watchPersonInput();
     pendingSelection.current = true;
     try {
       const state = await transport.getCommunityNavigation();
@@ -302,8 +371,10 @@ export function CommunityContextSwitcher({
         state.ownerKey !== capturedOwner.ownerKey ||
         !isCommunityAuthorityCurrent(capturedOwner) ||
         !capturedRoute.isCurrent()
-      )
+      ) {
+        settlePhoneFocus(false, person.acted());
         return;
+      }
       const destination = CommunityInstallationDestinationSchema.safeParse(
         state.installationDestination
       );
@@ -312,10 +383,13 @@ export function CommunityContextSwitcher({
           ? ({ to: destination.data.path, search: destination.data.search } as never)
           : { to: '/' }
       );
+      settlePhoneFocus(true, person.acted());
     } catch {
-      if (isCommunityAuthorityCurrent(capturedOwner) && capturedRoute.isCurrent())
-        await navigate({ to: '/' });
+      const fallback = isCommunityAuthorityCurrent(capturedOwner) && capturedRoute.isCurrent();
+      if (fallback) await navigate({ to: '/' });
+      settlePhoneFocus(fallback, person.acted());
     } finally {
+      person.stop();
       pendingSelection.current = false;
     }
   }
@@ -339,6 +413,11 @@ export function CommunityContextSwitcher({
 
   function handleCloseAutoFocus(event: Event) {
     guarded.onCloseAutoFocus(event);
+    if (holdCloseFocus.current) {
+      holdCloseFocus.current = false;
+      event.preventDefault();
+      return;
+    }
     const previous = returnFocus.current;
     returnFocus.current = null;
     if (event.defaultPrevented || !previous?.isConnected) return;
@@ -369,6 +448,7 @@ export function CommunityContextSwitcher({
       <ResponsiveDropdownMenu open={open} onOpenChange={handleOpenChange}>
         <ResponsiveDropdownMenuTrigger asChild>
           <button
+            ref={trigger}
             type="button"
             data-testid="sidebar-header-block"
             aria-label={labelPending ? 'Context menu' : `${label} menu`}

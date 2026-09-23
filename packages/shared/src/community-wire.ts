@@ -655,12 +655,16 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'ATTACHMENT_TOO_LARGE',
   'UNSUPPORTED_ATTACHMENT_TYPE',
   'RATE_LIMITED',
+  'REAUTH_FAILED',
   'COMMUNITY_SELECTION_REQUIRED',
   'COMMUNITY_UNAVAILABLE',
   'COMMUNITY_ARCHIVED',
   'COMMUNITY_SUSPENDED',
   'COMMUNITY_DELETION_PENDING',
   'UNAVAILABLE',
+  'MEMBER_LIMIT_REACHED',
+  'STORAGE_LIMIT_REACHED',
+  'AGENT_LIMIT_REACHED',
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;

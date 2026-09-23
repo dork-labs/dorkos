@@ -1,4 +1,5 @@
 import { useSafeSearch } from '@/layers/shared/model';
+import { PageHeading } from '@/layers/shared/ui';
 import {
   communityAccessState,
   useRemoteCommunityRoom,
@@ -65,9 +66,9 @@ function RoomIdentity({ room }: { room: RoomWithRoster }) {
         size="xs"
         className="shrink-0"
       />
-      <h1 className="flex min-w-[6ch] shrink items-center text-sm font-medium">
+      <PageHeading visible className="flex min-w-[6ch] shrink items-center text-sm font-medium">
         <RoomTitle room={room} />
-      </h1>
+      </PageHeading>
       {room.topic && (
         <span
           className="text-muted-foreground hidden min-w-0 shrink-[99999] truncate text-xs sm:inline"

@@ -127,16 +127,15 @@ describe('marketplace install pipeline — failure paths', () => {
     }
   });
 
-  it('rolls back cleanly when the fetcher throws during git clone', async () => {
-    // Wire a harness whose fetcher is replaced with one whose clone
-    // step throws immediately — simulates a network or auth failure
-    // inside `templateDownloader.cloneRepository`.
+  it('rolls back cleanly when the fetcher throws during the git fetch', async () => {
+    // Wire a harness whose fetcher is replaced with one whose git step
+    // throws immediately — simulates a network or auth failure inside the
+    // git fetch.
     const harness = buildInstallerForTests(dorkHome);
 
     // Replace the resolver's output with a git-kind descriptor so the
     // installer routes through the fetcher (which in turn rejects to
-    // simulate `templateDownloader.cloneRepository` blowing up on a
-    // network / auth failure).
+    // simulate the git fetch blowing up on a network / auth failure).
     const fetchSpy = vi
       .spyOn(harness.fetcher, 'fetchFromGit')
       .mockRejectedValue(new Error('simulated network failure: ECONNRESET'));
@@ -339,6 +338,6 @@ describe('marketplace install pipeline — failure paths', () => {
     // The planted package is still on disk — `force` does not sweep
     // unrelated install state.
     expect(await pathExists(path.join(existingSkillDir, 'SKILL.md'))).toBe(true);
-    expect(harness.spies.templateClone).not.toHaveBeenCalled();
+    expect(harness.spies.gitFetch).not.toHaveBeenCalled();
   });
 });

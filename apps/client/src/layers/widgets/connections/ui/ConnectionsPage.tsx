@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { PageContainer } from '@/layers/shared/ui';
+import { PageContainer, PageHeading } from '@/layers/shared/ui';
 import { MessagingRegion } from './MessagingRegion';
 import { AccountsRegion } from './AccountsRegion';
 
@@ -36,7 +36,7 @@ export function ConnectionsPage() {
             is a `nav` landmark, not a heading, so it cannot stand in for
             one, and a page with no `h1` leaves its sections hanging under
             nothing for anyone navigating by heading. */}
-        <h1 className="sr-only">Connections</h1>
+        <PageHeading>Connections</PageHeading>
         <p className="text-muted-foreground max-w-prose text-sm">
           Everything outside DorkOS: the ways people reach your agents, and the accounts your agents
           can act on for you.
