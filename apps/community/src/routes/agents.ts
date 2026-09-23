@@ -21,6 +21,7 @@ import {
 } from '../data.js';
 import { mintHandle } from '../handles.js';
 import { ApiError, json, readJson } from '../http.js';
+import { agentLimitReached, effectiveAgentLimit } from '../limits.js';
 import { hashSecret, randomToken } from '../security.js';
 
 const uuid = z.uuid();
@@ -67,8 +68,13 @@ export function registerAgentRoutes(
         'SELECT count(*)::text AS n FROM agents WHERE owner_member_id=$1 AND community_id=$2 AND active',
         [member.id, member.community_id]
       );
-      if (Number(count.rows[0].n) >= config.limits.agentsPerOwner)
-        throw new ApiError(429, 'RATE_LIMITED', 'Active agent limit reached.');
+      const limit = await effectiveAgentLimit(
+        client,
+        member.community_id,
+        member.id,
+        config.limits.agentsPerOwner
+      );
+      if (Number(count.rows[0].n) >= limit) throw agentLimitReached();
       const agent = existing.rows[0]
         ? await client.query<AgentRow>(
             'UPDATE agents SET active=true,revoked_at=NULL,display_name=$3 WHERE id=$1 AND community_id=$2 RETURNING id,display_name,handle,owner_member_id,active',

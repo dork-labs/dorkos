@@ -29,6 +29,7 @@ import { registerAttachmentRoutes } from './routes/attachments.js';
 import { registerExportRoutes } from './routes/exports.js';
 import { registerHostRoutes } from './routes/host.js';
 import { registerMembershipRoutes } from './routes/memberships.js';
+import { registerHostLimitRoutes } from './routes/host-limits.js';
 import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
 import { createHostAuthority } from './host-authority.js';
@@ -281,6 +282,7 @@ export function createCommunityApp({
   registerHostRoutes(hostApi, { pool, blobStore, authority, now });
   registerOwnerClaimRoutes(hostApi, { pool, auth, config, authority, now });
   registerMembershipRoutes(hostApi, { pool, auth });
+  registerHostLimitRoutes(hostApi, { pool, config, authority, now });
   registerHostKeyRoutes(hostApi, { pool, auth, authority, now });
   app.route('/api/v1', hostApi);
 

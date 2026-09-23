@@ -26,6 +26,7 @@ import {
   transaction,
 } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
+import { assertMemberRoom } from '../limits.js';
 import { inspectInvite, issueInvite } from '../invites.js';
 import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../security.js';
 import { mintHandle } from '../handles.js';
@@ -88,9 +89,14 @@ async function assertAdmissionOpen(
   if (result.rows[0]?.admission_policy === 'closed') throw new AdmissionClosed();
 }
 
-/** Keep the closed-community reason visible; hide every other invitation failure. */
+/**
+ * Keep the closed and full reasons visible, so a person learns before signing up that they
+ * cannot join; hide every other invitation failure.
+ */
 function invitationRefusal(error: ApiError): ApiError {
-  return error instanceof AdmissionClosed ? error : invalidInvitation();
+  return error instanceof AdmissionClosed || error.code === 'MEMBER_LIMIT_REACHED'
+    ? error
+    : invalidInvitation();
 }
 
 function admissionCookie(c: Context, config: CommunityConfig): string {
@@ -257,6 +263,7 @@ export function registerInviteRoutes(
     try {
       const { invite, communityName } = await validInvite(c, pool, token, config);
       if (invite.use_count >= invite.seat_limit) throw invalidInvitation();
+      await assertMemberRoom(pool, invite.community_id, { lock: false });
       return json(c, CommunityWireInvitePreviewResponseSchema, {
         communityName,
         inviterName: invite.issuer_name,
@@ -279,6 +286,7 @@ export function registerInviteRoutes(
       preview = await transaction(pool, async (client) => {
         const { invite, communityName } = await validInvite(c, client, token, config, true);
         if (invite.use_count >= invite.seat_limit) throw invalidInvitation();
+        await assertMemberRoom(client, invite.community_id, { lock: false });
         await client.query(
           'INSERT INTO pending_admissions(community_id,invite_id,token_hash,expires_at) VALUES($1,$2,$3,$4)',
           [invite.community_id, invite.id, hashSecret(pending), expiresAt]
@@ -451,6 +459,9 @@ export function registerInviteRoutes(
           'STATE_CONFLICT',
           'This invitation has no seats left. Ask for a new link.'
         );
+      // After the invite lock, before any insert or reactivation: the limit row lock serializes
+      // admissions racing for the last seat, and an active member is not counted twice.
+      await assertMemberRoom(client, invite.community_id, { lock: true, userId: user.id });
       let member = await client.query<{ id: string; active: boolean }>(
         'SELECT id,active FROM members WHERE community_id=$1 AND user_id=$2 FOR UPDATE',
         [invite.community_id, user.id]

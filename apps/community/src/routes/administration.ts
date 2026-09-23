@@ -17,6 +17,7 @@ import {
   type Member,
 } from '../data.js';
 import { AdminSettingsConflict, ApiError, json, readJson } from '../http.js';
+import { assertStorageRoom, assertStorageWithinLimit } from '../limits.js';
 import {
   BlobStoreError,
   completeManagedBlobCommit,
@@ -241,6 +242,13 @@ export function registerAdministrationRoutes(
       }
       if (current.settings_version !== expectedVersion)
         throw new AdminSettingsConflict(projectSettings(current));
+      // Icons are at most 2 MiB; refuse early on the declared size, counting the icon replaced.
+      await assertStorageRoom(
+        client,
+        current.id,
+        Math.min(Number(c.req.header('content-length')) || 0, 2 * 1024 * 1024),
+        current.icon_blob_key
+      );
       return reserveManagedBlob(client, current.id, 'icon');
     });
     let stored;
@@ -274,6 +282,8 @@ export function registerAdministrationRoutes(
         await completeManagedBlobCommit(client, reservation);
         if (current.icon_blob_key)
           await queueCommittedBlobDeletion(client, current.id, current.icon_blob_key);
+        // After the old icon is queued for deletion, so replacing an icon counts only the new one.
+        await assertStorageWithinLimit(client, current.id);
         await client.query(
           `INSERT INTO audit_events(community_id,actor_member_id,action,changed_fields)
            VALUES($1,$2,'settings.icon.update',ARRAY['icon'])`,

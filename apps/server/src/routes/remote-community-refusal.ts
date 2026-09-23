@@ -49,6 +49,14 @@ const STALE: CommunityRefusal = {
 
 const REJECTED = 'The community didn’t accept that request.';
 
+/** The caps a Community sets, as `409` codes, in the app's own words. */
+const LIMIT_MESSAGES: Partial<Record<string, string>> = {
+  AGENT_LIMIT_REACHED:
+    'You’ve reached your agent limit in this community. Remove one to add another.',
+  MEMBER_LIMIT_REACHED: 'This community is full. Ask its owner to make room.',
+  STORAGE_LIMIT_REACHED: 'This community is out of file space.',
+};
+
 /**
  * Map a refused Community request to a local answer.
  *
@@ -86,7 +94,10 @@ export function communityRefusal(
       };
     case 404:
       return NOT_FOUND;
-    case 409:
+    case 409: {
+      // A cap is a state the person can act on: name which one.
+      const limit = remoteCode ? LIMIT_MESSAGES[remoteCode] : undefined;
+      if (limit) return { status: 409, code: 'COMMUNITY_LIMIT_REACHED', error: limit };
       if (remoteCode === 'NESTED_THREAD')
         return {
           status: 409,
@@ -104,6 +115,7 @@ export function communityRefusal(
         code: 'COMMUNITY_CONFLICT',
         error: 'That no longer matches the community. Refresh and try again.',
       };
+    }
     case 410:
       return STALE;
     case 413:

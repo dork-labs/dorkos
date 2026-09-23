@@ -13,12 +13,12 @@ import { parseConfig } from '../src/config.js';
 import { migrate } from '../src/migrate.js';
 import { hashSecret } from '../src/security.js';
 
-// COMMUNITY_HOST_KEY_SCREENSHOTS optionally names a directory for reviewable screenshots.
-const { COMMUNITY_TEST_DATABASE_URL: adminUrl, COMMUNITY_HOST_KEY_SCREENSHOTS: shots } =
+// COMMUNITY_HOST_PAGE_SCREENSHOTS optionally names a directory for reviewable screenshots.
+const { COMMUNITY_TEST_DATABASE_URL: adminUrl, COMMUNITY_HOST_PAGE_SCREENSHOTS: shots } =
   process.env;
 if (!adminUrl)
   throw new Error('COMMUNITY_TEST_DATABASE_URL is required for community browser tests');
-const dbName = `community_browser_keys_${randomUUID().replaceAll('-', '')}`;
+const dbName = `community_browser_host_${randomUUID().replaceAll('-', '')}`;
 const dbUrl = new URL(adminUrl);
 dbUrl.pathname = `/${dbName}`;
 const admin = new Pool({ connectionString: adminUrl });
@@ -55,7 +55,7 @@ test.beforeAll(async () => {
   await admin.query(`CREATE DATABASE ${dbName}`);
   await migrate(dbUrl.toString());
   pool = new Pool({ connectionString: dbUrl.toString() });
-  blobDir = await mkdtemp(join(tmpdir(), 'community-browser-keys-'));
+  blobDir = await mkdtemp(join(tmpdir(), 'community-browser-host-'));
   const port = await freePort();
   baseUrl = `http://127.0.0.1:${port}`;
   const config = parseConfig({
@@ -189,6 +189,42 @@ test('a host operator creates a key, sees it once, replaces it, and revokes it',
     expect(
       (await pool.query('SELECT 1 FROM host_api_keys WHERE revoked_at IS NOT NULL')).rowCount
     ).toBe(1);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a host operator sets a community limit beside its current use', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    await page.goto(`${baseUrl}/host`);
+    const record = page.getByRole('article', { name: 'First Place community' });
+    await record.getByText('Limits', { exact: true }).click();
+    const form = record.getByRole('form', { name: 'First Place limits' });
+    await expect(form).toContainText('1 now');
+    await expect(form.getByLabel('Most members')).toHaveValue('');
+    await form.getByLabel('Most members').fill('1');
+    await form.getByLabel('Most file space (MiB)').fill('5');
+    await form.getByRole('button', { name: 'Save limits' }).click();
+    await expect(form).toContainText('Limits saved.');
+    const stored = await pool.query(
+      'SELECT max_active_members,max_storage_bytes::int AS bytes FROM community_limits'
+    );
+    expect(stored.rows).toEqual([{ max_active_members: 1, bytes: 5 * 1024 * 1024 }]);
+    await shot(page, 'host-community-limits');
+    // Empty means no limit again.
+    await form.getByLabel('Most members').fill('');
+    await form.getByLabel('Most file space (MiB)').fill('');
+    await form.getByRole('button', { name: 'Save limits' }).click();
+    await expect
+      .poll(async () => (await pool.query('SELECT max_active_members FROM community_limits')).rows)
+      .toEqual([{ max_active_members: null }]);
   } finally {
     await context.close();
   }

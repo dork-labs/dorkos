@@ -34,6 +34,15 @@ function payloadHash(body: z.infer<typeof CommunityAdminCreateRequestSchema>): s
         name: body.name,
         description: body.description ?? null,
         admissionPolicy: body.admissionPolicy ?? 'invite_only',
+        // Only when sent, so receipts written before limits existed still replay.
+        ...(body.limits
+          ? {
+              limits: {
+                maxActiveMembers: body.limits.maxActiveMembers,
+                maxStorageBytes: body.limits.maxStorageBytes,
+              },
+            }
+          : {}),
       })
     )
     .digest('hex');
@@ -91,6 +100,12 @@ async function createPendingCommunity(
      VALUES($1,'owner_claim',$2,$3) RETURNING id`,
     [input.tokenHash, community.rows[0].id, input.expiresAt]
   );
+  if (input.body.limits)
+    await client.query(
+      `INSERT INTO community_limits(community_id,max_active_members,max_storage_bytes)
+       VALUES($1,$2,$3)`,
+      [community.rows[0].id, input.body.limits.maxActiveMembers, input.body.limits.maxStorageBytes]
+    );
   await client.query(
     `INSERT INTO community_creation_receipts(
        idempotency_key,operator_user_id,operator_api_key_id,payload_hash,community_id,
@@ -109,7 +124,12 @@ async function createPendingCommunity(
     action: 'community.create',
     communityId: community.rows[0].id,
     nextState: 'pending_owner',
-    changedFields: ['name', 'description', 'admission_policy'],
+    changedFields: [
+      'name',
+      'description',
+      'admission_policy',
+      ...(input.body.limits ? ['limits'] : []),
+    ],
   });
   const row = await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [
     community.rows[0].id,
