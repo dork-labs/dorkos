@@ -263,6 +263,19 @@ test('the chooser routes one, several, suspended, removed, stale and zero member
     await expect(page).toHaveURL(`${baseUrl}/c/${firstId}`);
     await expect(page.getByRole('heading', { name: 'First Place' })).toBeVisible();
 
+    // With that same single membership, a link it cannot open stops at the chooser to say so
+    // instead of silently carrying the person into the one community they do have.
+    await page.goto(`${baseUrl}/c/${randomUUID()}`);
+    await expect(page).toHaveURL(`${baseUrl}/`);
+    await expect(page.getByRole('status')).toHaveText(
+      'That community is not available to this account.'
+    );
+    await expect(
+      page.getByRole('list', { name: 'Choose a community' }).getByRole('button')
+    ).toHaveCount(1);
+    await page.getByRole('button', { name: /First Place/ }).click();
+    await expect(page).toHaveURL(`${baseUrl}/c/${firstId}`);
+
     // Several show the chooser, focused on its heading, in keyboard order.
     await admitExistingAccount(secondId, 'rin@membership.test');
     // A remembered choice this account cannot see is ignored and forgotten.

@@ -300,7 +300,7 @@ describe('community server port additions', () => {
       communityName: 'Builders',
       inviterName: 'Owner',
       channelName: null,
-      account: { membership: 'inactive' },
+      account: { membership: 'inactive', boundToAnotherAccount: false },
     };
     expect(CommunityWireInvitePendingResponseSchema.parse(pending).account?.membership).toBe(
       'inactive'

@@ -375,6 +375,8 @@ describe('signed admission over real HTTP and Postgres', () => {
     const admission = cookieOf(preflight);
     const signedOut = await call('/api/v1/invites/pending', 'GET', undefined, admission);
     expect(signedOut.status).toBe(200);
+    // The review names a community and an inviter; no cache may keep it.
+    expect(signedOut.headers.get('cache-control')).toBe('no-store');
     const body = await signedOut.text();
     expect(body).not.toContain(token);
     expect(body).not.toContain(admission.split('=')[1]);
@@ -391,7 +393,10 @@ describe('signed admission over real HTTP and Postgres', () => {
     ).toEqual({ use_count: 0 });
     const memberAdmission = withAdmission(admittedCookie, preflight);
     const signedIn = await call('/api/v1/invites/pending', 'GET', undefined, memberAdmission);
-    expect((await signedIn.json()).account).toEqual({ membership: 'active' });
+    expect((await signedIn.json()).account).toEqual({
+      membership: 'active',
+      boundToAnotherAccount: false,
+    });
     expect(
       (
         await pool.query('SELECT account_id FROM pending_admissions WHERE invite_id=$1', [
@@ -402,7 +407,16 @@ describe('signed admission over real HTTP and Postgres', () => {
     const newcomer = await signup('Pending reader', 'pending-reader@admission.test', admission);
     expect(
       (await (await call('/api/v1/invites/pending', 'GET', undefined, newcomer)).json()).account
-    ).toEqual({ membership: 'none' });
+    ).toEqual({ membership: 'none', boundToAnotherAccount: false });
+    // Once bound to the newcomer, another account in the same browser is told so up front.
+    expect((await call('/api/v1/invites/bind', 'POST', {}, newcomer)).status).toBe(200);
+    expect(
+      (await (await call('/api/v1/invites/pending', 'GET', undefined, memberAdmission)).json())
+        .account
+    ).toEqual({ membership: 'active', boundToAnotherAccount: true });
+    expect(
+      (await (await call('/api/v1/invites/pending', 'GET', undefined, newcomer)).json()).account
+    ).toEqual({ membership: 'none', boundToAnotherAccount: false });
     // A revoked invitation ends the review, exactly as it ends binding.
     expect(
       (await call(`/api/v1/invites/${invite.id}`, 'DELETE', undefined, ownerCookie)).status
@@ -474,7 +488,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect(
       (await (await call('/api/v1/invites/pending', 'GET', undefined, reactivationCookie)).json())
         .account
-    ).toEqual({ membership: 'inactive' });
+    ).toEqual({ membership: 'inactive', boundToAnotherAccount: false });
     expect((await call('/api/v1/invites/bind', 'POST', {}, reactivationCookie)).status).toBe(200);
     const reactivated = await call('/api/v1/invites/redeem', 'POST', {}, reactivationCookie);
     expect(await reactivated.json()).toEqual({ memberId });

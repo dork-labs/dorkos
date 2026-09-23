@@ -963,6 +963,11 @@ it('rejects foreign objects on every id-taking community route, even for an owne
       route: 'POST /invites/redeem',
       call: (x) => ({ path: '/invites/redeem', body: {}, cookie: x.admission }),
     },
+    {
+      // B's join attempt read at A's URL must look exactly like no join attempt at all.
+      route: 'GET /invites/pending',
+      call: (x) => ({ path: '/invites/pending', cookie: x.admission }),
+    },
     { route: 'GET /exports/:id', call: (x) => ({ path: `/exports/${x.archive}` }) },
     { route: 'GET /pairings/:id', call: (x) => ({ path: `/pairings/${x.pairing}` }) },
     {
@@ -1056,7 +1061,6 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     'POST /channels': 'creates a new channel; references nothing',
     'GET /attention': "the caller's own unread counts",
     'GET /invites': 'lists the URL community',
-    'GET /invites/pending': "reads the caller's own join attempt from its cookie; takes no id",
     'GET /agents': "lists the caller's own agents",
     'POST /pairings/start': 'creates a new pairing; references nothing',
   };

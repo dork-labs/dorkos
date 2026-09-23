@@ -310,20 +310,23 @@ export function registerInviteRoutes(
   // A reload or sign-in callback lands on the clean join URL with only the HttpOnly admission
   // cookie. Reading it back keeps the review on screen without ever returning the invitation.
   // It applies the same liveness conditions as bind, so a revoked invitation or a departed
-  // issuer ends the review here too, and it never writes.
+  // issuer ends the review here too, and it never writes. The tenant-scoped lookup runs first:
+  // a cookie from another community gets the same refusal as no cookie, and learns nothing
+  // about this one, not even that it is closed.
   app.get('/invites/pending', async (c) => {
+    c.header('Cache-Control', 'no-store');
     const pending = admissionCookie(c, config);
     const session = await auth.api.getSession({ headers: c.req.raw.headers });
     const tenant = await resolveCommunityContext(c, pool);
-    await assertAdmissionOpen(pool, tenant.communityId, false);
     const result = await pool.query<{
       expires_at: Date;
+      account_id: string | null;
       community_name: string;
       inviter_name: string;
       channel_name: string | null;
     }>(
-      `SELECT p.expires_at,community.name AS community_name,issuer.display_name AS inviter_name,
-              channel.name AS channel_name
+      `SELECT p.expires_at,p.account_id,community.name AS community_name,
+              issuer.display_name AS inviter_name,channel.name AS channel_name
        FROM pending_admissions p
        JOIN communities community ON community.id=p.community_id
        JOIN invites i ON i.id=p.invite_id AND i.community_id=p.community_id
@@ -336,14 +339,22 @@ export function registerInviteRoutes(
     );
     const row = result.rows[0];
     if (!row) throw new ApiError(403, 'FORBIDDEN', 'This join attempt has expired.');
-    let account: { membership: 'none' | 'active' | 'inactive' } | null = null;
+    await assertAdmissionOpen(pool, tenant.communityId, false);
+    let account: {
+      membership: 'none' | 'active' | 'inactive';
+      boundToAnotherAccount: boolean;
+    } | null = null;
     if (session) {
       const member = await pool.query<{ active: boolean }>(
         'SELECT active FROM members WHERE community_id=$1 AND user_id=$2',
         [tenant.communityId, session.user.id]
       );
       const found = member.rows[0];
-      account = { membership: !found ? 'none' : found.active ? 'active' : 'inactive' };
+      account = {
+        membership: !found ? 'none' : found.active ? 'active' : 'inactive',
+        // Binding would refuse this account, so the page says why instead of trying.
+        boundToAnotherAccount: row.account_id !== null && row.account_id !== session.user.id,
+      };
     }
     return json(c, CommunityWireInvitePendingResponseSchema, {
       expiresAt: row.expires_at.toISOString(),

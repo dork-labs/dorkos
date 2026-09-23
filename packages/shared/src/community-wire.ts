@@ -414,14 +414,20 @@ export const CommunityWireInvitePreviewResponseSchema = z.strictObject({
 /**
  * A reload reads its still-live pending admission back from the HttpOnly cookie, so the review
  * survives without the raw invitation. `account` is present only for a signed-in browser and
- * says whether joining would create, keep, or reactivate that account's membership.
+ * says whether joining would create, keep, or reactivate that account's membership, and
+ * whether this join attempt already belongs to a different account.
  */
 export const CommunityWireInvitePendingResponseSchema = z.strictObject({
   expiresAt: timestamp,
   communityName: z.string().min(1),
   inviterName: z.string().min(1),
   channelName: z.string().nullable(),
-  account: z.strictObject({ membership: z.enum(['none', 'active', 'inactive']) }).nullable(),
+  account: z
+    .strictObject({
+      membership: z.enum(['none', 'active', 'inactive']),
+      boundToAnotherAccount: z.boolean(),
+    })
+    .nullable(),
 });
 /** The pending admission a clean join URL resumes after a reload or sign-in callback. */
 export type CommunityWireInvitePending = z.infer<typeof CommunityWireInvitePendingResponseSchema>;

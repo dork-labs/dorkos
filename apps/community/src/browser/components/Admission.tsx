@@ -151,6 +151,15 @@ export function Admission({
       return;
     }
     setPreview(pending);
+    // Binding would refuse this account; say why now rather than make a request that must fail.
+    if (pending.account?.boundToAnotherAccount) {
+      fail(
+        new RequestError(403, 'FORBIDDEN', 'This join attempt belongs to another account.'),
+        context,
+        () => continueSignedIn(null, context)
+      );
+      return;
+    }
     if (pending.account?.membership === 'inactive') {
       setStage('reactivate');
       return;
