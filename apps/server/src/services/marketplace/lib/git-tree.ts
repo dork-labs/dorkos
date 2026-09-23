@@ -46,10 +46,10 @@ import {
 const execFileAsync = promisify(execFile);
 
 /** Max time to wait for `git ls-remote`. */
-export const LS_REMOTE_TIMEOUT_MS = 15_000;
+const LS_REMOTE_TIMEOUT_MS = 15_000;
 
 /** Max time for any one git step of a fetch; matches the clone it replaced. */
-export const GIT_FETCH_TIMEOUT_MS = 120_000;
+const GIT_FETCH_TIMEOUT_MS = 120_000;
 
 /** Everything after it is a value, never a flag (git ≥ 2.24). */
 const END_OF_OPTIONS = '--end-of-options';
@@ -362,7 +362,7 @@ function credentialed(cloneUrl: string): string {
  *
  * @param cloneUrl - The remote's address.
  */
-export function describeRemote(cloneUrl: string): string {
+function describeRemote(cloneUrl: string): string {
   try {
     const parsed = new URL(cloneUrl);
     if (parsed.host) return `${parsed.host}${parsed.pathname.replace(/\.git$/, '')}`;
