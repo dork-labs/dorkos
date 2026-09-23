@@ -67,6 +67,10 @@ a {
   outline: 3px solid var(--accent);
   outline-offset: 3px;
 }
+/* A heading takes focus only so screen readers announce a new step; it is not a control. */
+h1[tabindex='-1']:focus {
+  outline: none;
+}
 h1,
 h2,
 h3,

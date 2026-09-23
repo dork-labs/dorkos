@@ -9,28 +9,32 @@
     <div id="root"></div>
     <script>
       (() => {
+        // Runs before any module or network work: read a secret from the link fragment into
+        // page memory only, then erase it from the address bar and the current history entry.
+        const claimPage = window.location.pathname === '/claim';
         const fragment = new URLSearchParams(window.location.hash.slice(1));
-        let invite = fragment.get('invite') ?? fragment.get('token');
-        if (!invite) return;
-        const clear = () => {
-          invite = null;
-          delete window.__readDorkosInviteFragment;
-          delete window.__clearDorkosInviteFragment;
-        };
+        let secret = claimPage
+          ? fragment.get('claim')
+          : (fragment.get('invite') ?? fragment.get('token'));
+        if (claimPage && window.location.hash)
+          window.history.replaceState(null, '', '/claim' + window.location.search);
+        if (!secret) return;
+        const read = claimPage ? '__readDorkosOwnerClaimFragment' : '__readDorkosInviteFragment';
+        const clear = claimPage ? '__clearDorkosOwnerClaimFragment' : '__clearDorkosInviteFragment';
         Object.defineProperties(window, {
-          __readDorkosInviteFragment: {
-            value: () => invite,
-            configurable: true,
-            enumerable: false,
-            writable: false,
-          },
-          __clearDorkosInviteFragment: {
-            value: clear,
+          [read]: { value: () => secret, configurable: true, enumerable: false, writable: false },
+          [clear]: {
+            value: () => {
+              secret = null;
+              delete window[read];
+              delete window[clear];
+            },
             configurable: true,
             enumerable: false,
             writable: false,
           },
         });
+        if (claimPage) return;
         const tenant = window.location.pathname.match(/^\/c\/[^/]+/u)?.[0];
         const cleanPath = tenant ? `${tenant}/join` : window.location.pathname;
         window.history.replaceState(null, '', cleanPath + window.location.search);

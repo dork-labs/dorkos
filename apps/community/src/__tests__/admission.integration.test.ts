@@ -1587,6 +1587,32 @@ describe('signed admission over real HTTP and Postgres', () => {
     const claimed = await call('/api/v1/owner-claims/claim', 'POST', {}, claimantCookie);
     expect(claimed.status).toBe(200);
     expect((await claimed.json()).community.id).toBe(secondId);
+    const clearsClaimCookie = (response: Response) =>
+      response.headers
+        .getSetCookie()
+        .some(
+          (header) =>
+            /^community_bootstrap=;/u.test(header) &&
+            /Max-Age=0/u.test(header) &&
+            /Path=\//u.test(header) &&
+            /HttpOnly/u.test(header) &&
+            /SameSite=Lax/u.test(header)
+        );
+    // A landed claim drops its single-purpose cookie, and a replay of it is refused and dropped too.
+    expect(clearsClaimCookie(claimed)).toBe(true);
+    const replayed = await call('/api/v1/owner-claims/claim', 'POST', {}, claimantCookie);
+    expect(replayed.status).toBe(403);
+    expect(clearsClaimCookie(replayed)).toBe(true);
+    const sessionOnly = claimantCookie
+      .split('; ')
+      .filter((part) => !part.startsWith('community_bootstrap='))
+      .join('; ');
+    const missing = await call('/api/v1/owner-claims/claim', 'POST', {}, sessionOnly);
+    expect(missing.status).toBe(403);
+    expect(clearsClaimCookie(missing)).toBe(true);
+    const signedOut = await call('/api/v1/owner-claims/claim', 'POST', {}, cookieOf(preflight));
+    expect(signedOut.status).toBe(401);
+    expect(clearsClaimCookie(signedOut)).toBe(false);
     const secondLifecycleVersion = Number(
       (await pool.query('SELECT lifecycle_version FROM communities WHERE id=$1', [secondId]))
         .rows[0].lifecycle_version

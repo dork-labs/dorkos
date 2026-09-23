@@ -64,6 +64,7 @@ test.beforeAll(async () => {
     '/',
     '/host',
     '/join',
+    '/claim',
     '/pairing',
     '/c/:communityId',
     '/c/:communityId/join',
@@ -190,7 +191,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await memberPage.screenshot({ path: '/tmp/community-join-mobile.png', fullPage: true });
     await expect.poll(() => memberPage.evaluate(() => location.hash)).toBe('');
     await memberPage.getByRole('button', { name: 'Continue' }).click();
-    await expect(memberPage.getByText('Gathering Place')).toBeVisible();
+    await expect(memberPage.getByText('Gathering Place', { exact: true })).toBeVisible();
     await memberPage.getByLabel('Your name').fill('Maya');
     await memberPage.getByLabel('Email').fill('maya@ui.test');
     await memberPage.getByLabel('Password').fill('password1234');
@@ -1006,7 +1007,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await ownerPage.getByRole('button', { name: 'Create community' }).click();
     await expect(ownerPage.getByLabel('Retry Community community')).toHaveCount(1);
     await expect(ownerPage.getByRole('status')).toContainText('Use Reissue owner claim');
-    await expect(ownerPage.getByLabel('Claim token')).toHaveCount(0);
+    await expect(ownerPage.getByLabel('Owner claim link')).toHaveCount(0);
     await ownerPage.unroute('**/api/v1/host/communities');
   } finally {
     await owner.close();
