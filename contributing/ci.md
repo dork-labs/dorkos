@@ -52,7 +52,7 @@ EDIT     Claude Code hooks: four PreToolUse guards on every Bash call; typecheck
 TURN END prettier --write on changed files (Stop hook); checkpoint in worktrees
 COMMIT   lefthook pre-commit: prettier, drizzle generate, dir-size, turbo lint --affected, turbo typecheck --affected (the last two under the machine-wide slot cap)
 PUSH     lefthook pre-push: a prettier check on the changed files. No tests run at push (DOR-2160)
-PR       ~19-25 Actions jobs; the 9 required checks below must pass ON THE PR before it may enter the queue
+PR       ~19-25 Actions jobs; the required checks below must pass ON THE PR before it may enter the queue
 ARM      agents arm with gh pr merge --auto; merge-tail (every 2-3 h, throttled) is the backstop
 QUEUE    merge_group: the required checks re-run on main + everything ahead, up to 5 PRs per group, ALLGREEN
 MAIN     squash merge; a few push-to-main legs (db-check, CLI smoke, scripts-test, desktop smoke)
@@ -60,7 +60,7 @@ MAIN     squash merge; a few push-to-main legs (db-check, CLI smoke, scripts-tes
 
 ## Required checks
 
-Ruleset 19893973 is the **only** protection on `main`. Classic branch protection was deleted on 2026-09-19, and `db-check`, `deletion` and `non_fast_forward` moved into the ruleset then. All 9 contexts are pinned to the GitHub Actions app (integration id 15368), so nothing else can post a status that satisfies them. No human approval is required and conversation resolution is off.
+Ruleset 19893973 is the **only** protection on `main`. Classic branch protection was deleted on 2026-09-19, and `db-check`, `deletion` and `non_fast_forward` moved into the ruleset then. Every context is pinned to the GitHub Actions app (integration id 15368), so nothing else can post a status that satisfies it; a context added later is pinned the same way. No human approval is required and conversation resolution is off.
 
 <!-- The block below is generated from ci/required-checks.json and checked byte for byte
      by the CI Steward census; prettier would add blank lines inside it, hence the ignore. -->
@@ -75,6 +75,8 @@ Ruleset 19893973 is the **only** protection on `main`. Classic branch protection
 - `lint`
 - `credential-free-build`
 - `db-check`
+- `openapi-fresh`
+- `fixtures`
 <!-- ci-steward:required-checks:end -->
 <!-- prettier-ignore-end -->
 
@@ -138,7 +140,7 @@ Nothing that reaches `main` reaches it with less checking. The queue runs the fu
 - The scope decision lives **inside the job**, never in a workflow-level `paths:` filter, so the check always reports. A path-filtered workflow reports nothing, which keeps a PR out of the queue and then stalls the queue for an hour.
 - **It is not a required check yet.** Making it one is a ruleset change, the operator's to make, and it needs no edit to the workflow (and, under the steward, a ledger entry first).
 
-**Other Actions checks.** `fragment-present` and `no-fragment-under-skip-label` (changelog), `scripts-test` (the shell fixture suites, path-filtered and advisory), and CLI smoke tests (Node 22/24) plus integration tests, which run on push to `main` and on PRs that touch what they package. Locally: `pnpm smoke:docker` and `pnpm smoke:integration`. Advisory checks such as `site-build`, `openapi-fresh`, `harness-windows` and the Claude `review` do not block the queue, but any red check stops merge-tail arming a PR.
+**Other Actions checks.** `fragment-present` and `no-fragment-under-skip-label` (changelog), `scripts-test` (its `fixtures` job is required and runs on every PR and merge group; its `harness` job is advisory, PR and push only, and scoped by `scripts/scripts-test-scope.sh`), and CLI smoke tests (Node 22/24) plus integration tests, which run on push to `main` and on PRs that touch what they package. Locally: `pnpm smoke:docker` and `pnpm smoke:integration`. Advisory checks such as `site-build`, `harness-windows` and the Claude `review` do not block the queue, but any red check stops merge-tail arming a PR.
 
 **Capacity.** The org is on the GitHub **Team** plan: 60 concurrent jobs, not the Free plan's 20. One push to a PR starts 19 jobs (docs-only) to 25 (code); a queue entry costs about 19 to 20. Twenty agents each pushing once is 400 to 500 jobs, 7 to 8 full refills of the pool, and the queue's own builds wait behind them. That arithmetic is why no remedy anywhere here is "push an empty commit".
 

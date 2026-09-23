@@ -136,90 +136,51 @@ name: scripts-test
 ### on something else — so a change to those env values has to trigger the suite
 ### that pins them.
 ###
-### contributing/INDEX.md is in the filter because the `Docs-coverage-map drift
+### contributing/INDEX.md is in the list because the `Docs-coverage-map drift
 ### check` step parses it: `.claude/scripts/docs-coverage-map.json` is GENERATED
 ### from its three tables, and the one PR shape that drifts them is an edit to
 ### INDEX.md alone — nothing under `.claude/scripts/**` need change for the
 ### committed JSON to go stale. That is exactly how it went stale on main:
 ### #1397 edited one description cell, regenerated nothing, and `--check` went
-### red on origin/main for the 160-odd commits before DOR-1781 noticed.
-### Extending the workflow-level filter is the right move HERE, and the
-### site-build lesson does not contradict it: that lesson is about REQUIRED
-### checks, which must report on every PR or the merge queue deadlocks waiting
-### for a check that never runs. This workflow has no `merge_group:` trigger and
-### so cannot be required — it is advisory and path-filtered by design (see the
-### `harness` job's lint comment) — so a filter that skips it skips a job rather
-### than stalling a queue.
+### red on origin/main for the 160-odd commits before DOR-1781 noticed. That
+### step now rides `fixtures`, which runs unscoped, so the entry no longer
+### decides whether the drift check runs; it stays because pruning the list is
+### the regression every entry above was added to stop.
+###
+### THE FILTER ABOVE IS NO LONGER A `paths:` FILTER. `fixtures` is a REQUIRED
+### check (ci/required-checks.json, ledger 260923-094812-required-openapi-and-
+### scripts-fixtures): the docs-coverage-map drift it catches reached main
+### twice while this workflow was advisory (#1397, then #1657, which was red here and
+### merged anyway). A required check has to report on every pull
+### request and every merge group, and a workflow skipped by a path filter
+### reports NOTHING — which keeps every unrelated PR out of the queue until it
+### times out (PR #1246 sat armed, green and unqueueable for 15 hours that
+### way). So:
+###
+###   * `fixtures` runs on every event, UNSCOPED. It is about a minute of bash
+###     and Node with no install, and scoping it would have cost an `if:` on
+###     each of its ~27 steps (each one a census exception) to save ~40 seconds
+###     of a runner the job holds anyway — while bringing back the "a file
+###     outside the list broke a suite that did not run" class this header is a
+###     catalogue of. Unscoped, it also sees the queue's combined tree, where an
+###     INDEX.md edit in one PR and a stale map in another only meet.
+###   * `harness` keeps the scope, decided by the first step of `fixtures` from
+###     ONE list, scripts/scripts-test-scope.sh (pinned by test-scripts-test-scope.sh).
+###     Every entry discussed above lives there. `harness` is not required, so
+###     a job-level skip is safe for it and for nothing else in this file.
+###     It does not run in the merge queue (see its job comment).
+###
+### `push` to main STAYS, unfiltered, for one reader: the `main-green` SLO
+### (ci/slos.yaml) is computed from push-to-main runs, and this workflow is one
+### of its sensors. Retiring the leg would drop red episodes mechanically and
+### credit the experiment that required `fixtures` with a change in the
+### measuring instrument. That retirement is its own proposal
+### (ledger 260919-175509), still unstarted.
 on:
   pull_request:
-    paths:
-      - 'scripts/**'
-      - '.agents/skills/creating-pull-requests/scripts/**'
-      - '.claude/scripts/**'
-      - 'package.json'
-      - 'lefthook.yml'
-      - 'apps/*/package.json'
-      - 'packages/*/package.json'
-      # The H-tier smoke (scripts/harness-smoke/) typechecks against the built
-      # harness engine, so a change to it or its one dependency can break this
-      # job without touching scripts/ (DOR-1856).
-      - 'packages/harness/src/**'
-      - 'packages/shared/src/**'
-      - 'vitest.config.ts'
-      - 'pnpm-workspace.yaml'
-      - '.claude/hooks/**'
-      - 'contributing/INDEX.md'
-      - 'apps/server/eslint.config.js'
-      - 'packages/eslint-config/**'
-      - '.github/workflows/scripts-test.yml'
-      - '.github/workflows/claude-code-review.yml'
-      - '.github/workflows/merge-tail.yml'
-      - '.github/workflows/operating-skills-version-check.yml'
-      - '.github/workflows/test.yml'
-      # credential-free-build.yml is in the filter because
-      # scripts/__tests__/credential-free-workflow.test.ts asserts against it
-      # (DOR-2081): the check has to declare BOTH triggers or it can never be
-      # required, and every command it runs has to go through the scrub or the
-      # job silently stops being credential-free. Both regressions take the same
-      # PR shape — an edit to that workflow alone — and nothing else in CI would
-      # fire on it.
-      - '.github/workflows/credential-free-build.yml'
-      - '.github/dependabot.yml'
+  merge_group:
   push:
     branches: [main]
-    paths:
-      - 'scripts/**'
-      - '.agents/skills/creating-pull-requests/scripts/**'
-      - '.claude/scripts/**'
-      - 'package.json'
-      - 'lefthook.yml'
-      - 'apps/*/package.json'
-      - 'packages/*/package.json'
-      # The H-tier smoke (scripts/harness-smoke/) typechecks against the built
-      # harness engine, so a change to it or its one dependency can break this
-      # job without touching scripts/ (DOR-1856).
-      - 'packages/harness/src/**'
-      - 'packages/shared/src/**'
-      - 'vitest.config.ts'
-      - 'pnpm-workspace.yaml'
-      - '.claude/hooks/**'
-      - 'contributing/INDEX.md'
-      - 'apps/server/eslint.config.js'
-      - 'packages/eslint-config/**'
-      - '.github/workflows/scripts-test.yml'
-      - '.github/workflows/claude-code-review.yml'
-      - '.github/workflows/merge-tail.yml'
-      - '.github/workflows/operating-skills-version-check.yml'
-      - '.github/workflows/test.yml'
-      # credential-free-build.yml is in the filter because
-      # scripts/__tests__/credential-free-workflow.test.ts asserts against it
-      # (DOR-2081): the check has to declare BOTH triggers or it can never be
-      # required, and every command it runs has to go through the scrub or the
-      # job silently stops being credential-free. Both regressions take the same
-      # PR shape — an edit to that workflow alone — and nothing else in CI would
-      # fire on it.
-      - '.github/workflows/credential-free-build.yml'
-      - '.github/dependabot.yml'
 
 # Opt into Node 24 for JavaScript-based actions (checkout) ahead of GitHub's
 # Sept 2026 cutoff for the Node 20 runtime.
@@ -249,8 +210,64 @@ jobs:
     # runs over 2026-09-07..09-19, p95 1.12 min, max 1.30. Ceiling =
     # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
     timeout-minutes: 10
+    outputs:
+      harness: ${{ steps.scope.outputs.harness }}
     steps:
+      # Depth 2 so a pull request's test-merge commit has its first parent (the
+      # base it was merged onto) locally; everything else the scope step needs
+      # it fetches by SHA.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      # Decides whether `harness` starts, from the one scope list in
+      # scripts/scripts-test-scope.sh (the header says why that list is no longer
+      # a workflow-level `paths:` filter). It scopes `harness` only: every step
+      # below it runs on every event whatever it says, and it has no `if:`, so
+      # this required job never skips anything on its account. It lives here
+      # rather than in a job of its own so a pull request pays for no extra
+      # runner, and it is FIRST so its answer exists even when a suite fails.
+      #
+      # pull_request diffs the test-merge commit against its first parent, so
+      # it sees exactly the PR's change on top of the current base. push diffs
+      # the push's own range, fetched by SHA, because one queue merge can push
+      # several commits at once. merge_group answers false: `harness` does not
+      # run in the queue. A base git cannot fetch (a new branch's zero SHA)
+      # runs `harness` rather than guessing.
+      #
+      # `--no-renames` is load-bearing: with rename detection on, moving a file
+      # OUT of scope reports only the destination path, so a change that
+      # deletes a pinned file would score as not touching it.
+      - name: Decide whether this change can reach the harness job
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request) base=$(git rev-parse --verify --quiet 'HEAD^1' || true) ;;
+            push) base=$BEFORE ;;
+            *)
+              echo "$EVENT run: harness does not run here"
+              echo 'harness=false' >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+          # Every failure below FAILS OPEN to running harness, never to a red
+          # step: this job is a required context, and a scope decision that
+          # could not be made is no reason to block a merge. The diff is
+          # captured before it is matched, so a git failure is seen as a
+          # failure and never as an empty, out-of-scope diff.
+          verdict=true
+          if [ -n "$base" ] && { git cat-file -e "${base}^{commit}" 2>/dev/null ||
+            git fetch --no-tags --quiet --depth=1 origin "$base"; } &&
+            changed=$(git diff --no-renames --name-only "$base" HEAD); then
+            verdict=$(printf '%s\n' "$changed" | bash scripts/scripts-test-scope.sh)
+          else
+            echo "cannot diff against the base (${base:-none}); running harness"
+          fi
+          echo "harness=$verdict" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v7
         with:
@@ -522,12 +539,36 @@ jobs:
       - name: Docs-coverage-map drift check
         run: node .claude/scripts/docs-coverage-map.mjs --check
 
+      # scripts-test-scope.sh decides whether `harness` runs at all, so a
+      # regex that stops matching one of its entries silently turns that suite
+      # off for the PRs it was added to catch. The fixtures pin every entry and
+      # the near-misses a glob-to-regex translation gets wrong. Hermetic, no
+      # pnpm, about a second.
+      - name: Harness scope-list fixtures
+        run: bash scripts/test-scripts-test-scope.sh
+
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages
   # and covers none of it. Without this job the Q3 harness — its overlap and work
   # proofs, its canary accounting, and the destructive-path guard in provision.ts —
   # would have no automated gate at all.
+  #
+  # Started only when `fixtures`' scope step says the change can reach it, and
+  # `!cancelled()` rather than the default `success()`, so a red fixture does
+  # not also hide this job's answer: the output is written by the job's FIRST
+  # step, before any suite can fail.
+  #
+  # NOT REQUIRED, and it does not run in the merge queue (the scope step says
+  # false there). Decided in ledger 260923-094812: over
+  # 2026-09-09..09-23 it went red on 3 of ~240 completed pull request runs (a
+  # typecheck, two unit-test failures) and on 0 of 114 push-to-main runs, so no
+  # harness break on record reached main, while running it in every queue build
+  # would cost a pnpm install, a turbo build and ~4 minutes of runner per build.
+  # The push leg still watches main for it. If a harness red does reach main,
+  # requiring it is the next experiment, not a line added here.
   harness:
+    needs: fixtures
+    if: ${{ !cancelled() && needs.fixtures.outputs.harness == 'true' }}
     runs-on: ubuntu-latest
     # Measured, not guessed (CI Steward phase 0, 2026-09-19): 291 completed
     # runs over 2026-09-07..09-19, p95 4.13 min, max 4.58. Ceiling =
@@ -567,7 +608,7 @@ jobs:
       # `lint` gained an explicit `pnpm lint:root` step: `eslint .` from the
       # repo root covers `scripts/` AND the `.claude/` and `.agents/`
       # automation that nothing linted at all. That step is in a REQUIRED
-      # merge-queue check, where this job is advisory and path-filtered, so the
+      # merge-queue check, where this job is advisory and scoped, so the
       # coverage moved strictly upward. Leaving the old step would have linted
       # `scripts/` twice on every PR and left two places to keep in step.
       #
@@ -626,8 +667,8 @@ jobs:
       # mostly synthetic fixtures plus one "regression canary" that runs the
       # real gate against this checkout, and for a long time that canary was
       # the only place the gate ran at all — which was the hole DOR-1814
-      # found: this workflow is path-filtered to `scripts/**` and friends and
-      # has no `merge_group:` trigger, so a PR touching nothing but
+      # found: this job is scoped to `scripts/**` and friends and
+      # does not run in the merge queue, so a PR touching nothing but
       # apps/client/src copy never reached the canary. The gate itself now
       # runs as its own step in typecheck.yml, which is unfiltered, required,
       # and reports on merge_group. Keep both: that step enforces the result,

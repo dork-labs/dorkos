@@ -41,7 +41,7 @@
  *     that today.
  *
  * Walks every workspace manifest — the root plus `apps/*` and `packages/*` —
- * which is exactly the set `.github/workflows/scripts-test.yml`'s path filter
+ * which is exactly the set the `harness` scope list (scripts/scripts-test-scope.sh)
  * already names (`package.json`, one level under `apps`, one level under
  * `packages`), so this file runs on any PR that touches one.
  *

@@ -9,6 +9,8 @@
     "browser-test",
     "lint",
     "credential-free-build",
-    "db-check"
+    "db-check",
+    "openapi-fresh",
+    "fixtures"
   ]
 }

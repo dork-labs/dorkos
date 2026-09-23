@@ -14,8 +14,8 @@ name: docs-openapi-check
 # on, and the reason this workflow can ever become a required check:
 #
 #   * `merge_group`: regenerates UNCONDITIONALLY, with NO `paths:` filter. That
-#     trigger is not decoration and must not be deleted as unused while the check
-#     is still advisory (DOR-1608). Two reasons it has to be here. First, the
+#     trigger is not decoration and must not be deleted as unused (it was added
+#     while the check was still advisory, DOR-1608). Two reasons. First, the
 #     queue's combined tree — main plus everything ahead of it in the queue plus
 #     this PR — is the only place the cross-PR staleness this job exists to catch
 #     is visible: a PR that adds a route and a PR that regenerates docs/api are
@@ -41,12 +41,14 @@ name: docs-openapi-check
 # second hand-synced copy of the path list; there is now one copy, in the scope
 # step.
 #
-# THIS IS NOT A REQUIRED CHECK. Making `openapi-fresh` required is a
-# branch-protection change and the operator's to make (the DOR-1519 precedent);
-# this file only removes the two reasons it could not become one. Until the
-# ruleset lists it, a red here blocks `merge-tail.yml` from ARMING auto-merge
-# (scripts/should-arm-automerge.sh requires every check settled green) but does
-# not block the queue.
+# `openapi-fresh` IS A REQUIRED CHECK (ci/required-checks.json, ledger
+# 260923-094812). While it was advisory it stayed red on its own pull request,
+# and in queue builds, and the PR merged anyway: every red episode on main from
+# 2026-08-25 to 09-23 came from a workflow the queue did not require, and
+# this was one of them. Its scoped steps each carry a ci/census-allowlist.yaml
+# entry, because the census cannot see that the scope step always says run on
+# merge_group. Removing the requirement is a ledger entry first and a ruleset
+# edit second, like adding it was.
 
 on:
   pull_request:

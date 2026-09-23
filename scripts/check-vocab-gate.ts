@@ -81,8 +81,8 @@
  * `check-banned-words.sh` — the two halves of the split above, side by side.
  * That is new as of DOR-1814. For its first four months this script's only CI
  * home was the real-repo canary inside `scripts/__tests__/check-vocab-gate.test.ts`,
- * run by `scripts-test.yml`, which is path-filtered to `scripts/**` and friends
- * and carries no `merge_group:` trigger — so a PR touching nothing but
+ * run by `scripts-test.yml`'s `harness` job, which is scoped to `scripts/**` and
+ * friends and does not run in the merge queue — so a PR touching nothing but
  * `apps/client/src` copy never ran the gate at all. The canary test stays: it
  * pins the mechanism, the workflow step enforces the result.
  *
