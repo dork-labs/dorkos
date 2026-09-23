@@ -577,25 +577,25 @@ If the new type introduces its own collision class (e.g. theme IDs must be globa
 
 All endpoints mount under `/api/marketplace/*`. The router factory is `createMarketplaceRouter(deps)` in `apps/server/src/routes/marketplace.ts`. Every response is JSON.
 
-| Method | Path                        | Body                         | Response                                                                                                         |
-| ------ | --------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| GET    | `/sources`                  | —                            | `{ sources: MarketplaceSource[] }`                                                                               |
-| POST   | `/sources`                  | `{ name, source, enabled? }` | `MarketplaceSource` (201)                                                                                        |
-| DELETE | `/sources/:name`            | —                            | 204                                                                                                              |
-| POST   | `/sources/:name/refresh`    | —                            | `{ marketplace: MarketplaceJson, fetchedAt }`                                                                    |
-| GET    | `/installed`                | `?projectPath=<path>`        | `{ packages: InstalledPackage[] }` — cross-scope by default; see §16                                             |
-| GET    | `/installed/:name`          | —                            | `{ installations: InstalledPackage[] }` — one per scope; see §16                                                 |
-| GET    | `/cache`                    | —                            | `{ marketplaces, packages, totalSizeBytes, cleanup: { paused, reason, since } }`                                 |
-| DELETE | `/cache`                    | —                            | 204                                                                                                              |
-| POST   | `/cache/prune`              | — (no options)               | `{ removed: [{ packageName, commitSha, path, lastUsedAt }], freedBytes }`; 503 when it cannot read every install |
-| GET    | `/packages`                 | —                            | `{ packages: AggregatedPackage[] }`                                                                              |
-| GET    | `/packages/:name`           | `?marketplace=<name>`        | `{ manifest, packagePath, preview }`                                                                             |
-| POST   | `/packages/:name/preview`   | `InstallRequestBody`         | `{ preview, manifest, packagePath }`                                                                             |
-| POST   | `/packages/:name/install`   | `InstallRequestBody`         | `InstallResult`                                                                                                  |
-| POST   | `/packages/:name/uninstall` | `{ purge?, projectPath? }`   | `UninstallResult`                                                                                                |
-| POST   | `/packages/:name/update`    | `{ apply?, projectPath? }`   | `UpdateResult`                                                                                                   |
-| GET    | `/updates`                  | `?projectPath=<path>`        | `{ checks: InstallationUpdateCheck[] }` — advisory, one per installation |
-| POST   | `/updates`                  | `{ apply: true, names?, installPaths?, projectPath? }` | `{ checks: InstallationUpdateCheck[] }` — with `applied` / `applyError` |
+| Method | Path                        | Body                                                   | Response                                                                                                         |
+| ------ | --------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| GET    | `/sources`                  | —                                                      | `{ sources: MarketplaceSource[] }`                                                                               |
+| POST   | `/sources`                  | `{ name, source, enabled? }`                           | `MarketplaceSource` (201)                                                                                        |
+| DELETE | `/sources/:name`            | —                                                      | 204                                                                                                              |
+| POST   | `/sources/:name/refresh`    | —                                                      | `{ marketplace: MarketplaceJson, fetchedAt }`                                                                    |
+| GET    | `/installed`                | `?projectPath=<path>`                                  | `{ packages: InstalledPackage[] }` — cross-scope by default; see §16                                             |
+| GET    | `/installed/:name`          | —                                                      | `{ installations: InstalledPackage[] }` — one per scope; see §16                                                 |
+| GET    | `/cache`                    | —                                                      | `{ marketplaces, packages, totalSizeBytes, cleanup: { paused, reason, since } }`                                 |
+| DELETE | `/cache`                    | —                                                      | 204                                                                                                              |
+| POST   | `/cache/prune`              | — (no options)                                         | `{ removed: [{ packageName, commitSha, path, lastUsedAt }], freedBytes }`; 503 when it cannot read every install |
+| GET    | `/packages`                 | —                                                      | `{ packages: AggregatedPackage[] }`                                                                              |
+| GET    | `/packages/:name`           | `?marketplace=<name>`                                  | `{ manifest, packagePath, preview }`                                                                             |
+| POST   | `/packages/:name/preview`   | `InstallRequestBody`                                   | `{ preview, manifest, packagePath }`                                                                             |
+| POST   | `/packages/:name/install`   | `InstallRequestBody`                                   | `InstallResult`                                                                                                  |
+| POST   | `/packages/:name/uninstall` | `{ purge?, projectPath? }`                             | `UninstallResult`                                                                                                |
+| POST   | `/packages/:name/update`    | `{ apply?, projectPath? }`                             | `UpdateResult`                                                                                                   |
+| GET    | `/updates`                  | `?projectPath=<path>`                                  | `{ checks: InstallationUpdateCheck[] }` — advisory, one per installation                                         |
+| POST   | `/updates`                  | `{ apply: true, names?, installPaths?, projectPath? }` | `{ checks: InstallationUpdateCheck[] }` — with `applied` / `applyError`                                          |
 
 Where `InstallRequestBody` is:
 
