@@ -117,13 +117,17 @@ function failure(res: Response, error: unknown): void {
   }
 }
 
-/** Whether this connection may show counts at all: connected, verified, and readable. */
-function readsAttention(connection: CommunityConnectionDescriptor): boolean {
-  return (
-    connection.status === 'connected' &&
-    connection.access?.state === 'verified' &&
-    connection.access.effective.read
-  );
+/**
+ * What this connection's access allows for counts: `read` fetches them now,
+ * `offline` keeps showing the last confirmed ones (the Community did not
+ * answer this read, but could read before), and `none` means counts must go.
+ */
+function attentionAccess(connection: CommunityConnectionDescriptor): 'read' | 'offline' | 'none' {
+  if (connection.status !== 'connected' || !connection.access) return 'none';
+  const { state, effective, lastKnown } = connection.access;
+  if (state === 'verified') return effective.read ? 'read' : 'none';
+  if (state === 'unverified') return lastKnown?.capabilities.read ? 'offline' : 'none';
+  return 'none';
 }
 
 /**
@@ -133,20 +137,25 @@ function readsAttention(connection: CommunityConnectionDescriptor): boolean {
  * counts that break a descriptor rule — leaves this one connection on the last
  * counts its Community confirmed (`stale`) or on `unavailable`, so a single
  * broken or slow Community can never fail or stall the whole list and hide the
- * Remove control the owner needs to drop it.
+ * Remove control the owner needs to drop it. A Community that is offline this
+ * read is not asked at all and keeps its last confirmed counts, also `stale`.
  */
 async function withAttention(
   connection: CommunityConnectionDescriptor,
   owner: string,
   attentionCache: CommunityAttentionCache
 ): Promise<CommunityConnectionDescriptor> {
-  if (!readsAttention(connection)) {
+  const access = attentionAccess(connection);
+  if (access === 'none') {
     attentionCache.forget(owner, connection.ref);
     return connection;
   }
-  const attention = await attentionCache.read(owner, connection.ref, () =>
-    getRemoteCommunityAdapter(connection.ref, owner).attention()
-  );
+  const attention =
+    access === 'offline'
+      ? attentionCache.lastConfirmed(owner, connection.ref)
+      : await attentionCache.read(owner, connection.ref, () =>
+          getRemoteCommunityAdapter(connection.ref, owner).attention()
+        );
   const enriched = CommunityConnectionDescriptorSchema.safeParse({ ...connection, attention });
   return enriched.success ? enriched.data : connection;
 }
@@ -178,7 +187,9 @@ export function createCommunityConnectionsRouter(
       const connections = await connectionService.list(owner);
       attentionCache.retainOnly(
         owner,
-        connections.filter(readsAttention).map((connection) => connection.ref)
+        connections
+          .filter((connection) => attentionAccess(connection) !== 'none')
+          .map((connection) => connection.ref)
       );
       res.json(
         CommunityConnectionListResponseSchema.parse({

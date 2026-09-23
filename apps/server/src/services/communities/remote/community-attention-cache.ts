@@ -106,7 +106,18 @@ export class CommunityAttentionCache {
     ]);
     clearTimeout(timer);
     if (answered) return { state: 'verified', ...answered };
-    // Read the entry again: the owner may have been forgotten while we waited.
+    return this.lastConfirmed(owner, ref);
+  }
+
+  /**
+   * The last counts this Community confirmed, as `stale`, without asking it
+   * again; `unavailable` when it never confirmed any. For a Community that is
+   * offline right now but was readable before the outage.
+   *
+   * @param owner - The trusted local owner the connection belongs to.
+   * @param ref - The owner's connection ref.
+   */
+  lastConfirmed(owner: string, ref: CommunityRef): CommunityConnectionAttention {
     const confirmed = this.owners.get(owner)?.get(ref)?.confirmed;
     return confirmed ? { state: 'stale', ...confirmed } : UNAVAILABLE;
   }

@@ -710,6 +710,32 @@ describe('attention within a budget, with last confirmed counts as the fallback'
     expect((await list()).byRef.get(ref)?.state).toBe('unavailable');
   });
 
+  it('keeps the last confirmed counts, without asking, while a Community is offline', async () => {
+    await start(100);
+    behaviour.set(ref, async () => ({ unreadCount: 4, mentionCount: 1 }));
+    const first = (await list()).byRef.get(ref);
+    const none = { read: false, post: false, enrollAgent: false, stream: false };
+    const offline = connected();
+    offline.access = {
+      state: 'unverified',
+      effective: none,
+      lastKnown: offline.access!.lastKnown,
+    };
+    listed = [offline];
+    const calls = vi.fn(() => Promise.resolve({ unreadCount: 9, mentionCount: 9 }));
+    behaviour.set(ref, calls);
+    expect((await list()).byRef.get(ref)).toEqual({
+      state: 'stale',
+      unreadCount: 4,
+      mentionCount: 1,
+      verifiedAt: first?.verifiedAt,
+    });
+    expect(calls).not.toHaveBeenCalled();
+    // Back online: fresh counts again.
+    listed = [connected()];
+    expect((await list()).byRef.get(ref)).toMatchObject({ state: 'verified', unreadCount: 9 });
+  });
+
   it('serves the same fallback on the single-connection read', async () => {
     await start(100);
     behaviour.set(ref, async () => ({ unreadCount: 4, mentionCount: 1 }));
