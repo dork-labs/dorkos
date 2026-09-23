@@ -178,8 +178,8 @@ router.post('/', async (req, res) => {
   });
 
   // Always 200 with an honest `ok` — a failed forward is not a client error to
-  // retry; the UI reads `ok` to choose between "Thanks, sent." and the GitHub
-  // fallback message.
+  // retry; the UI reads `ok` to choose between "Sent. Thank you!" and the
+  // try-again message that keeps the person's words in the form.
   return res.json(result);
 });
 

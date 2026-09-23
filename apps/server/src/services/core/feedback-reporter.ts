@@ -27,8 +27,8 @@
  *     submission, two POSTs, right now.
  *   - **Honest result.** Network errors are swallowed (they never destabilize
  *     the server) but the outcome is RETURNED as `{ ok }` so the calling UI can
- *     toast truthfully ("Thanks, sent." vs "Couldn't send — try the GitHub
- *     option."). This is the opposite of the fire-and-forget usage path.
+ *     toast truthfully ("Sent. Thank you!" vs "Couldn't send. Your words are
+ *     still here…"). This is the opposite of the fire-and-forget usage path.
  *
  * The anonymous per-install `instanceId` is shared by both posts (the metrics
  * event's `distinctId` and the durable payload's `instanceId`), and the
