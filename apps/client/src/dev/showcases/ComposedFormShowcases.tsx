@@ -326,7 +326,7 @@ function FieldCardSection() {
                   <p className="text-sm font-medium">Reset all data</p>
                   <p className="text-muted-foreground text-xs">Delete everything DorkOS saved.</p>
                 </div>
-                <button className="bg-destructive text-destructive-foreground rounded-md px-3 py-1.5 text-xs">
+                <button className="bg-destructive text-destructive-foreground dark:bg-destructive/60 rounded-md px-3 py-1.5 text-xs">
                   Reset
                 </button>
               </div>
@@ -335,7 +335,7 @@ function FieldCardSection() {
                   <p className="text-sm font-medium">Restart DorkOS</p>
                   <p className="text-muted-foreground text-xs">Anything running right now stops.</p>
                 </div>
-                <button className="bg-destructive text-destructive-foreground rounded-md px-3 py-1.5 text-xs">
+                <button className="bg-destructive text-destructive-foreground dark:bg-destructive/60 rounded-md px-3 py-1.5 text-xs">
                   Restart
                 </button>
               </div>

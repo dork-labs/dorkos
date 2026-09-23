@@ -48,7 +48,7 @@ export class ShowcaseErrorBoundary extends Component<Props, State> {
               {this.props.name ? `${this.props.name} crashed` : 'Showcase crashed'}
             </span>
           </div>
-          <pre className="text-destructive/80 w-full overflow-x-auto text-xs">
+          <pre className="text-destructive w-full overflow-x-auto text-xs">
             {this.state.error.message}
           </pre>
           <button

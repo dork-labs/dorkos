@@ -753,6 +753,7 @@
                           "tag": "button",
                           "classes": [
                             "bg-destructive",
+                            "dark:bg-destructive/60",
                             "focus-ring",
                             "hover:bg-destructive/90",
                             "max-md:p-2",
