@@ -11,6 +11,7 @@ import {
   primaryKey,
   check,
   foreignKey,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -151,14 +152,60 @@ export const hostOperators = pgTable('host_operators', {
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
 });
 
+/** Host-owned machine credentials for host routes. Only the secret's hash is stored. */
+export const hostApiKeys = pgTable(
+  'host_api_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    label: text('label').notNull(),
+    prefix: text('prefix').notNull(),
+    secretHash: text('secret_hash').notNull().unique(),
+    scopes: text('scopes').array().notNull(),
+    issuedVia: text('issued_via').notNull(),
+    issuedByUserId: text('issued_by_user_id').references(() => users.id),
+    createdAt: time('created_at'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedByUserId: text('revoked_by_user_id').references(() => users.id),
+    successorId: uuid('successor_id').references((): AnyPgColumn => hostApiKeys.id),
+  },
+  (table) => [
+    index('host_api_keys_created_idx').on(table.createdAt.desc(), table.id),
+    check(
+      'host_api_keys_label',
+      sql`${table.label} = btrim(${table.label}) AND char_length(${table.label}) BETWEEN 1 AND 80`
+    ),
+    check('host_api_keys_prefix', sql`${table.prefix} ~ '^dkh_[A-Za-z0-9_-]{6}$'`),
+    check('host_api_keys_secret_hash', sql`${table.secretHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'host_api_keys_scopes',
+      sql`cardinality(${table.scopes}) BETWEEN 1 AND 4 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import']::text[]`
+    ),
+    check(
+      'host_api_keys_issuer',
+      sql`(${table.issuedVia} = 'browser' AND ${table.issuedByUserId} IS NOT NULL) OR (${table.issuedVia} = 'command' AND ${table.issuedByUserId} IS NULL)`
+    ),
+    check(
+      'host_api_keys_revoker',
+      sql`${table.revokedByUserId} IS NULL OR ${table.revokedAt} IS NOT NULL`
+    ),
+    check(
+      'host_api_keys_successor',
+      sql`${table.successorId} IS NULL OR ${table.expiresAt} IS NOT NULL`
+    ),
+  ]
+);
+
 /** Metadata-only audit log for actions performed with host authority. */
 export const hostAuditEvents = pgTable(
   'host_audit_events',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    actorUserId: text('actor_user_id')
-      .notNull()
-      .references(() => users.id),
+    actorKind: text('actor_kind').notNull().default('person'),
+    actorUserId: text('actor_user_id').references(() => users.id),
+    actorApiKeyId: uuid('actor_api_key_id').references(() => hostApiKeys.id),
+    subjectApiKeyId: uuid('subject_api_key_id').references(() => hostApiKeys.id),
     communityId: uuid('community_id'),
     action: text('action').notNull(),
     priorState: text('prior_state'),
@@ -174,6 +221,14 @@ export const hostAuditEvents = pgTable(
     ),
     check('host_audit_events_action', sql`${table.action} ~ '^[a-z][a-z0-9_.]{0,79}$'`),
     check('host_audit_events_changed_fields', sql`cardinality(${table.changedFields}) <= 16`),
+    check(
+      'host_audit_events_actor_kind',
+      sql`${table.actorKind} IN ('person','api_key','offline')`
+    ),
+    check(
+      'host_audit_events_actor',
+      sql`(${table.actorKind} = 'person') = (${table.actorUserId} IS NOT NULL) AND (${table.actorKind} = 'api_key') = (${table.actorApiKeyId} IS NOT NULL)`
+    ),
   ]
 );
 
@@ -240,6 +295,7 @@ export const bootstrapGrants = pgTable(
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokedBy: text('revoked_by').references(() => users.id),
+    revokedByApiKeyId: uuid('revoked_by_api_key_id').references(() => hostApiKeys.id),
     createdAt: time('created_at'),
   },
   (table) => [
@@ -250,7 +306,7 @@ export const bootstrapGrants = pgTable(
     index('bootstrap_grants_community_idx').on(table.communityId),
     check(
       'bootstrap_grants_revocation',
-      sql`(${table.revokedAt} IS NULL AND ${table.revokedBy} IS NULL) OR (${table.revokedAt} IS NOT NULL AND ${table.revokedBy} IS NOT NULL)`
+      sql`(${table.revokedAt} IS NULL AND ${table.revokedBy} IS NULL AND ${table.revokedByApiKeyId} IS NULL) OR (${table.revokedAt} IS NOT NULL AND num_nonnulls(${table.revokedBy}, ${table.revokedByApiKeyId}) = 1)`
     ),
   ]
 );
@@ -260,9 +316,8 @@ export const communityCreationReceipts = pgTable(
   'community_creation_receipts',
   {
     idempotencyKey: text('idempotency_key').primaryKey(),
-    operatorUserId: text('operator_user_id')
-      .notNull()
-      .references(() => hostOperators.userId),
+    operatorUserId: text('operator_user_id').references(() => hostOperators.userId),
+    operatorApiKeyId: uuid('operator_api_key_id').references(() => hostApiKeys.id),
     payloadHash: text('payload_hash').notNull(),
     communityId: uuid('community_id')
       .notNull()
@@ -282,6 +337,10 @@ export const communityCreationReceipts = pgTable(
     check(
       'community_creation_receipts_payload_hash_check',
       sql`${table.payloadHash} ~ '^[a-f0-9]{64}$'`
+    ),
+    check(
+      'community_creation_receipts_operator',
+      sql`num_nonnulls(${table.operatorUserId}, ${table.operatorApiKeyId}) = 1`
     ),
   ]
 );
@@ -696,6 +755,7 @@ export const entries = pgTable(
     ),
     index('entries_thread_idx').on(table.channelId, table.threadRootEntryId, table.seq),
     index('entries_community_idx').on(table.communityId),
+    index('entries_community_created_idx').on(table.communityId, table.createdAt.desc()),
     foreignKey({
       name: 'entries_channel_tenant_fk',
       columns: [table.communityId, table.channelId],
@@ -924,6 +984,8 @@ export const managedBlobs = pgTable(
   (table) => [
     uniqueIndex('managed_blobs_community_key_unique').on(table.communityId, table.blobKey),
     index('managed_blobs_community_state_idx').on(table.communityId, table.state, table.createdAt),
+    // The SQL index also INCLUDEs byte_size so the usage sum is an index-only scan.
+    index('managed_blobs_community_usage_idx').on(table.communityId, table.state, table.purpose),
     check(
       'managed_blobs_purpose',
       sql`${table.purpose} IN ('attachment','export','icon','legacy_cleanup')`
@@ -1122,5 +1184,50 @@ export const auditEvents = pgTable(
     }),
     check('audit_events_actor_kind', sql`${table.actorKind} IN ('member','system')`),
     check('audit_events_changed_fields', sql`cardinality(${table.changedFields}) <= 16`),
+  ]
+);
+
+/** Host-set caps for one community. A community without a row has no limit. */
+export const communityLimits = pgTable(
+  'community_limits',
+  {
+    communityId: uuid('community_id')
+      .primaryKey()
+      .references(() => communities.id),
+    maxActiveMembers: integer('max_active_members'),
+    maxStorageBytes: bigint('max_storage_bytes', { mode: 'number' }),
+    limitsVersion: integer('limits_version').notNull().default(1),
+    updatedAt: time('updated_at'),
+  },
+  (table) => [
+    check(
+      'community_limits_max_active_members_check',
+      sql`${table.maxActiveMembers} BETWEEN 1 AND 1000000`
+    ),
+    check('community_limits_max_storage_bytes_check', sql`${table.maxStorageBytes} >= 0`),
+    check('community_limits_limits_version_check', sql`${table.limitsVersion} > 0`),
+  ]
+);
+
+/** Host-set agents-per-person override for one member of one community. */
+export const memberLimitOverrides = pgTable(
+  'member_limit_overrides',
+  {
+    communityId: uuid('community_id').notNull(),
+    memberId: uuid('member_id').notNull(),
+    agentsPerMember: integer('agents_per_member').notNull(),
+    updatedAt: time('updated_at'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.communityId, table.memberId] }),
+    foreignKey({
+      name: 'member_limit_overrides_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    check(
+      'member_limit_overrides_agents_per_member_check',
+      sql`${table.agentsPerMember} BETWEEN 1 AND 1000`
+    ),
   ]
 );

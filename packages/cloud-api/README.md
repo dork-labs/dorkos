@@ -46,6 +46,7 @@ body is neither.
 | Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                |
 | Seats, orgs and addresses | organizations, membership, invitations, agents and claims, seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                          |
 | Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation, instance credentials, the command stream and its acknowledgement, event batches |
+| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, and moves: start, list, poll, cancel   |
 | Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                    |
 
 ### What is deliberately not in it
@@ -118,9 +119,58 @@ There is no compile-time exhaustiveness over subscriptions here, deliberately.
 
 Enums that are fine, because they describe mechanism rather than catalog: the `Problem` codes,
 the remote `mode` and `state`, `remoteAccess`, `customAddress`, `support`, `costBasis`, the
-`supports` booleans, `groupBy`, the refusal reasons, and the RFC 8628 error set. Each one is
+`supports` booleans, `groupBy`, the refusal reasons, the RFC 8628 error set, and a hosted
+community's lifecycle, hold reason and move stages. Each one is
 listed by name with its reason in `src/__tests__/catalog-blindness.test.ts`, and a new exported
 enum fails that test until somebody writes down why it is mechanism.
+
+### A refusal names the way out
+
+A refusal a larger allowance would lift is `entitlement_required`, whatever the allowance is: a
+count of communities, members or storage, or anything added later. The service writes the
+`title` and `detail`, and may add an `actionUrl` (with an `actionLabel`) for the page where a
+person can act on it. The app renders those as given and opens the URL; it never knows what the
+person bought or what would change it. Limits reach the app as numbers
+(`limits.communities`, `used.communities`, and each hosted community's `limits` and `usage`),
+so it can say "this community is full" without naming a plan.
+
+### Hosted communities
+
+The service starts a community on a Community server and hands ownership to a person through
+that server's single-use owner claim; it never owns one itself.
+
+- **Two credentials, each returned once.** The claim link and a move's upload token appear only
+  in the answer that created them (a start, a move start, or `claim-link`), never in a list or
+  a poll. Both carry the `ONE_TIME_CREDENTIAL_META` marker, which
+  reaches the JSON Schema too, and `src/__tests__/communities.test.ts` pins exactly where they
+  may appear. A lost claim link is replaced by `claim-link`, which revokes the last; a lost
+  upload token by cancelling the move and starting a new one.
+- **Relay the parsed value, never the raw body.** Objects here are not strict, so a field the
+  schema does not define is dropped by `parse`. A server that relays these answers to a browser
+  (the DorkOS server does) must serialize what it parsed, so a credential a service leaks into
+  the wrong shape stops there.
+- **Links are checked by scheme.** A link the service sends a person to (`actionUrl`) is
+  `https:` only (`HttpsUrlSchema`). A link to a Community server (`communityUrl`, `claimUrl`,
+  an upload `url`) is `https:`, or `http:` to a loopback address for local use
+  (`ServerUrlSchema`). Both rules are
+  also a `pattern` in the JSON Schema. A malformed `actionUrl` or `actionLabel` is dropped
+  rather than failing the whole refusal.
+- **Retries are safe.** A start or a move takes an idempotency key, scoped to the caller. A
+  repeat answers `replayed: true` and without the credential.
+- **The upload goes straight to the Community server**, so the file never passes through the
+  service. A mismatched or broken upload leaves the move waiting and the token usable until the
+  window closes. A closed window fails the move with `upload_expired`; a failed or cancelled
+  move frees its short name at once, so starting again with the same name works.
+- **New states do not break a page.** A hosted community's `state` and hold `reason`, and a
+  move's `state` and `failureCode`, are tolerant (`tolerantEnum`): a value added in a later
+  release reads as `unrecognised`, and every other item in the list still parses. Render it
+  generically. The known members stay published as their own enums.
+- **Generate JSON Schema with `{ io: 'input' }`.** `tolerantEnum` maps an unknown value with a
+  transform, and Zod cannot express a transform's output in JSON Schema. Call
+  `z.toJSONSchema(schema, { io: 'input' })` (or pass `unrepresentable: 'any'`) for the
+  communities shapes, or the conversion throws.
+
+Every link to a community is a runtime value.
 
 ### Money is never a number
 

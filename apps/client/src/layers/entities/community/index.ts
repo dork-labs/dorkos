@@ -9,6 +9,7 @@ export {
   withinCommunityContentAuthority,
   type CommunityContentAuthority,
 } from './model/use-community-connections';
+export { useCommunityConnectionsSync } from './model/use-community-connections-sync';
 export {
   communityNavigationKeys,
   useCommunityNavigation,
@@ -17,7 +18,19 @@ export {
   useRememberCommunityNavigation,
 } from './model/use-community-navigation';
 export {
+  communityDraftKey,
+  EMPTY_COMMUNITY_DRAFT,
+  MAX_COMMUNITY_DRAFTS,
+  useCommunityDraft,
+  useCommunityDraftStore,
+  type CommunityDraft,
+  type CommunityDraftActions,
+  type CommunityDraftAddress,
+  type CommunityDraftFile,
+} from './model/community-drafts';
+export {
   endCommunityConnection,
+  eraseCommunityOwnerState,
   unconfirmedDisconnectMessage,
   useEndCommunityConnection,
   type CommunityConnectionEnd,

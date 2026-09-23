@@ -15,7 +15,11 @@ import {
   type ConfirmedCommunityAuthority,
 } from '@/layers/shared/lib';
 import { commitCommunityRouteEpoch, TransportProvider } from '@/layers/shared/model';
-import { communityKeys, communityNavigationKeys } from '@/layers/entities/community';
+import {
+  communityKeys,
+  communityNavigationKeys,
+  useCommunityConnectionsSync,
+} from '@/layers/entities/community';
 import { useCommunityRevocationCleanup } from '../use-community-revocation-cleanup';
 
 const mockNavigate = vi.fn((_options: unknown) => Promise.resolve());
@@ -24,6 +28,15 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useNavigate: () => mockNavigate,
 }));
 vi.mock('sonner', () => ({ toast: vi.fn() }));
+// Capture the global-stream handlers without a live stream, so a case can
+// play the server's `community_connections_changed` frame.
+const streamHandlers = new Map<string, (data: unknown) => void>();
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useEventSubscription: (event: string, handler: (data: unknown) => void) => {
+    streamHandlers.set(event, handler);
+  },
+}));
 
 const all = { read: true, post: true, enrollAgent: true, stream: true };
 const none = { read: false, post: false, enrollAgent: false, stream: false };
@@ -56,7 +69,18 @@ let authority: ConfirmedCommunityAuthority;
 let client: QueryClient;
 let rows: CommunityConnectionDescriptor[];
 
-function mount() {
+/** The watcher alone, as every case but the push case mounts it. */
+function useWatcher() {
+  useCommunityRevocationCleanup();
+}
+
+/** The watcher beside the sync hook, the way `AppShell` mounts them. */
+function useWatcherWithPush() {
+  useCommunityRevocationCleanup();
+  useCommunityConnectionsSync();
+}
+
+function mount(hook: () => void = useWatcher) {
   const transport = createMockTransport({
     listCommunityConnections: vi.fn(() => Promise.resolve(rows)),
     getCommunityNavigation: vi.fn(() =>
@@ -73,7 +97,7 @@ function mount() {
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
-  return renderHook(() => useCommunityRevocationCleanup(), { wrapper });
+  return renderHook(hook, { wrapper });
 }
 
 async function answer(next: CommunityConnectionDescriptor[]) {
@@ -86,6 +110,7 @@ const privateRows = (ref: string) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  streamHandlers.clear();
   const pending = invalidateCommunityAuthority();
   confirmCommunityAuthority(pending.epoch, 'owner-a');
   authority = { epoch: pending.epoch, ownerKey: 'owner-a' };
@@ -194,5 +219,31 @@ describe('useCommunityRevocationCleanup', () => {
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ to: '/', replace: true }));
     // Not tombstoned a second time.
     expect(getCommunityConnectionGeneration('a')).toBe(after);
+  });
+
+  it('leaves a Community the server says ended at once, without waiting for the poll', async () => {
+    // The acceptance run's defect: the server knew in ~26 ms, the window moved
+    // on its next 30-second poll. With the sync hook mounted beside the
+    // watcher, the server's frame alone drives the same cleanup.
+    commitCommunityRouteEpoch(JSON.stringify(['community', 'a', 'room', null]));
+    mount(useWatcherWithPush);
+    await waitFor(() =>
+      expect(client.getQueryData(communityKeys.connections(authority))).toBeDefined()
+    );
+    const before = getCommunityConnectionGeneration('a');
+
+    // The person left A. Nothing re-reads the list yet: the poll is 30 s off.
+    rows = [row('a', 'reconnect-required'), row('b', 'connected')];
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    act(() => streamHandlers.get('community_connections_changed')!({ changedAt: 'now' }));
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ to: '/', replace: true }), {
+      timeout: 1_000,
+    });
+    expect(getCommunityConnectionGeneration('a')).toBe(before + 1);
+    expect(privateRows('a')).toEqual([]);
+    expect(privateRows('b')).toEqual([['B private']]);
   });
 });

@@ -60,6 +60,11 @@ const schema = z.object({
     100
   ),
   COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE: integer('COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE', 5, 100),
+  COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE: integer(
+    'COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE',
+    20,
+    100
+  ),
   COMMUNITY_GOOGLE_CLIENT_ID: z.string().optional(),
   COMMUNITY_GOOGLE_CLIENT_SECRET: z.string().optional(),
   COMMUNITY_GITHUB_CLIENT_ID: z.string().optional(),
@@ -190,6 +195,7 @@ export function parseConfig(env: Record<string, unknown>) {
       bootstrapAttemptsPerMinute: value.COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE,
       invitePreviewAttemptsPerMinute: value.COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE,
       pairingAttemptsPerMinute: value.COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE,
+      hostKeyAttemptsPerMinute: value.COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE,
     },
   };
 }

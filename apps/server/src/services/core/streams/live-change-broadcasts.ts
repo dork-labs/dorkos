@@ -1,5 +1,6 @@
 /**
- * The two subscriptions that make an agent list and a settings panel live.
+ * The subscriptions that make an agent list, a settings panel and the
+ * Community connection list live.
  *
  * ## Why this is a module and not two lines in `index.ts`
  *
@@ -40,6 +41,16 @@ export interface ConfigChangeSource {
   onChange(listener: (change: ConfigChange) => void): () => void;
 }
 
+/** The narrow slice of `RemoteConnectionStore` this wiring needs. */
+export interface CommunityConnectionsSource {
+  /**
+   * Subscribe to committed connection-list writes, one call per write with
+   * every change it made. The changes name owners and refs, and this wiring
+   * passes neither on. Returns an unsubscribe.
+   */
+  onChange(listener: (changes: readonly { ownerKey: string }[]) => void): () => void;
+}
+
 /** The narrow slice of the global fan-out this wiring needs. */
 export interface BroadcastSink {
   /** Write one event to every connection the audience admits. */
@@ -59,7 +70,9 @@ export interface LiveChangeBroadcastDeps {
   meshCore: AgentsChangedSource | undefined;
   /** The settings store whose writes become `config_changed`. */
   configManager: ConfigChangeSource;
-  /** Where both events are written. */
+  /** The Community connection store whose changes become `community_connections_changed`. */
+  communityConnections: CommunityConnectionsSource;
+  /** Where every event is written. */
   eventFanOut: BroadcastSink;
   /** The clock, for the `changedAt` stamp. Overridden only by tests. */
   now?: () => string;
@@ -99,7 +112,24 @@ export interface ConfigChangedEvent {
 }
 
 /**
- * Subscribe both live-change broadcasts (DOR-2052).
+ * What `community_connections_changed` puts on the wire: a stamp and nothing
+ * else.
+ *
+ * The global stream knows a connection only as a principal kind — operator,
+ * program, agent — never as the local owner a Community connection belongs
+ * to, so it cannot address one owner. The frame therefore says only that SOME
+ * owner's list moved: no ref, no status, no Community name, no owner. Each
+ * window then re-reads `GET /api/community-connections`, which is scoped to
+ * the owner it is signed in as, and learns only its own state. A window whose
+ * owner nothing happened to re-reads an unchanged list.
+ */
+export interface CommunityConnectionsChangedEvent {
+  /** When the change committed. */
+  changedAt: string;
+}
+
+/**
+ * Subscribe the live-change broadcasts (DOR-2052).
  *
  * **`agents_changed` is global.** An agent was registered, renamed or removed,
  * by any path that reaches the mesh registry, and every open window redraws its
@@ -120,10 +150,30 @@ export interface ConfigChangedEvent {
  * `config_changed` has no such suppression — `ConfigManager` reports every
  * write, including one that stored an identical value.
  *
- * @param deps - The mesh core, the config manager, and the fan-out.
+ * **`community_connections_changed` is ADDRESSED and content-free.** A
+ * Community connection was added, connected, told to reconnect, or removed —
+ * most urgently because the person left the Community or was removed from it,
+ * which the server learns in milliseconds. Without this the open window found
+ * out on its next 30-second poll of the list, and kept showing the Community
+ * until then. It goes out under `operatorAudience` (connections are a
+ * person's, and an agent can never manage them), and it carries only a stamp
+ * — see {@link CommunityConnectionsChangedEvent} for why nothing about the
+ * owner or the Community may ride on it.
+ *
+ * **It is not free, so it is sent sparingly.** Every frame costs one
+ * owner-scoped list read per open operator window, and that read re-verifies
+ * each of the owner's connections with its Community over the network. So
+ * the store announces only a change to the list's SHAPE — a row added,
+ * connected, told to reconnect, or removed — and one frame per committed
+ * write however many rows it touched. It never announces an access
+ * re-check: the list read itself performs one per row, so announcing it would
+ * have every window's read trigger another read in every window, forever.
+ *
+ * @param deps - The mesh core, the config manager, the Community connection
+ *   store, and the fan-out.
  */
 export function wireLiveChangeBroadcasts(deps: LiveChangeBroadcastDeps): void {
-  const { meshCore, configManager, eventFanOut } = deps;
+  const { meshCore, configManager, communityConnections, eventFanOut } = deps;
   const now = deps.now ?? (() => new Date().toISOString());
 
   meshCore?.onAgentsChanged((change) => {
@@ -142,5 +192,12 @@ export function wireLiveChangeBroadcasts(deps: LiveChangeBroadcastDeps): void {
   configManager.onChange((change) => {
     const event: ConfigChangedEvent = { sections: change.sections, changedAt: now() };
     eventFanOut.broadcast('config_changed', event, operatorAudience);
+  });
+
+  communityConnections.onChange(() => {
+    // The change is not read: the owner and ref it names must not reach a
+    // stream that cannot tell one owner's windows from another's.
+    const event: CommunityConnectionsChangedEvent = { changedAt: now() };
+    eventFanOut.broadcast('community_connections_changed', event, operatorAudience);
   });
 }

@@ -143,3 +143,74 @@ export function pageOf<T extends z.ZodTypeAny>(item: T, description: string) {
     })
     .describe(description);
 }
+
+/**
+ * A link a person may be sent to: `https:` and nothing else.
+ *
+ * A plain `url()` accepts any scheme, including `javascript:`, `file:` and
+ * `data:`, and a link this contract hands to a browser must never be one of
+ * those. The scheme is checked twice on purpose: once by the URL parser, and
+ * once as a `pattern` that reaches the generated JSON Schema, so a consumer
+ * validating from the JSON Schema alone refuses the same values.
+ */
+export const HttpsUrlSchema = z
+  .url({ protocol: /^https$/ })
+  .regex(/^https:\/\//, 'must be an https: link')
+  .describe('An absolute https: link. Any other scheme is refused.');
+
+/**
+ * A link to a server the DorkOS app talks to: `https:`, or plain `http:` to
+ * this machine's loopback address only.
+ *
+ * Loopback `http:` is allowed so a service and a server running side by side on
+ * one machine (development, a self-hosted test) can describe each other. Any
+ * other `http:` host, and every other scheme, is refused.
+ */
+export const ServerUrlSchema = z
+  .url({ protocol: /^https?$/ })
+  .regex(
+    /^(https:\/\/|http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?([/?#]|$))/,
+    'must be an https: link, or http: to a loopback address'
+  )
+  .describe('An absolute https: link, or an http: link to a loopback address only.');
+
+/**
+ * The metadata key that marks a field as a one-time credential.
+ *
+ * Set on a schema with `.meta()`, so it reaches the generated JSON Schema as
+ * well as the runtime registry (`z.globalRegistry.get(schema)`). A consumer
+ * that relays a response (the DorkOS server relaying to its browser, for
+ * instance) can refuse to pass any marked field on, and this package's tests
+ * prove marked fields appear only where the contract says they may.
+ */
+export const ONE_TIME_CREDENTIAL_META = 'x-dorkos-one-time-credential' as const;
+
+/**
+ * What a tolerant enum field reads as when the service sends a value this
+ * release does not know.
+ */
+export const UNRECOGNISED = 'unrecognised' as const;
+
+/**
+ * Wraps a published enum so a value added in a later release reads as
+ * {@link UNRECOGNISED} instead of failing the whole response.
+ *
+ * The additive rule lets the service add enum members in a minor release. For
+ * a field inside a list or a poll, a strict enum would turn one new state on
+ * one item into a failed parse of the whole page. This keeps every other item
+ * and gives the app one value to render generically ("in a state this version
+ * does not know"). A value that is not a string at all still fails: tolerance
+ * is for new members, not for a broken response. The known set stays published
+ * as the wrapped enum itself, so a consumer can still narrow on it.
+ *
+ * @param known - The published enum of known members.
+ */
+export function tolerantEnum<T extends z.ZodEnum>(known: T) {
+  return z.union([
+    known,
+    z
+      .string()
+      .transform((): typeof UNRECOGNISED => UNRECOGNISED)
+      .describe('A value this release does not know. It reads as unrecognised.'),
+  ]);
+}

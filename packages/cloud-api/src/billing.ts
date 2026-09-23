@@ -49,6 +49,41 @@ export const EntitlementSeatsSchema = z
   })
   .describe('Seat counts for the caller`s organization. Counts only.');
 
+/**
+ * The hosted-community block of the entitlement.
+ *
+ * Numbers, so the app can say how many more communities a person can start, or
+ * grey out Start, without ever knowing what they bought. A null limit means
+ * there is no fixed number: the count is not capped, or a community draws on
+ * the account's shared storage rather than an allowance of its own.
+ */
+export const EntitlementCommunityLimitsSchema = z
+  .object({
+    maxCommunities: z
+      .number()
+      .int()
+      .nonnegative()
+      .nullable()
+      .describe(
+        'How many hosted communities the account may keep open. Null means no fixed count.'
+      ),
+    maxMembersPerCommunity: z
+      .number()
+      .int()
+      .positive()
+      .nullable()
+      .describe('The most active members one hosted community may have. Null means no limit.'),
+    maxStorageBytesPerCommunity: z
+      .number()
+      .int()
+      .nonnegative()
+      .nullable()
+      .describe(
+        'The most bytes of files one hosted community may store. Null means communities draw on the account`s shared storage instead.'
+      ),
+  })
+  .describe('The limits on the caller`s hosted communities. Counts and sizes only.');
+
 /** The measurable limits of the caller`s entitlement. */
 export const EntitlementLimitsSchema = z
   .object({
@@ -70,6 +105,9 @@ export const EntitlementLimitsSchema = z
       ),
     support: SupportCapabilitySchema,
     emailAddressPerSeat: z.boolean(),
+    communities: EntitlementCommunityLimitsSchema.optional().describe(
+      'The limits on hosted communities. Absent means the service did not say.'
+    ),
   })
   .describe(
     'The measurable limits of the caller`s entitlement. Interface behaviour is driven by these values, never by the plan identifier.'
@@ -97,6 +135,14 @@ export const EntitlementsSchema = z
     used: z.object({
       personSeats: z.number().int().nonnegative(),
       agentSeats: z.number().int().nonnegative(),
+      communities: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe(
+          'How many hosted communities count against `limits.communities.maxCommunities`. Absent means the service did not say.'
+        ),
     }),
     seats: EntitlementSeatsSchema,
     canCreateSeat: z.boolean(),

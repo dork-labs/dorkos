@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { IdSchema, TimestampSchema } from './primitives.js';
+import { HttpsUrlSchema, IdSchema, TimestampSchema } from './primitives.js';
 
 /**
  * Every machine-readable failure code this contract can return.
@@ -43,6 +43,10 @@ export const ProblemCodeSchema = z
     'enrolment_required',
     'remote_disabled',
     'address_unavailable',
+    // Hosted communities.
+    'community_name_taken',
+    'community_name_reserved',
+    'import_too_large',
     // The server's own faults.
     'internal_error',
     'temporarily_unavailable',
@@ -64,6 +68,13 @@ export type ProblemCode = z.infer<typeof ProblemCodeSchema>;
  * is an opaque identifier paired with a server-supplied display string: the
  * client renders what it is given and never switches on the value, and no
  * amount ever appears here.
+ *
+ * `actionUrl` is the other half of a refusal a person can do something about:
+ * the page, supplied by the service, where they can do it (raise an allowance,
+ * add credit, contact the host). The client opens it as given, beside `title`
+ * and `detail`, and never builds one itself. It is `https:` only, and both it and
+ * `actionLabel` are dropped rather than failing the parse when malformed: a bad
+ * link must never cost a person the refusal's own words.
  */
 export const ProblemSchema = z
   .object({
@@ -98,6 +109,20 @@ export const ProblemSchema = z
     freesAt: TimestampSchema.optional().describe(
       'When the blocking condition clears, where the server can say so.'
     ),
+    actionUrl: HttpsUrlSchema.optional()
+      .catch(undefined)
+      .describe(
+        'A page, supplied by the service, where a person can act on this refusal. An https: link; open it as given. A malformed value is dropped rather than failing the whole envelope.'
+      ),
+    actionLabel: z
+      .string()
+      .min(1)
+      .max(60)
+      .optional()
+      .catch(undefined)
+      .describe(
+        'The server-supplied text for a link or button that opens `actionUrl`. A malformed value is dropped.'
+      ),
   })
   .describe(
     'The error envelope every endpoint in this contract returns in place of its success body.'

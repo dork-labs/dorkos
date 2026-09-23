@@ -57,15 +57,15 @@ Finally, sign-in is email and password plus optional Google and GitHub (`auth.ts
 
 ## Technical Dependencies
 
-| Dependency                         | Version in repo                       | Used for                                                                                                                  |
-| ---------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `hono`                             | 4.13.8                                | routes, streaming upload body                                                                                             |
-| `better-auth`                      | 1.7.5                                 | sessions, `verifyPassword` reauthentication, the `genericOAuth` plugin for P4 (discovery URL, PKCE)                       |
-| `pg` + hand-written SQL migrations | `apps/community/migrations/0001…0011` | schema changes; new files 0012–0015 are added to the list in `src/migrate.ts`                                             |
-| `drizzle-orm`                      | 0.45.2                                | `src/schema.ts` mirrors every migration                                                                                   |
-| `fflate`                           | 0.8.3                                 | already writes the export zip; its streaming `Unzip` reads the import archive                                             |
-| `zod`                              | ^4.1.13                               | strict wire schemas in `@dorkos/shared/community-wire`, `@dorkos/shared/community-admin-wire`, and `@dork-labs/cloud-api` |
-| Node `crypto`                      | built in                              | SHA-256 token hashing (`security.ts`), UUIDv5 derivation for import IDs                                                   |
+| Dependency                         | Version in repo                       | Used for                                                                                                                                               |
+| ---------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `hono`                             | 4.13.8                                | routes, streaming upload body                                                                                                                          |
+| `better-auth`                      | 1.7.5                                 | sessions, `verifyPassword` reauthentication, the `genericOAuth` plugin for P4 (discovery URL, PKCE)                                                    |
+| `pg` + hand-written SQL migrations | `apps/community/migrations/0001…0011` | schema changes; new files 0012–0015 are added to the list in `src/migrate.ts`                                                                          |
+| `drizzle-orm`                      | 0.45.2                                | `src/schema.ts` mirrors every migration                                                                                                                |
+| `fflate`                           | 0.8.3                                 | already writes the export zip; its streaming `Unzip` reads the import archive                                                                          |
+| `zod`                              | ^4.1.13                               | strict wire schemas in `@dorkos/shared/community-wire` and `@dorkos/shared/community-admin-wire`; the non-strict house style in `@dork-labs/cloud-api` |
+| Node `crypto`                      | built in                              | SHA-256 token hashing (`security.ts`), UUIDv5 derivation for import IDs                                                                                |
 
 No new runtime dependency is needed. UUIDv5 is a SHA-1 over a namespace and a name, which Node `crypto` computes directly.
 
@@ -267,7 +267,7 @@ A short name is a mutable, host-unique alias for one community. It is never iden
 - **Storage.** `community_short_names(short_name text PRIMARY KEY, community_id uuid NOT NULL REFERENCES communities(id), state text NOT NULL CHECK (state IN ('current','retired')), created_at, retired_at)`, with a partial unique index allowing one `current` row per community. The primary key makes a name unique across the host, including retired names.
 - **Rename.** Setting a new name marks the current row `retired` and inserts the new one `current`, in one transaction under the community lock. Setting `null` retires the current name. A retired name still resolves to its community and the browser moves to the current name.
 - **Retired names stay bound** for the community's lifetime, so a bookmarked old address can never be taken over by another community. A host operator may release a retired name on purpose (`DELETE /host/communities/:id/short-names/:name`, audited), for example after a trademark request. When the community is deleted, the deletion worker deletes its name rows with the other tenant rows.
-- **Cool-off after release.** A released name (released by the host, or freed by a deletion) cannot be taken again for `COMMUNITY_SHORT_NAME_COOLOFF_DAYS` (default 90, range 0–365). The hold is stored as `released_short_names(name_hmac text PRIMARY KEY, available_at timestamptz)`, where `name_hmac` is an HMAC-SHA-256 of the name under a key derived from `COMMUNITY_AUTH_SECRET` (HKDF, info `community-short-name-hold`). No name survives deletion in clear text, which keeps the tombstone rule of the administration contract. Rotating the auth secret ends outstanding holds early; the operations guide says so. A host operator may lift a hold for one name (`DELETE /host/short-name-holds/:name`, audited).
+- **Cool-off after release.** A released name (released by the host, or freed by a deletion) cannot be taken again for `COMMUNITY_SHORT_NAME_COOLOFF_DAYS` (default 90, range 0–365). The hold is stored as `released_short_names(name_hmac text PRIMARY KEY, available_at timestamptz)`, where `name_hmac` is an HMAC-SHA-256 of the name under a key derived from `COMMUNITY_AUTH_SECRET` (HKDF, info `community-short-name-hold`). No name survives deletion in clear text, which keeps the tombstone rule of the administration contract. Rotating the auth secret ends outstanding holds early; the operations guide says so. A host operator may lift a hold for one name (`DELETE /host/short-name-holds/:name`, audited). **Exception:** a name freed by abandoning a `pending_owner` community that was never claimed (a cancelled or failed import, an unclaimed start, the host's abandon route) is freed at once with no hold. Nobody ever reached that community at that address, so there is no bookmark to protect, and a person who retries a move must be able to reuse the name they chose.
 - **Who sets it.** The host (scope `communities:write`), on create (`shortName` in the create request) or later (`PUT /host/communities/:id/short-name`). The short name is a slot in the host's namespace, like the list of communities, so it is host authority. Owner self-service is an open question.
 
 `409` codes: `SHORT_NAME_TAKEN` (bound to any community, current or retired, or in its cool-off), `SHORT_NAME_RESERVED`.
@@ -353,7 +353,7 @@ stateDiagram-v2
 `managed_blobs.purpose` gains `import_staging`. Its bytes appear in usage as import staging and never count against the storage limit.
 
 1. **Create.** `POST /api/v1/host/imports` (scope `communities:import`) with an idempotency key, the community `name`, optional `description`, `admissionPolicy`, `shortName`, and `limits`. One transaction creates a `pending_owner` community, its limits and short name, the import row, and a one-time **upload token** (24-hour expiry). No owner claim is issued yet. Replaying the same key returns the same import with `uploadToken: null`; a different payload under the key is `409 IDEMPOTENCY_CONFLICT`.
-2. **Upload.** `PUT /api/v1/imports/:importId/archive` accepts either the upload token as a bearer or host authority with `communities:import`. The upload token lets a host hand the upload to the person who holds the file without handing them a host key. Headers: `Content-Length` (required, at most 1 GiB), `X-Archive-SHA256` (required). The body streams into a reserved staging blob with the existing `BlobStore.put` byte limit; this route joins the attachment route in bypassing the ~96 KiB JSON body buffer in `app.ts`. A hash or length mismatch discards the blob (`400 IMPORT_ARCHIVE_INVALID`). Repeating the upload with the same hash after success is `200`; a different hash is `409 IDEMPOTENCY_CONFLICT`. Success consumes the upload token and moves the job to `validating`.
+2. **Upload.** `PUT /api/v1/imports/:importId/archive` accepts either the upload token as a bearer or host authority with `communities:import`. The upload token lets a host hand the upload to the person who holds the file without handing them a host key. Headers: `Content-Length` (required, at most 1 GiB), `X-Archive-SHA256` (required). The body streams into a reserved staging blob with the existing `BlobStore.put` byte limit; this route joins the attachment route in bypassing the ~96 KiB JSON body buffer in `app.ts`. A hash or length mismatch discards the blob (`400 IMPORT_ARCHIVE_INVALID`). Neither a mismatch nor a dropped connection spends the upload token: it stays valid, and the job stays `awaiting_upload`, until it succeeds or its window closes. Repeating the upload with the same hash after success is `200`; a different hash is `409 IDEMPOTENCY_CONFLICT`. Success consumes the upload token and moves the job to `validating`.
 3. **Validate** (background worker, like the deletion worker, one job at a time per replica with `SKIP LOCKED`). Stream the staging blob through `fflate`'s `Unzip`:
    - the first entry must be `manifest.json`, at most 16 MiB; every other entry must be `attachments/<uuid>`; any other name, a duplicate name, a directory, or an encrypted entry fails the job;
    - the manifest parses with `CommunityExportManifestV1Schema` (strict), `scope` must be `owner`, and every collection is within 10,000 rows;
@@ -370,7 +370,7 @@ stateDiagram-v2
 
 **All or nothing.** No row of the imported community becomes visible, and no file becomes a committed attachment, until step 5's single transaction commits. Files stored in step 4 stay `stored` (never `committed`) in the blob inventory until then, so a failure at any point leaves nothing that a person could see and only inventory that the cleanup path removes.
 
-**Failure and cancel.** A failure records a redacted `failure_code` (`IMPORT_ARCHIVE_INVALID`, `IMPORT_VERSION_UNSUPPORTED`, `IMPORT_TOO_LARGE`, `STORAGE_LIMIT_REACHED`, `IMPORT_CHECKSUM_MISMATCH`, `IMPORT_STORAGE_UNAVAILABLE`) and never a manifest value. Transient storage errors retry with the existing cleanup backoff; validation errors do not retry. `POST /host/imports/:id/cancel` works in any state before `ready`. Cancel, failure, and an expired upload window all end the same way: every reserved or stored blob of that import moves to the existing pending-deletion cleanup, and the `pending_owner` community is removed by the existing abandon path, which now also accepts a community whose only content came from an unfinished import. A `ready` community that is never claimed is abandoned through the ordinary deletion job instead, because it holds content, using the host requester columns added for host-started deletion (migration 0013); a host-requested deletion of an unclaimed imported community has no grace period, since no person has ever had access to it.
+**Failure and cancel.** A failure records a redacted `failure_code` (`IMPORT_ARCHIVE_INVALID`, `IMPORT_NOT_OWNER_EXPORT` for a manifest whose `scope` is `personal`, `IMPORT_VERSION_UNSUPPORTED`, `IMPORT_TOO_LARGE`, `STORAGE_LIMIT_REACHED`, `IMPORT_CHECKSUM_MISMATCH`, `IMPORT_STORAGE_UNAVAILABLE`) and never a manifest value. Transient storage errors retry with the existing cleanup backoff; validation errors do not retry. `POST /host/imports/:id/cancel` works in any state before `ready`. Cancel, failure, and an expired upload window all end the same way: every reserved or stored blob of that import moves to the existing pending-deletion cleanup, and the `pending_owner` community is removed by the existing abandon path, which now also accepts a community whose only content came from an unfinished import. A `ready` community that is never claimed is abandoned through the ordinary deletion job instead, because it holds content, using the host requester columns added for host-started deletion (migration 0013); a host-requested deletion of an unclaimed imported community has no grace period, since no person has ever had access to it.
 
 **Why this is still host authority.** Import writes content the host was handed into a new community that has no members. The host cannot read it back through any host route, and nobody can read it until a person redeems the owner claim. It never touches an existing community. This is the one place the host writes content, and ADR `260923-121153` records it.
 
@@ -378,23 +378,33 @@ stateDiagram-v2
 
 #### Contract in `packages/cloud-api`
 
-A new `communities.ts` module, exported from `src/index.ts`, with routes added to `V1_ROUTES` and `v1Path`. It describes mechanism only: no plan, price, catalog value, supplier, or host literal. The origin a community lives on is a runtime value in the response.
+A new `communities.ts` module, exported from `src/index.ts`, with routes added to `V1_ROUTES` and `v1Path`. It describes mechanism only: no plan, price, catalog value, supplier, or host literal. The address a community lives at is a runtime value in the response. The route set was settled in the contract PR (task 5.1) against what a hosted service needs; each route answers one thing a person does in the app.
 
-| Route                                        | Purpose                                                                                           |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `POST /v1/communities`                       | Start a hosted community. Returns the community's canonical link and a one-time owner-claim link. |
-| `POST /v1/communities/moves`                 | Start a move. Returns an import upload target and a move id.                                      |
-| `GET /v1/communities/moves/{moveId}`         | Poll a move: state, failure code, and, once ready, a one-time owner-claim link.                   |
-| `POST /v1/communities/moves/{moveId}/cancel` | Cancel a move before it is ready.                                                                 |
+| Route                                           | The person                                                                | Answers                                                                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `GET /v1/communities`                           | opens the switcher, or reopens the app mid-claim or mid-move              | their hosted communities: state, hold, deletion date, a service notice, limits, usage, an unfinished move, actions |
+| `GET /v1/communities/name-check?name=`          | types a web address                                                       | free, or taken / reserved (advisory; start checks again)                                                           |
+| `POST /v1/communities`                          | presses Start                                                             | the community, `replayed`, and a one-time claim link (first answer only, once `pending_owner`)                     |
+| `POST /v1/communities/{communityId}/claim-link` | lost or let the claim link expire, or finished a move                     | a fresh one-time link; the last stops working. `conflict` unless `pending_owner`                                   |
+| `POST /v1/communities/{communityId}/keep`       | confirms which community stays open, having seen `actions.keep.wouldHold` | the kept community and the others it held; `conflict` if `expectedHeldCommunityIds` no longer matches              |
+| `POST /v1/communities/{communityId}/restore`    | reopens a held community                                                  | the community. Never holds another; `entitlement_required` if it does not fit, `forbidden` for a host hold         |
+| `POST /v1/communities/moves`                    | picks an export file (size and SHA-256 declared first)                    | the move, `replayed`, and a one-time upload target (first answer only)                                             |
+| `GET /v1/communities/moves`                     | reopens the app after a move finished or failed                           | unfinished moves and those finished within the last 7 days, newest first                                           |
+| `GET /v1/communities/moves/{moveId}`            | waits while it imports                                                    | state, a typed failure code, a counts-only report, and `pollAfterMs`                                               |
+| `POST /v1/communities/moves/{moveId}/cancel`    | cancels before it is ready                                                | the cancelled move                                                                                                 |
+
+Credentials: the claim link and the upload token are returned once, only by the routes that create them, and carry a one-time-credential marker in the schema (and its JSON Schema). No list or poll has a field for either; the local server relays the parsed value, never the raw body, so one leaked into the wrong shape stops there. Once a move is `ready`, the app gets its claim link from `claim-link`, which is exactly the host's P3 step 6. The upload goes straight to the Community server's import route (P3 step 2): a broken or mismatched upload (`400 IMPORT_ARCHIVE_INVALID`) keeps the move `awaiting_upload` and the token usable until its window closes (P3 step 2). A window that closes first cancels the host import (the P3 state diagram), which the service reports as a `failed` move with `upload_expired`. There is no token reissue on the host, so recovery from a lost token or a closed window is cancel and start again, which is cheap because a failed or cancelled move removes its `pending_owner` community and frees the short name at once (P6 exception).
+
+Links: a link the service sends a person to (`actionUrl`) is `https:` only; a link to a Community server (`communityUrl`, `claimUrl`, an upload `url`) is `https:` or loopback `http:`, so local development works. Both rules are also a JSON Schema `pattern`. Field combinations are enforced one way, so a later release can widen them: a `held` community has `hold`, a `deletion_pending` one has `deletionAt`, a `failed` move has `failureCode`; a name check's `reason` is set exactly when unavailable, and a credential comes only on a first answer. A community's `state` and hold `reason`, and a move's `state` and `failureCode`, are tolerant: a value from a later release reads as `unrecognised` instead of failing the whole list or poll.
 
 `EntitlementLimitsSchema` (`billing.ts`, a non-strict object) gains one optional group, and `EntitlementsSchema.used` one optional count, both additive:
 
-- `limits.communities?: { maxCommunities, maxMembersPerCommunity, maxStorageBytesPerCommunity }`: non-negative integers; the last two nullable for "no limit";
-- `used.communities?`: the number of hosted communities the caller owns.
+- `limits.communities?: { maxCommunities, maxMembersPerCommunity, maxStorageBytesPerCommunity }`: non-negative integers, each nullable for "no fixed number" (no count cap, or storage drawn from the account's shared storage);
+- `used.communities?`: the number of hosted communities that count against `maxCommunities`.
 
 These are numbers, so the app can say "You can start 2 more communities" or grey out Start without ever knowing a plan. The app renders them only when present, and never branches on `planId`.
 
-New `Problem` codes (additive under the package's own rule): `community_name_taken`, `community_name_reserved`, `import_invalid`. An entitlement refusal uses the existing `entitlement_required` and its server-supplied `detail`; the app never branches on a plan. The move `state` enum is mechanism and is added, with its reason, to `src/__tests__/catalog-blindness.test.ts`.
+New `Problem` codes (additive under the package's own rule): `community_name_taken`, `community_name_reserved`, `import_too_large`. An archive's validity is only known after upload, so it is a move `failureCode`, not a refusal. Any refusal a larger allowance would lift (a count, members, storage) is the existing `entitlement_required` with the service's own `title` and `detail`, plus a new optional `Problem.actionUrl` and `actionLabel`: the page where the person can act on it. A malformed link or label is dropped rather than failing the refusal. A host hold, a suspension or a pending deletion is explained by the community's own `notice` (`title`, `detail`, optional `actionUrl`/`actionLabel`) in the service's words, so the contract never enumerates a host's reasons. The new enums (`HostedCommunityStateSchema`, `HostedCommunityHoldReasonSchema`, `CommunityNameUnavailableReasonSchema`, `CommunityMoveStateSchema`, `CommunityMoveFailureCodeSchema`) are mechanism and are listed, with their reasons, in `src/__tests__/catalog-blindness.test.ts`.
 
 #### Where it appears
 
@@ -737,62 +747,54 @@ export const CommunityWireHostLinksSchema = z.strictObject({
 });
 ```
 
-`packages/cloud-api/src/communities.ts` (P5), in the package's style (`IdSchema`, `TimestampSchema`, opaque strings):
+`packages/cloud-api/src/communities.ts` (P5) is the authoritative shape, published by task 5.1 in the package's style (`IdSchema`, `TimestampSchema`, `pageOf`, and `z.object` rather than strict objects, so an optional field a newer service adds never breaks an older app). In outline:
 
 ```ts
-export const CommunityStartRequestSchema = z.strictObject({
-  idempotencyKey: z.string().min(1).max(200),
-  name: z.string().trim().min(1).max(80),
-  shortName: z.string().min(3).max(32).optional(), // grammar enforced by the service
-});
-export const CommunityStartResponseSchema = z.strictObject({
-  communityId: IdSchema,
-  communityUrl: z.url(), // canonical https://<origin>/c/<uuid>, runtime value
-  claimUrl: z.url().nullable(), // one-time; null on idempotent replay
-  claimExpiresAt: TimestampSchema.nullable(),
-});
-export const CommunityMoveStartRequestSchema = z.strictObject({
-  idempotencyKey: z.string().min(1).max(200),
-  name: z.string().trim().min(1).max(80),
-  shortName: z.string().min(3).max(32).optional(),
-  archiveBytes: z.int().positive(),
-  archiveSha256: z.string().regex(/^[a-f0-9]{64}$/),
-});
-export const CommunityMoveStateSchema = z.enum([
-  'awaiting_upload',
-  'importing',
-  'ready',
-  'failed',
-  'cancelled',
-  'claimed',
-]);
-export const CommunityMoveSchema = z.strictObject({
-  moveId: IdSchema,
-  communityId: IdSchema,
-  communityUrl: z.url(),
-  state: CommunityMoveStateSchema,
-  failureCode: z.string().max(64).nullable(),
-  upload: z
-    .strictObject({
-      url: z.url(),
-      token: z.string().min(1),
-      expiresAt: TimestampSchema,
-      maxBytes: z.int().positive(),
-    })
-    .nullable(),
-  claimUrl: z.url().nullable(),
-  updatedAt: TimestampSchema,
-});
+CommunityShortNameSchema; // the P6 grammar, lower case by grammar
+HttpsUrlSchema; // https: only, also a JSON Schema pattern
+ServerUrlSchema; // https:, or http: to a loopback address
+ONE_TIME_CREDENTIAL_META; // marks claimUrl and the upload token
+tolerantEnum(known); // a later member reads as UNRECOGNISED ('unrecognised')
+HostedCommunitySchema = {
+  communityId, orgId, name /* 1–80 */, shortName: nullable, communityUrl: ServerUrl,
+  state: 'provisioning' | 'pending_owner' | 'active' | 'archived' | 'held' | 'suspended' | 'deletion_pending',
+  // state, hold.reason: tolerant
+  hold: { reason: 'over_limit' | 'inactive' | 'host', since, deletionNoticeAt: nullable } | null, // always set when held
+  deletionAt: nullable, // always set when deletion_pending
+  notice: { title, detail, actionUrl?, actionLabel? } | null,
+  kept: boolean, moveId: nullable,
+  limits: { maxActiveMembers: nullable, maxStorageBytes: nullable },
+  usage: { activeMembers, storageBytes, measuredAt } | null,
+  actions: { claimLink: boolean, keep: { allowed: boolean, wouldHold: Id[] }, restore: boolean },
+  createdAt,
+};
+CommunityStartRequestSchema = { idempotencyKey /* per caller */, name /* trimmed, 1–80 */, shortName?, orgId? };
+CommunityStartResponseSchema = { community, claim: CommunityClaimLink | null, replayed: boolean };
+CommunityClaimLinkSchema = { communityId, claimUrl /* ServerUrl, one-time credential */, expiresAt };
+CommunityNameCheckResponseSchema = { name, available, reason: 'taken' | 'reserved' | null };
+CommunityKeepRequestSchema = { expectedHeldCommunityIds: Id[] };
+CommunityKeepResponseSchema = { community, heldCommunityIds: Id[] };
+CommunityMoveStartRequestSchema = { idempotencyKey, name, shortName?, orgId?, archiveBytes, archiveSha256 };
+CommunityMoveUploadSchema = { url: ServerUrl, token /* one-time credential */, expiresAt, maxBytes };
+CommunityMoveStartResponseSchema = { move, upload: CommunityMoveUpload | null, replayed: boolean };
+CommunityMoveSchema = {
+  moveId, communityId, communityUrl, name,
+  state: 'awaiting_upload' | 'importing' | 'ready' | 'failed' | 'cancelled' | 'claimed',
+  failureCode: 'not_owner_export' | 'archive_invalid' | 'checksum_mismatch' | 'version_unsupported'
+    | 'too_large' | 'storage_limit_reached' | 'upload_expired' | 'storage_unavailable' | null, // always set when failed; state and failureCode tolerant
+  report: { channels, entries, attachments, historicalMembers, historicalAgents, attachmentBytes, countedBytes } | null,
+  pollAfterMs: nullable, updatedAt,
+};
+CommunityMoveListResponseSchema = page of CommunityMove; // unfinished, plus finished within 7 days
+COMMUNITY_ARCHIVE_DIGEST_HEADER = 'X-Archive-SHA256';
 
 // billing.ts, additive and optional
-export const EntitlementCommunityLimitsSchema = z.object({
-  maxCommunities: z.number().int().nonnegative(),
-  maxMembersPerCommunity: z.number().int().positive().nullable(),
-  maxStorageBytesPerCommunity: z.number().int().nonnegative().nullable(),
-});
-// EntitlementLimitsSchema gains: communities: EntitlementCommunityLimitsSchema.optional()
-// EntitlementsSchema.used gains: communities: z.number().int().nonnegative().optional()
+EntitlementCommunityLimitsSchema = { maxCommunities, maxMembersPerCommunity, maxStorageBytesPerCommunity }; // each nullable
+// EntitlementLimitsSchema gains communities?; EntitlementsSchema.used gains communities?
+// problem.ts: ProblemSchema gains actionUrl? (https) and actionLabel? (1–60), each dropped when malformed
 ```
+
+The failure codes map from P3's `failure_code`: `IMPORT_ARCHIVE_INVALID` to `archive_invalid`, `IMPORT_NOT_OWNER_EXPORT` to `not_owner_export`, `IMPORT_CHECKSUM_MISMATCH` (an attachment that does not match the export's own manifest) to `checksum_mismatch`, `IMPORT_VERSION_UNSUPPORTED` to `version_unsupported`, `IMPORT_TOO_LARGE` to `too_large`, `STORAGE_LIMIT_REACHED` to `storage_limit_reached`, `IMPORT_STORAGE_UNAVAILABLE` to `storage_unavailable`; an import cancelled because its upload window closed before a matching file arrived is reported as a failed move with `upload_expired`.
 
 ### Data model changes (migrations)
 
@@ -826,7 +828,7 @@ P4 and P5 need no Community migration. P5 adds local configuration only if the a
 | `apps/server/src/routes/cloud.ts` (or a new `routes/cloud-communities.ts`)                                                               | start, move, upload relay                                                                          |
 | `apps/client/src/layers/features/dashboard-sidebar/ui/context/CommunityContextSwitcher.tsx` and a new `features/community-hosting` slice | P5 menu items and dialogs                                                                          |
 | `packages/shared/src/community-admin-wire.ts`, `community-wire.ts`                                                                       | schemas above                                                                                      |
-| `packages/cloud-api/src/communities.ts`, `routes.ts`, `problem.ts`, `index.ts`                                                           | P5 contract                                                                                        |
+| `packages/cloud-api/src/communities.ts`, `primitives.ts`, `routes.ts`, `problem.ts`, `billing.ts`, `index.ts`                            | P5 contract                                                                                        |
 
 ## User Experience
 
@@ -887,6 +889,7 @@ Each test carries a purpose comment. Every acceptance criterion below names the 
 
 - `GET /api/v1/community-names/acme` returns the community's UUID; after renaming to `acme-labs`, `acme` returns the same UUID with `shortName: 'acme-labs'`, and another community cannot take `acme` (`409 SHORT_NAME_TAKEN`). Fails if retired names are released on rename.
 - After a host releases `acme` (or its community is deleted), creating another community with `acme` is `409 SHORT_NAME_TAKEN` until the cool-off ends (clock injected), then succeeds; the database holds no row containing the text `acme` after the deletion. Fails if the hold is missing or stored in clear text.
+- Abandoning a never-claimed `pending_owner` community named `acme` (including a cancelled or failed import) frees `acme` at once: creating another community with it succeeds with no clock movement and leaves no `released_short_names` row. Fails if the cool-off applies to a name nobody ever reached.
 - The lookup returns an identical `404` body for an unknown name, a reserved name, a malformed name, and a `pending_owner` or `suspended` community's name. Fails if the response distinguishes them.
 - Every literal top-level path served by `main.ts` and matched in `BrowserRoot.tsx` is in `COMMUNITY_RESERVED_SHORT_NAMES`. Fails when someone adds a page and forgets the list.
 - A stored DorkOS connection made from `/<name>` keeps working after the community is renamed and its old name released. Fails if the name was stored as identity.
@@ -897,7 +900,7 @@ Each test carries a purpose comment. Every acceptance criterion below names the 
 - Round trip: seed community A with private and public channels, threads, human and agent mentions, attachments, an archived channel, removed members, and revoked agents; owner-export it; import it into the same host; claim it. Then: channel, entry, attachment, and audit counts match; every entry's text, sequence, thread shape, mention order, author display name, and timestamp match through the ID map; every attachment's bytes hash to its original checksum; the claimant owns the adopted owner row and sees the owner's past entries as their own; no other historical member has a `user_id`; no grant, credential, pairing, or invitation exists in the new community. Fails on any lost or reordered field.
 - Importing the same archive twice yields two communities with disjoint IDs. Fails if IDs are preserved.
 - A worker killed after half the files and restarted finishes with each file stored exactly once and no orphaned blob in the inventory. Fails without resumable progress.
-- Tampered archives each fail with the named code and leave no committed row and, after cleanup, no blob: a changed attachment byte (`IMPORT_CHECKSUM_MISMATCH`), a mention pointing outside the manifest, a `../x` entry name, a second `manifest.json`, `scope: 'personal'`, `version: 2`, an entry that inflates past its declared size, and a manifest over 16 MiB.
+- Tampered archives each fail with the named code and leave no committed row and, after cleanup, no blob: a changed attachment byte (`IMPORT_CHECKSUM_MISMATCH`), a mention pointing outside the manifest, a `../x` entry name, a second `manifest.json`, `scope: 'personal'` (`IMPORT_NOT_OWNER_EXPORT`), `version: 2`, an entry that inflates past its declared size, and a manifest over 16 MiB.
 - An import whose attachments exceed the target's storage limit fails with `STORAGE_LIMIT_REACHED` before any file is restored.
 - An import pauses at `validated` with a report whose counts equal the seeded source and which contains no text or names (JSON key and value scan); nothing is visible in the target until `commit`. With `autoCommit: true` it proceeds without the pause. Cancelling at `validated` leaves no committed row and, after cleanup, no blob.
 - Killing the worker between the last file and the row transaction leaves no visible channel or entry and no `committed` attachment blob. Fails if files commit before rows.
@@ -906,7 +909,7 @@ Each test carries a purpose comment. Every acceptance criterion below names the 
 
 **P5**
 
-- `packages/cloud-api` conformance fixtures parse for every new route and `Problem` code; the catalog-blindness test lists the new enum with its reason.
+- `packages/cloud-api` conformance fixtures parse for every new route and `Problem` code; the catalog-blindness test lists every new enum with its reason; the credential marker appears on exactly the claim link and upload token, at exactly the paths that create them, and no field named like a credential appears anywhere else in the family; `javascript:`, `file:`, `data:` and non-loopback `http:` links are refused; each tied field combination has a negative test; a list with one item in an unknown state still parses, with that item read as `unrecognised` and the others intact.
 - With the installation unlinked, the switcher renders neither item and the client makes no request to `/api/cloud/communities/*` (asserted with a mock transport). Fails if the items render inert or probe the service.
 - Each dialog state renders at phone, tablet, and desktop widths in the Dev Playground, and the move state survives a reload.
 

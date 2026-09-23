@@ -41,7 +41,7 @@ const CAPABILITIES: ConversationCapabilities = {
   asks: false,
 };
 
-/** One qualified remote conversation; the parent keys it by community and room to isolate drafts. */
+/** One qualified remote conversation; the parent keys it by community and room, and its draft lives in the qualified draft store. */
 export function RemoteCommunitySurface({
   community,
   roomId,
@@ -185,16 +185,32 @@ export function RemoteCommunitySurface({
   useLayoutEffect(() => {
     if (receiptRevision > 0) timeline.current?.scrollToBottom();
   }, [receiptRevision]);
-  const drafts = useRemoteCommunityDrafts(
-    community,
+  // The draft outlives this surface: it is keyed by owner, connection
+  // generation, room and thread, so coming back here finds it again.
+  const draftAddress = useMemo(
+    () =>
+      authority
+        ? {
+            ownerKey: authority.ownerKey,
+            epoch: authority.epoch,
+            ref: community,
+            generation: authority.connection?.generation ?? 0,
+            roomId,
+            threadId,
+          }
+        : null,
+    [authority, community, roomId, threadId]
+  );
+  const drafts = useRemoteCommunityDrafts({
+    ref: community,
     roomId,
     canSend,
     entries,
     onReceipt,
-    ownerAddress || 'unresolved',
-    threadId ?? 'channel',
-    contextAddress || 'unresolved'
-  );
+    draft: draftAddress,
+    ownerKey: ownerAddress || 'unresolved',
+    contextKey: contextAddress || 'unresolved',
+  });
   const visible = entries.filter((entry) =>
     threadId ? entry.id === threadId || entry.threadRootEntryId === threadId : entry.depth === 0
   );

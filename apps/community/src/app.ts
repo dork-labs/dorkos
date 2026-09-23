@@ -16,7 +16,7 @@ import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
 import { bootstrapGrant, transaction } from './data.js';
 import { ApiError, handleError, json, readJson } from './http.js';
-import { equalSecret, hashSecret, randomToken, signValue } from './security.js';
+import { equalSecret, hashSecret, isHostApiKeyBearer, randomToken, signValue } from './security.js';
 import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/channels.js';
 import { registerEntryRoutes } from './routes/entries.js';
@@ -28,6 +28,8 @@ import { registerAgentRoutes } from './routes/agents.js';
 import { registerAttachmentRoutes } from './routes/attachments.js';
 import { registerExportRoutes } from './routes/exports.js';
 import { registerHostRoutes } from './routes/host.js';
+import { registerHostKeyRoutes } from './routes/host-keys.js';
+import { createHostAuthority } from './host-authority.js';
 import { registerAdministrationRoutes } from './routes/administration.js';
 import { createBlobStore, type BlobStore } from './storage/index.js';
 import { DeliveryReceiptGate } from './delivery-receipt-gate.js';
@@ -48,6 +50,8 @@ export function createCommunityApp({
     afterEntryAttachmentLookup?: () => Promise<void>;
     invitePreviewPeer?: (c: Parameters<typeof getConnInfo>[0]) => string;
     beforeBootstrapChannelCreate?: () => Promise<void>;
+    /** The clock host API key expiry is judged by. Tests move it; production uses the wall clock. */
+    now?: () => Date;
   };
   blobStore?: BlobStore;
 }) {
@@ -263,12 +267,26 @@ export function createCommunityApp({
     return json(c, CommunityWireBootstrapCompleteResponseSchema, result, 201);
   });
 
+  const now = hooks?.now ?? (() => new Date());
+  const authority = createHostAuthority({
+    auth,
+    pool,
+    now,
+    limitKeyMiss: (c) =>
+      limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
+  });
   const hostApi = new Hono();
-  registerHostRoutes(hostApi, { pool, auth, config, blobStore });
+  registerHostRoutes(hostApi, { pool, auth, config, blobStore, authority, now });
+  registerHostKeyRoutes(hostApi, { pool, auth, authority, now });
   app.route('/api/v1', hostApi);
 
   const communityApi = new Hono();
   communityApi.use('*', async (c, next) => {
+    // Host authority manages communities as containers and never reaches their content.
+    // Refuse a host API key here, before any tenant, credential, or unauthenticated route runs.
+    if (isHostApiKeyBearer(c.req.header('authorization'))) {
+      throw new ApiError(401, 'UNAUTHENTICATED', 'Host API keys cannot reach community content.');
+    }
     if (c.req.param('communityId')) {
       await resolveCommunityContext(c, pool, {
         allowPendingOwner: true,

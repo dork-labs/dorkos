@@ -121,11 +121,13 @@ beforeEach(async () => {
     if (eventName === 'agents_changed') broadcasts.push(data as Record<string, unknown>);
   });
 
-  // The REAL wiring, the same call `index.ts` makes. No config manager is
-  // needed here — this file is about agent writes — so it gets an inert one.
+  // The REAL wiring, the same call `index.ts` makes. No config manager or
+  // connection store is needed here — this file is about agent writes — so
+  // each gets an inert one.
   wireLiveChangeBroadcasts({
     meshCore: mesh,
     configManager: { onChange: () => () => {} },
+    communityConnections: { onChange: () => () => {} },
     eventFanOut,
   });
 

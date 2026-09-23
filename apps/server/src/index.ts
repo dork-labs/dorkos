@@ -339,6 +339,7 @@ import {
 } from '@dorkos/db';
 import {
   getRemoteCommunityAdapter,
+  getRemoteConnectionStore,
   getRemotePairingService,
   publishRemoteCommunityDeliveryChanges,
   setRemoteCommunityDb,
@@ -1966,7 +1967,12 @@ async function start() {
   // audience on one, `operatorAudience` on the other, and what each payload may
   // carry — live in the module, where a test can drive them; a one-line wiring
   // here could only ever be tested by a test that copied it.
-  wireLiveChangeBroadcasts({ meshCore, configManager, eventFanOut });
+  wireLiveChangeBroadcasts({
+    meshCore,
+    configManager,
+    communityConnections: getRemoteConnectionStore(),
+    eventFanOut,
+  });
 
   // The milestones #team marks (team-room-home spec D5.1). Two seams feed them
   // and NEITHER is a timer: the agent-created seam below, and the activity log

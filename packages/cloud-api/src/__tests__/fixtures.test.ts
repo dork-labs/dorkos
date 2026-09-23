@@ -51,6 +51,7 @@ describe('conformance fixtures', () => {
     const groups = new Set(Object.keys(manifest.fixtures).map((rel) => rel.split('/')[0]));
     expect([...groups].sort()).toEqual([
       'billing',
+      'communities',
       'connections',
       'inference',
       'instances',

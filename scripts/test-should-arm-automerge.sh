@@ -39,6 +39,7 @@ green() {
   "isDraft": false,
   "mergeStateStatus": "BEHIND",
   "autoMergeRequest": null,
+  "mergeQueueEntry": null,
   "reviewDecision": "APPROVED",
   "labels": [],
   "unresolvedThreads": 0,
@@ -81,6 +82,14 @@ check "already armed"             "SKIP already-armed"        '.autoMergeRequest
 check "already queued"            "SKIP already-queued"       '.mergeQueueEntry = {"position": 1, "state": "AWAITING_CHECKS"}'
 check "queued and armed"          "SKIP already-armed"        '.mergeQueueEntry = {"position": 1} | .autoMergeRequest = {"enabledAt": "now"}'
 
+# The two facts only merge-tail's GraphQL read supplies must be PRESENT, not
+# defaulted: a payload built without them (a failed read, or a caller using
+# `gh pr view` alone) used to read as "not queued" and "no open threads".
+check "queue entry absent"        "SKIP queue-entry-unknown"  'del(.mergeQueueEntry)'
+check "thread count absent"       "SKIP review-threads-unknown" 'del(.unresolvedThreads)'
+check "thread count null"         "SKIP review-threads-unknown" '.unresolvedThreads = null'
+check "thread count not a number" "SKIP review-threads-unknown" '.unresolvedThreads = "0"'
+
 # A hold label outranks every green signal, including on an otherwise
 # perfect PR. Both payload shapes gh can produce are covered: objects and
 # bare strings.
@@ -102,6 +111,7 @@ check "mergeability absent"       "SKIP mergeability-unknown" 'del(.mergeStateSt
 # Human review signals.
 check "changes requested"         "SKIP changes-requested"    '.reviewDecision = "CHANGES_REQUESTED"'
 check "unresolved threads"        "SKIP unresolved-threads"   '.unresolvedThreads = 3'
+check "exactly one open thread"   "SKIP unresolved-threads"   '.unresolvedThreads = 1'
 check "no review decision yet"    "ARM"                       '.reviewDecision = ""'
 
 # Check buckets. Anything unsettled or unhappy refuses.

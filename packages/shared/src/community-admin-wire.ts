@@ -111,3 +111,50 @@ export const CommunityAdminDeletionStatusSchema = z.strictObject({
   state: z.enum(['waiting', 'deleting', 'retrying']).nullable(),
   attempts: z.int().nonnegative(),
 });
+
+/** Host API key scopes. Host authority only; no scope reaches community content. */
+export const CommunityAdminHostApiKeyScopeSchema = z.enum([
+  'communities:read',
+  'communities:write',
+  'communities:lifecycle',
+  'communities:import',
+]);
+
+/** Host API key projection. Never carries the secret or its hash. */
+export const CommunityAdminHostApiKeySchema = z.strictObject({
+  id,
+  label: z.string().trim().min(1).max(80),
+  prefix: z.string().regex(/^dkh_[A-Za-z0-9_-]{6}$/),
+  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(4),
+  issuedVia: z.enum(['browser', 'command']),
+  /** The issuing host operator's display name; null for a key issued by the offline command. */
+  issuedByOperator: z.string().min(1).nullable(),
+  createdAt: timestamp,
+  expiresAt: timestamp.nullable(),
+  lastUsedAt: timestamp.nullable(),
+  revokedAt: timestamp.nullable(),
+});
+/** Every host API key, newest first. */
+export const CommunityAdminHostApiKeyListSchema = z.strictObject({
+  keys: z.array(CommunityAdminHostApiKeySchema),
+});
+/** Issue a host API key. Needs a host operator's session and password; a key cannot issue keys. */
+export const CommunityAdminHostApiKeyIssueRequestSchema = z.strictObject({
+  label: z.string().trim().min(1).max(80),
+  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(4),
+  expiresInDays: z.int().min(1).max(365).nullable(),
+  password: z.string().min(1),
+});
+/** Rotate a host API key; the old key keeps working for the overlap. */
+export const CommunityAdminHostApiKeyRotateRequestSchema = z.strictObject({
+  overlapMinutes: z.int().min(0).max(1_440),
+  password: z.string().min(1),
+});
+/** One-time secret handoff, served with Cache-Control: no-store. */
+export const CommunityAdminHostApiKeySecretResponseSchema = z.strictObject({
+  key: CommunityAdminHostApiKeySchema,
+  secret: z.string().regex(/^dkh_[A-Za-z0-9_-]{43}$/),
+  previousKeyExpiresAt: timestamp.nullable(),
+});
+/** Revocation takes no input; it cannot be undone. */
+export const CommunityAdminHostApiKeyRevokeRequestSchema = z.strictObject({});

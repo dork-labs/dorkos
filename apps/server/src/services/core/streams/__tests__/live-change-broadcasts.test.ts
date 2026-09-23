@@ -1,5 +1,6 @@
 /**
- * The REAL wiring of `agents_changed` and `config_changed`, not a copy of it.
+ * The REAL wiring of `agents_changed`, `config_changed` and
+ * `community_connections_changed`, not a copy of it.
  *
  * ## What the copy could not prove
  *
@@ -16,7 +17,9 @@
  * - spread the in-process change instead of picking fields → the `projectPath`
  *   case goes red;
  * - drop either subscription → its "reaches a reader" case goes red;
- * - let a config VALUE into the payload → the secret case goes red.
+ * - let a config VALUE into the payload → the secret case goes red;
+ * - drop the Community subscription or its audience, or let the owner or ref
+ *   onto the wire → a `community_connections_changed` case goes red.
  *
  * `index.ts` calling this function is the one link left unproven by unit test,
  * and it is a single call rather than a policy: `sse-event-allowlist.test.ts`
@@ -30,6 +33,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   wireLiveChangeBroadcasts,
   type AgentsChangedSource,
+  type CommunityConnectionsSource,
   type ConfigChange,
   type ConfigChangeSource,
 } from '../live-change-broadcasts.js';
@@ -95,6 +99,24 @@ function fakeConfig() {
   };
 }
 
+/** A Community connection store that just holds its subscriber. */
+function fakeCommunityConnections() {
+  type Change = { ownerKey: string; ref: string; status: string };
+  const listeners: Array<(changes: readonly Change[]) => void> = [];
+  const source: CommunityConnectionsSource = {
+    onChange: (listener) => {
+      listeners.push(listener);
+      return () => {};
+    },
+  };
+  return {
+    source,
+    subscriberCount: () => listeners.length,
+    /** One committed write carrying `changes`. */
+    fire: (...changes: Change[]) => listeners.forEach((listener) => listener(changes)),
+  };
+}
+
 const AGENT_CHANGE: AgentIdentityChange = {
   kind: 'registered',
   agentId: '01JKAGENT0000000000000000',
@@ -105,15 +127,18 @@ const AGENT_CHANGE: AgentIdentityChange = {
 
 let mesh: ReturnType<typeof fakeMesh>;
 let config: ReturnType<typeof fakeConfig>;
+let communities: ReturnType<typeof fakeCommunityConnections>;
 let fanOut: ReturnType<typeof recordingFanOut>;
 
 beforeEach(() => {
   mesh = fakeMesh();
   config = fakeConfig();
+  communities = fakeCommunityConnections();
   fanOut = recordingFanOut();
   wireLiveChangeBroadcasts({
     meshCore: mesh.source,
     configManager: config.source,
+    communityConnections: communities.source,
     eventFanOut: fanOut,
     now: () => '2026-09-15T00:00:00.000Z',
   });
@@ -203,6 +228,71 @@ describe('config_changed', () => {
   });
 });
 
+describe('community_connections_changed', () => {
+  const ENDED = {
+    ownerKey: 'owner-author-7f3a',
+    ref: 'remote_0123456789abcdef0123456789abcdef',
+    status: 'reconnect-required',
+  };
+
+  it('is subscribed at all', () => {
+    expect(communities.subscriberCount()).toBe(1);
+  });
+
+  it('goes out the moment the store reports a write, one frame per write', () => {
+    communities.fire(ENDED);
+    communities.fire({ ...ENDED, status: 'removed' });
+
+    expect(fanOut.sent.map((entry) => entry.event)).toEqual([
+      'community_connections_changed',
+      'community_connections_changed',
+    ]);
+  });
+
+  it('sends ONE frame for a write that changed several rows', () => {
+    // A sweep of three expired rows is one write; three frames would cost
+    // every open window three list reads, each re-verifying every connection.
+    communities.fire(
+      { ...ENDED, ref: 'remote_1', status: 'removed' },
+      { ...ENDED, ref: 'remote_2', status: 'removed' },
+      { ...ENDED, ref: 'remote_3', status: 'removed' }
+    );
+
+    expect(fanOut.sent.map((entry) => entry.event)).toEqual(['community_connections_changed']);
+  });
+
+  it('carries a stamp and nothing else — no owner, no ref, no status', () => {
+    // The global stream cannot tell one local owner's windows from another's,
+    // so anything about the connection on this frame would reach them all.
+    communities.fire(ENDED);
+
+    const { event, data } = fanOut.only('community_connections_changed');
+    expect(data).toEqual({ changedAt: '2026-09-15T00:00:00.000Z' });
+    const encoded = encodeBroadcast(event, data);
+    for (const secret of [ENDED.ownerKey, ENDED.ref, ENDED.status]) {
+      expect(`${encoded.json}\n${encoded.sse}`).not.toContain(secret);
+    }
+  });
+
+  it('is ADDRESSED: a person and a program receive it, an agent never does', () => {
+    communities.fire(ENDED);
+
+    expect(fanOut.only('community_connections_changed').audience).toBeDefined();
+    expect(fanOut.reaches('community_connections_changed', { kind: 'operator' })).toBe(true);
+    expect(
+      fanOut.reaches('community_connections_changed', { kind: 'program', userId: 'user-1' })
+    ).toBe(true);
+    expect(fanOut.reaches('community_connections_changed', { kind: 'agent' })).toBe(false);
+    expect(
+      fanOut.reaches('community_connections_changed', {
+        kind: 'bridged',
+        platform: 'telegram',
+        platformUserId: '42',
+      })
+    ).toBe(false);
+  });
+});
+
 describe('a server with no mesh', () => {
   it('still broadcasts settings changes', () => {
     // Mesh init is allowed to fail without taking the server down. Losing
@@ -212,6 +302,7 @@ describe('a server with no mesh', () => {
     wireLiveChangeBroadcasts({
       meshCore: undefined,
       configManager: soloConfig.source,
+      communityConnections: fakeCommunityConnections().source,
       eventFanOut: soloFanOut,
     });
 
@@ -230,6 +321,7 @@ describe('the stamp', () => {
     wireLiveChangeBroadcasts({
       meshCore: realMesh.source,
       configManager: fakeConfig().source,
+      communityConnections: fakeCommunityConnections().source,
       eventFanOut: realFanOut,
     });
     const before = Date.now();
@@ -256,6 +348,7 @@ describe('a throwing fan-out', () => {
     wireLiveChangeBroadcasts({
       meshCore: ownMesh.source,
       configManager: fakeConfig().source,
+      communityConnections: fakeCommunityConnections().source,
       eventFanOut: throwingFanOut,
     });
 

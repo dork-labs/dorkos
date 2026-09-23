@@ -37,6 +37,8 @@ import { commitAll } from '../services/rooms/repo/room-repo-git.js';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import { getAgentIdentityService } from '../services/core/agent-identity/agent-identity-service.js';
 import { MOCK_MCP_OAUTH_MCP_PATH, resetMockMcpOAuthState } from './mock-mcp-oauth-server.js';
+import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
+import { getRemoteConnectionStore } from '../services/communities/remote/state.js';
 import type { AgentMcpServerService } from '../services/mesh/agent-mcp-server-service.js';
 
 /**
@@ -90,6 +92,37 @@ testControlRouter.get('/community-subscription', (req, res) => {
   const value = remoteCommunitySubscriptionProbe(parsed.data.ref, parsed.data.roomId);
   if (!value) return res.status(404).json({ error: 'Community room subscription is unavailable.' });
   return res.json(value);
+});
+
+/**
+ * Make the real Community connection store commit a change, so the real
+ * `community_connections_changed` broadcast goes out on `/api/events`.
+ *
+ * A browser proof cannot end a real Community connection — that needs a live
+ * Community host — so it mocks the connection LIST and asks here for the
+ * server's push. The push is content-free (a stamp only), so which owner's
+ * list changed does not matter to a window: a throwaway pending row, owned by
+ * a key no local author can have, is added and removed through the same store
+ * methods every pairing, expiry and disconnect uses. Nothing is left behind.
+ */
+testControlRouter.post('/community-connection-change', async (_req, res) => {
+  const store = getRemoteConnectionStore();
+  const ownerKey = 'e2e-connection-change-probe';
+  const ref = CommunityRefSchema.parse(`remote_probe_${ulid().toLowerCase()}`);
+  await store.addPending(
+    {
+      ref,
+      ownerKey,
+      remoteCommunityId: 'e2e-probe',
+      label: 'Probe',
+      pinnedOrigin: 'https://probe.example.test',
+      pairingId: 'e2e-probe',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    },
+    'e2e-probe-verifier'
+  );
+  await store.disconnect(ref, ownerKey);
+  res.json({ ok: true });
 });
 
 const scenarioSchema = z.object({

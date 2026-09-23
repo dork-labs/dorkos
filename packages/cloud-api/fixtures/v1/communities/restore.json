@@ -1,0 +1,31 @@
+{
+  "communityId": "2b3c4d5e-6f70-4812-9a3b-4c5d6e7f8091",
+  "orgId": "org_0001",
+  "name": "Reading group",
+  "shortName": "reading-group",
+  "communityUrl": "https://community.example.invalid/c/2b3c4d5e-6f70-4812-9a3b-4c5d6e7f8091",
+  "state": "active",
+  "hold": null,
+  "deletionAt": null,
+  "notice": null,
+  "kept": false,
+  "moveId": null,
+  "limits": {
+    "maxActiveMembers": 200,
+    "maxStorageBytes": 2000000000
+  },
+  "usage": {
+    "activeMembers": 12,
+    "storageBytes": 48213504,
+    "measuredAt": "2026-09-23T12:00:00.000Z"
+  },
+  "actions": {
+    "claimLink": false,
+    "keep": {
+      "allowed": false,
+      "wouldHold": []
+    },
+    "restore": false
+  },
+  "createdAt": "2025-06-01T09:00:00.000Z"
+}

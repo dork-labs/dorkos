@@ -29,3 +29,4 @@ export * from './billing.js';
 export * from './inference.js';
 export * from './seats.js';
 export * from './remote.js';
+export * from './communities.js';
