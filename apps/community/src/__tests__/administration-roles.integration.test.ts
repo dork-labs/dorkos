@@ -29,6 +29,8 @@ import { parseConfig, type CommunityConfig } from '../config.js';
 import { migrate } from '../migrate.js';
 import { registerAdministrationRoutes } from '../routes/administration.js';
 import { registerHostRoutes } from '../routes/host.js';
+import { registerMembershipRoutes } from '../routes/memberships.js';
+import { registerOwnerClaimRoutes } from '../routes/owner-claims.js';
 import { registerHostKeyRoutes } from '../routes/host-keys.js';
 import { createHostAuthority } from '../host-authority.js';
 import { issueHostApiKey } from '../host-key-store.js';
@@ -1668,7 +1670,9 @@ it('classifies every registered route, and puts every host and settings route in
   const blobStore = new FileSystemBlobStore(storagePath);
   const now = () => new Date();
   const authority = createHostAuthority({ auth, pool, now, limitKeyMiss: () => undefined });
-  registerHostRoutes(modules, { pool, auth, config, blobStore, authority, now });
+  registerHostRoutes(modules, { pool, blobStore, authority, now });
+  registerOwnerClaimRoutes(modules, { pool, auth, config, authority, now });
+  registerMembershipRoutes(modules, { pool, auth });
   registerHostKeyRoutes(modules, { pool, auth, authority, now });
   registerAdministrationRoutes(modules, { pool, auth, blobStore });
   const administration = [

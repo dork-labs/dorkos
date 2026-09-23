@@ -29,7 +29,7 @@ import {
 } from '../storage/index.js';
 import { prepareCommunityDeletionInventory } from '../deletion-worker.js';
 import { resolveCommunityContext } from '../tenant-context.js';
-import { revokeTenantAccess } from './host.js';
+import { revokeTenantAccess } from '../host-communities.js';
 
 interface SettingsRow {
   id: string;

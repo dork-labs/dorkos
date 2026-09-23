@@ -28,6 +28,8 @@ import { registerAgentRoutes } from './routes/agents.js';
 import { registerAttachmentRoutes } from './routes/attachments.js';
 import { registerExportRoutes } from './routes/exports.js';
 import { registerHostRoutes } from './routes/host.js';
+import { registerMembershipRoutes } from './routes/memberships.js';
+import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
 import { createHostAuthority } from './host-authority.js';
 import { registerAdministrationRoutes } from './routes/administration.js';
@@ -276,7 +278,9 @@ export function createCommunityApp({
       limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
   });
   const hostApi = new Hono();
-  registerHostRoutes(hostApi, { pool, auth, config, blobStore, authority, now });
+  registerHostRoutes(hostApi, { pool, blobStore, authority, now });
+  registerOwnerClaimRoutes(hostApi, { pool, auth, config, authority, now });
+  registerMembershipRoutes(hostApi, { pool, auth });
   registerHostKeyRoutes(hostApi, { pool, auth, authority, now });
   app.route('/api/v1', hostApi);
 
