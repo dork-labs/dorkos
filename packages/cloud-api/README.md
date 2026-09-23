@@ -165,6 +165,10 @@ that server's single-use owner claim; it never owns one itself.
   move's `state` and `failureCode`, are tolerant (`tolerantEnum`): a value added in a later
   release reads as `unrecognised`, and every other item in the list still parses. Render it
   generically. The known members stay published as their own enums.
+- **Generate JSON Schema with `{ io: 'input' }`.** `tolerantEnum` maps an unknown value with a
+  transform, and Zod cannot express a transform's output in JSON Schema. Call
+  `z.toJSONSchema(schema, { io: 'input' })` (or pass `unrepresentable: 'any'`) for the
+  communities shapes, or the conversion throws.
 
 Every link to a community is a runtime value.
 
