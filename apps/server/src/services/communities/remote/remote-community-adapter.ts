@@ -37,6 +37,7 @@ import {
   COMMUNITY_API_V1_ROUTES,
   CommunityWireChannelListResponseSchema,
   CommunityWireChannelResponseSchema,
+  CommunityWireAttentionResponseSchema,
   CommunityWireAgentChannelMembershipResponseSchema,
   CommunityWireAgentListResponseSchema,
   CommunityWireAttachmentUploadResponseSchema,
@@ -405,6 +406,13 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     this.rooms.clear();
     for (const item of result) this.rooms.set(item.roomId, item);
     return result;
+  }
+
+  /** Read the remote server's owner-authorized aggregate activity summary. */
+  async attention(): Promise<{ unreadCount: number; mentionCount: number }> {
+    return CommunityWireAttentionResponseSchema.parse(
+      await this.request(COMMUNITY_API_V1_ROUTES.attention, undefined, undefined, 'GET')
+    );
   }
 
   async getRoom(roomId: string, context?: CommunityReadContext): Promise<CommunityRoom | null> {

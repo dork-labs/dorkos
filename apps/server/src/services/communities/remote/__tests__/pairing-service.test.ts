@@ -160,6 +160,12 @@ beforeAll(async () => {
           },
         },
       });
+    } else if (req.url === `${qualified}/attention`) {
+      if (req.headers.authorization !== `Bearer ${token}`) {
+        send({ error: 'Unauthorized' }, 401);
+        return;
+      }
+      send({ unreadCount: 7, mentionCount: 2 });
     } else if (req.url === `${qualified}/channels`) {
       send({
         channels: [
@@ -420,6 +426,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     });
     const adapter = new RemoteCommunityAdapter(started.connection.ref, 'adapter-owner', store);
     expect((await adapter.connect()).status).toBe('connected');
+    expect(await adapter.attention()).toEqual({ unreadCount: 7, mentionCount: 2 });
     expect((await adapter.listRooms()).map((item) => item.roomId)).toEqual([remoteRoomId]);
     const history = await adapter.listEntries(remoteRoomId);
     expect(history.entries).toHaveLength(1);
