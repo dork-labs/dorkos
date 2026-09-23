@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 6 / 10 (1.1–1.3, 2.1, 2.2 and 2.4)
+**Tasks Completed:** 7 / 10 (1.1–1.3 and 2.1–2.4)
 
 ## Tasks Completed
 
@@ -62,6 +62,15 @@
 - Closed DOR-2181 Task 2.2. A new read, `GET /api/v1/invites/pending`, returns the live join attempt's community, inviter, channel, expiry and (when signed in) whether the account's membership is new, active or inactive, from the HttpOnly admission cookie alone; it applies bind's liveness checks and never writes, is sent `no-store`, looks up the tenant-scoped attempt before revealing that a community is closed, and reports when the attempt is bound to a different account. The join page resumes from it after a reload or sign-in return, shows reactivation scope before an inactive member rejoins, and reports every failure as "Membership was not added." (or "Your account was created, but membership was not added.") with one recovery: try again, open the link again, or ask for a new invitation. Each step moves focus to its heading; errors are alerts.
 - Removed the chooser's dead `communityPendingInvite` session-storage read (nothing wrote it) and the join-path bind/redeem retries the pending read replaces.
 
+### Session 7 - 2026-09-23
+
+**Branch:** `feat/community-signout-disconnect-all`
+
+- Closed DOR-2181 Task 2.3. Settings > Account now shows three separate panels. "This browser" signs only this browser out; the page then says memberships and connected installations are unchanged and offers "Sign in again". "Connected installations" lists each installation with what it can do in words ("Can read and post"), disconnects one after a confirmation that names what ends and that the person stays a member, and, when there are two or more, disconnects all of them behind the current password. "Leave community" lists what ends and what stays. The chooser offers the same sign-out, so an account with no community it can open can still sign out.
+- Signing out also forgets this browser's remembered community. The remembered-community helpers moved to `src/browser/remembered-community.ts` so the chooser and the sign-out control share them without an import cycle.
+- A refused password on disconnect-all or leave now says the password was wrong and that nothing changed, next to the field, instead of "Reauthentication failed."
+- DorkOS's own Disconnect already revokes its grant (#2019, 907a533e8), so no DorkOS-side change was needed here.
+
 ## Files Modified/Created
 
 **Source files:**
@@ -98,7 +107,6 @@
 
 ## Remaining Work
 
-- **1.4 Disconnect revokes the grant (DOR-2180).** DorkOS's Disconnect deletes only the local credential (`PairingService.disconnect`), so the grant stays live on the Community. The spec says "Disconnect this installation" revokes the selected grant. Found by PR #2016 step 25; a fix is in progress.
-- **2.3 separate controls (DOR-2181).** The Community app needs a browser sign-out control and a "disconnect all my installations" control (the API exists), with scope summaries that name what ends and what remains. Its Disconnect control also depends on the 1.4 fix.
+- **1.4 Disconnect revokes the grant (DOR-2180).** The fix merged in #2019 (907a533e8), with `install-disconnect.integration.test.ts`. Its checkbox stays open until someone re-audits 1.4 against that merge; Session 7 did not.
 - **3.1 cross-device proof (DOR-2182).** Covered by the two-Desktop acceptance run on main 30df6cdc2 (20/20 steps). It closes when the durable driver, PR #2016, merges.
 - **3.2 exact-scope proof (DOR-2182).** Blocked on the 1.4 Disconnect fix, and on Community refusals being passed through rather than reported as 502 "Community unavailable." (`apps/server/src/routes/remote-communities.ts` `fail`). Both were found by PR #2016's extended run. Accessibility and Cloud-unavailable proof across the whole journey set is still to be written.
