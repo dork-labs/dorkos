@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   CommunityWireErasure,
   CommunityWireMembershipSummary,
@@ -85,10 +85,13 @@ function EraseMembershipForm({
   communityId,
   communityName,
   idPrefix,
+  active,
 }: {
   communityId: string;
   communityName: string;
   idPrefix: string;
+  /** Whether the person is still a member, so the erasure will also end their membership. */
+  active: boolean;
 }) {
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
@@ -96,6 +99,10 @@ function EraseMembershipForm({
   const [error, setError] = useState('');
   // The fields stay folded away until asked for, so they never sit beside the leave form's.
   const [open, setOpen] = useState(false);
+  const nameInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (open) nameInput.current?.focus();
+  }, [open]);
   async function submit() {
     setBusy(true);
     setError('');
@@ -120,16 +127,29 @@ function EraseMembershipForm({
         from {communityName}. Your messages stay in their place in conversations, marked &ldquo;This
         message was erased.&rdquo; You can cancel until then.
       </p>
+      {active && (
+        <p className="small">
+          When it runs, you&apos;ll leave {communityName}. Anything you post before then is erased
+          too.
+        </p>
+      )}
       <p className="small muted">{CANNOT_REACH}</p>
-      {!open ? (
-        <button className="button" type="button" onClick={() => setOpen(true)}>
-          Continue to erase
-        </button>
-      ) : (
-        <>
+      <button
+        className="button"
+        type="button"
+        hidden={open}
+        aria-expanded={open}
+        aria-controls={`${idPrefix}-fields`}
+        onClick={() => setOpen(true)}
+      >
+        Continue to erase
+      </button>
+      {open && (
+        <div id={`${idPrefix}-fields`}>
           <div className="field">
             <label htmlFor={`${idPrefix}-name`}>Enter {communityName}</label>
             <input
+              ref={nameInput}
               id={`${idPrefix}-name`}
               value={name}
               onChange={(event) => setName(event.target.value)}
@@ -149,16 +169,22 @@ function EraseMembershipForm({
           >
             Erase my messages
           </button>
-        </>
+        </div>
       )}
     </>
   );
 }
 
-/** A scheduled erasure's date and its cancel button. */
+/** A scheduled erasure's date and its cancel button, or that it is running now. */
 function Scheduled({ erasure, text }: { erasure: CommunityWireErasure; text: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  if (erasure.state === 'running')
+    return (
+      <div role="status" className="notice">
+        <p className="mb-0">Erasing now. It can no longer be cancelled.</p>
+      </div>
+    );
   return (
     <div role="status" className="notice">
       <p className="mb-2">
@@ -188,7 +214,7 @@ function scheduledFor(erasures: CommunityWireErasure[] | null, communityId: stri
     (erasure) =>
       erasure.kind === 'membership' &&
       erasure.communityId === communityId &&
-      erasure.state === 'scheduled'
+      (erasure.state === 'scheduled' || erasure.state === 'running')
   );
 }
 
@@ -212,6 +238,7 @@ export function EraseMembershipPanel({
 }: {
   communityId: string;
   communityName: string;
+  /** The active owner, who must hand over or delete the community first. */
   owner: boolean;
 }) {
   const { erasures, error } = useErasures();
@@ -230,11 +257,15 @@ export function EraseMembershipPanel({
           communityId={communityId}
           communityName={communityName}
           idPrefix="erase-membership"
+          active
         />
       )}
       {error && <p className="small muted">{error}</p>}
       <p className="small mb-0">
-        <a href="/?account">Delete your account</a>
+        {/* At least 24px tall, so it meets the minimum target size. */}
+        <a href="/?account" className="inline-flex min-h-6 items-center">
+          Delete your account
+        </a>
       </p>
     </section>
   );
@@ -256,10 +287,16 @@ export function AccountErasurePanels({
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
+  const [formerError, setFormerError] = useState('');
   const loadFormer = useCallback(() => {
     hostRequest<{ memberships: FormerMembership[] }>('/api/v1/account/former-memberships')
-      .then((body) => setFormer(body.memberships))
-      .catch(() => setFormer([]));
+      .then((body) => {
+        setFormer(body.memberships);
+        setFormerError('');
+      })
+      .catch((cause: unknown) =>
+        setFormerError(`Communities you left could not be shown. ${describeError(cause)}`)
+      );
   }, []);
   useEffect(() => {
     loadFormer();
@@ -267,7 +304,9 @@ export function AccountErasurePanels({
     return () => window.removeEventListener(CHANGED, loadFormer);
   }, [loadFormer]);
   const owned = memberships.filter((membership) => membership.role === 'owner');
-  const scheduled = (erasures ?? []).filter((erasure) => erasure.state === 'scheduled');
+  const scheduled = (erasures ?? []).filter(
+    (erasure) => erasure.state === 'scheduled' || erasure.state === 'running'
+  );
   const account = scheduled.find((erasure) => erasure.kind === 'account');
   async function deleteAccount() {
     setBusy(true);
@@ -291,6 +330,11 @@ export function AccountErasurePanels({
       {error && (
         <p role="alert" className="notice error">
           {error}
+        </p>
+      )}
+      {formerError && (
+        <p role="alert" className="notice error">
+          {formerError}
         </p>
       )}
       {scheduled.length > 0 && (
@@ -326,13 +370,16 @@ export function AccountErasurePanels({
                 )}
                 {membership.erasure ? (
                   <p className="small muted mb-0">
-                    Your messages here will be erased on {when(membership.erasure.executeAfter)}.
+                    {membership.erasure.state === 'running'
+                      ? 'Erasing now.'
+                      : `Your messages here will be erased on ${when(membership.erasure.executeAfter)}.`}
                   </p>
                 ) : erasing === membership.communityId ? (
                   <EraseMembershipForm
                     communityId={membership.communityId}
                     communityName={membership.communityName}
                     idPrefix={`erase-${membership.communityId}`}
+                    active={false}
                   />
                 ) : (
                   <button

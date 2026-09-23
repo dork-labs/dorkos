@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): erase yourself from a community or delete your account in the browser (DOR-2265)'
+  - 'fix(community): tell members erasing ends their membership, and show a running erasure (DOR-2265)'
 ---
 
 ### Added

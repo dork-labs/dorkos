@@ -97,6 +97,17 @@ async function admitNewAccount(name: string, email: string) {
   }
 }
 
+/** The page must fit a phone: nothing may scroll sideways at 390 pixels. */
+async function assertFitsPhone(page: Page) {
+  const original = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+  if (original) await page.setViewportSize(original);
+}
+
 async function signIn(context: BrowserContext, email: string) {
   const response = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
     headers: { origin: baseUrl },
@@ -167,7 +178,18 @@ test('a member schedules erasure from Manage, sees the banner, and cancels it', 
     await page.goto(`${baseUrl}/c/${communityId}/settings/account`);
     const panel = page.getByRole('region', { name: 'Erase your messages here' });
     await expect(panel.getByText(cannotReach)).toBeVisible();
-    await panel.getByRole('button', { name: 'Continue to erase' }).click();
+    // A current member is told that erasing also ends their membership.
+    await expect(
+      panel.getByText(
+        "When it runs, you'll leave Erasure Place. Anything you post before then is erased too."
+      )
+    ).toBeVisible();
+    const proceed = panel.getByRole('button', { name: 'Continue to erase' });
+    await expect(proceed).toHaveAttribute('aria-expanded', 'false');
+    await proceed.click();
+    // Opening the form moves focus to its first field.
+    await expect(panel.getByLabel('Enter Erasure Place')).toBeFocused();
+    await assertFitsPhone(page);
     const erase = panel.getByRole('button', { name: 'Erase my messages' });
     await expect(erase).toBeDisabled();
     await panel.getByLabel('Enter Erasure Place').fill('Erasure Place');
@@ -179,9 +201,26 @@ test('a member schedules erasure from Manage, sees the banner, and cancels it', 
       .filter({ hasText: 'Your messages here will be erased on' });
     await expect(banner.first()).toBeVisible();
     await shot(page, 'manage-scheduled');
+    await assertFitsPhone(page);
     await banner.first().getByRole('button', { name: 'Cancel' }).click();
     await expect(page.getByText('Your messages here will be erased on')).toHaveCount(0);
     await expect(panel.getByRole('button', { name: 'Continue to erase' })).toBeVisible();
+    // Once the worker has started, the request reads as running and offers no cancel.
+    await panel.getByRole('button', { name: 'Continue to erase' }).click();
+    await panel.getByLabel('Enter Erasure Place').fill('Erasure Place');
+    await panel.getByLabel('Confirm password').fill(password);
+    await panel.getByRole('button', { name: 'Erase my messages' }).click();
+    await expect(page.getByText('Your messages here will be erased on').first()).toBeVisible();
+    await pool.query(
+      `UPDATE erasure_requests SET state='running',started_at=now()
+       WHERE kind='membership' AND state='scheduled' AND community_id=$1`,
+      [communityId]
+    );
+    await page.reload();
+    await expect(
+      page.getByText('Erasing now. It can no longer be cancelled.').first()
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cancel' })).toHaveCount(0);
   } finally {
     await context.close();
   }
@@ -205,6 +244,7 @@ test('an owner is told to transfer first, and the account panel names what they 
     await expect(page.getByText(/You own Erasure Place\. To delete your account/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Delete my account' })).toHaveCount(0);
     await shot(page, 'owner-account');
+    await assertFitsPhone(page);
   } finally {
     await context.close();
   }
@@ -241,6 +281,7 @@ test('a person who left sees the community under "Communities you left" and can 
     await account.getByRole('button', { name: 'Delete my account' }).click();
     await expect(page.getByText(/Your account will be deleted on/)).toBeVisible();
     await shot(page, 'left-and-account');
+    await assertFitsPhone(page);
   } finally {
     await context.close();
   }
