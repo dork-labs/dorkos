@@ -2,13 +2,16 @@
  * CLI handler for `dorkos update [name]`.
  *
  * Advisory by default — calls `POST /api/marketplace/packages/:name/update`
- * (with `apply: false`) and prints any pending updates. Pass `--apply` to
- * actually reinstall.
+ * (with `apply: false`) and prints one line per package: a newer version, up
+ * to date, or could not check (and why). Pass `--apply` to reinstall the
+ * packages that have an update.
  *
- * When no `<name>` is given, the CLI iterates over every installed
- * package returned by `GET /api/marketplace/installed` and runs the update
- * check for each. Per the spec, an `/api/marketplace/update-all` endpoint
- * is intentionally deferred, so the iteration lives client-side.
+ * When no `<name>` is given, the CLI lists installed packages through
+ * `GET /api/marketplace/installed` (forwarding `--project`) and checks each
+ * one in the scope it was found in, so an agent's install is checked in that
+ * agent's project. One package failing never stops the rest. An
+ * all-packages endpoint is deferred (DOR-2194), so the iteration lives
+ * client-side.
  *
  * @module commands/update
  */
@@ -26,6 +29,9 @@ export interface UpdateArgs {
   projectPath?: string;
 }
 
+/** Where a version came from, in Claude Code's order. Mirrors `VersionSource` on the server. */
+type VersionSource = 'package' | 'index' | 'commit';
+
 /** A single update check result. Mirrors `UpdateCheckResult` on the server. */
 interface UpdateCheckResult {
   packageName: string;
@@ -33,6 +39,10 @@ interface UpdateCheckResult {
   latestVersion: string;
   hasUpdate: boolean;
   marketplace: string;
+  status: 'current' | 'update-available' | 'unknown';
+  installedVersionSource?: VersionSource;
+  latestVersionSource?: VersionSource;
+  note?: string;
 }
 
 /** Mirrors `InstallResult` on the server, narrowed to fields we render. */
@@ -48,9 +58,16 @@ interface UpdateResultBody {
   applied: AppliedUpdate[];
 }
 
-/** Response shape for `GET /api/marketplace/installed`. */
+/** Response shape for `GET /api/marketplace/installed`, narrowed to what targeting needs. */
 interface InstalledListBody {
-  packages: { name: string }[];
+  packages: { name: string; agentPath?: string; scope?: string }[];
+}
+
+/** One package to check, in the scope it was found in. */
+interface UpdateTarget {
+  name: string;
+  /** The scope to check it in; absent for a global install. */
+  projectPath?: string;
 }
 
 /** One-line usage string surfaced in error messages. */
@@ -89,12 +106,20 @@ export function parseUpdateArgs(rawArgs: string[]): UpdateArgs {
 /**
  * Implements `dorkos update [name]`.
  *
+ * Each target is checked on its own: a server error for one package prints as
+ * `could not check` and the run goes on. Only failing to reach the server at
+ * all ends the run early.
+ *
  * @param args - Parsed update arguments.
- * @returns The intended process exit code (`0` success, `1` error).
+ * @returns The intended process exit code: `0` on success, `1` when the
+ *   server was unreachable or any requested apply failed. Packages that could
+ *   not be checked do not change it on their own.
  */
 export async function runUpdate(args: UpdateArgs): Promise<number> {
   try {
-    const targets = args.name ? [args.name] : await listInstalledPackageNames();
+    const targets = args.name
+      ? [{ name: args.name, projectPath: args.projectPath }]
+      : await listTargets(args.projectPath);
 
     if (targets.length === 0) {
       console.log('No installed packages to check.');
@@ -103,18 +128,27 @@ export async function runUpdate(args: UpdateArgs): Promise<number> {
 
     const allChecks: UpdateCheckResult[] = [];
     const allApplied: AppliedUpdate[] = [];
+    let failedTargets = 0;
 
-    for (const name of targets) {
+    for (const target of targets) {
       const body: Record<string, unknown> = { apply: Boolean(args.apply) };
-      if (args.projectPath) body.projectPath = args.projectPath;
+      if (target.projectPath) body.projectPath = target.projectPath;
 
-      const result = await apiCall<UpdateResultBody>(
-        'POST',
-        `/api/marketplace/packages/${encodeURIComponent(name)}/update`,
-        body
-      );
-      allChecks.push(...result.checks);
-      allApplied.push(...result.applied);
+      try {
+        const result = await apiCall<UpdateResultBody>(
+          'POST',
+          `/api/marketplace/packages/${encodeURIComponent(target.name)}/update`,
+          body
+        );
+        allChecks.push(...result.checks);
+        allApplied.push(...result.applied);
+      } catch (err) {
+        // Anything but an answer from the server (it could not be reached at
+        // all) ends the run below; an error for ONE package does not.
+        if (!(err instanceof ApiError)) throw err;
+        failedTargets += 1;
+        allChecks.push(couldNotCheck(target.name, err.message));
+      }
     }
 
     renderUpdateChecks(allChecks, Boolean(args.apply));
@@ -127,48 +161,89 @@ export async function runUpdate(args: UpdateArgs): Promise<number> {
       }
     }
 
-    return 0;
+    // With --apply, a target the server refused is an apply that did not land.
+    return args.apply && failedTargets > 0 ? 1 : 0;
   } catch (err) {
-    if (err instanceof ApiError) {
-      console.error(`Error: ${err.message}`);
-    } else {
-      console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   }
 }
 
 /**
- * Fetch the names of every installed package via the marketplace API.
- * Returns an empty array when nothing is installed.
+ * List every installed package to check, each in the scope it was found in.
+ *
+ * With `--project` the listing is that project's merged view (global plus
+ * project installs) and every target is checked there. Without it the listing
+ * spans every scope, and an agent's install is checked with that agent's
+ * directory as its project, so the server walks the same scope the listing
+ * found it in. Targets are de-duplicated on (name, scope), because the route
+ * checks by name.
+ *
+ * @param projectPath - The `--project` value, when given.
  */
-async function listInstalledPackageNames(): Promise<string[]> {
-  const installed = await apiCall<InstalledListBody>('GET', '/api/marketplace/installed');
-  return installed.packages.map((p) => p.name);
+async function listTargets(projectPath: string | undefined): Promise<UpdateTarget[]> {
+  const query = projectPath ? `?projectPath=${encodeURIComponent(projectPath)}` : '';
+  const installed = await apiCall<InstalledListBody>('GET', `/api/marketplace/installed${query}`);
+  const byKey = new Map<string, UpdateTarget>();
+  for (const pkg of installed.packages) {
+    const target = { name: pkg.name, projectPath: projectPath ?? pkg.agentPath };
+    byKey.set(`${target.name}\n${target.projectPath ?? ''}`, target);
+  }
+  return [...byKey.values()];
+}
+
+/** A check result standing in for a target the server returned an error for. */
+function couldNotCheck(packageName: string, reason: string): UpdateCheckResult {
+  return {
+    packageName,
+    installedVersion: '',
+    latestVersion: '',
+    hasUpdate: false,
+    marketplace: '',
+    status: 'unknown',
+    note: reason,
+  };
+}
+
+/** A version as a person reads it: a commit prints as `commit <short sha>`. */
+function formatVersion(version: string, source: VersionSource | undefined): string {
+  return source === 'commit' ? `commit ${version.slice(0, 7)}` : version;
 }
 
 /**
- * Render a flat list of update checks. Up-to-date entries are reported
- * once with a quiet status line; pending updates each get a dedicated line
- * with a hint about `--apply`.
+ * Print one line per check, then a summary that counts all three outcomes.
+ * The summary never claims everything is up to date while any package could
+ * not be checked.
  */
 function renderUpdateChecks(checks: UpdateCheckResult[], apply: boolean): void {
-  const pending = checks.filter((c) => c.hasUpdate);
-  const upToDate = checks.length - pending.length;
-
-  if (pending.length === 0) {
-    console.log(`All ${checks.length} package(s) up to date.`);
-    return;
+  for (const check of checks) {
+    const installed = formatVersion(check.installedVersion, check.installedVersionSource);
+    if (check.status === 'unknown') {
+      console.log(`${check.packageName}  could not check: ${check.note ?? 'no reason given'}`);
+      continue;
+    }
+    if (check.status === 'update-available') {
+      const latest = formatVersion(check.latestVersion, check.latestVersionSource);
+      const from = check.marketplace ? `  (${check.marketplace})` : '';
+      console.log(`${check.packageName}  ${installed} → ${latest}${from}`);
+    } else {
+      console.log(`${check.packageName}  up to date (${installed})`);
+    }
+    // A caveat on a known answer: a rollback, or a check of the default branch.
+    if (check.note) console.log(`  ${check.note}`);
   }
 
-  for (const check of pending) {
-    const suffix = apply ? '' : ' (run with --apply to update)';
-    console.log(
-      `${check.packageName}: ${check.installedVersion} → ${check.latestVersion}${suffix}`
-    );
-  }
-
-  if (upToDate > 0) {
-    console.log(`${upToDate} package(s) already up to date.`);
-  }
+  const updates = checks.filter((c) => c.status === 'update-available').length;
+  const current = checks.filter((c) => c.status === 'current').length;
+  const unknown = checks.filter((c) => c.status === 'unknown').length;
+  const parts = [
+    updates > 0 && `${updates} ${updates === 1 ? 'update' : 'updates'} available`,
+    current > 0 && `${current} up to date`,
+    unknown > 0 && `${unknown} could not be checked`,
+  ].filter(Boolean);
+  const hint =
+    !apply && updates > 0
+      ? ` Run again with --apply to install ${updates === 1 ? 'it' : 'them'}.`
+      : '';
+  console.log(`${parts.join(', ')}.${hint}`);
 }
