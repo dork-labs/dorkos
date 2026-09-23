@@ -43,28 +43,74 @@ const options = (executable: string, env: Readonly<Record<string, string>> = {})
 });
 
 describe('provider mutation boundaries', () => {
-  it('creates a Fly app with exact organization binding and no name-only recovery', async () => {
+  // `fly apps create --json` (flyctl v0.4.104) reads the app back over GraphQL without asking for
+  // the organization's name, so it arrives blank. That shape created the app and then failed.
+  it('binds the app flyctl actually prints on create by name and organization slug', async () => {
+    const document = await readFile(
+      new URL('./fixtures/fly/app-create.json', import.meta.url),
+      'utf8'
+    );
     const { executable } = await fakeProvider(`
-test "$*" = "apps create community-space --org dork-labs --json --yes" || exit 9
-printf '%s' '{"ID":"app_123","Name":"community-space","Status":"pending","Organization":{"ID":"org_123","Slug":"dork-labs","Name":"Dork Labs"}}'
+test "$*" = "apps create community-fixture-app --org fixture-org --json --yes" || exit 9
+printf '%s' "$FIXTURE_JSON"
 `);
     await expect(
-      createFlyApp(options(executable), 'community-space', 'dork-labs')
+      createFlyApp(
+        options(executable, { FIXTURE_JSON: document }),
+        'community-fixture-app',
+        'fixture-org'
+      )
     ).resolves.toEqual({
-      id: 'app_123',
-      name: 'community-space',
-      organizationId: 'org_123',
-      organizationSlug: 'dork-labs',
-      organizationName: 'Dork Labs',
+      id: 'community-fixture-app',
+      name: 'community-fixture-app',
+      organizationSlug: 'fixture-org',
       status: 'pending',
     });
   });
 
-  it('classifies lost or malformed create output as uncertain', async () => {
-    for (const source of ["printf '%s' '{}'", "printf '%s' 'lost' >&2; exit 12"]) {
+  it('identifies a created app by name and slug when the create output is unreadable', async () => {
+    for (const output of ["printf '%s' '{}'", "printf '%s' 'New app created'", ':']) {
+      const { executable, directory } = await fakeProvider(`
+case "$*" in
+  "apps create community-space --org dork-labs --json --yes") ${output} ;;
+  "apps list --org dork-labs --json")
+    printf 'listed\n' >> "${join('$DIR', 'calls')}"
+    printf '%s' '[{"ID":"other-app","Name":"other-app","Status":"deployed","Organization":{"ID":"","Slug":"dork-labs","Name":"Dork Labs"}},{"ID":"community-space","Name":"community-space","Status":"pending","Organization":{"ID":"","Slug":"dork-labs","Name":"Dork Labs"}}]'
+    ;;
+  *) exit 9 ;;
+esac
+`);
+      await expect(
+        createFlyApp(options(executable, { DIR: directory }), 'community-space', 'dork-labs'),
+        output
+      ).resolves.toEqual({
+        id: 'community-space',
+        name: 'community-space',
+        organizationSlug: 'dork-labs',
+        status: 'pending',
+      });
+      await expect(readFile(join(directory, 'calls'), 'utf8')).resolves.toBe('listed\n');
+    }
+  });
+
+  it('classifies lost, unidentifiable, or foreign create outcomes as uncertain', async () => {
+    const sources = [
+      // The command failed: nothing is looked up or adopted by name.
+      "printf '%s' 'lost' >&2; exit 12",
+      // Unreadable output, and the organization does not hold the planned name.
+      `case "$*" in apps\\ create*) printf '%s' '{}' ;; *) printf '%s' '[]' ;; esac`,
+      // Unreadable output, and the follow-up listing fails.
+      `case "$*" in apps\\ create*) printf '%s' '{}' ;; *) exit 3 ;; esac`,
+      // Readable output naming a different organization is never adopted.
+      `printf '%s' '{"ID":"community-space","Name":"community-space","Status":"pending","Organization":{"ID":"org_123","Slug":"personal","Name":""}}'`,
+      // Readable output naming a different app is never adopted.
+      `printf '%s' '{"ID":"community-other","Name":"community-other","Status":"pending","Organization":{"ID":"org_123","Slug":"dork-labs","Name":""}}'`,
+    ];
+    for (const source of sources) {
       const { executable } = await fakeProvider(source);
       await expect(
-        createFlyApp(options(executable), 'community-space', 'dork-labs')
+        createFlyApp(options(executable), 'community-space', 'dork-labs'),
+        source
       ).rejects.toMatchObject({
         code: 'CREATION_OUTCOME_UNCERTAIN',
         message: expect.not.stringContaining('lost'),
@@ -79,19 +125,21 @@ printf '%s' '{"ID":"app_123","Name":"community-space","Status":"pending","Organi
     const neonFixture = JSON.parse(
       await readFile(new URL('./fixtures/neon/project-create.json', import.meta.url), 'utf8')
     ) as unknown;
+    // The follow-up listing finds nothing, so a mutated create response cannot be rescued by it.
+    const { executable: flyExecutable } = await fakeProvider(
+      `case "$*" in apps\\ create*) printf '%s' "$FIXTURE_JSON" ;; *) printf '%s' '[]' ;; esac`
+    );
     const { executable } = await fakeProvider(`printf '%s' "$FIXTURE_JSON"`);
     await Promise.all(
       mutateTrustedProviderFields(flyFixture, [
         ['ID'],
         ['Name'],
         ['Status'],
-        ['Organization', 'ID'],
         ['Organization', 'Slug'],
-        ['Organization', 'Name'],
       ]).map((mutation) =>
         expect(
           createFlyApp(
-            options(executable, { FIXTURE_JSON: JSON.stringify(mutation.value) }),
+            options(flyExecutable, { FIXTURE_JSON: JSON.stringify(mutation.value) }),
             'community-fixture-app',
             'fixture-org'
           ),
@@ -332,10 +380,8 @@ printf '%s' '{"project":{"id":"project_123","org_id":"org_123","name":"Community
           {
             id: 'foreign-app',
             name: 'community-space',
-            organizationId: 'org_123',
             organizationSlug: 'dork-labs',
-            organizationName: 'Dork Labs',
-            status: 'running',
+            status: 'deployed',
           },
         ],
         'community-space'

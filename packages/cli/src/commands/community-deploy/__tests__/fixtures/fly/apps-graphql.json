@@ -13,7 +13,7 @@
     "Network": "",
     "Release": null,
     "Organization": {
-      "ID": "",
+      "ID": "org_fixture_01",
       "InternalNumericID": "",
       "Name": "Fixture Organization",
       "RemoteBuilderImage": "",

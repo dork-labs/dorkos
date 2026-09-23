@@ -1,10 +1,99 @@
 {
-  "ID": "app_fixture_01",
+  "ID": "community-fixture-app",
+  "InternalNumericID": 0,
   "Name": "community-fixture-app",
+  "State": "",
   "Status": "pending",
+  "Deployed": false,
+  "Hostname": "community-fixture-app.fly.dev",
+  "AppURL": "",
+  "Version": 0,
+  "NetworkID": 0,
+  "Network": "",
+  "Release": null,
   "Organization": {
     "ID": "org_fixture_01",
+    "InternalNumericID": "",
+    "Name": "",
+    "RemoteBuilderImage": "",
+    "RemoteBuilderApp": null,
     "Slug": "fixture-org",
-    "Name": "Fixture Organization"
-  }
+    "RawSlug": "",
+    "Type": "",
+    "PaidPlan": false,
+    "Billable": false,
+    "Settings": null,
+    "AllowedReplaySourceOrgSlugs": null,
+    "AllowAllCrossNetworkReplays": false,
+    "WireGuardPeer": null,
+    "WireGuardPeers": {
+      "Nodes": null,
+      "Edges": null
+    },
+    "DelegatedWireGuardTokens": {
+      "Nodes": null,
+      "Edges": null
+    },
+    "LoggedCertificates": null
+  },
+  "CurrentRelease": null,
+  "Releases": {
+    "Nodes": null
+  },
+  "IPAddresses": {
+    "Nodes": null
+  },
+  "EgressIpAddresses": {
+    "Nodes": null
+  },
+  "SharedIPAddress": "",
+  "CNAMETarget": "",
+  "IPAddress": null,
+  "Certificates": {
+    "Nodes": null
+  },
+  "Certificate": {
+    "ID": "",
+    "AcmeDNSConfigured": false,
+    "AcmeALPNConfigured": false,
+    "Configured": false,
+    "CertificateAuthority": "",
+    "CreatedAt": "0001-01-01T00:00:00Z",
+    "DNSProvider": "",
+    "DNSValidationInstructions": "",
+    "DNSValidationHostname": "",
+    "DNSValidationTarget": "",
+    "Hostname": "",
+    "Source": "",
+    "ClientStatus": "",
+    "IsApex": false,
+    "IsWildcard": false,
+    "Issued": {
+      "Nodes": null
+    },
+    "ValidationErrors": null
+  },
+  "PostgresAppRole": null,
+  "Image": null,
+  "ImageUpgradeAvailable": false,
+  "ImageVersionTrackingEnabled": false,
+  "ImageDetails": {
+    "Registry": "",
+    "Repository": "",
+    "Tag": "",
+    "Version": "",
+    "Digest": ""
+  },
+  "LatestImageDetails": {
+    "Registry": "",
+    "Repository": "",
+    "Tag": "",
+    "Version": "",
+    "Digest": ""
+  },
+  "PlatformVersion": "machines",
+  "Machines": {
+    "Nodes": null
+  },
+  "CurrentLock": null
 }
