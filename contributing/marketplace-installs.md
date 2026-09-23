@@ -80,7 +80,8 @@ All marketplace install code lives under `apps/server/src/services/marketplace/`
 apps/server/src/services/marketplace/
 ├── marketplace-installer.ts     # Top-level orchestrator + error classes
 ├── marketplace-source-manager.ts # ~/.dork/marketplaces.json CRUD
-├── marketplace-cache.ts         # ~/.dork/cache/marketplace/ with TTL
+├── marketplace-cache.ts         # ~/.dork/cache/marketplace/ with TTL; stamps use, removeUnused
+├── package-cache-retention.ts   # What the package cache keeps; sweeps after each new entry
 ├── package-resolver.ts          # name@source → resolved source descriptor
 ├── package-fetcher.ts           # Verified git fetch through the cache + marketplace.json fetch
 ├── permission-preview.ts        # Build human-readable preview
@@ -107,6 +108,7 @@ apps/server/src/services/marketplace/
 │   ├── marketplace-installer.test.ts
 │   ├── marketplace-source-manager.test.ts
 │   ├── marketplace-cache.test.ts
+│   ├── package-cache-retention.test.ts
 │   ├── package-resolver.test.ts
 │   ├── permission-preview.test.ts
 │   ├── conflict-detector.test.ts
@@ -198,7 +200,7 @@ The question it answers is "what would installing this package right now give me
 
 **Known limits.**
 
-- The package cache has no automatic pruning owner (DOR-2249). Each check that observes a new marketplace commit adds one cache entry per installed package from that repository.
+- Each check that observes a new marketplace commit stages one cache entry per installed package from that repository. The cache's retention owner (section 8) removes the superseded ones after the check, so this no longer accumulates.
 - A direct install (`name@url`, `github:`) is always fetched from the default branch today: neither form can carry a ref or subpath, so its recorded `sourceKey` is always `ref: 'HEAD'` (`'main'` in sidecars written before DOR-2248, which `resolvedFromSourceKey` reads as `HEAD` and `matchesRecordedKey` accepts against `HEAD`), `subpath: ''`, and applying an update reinstalls from the same place. If install requests gain a structured source, apply must carry the recorded key too. A direct install recorded before `sourceKey` existed is checked against the default branch, and its check says so in `note`.
 
 The update flow never touches disk on its own. Anything that mutates state lives inside the installer's transaction.
@@ -417,9 +419,23 @@ ${dorkHome}/cache/marketplace/
 Two cache disciplines side by side:
 
 - **`marketplace.json` — 1h TTL.** Past the TTL, the cached entry is still served but flagged `stale: true` so the caller can choose to refresh in the background. On network failure, the stale entry is served verbatim — this is the offline fallback.
-- **Package trees — never expire.** The tree of commit `a1b2c3d…` is the same today, tomorrow, and a year from now, so TTL would only ever make things worse. Garbage collection is explicit: `dorkos cache prune` (keeps the last N SHAs per package name, default 1) or `dorkos cache clear` (wipes everything).
+- **Package trees — never expire, but are swept.** The tree of commit `a1b2c3d…` is the same today, tomorrow, and a year from now, so a TTL would only ever make things worse. What bounds them is retention (below); `dorkos cache clear` wipes everything.
 
-**An entry's key is the commit its checkout holds** ([ADR 260923-162950](../decisions/260923-162950-cache-entry-keyed-by-the-verified-checkout.md), DOR-2248). There is one way in, `MarketplaceCache.materializePackage(name, expectedSha, subpath, fetch)`: the fetch populates a temp directory and returns the commit it checked out, the cache names the entry after that commit, and it refuses anything that is not a full commit id (`isFullCommitSha`). `expectedSha` only short-circuits a tree already cached under it and de-duplicates concurrent fetches. So no entry is ever keyed by a lookup, a placeholder, or a guess. A sparse checkout is a different tree from the whole repository at the same commit, so a `git-subdir` entry's key carries the first 12 hex digits of its subfolder's SHA-256 (`flow@<sha>~<digest>`), and `getPackage` takes the subfolder too. Entries from before this rule lived under `packages/`; nothing reads them. At startup, before any route exists, the server calls `removeLeftovers`, which deletes that directory and any `trees/.tmp-fetch-*` a crash left behind.
+**Retention** ([ADR 260923-193906](../decisions/260923-193906-package-cache-sweeps-itself-on-write.md), DOR-2249, `services/marketplace/package-cache-retention.ts`). An entry is kept when any of these holds, and a sweep removes it otherwise:
+
+1. **In use:** it was handed out in the last `IN_USE_GRACE_MS` (15 minutes). `getPackage`, `materializePackage`'s fast path and the landing of a fetch stamp the entry's mtime, so an entry's mtime (`CachedPackage.lastUsedAt`) is its last use. The cache enforces this itself in `removeUnused`; no caller can waive it. Stamping is best-effort: a tree DorkOS can read but not stamp (root-owned, read-only disk) is still served.
+2. **Recorded:** an installation records its commit (`commitSha`, plus `sourceKey.subpath` when present; a sidecar without a `sourceKey` protects every entry at that commit). Matched by commit, never by name: a direct `name@url` install keys the cache by the typed name, while the sidecar records the manifest's. Rebuilding an install's file record fetches this commit (DOR-2245).
+3. **Newest of an installed package:** among the entries rule 2 does not already keep, the most recently used of each `(name, subfolder digest)` group an installation belongs to — the staged update when one is pending. Excluding rule 2's entries means re-reading the installed commit never costs the staged update its place; after an update is applied, the superseded tree can hold this slot until the next update is staged. Groups nothing installed belongs to keep nothing beyond rule 1, so browsing and previewing never pin entries.
+
+The cache therefore holds at most two entries per installed package. `PackageCacheRetention` is the one owner: `MarketplaceCache.onEntryWritten` fires after a fetch lands a new entry (the only way the cache grows), and the owner runs a sweep; it also sweeps once at startup and on `POST /cache/prune` (`dorkos cache prune`). Sweeps are coalesced — one runs, at most one waits, and every request in between shares it — so a 20-package update check costs one or two. There is no timer and no size budget: the rule already bounds the cache by what is installed. Uninstalling frees disk at the next sweep, not immediately.
+
+**What installs record is read strictly** (`listRecordedTrees`), because a sweep deletes whatever that read misses. It reads the global install roots, every registered agent's project, and the **project install record** (`lib/project-install-index.ts`, `<dorkHome>/marketplace/project-installs.json`). The installer writes one entry there per install that lands inside a project (`recordProjectInstall`, called from `MarketplaceInstaller.install` right after the sidecar, best-effort), with its commit and subfolder. That is how installs in folders that are not registered agents — including those an unregistered agent left behind — are found. The sweep removes nothing, and logs why (`POST /cache/prune` answers 503), when: the agent registry is unavailable; a registered agent's project folder is missing (an unplugged drive looks exactly like this); an install root or a sidecar exists but cannot be read; or a sidecar or the record does not parse. A folder that does not exist is simply empty, and the install engine's own siblings (`isInstallSiblingName`, such as a crash-left backup) are skipped: they are bookkeeping, and a restored one is read as an install from then on. A recorded install that cannot be reached is protected by its record, which is dropped only when its project folder exists and its install folder does not (it was uninstalled) — never on an error. The drop is a compare-and-delete inside the record's write chain: it re-checks that the install folder is still missing and that the record still names the commit the sweep read, so a reinstall that recorded in between keeps its record. A deleted project's records stay (they look like an unplugged drive) and pin their commits' trees, a small bounded leak. Writes are fsynced before their atomic rename; a record file that still does not parse stops sweeps until the next project install moves it aside to `project-installs.json.corrupt-<time>` and starts fresh. Project installs made before the record existed are found only through the agent registry.
+
+**A paused cleanup is visible.** `PackageCacheRetention.status()` keeps the last sweep's outcome, and `GET /cache` returns it as `cleanup: { paused, reason, since }` (`reason` is a plain fragment such as `couldn't read /Volumes/Work/app (the folder is missing)`). `dorkos cache list` prints `Automatic cleanup is paused: <reason>` while it is. The pause is logged at warn once per change of reason, not on every sweep, and its end at info. A missing registered-agent folder normally stops pausing within a day, when the mesh reconciler removes the unreachable agent (24 hours).
+
+Concurrency: every reader of a cache entry is in this server process (one server holds a data directory, `lib/instance-lock.ts`). "Exists? stamp it" (both read paths and the landing of a fetch) and "still unused? rename it aside" (a sweep) run under one in-process lock (`exclusive`, a promise chain), so a sweep can never remove an entry between a reader's check and its stamp, and the grace covers the reader afterwards. A swept entry is renamed to `trees/.tmp-prune-<uuid>` and deleted outside the lock; `removeLeftovers` deletes any a crash left. Sizes (`lib/directory-size.ts`, also used by `GET /cache`) never follow symlinks: git keeps them, and `a -> .` would otherwise walk for ever.
+
+**An entry's key is the commit its checkout holds** ([ADR 260923-162950](../decisions/260923-162950-cache-entry-keyed-by-the-verified-checkout.md), DOR-2248). There is one way in, `MarketplaceCache.materializePackage(name, expectedSha, subpath, fetch)`: the fetch populates a temp directory and returns the commit it checked out, the cache names the entry after that commit, and it refuses anything that is not a full commit id (`isFullCommitSha`). `expectedSha` only short-circuits a tree already cached under it and de-duplicates concurrent fetches. So no entry is ever keyed by a lookup, a placeholder, or a guess. A sparse checkout is a different tree from the whole repository at the same commit, so a `git-subdir` entry's key carries the first 12 hex digits of its subfolder's SHA-256 (`flow@<sha>~<digest>`), and `getPackage` takes the subfolder too. Entries from before this rule lived under `packages/`; nothing reads them. At startup, before any route exists, the server calls `removeLeftovers`, which deletes that directory and any `trees/.tmp-fetch-*` or `trees/.tmp-prune-*` a crash left behind.
 
 **How a tree is fetched** (`lib/git-tree.ts`, behind `PackageFetcher.fetchGitTree`, which all three git forms share):
 
@@ -550,23 +566,23 @@ If the new type introduces its own collision class (e.g. theme IDs must be globa
 
 All endpoints mount under `/api/marketplace/*`. The router factory is `createMarketplaceRouter(deps)` in `apps/server/src/routes/marketplace.ts`. Every response is JSON.
 
-| Method | Path                        | Body                         | Response                                                             |
-| ------ | --------------------------- | ---------------------------- | -------------------------------------------------------------------- |
-| GET    | `/sources`                  | —                            | `{ sources: MarketplaceSource[] }`                                   |
-| POST   | `/sources`                  | `{ name, source, enabled? }` | `MarketplaceSource` (201)                                            |
-| DELETE | `/sources/:name`            | —                            | 204                                                                  |
-| POST   | `/sources/:name/refresh`    | —                            | `{ marketplace: MarketplaceJson, fetchedAt }`                        |
-| GET    | `/installed`                | `?projectPath=<path>`        | `{ packages: InstalledPackage[] }` — cross-scope by default; see §16 |
-| GET    | `/installed/:name`          | —                            | `{ installations: InstalledPackage[] }` — one per scope; see §16     |
-| GET    | `/cache`                    | —                            | `{ marketplaces, packages, totalSizeBytes }`                         |
-| DELETE | `/cache`                    | —                            | 204                                                                  |
-| POST   | `/cache/prune`              | `{ keepLastN? }`             | `{ removed: CachedPackage[], freedBytes }`                           |
-| GET    | `/packages`                 | —                            | `{ packages: AggregatedPackage[] }`                                  |
-| GET    | `/packages/:name`           | `?marketplace=<name>`        | `{ manifest, packagePath, preview }`                                 |
-| POST   | `/packages/:name/preview`   | `InstallRequestBody`         | `{ preview, manifest, packagePath }`                                 |
-| POST   | `/packages/:name/install`   | `InstallRequestBody`         | `InstallResult`                                                      |
-| POST   | `/packages/:name/uninstall` | `{ purge?, projectPath? }`   | `UninstallResult`                                                    |
-| POST   | `/packages/:name/update`    | `{ apply?, projectPath? }`   | `UpdateResult`                                                       |
+| Method | Path                        | Body                         | Response                                                                                                         |
+| ------ | --------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| GET    | `/sources`                  | —                            | `{ sources: MarketplaceSource[] }`                                                                               |
+| POST   | `/sources`                  | `{ name, source, enabled? }` | `MarketplaceSource` (201)                                                                                        |
+| DELETE | `/sources/:name`            | —                            | 204                                                                                                              |
+| POST   | `/sources/:name/refresh`    | —                            | `{ marketplace: MarketplaceJson, fetchedAt }`                                                                    |
+| GET    | `/installed`                | `?projectPath=<path>`        | `{ packages: InstalledPackage[] }` — cross-scope by default; see §16                                             |
+| GET    | `/installed/:name`          | —                            | `{ installations: InstalledPackage[] }` — one per scope; see §16                                                 |
+| GET    | `/cache`                    | —                            | `{ marketplaces, packages, totalSizeBytes, cleanup: { paused, reason, since } }`                                 |
+| DELETE | `/cache`                    | —                            | 204                                                                                                              |
+| POST   | `/cache/prune`              | — (no options)               | `{ removed: [{ packageName, commitSha, path, lastUsedAt }], freedBytes }`; 503 when it cannot read every install |
+| GET    | `/packages`                 | —                            | `{ packages: AggregatedPackage[] }`                                                                              |
+| GET    | `/packages/:name`           | `?marketplace=<name>`        | `{ manifest, packagePath, preview }`                                                                             |
+| POST   | `/packages/:name/preview`   | `InstallRequestBody`         | `{ preview, manifest, packagePath }`                                                                             |
+| POST   | `/packages/:name/install`   | `InstallRequestBody`         | `InstallResult`                                                                                                  |
+| POST   | `/packages/:name/uninstall` | `{ purge?, projectPath? }`   | `UninstallResult`                                                                                                |
+| POST   | `/packages/:name/update`    | `{ apply?, projectPath? }`   | `UpdateResult`                                                                                                   |
 
 Where `InstallRequestBody` is:
 
@@ -630,12 +646,12 @@ dorkos marketplace refresh [<name>]           # Force-refetch marketplace.json
 
 # Cache management
 dorkos cache list                             # Show cache counts and total size
-dorkos cache prune                            # Keep the last SHA per package (default --keep-last-n 1)
-dorkos cache prune --keep-last-n <N>          # Keep the last N SHAs per package name
+dorkos cache prune                            # Remove cached packages no install needs (also automatic)
+                                              # (`cache list` says when automatic cleanup is paused, and why)
 dorkos cache clear -y                         # Wipe the entire cache (requires -y/--yes in non-TTY)
 ```
 
-`--keep-last-n` on `cache prune` was added during spec implementation — it did not appear in the original spec's CLI block. The endpoint that backs it is `POST /api/marketplace/cache/prune`; `MarketplaceCache.prune({ keepLastN })` is the underlying primitive, defaulting to `keepLastN: 1`.
+`cache prune` runs the same sweep the server runs after every fetch (section 8) through `POST /api/marketplace/cache/prune`, and takes no options. Its old `--keep-last-n` (and the endpoint's `keepLastN`) were removed in DOR-2249: a per-name "keep N" deleted the commits installs record.
 
 `dorkos cache clear` requires an explicit `-y`/`--yes` flag in non-interactive mode and prompts interactively otherwise. The confirmation prompt follows the same TTY-aware pattern as `lib/confirm-prompt.ts` used by the install flow.
 

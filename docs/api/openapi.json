@@ -17897,7 +17897,7 @@
         "summary": "Marketplace cache status",
         "responses": {
           "200": {
-            "description": "Cache counts and total size",
+            "description": "Cache counts, total size, and whether automatic cleanup is paused",
             "content": {
               "application/json": {
                 "schema": {
@@ -17914,12 +17914,39 @@
                     "totalSizeBytes": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "cleanup": {
+                      "type": "object",
+                      "properties": {
+                        "paused": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "paused",
+                        "reason",
+                        "since"
+                      ],
+                      "description": "Automatic cleanup of cached packages. Paused while the server cannot read every install, in which case nothing is removed; `reason` says what it could not read."
                     }
                   },
                   "required": [
                     "marketplaces",
                     "packages",
-                    "totalSizeBytes"
+                    "totalSizeBytes",
+                    "cleanup"
                   ]
                 }
               }
@@ -17944,18 +17971,15 @@
         "tags": [
           "Marketplace"
         ],
-        "summary": "Garbage-collect cached packages, keeping the N most recent per name",
+        "summary": "Remove cached packages no install needs",
+        "description": "Runs the same sweep the server runs after every fetch and at startup. Keeps every tree an installation records, the most recently used tree of each installed package, and anything used in the last 15 minutes. Takes no options.",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {
-                  "keepLastN": {
-                    "type": "integer",
-                    "minimum": 0
-                  }
-                }
+                "properties": {},
+                "additionalProperties": false
               }
             }
           }
@@ -17982,7 +18006,7 @@
                           "path": {
                             "type": "string"
                           },
-                          "cachedAt": {
+                          "lastUsedAt": {
                             "type": "string"
                           }
                         },
@@ -17990,7 +18014,7 @@
                           "packageName",
                           "commitSha",
                           "path",
-                          "cachedAt"
+                          "lastUsedAt"
                         ]
                       }
                     },

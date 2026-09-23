@@ -134,44 +134,86 @@ export interface InstallMetadata {
 export async function readInstallMetadata(installRoot: string): Promise<InstallMetadata | null> {
   const metadataPath = path.join(installRoot, INSTALL_METADATA_PATH);
   try {
-    const raw = await readFile(metadataPath, 'utf-8');
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    const obj = parsed as Record<string, unknown>;
-    if (typeof obj.name !== 'string' || typeof obj.version !== 'string') return null;
-    if (typeof obj.type !== 'string' || typeof obj.installedAt !== 'string') return null;
-    return {
-      name: obj.name,
-      version: obj.version,
-      type: obj.type as PackageType,
-      installedFrom: typeof obj.installedFrom === 'string' ? obj.installedFrom : undefined,
-      installedAt: obj.installedAt,
-      sourceRepo: typeof obj.sourceRepo === 'string' ? obj.sourceRepo : undefined,
-      sourceRef: typeof obj.sourceRef === 'string' ? obj.sourceRef : undefined,
-      commitSha: typeof obj.commitSha === 'string' ? obj.commitSha : undefined,
-      entryVersion: typeof obj.entryVersion === 'string' ? obj.entryVersion : undefined,
-      sourceKey: parseSourceKey(obj.sourceKey),
-      // Every element is checked, not just the array-ness: this string goes
-      // straight onto a UI surface, and a sidecar is a file anything on the
-      // machine can have written.
-      dependencyWarnings:
-        Array.isArray(obj.dependencyWarnings) &&
-        obj.dependencyWarnings.every((w) => typeof w === 'string')
-          ? (obj.dependencyWarnings as string[])
-          : undefined,
-      // Every element checked, like the warnings above and for a sharper reason:
-      // these strings become paths that uninstall DELETES. A sidecar is a file
-      // anything on the machine can have written, so a non-string element makes
-      // the whole list untrustworthy rather than merely odd.
-      generatedSchedulePaths:
-        Array.isArray(obj.generatedSchedulePaths) &&
-        obj.generatedSchedulePaths.every((p) => typeof p === 'string')
-          ? (obj.generatedSchedulePaths as string[])
-          : undefined,
-    };
+    return parseInstallMetadata(await readFile(metadataPath, 'utf-8'));
   } catch {
     return null;
   }
+}
+
+/**
+ * {@link readInstallMetadata} for a caller that must tell "no sidecar" from
+ * "a sidecar I could not read". Returns `null` only when the file does not
+ * exist; any other read failure, and a sidecar that does not parse, throws.
+ * The package cache's sweep uses it: it may delete what an install records
+ * only when it has actually read every record (DOR-2249).
+ *
+ * @param installRoot - Absolute path to the package install root.
+ * @throws {Error} When the sidecar exists but cannot be read or parsed; the
+ *   message names the file.
+ */
+export async function readInstallMetadataStrict(
+  installRoot: string
+): Promise<InstallMetadata | null> {
+  const metadataPath = path.join(installRoot, INSTALL_METADATA_PATH);
+  let raw: string;
+  try {
+    raw = await readFile(metadataPath, 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw new Error(`Can't read ${metadataPath}: ${(err as Error).message}`, { cause: err });
+  }
+  let parsed: InstallMetadata | null = null;
+  try {
+    parsed = parseInstallMetadata(raw);
+  } catch {
+    // Falls through to the refusal below.
+  }
+  if (parsed === null) throw new Error(`Can't make sense of ${metadataPath}`);
+  return parsed;
+}
+
+/**
+ * Parse sidecar text into {@link InstallMetadata}, or `null` when it lacks a
+ * required field.
+ *
+ * @throws {SyntaxError} When the text is not JSON.
+ * @internal
+ */
+function parseInstallMetadata(raw: string): InstallMetadata | null {
+  const parsed: unknown = JSON.parse(raw);
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const obj = parsed as Record<string, unknown>;
+  if (typeof obj.name !== 'string' || typeof obj.version !== 'string') return null;
+  if (typeof obj.type !== 'string' || typeof obj.installedAt !== 'string') return null;
+  return {
+    name: obj.name,
+    version: obj.version,
+    type: obj.type as PackageType,
+    installedFrom: typeof obj.installedFrom === 'string' ? obj.installedFrom : undefined,
+    installedAt: obj.installedAt,
+    sourceRepo: typeof obj.sourceRepo === 'string' ? obj.sourceRepo : undefined,
+    sourceRef: typeof obj.sourceRef === 'string' ? obj.sourceRef : undefined,
+    commitSha: typeof obj.commitSha === 'string' ? obj.commitSha : undefined,
+    entryVersion: typeof obj.entryVersion === 'string' ? obj.entryVersion : undefined,
+    sourceKey: parseSourceKey(obj.sourceKey),
+    // Every element is checked, not just the array-ness: this string goes
+    // straight onto a UI surface, and a sidecar is a file anything on the
+    // machine can have written.
+    dependencyWarnings:
+      Array.isArray(obj.dependencyWarnings) &&
+      obj.dependencyWarnings.every((w) => typeof w === 'string')
+        ? (obj.dependencyWarnings as string[])
+        : undefined,
+    // Every element checked, like the warnings above and for a sharper reason:
+    // these strings become paths that uninstall DELETES. A sidecar is a file
+    // anything on the machine can have written, so a non-string element makes
+    // the whole list untrustworthy rather than merely odd.
+    generatedSchedulePaths:
+      Array.isArray(obj.generatedSchedulePaths) &&
+      obj.generatedSchedulePaths.every((p) => typeof p === 'string')
+        ? (obj.generatedSchedulePaths as string[])
+        : undefined,
+  };
 }
 
 /**

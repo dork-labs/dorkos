@@ -58,6 +58,7 @@ import {
 } from './lib/source-provenance.js';
 import { materializePackageSchedules } from './lib/materialize-schedules.js';
 import { withInstallTargetLock } from './transaction.js';
+import { recordProjectInstall } from './lib/project-install-index.js';
 import { validatePackageSchedules } from './lib/validate-package-schedules.js';
 import {
   describeDisclosedEffects,
@@ -409,6 +410,29 @@ export class MarketplaceInstaller implements InstallerLike {
               `leave its scheduled tasks behind. Delete these folders by hand if you uninstall ` +
               `it: ${materialized.generatedPaths.join(', ')}`
           );
+        }
+      }
+
+      // DOR-2249: the package cache's sweep keeps the tree an install records,
+      // but it only finds project installs through the agent registry, which
+      // misses unregistered folders. This record is how it finds the rest.
+      if (req.projectPath && isInsideDir(req.projectPath, result.installPath)) {
+        try {
+          await recordProjectInstall(this.deps.dorkHome, {
+            projectPath: req.projectPath,
+            installRoot: result.installPath,
+            name: result.packageName,
+            ...(staged.commitSha !== undefined && { commitSha: staged.commitSha }),
+            ...(staged.sourceKey !== undefined && { subpath: staged.sourceKey.subpath }),
+          });
+        } catch (err) {
+          // Best-effort like the sidecar: the package is installed; at worst
+          // its cached tree is fetched again later.
+          this.deps.logger.warn('[marketplace-installer] failed to record the project install', {
+            packageName: result.packageName,
+            installPath: result.installPath,
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
       }
 
@@ -999,4 +1023,15 @@ function resolveRelativeSubpath(source: string, pluginRoot?: string): string {
   }
   const normalized = pluginRoot ? pluginRoot.replace(/^\.\//, '').replace(/\/+$/, '') : '';
   return normalized ? `${normalized}/${source}` : source;
+}
+
+/**
+ * True when `target` is `dir` or inside it.
+ *
+ * @param dir - Absolute directory path.
+ * @param target - Absolute path to test.
+ */
+function isInsideDir(dir: string, target: string): boolean {
+  const rel = path.relative(dir, target);
+  return rel === '' || (rel.split(path.sep)[0] !== '..' && !path.isAbsolute(rel));
 }

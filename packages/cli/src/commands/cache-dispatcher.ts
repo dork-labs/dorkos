@@ -26,13 +26,13 @@ Inspect and manage the marketplace package cache on the running DorkOS server.
 
 Subcommands:
   list                       Show cache counts and total size
-  prune [--keep-last-n <N>]  Remove older cached package SHAs (default: keep 1)
+  prune                      Remove cached packages no install needs
+                             (DorkOS also does this on its own)
   clear [-y|--yes]           Wipe the entire cache (requires confirmation)
 
 Examples:
   dorkos cache list
   dorkos cache prune
-  dorkos cache prune --keep-last-n 3
   dorkos cache clear --yes
 `;
 
@@ -68,7 +68,8 @@ export async function runCacheDispatcher(
       return await runCacheList();
     }
     if (subcommand === 'prune') {
-      return await runCachePrune(parseCachePruneArgs(subArgs));
+      parseCachePruneArgs(subArgs);
+      return await runCachePrune();
     }
     if (subcommand === 'clear') {
       return await runCacheClear(parseCacheClearArgs(subArgs));
