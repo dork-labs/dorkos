@@ -220,7 +220,7 @@ lifecycle + reachability because the descriptor carries no role, and the Communi
 
 ## Page headings and phone focus (DOR-2240)
 
-Branch `feat/community-phone-focus-heading`, base `ec832024d`.
+PR #2038, branch `feat/community-phone-focus-heading`, base `ec832024d`.
 
 - **Decision: real page headings, not landmark focus.** `PageHeading` (`shared/ui/page-heading.tsx`) is an undrawn `h1` with `tabIndex={-1}`, following design decision E1: the bar already names the page, so the heading is for the outline and for focus, never a second visible title. Its `visible` form is used once, for the channel bar's room name, which already was a local room's `h1`.
 - **Every page the switcher can land on has one.** Home, Activity, Schedules (`/tasks`), Team, Session, Channels (none picked), and the five pages that already had an undrawn `h1` (Workspaces, Connections, Marketplace, Marketplace sources, Your reports) now use the primitive. A Community page's heading is the Community and then the channel ("Alpha · General"), read from the same queries as the channel bar. It sits outside `ChannelsPage`'s body, so it is one element across the bare Community address and its channel.
