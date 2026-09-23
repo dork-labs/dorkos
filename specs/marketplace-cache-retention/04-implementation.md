@@ -17,9 +17,18 @@
 
 - `removeUnused` takes a function of the whole listing that returns paths to keep (rule 3 compares entries within a group), and reports per-entry failures in `failed` for the owner to log; the cache stays logger-free.
 
-## Not touched (coordination)
+## Review round 1 (all adopted)
 
-- `marketplace-installer.ts`, `flows/update.ts`, `flows/uninstall.ts` (DOR-2194 / DOR-2273). Overlap: `routes/marketplace.ts` (new `cacheRetention` dep and the prune handler only) and `index.ts` (construction beside `listAgentScopes`).
+1. Strict read of what installs record (`listRecordedTrees` in `package-cache-retention.ts`, `readInstallMetadataStrict` in `installed-metadata.ts`, sharing the lenient reader's parser): unreadable roots, unreadable or unparseable sidecars, a missing registered-agent project, a corrupt project-install record, or no agent registry stop the sweep (`UnreadableInstallsError`; `POST /cache/prune` answers 503).
+2. `lib/directory-size.ts` never follows symlinks (withFileTypes, depth-bounded); the status endpoint shares it.
+3. Stamping is best-effort (`stampUsed` keeps the old time on EPERM/EROFS/EACCES).
+4. Rule 3 picks the newest among entries rule 2 does not keep.
+5. New `lib/project-install-index.ts` (`<dorkHome>/marketplace/project-installs.json`): `MarketplaceInstaller.install` calls `recordProjectInstall` after the sidecar for any install inside a project; the sweep drops a record only when its project exists and its install root does not.
+6. `cli.ts` comment; cross-process reasoning replaced by the instance lock in the ADR, spec, guide and code.
+
+## Coordination
+
+- Touched in shared files: `marketplace-installer.ts` (one import, the `recordProjectInstall` block after the sidecar's try/catch in `install()`, and the `isInsideDir` helper at the end of the file), `installed-metadata.ts` (reader split into `parseInstallMetadata` + new `readInstallMetadataStrict`), `routes/marketplace.ts` (the `cacheRetention` dep and the prune handler), `index.ts` (construction beside `listAgentScopes`). `flows/update.ts` and `flows/uninstall.ts` are untouched (DOR-2194 / DOR-2273).
 
 ## Notes for dependent work
 

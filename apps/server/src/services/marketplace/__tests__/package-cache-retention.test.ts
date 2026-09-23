@@ -2,7 +2,8 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { access, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
+import { readProjectInstalls, recordProjectInstall } from '../lib/project-install-index.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
@@ -10,6 +11,7 @@ import { MarketplaceCache, subpathDigest, type CachedPackage } from '../marketpl
 import { INSTALL_METADATA_PATH } from '../installed-metadata.js';
 import {
   PackageCacheRetention,
+  UnreadableInstallsError,
   keepRule,
   listRecordedTrees,
   type RecordedTree,
@@ -205,7 +207,7 @@ describe('with a real data directory', () => {
       await install(join(projectPath, '.dork'), 'lint', { commitSha: sha('b') });
       await install(dorkHome, 'local-thing', {});
 
-      const trees = await listRecordedTrees(dorkHome, [{ projectPath }]);
+      const { trees } = await listRecordedTrees(dorkHome, [{ projectPath }]);
 
       expect(trees).toEqual(
         expect.arrayContaining([
@@ -215,6 +217,102 @@ describe('with a real data directory', () => {
       );
       // The install with no commit (a local or file:// one) records nothing.
       expect(trees).toHaveLength(2);
+    });
+
+    it('refuses when the agent registry is unavailable', async () => {
+      // Purpose: with no registry, every agent-scoped install is invisible;
+      // reading that as "none" deletes what they record.
+      await expect(listRecordedTrees(dorkHome, undefined)).rejects.toThrow(UnreadableInstallsError);
+    });
+
+    it("refuses when a registered agent's project folder is missing", async () => {
+      // Purpose: an unplugged drive looks exactly like this, and its installs
+      // still record trees.
+      await expect(
+        listRecordedTrees(dorkHome, [{ projectPath: join(projectPath, 'unplugged') }])
+      ).rejects.toThrow(/unplugged/);
+    });
+
+    it('refuses when an install root exists but cannot be read', async () => {
+      // Purpose: `chmod 000 ~/.dork/plugins` used to read as "nothing installed".
+      await install(dorkHome, 'flow', { commitSha: sha('a') });
+      const plugins = join(dorkHome, 'plugins');
+      await chmod(plugins, 0o000);
+      try {
+        await expect(listRecordedTrees(dorkHome, [])).rejects.toThrow(UnreadableInstallsError);
+      } finally {
+        await chmod(plugins, 0o755);
+      }
+    });
+
+    it('refuses when a sidecar exists but cannot be read', async () => {
+      await install(dorkHome, 'flow', { commitSha: sha('a') });
+      const sidecar = join(dorkHome, 'plugins', 'flow', INSTALL_METADATA_PATH);
+      await chmod(sidecar, 0o000);
+      try {
+        await expect(listRecordedTrees(dorkHome, [])).rejects.toThrow(/install-metadata/);
+      } finally {
+        await chmod(sidecar, 0o644);
+      }
+    });
+
+    it('refuses when a sidecar does not parse', async () => {
+      // Purpose: a torn sidecar still names a commit we cannot see; guessing
+      // "none" deletes it.
+      await install(dorkHome, 'flow', { commitSha: sha('a') });
+      await writeFile(join(dorkHome, 'plugins', 'flow', INSTALL_METADATA_PATH), '{"name":');
+      await expect(listRecordedTrees(dorkHome, [])).rejects.toThrow(/make sense/);
+    });
+
+    it('reads a project install in a folder that is not a registered agent', async () => {
+      // Purpose: installs into an unregistered folder, or left behind by an
+      // unregistered agent, are found through the installer's record.
+      const scope = join(projectPath, '.dork');
+      await install(scope, 'lint', { commitSha: sha('b') });
+      await recordProjectInstall(dorkHome, {
+        projectPath,
+        installRoot: join(scope, 'plugins', 'lint'),
+        name: 'lint',
+        commitSha: sha('b'),
+      });
+
+      const { trees } = await listRecordedTrees(dorkHome, []);
+
+      expect(trees).toEqual([{ name: 'lint', commitSha: sha('b') }]);
+    });
+
+    it('protects a recorded install whose project cannot be reached', async () => {
+      // Purpose: a project on a drive that is not plugged in stays protected
+      // by what the installer recorded, and its record is kept.
+      const away = join(projectPath, 'on-a-drive');
+      await recordProjectInstall(dorkHome, {
+        projectPath: away,
+        installRoot: join(away, '.dork', 'plugins', 'lint'),
+        name: 'lint',
+        commitSha: sha('b'),
+        subpath: '',
+      });
+
+      const result = await listRecordedTrees(dorkHome, []);
+
+      expect(result.trees).toEqual([{ name: 'lint', commitSha: sha('b'), subpath: '' }]);
+      expect(result.goneProjectInstalls).toEqual([]);
+    });
+
+    it('reports a recorded install whose project exists but whose install is gone', async () => {
+      // Purpose: that is an uninstall; its record may go, and it protects nothing.
+      const installRoot = join(projectPath, '.dork', 'plugins', 'lint');
+      await recordProjectInstall(dorkHome, {
+        projectPath,
+        installRoot,
+        name: 'lint',
+        commitSha: sha('b'),
+      });
+
+      const result = await listRecordedTrees(dorkHome, []);
+
+      expect(result.trees).toEqual([]);
+      expect(result.goneProjectInstalls).toEqual([installRoot]);
     });
   });
 
@@ -245,6 +343,31 @@ describe('with a real data directory', () => {
       expect(result.freedBytes).toBe(2 * 'tree\n'.length);
       await expect(access(recorded)).resolves.toBeUndefined();
       await expect(access(pending)).resolves.toBeUndefined();
+    });
+
+    it('removes nothing when an install root cannot be read', async () => {
+      // Purpose: the sweep deletes what the scan does not return, so a scan
+      // that cannot see an install must stop the sweep, not shrink the answer.
+      await install(dorkHome, 'flow', { commitSha: sha('a') });
+      const recorded = await cached('flow', sha('a'), '');
+      const plugins = join(dorkHome, 'plugins');
+      await chmod(plugins, 0o000);
+      try {
+        await expect(retention().sweep()).rejects.toThrow(UnreadableInstallsError);
+      } finally {
+        await chmod(plugins, 0o755);
+      }
+      await expect(access(recorded)).resolves.toBeUndefined();
+    });
+
+    it('drops the record of an uninstalled project install', async () => {
+      // Purpose: records must not pin trees for ever after an uninstall.
+      const installRoot = join(projectPath, '.dork', 'plugins', 'lint');
+      await recordProjectInstall(dorkHome, { projectPath, installRoot, name: 'lint' });
+
+      await retention().sweep();
+
+      expect(await readProjectInstalls(dorkHome)).toEqual([]);
     });
 
     it('removes nothing when it cannot list installations', async () => {

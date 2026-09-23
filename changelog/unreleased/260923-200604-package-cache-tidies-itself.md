@@ -3,6 +3,8 @@ covers:
   - 'docs(specs): specify marketplace package cache retention (DOR-2249)'
   - 'feat(marketplace): give the package cache a retention owner (DOR-2249)'
   - 'docs(marketplace): document package cache retention (DOR-2249)'
+  - 'fix(marketplace): never follow a symlink when sizing a tree; stamp best-effort; keep a staged update beside a re-read install (DOR-2249)'
+  - 'fix(marketplace): read what installs record strictly, and record project installs (DOR-2249)'
 ---
 
 ### Changed

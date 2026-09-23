@@ -649,6 +649,22 @@ describe('Marketplace Routes', () => {
       expect(res.body).toEqual({ removed: [], freedBytes: 0 });
     });
 
+    it('answers 503 and removes nothing when an install cannot be read', async () => {
+      // Purpose: the person running `dorkos cache prune` hears why nothing
+      // happened, without the path (it names their home folder).
+      await seedTree('test-pkg', 'a'.repeat(40));
+      await ageAllTrees();
+      agentScopes = [{ projectPath: join(dorkHome, 'unplugged-drive', 'app') }];
+
+      const res = await request(fixtureServer).post('/api/marketplace/cache/prune').send({});
+
+      expect(res.status).toBe(503);
+      expect(res.body.error).toMatch(/nothing was removed/);
+      expect(res.body.error).not.toContain(dorkHome);
+      const statusRes = await request(fixtureServer).get('/api/marketplace/cache');
+      expect(statusRes.body.packages).toBe(1);
+    });
+
     it('rejects the retired keepLastN option', async () => {
       // Purpose: a per-name "keep N" deletes the commits installs record; a
       // caller still sending it must hear that it no longer applies.

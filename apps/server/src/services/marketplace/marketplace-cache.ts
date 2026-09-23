@@ -89,9 +89,9 @@ const TEMP_PRUNE_PREFIX = '.tmp-prune-';
  * A reader (an install, a preview, the update check) holds an entry's path
  * only for the seconds it takes to validate the tree or copy it into staging,
  * and nothing keeps a path into the cache after its request. Stamping on use
- * and sparing anything stamped recently is git gc's grace period in miniature;
- * because the stamp is on disk, it also protects a read by a second DorkOS
- * process sharing this data directory.
+ * and sparing anything stamped recently is git gc's grace period in miniature.
+ * Every reader is in this server process (one server holds a data directory,
+ * `lib/instance-lock.ts`), so the lock plus this grace covers all of them.
  */
 export const IN_USE_GRACE_MS = 15 * 60 * 1000;
 
@@ -446,7 +446,7 @@ export class MarketplaceCache {
   /**
    * Be told each time a fetch lands a new entry: the one way the cache grows,
    * so the one signal its retention owner needs. Not called for a cache hit,
-   * a failed fetch, or a tree another process had already landed.
+   * a failed fetch, or a tree that was already there when the fetch landed.
    *
    * @param listener - Called synchronously after the entry is in place. It
    *   must not throw; start any work it triggers in the background.

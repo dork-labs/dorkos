@@ -23,7 +23,10 @@ import {
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { logger } from '../lib/logger.js';
 import type { MarketplaceCache } from '../services/marketplace/marketplace-cache.js';
-import type { PackageCacheRetention } from '../services/marketplace/package-cache-retention.js';
+import {
+  UnreadableInstallsError,
+  type PackageCacheRetention,
+} from '../services/marketplace/package-cache-retention.js';
 import { directorySize } from '../services/marketplace/lib/directory-size.js';
 import type { MarketplaceSourceManager } from '../services/marketplace/marketplace-source-manager.js';
 import type { PackageFetcher } from '../services/marketplace/package-fetcher.js';
@@ -652,6 +655,16 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         freedBytes,
       });
     } catch (err) {
+      if (err instanceof UnreadableInstallsError) {
+        // Names the folder only in the log: it spells the operator's home.
+        logger.warn('[Marketplace] cache prune stopped: could not read every install', {
+          error: err.message,
+        });
+        return res.status(503).json({
+          error:
+            "Couldn't check every installed package, so nothing was removed. The server log names the folder it couldn't read.",
+        });
+      }
       logger.error('[Marketplace] Failed to prune cache', err);
       return res.status(500).json({ error: 'Failed to prune marketplace cache' });
     }

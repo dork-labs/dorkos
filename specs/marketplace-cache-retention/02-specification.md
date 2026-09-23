@@ -32,7 +32,7 @@ The marketplace package cache (`<dorkHome>/cache/marketplace/trees/`) only ever 
 ## Non-Goals
 
 - No timer, daemon or disk budget (Decisions 4 and 5 in the ideation).
-- No edits to `marketplace-installer.ts`, `flows/update.ts` or `flows/uninstall.ts` (DOR-2194 and DOR-2273 are landing there).
+- No edits to `flows/update.ts` or `flows/uninstall.ts` (DOR-2194 and DOR-2273 are landing there). `marketplace-installer.ts` gains one best-effort call, `recordProjectInstall`, after the sidecar write (review amendment).
 - The `marketplaces/` half of the cache is unchanged.
 - Not changing `removeLeftovers()`'s startup deletion of `.tmp-fetch-*` directories.
 
@@ -46,9 +46,9 @@ The marketplace package cache (`<dorkHome>/cache/marketplace/trees/`) only ever 
 
 An entry is **kept** when any of these holds; otherwise a sweep removes it.
 
-1. **In use.** Its last use was less than `IN_USE_GRACE_MS` (15 minutes) ago. Every cache call that hands out an entry's path stamps the entry's mtime with the current time: `getPackage` on a hit, `materializePackage`'s fast path, and the promote at the end of a fetch. A reader copies or validates the tree within seconds, so 15 minutes is a wide margin. Because the stamp is on disk, a second DorkOS process sharing the data directory is covered too. This part of the rule lives in `MarketplaceCache` and cannot be switched off: it is the cache's promise to whoever it handed a path.
+1. **In use.** Its last use was less than `IN_USE_GRACE_MS` (15 minutes) ago. Every cache call that hands out an entry's path stamps the entry's mtime with the current time: `getPackage` on a hit, `materializePackage`'s fast path, and the landing of a fetch. A reader copies or validates the tree within seconds, so 15 minutes is a wide margin. Every reader is in this server process (one server holds a data directory, `lib/instance-lock.ts`). Stamping is best-effort: a tree DorkOS can read but not stamp is still served. This part of the rule lives in `MarketplaceCache` and cannot be switched off: it is the cache's promise to whoever it handed a path.
 2. **Recorded.** Some installation's `install-metadata.json` records its commit: `commitSha` equals the entry's commit and, when the sidecar has a `sourceKey`, `subpathDigest(sourceKey.subpath)` equals the entry's digest. A sidecar with a commit but no `sourceKey` (written before DOR-2244) protects every entry at that commit. Matching ignores the package name on purpose: a direct git install keys the cache by the name a person typed, while the sidecar records the manifest's name. A commit id is content-addressed, so this keeps the right tree and at most a same-commit sibling.
-3. **Newest of an installed package.** Group entries by `(packageName, subpathDigest)`. In each group that an installation belongs to (`name` equals the group's name, and the subfolder digest matches when the sidecar has a `sourceKey`), keep the most recently used entry. That is the staged update when one is pending, and the installed commit otherwise. Groups no installation belongs to (packages previewed but never installed, packages since uninstalled) keep nothing beyond rule 1.
+3. **Newest of an installed package.** Group the entries rule 2 does not keep by `(packageName, subpathDigest)`. In each group that an installation belongs to (`name` equals the group's name, and the subfolder digest matches when the sidecar has a `sourceKey`), keep the most recently used entry. That is the staged update when one is pending, and the installed commit otherwise. Groups no installation belongs to (packages previewed but never installed, packages since uninstalled) keep nothing beyond rule 1.
 
 So the cache holds at most two entries per installed package, plus whatever was used in the last 15 minutes.
 
@@ -65,12 +65,12 @@ So the cache holds at most two entries per installed package, plus whatever was 
 - `MarketplaceCache` holds an in-process lock (a promise chain) around two short critical sections: "check the entry exists and stamp it" (both read paths and the promote) and "re-check the stamp, then rename the entry aside" (the sweep). A sweep can therefore never remove an entry between a reader's existence check and its stamp. Once stamped, rule 1 protects it for 15 minutes.
 - A sweep removes an entry by renaming it to `trees/.tmp-prune-<uuid>` (atomic) and then deleting that directory outside the lock. `removeLeftovers()` also deletes `.tmp-prune-*` directories a crash left behind.
 - A sweep only considers directories that parse as entries; `.tmp-fetch-*` and `.tmp-prune-*` are never candidates.
-- Across processes the stamp is the only guard; the remaining window is between another process's existence check and its stamp (a few system calls). Accepted and documented.
+- Sizing a removed tree (`lib/directory-size.ts`, also the status endpoint's) never follows symlinks, which git keeps: `a -> .` would otherwise walk for ever and hang every later sweep.
 
 ### Failure handling
 
-- If listing installations throws, the sweep removes nothing and logs a warning. A background sweep never throws; its errors are logged.
-- An agent project the server cannot read (an unmounted drive, say) is skipped by the installation scan, so its installs protect nothing. Accepted: every entry can be fetched again by commit, which is what DOR-2245 does.
+- What installs record is read strictly (`listRecordedTrees`, not the lenient `scanInstallationsAcrossScopes`, which never throws). The sweep removes nothing, and `UnreadableInstallsError` names the folder in the log, when: the agent registry is unavailable; a registered agent's project folder is missing; an install root or sidecar exists but cannot be read; or a sidecar or the project-install record does not parse. `POST /cache/prune` answers 503. A background sweep never throws; its errors are logged.
+- Project installs are also read from `<dorkHome>/marketplace/project-installs.json` (`lib/project-install-index.ts`), which `MarketplaceInstaller.install` writes (best-effort, right after the sidecar) for every install that lands inside a project, with its commit and subfolder. That covers folders that are not registered agents. A recorded install that cannot be reached is protected by its record; the record is dropped only when its project folder exists and its install folder does not.
 - A failure removing one entry is logged and the sweep continues.
 
 ### Code structure
@@ -86,7 +86,7 @@ So the cache holds at most two entries per installed package, plus whatever was 
 - `apps/server/src/services/marketplace/lib/directory-size.ts` (new): `directorySize(root)`, moved from the route's private `sumDirectorySize` so the cache can report freed bytes; the route's status endpoint imports it.
 - `apps/server/src/services/marketplace/package-cache-retention.ts` (new)
   - `RecordedTree { name; commitSha; subpath?: string }`.
-  - `listRecordedTrees(dorkHome, agents)`: every installation across scopes (`scanInstallationsAcrossScopes`), its sidecar read with `readInstallMetadata`; installs without a real `commitSha` contribute nothing.
+  - `listRecordedTrees(dorkHome, agents | undefined)`: the strict read described under Failure handling; returns `{ trees, goneProjectInstalls }`.
   - `keepRule(entries, recorded): ReadonlySet<string>` (paths to keep): rules 2 and 3, pure.
   - `PackageCacheRetention` with `start()` (subscribe to writes, sweep once in the background) and `sweep()` (coalesced; returns `{ removed, freedBytes }`).
 - `apps/server/src/index.ts`: construct `PackageCacheRetention` beside the cache (after `listAgentScopes` exists), `start()` it, pass it to the router.
@@ -140,7 +140,7 @@ Sweeps only delete directories that parse as entries directly under `trees/`, or
 
 ## Open Questions
 
-- ~~Should a pending update survive by being "newest unrecorded" rather than "most recently used"?~~ (RESOLVED) **Answer:** most recently used. **Rationale:** "newest unrecorded" keeps an old superseded entry for ever once the update is applied; the cost of "most recently used" is only a refetch in the rare case the recorded commit was used after the update was staged.
+- ~~Should a pending update survive by being "newest unrecorded" rather than "most recently used"?~~ (RESOLVED, reversed in review) **Answer:** newest among entries rule 2 does not keep. **Rationale:** reading the installed commit (DOR-2245) must not cost a staged update its place; the price is that a superseded tree may hold the slot until the next update is staged, still at most two entries per package.
 - ~~Should uninstall trigger a sweep?~~ (RESOLVED) **Answer:** no. **Rationale:** it would edit `flows/uninstall.ts` (DOR-2273's area) to reclaim disk a few minutes sooner; the next write or restart does it.
 
 ## Related ADRs

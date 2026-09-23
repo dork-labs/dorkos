@@ -20,7 +20,7 @@ status: ideation
   - DOR-2248 has landed: entries live in `<dorkHome>/cache/marketplace/trees/` as `<name>@<sha>` (whole repository) or `<name>@<sha>~<digest12>` (a sparse subfolder), and `MarketplaceCache.materializePackage` is the only writer.
   - Every reader of an entry is in the server process and gets the entry's path from one of three cache calls: `getPackage` (the fetcher's cache hit), `materializePackage`'s fast path, or a fresh promote. It then reads the tree for seconds (validate, copy into a staging directory) and never again; installs copy, they never point at the cache.
   - DOR-2245 (designed, not built) will call `PackageFetcher.fetchAtCommit` for an install's recorded commit, to rebuild its installed-files record. That commit must stay cheap to get back.
-  - Two servers can share one data directory (the desktop app and a CLI server), so on-disk state, not only process memory, has to carry "in use".
+  - One server holds a data directory at a time (`lib/instance-lock.ts`), so every reader of the cache is in this process. (An earlier draft assumed two servers could share one; the review corrected it.)
 - **Out of scope:**
   - The crash-recovery janitor for install backups (DOR-2273) and the update route (DOR-2194). This work does not edit `marketplace-installer.ts`, `flows/update.ts` or `flows/uninstall.ts`.
   - The `marketplaces/` half of the cache (one small JSON document per configured marketplace, already bounded).
@@ -89,3 +89,14 @@ With that rule the cache holds at most two entries per installed package plus wh
 | 11  | `file://` marketplaces                     | Nothing to do                                                                                                                                                                           | They are served in place and never write the cache                                                                                                                                                                   |
 
 Next step: SPECIFY.
+
+## 7) Review amendments (2026-09-23)
+
+The independent review found two blocking gaps, both reproduced, and four smaller ones. Adopted:
+
+1. The installation scan must be strict. `scanInstallationsAcrossScopes` never throws (unreadable roots read as empty, a missing agent project as no installs, an unreadable sidecar as none), so "if the scan fails, remove nothing" could not hold. The sweep now reads installs itself and stops on any doubt (Decision 6 is superseded by this).
+2. Sizing a removed tree followed symlinks, and git keeps them: `a -> .` hung the sweep forever. Sizes now never follow links.
+3. Stamping is best-effort, so a readable but unstampable tree still installs.
+4. Rule 3 now picks the newest among entries rule 2 does not keep, so re-reading the installed commit cannot cost the staged update its place (the resolved open question in the spec is reversed).
+5. Project installs in folders that are not registered agents are recorded by the installer in `<dorkHome>/marketplace/project-installs.json` (Decision 7 is superseded).
+6. The cross-process reasoning is replaced by the instance lock.

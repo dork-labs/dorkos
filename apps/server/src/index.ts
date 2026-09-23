@@ -4126,7 +4126,9 @@ async function start() {
     const marketplaceCacheRetention = new PackageCacheRetention({
       cache: marketplaceCache,
       dorkHome,
-      listAgentScopes,
+      // No registry means agent-scoped installs are invisible, so the sweep
+      // must remove nothing rather than read that as "none installed".
+      listAgentScopes: () => (meshCore ? listAgentScopes() : undefined),
       logger,
     });
     marketplaceCacheRetention.start();
