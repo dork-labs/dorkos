@@ -120,4 +120,16 @@ Industry practice for erasure in chat products (Slack, Discord, Matrix, Mastodon
 | 15  | Copies on DorkOS installations                    | A pull-only redaction feed (new route, content-free list of changed entry ids with their current wire form). DorkOS installations that know the route replace their cached copy and re-index search. Older ones never call it.               | The only way to reach a member's local mirror without breaking strict parsers. It is good-faith cooperation, not a guarantee, and the copy says so.                                                                               |
 | 16  | Host backups                                      | Out of reach. Each completed erasure writes one content-free log line (`community_id`, member id), and a CLI re-runs a list of erasures after a restore.                                                                                     | A host that restores a backup must be able to redo erasures that happened after it was taken. The procedure is idempotent by member id.                                                                                           |
 
+### Revised after adversarial review (2026-09-23)
+
+The review of the first draft (PR #2023) changed these decisions; the specification carries the details.
+
+- **4 (mentions):** only the tokens the mention resolver itself would see are rewritten: outside code and quotes, with a left boundary and the resolver's trailing strip. Rewriting inside code damaged text such as `@types/node`.
+- **9 (who), 13 (imported members), and the `deletion_pending` part of 10:** the owner-made path moves to task 1.2, after import (operator decision). Phase 1 is self-erasure only. Owners see a self-erasure only after it completes.
+- **10 (owners):** account erasure requires owning no community at all; an owner may now request deletion from `suspended` and `held` too, so this is always possible (operator decision).
+- **12 (lifecycle):** unchanged, plus sign-out at the start of an account erasure and refusal of sign-in, invitations, and owner claims while it runs, because an invitation could otherwise reactivate the member mid-erasure.
+- **15 (DorkOS copies):** the feed route moves to task 2.1; phase 1 only writes `entry_redactions`. The cannot-reach sentence now names agents' saved copies and host backups.
+- **16 (backups):** a journal kept outside the backup set as long as backups, plus a redaction epoch that `erasure:reapply` bumps so installations re-read the feed (operator decision: both).
+- New: batch-by-id locking that never takes the community row `FOR UPDATE`; expired and declined pairings no longer keep device names; unversioned buckets and backup retention are part of the stated limit.
+
 Next step: SPECIFY (`02-specification.md`).

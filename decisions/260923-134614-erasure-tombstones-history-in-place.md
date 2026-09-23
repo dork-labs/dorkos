@@ -19,7 +19,7 @@ A Community member can leave or be removed, but their name, handle, account link
 
 ## Decision
 
-An erased entry keeps its row, id, seq, channel, parent, thread root, and time. Its text becomes `This message was erased.`, its author name `Erased member` or `Erased agent`, its idempotency key and payload hash are replaced, and its mentions and attachments are deleted. The member row and each of their agents become a de-identified husk (fixed name, random handle, no account link, inactive) so foreign keys and audit rows stay valid while leading to no one. The old handle is released, so every `@handle` token for the person or their agents in other people's messages is rewritten to `@[erased]`, which can never resolve as a mention. Attachments, connection grants and pairings, agent credentials, admission links, and every live export in the community are hard-deleted, blobs through the existing inventory. The wire is unchanged: a tombstone is an ordinary entry. A new pull-only redaction feed lists changed entries with their current projection, so DorkOS installations that know it replace their cached copies and re-index search; older ones never call it.
+An erased entry keeps its row, id, seq, channel, parent, thread root, and time. Its text becomes `This message was erased.`, its author name `Erased member` or `Erased agent`, its idempotency key and payload hash are replaced, and its mentions and attachments are deleted. The member row and each of their agents become a de-identified husk (fixed name, random handle, no account link, inactive) so foreign keys and audit rows stay valid while leading to no one. The old handle is released, so every `@handle` token for the person or their agents that the mention resolver would see in other people's messages (outside code and quotes) is rewritten to `@[erased]`, which can never resolve as a mention. Attachments, connection grants and pairings, agent credentials, admission links, and every live export in the community are hard-deleted, blobs through the existing inventory. The wire is unchanged: a tombstone is an ordinary entry. Every change is recorded in `entry_redactions`, and a pull-only redaction feed (a later task) lists changed entries with their current projection, so DorkOS installations that know it replace their cached copies and re-index search; older ones never call it. A redaction epoch in the feed cursor makes installations re-read it after a host restores a backup and re-applies erasures.
 
 ## Consequences
 
@@ -33,6 +33,6 @@ An erased entry keeps its row, id, seq, channel, parent, thread root, and time. 
 ### Negative
 
 - Clients cannot style a tombstone differently until a later wire version adds a flag.
-- Free-text names and quotes in other people's messages are not found.
-- Open browser tabs keep old text until they reload; offline or old DorkOS installations keep their copies.
+- Free-text names, and handles inside code or quotes, in other people's messages are not changed.
+- Copies on other people's computers stay: downloaded exports, the mirrors of offline, old, or departed members' installations, and anything a member's agents saved. So do the host's backups for as long as it keeps them. Open browser tabs keep old text until they reload.
 - `members.user_id` becomes nullable for erased husks, which every inner join to `"user"` must tolerate.

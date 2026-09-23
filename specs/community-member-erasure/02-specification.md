@@ -9,57 +9,60 @@ project: Cloud-Hosted Communities
 
 # Community member erasure
 
-**Status:** Draft
+**Status:** Approved
 **Author:** Claude (for DOR-2247)
 **Date:** 2026-09-23
 
 ## Overview
 
-A person on a Community host can erase themselves from one community, or delete their account and be erased from every community on the host. A community owner can erase a former member on that person's request. After a 72-hour window in which the request can be cancelled, the server removes the person's name, handle, account link, messages, files, agents, and connections, and rewrites mentions of them in other people's messages. Their messages stay in place in threads as `This message was erased.` so conversations keep their shape. Every live export in the community is deleted. DorkOS installations that are online replace their cached copies through a new, content-free redaction feed.
+A person on a Community host can erase themselves from one community, or delete their account and be erased from every community on the host. After a 72-hour window in which they can cancel, the server removes their name, handle, account link, messages, files, agents, and connections, and rewrites mentions of them in other people's messages. Their messages stay in place in threads as `This message was erased.` so conversations keep their shape. Every live export in the community is deleted.
 
-Erasure belongs to the person and to the community owner. Host authority (a host operator's session or a host API key) cannot request, cancel, speed up, or observe one, which keeps the rule from the host-operator API spec (Open Question 7) and ADR `260920-201101`: host authority never reads or writes community content.
+That is phase 1, the hosted-community launch blocker. Two more tasks follow: the community owner erasing a former member, including an imported historical member (task 1.2, after import exists), and a content-free redaction feed that lets DorkOS installations replace their cached copies (task 2.1).
+
+Erasure belongs to the person and to the community owner. Host authority (a host operator's session or a host API key) cannot request, cancel, speed up, or observe one. This keeps the rule from the host-operator API spec (its Open Question 7) and ADR `260920-201101`: host authority never reads or writes community content.
 
 ## Background / Problem Statement
 
 - Leave and removal (`routes/members.ts`, `remove()`) end access and revoke credentials, but keep `members.display_name`, `members.handle`, `members.user_id`, every entry with its `author_display_name`, every attachment, and every mention. The leave screen says so: "Your past messages stay attributed to you."
-- Entries are immutable. There is no edit or delete route, so there is also no edit history to erase.
-- A host account cannot be closed. Better Auth's `user.deleteUser` is not enabled in `auth.ts`, and even if it were, five columns reference `"user"(id)` without a cascade (`members.user_id`, `invite_uses.user_id`, `host_operators.user_id`, `host_audit_events.actor_user_id`, `bootstrap_grants.revoked_by`), so the delete would fail. (The host-operator API spec says accounts "can already be closed through Better Auth". That is not true today; this spec closes the gap.)
-- Owner exports copy every member's email and every message into a zip that lives for an hour, and each member's DorkOS installation keeps a persisted mirror of the rooms it reads (`apps/server/.../remote/mirror-store.ts`), indexed by DorkOS message search.
+- Entries are immutable. There is no edit or delete route, so there is no edit history to erase. There are no reaction or notification tables; unread state is `read_cursors`.
+- A host account cannot be closed. Better Auth's `user.deleteUser` is not enabled in `auth.ts`, and five columns reference `"user"(id)` without a cascade (`members.user_id`, `invite_uses.user_id`, `host_operators.user_id`, `host_audit_events.actor_user_id`, `bootstrap_grants.revoked_by`), so a delete would fail anyway. (The host-operator API spec says accounts "can already be closed through Better Auth". That is not true today; this spec closes the gap.)
+- Owner exports copy every member's email and every message into a zip that lives for an hour. Each member's DorkOS installation keeps a persisted mirror of the rooms it reads (`apps/server/src/services/communities/remote/mirror-store.ts`), indexed by DorkOS message search, and a member's local agents may have saved what they read.
 - A host that serves people in the EU or California will receive erasure requests (GDPR Art. 17, CCPA deletion). Without this, hosted communities cannot launch.
 
 ## Goals
 
-- A person can erase themselves from one community, or delete their account and be erased everywhere on the host, without anyone's help.
-- A community owner can erase a member who is no longer active: removed, left, or an imported historical member.
-- After erasure, no row, column, blob, export, or log line on the Community server holds the person's name, handle, email, account link, message text, file names, or file bytes, except where this spec names a limit.
+- A person can erase themselves from one community (including one they already left), or delete their account and be erased everywhere on the host, without anyone's help.
+- After erasure, no row, column, blob, export, or log line on the Community server holds the person's name, handle, email, account link, message text, file names, file bytes, or hashes of them, except the leftovers this spec names.
 - Other people's history stays readable: threads, replies, sequence numbers, read positions, and cursors keep working.
-- One 72-hour cancellable window for every erasure, with nothing changed until it runs.
+- One 72-hour cancellable window, with nothing changed until it runs.
 - No change to any existing wire object or SSE event, so every DorkOS installation keeps working.
-- DorkOS installations that are online remove their cached copies, including from message search.
 - The UI tells the truth about what erasure cannot reach.
 
 ## Non-Goals
 
 - Any erasure started, cancelled, sped up, or read by host authority. A host that gets an emailed request uses the existing offline password recovery (`src/recover-password.ts`) so the person can sign in and erase themselves.
+- In phase 1: the owner erasing someone else. That is task 1.2.
+- In phase 1: the redaction feed route and DorkOS mirror changes. That is task 2.1. Phase 1 only writes `entry_redactions` rows so 2.1 can catch up on every earlier erasure.
 - Admins erasing anyone other than themselves.
 - Deleting or editing single messages, for moderation or otherwise.
-- Finding a person's name, words, or likeness in free text or files posted by other people or their agents. Only `@handle` mentions are rewritten.
-- Recalling downloaded exports, reaching host backups directly, or reaching DorkOS installations that are offline, old, or modified.
+- Finding a person's name, words, or likeness in free text, code, or files posted by other people or their agents. Only `@handle` mentions outside code and quotes are rewritten.
+- Channel names, channel descriptions, and the community icon, even when the person set them. They are community settings, not attributed to anyone in the database.
+- Recalling copies on other people's computers (downloaded exports, DorkOS mirrors, anything a member's agents saved) or reaching the host's backups directly.
 - Legal holds. The server has none.
 - A wire flag that lets clients style tombstones differently. It would change `CommunityWireEntrySchema`, which is strict. Follow-up with the next wire version.
-- Closing a host operator's account online. Host operators are made offline at first install and close their accounts the same way.
+- Closing an account that has ever been a host operator online (see Security). Follow-up: an offline host command.
 - Time or effort estimates.
 
 ## Technical Dependencies
 
-| Dependency                         | Version in repo              | Used for                                                                                                                                                   |
-| ---------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hono`                             | 4.13.8                       | routes                                                                                                                                                     |
-| `better-auth`                      | 1.7.5                        | `verifyPassword` reauthentication, session age for fresh-sign-in reauthentication; `deleteUser` stays disabled, the server deletes the account rows itself |
-| `pg` + hand-written SQL migrations | `apps/community/migrations/` | one new migration, **the next free number at build time** (the host-operator API spec takes 0012 to 0015), added to the list in `src/migrate.ts`           |
-| `drizzle-orm`                      | 0.45.2                       | `src/schema.ts` mirrors the migration; `@dorkos/db` migration for the DorkOS mirror (phase 2)                                                              |
-| `zod`                              | ^4.1.13                      | new strict schemas in `@dorkos/shared/community-wire`                                                                                                      |
-| Node `crypto`                      | built in                     | random husk handles, SHA-256 of tombstone payloads                                                                                                         |
+| Dependency                         | Version in repo              | Used for                                                                                                                                                                                                                   |
+| ---------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hono`                             | 4.13.8                       | routes                                                                                                                                                                                                                     |
+| `better-auth`                      | 1.7.5                        | `verifyPassword` reauthentication; session age for fresh-sign-in reauthentication; a `before` hook refusing sign-in while an account erasure runs. `deleteUser` stays disabled: the server deletes the account rows itself |
+| `pg` + hand-written SQL migrations | `apps/community/migrations/` | one new migration, **the next free number at build time** (the host-operator API spec takes 0012 to 0015), added to the list in `src/migrate.ts`                                                                           |
+| `drizzle-orm`                      | 0.45.2                       | `src/schema.ts` mirrors the migration                                                                                                                                                                                      |
+| `zod`                              | ^4.1.13                      | new strict schemas in `@dorkos/shared/community-wire`                                                                                                                                                                      |
+| Node `crypto`                      | built in                     | random husk handles, SHA-256 of tombstone payloads                                                                                                                                                                         |
 
 No new runtime dependency.
 
@@ -67,133 +70,127 @@ No new runtime dependency.
 
 ### Shared rules
 
-- **Who.** The person (a signed-in browser session for the account) or the current owner of the community. Every erasure route refuses a bearer credential of any kind (connection grant, agent credential, host API key) and a host operator's session acting as host authority (`403 FORBIDDEN`). A host operator who is also a member erases themselves like anyone else.
-- **Reauthentication.** Password when the account has a `credential` account row (`auth.api.verifyPassword`); otherwise the request's session must have been created less than 5 minutes ago, or the route answers `403 REAUTH_REQUIRED` with a message to sign in again. The owner route always reauthenticates the owner the same way.
-- **Window.** Every request is `scheduled` with `execute_after = created_at + 72 hours` (a constant, `ERASURE_WINDOW_HOURS`, not configuration). Nothing about the person changes until it runs. The requester cancels; for an owner request, the current owner cancels. After `execute_after`, cancel answers `409 STATE_CONFLICT`.
-- **Every lifecycle.** Requests are accepted and erasures run in `active`, `archived`, `held`, `suspended`, and `deletion_pending`. In `held` and `archived` erasure is removal, not growth; the host-operator spec's hold rules must list it beside owner export as allowed.
-- **Idempotent by member id.** The procedure below can be re-run on any member id at any point and converges to the same final state. That is what makes worker restarts, backup re-application, and overlapping requests (the person and the owner both asking) safe.
-- **Tenant first.** Every step names `community_id` in its predicate and its locks, as every other tenant query does. Erasing one person never touches another community's rows.
-- **Error codes.** One new code, `REAUTH_REQUIRED`, added to `CommunityWireErrorCodeSchema` (only the same-origin browser bundle and the community app parse it). Everything else reuses `FORBIDDEN`, `NOT_FOUND`, `STATE_CONFLICT`.
+- **Who (phase 1).** Only the person, through a signed-in browser session for their own account. Every erasure route refuses a bearer credential of any kind (connection grant, agent credential, host API key) with `403 FORBIDDEN`. Account routes never consult host-operator status, so a host operator acting as host has no route here; a host operator who is also a member erases their own membership like anyone else.
+- **Reauthentication.** Password when the account has a `credential` account row (`auth.api.verifyPassword`); otherwise the request's session must have been created less than 5 minutes ago, or the route answers `403 REAUTH_REQUIRED` with "Sign in again, then try once more."
+- **Window.** Every request is `scheduled` with `execute_after = created_at + 72 hours` (a constant, `ERASURE_WINDOW_HOURS`, not configuration). Nothing about the person changes until it runs. The person can cancel until then; after `execute_after`, cancel answers `409 STATE_CONFLICT`.
+- **Every lifecycle.** Requests are accepted and erasures run in `active`, `archived`, `held`, `suspended`, and `deletion_pending`. In `held` and `archived` erasure is removal, not growth; the host-operator spec's hold rules list it as allowed.
+- **Idempotent by member id.** The procedure can be re-run on any member id at any point and converges to the same final state. That makes worker restarts, backup re-application, and overlapping requests safe.
+- **Tenant first.** Every step names `community_id` in its predicate and locks. Erasing one person never touches another community's rows.
+- **Error codes.** One new code, `REAUTH_REQUIRED`, added to `CommunityWireErrorCodeSchema` (only the same-origin browser bundle and the community app parse that enum). Everything else reuses `FORBIDDEN`, `NOT_FOUND`, `STATE_CONFLICT`.
 
 ### What a thread shows
 
-An erased entry keeps `id`, `channel_id`, `seq`, `parent_entry_id`, `thread_root_entry_id`, and `created_at`, so replies, thread roots, cursors, and unread counts are unchanged. In the database:
+An erased entry keeps `id`, `channel_id`, `seq`, `parent_entry_id`, `thread_root_entry_id`, `created_at`, and its author id (now the husk's), so replies, thread roots, cursors, and unread counts are unchanged.
 
-| Column                                 | After erasure                                                                                                             |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `text`                                 | `This message was erased.`                                                                                                |
-| `author_display_name`                  | `Erased member` (human) or `Erased agent` (agent)                                                                         |
-| `author_member_id` / `author_agent_id` | unchanged: the husk's id                                                                                                  |
-| `idempotency_key`                      | `erased:<entry id>`                                                                                                       |
-| `payload_hash`                         | SHA-256 of the tombstone payload `{"text":"This message was erased.","mentions":[],"parentEntryId":…,"attachmentIds":[]}` |
-| `erased_at` (new)                      | the time of erasure                                                                                                       |
-| `entry_mentions` rows                  | deleted                                                                                                                   |
-| `attachments` rows                     | deleted, blobs to cleanup                                                                                                 |
+| Column                | After erasure                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `text`                | `This message was erased.`                                                                                    |
+| `author_display_name` | `Erased member` (human) or `Erased agent` (agent)                                                             |
+| `idempotency_key`     | `erased:<entry id>`                                                                                           |
+| `payload_hash`        | SHA-256 of `{"text":"This message was erased.","mentions":[],"parentEntryId":<unchanged>,"attachmentIds":[]}` |
+| `erased_at` (new)     | the time of erasure                                                                                           |
+| `entry_mentions` rows | deleted                                                                                                       |
+| `attachments` rows    | deleted, blobs to cleanup                                                                                     |
 
-On the wire this is an ordinary `CommunityWireEntry` with that text and name, `mentions: []`, and `attachments: []`. Older DorkOS installations render it with no change. The same text is used whether the person or the owner asked, so a reader cannot tell which.
+On the wire this is an ordinary `CommunityWireEntry` with that text and name, `mentions: []`, and `attachments: []`. Older DorkOS installations render it with no change. The text is the same whoever asked.
 
 ### Mentions in other people's messages
 
-After erasure, the person's old handle is released (a newcomer may take it), so a leftover `@handle` could later seem to name someone else. For every other entry in the community (not the person's, not their agents'):
+The person's old handle is released at the end (a newcomer may take it), so a leftover `@handle` could later seem to name someone else. For every other entry in the community:
 
-- delete every `entry_mentions` row whose target is the person's member id or one of their agent ids;
-- in `text`, replace every case-insensitive `@<handle>` token for the person and each of their agents with `@[erased]`, where a token ends at the end of text or at a character that is not `[A-Za-z0-9_]` and is not a `.` or `-` followed by `[A-Za-z0-9]` (the same end rule `resolveCommunityMentions` uses). This applies inside code and quotes too: there it is not a mention, but it is still the handle.
+- Delete every `entry_mentions` row whose target is the person's member id or one of their agent ids.
+- Rewrite the handle tokens the mention resolver itself would see. `rewriteHandleTokens(text, handles)` in `src/erasure.ts` reuses the tokenizer from `src/mentions.ts` (export its masking and address pattern rather than copying them): it masks fenced code, inline code, and quoted lines exactly as `maskedText` does, finds `@` tokens with the same pattern, applies the resolver's trailing strip (`[.\-_]+$`), and replaces a token only when its stripped handle equals, case-insensitively, one of the person's or their agents' handles, **and** the `@` is at the start of the text or follows a character that is not `[A-Za-z0-9_.-]`. The stripped trailing characters stay. The replacement is `@[erased]`.
+- Tokens inside code or quotes, and email-shaped strings (`bob@zq`), are left alone: there they are not mentions, and rewriting them would damage code such as `@types/node` or `@media` when a handle happens to be `types` or `media`. These are named leftovers (AC-10).
 - `payload_hash` and `idempotency_key` of other people's entries are **not** changed, so their own retries still replay.
 
-`@[erased]` can never resolve as a mention: the address form in `src/mentions.ts` needs a letter or digit after `@`. Handles are never renamed today, so the current handle is the one used in every past message; a future handle-rename feature must keep past handles for this step.
-
-Free-text names (`thanks Zephyrine`) are not touched (Non-Goals).
+`@[erased]` can never resolve as a mention: the address pattern needs a letter or digit after `@`. Handles are never renamed today, so the current handle is the one used in every past message; a future rename feature must keep past handles for this step.
 
 ### The husk
 
 The member row stays, because entries, audit rows, deletion requests, and invites point at it, but it no longer leads to anyone:
 
-- `members`: `display_name = 'Erased member'`, `handle = 'erased-' || 12 random lowercase base32 characters`, `user_id = NULL`, `active = false`, `removed_at = COALESCE(removed_at, now())`, `erased_at = now()`. `role` is kept (see the owner case below). `created_at` is kept.
-- `community_handles`: the row for this member is re-keyed to the new random handle, releasing the old one.
+- `members`: `display_name = 'Erased member'`, `handle = 'erased-' || 12 random lowercase base32 characters`, `user_id = NULL`, `active = false`, `removed_at = COALESCE(removed_at, now())`, `erased_at = now()`. `role` and `created_at` are kept.
+- `community_handles`: the member's row is re-keyed to the new random handle, releasing the old one.
 - Each agent the person owns: `display_name = 'Erased agent'`, a random `erased-…` handle (and its `community_handles` row), `local_agent_id = NULL`, `active = false`, `revoked_at = COALESCE(revoked_at, now())`.
+
+### Locking
+
+Posts, reads, and the existing `live()` helper take the `communities` row `FOR SHARE` (`lockActiveCommunity`, `lockChannel` in `src/data.ts`). Erasure must not freeze a community, so:
+
+- Every erasure transaction takes the `communities` row `FOR SHARE` (so a lifecycle change waits for it, and posts do not), then the member row `FOR UPDATE`.
+- Candidate rows are found **without** a lock (plain `SELECT id … LIMIT 500`), then each batch of at most 500 rows is locked `FOR UPDATE` by id and re-checked before it is changed.
+- The content version lives in its own table, `community_content_versions(community_id PK, version)`, so bumping it contends only with export commits, never with posts.
+- Step 5 records a per-channel watermark (`max(seq)` per channel) when it starts; the seal step only scans entries above that watermark.
 
 ### The procedure (one membership)
 
-`eraseMembership(communityId, memberId)` in `src/erasure.ts`. Each numbered step is one or more short transactions that lock the `communities` row `FOR UPDATE` and then the member row, in that order (the same lock order as `live()` in `routes/members.ts`). Batches are 500 rows.
+`eraseMembership(communityId, memberId)` in `src/erasure.ts`:
 
-1. **End access.** If the member is active, run the existing `remove()` with action `member.erase.start` (it revokes agents, credentials, grants, pairings, channel memberships, read cursors, admission receipts). Delete the member's `connection_grants`, `connection_pairings`, and their agents' `agent_credentials` rows outright (they hold install names and token hashes). Delete `agent_channel_members`, `owner_quota_windows`, and, for this community, `invite_uses`, `pending_admissions`, and `admission_receipts` rows for the member's `user_id` (read before the husk step nulls it). Revoke the member's unexpired invites (`revoked_at = now()`), keeping the rows.
-2. **Files.** Delete every `attachments` row uploaded by the member or their agents, bound or unbound, and queue each blob with the existing `queueCommittedBlobDeletion` (`storage/managed-blobs.ts`), or `discardManagedBlob` for an upload not yet committed, in the same transaction, so the pending-deletion sweep removes the bytes and any metadata the store keeps beside them (the stored display name).
-3. **Exports.** Mark every `export_archives` row in the community with `deleted_at IS NULL` as deleted and move its blob to cleanup. Increment `communities.content_version` (new) in the same transaction.
-4. **Tombstones.** Batches of entries `WHERE community_id=$1 AND erased_at IS NULL AND (author_member_id=$2 OR author_agent_id = ANY(agent ids))`: apply the tombstone table above, delete their mention rows, insert one `entry_redactions` row per entry, and increment `content_version`.
-5. **Mentions.** Batches of other entries in the community that have a mention row for the person or their agents, or whose `text` matches one of their `@handle` tokens (`text ~* ('@' || regexp-escaped handle)` pre-filter, exact rule applied in code): delete the mention rows, rewrite the text, insert one `entry_redactions` row per changed entry, increment `content_version`.
-6. **Seal.** One transaction: repeat steps 3 and 5 for anything written since they ran (another member can still type the literal handle until now), apply the husk, write the tenant audit row `member.erase.complete` (`actor_kind='system'`, `subject_id` = the husk id, no other fields), and mark this membership done. Emit one log line `{"event":"community.member_erased","communityId":…,"memberId":…}` with no other field.
+1. **End access.** If the member is active, run the existing `remove()` with action `member.erase.start` (it revokes agents, credentials, grants, and pairings and deletes channel memberships, read cursors, and admission receipts). Then delete outright: the member's `connection_grants` and `connection_pairings` rows (approved or declined; see Pairings below), their agents' `agent_credentials`, `agent_channel_members` for their agents, `owner_quota_windows`, and for this community the `invite_uses`, `pending_admissions`, and `admission_receipts` rows for the member's `user_id` (read before the husk step nulls it). Revoke the member's unexpired invites (`revoked_at = now()`), keeping the rows.
+2. **Files.** Delete every `attachments` row uploaded by the member or their agents, bound or unbound, and in the same transaction move each blob to cleanup: `UPDATE managed_blobs SET state='pending_delete' … WHERE state IN ('committed','stored')` plus a `pending_blob_deletions` row, the same two statements `queueCommittedBlobDeletion` and `discardManagedBlob` run (`storage/managed-blobs.ts`; `discardManagedBlob` itself takes a pool and deletes from the store, so it is not called here). A reservation not yet committed has no uploader column and no `attachments` row; if its upload commits later, the seal step catches it, and the attachment route refuses a commit for a principal that is no longer active.
+3. **Exports.** Mark every live `export_archives` row in the community deleted and move its blob to cleanup. Bump the community's content version.
+4. **Tombstones.** In batches, entries with `erased_at IS NULL` authored by the member or their agents: apply the tombstone table, delete their mention rows, insert one `entry_redactions` row per entry, bump the content version.
+5. **Mentions.** Record the per-channel watermark. In batches, other entries in the community that have a mention row for the person or their agents, or whose `text` contains `@<handle>` for one of them (a case-insensitive `position()` pre-filter; the exact rule runs in code): delete those mention rows, apply `rewriteHandleTokens`, insert one `entry_redactions` row per changed entry, bump the content version.
+6. **Seal.** Repeat steps 1, 2, and 4 (anything the member or their agents did between steps), step 3, and step 5 above the watermark. Then, in one transaction: apply the husk; write the tenant audit row `member.erase.complete` (`actor_kind='system'`, `subject_id` the husk id, nothing else); mark this membership done. Log one line, `{"event":"community.member_erased","communityId":…,"memberId":…}`, and append the same line to the erasure journal when one is configured (Backup re-application).
 
 The old handle stays in `members.handle` until step 6, so a restart at any point can still find the tokens to rewrite.
 
-**The owner case.** A person cannot ask to erase a membership in which they are the active owner (`403 FORBIDDEN`, "Transfer ownership or delete the community first."), matching leave. The one exception is a community already in `deletion_pending` that the person owns: there the husk step runs (name, handle, `user_id`), but `role` and `active` stay as the owner-lifecycle trigger needs, and steps 2 to 5 are skipped because the tenant deletion removes everything within seven days. Nobody can cancel that deletion once the owner's account is gone (the host cannot cancel an owner-requested deletion), and, below, the owner cannot cancel it while their account erasure is scheduled.
+A person cannot ask to erase a membership in which they are the active owner (`403 FORBIDDEN`, "Transfer ownership or delete the community first."), matching leave.
 
 ### The procedure (whole account)
 
 `eraseAccount(userId)`:
 
-1. Refuse at request time if the account is in `host_operators` (`403 FORBIDDEN`) or is the active owner of any community not in `deletion_pending` (`409 STATE_CONFLICT`, naming the communities the person owns so they can act).
-2. At execution, list every `members` row with this `user_id` (active or not, including ones joined during the window), create one child `membership` request per row (`parent_request_id` = the account request, `execute_after = now()`), and run `eraseMembership` for each.
-3. When every child is done, in one transaction: delete `invite_uses` for the user (any community left over), `pending_admissions` and `admission_receipts` with `account_id` = the user, `verification` rows whose `identifier` is the user's email, and finally the `"user"` row (sessions and linked sign-in accounts cascade). `erasure_requests.user_id` becomes NULL by its `ON DELETE SET NULL`.
+1. **At request.** Refused (`403 FORBIDDEN`) if the account has any `host_operators` row, revoked or not (see Security). Refused (`409 STATE_CONFLICT`) while the person is the owner of any community, in any lifecycle state, naming each one and what to do: transfer ownership, or delete the community and wait until the deletion finishes. (Handling a community already in `deletion_pending` without waiting is task 1.2.)
+2. **At claim.** The worker's claiming transaction also deletes every `session` row of the user, so the person is signed out everywhere when the erasure starts. While an account request is `running`, the Better Auth `before` hook refuses sign-in for that account, invite redemption refuses that account, and owner-claim redemption refuses it.
+3. **Memberships.** List every `members` row with this `user_id` (active or not, including ones joined during the window), create one child `membership` request per row (`parent_request_id` = the account request, `execute_after = now()`), and run `eraseMembership` for each. A child whose community was removed by tenant deletion counts as done.
+4. **Account.** In one transaction that first locks the `"user"` row `FOR UPDATE`: list memberships again; if any remain linked, run them first and retry this step. Then delete `invite_uses` for the user, `pending_admissions` and `admission_receipts` whose `account_id` is the user, `verification` rows whose `value` is the user id or contains the account email (Better Auth 1.7 stores random identifiers such as `reset-password:<token>` with the user id as the value), and finally the `"user"` row (sessions and linked sign-in accounts cascade). Log `{"event":"community.account_erased","userId":…}` (a random id, not an email) and journal it.
 
-After this, the email address can be used to join again by invitation, as a new person with no link to the old history.
+After this, the email address can join again by invitation, as a new person with no link to the old history.
 
-### Guards during the window
+### Guards
 
-- **Ownership transfer** to a member with an open erasure (or whose account has one) is refused (`409 STATE_CONFLICT`, "That member is leaving this community.").
-- **Owner-claim redemption** by an account with an open account erasure is refused (`409 STATE_CONFLICT`).
-- **Cancelling a community deletion** by an owner whose account erasure is open is refused (`409 STATE_CONFLICT`, "Cancel your account deletion first.").
-- **New memberships** during the window are allowed and are erased with the rest, since step 2 lists memberships at execution.
+- **During the window** (`scheduled`): ownership transfer to the member is refused (`409 STATE_CONFLICT`, "That member is leaving this community."); for an account request, owner-claim redemption by the account is refused.
+- **While running**: invite redemption that would reactivate the member row (`routes/invites.ts`, which today sets `active=true` on an existing inactive row) is refused with `409 STATE_CONFLICT` ("This account is being erased here. Try again later."), for any community while an account request runs, and for that community while a membership request runs.
+- **New memberships** during an account window are allowed and are erased with the rest.
+
+### Pairings
+
+`connection_pairings` rows start with `install_name` and no `member_id` (`routes/pairings.ts`, start). Decline only sets `cancelled_at`, and nothing sweeps expired rows, so a device name can outlive everything. Phase 1 changes both:
+
+- Decline records `member_id` of the member who declined, so step 1 finds it.
+- The existing blob-cleanup interval also deletes pairing rows that expired more than an hour ago and were never consumed (pairings last 10 minutes). No pairing started before an erasure survives its 72-hour window.
+
+### Owner deletion from `suspended` and `held`
+
+Phase 1's account copy tells an owner to delete their community first, but today the owner's deletion request (`POST /owner/deletion`, `routes/administration.ts`) is allowed only from `active` and `archived`, and suspension blocks every member request. So an owner of a suspended community could never delete their account. The owner's deletion request is now also allowed from `suspended` and `held`, through a narrow carve-out in the tenant context like the one owner export has, with the same reauthentication and name confirmation. `communities.deletion_from_state` (added by the host-operator hold migration; added here if that has not landed) records where it started, and a cancel returns there. Suspension or hold does not stop the deletion worker once the seven days pass.
 
 ### Export changes
 
-- The owner export's member query becomes a `LEFT JOIN "user"`, so erased husks (and imported historical members) stay in the archive with `email: null`. The host-operator spec's phase 4 makes the same change and makes `email` nullable in `CommunityExportManifestV1Schema`; whichever lands first makes both changes, and the other drops its copy.
-- `export_archives` gains `content_version`, read in the snapshot transaction. Export commit, under the community lock, refuses with `409 STATE_CONFLICT` ("The community changed while this export was being made. Try again.") and discards the blob when `communities.content_version` has moved. This closes the race where an export snapshotted before an erasure is committed after it.
-
-### Redaction feed
-
-`GET /api/v1/communities/:communityId/channels/:id/redactions?cursor=&limit=` (and the single-community alias), same authorization as `GET /channels/:id/entries` for the same principal (browser session or connection grant with `read`). Oldest first, at most 100 per page:
-
-```ts
-CommunityWireRedactionPageQuerySchema = z.strictObject({
-  cursor: cursor.optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-});
-CommunityWireRedactionPageSchema = z.strictObject({
-  redactions: z.array(z.strictObject({ entry: CommunityWireEntrySchema })).max(100),
-  nextCursor: cursor.nullable(),
-});
-```
-
-Each item is the entry's **current** projection (a tombstone, or another person's entry with the rewritten text), read from `entry_redactions` joined to `entries`. The feed carries no reason and no link to the person. Cursors are signed like page cursors (`encodeCursor` with a new `kind: 'redaction'` field inside the signed value) over the `entry_redactions.id` sequence. A route that is new is additive: older installations never call it, and an installation calling an older server gets `404` and stops asking until restart.
-
-The live stream is unchanged: no new event type (it would break strict parsers), no epoch bump (it would close every member's live stream in every channel the person wrote in, and cursors stay valid because seq does not change). A browser tab that is open when an erasure runs shows the old text until it reloads.
+- The owner export's member query becomes a `LEFT JOIN "user"`, so erased husks stay in the archive with `email: null`. The host-operator spec's phase 4 makes the same change and makes `email` nullable in `CommunityExportManifestV1Schema`; whichever lands first makes both, and the other drops its copy.
+- `export_archives` gains `content_version`, read from `community_content_versions` in the snapshot transaction. Export commit refuses with `409 STATE_CONFLICT` ("The community changed while this export was being made. Try again.") and discards the blob when the version has moved.
 
 ### Routes
 
-Account routes sit on `hostApi` beside `/memberships`, need a signed-in browser session, and never accept host authority.
+Account routes sit on `hostApi` beside `/memberships` and need a signed-in browser session.
 
-| Route                                                               | Body                                                                                               | Result                                                                                                                                                                                                        |
-| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/v1/account/erasures`                                      |                                                                                                    | this account's open requests and those cancelled in the last 30 days; membership items include the community name. A completed membership erasure no longer appears: nothing links it to the account any more |
-| `POST /api/v1/account/erasures`                                     | `{ kind: 'membership', communityId, password? }` or `{ kind: 'account', confirmEmail, password? }` | `201 { erasure }`; a repeat while one is open returns the open one with `200`                                                                                                                                 |
-| `POST /api/v1/account/erasures/:id/cancel`                          |                                                                                                    | `200 { erasure }`; `409` after `execute_after`                                                                                                                                                                |
-| `GET /api/v1/communities/:communityId/owner/former-members?cursor=` |                                                                                                    | owner only: inactive members (id, display name, handle, `removedAt`, origin, open erasure if any), 50 per page                                                                                                |
-| `POST /api/v1/communities/:communityId/owner/erasures`              | `{ memberId, password? }`                                                                          | owner only; target must be inactive and not erased (`409` otherwise)                                                                                                                                          |
-| `GET /api/v1/communities/:communityId/owner/erasures`               |                                                                                                    | owner only: requests for this community (owner-made and self-made), states and times only                                                                                                                     |
-| `POST /api/v1/communities/:communityId/owner/erasures/:id/cancel`   |                                                                                                    | current owner; owner-made requests only                                                                                                                                                                       |
-| `GET /api/v1/communities/:communityId/channels/:id/redactions`      |                                                                                                    | see above                                                                                                                                                                                                     |
+| Route                                                 | Body                                                                                               | Result                                                                                                                                                                                 |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/account/former-memberships`              |                                                                                                    | memberships of this account that are no longer active: `communityId`, community name, `leftAt`, and any open erasure. `GET /memberships` stays active-only                             |
+| `GET /api/v1/account/erasures`                        |                                                                                                    | this account's open requests and those cancelled in the last 30 days, with community names. A completed membership erasure no longer appears: nothing links it to the account any more |
+| `POST /api/v1/account/erasures`                       | `{ kind: 'membership', communityId, password? }` or `{ kind: 'account', confirmEmail, password? }` | `201 { erasure }`; a repeat while one is open returns the open one with `200`                                                                                                          |
+| `POST /api/v1/account/erasures/:id/cancel`            |                                                                                                    | `200 { erasure }`; `409` after `executeAfter`                                                                                                                                          |
+| `GET /api/v1/communities/:communityId/owner/erasures` |                                                                                                    | owner only: **completed** self-erasures in this community (husk id and completion time). A scheduled one is not shown, so the owner cannot pressure the person during the window       |
 
-`kind: 'membership'` needs a `members` row for this account in that community, active or not; that is how a person erases a community they already left. `confirmEmail` must equal the account's email exactly.
+`kind: 'membership'` needs a `members` row for this account in that community, active or not. `confirmEmail` must equal the account's email exactly.
 
 ```ts
 CommunityWireErasureSchema = z.strictObject({
   id,
   kind: z.enum(['membership', 'account']),
-  requestedBy: z.enum(['self', 'owner']),
   state: z.enum(['scheduled', 'running', 'completed', 'cancelled']),
   communityId: id.nullable(),
   communityName: z.string().nullable(), // account routes only, the person's own memberships
-  memberId: id.nullable(),
   executeAfter: timestamp,
   createdAt: timestamp,
   completedAt: timestamp.nullable(),
@@ -201,189 +198,223 @@ CommunityWireErasureSchema = z.strictObject({
 });
 ```
 
+Task 1.2 adds `requestedBy`. The object is new and only the same-origin browser bundle parses it, so adding a field later is safe.
+
 ### Worker
 
-`src/erasure-worker.ts`, started from `main.ts` beside the deletion worker, polls every 30 seconds for `erasure_requests` with `state IN ('scheduled','running') AND execute_after <= now() AND next_attempt_at <= now()`, claiming one with `FOR UPDATE SKIP LOCKED`, sets `running`, runs the procedure, and marks `completed`. A failure records an error class (`^[A-Z][A-Z0-9_]{0,63}$`, never a message), increments `attempts`, and backs off with the existing cleanup backoff. Blob bytes are removed by the existing pending-deletion cleanup, which already retries.
+`src/erasure-worker.ts`, started from `main.ts` beside the deletion worker, polls every 30 seconds. It claims one due request (`state IN ('scheduled','running') AND execute_after <= now() AND next_attempt_at <= now()`) with `FOR UPDATE SKIP LOCKED`, and in the claiming transaction sets `state='running'` and `next_attempt_at = now() + interval '5 minutes'` as a lease, copying `deletion-worker.ts`. It then runs the procedure and marks `completed`. A failure records an error class (`^[A-Z][A-Z0-9_]{0,63}$`, never a message), increments `attempts`, and backs off with the existing cleanup backoff. A worker that dies leaves the lease to expire and another replica resumes. Blob bytes are removed by the existing pending-deletion sweep, which retries; a store delete whose outcome was uncertain is retried an hour later before the `managed_blobs` row (with its checksum) goes.
+
+On completion, `parent_request_id` is cleared. Completed and cancelled requests are deleted 30 days after they end.
 
 ### Backup re-application
 
-A host restoring a backup taken before some erasures must run them again. Each completed membership erasure logs `{"event":"community.member_erased","communityId":…,"memberId":…}` and each completed account erasure logs `{"event":"community.account_erased","userId":…}` (a random id, not an email). `pnpm --filter @dorkos/community erasure:reapply < ids.txt` reads `member <communityId> <memberId>` and `account <userId>` lines, runs `eraseMembership` or `eraseAccount` for each with the web service stopped (like `recover-password`), and prints only counts. The self-hosting docs describe this.
+A host restoring a backup taken before some erasures must run them again.
+
+- **The list.** Each completed erasure logs one line (above). Logs on many platforms are short-lived, so the server also appends the same line to an erasure journal file when `COMMUNITY_ERASURE_JOURNAL` names a path. The self-hosting docs require a host to keep either the log lines or the journal, **outside the database backup set, for at least as long as it keeps backups.**
+- **The command.** `pnpm --filter @dorkos/community erasure:reapply < journal` reads `member <communityId> <memberId>` and `account <userId>` lines, runs `eraseMembership` or `eraseAccount` for each with the web service stopped (like `recover-password`), and prints only counts.
+- **Cached copies.** A restore rewinds the `entry_redactions` sequence, so a DorkOS installation's saved feed cursor (task 2.1) would skip re-applied rows. `communities.redaction_epoch` (new, starting at 1) is signed into every feed cursor, and `erasure:reapply` increments it for every community it touches, so old cursors answer `410` and installations read the feed again from the start.
 
 ### Data model changes (migration: next free number at build time)
 
-- `erasure_requests(id uuid PK, kind CHECK IN ('membership','account'), requested_by CHECK IN ('self','owner'), user_id text NULL REFERENCES "user"(id) ON DELETE SET NULL, community_id uuid NULL REFERENCES communities(id), member_id uuid NULL, requested_by_member_id uuid NULL, parent_request_id uuid NULL REFERENCES erasure_requests(id), state CHECK IN ('scheduled','running','completed','cancelled'), execute_after, created_at, started_at, completed_at, cancelled_at, attempts int, next_attempt_at, last_error_class)`, with checks: `kind='account'` ⇒ `community_id`, `member_id` NULL and `requested_by='self'` (its `user_id` is set until the account row is deleted); `kind='membership'` ⇒ `community_id`, `member_id` set and `user_id` NULL, so no completed request links an account to a community; `requested_by='owner'` ⇒ `requested_by_member_id` set; `execute_after >= created_at`; completed and cancelled timestamps match the state. Composite tenant foreign keys `(community_id, member_id)` and `(community_id, requested_by_member_id)` to `members(community_id, id)`. Partial unique indexes: one open (`scheduled`/`running`) membership request per `(community_id, member_id, requested_by)` and one open account request per `user_id`. Due index on `(next_attempt_at, execute_after) WHERE state IN ('scheduled','running')`.
+- `erasure_requests(id uuid PK, kind CHECK IN ('membership','account'), user_id text NULL REFERENCES "user"(id) ON DELETE SET NULL, community_id uuid NULL REFERENCES communities(id), member_id uuid NULL, parent_request_id uuid NULL REFERENCES erasure_requests(id), state CHECK IN ('scheduled','running','completed','cancelled'), execute_after, created_at, started_at, completed_at, cancelled_at, attempts int NOT NULL DEFAULT 0, next_attempt_at, last_error_class CHECK (~ '^[A-Z][A-Z0-9_]{0,63}$'))`. Checks: `kind='account'` ⇒ `community_id` and `member_id` NULL (its `user_id` is set until the account row is deleted); `kind='membership'` ⇒ `community_id` and `member_id` set and `user_id` NULL, so no row links an account to a community; `execute_after >= created_at`; timestamps match the state. Composite tenant foreign key `(community_id, member_id)` to `members(community_id, id)`. Partial unique indexes: one open (`scheduled`/`running`) membership request per `(community_id, member_id)`, one open account request per `user_id`. Due index on `(next_attempt_at, execute_after) WHERE state IN ('scheduled','running')`.
 - `entry_redactions(id bigint GENERATED ALWAYS AS IDENTITY PK, community_id, channel_id, entry_id, created_at)` with tenant foreign keys to `channels` and `entries`, index `(channel_id, id)`.
+- `community_content_versions(community_id uuid PK REFERENCES communities(id), version bigint NOT NULL DEFAULT 1)`, a row per community (backfilled; created with every new community).
+- `communities.redaction_epoch integer NOT NULL DEFAULT 1 CHECK (redaction_epoch > 0)`.
 - `entries.erased_at timestamptz NULL`.
-- `members.erased_at timestamptz NULL`; `members.user_id` drops `NOT NULL`; the user-presence check becomes `user_id IS NOT NULL OR erased_at IS NOT NULL OR (origin='imported' AND NOT active)`. If the import migration (host-operator phase 4) has not landed, the check is `user_id IS NOT NULL OR erased_at IS NOT NULL`, and the import migration later widens it. Whichever lands second owns the combined check.
-- `communities.content_version integer NOT NULL DEFAULT 1 CHECK (content_version > 0)`; `export_archives.content_version integer NULL` (NULL for rows written by old code, which commit refuses only if an erasure has happened since the migration: treat NULL as 1).
-- The tenant deletion worker deletes the tenant's `entry_redactions` and `erasure_requests` rows before its members.
+- `members.erased_at timestamptz NULL`; `members.user_id` drops `NOT NULL`; the user-presence check becomes `user_id IS NOT NULL OR erased_at IS NOT NULL OR (origin='imported' AND NOT active)`. If the import migration (host-operator phase 4) has not landed, the check is `user_id IS NOT NULL OR erased_at IS NOT NULL`, and the import migration widens it. Whichever lands second owns the combined check.
+- `export_archives.content_version bigint NULL` (NULL on rows written by old code is treated as version 1).
+- The tenant deletion worker deletes the tenant's `entry_redactions`, `erasure_requests`, and `community_content_versions` rows before its members.
 - `src/schema.ts` mirrors all of it.
 
 ### Code structure
 
-- `apps/community/src/erasure.ts`: `eraseMembership`, `eraseAccount`, `rewriteHandleTokens(text, handles)` (pure, unit-tested), tombstone constants.
-- `apps/community/src/erasure-worker.ts`: polling and backoff.
-- `apps/community/src/routes/erasures.ts`: account and owner routes; registered from `app.ts` (`hostApi` for account routes, `communityApi` for owner routes).
-- `apps/community/src/routes/entries.ts`: redaction feed.
-- `apps/community/src/routes/members.ts`, `routes/host.ts`, `routes/administration.ts`: the three window guards.
-- `apps/community/src/routes/exports.ts`: `LEFT JOIN`, `content_version`.
+- `apps/community/src/erasure.ts`: `eraseMembership`, `eraseAccount`, `rewriteHandleTokens` (pure, unit-tested), tombstone constants, journal append.
+- `apps/community/src/mentions.ts`: export the masking and address pattern for `rewriteHandleTokens` (no second copy).
+- `apps/community/src/erasure-worker.ts`: polling, lease, backoff, 30-day pruning.
+- `apps/community/src/routes/erasures.ts`: account routes (`hostApi`) and the owner's completed-erasure list (`communityApi`), registered from `app.ts`.
+- `apps/community/src/routes/members.ts` (transfer guard), `routes/invites.ts` (re-admission guard), `routes/host.ts` (owner-claim guard), `routes/pairings.ts` (decline records the member), `routes/attachments.ts` (commit refuses an inactive principal, if it does not already), `auth.ts` (sign-in refusal while running), `storage/pending-deletions.ts` or the cleanup interval (expired pairings).
+- `apps/community/src/routes/exports.ts`: `LEFT JOIN`, content version.
+- `apps/community/src/config.ts`: `COMMUNITY_ERASURE_JOURNAL` (optional path).
 - `apps/community/src/erasure-reapply.ts` + `package.json` script.
 - `packages/shared/src/community-wire.ts`: the schemas above and `REAUTH_REQUIRED`.
-- Browser: `Manage.tsx`, `CommunityChooser.tsx`, `CommunityAdministration.tsx`.
-- Phase 2: `apps/server/src/services/communities/remote/` (feed client, mirror update), `packages/db` (mirror column), `apps/server/src/services/search/` (room re-index on update).
+- Browser: `Manage.tsx`, `CommunityChooser.tsx`.
 
-### Phase 2: DorkOS installations drop their cached copies
+### Task 1.2 — the owner erases a former member (after import)
 
-- `community_room_mirrors` gains `redaction_cursor text NULL`.
-- The remote subscription runtime pages the redaction feed for each mirrored room after every `replay_complete` and every 15 minutes while subscribed, from the stored cursor.
-- For each item whose entry is in `community_mirror_entries`: in one SQLite transaction, update `room_entries.body` and `mentions`, and `community_mirror_entries.entry_json`, `author_display_name`, `author_kind`; if the entry is a tombstone, set the external author's display name in `authors` to `Erased member` / `Erased agent`. Store the new cursor.
-- The mirror never dispatches a local agent for a redaction (it is not a new post).
-- Message search only indexes above a per-room watermark and never sees an in-place update (`row-frontier.ts`), so after a page that changed rows, drop that room's frontier so the room is re-indexed from the start. Add a per-container invalidation to the frontier store if none fits.
-- A `404` from the feed marks the connection as not supporting it until restart, logged once.
+Depends on the import task (host-operator API task 4.2), because imported historical members are the main people only an owner can erase. Its design:
+
+- **Who.** The current owner, with reauthentication, for a member who is not active (removed, left, or imported). `POST /api/v1/communities/:communityId/owner/erasures { memberId, password? }`, `POST …/owner/erasures/:id/cancel` (owner-made only), `GET …/owner/former-members?cursor=` (inactive members with name, handle, `removedAt`, origin, open erasure; 50 per page). The owner list of erasures gains owner-made requests in every state. `erasure_requests` gains `requested_by ('self','owner')`, `requested_by_member_id`, and `subject_user_id` (the target's account, if any, kept only until completion); the open-request unique index includes `requested_by`; the wire object gains `requestedBy`. Completion clears `requested_by_member_id`.
+- **Re-admission (finding 1a).** The target is checked at request time **and** by the worker at execution (still not active, else the request is cancelled with error class `MEMBER_READMITTED`). Re-admitting the target by invitation during the window cancels the owner-made request in the same transaction and writes `member.erase.cancel`.
+- **The target's view (finding 8).** A target who still has an account sees the owner-made request in `GET /account/erasures` with its date, and may request a personal export of their own messages during the window, a narrow exception to the active-member rule in `routes/exports.ts`. They cannot cancel it; the UI tells them to contact the owner.
+- **Owners of a community being deleted (finding 15).** An account erasure may proceed while the person owns a community in `deletion_pending`: the owner membership is husked (name, handle, `user_id`) with `role` and `active` kept for the owner-lifecycle trigger, steps 2 to 5 are skipped because tenant deletion removes everything, the owner cannot cancel that deletion while the account request is open, and the worker re-checks at execution that the community is still `deletion_pending` (else it retries later with error class `OWNER_ACTIVE`).
+- **UI.** `CommunityAdministration.tsx`, "Former members": list → **Erase** → "Erase {name}'s messages? In 72 hours, we'll remove their name, messages, files, and agents' messages from this community. Do this when they ask you to. You can cancel until then." + password.
+- **Tests.** The AC-6 owner and admin cases below, owner-made requests in AC-8, the re-admission and deletion-pending cases in AC-7 and AC-9, and imported members in AC-10.
+
+### Task 2.1 — DorkOS installations drop their cached copies
+
+- **The feed (community server).** `GET /api/v1/communities/:communityId/channels/:id/redactions?cursor=&limit=` (and the single-community alias), same authorization as `GET /channels/:id/entries`. Oldest first, at most 100 per page: `CommunityWireRedactionPageQuerySchema = { cursor?, limit? 1–100 }`, `CommunityWireRedactionPageSchema = { redactions: [{ entry: CommunityWireEntry }] (max 100), nextCursor | null }`. Each item is the entry's **current** projection. The cursor is signed like page cursors, carrying `kind: 'redaction'`, the channel, the `entry_redactions.id`, and `communities.redaction_epoch`; a foreign cursor or an older epoch answers `410`. The route is new, so older installations never call it, and an installation calling an older server gets `404`.
+- The live stream is unchanged: no new event type (it would break strict parsers) and no epoch bump (it would close everyone's live streams, and cursors stay valid because seq does not change). An open browser tab shows the old text until it reloads.
+- **The mirror (DorkOS app).** `community_room_mirrors` gains `redaction_cursor`. After every `replay_complete` and every 15 minutes while subscribed, the remote subscription runtime pages the feed per mirrored room from the stored cursor (a `410` resets it to the start). For each item whose entry is in `community_mirror_entries`, in one SQLite transaction with `PRAGMA secure_delete=ON`: update `room_entries.body` and `mentions`, `community_mirror_entries.entry_json`, `author_display_name`, `author_kind`, and for a tombstone the external author's display name in `authors`; store the cursor. Never dispatch a local agent for it.
+- **Search.** Message search indexes above a per-room watermark and never sees an in-place update (`row-frontier.ts`), so after a page that changed rows, drop that room's frontier so it re-indexes from the start, and run the FTS5 `optimize` command afterwards so old terms leave the index's shadow tables. Add a per-container invalidation to the frontier store if none fits.
+- A `404` marks the connection as not supporting the feed until restart, logged once.
+- **Limits, stated in the UI and docs.** A member who has left or been removed can no longer read the feed, so their installation keeps what it had. Anything a member's local agents saved (session transcripts, memory) is theirs and is not touched, and message search still finds it there.
 
 ## User Experience
 
-Copy follows the `writing-for-humans` skill. Every screen that starts an erasure says what it cannot reach.
+Copy follows the `writing-for-humans` skill. Every screen that starts an erasure says what it cannot reach, in the same words:
 
-**Erase me from one community** (`Manage.tsx`, in the "Leave community" panel's place for non-owners, and reachable from the host root for communities the person already left):
+> We can't reach copies on other people's computers, including files they downloaded and anything their agents saved, or the host's backups for as long as it keeps them.
+
+**Erase me from one community** (`Manage.tsx`, beside "Leave community" for non-owners; for communities the person already left, from the host root's "Communities you left" list, fed by `GET /account/former-memberships`):
 
 > **Erase your messages here**
 > In 72 hours, we'll remove your name, messages, files, and your agents' messages from {community}. Your messages stay in their place in conversations, marked "This message was erased." You can cancel until then.
-> We can't reach copies people already downloaded, or copies on members' computers that are offline.
+> {cannot-reach sentence}
 > [Enter {community}] [Confirm password] **Erase my messages**
 
-Owners see "Transfer ownership or delete the community before you erase your messages here." While scheduled, the community shows a banner to that person only: "Your messages here will be erased on {date}. **Cancel**".
+Owners see "Transfer ownership or delete the community before you erase your messages here." While scheduled, that person sees a banner in the community: "Your messages here will be erased on {date}. **Cancel**".
 
 **Delete your account** (`CommunityChooser.tsx`, host root):
 
 > **Delete your account**
-> In 72 hours, we'll delete your account on this host and erase your name, messages, files, and agents from every community here, including ones you left. You can cancel until then by signing in.
-> We can't reach copies people already downloaded, or copies on members' computers that are offline.
+> In 72 hours, we'll delete your account on this host and erase your name, messages, files, and agents from every community here, including ones you left. You can cancel until then by signing in. When it starts, you'll be signed out everywhere.
+> {cannot-reach sentence}
 > [Enter your email] [Confirm password] **Delete my account**
 
-If the person owns a community, the button is replaced by: "You own {names}. Transfer ownership or delete {it/them} first." The host root lists scheduled erasures with their dates and a **Cancel** button each.
+If the person owns a community, the button is replaced by: "You own {names}. To delete your account, first transfer ownership to another member or delete {the community / those communities}, then wait until the deletion finishes. You can ask to delete a community even while the host has put it on hold or suspended it." The host root lists scheduled erasures with their dates and a **Cancel** button each.
 
-**Owner: erase a former member** (`CommunityAdministration.tsx`, "Former members" section):
-
-> Former members (list: name, handle, left or removed on {date}) → **Erase** →
-> Erase {name}'s messages? In 72 hours, we'll remove their name, messages, files, and agents' messages from this community. Do this when they ask you to. You can cancel until then.
-> [Confirm password] **Erase**
-
-Errors are plain sentences from the server (`409`: "That person is already scheduled for erasure."). Nothing in the UI names who asked for an erasure except to the person who asked.
+Errors are plain sentences from the server. Other members see no sign of an erasure until it runs; the owner sees completed ones only.
 
 ## Testing Strategy
 
-Integration tests run against real PostgreSQL and the filesystem BlobStore, using `tenancy-test-harness.ts`. Each test carries a purpose comment.
+Integration tests run against real PostgreSQL and the filesystem BlobStore, using `tenancy-test-harness.ts`. Each test carries a purpose comment. ACs marked (1.2) or (2.1) belong to those tasks.
 
 ### Acceptance criteria that discriminate
 
-**AC-1 — Residue scan (the core test).** Seed two communities on one host. In community A, person P (display name `Zephyrine Quill`, email `zq-canary@example.test`) joins, pairs an installation named `zq-canary-laptop`, enrolls an agent `ZQ Canary Bot` (handle derived, `local_agent_id` `zq-canary-local`), and posts: a top-level message containing `canary-text-1`, a reply in someone else's thread, an agent post containing `canary-text-2`, a message with an attachment named `zq-canary.txt` whose bytes contain `canary-bytes-1`, an unbound upload, and uses idempotency key `zq-canary-key`. Member Q posts `@<P's handle> thanks`, a message mentioning P's agent, and a code block containing `@<P's handle>`. Q creates a personal export and the owner creates an owner export, both within their hour. In community B, P is also a member with the same canaries. Then:
+**AC-1 — Residue scan (the core test).** Seed two communities on one host. In community A, person P (display name `Zephyrine Quill`, email `zq-canary@example.test`) joins and:
 
-- **Control (before):** a scan finds every canary in its expected place. The scan enumerates **every table and every column** of type `text`, `varchar`, `text[]`, `json`, and `jsonb` in the `public` schema from `information_schema.columns` (never a hand list), plus every object in the BlobStore, plus the log output captured during the test. It also searches for the SHA-256 hex of each of P's entry payloads. If any canary is not found before erasure, the test fails: a canary the scan cannot see proves nothing.
-- **After P erases their membership in A and the worker and blob cleanup finish:** no canary appears in any column of any row with `community_id = A`, in any blob that belonged to A, or in the log, except the ones listed in AC-10. Community B still contains every canary (tenant isolation).
-- **After P deletes their account:** no canary appears anywhere on the host: no row in any table, no blob, no log line. The `"user"`, `session`, `account`, and `verification` rows are gone.
-- A new table added later that stores a person's data fails this test until erasure covers it, because the scan enumerates the schema.
+- pairs an installation named `zq-canary-laptop`; starts a second pairing named `zq-canary-declined` that P declines; and starts a third named `zq-canary-abandoned` that is never approved and expires;
+- enrolls an agent `ZQ Canary Bot` with `local_agent_id` `zq-canary-local`;
+- posts a top-level message with `canary-text-1`, a reply in someone else's thread, an agent post with `canary-text-2`, and a message with an attachment `zq-canary.txt` whose bytes contain `canary-bytes-1`; leaves one unbound upload; uses idempotency key `zq-canary-key`;
+- as an admin, names a channel `zq-canary-channel` (a named leftover, AC-10).
 
-**AC-2 — Thread shape.** After erasure, every entry of P and P's agent in A has the same `id`, `seq`, `parent_entry_id`, `thread_root_entry_id`, and `created_at` as before; `GET /channels/:id/entries` returns them with text `This message was erased.`, author `Erased member` / `Erased agent`, `mentions: []`, `attachments: []`; each response parses with the unchanged `CommunityWireEntrySchema`. Q's reply to P's erased message still lists it as parent; a thread query on P's erased root still returns Q's replies. A page cursor and a live-stream resume cursor taken before erasure still work after it (`seq` unchanged, no `410`).
+Member Q posts `@<P's handle> thanks`, a message mentioning P's agent, and a code block containing `@<P's handle>` (a named leftover). Q makes a personal export and the owner makes an owner export, both within their hour. In community B, P is also a member with the same kinds of canaries.
 
-**AC-3 — Mentions.** Q's `@<handle> thanks` reads `@[erased] thanks`; the code-block handle reads `@[erased]`; Q's mention of P's agent reads `@[erased]`; no `entry_mentions` row targets P or P's agent; Q's own retry of their original post with its original idempotency key and payload returns `200` with the entry (payload hash unchanged). A new member can now take P's old handle, and posting `@<old handle>` resolves to the new member only.
+The scan enumerates **every table and every column** of type `text`, `varchar`, `text[]`, `json`, and `jsonb` in the `public` schema from `information_schema.columns` (never a hand list), every object in the BlobStore, and the log output captured during the test. It matches case-insensitively, and on each of: the display name, each word of it, P's handle, the agent's handle, the email, every `canary-…` string, and the SHA-256 hex of each of P's entry payloads and of each canary file's bytes.
 
-**AC-4 — Files and exports.** Every attachment blob of P in A is gone from the BlobStore after cleanup, and `GET /attachments/:id` answers `404`. Q's personal export and the owner's export made before erasure answer `404` at `GET /exports/:id`, and their blobs are gone. An owner export whose snapshot was read before the erasure's first content change and whose commit is forced after it (test hook between snapshot and commit) is refused with `409` and leaves no blob. An owner export made after erasure contains P's husk with `email: null` and no canary.
+- **Control (before):** every canary is found in its expected place. If one is not, the test fails: a canary the scan cannot see proves nothing.
+- **After P erases their membership in A**, with the worker and blob sweep run to completion (clock advanced past the sweep's one-hour retry): no canary in any row with `community_id = A`, in any blob that belonged to A, or in the log, except AC-10's named leftovers. Community B keeps every canary.
+- **After P deletes their account:** no canary anywhere on the host, except the named leftovers. The `"user"`, `session`, `account`, and `verification` rows for P are gone.
+- A table added later that stores a person's data fails this test until erasure covers it, because the scan enumerates the schema.
 
-**AC-5 — Window and cancel.** A request is `scheduled` with `executeAfter` exactly 72 hours after `createdAt`. Before that, nothing about P changes (a full-table digest of community A is equal before the request and just before execution), P can still post, and cancel returns `cancelled` with the digest still equal. After `executeAfter`, cancel answers `409`. The worker never runs a cancelled request.
+**AC-2 — Thread shape.** After erasure, every entry of P and P's agent in A has the same `id`, `seq`, `parent_entry_id`, `thread_root_entry_id`, and `created_at` as before; history returns them with text `This message was erased.`, author `Erased member` / `Erased agent`, `mentions: []`, `attachments: []`; each response parses with the unchanged `CommunityWireEntrySchema`. Q's reply still lists P's erased message as parent; a thread query on P's erased root still returns Q's replies. A page cursor and a live-stream resume cursor taken before erasure still work after it (no `410`).
 
-**AC-6 — Authority.** Each erasure route answers `403` for: a host API key, a host operator's session acting on a community where they are not a member, a connection grant bearer, an agent bearer, an admin erasing another member, a member erasing another member, and the owner erasing an active member (`409`). The owner erasing themselves is `403`. Account deletion is `403` for a host operator and `409` for an owner of an active community. A person cannot cancel an owner-made request, and an owner cannot cancel a self-made one.
+**AC-3 — Mentions.** Q's `@<handle> thanks` reads `@[erased] thanks`; Q's mention of P's agent reads `@[erased]`; the code block is unchanged; no `entry_mentions` row targets P or P's agent. Q's retry of their original post with its original key and payload returns `200` (payload hash unchanged). A new member can take P's old handle, and `@<old handle>` then resolves to the new member only. Unit cases for `rewriteHandleTokens`: `@zq,` and `@zq.` (punctuation kept), `@zq_` and `@zq-` (trailing strip), `@ZQ` (case), `@zq2` and `@zqx` (different handles, untouched), `x@zq` and `bob@zq.com` (untouched), `@types/node` inside a fence and inline code when a handle is `types` (untouched), a quoted line (untouched).
 
-**AC-7 — Window guards.** During P's open erasure: transfer of ownership to P is `409`; an owner claim redeemed by P's account (account erasure) is `409`; an owner with an open account erasure cannot cancel their community's deletion (`409`). A membership P gains during an account-erasure window is erased at execution.
+**AC-4 — Files and exports.** P's blobs in A are gone from the BlobStore after the sweep, `GET /attachments/:id` answers `404`, and no `managed_blobs` row keeps their checksums. Both pre-erasure exports answer `404` at `GET /exports/:id` and their blobs are gone. An export snapshotted before the erasure's first content change and committed after it (test hook) is refused with `409` and leaves no blob. An upload P started before step 2 and committed after it (test hook) is refused, or, if it commits, is removed by the seal. An owner export made after erasure has P's husk with `email: null` and no canary.
 
-**AC-8 — Crash and repeat.** Kill the worker after each of steps 1 to 6 (test hook), restart it, and the final state equals an uninterrupted run (same digest). Running `eraseMembership` twice, or the reapply CLI after completion, changes nothing. The person and the owner both requesting erasure of the same membership completes both requests with one erasure.
+**AC-5 — Window and cancel.** A request is `scheduled` with `executeAfter` exactly 72 hours after `createdAt`. A digest of every community-A row outside `erasure_requests` is equal just after the request and just before execution when nothing else happens in between; separately, P can still post during the window. Cancel returns `cancelled` with that digest unchanged; after `executeAfter`, cancel answers `409`; the worker never runs a cancelled request.
 
-**AC-9 — Every lifecycle.** An erasure scheduled in A completes when A is `archived`, `held` (once the host-operator hold exists), `suspended`, and `deletion_pending` at execution time. In a `deletion_pending` community P owns, account erasure husks P's owner row (no name, handle, or `user_id`) and the tenant deletion later removes the rest.
+**AC-6 — Authority.** Every erasure route answers `403` for a connection-grant bearer, an agent bearer, and a host API key. A host operator who is **not** a member of A, using both a host API key and their own session, cannot create, cancel, or list an erasure for P (their session reaches only their own account's requests, and has no membership in A to name). P cannot erase a membership they own (`403`). Account deletion is `403` for an account with any `host_operators` row (revoked or not) and `409` for the owner of a community in any state. (1.2) Admins and members cannot erase another member (`403`); the owner cannot erase an active member (`409`); a person cannot cancel an owner-made request and an owner cannot cancel a self-made one.
 
-**AC-10 — Imported and historical.** The owner can erase an imported historical member (once import exists) and a member who left before this feature shipped. The only data the scan is allowed to find after erasure is data the design leaves on purpose, each asserted explicitly so nobody later claims otherwise: a free-text display name typed by another member (`thanks Zephyrine`), and audit rows holding the husk's id.
+**AC-7 — Guards.** During P's window, transfer of ownership to P is `409`, and an owner claim by P's account (account erasure) is `409`. While P's membership erasure in A runs, P's session redeeming an invite to A is refused (`409`); while P's account erasure runs, every invite redemption, owner claim, and sign-in by P is refused, and P's existing sessions no longer work. A membership P gains during an account window is erased at execution. (1.2) Re-admitting an owner-erasure target during the window cancels the request; a target re-admitted by other means is not erased (worker re-check).
 
-**AC-11 — Redaction feed.** Before erasure the feed for a channel is empty; after it, the feed returns one item per changed entry with its current projection (tombstones and Q's rewritten entry), each parsing with the strict schemas, and nothing for channels the caller cannot read (`404`, same as history). A cursor from another channel is `410`.
+**AC-8 — Crash and repeat.** Kill the worker after each of steps 1 to 6 and after each account step (test hook), let the lease expire, and the final state equals an uninterrupted run (same digest). P posting, uploading, and enrolling an agent between steps 1 and 6 (test hook bypassing the guards, to simulate a missed check) leaves nothing after the seal. Running `eraseMembership` twice, or `erasure:reapply` after completion, changes nothing.
 
-**AC-12 — Backup re-application.** Take a database and BlobStore snapshot, erase P, restore the snapshot, run `erasure:reapply` with the logged ids: the AC-1 scan passes again, and P's restored account is deleted.
+**AC-9 — Every lifecycle.** An erasure scheduled in A completes when A is `archived`, `held` (once the hold exists), `suspended`, and `deletion_pending` at execution time. The owner can request deletion of a `suspended` or `held` community, and a cancel returns it there. (1.2) An account erasure with a `deletion_pending` community P owns husks P's owner row, and the tenant deletion later removes the rest.
 
-**AC-13 — DorkOS installation (phase 2).** A DorkOS test server paired to community A mirrors a channel with P's messages and indexes it. Control: the local SQLite file (every table and column enumerated from `sqlite_master`) and a message search for `canary-text-1` both find it. After erasure and one feed sync: neither the SQLite file nor search finds any canary, the mirrored entries show the tombstone and the rewritten mention, the external author record reads `Erased member`, and no local agent was dispatched. Against a community server without the route (`404`), sync logs once and changes nothing.
+**AC-10 — Named leftovers.** The only matches the scan may find after erasure, each asserted explicitly so nobody later claims otherwise: a free-text display name typed by another member (`thanks Zephyrine`), P's handle inside another member's code block or quote, the channel name P set as an admin, and audit rows holding the husk's id. (1.2) The owner can erase an imported historical member and a member who left before this feature shipped.
+
+**AC-11 — Locks.** While a batch of P's erasure is open (test hook), Q can post in A and read history within a normal timeout.
+
+**AC-12 — Backup re-application.** Configure `COMMUNITY_ERASURE_JOURNAL`. Snapshot the database and BlobStore, erase P, restore the snapshot, run `erasure:reapply` with the journal: the AC-1 scan passes again, P's restored account is deleted, and `communities.redaction_epoch` has increased. (2.1) A feed cursor saved before the restore answers `410`, and a fresh read returns every redaction.
+
+**AC-13 — Redaction feed (2.1).** Before erasure the feed for a channel is empty; after it, one item per changed entry with its current projection, each strict-schema valid; `404` for a channel the caller cannot read; `410` for another channel's cursor.
+
+**AC-14 — DorkOS installation (2.1).** A DorkOS test server paired to community A mirrors a channel where P posted `canary-text-1` and Q mentioned P, indexes it, and dispatches a local agent on P's message (so the agent's transcript contains the canary). Control: the raw bytes of the SQLite database file and its WAL after a checkpoint, and a message search restricted to rooms, all find the canary. After P's erasure and one feed sync: the raw database file and WAL do not contain any canary (`secure_delete` and FTS `optimize` make this true), room search finds nothing, mirrored entries show the tombstone and Q's `@[erased]`, the external author reads `Erased member`, and no local agent was dispatched by the sync. The agent's transcript still contains the canary, and a search over sessions still finds it there: a named limit, asserted so the copy stays honest. Against a server without the route (`404`), sync logs once and changes nothing.
 
 ### Other tests
 
-- Unit: `rewriteHandleTokens` (end-of-token rule with `.`, `-`, `_`, trailing punctuation, case, handles that are prefixes of other handles such as `zq` vs `zq2`, code blocks, quotes); tombstone payload hash; reauthentication rule (password account, OAuth-only account with fresh and stale sessions).
-- Browser: the three flows render their "cannot reach" sentence, the owner sees the transfer message instead of the button, cancel updates the banner.
-- Migration: old code against the new schema (backout), and the user-presence check under both orders of this migration and the import migration.
+- Unit: `rewriteHandleTokens` (AC-3 cases); the tombstone payload hash; the reauthentication rule (password account; OAuth-only account with fresh and stale sessions).
+- Browser: both flows show the cannot-reach sentence; owners see the transfer message; the account panel lists owned communities; cancel updates the banner; the "Communities you left" list offers erasure.
+- Migration: old code against the new schema, and the user-presence check under both orders of this migration and the import migration.
+- Pairings: a declined pairing records the decliner; an expired, never-consumed pairing is deleted by the sweep.
 
 ### Mocking strategy
 
-None for PostgreSQL or the BlobStore (real ones, as the tenancy suites do). The clock is injected into the worker so the 72-hour window is tested without waiting. Phase 2 uses a real community server from the community test harness and a real DorkOS SQLite database.
+None for PostgreSQL or the BlobStore (real ones, as the tenancy suites do). The clock is injected into the worker and the sweep so the window and retries are tested without waiting. Task 2.1 uses a real community server from the community harness and a real DorkOS SQLite database.
 
 ## Performance Considerations
 
-- Batches of 500 rows per transaction keep lock time on a community short; posting in that community waits at most one batch.
-- The mention step pre-filters with a regular expression on `text` within one community. It is a scan of that community's entries, run once per erasure in the background; the index on `entry_mentions(community_id, mentioned_member_id)` covers the mention rows.
-- The redaction feed reads `entry_redactions` by `(channel_id, id)`; pages are at most 100.
-- Phase 2 re-indexes a whole room after a change. Rooms are bounded by community history; erasures are rare.
+- Candidates are found without locks; each batch of at most 500 rows is locked by id. Every erasure transaction holds the community row only `FOR SHARE`, which posts and reads also take, so a community keeps working while one of its members is erased (AC-11).
+- The mention step pre-filters with `position()` over one community's entries once per erasure, in the background; the seal re-scans only above the per-channel watermark. `entry_mentions(community_id, mentioned_member_id)` is already indexed.
+- The content version is its own row, bumped once per batch, contended only by export commits.
 
 ## Security Considerations
 
-- Erasure is irreversible after the window, so every request reauthenticates, and the account form also asks for the email typed exactly. The window is the defense against a mistake or a stolen session; a stolen password defeats it, as it defeats every account control.
-- Host authority cannot reach any erasure route, the owner lists, or the redaction feed, and no host route reports erasures. Host usage figures change as bytes are removed; that is all the host can see.
-- The owner can erase only former members, so erasure is not a faster way to silence a current member than removal already is.
-- Nothing about who asked is visible to other members. The audit trail says an erasure happened, to a husk id.
-- The redaction feed carries the same content the caller could already read through history, and nothing else.
-- Log lines carry ids only. Error classes are codes, never messages.
+- Erasure is irreversible after the window, so every request reauthenticates, and the account form also asks for the email typed exactly. The window defends against a mistake or a stolen session; a stolen password defeats it, as it defeats every account control.
+- An account erasure signs the person out everywhere and refuses sign-in, invitation, and owner claim while it runs, so nothing new can be written under the account mid-erasure.
+- Host authority has no erasure route, and no host route reports erasures. Host usage figures change as bytes are removed; that is all the host can see.
+- An account that has ever been a host operator cannot be deleted online: `host_audit_events.actor_user_id` is a required reference to the account, and host audit rows must keep naming who acted, so even a revoked operator's account stays. Such a person can still erase each membership. Closing their account is an offline host task (follow-up command).
+- The owner sees completed self-erasures only, never a scheduled one.
+- Log lines and the journal carry ids only. Error classes are codes, never messages.
 - The random husk handle is unguessable, so it cannot be used to find the person again.
+- **Physical residue is part of the limit, and the docs say so.** Deleted rows remain in PostgreSQL dead tuples until vacuum, and in WAL and point-in-time-recovery archives for as long as the host keeps them. The S3 store deletes without a version id (`storage/s3-blob-store.ts`), so on a versioned bucket old versions stay: the self-hosting docs require an unversioned bucket, or a lifecycle rule that expires noncurrent versions, and state that backup and recovery retention is how long erased data can still exist on the host.
 
 ## Documentation
 
-- `docs/guides/communities.mdx`, "Export or leave": add erasing your messages and deleting your account, with the 72-hour window and the plain list of what erasure cannot reach.
-- The self-hosting docs: how erasure works on a host, that host operators cannot erase for a person, how to help someone who cannot sign in (offline password recovery), and `erasure:reapply` after restoring a backup.
-- A changelog fragment in `changelog/unreleased/` for each phase.
-- `specs/community-host-operator-api/02-specification.md`: its Open Question 7 points here; its hold section lists erasure as allowed while held; its import section notes the shared `LEFT JOIN` and check change.
+- `docs/guides/communities.mdx`, "Export or leave": erasing your messages and deleting your account, the 72-hour window, and the cannot-reach sentence.
+- The self-hosting docs: host operators cannot erase for a person; how to help someone who cannot sign in (offline password recovery); keeping the erasure log or journal outside the backup set for as long as backups; `erasure:reapply` after a restore; unversioned buckets or noncurrent-version expiry; backup and recovery retention as part of what erasure cannot reach.
+- A changelog fragment in `changelog/unreleased/` for each task.
+- `specs/community-host-operator-api/02-specification.md`: its Open Question 7 points here; its hold rules list erasure and the owner's deletion request as allowed while held; its import section notes the shared `LEFT JOIN` and user-presence check.
 
 ## Implementation Phases
 
-- **Phase 1 — Community server erasure (host launch blocker).** Migration; procedure, worker, routes, guards, export changes, redaction feed, reapply CLI, browser flows, docs. AC-1 to AC-12.
-- **Phase 2 — DorkOS installations honor redactions.** Feed client, mirror update, search re-index. AC-13. Not a host launch blocker: it reaches copies on members' own machines, which the host does not control. Phase 1 writes `entry_redactions` from its first erasure, so phase 2 catches up on every erasure that happened before it shipped.
+- **Phase 1, task 1.1 — Self-erasure on the Community server (host launch blocker).** Migration; procedures, worker, account routes, guards, pairing cleanup, export changes, owner deletion from `suspended` and `held`, journal and reapply CLI, browser flows, docs. AC-1 to AC-12 except the parts marked (1.2) or (2.1).
+- **Phase 1, task 1.2 — The owner erases a former member.** After the import task (host-operator API task 4.2). Owner routes, re-admission handling, the target's view and export, the `deletion_pending` owner case, owner UI. The (1.2) parts of AC-6 to AC-10.
+- **Phase 2, task 2.1 — The redaction feed and DorkOS installations.** Not a host launch blocker: it reaches copies on members' own machines. Phase 1 writes `entry_redactions` from its first erasure, so this catches up on every earlier erasure. AC-12 (2.1 part), AC-13, AC-14.
 
 ### Backout
 
-- Phase 1: before any erasure has run, revert the code; the migration stays and old code ignores the new tables and columns. After one has run, the supported path is forward-fix: old code's owner export inner-joins `"user"` and would silently drop every husk, leaving entries whose author is missing from the archive. If a revert is unavoidable, cancel every open request first and accept that owner exports are incomplete until the fix ships.
-- Phase 2: revert the code; the mirror column stays and is ignored.
+- Task 1.1: before any erasure has run, revert the code; the migration stays and old code ignores the new tables and columns. After one has run, the supported path is forward-fix: old code's owner export inner-joins `"user"` and would silently drop every husk, leaving entries whose author is missing from the archive. If a revert is unavoidable, cancel every open request first and accept that owner exports are incomplete until the fix ships.
+- Task 1.2 and 2.1: revert the code; their columns stay and are ignored.
 
 ## Open Questions
 
 None open. Resolved while specifying:
 
 - ~~What does a thread show in place of an erased message?~~ (RESOLVED) **Answer:** the row stays with its position and thread links; text `This message was erased.`, author `Erased member` or `Erased agent`, no mentions, no attachments. **Rationale:** keeps threads, cursors, and unread counts working and fits the strict wire unchanged.
-- ~~Per community or the whole account?~~ (RESOLVED) **Answer:** both, from one per-membership procedure; the account form erases every membership on the host, then the account. **Rationale:** accounts are host-wide and authority is per membership (ADR `260920-192429`).
+- ~~Per community or the whole account?~~ (RESOLVED) **Answer:** both, from one per-membership procedure. **Rationale:** accounts are host-wide and authority is per membership (ADR `260920-192429`).
 - ~~Are the person's agents' posts erased?~~ (RESOLVED) **Answer:** yes. **Rationale:** the person owns the agent, and its posts carry their data.
-- ~~Mentions in other people's messages?~~ (RESOLVED) **Answer:** mention rows deleted, `@handle` tokens rewritten to `@[erased]`, free text untouched. **Rationale:** the handle is released and must not come to name someone else; free-text matching would be guesswork.
+- ~~Mentions in other people's messages?~~ (RESOLVED) **Answer:** mention rows deleted; handle tokens the resolver would see rewritten to `@[erased]`; code, quotes, email-shaped strings, and free text untouched. **Rationale:** the handle is released and must not come to name someone else, but rewriting inside code would damage it.
 - ~~Attachments?~~ (RESOLVED) **Answer:** hard delete through the blob inventory.
 - ~~Exports?~~ (RESOLVED) **Answer:** every live export in the community is deleted; an export snapshotted before an erasure cannot commit; downloaded files cannot be recalled, and the UI says so.
 - ~~Audit trail?~~ (RESOLVED) **Answer:** kept, ids and action names only.
-- ~~Immediate or a grace period?~~ (RESOLVED) **Answer:** 72 hours, cancellable, nothing changes until it runs. **Rationale:** a cancel is a full undo; 72 hours is well within "without undue delay".
-- ~~Host hold, import, owner export?~~ (RESOLVED) **Answer:** erasure runs in every lifecycle state; imported historical members are erased by the owner; the owner export keeps husks with `email: null`.
-- ~~Can the owner erase a removed member's content on request?~~ (RESOLVED) **Answer:** yes, for any member who is no longer active, with reauthentication and the same window.
-- ~~How do OAuth-only accounts reauthenticate?~~ (RESOLVED) **Answer:** a session less than 5 minutes old. **Rationale:** they must be able to erase themselves at launch; the general OIDC reauthentication follow-up (host-operator spec Open Question 5) can replace this later.
-- ~~Should the live stream announce erasures?~~ (RESOLVED) **Answer:** no; a separate pull-only feed. **Rationale:** a new event type breaks strict parsers in every older installation, and an epoch bump closes everyone's streams for no gain.
+- ~~Immediate or a grace period?~~ (RESOLVED) **Answer:** 72 hours, cancellable, nothing changes until it runs.
+- ~~Host hold, import, owner export?~~ (RESOLVED) **Answer:** erasure runs in every lifecycle state; the owner export keeps husks with `email: null`; imported members are erased by the owner (task 1.2).
+- ~~Can the owner erase a removed member on request?~~ (RESOLVED) **Answer:** yes, in task 1.2, after import. **Rationale (operator):** phase 1 is what a host needs at launch; the owner path matters most for imported members.
+- ~~Can a suspended or held community's owner delete it?~~ (RESOLVED) **Answer (operator):** yes, the owner may request deletion from `suspended` and `held`; account erasure still requires owning nothing, and the copy explains how.
+- ~~When does the owner learn of a self-erasure?~~ (RESOLVED) **Answer (operator):** only after it completes.
+- ~~How do OAuth-only accounts reauthenticate?~~ (RESOLVED) **Answer:** a session less than 5 minutes old. **Rationale:** they must be able to erase themselves at launch; the general OIDC reauthentication follow-up (host-operator spec Open Question 5) can replace it.
+- ~~How does a host redo erasures after restoring a backup?~~ (RESOLVED) **Answer (operator):** both a retention requirement for the log or journal outside the backup set, and a redaction epoch in feed cursors that `erasure:reapply` bumps.
+- ~~Should the live stream announce erasures?~~ (RESOLVED) **Answer:** no; a separate pull-only feed (task 2.1). **Rationale:** a new event type breaks strict parsers in every older installation, and an epoch bump closes everyone's streams for no gain.
 
 ## Related ADRs
 
-- `260923-134614` — Erasure tombstones a member's history in place and deletes everything else (draft, from this spec)
-- `260923-134616` — Member erasure belongs to the person and the community owner, after a 72-hour cancellable window (draft, from this spec)
+- `260923-134614` — Erasure tombstones a member's history in place and deletes everything else (accepted, from this spec)
+- `260923-134616` — Member erasure belongs to the person and the community owner, after a 72-hour cancellable window (accepted, from this spec)
 - `260920-201101` — Separate community retention from permanent tenant deletion (the same window-and-worker shape, one level down; host authority stays out)
 - `260920-192429` — Scope host accounts through immutable community memberships (account erasure spans every membership)
-- `260923-121712` — Host hold and host-started deletion (draft, host-operator spec; erasure is allowed while held)
-- `260923-121153` — Import restores an owner export with historical members (draft, host-operator spec; shares the nullable `user_id` and the `LEFT JOIN`)
+- `260923-121712` — Host hold and host-started deletion (draft, host-operator spec; erasure and the owner's deletion request are allowed while held)
+- `260923-121153` — Import restores an owner export with historical members (draft, host-operator spec; shares the nullable `user_id` and the `LEFT JOIN`; task 1.2 depends on it)
 
 ## References
 
 - DOR-2247 — this specification
-- DOR-2243 and `specs/community-host-operator-api/02-specification.md` (Open Question 7, migrations 0012 to 0015)
+- DOR-2243 and `specs/community-host-operator-api/02-specification.md` (Open Question 7, migrations 0012 to 0015, task 4.2)
 - `specs/community-tenancy-contract/02-specification.md`, `specs/community-administration-contract/02-specification.md`
-- `apps/community/src/routes/members.ts`, `routes/entries.ts`, `routes/exports.ts`, `routes/events.ts`, `routes/host.ts`, `routes/administration.ts`, `mentions.ts`, `handles.ts`, `auth.ts`, `schema.ts`, `deletion-worker.ts`, `recover-password.ts`, `storage/`
-- `packages/shared/src/community-wire.ts`
+- `apps/community/src/routes/members.ts`, `routes/invites.ts`, `routes/pairings.ts`, `routes/entries.ts`, `routes/exports.ts`, `routes/events.ts`, `routes/host.ts`, `routes/administration.ts`, `routes/attachments.ts`, `mentions.ts`, `handles.ts`, `auth.ts`, `data.ts`, `schema.ts`, `deletion-worker.ts`, `recover-password.ts`, `storage/managed-blobs.ts`, `storage/pending-deletions.ts`, `storage/s3-blob-store.ts`
+- `packages/shared/src/community-wire.ts`, `packages/shared/src/handle.ts`
 - `apps/server/src/services/communities/remote/mirror-store.ts`, `apps/server/src/services/search/registry.ts`, `row-frontier.ts`
+- Better Auth 1.7 verification rows (`reset-password:<token>` identifiers, user id as value)
 - GDPR Art. 17 (right to erasure; "without undue delay"); California Civil Code §1798.105 (CCPA right to delete)
