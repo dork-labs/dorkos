@@ -1,13 +1,13 @@
 # Implementation Summary: Community tenant identity, authorization, and migration contracts
 
 **Created:** 2026-09-20
-**Last Updated:** 2026-09-20
+**Last Updated:** 2026-09-23
 **Spec:** specs/community-tenancy-contract/02-specification.md
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 4 / 12
+**Status:** Complete
+**Tasks Completed:** 12 / 12
 
 ## Tasks Completed
 
@@ -204,3 +204,21 @@ Tasks 2.1 through 2.3 reached VERIFY:
 - Initial canonical member removal or community suspension returns to the chooser, matching the existing polling recovery. The task prose now explicitly separates this host chooser from DOR-2184's local app switcher.
 - Full community build/browser acceptance: 3/3. Added real signed-out host login, initial removed-member reload, suspended-community reload, and a pending-invite OAuth callback recovery. The external OAuth request alone is intercepted; invitation preflight, stored browser state, existing auth session, redemption, and qualified community entry use the real service. The first fixture omitted the required preflight cookie and failed; retained that red evidence, corrected the fixture, and reran successfully.
 - Independent delta review remains required before PR creation.
+
+### Session 10 - 2026-09-23 — isolation and upgrade proof (DOR-2174)
+
+**Workers:** _(none — one implementer; worktree `test-community-tenancy-proof-pack`, branch `test/community-tenancy-proof-pack`)_
+
+- Tasks 4.1 and 4.2 are complete. `05-isolation-receipt.md` maps all 13 adversarial-matrix rows and all 5 task 4.2 acceptance criteria to named tests, and `tenancy-receipt.test.ts` reads the rows from this spec so a new or reworded row fails until it has a live proof.
+- `tenancy-concurrency.integration.test.ts` runs posts, invites, cursors, member removal, a third community's deletion and racing owner claims in parallel across tenants on one host. Each channel's sequence stays gap-free and per channel, nothing crosses, and PostgreSQL records no deadlock.
+- `tenancy-isolation.integration.test.ts` covers the rows no earlier fixture proved alone: API and SQL mentions of another tenant's person or agent, racing cross-tenant pairing approval and invite redemption, reused idempotency keys, removal that closes only one tenant's streams and grants, role and ownership changes that stay in one tenant, and a host operator with no membership (including a suspended tenant).
+- `tenancy-egress.integration.test.ts` blocks every non-local TCP connect and DNS lookup in the process, proves the block works, then runs first install through a second community, pairing, agents, export, recovery and every background sweep with no outbound attempt.
+- `browser-tests/switching.spec.ts` observes, at the host, that switching from A to B ends A's event stream before B receives any request. `canonical-link-isolation.test.ts` adds credential, encoded-path and DNS-change refusal for canonical links.
+- Each new proof was mutation-checked: dropping a tenant filter, sharing a sequence across tenants, leaking a role change across memberships, skipping grant revocation, adding a silent outbound call, un-pinning DNS, accepting URL credentials, and prefetching B before leaving A each turn the matching test red.
+
+### Session 11 - 2026-09-23 — review fixes for #2000
+
+- A proof now counts only if the runner report shows it passed. `apps/community/scripts/tenancy-receipt.ts` reads `vitest-pg-report.json` at the end of `test:pg` and `browser-report.json` at the end of `test:browser`; `test:pg` also runs the cited unit files with a JSON reporter and checks that report. A cited test in `describe.skip`, behind a false condition, or commented out now fails the receipt; files no receipt runner executes (`*.s3.test.ts`, `acceptance/`) are refused.
+- Matrix row M10 gains a held-lock test: a pairing approval passes its pre-transaction membership check, waits on the held pairing row, the member is removed, and the approval then returns 403 with nothing approved. Deleting `requirePairingMember` from the approval turns it red.
+- Racing owner claims and the two simultaneous ownership transfers now wait behind a held row lock until every request is blocked, so their overlap is forced rather than hoped for.
+- The egress guard also refuses `dns.resolve*`, `Resolver` queries (callback and promise), and UDP sends and connects to non-local addresses.
