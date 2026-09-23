@@ -8,19 +8,20 @@
  * integration-level assertion that the dispatcher routes correctly and
  * that the expected scenarios produce the expected outcomes.
  *
- * All filesystem and subprocess interactions are mocked — this suite
- * never touches the real disk or network.
+ * All filesystem and git interactions are faked — this suite never touches
+ * the real disk or network.
  *
  * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { EventEmitter } from 'node:events';
 import type { PluginSource } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { PackageFetcher } from '../package-fetcher.js';
 import { NpmSourceNotSupportedError } from '../source-resolvers/npm.js';
 import type { MarketplaceCache } from '../marketplace-cache.js';
-import type { TemplateDownloader } from '../../core/template-downloader.js';
+import type { GitTreeSource, TreeRequest } from '../lib/git-tree.js';
+
+const SHA = 'a'.repeat(40);
 
 // Module-level mock for fs/promises.access — the relative-path resolver
 // uses it to verify that a subdir exists inside the marketplace clone.
@@ -29,53 +30,6 @@ vi.mock('node:fs/promises', async () => {
   return {
     ...actual,
     access: vi.fn().mockResolvedValue(undefined),
-  };
-});
-
-// Module-level mock for child_process — git-subdir spawns the git binary,
-// and package-fetcher.resolveCommitSha calls execFile('git', ['ls-remote',...]).
-// Both must be mocked so no real network I/O happens during the dispatch tests.
-vi.mock('node:child_process', async () => {
-  const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
-  return {
-    ...actual,
-    spawn: vi.fn().mockImplementation(() => {
-      const child = new EventEmitter() as EventEmitter & {
-        stdout: EventEmitter;
-        stderr: EventEmitter;
-      };
-      child.stdout = new EventEmitter();
-      child.stderr = new EventEmitter();
-      setImmediate(() => {
-        (child as EventEmitter).emit('close', 0);
-      });
-      return child as unknown as ReturnType<typeof import('node:child_process').spawn>;
-    }),
-    // Callback-style mock so `promisify(execFile)` wraps it correctly.
-    // Returns empty stdout — resolveCommitSha then falls back to tmp SHA,
-    // which is exactly the dispatch path these tests intend to exercise.
-    execFile: vi
-      .fn()
-      .mockImplementation(
-        (
-          _cmd: string,
-          _args: readonly string[],
-          optionsOrCallback: unknown,
-          maybeCallback?: unknown
-        ) => {
-          const callback =
-            typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback;
-          if (typeof callback === 'function') {
-            setImmediate(() => {
-              (callback as (err: unknown, out: { stdout: string; stderr: string }) => void)(null, {
-                stdout: '',
-                stderr: '',
-              });
-            });
-          }
-          return undefined as unknown as ReturnType<typeof import('node:child_process').execFile>;
-        }
-      ),
   };
 });
 
@@ -91,17 +45,14 @@ function createFakeLogger(): Logger {
 function createFakeCache(): MarketplaceCache {
   return {
     getPackage: vi.fn().mockResolvedValue(null),
-    putPackage: vi.fn().mockImplementation(async (name: string, sha: string) => {
-      return `/tmp/cache/${name}/${sha}`;
-    }),
-    // Invoke the clone callback against a temp dir (so cloneRepository / spawn
-    // are observed by the dispatch assertions) and return the final cache path.
+    // Run the fetch against a temp dir (so the dispatch assertions observe
+    // it) and key the entry by the commit it reports, like the real cache.
     materializePackage: vi
       .fn()
       .mockImplementation(
-        async (name: string, sha: string, clone: (tempDir: string) => Promise<void>) => {
-          await clone(`/tmp/cache/.tmp-clone-${name}-${sha}`);
-          return `/tmp/cache/${name}/${sha}`;
+        async (name: string, sha: string, fetch: (tempDir: string) => Promise<string>) => {
+          const commitSha = await fetch(`/tmp/cache/.tmp-fetch-${name}-${sha}`);
+          return { path: `/tmp/cache/${name}@${commitSha}`, commitSha };
         }
       ),
     readMarketplace: vi.fn().mockResolvedValue(null),
@@ -109,23 +60,27 @@ function createFakeCache(): MarketplaceCache {
   } as unknown as MarketplaceCache;
 }
 
-function createFakeDownloader(): TemplateDownloader {
+function createFakeGit(): GitTreeSource & {
+  lookup: ReturnType<typeof vi.fn>;
+  fetch: ReturnType<typeof vi.fn>;
+} {
   return {
-    cloneRepository: vi.fn().mockResolvedValue(undefined),
-  } as unknown as TemplateDownloader;
+    lookup: vi.fn().mockResolvedValue({ kind: 'found', commitSha: SHA, refName: 'HEAD' }),
+    fetch: vi.fn(async (req: TreeRequest) => req.commitSha),
+  };
 }
 
 describe('install source matrix — fetchPackage dispatch', () => {
   let cache: MarketplaceCache;
-  let downloader: TemplateDownloader;
+  let git: ReturnType<typeof createFakeGit>;
   let logger: Logger;
   let fetcher: PackageFetcher;
 
   beforeEach(() => {
     cache = createFakeCache();
-    downloader = createFakeDownloader();
+    git = createFakeGit();
     logger = createFakeLogger();
-    fetcher = new PackageFetcher(cache, downloader, logger);
+    fetcher = new PackageFetcher(cache, git, logger);
   });
 
   it('relative-path source returns sentinel commit SHA with fromCache=true', async () => {
@@ -139,7 +94,8 @@ describe('install source matrix — fetchPackage dispatch', () => {
     expect(result.commitSha).toBe('relative-path');
     expect(result.fromCache).toBe(true);
     expect(result.path).toBe('/tmp/mp/code-reviewer');
-    expect(downloader.cloneRepository).not.toHaveBeenCalled();
+    expect(git.lookup).not.toHaveBeenCalled();
+    expect(git.fetch).not.toHaveBeenCalled();
   });
 
   it('relative-path source with explicit ./ bypasses pluginRoot', async () => {
@@ -154,49 +110,51 @@ describe('install source matrix — fetchPackage dispatch', () => {
     expect(result.path).toBe('/tmp/mp/code-reviewer');
   });
 
-  it('github source dispatches to the github resolver with canonical clone URL', async () => {
+  it('github source fetches the canonical clone URL at the default branch', async () => {
     const source: PluginSource = { source: 'github', repo: 'foo/bar' };
     const result = await fetcher.fetchPackage({
       packageName: 'bar',
       source,
     });
 
-    expect(downloader.cloneRepository).toHaveBeenCalledTimes(1);
-    const call = vi.mocked(downloader.cloneRepository).mock.calls[0];
-    expect(call?.[0]).toBe('https://github.com/foo/bar.git');
-    expect(result.fromCache).toBe(false);
+    expect(git.lookup).toHaveBeenCalledWith('https://github.com/foo/bar.git', 'HEAD');
+    expect(git.fetch).toHaveBeenCalledTimes(1);
+    expect(git.fetch.mock.calls[0]?.[0]).toMatchObject({
+      cloneUrl: 'https://github.com/foo/bar.git',
+      commitSha: SHA,
+      subpath: '',
+    });
+    expect(result).toEqual({ path: `/tmp/cache/bar@${SHA}`, commitSha: SHA, fromCache: false });
   });
 
-  it('url source passes the URL through unchanged', async () => {
+  it('url source passes the URL and its ref through unchanged', async () => {
     const source: PluginSource = {
       source: 'url',
       url: 'https://gitlab.com/foo/bar.git',
+      ref: 'release',
     };
     await fetcher.fetchPackage({ packageName: 'bar', source });
 
-    const call = vi.mocked(downloader.cloneRepository).mock.calls[0];
-    expect(call?.[0]).toBe('https://gitlab.com/foo/bar.git');
+    expect(git.lookup).toHaveBeenCalledWith('https://gitlab.com/foo/bar.git', 'release');
+    expect(git.fetch.mock.calls[0]?.[0]).toMatchObject({
+      cloneUrl: 'https://gitlab.com/foo/bar.git',
+    });
   });
 
-  it('git-subdir source dispatches to the git-subdir resolver (spawn called)', async () => {
+  it('git-subdir source fetches sparse and returns the package directory', async () => {
     const source: PluginSource = {
       source: 'git-subdir',
       url: 'https://github.com/foo/monorepo.git',
       path: 'plugins/qa',
     };
 
-    // The git-subdir resolver may throw downstream because its internal
-    // filesystem assertions fail against our mocks — we only care that the
-    // dispatcher routed to it. Capture the result or error and verify spawn
-    // was called.
-    const { spawn } = await import('node:child_process');
-    try {
-      await fetcher.fetchPackage({ packageName: 'qa', source });
-    } catch {
-      // Swallow — we're only asserting the dispatch path.
-    }
+    const result = await fetcher.fetchPackage({ packageName: 'qa', source });
 
-    expect(vi.mocked(spawn)).toHaveBeenCalled();
+    expect(git.fetch.mock.calls[0]?.[0]).toMatchObject({
+      cloneUrl: 'https://github.com/foo/monorepo.git',
+      subpath: 'plugins/qa',
+    });
+    expect(result.path).toBe(`/tmp/cache/qa@${SHA}/plugins/qa`);
   });
 
   it('npm source throws NpmSourceNotSupportedError without touching cache', async () => {
@@ -210,9 +168,9 @@ describe('install source matrix — fetchPackage dispatch', () => {
       NpmSourceNotSupportedError
     );
 
-    // The npm stub must not touch cache or downloader.
-    expect(cache.putPackage).not.toHaveBeenCalled();
-    expect(downloader.cloneRepository).not.toHaveBeenCalled();
+    // The npm stub must not touch cache or git.
+    expect(cache.materializePackage).not.toHaveBeenCalled();
+    expect(git.fetch).not.toHaveBeenCalled();
   });
 
   it('NpmSourceNotSupportedError carries structured package metadata', async () => {

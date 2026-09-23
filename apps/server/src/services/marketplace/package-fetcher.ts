@@ -1,26 +1,25 @@
 /**
- * Package fetcher — thin wrapper that resolves marketplace package git URLs
- * to a cached on-disk path via the content-addressable `MarketplaceCache`
- * and an injected `TemplateDownloader`.
+ * Package fetcher — resolves marketplace package sources to a cached on-disk
+ * tree via the content-addressable `MarketplaceCache` and an injected
+ * {@link GitTreeSource}.
  *
  * Two surfaces:
  *
- * 1. {@link PackageFetcher.fetchFromGit} — resolves a commit SHA with
- *    `git ls-remote`, consults the cache, and delegates a cache miss to
- *    the template downloader's `cloneRepository` primitive.
+ * 1. {@link PackageFetcher.fetchPackage} (and the legacy
+ *    {@link PackageFetcher.fetchFromGit}) — every git source form goes through
+ *    one path: look the ref up, serve a cached tree for that commit, or fetch
+ *    exactly that commit and cache it under the commit the checkout verifiably
+ *    holds (DOR-2248). A ref that does not exist or a remote that cannot be
+ *    reached fails with a plain error, and nothing is fetched.
  * 2. {@link PackageFetcher.fetchMarketplaceJson} — performs a plain HTTPS
  *    GET of the remote `marketplace.json`, parses it via
  *    `@dorkos/marketplace`, writes it to the cache on success, and serves
  *    the previously cached copy on network failure.
  *
- * This module is intentionally side-effect light — all disk I/O is
- * delegated to {@link MarketplaceCache} and all git I/O to the injected
- * downloader. The only system call made directly here is `git ls-remote`
- * via `execFile`. A FAILED `ls-remote` (no git, no network, unparseable
- * output) is caught and degraded to a deterministic placeholder SHA so the
- * cache miss path still executes; a REFUSED address is not — an address this
- * module will not hand to `git` throws `UnsupportedSourceUrlError` and stops
- * the fetch (DOR-1799).
+ * This module is intentionally side-effect light — disk I/O is delegated to
+ * {@link MarketplaceCache} and all git I/O to the injected source. An address
+ * this module will not hand to `git` throws `UnsupportedSourceUrlError` before
+ * any git process starts (DOR-1799).
  *
  * A `file://` address never reaches `git`, so it answers the other question
  * instead: the directory boundary, which is what `PackageResolver` already
@@ -29,10 +28,8 @@
  *
  * @module services/marketplace/package-fetcher
  */
-import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import type { Logger } from '@dorkos/shared/logger';
 import {
@@ -44,23 +41,21 @@ import {
   type MarketplaceJson,
   type PluginSource,
   type ResolvedSourceDescriptor,
+  type SourceKey,
 } from '@dorkos/marketplace';
 import type { MarketplaceCache } from './marketplace-cache.js';
-import type { TemplateDownloader } from '../core/template-downloader.js';
 import type { MarketplaceSource } from './types.js';
 import { relativePathResolver } from './source-resolvers/relative-path.js';
-import { githubResolver } from './source-resolvers/github.js';
-import { urlResolver } from './source-resolvers/url.js';
-import { gitSubdirResolver } from './source-resolvers/git-subdir.js';
-import { hardenedGitEnv } from '../../lib/git-safety.js';
+import { gitResolver } from './source-resolvers/git.js';
 import { npmResolver } from './source-resolvers/npm.js';
 import { assertSafeGitRemote } from './source-url-policy.js';
 import { validateBoundary } from '../../lib/boundary.js';
-
-const execFileAsync = promisify(execFile);
-
-/** Max time to wait for `git ls-remote` before falling back to a tmp SHA. */
-const LS_REMOTE_TIMEOUT_MS = 15_000;
+import {
+  GitRefNotFoundError,
+  GitRemoteUnreachableError,
+  isFullCommitSha,
+  type GitTreeSource,
+} from './lib/git-tree.js';
 
 /**
  * Options for {@link PackageFetcher.fetchPackage} (and the legacy
@@ -95,9 +90,9 @@ export interface FetchPackageOptions {
    * @deprecated Use `source` instead.
    */
   gitUrl?: string;
-  /** Optional ref/branch (defaults to the remote's default branch). */
+  /** Legacy `fetchFromGit` only: the ref to fetch (default `HEAD`, the remote's default branch). */
   ref?: string;
-  /** Force refetch even if the resolved SHA is already cached. */
+  /** Skip the cache lookup; a tree already cached for the commit is still reused. */
   force?: boolean;
 }
 
@@ -105,10 +100,28 @@ export interface FetchPackageOptions {
 export interface FetchedPackage {
   /** Filesystem path of the cached package. */
   path: string;
-  /** Commit SHA the cache is keyed by. */
+  /**
+   * The commit the tree is: a full commit id for a git source, read from the
+   * checkout. `local` for a `file://` address and `relative-path` for a path
+   * inside a local marketplace, which `isRealCommitSha` rejects.
+   */
   commitSha: string;
   /** Whether the result came from the cache (no clone performed). */
   fromCache: boolean;
+}
+
+/** One git tree to fetch, as the source resolvers describe it. */
+export interface GitTreeFetch {
+  /** Package name (the cache key's first half). */
+  packageName: string;
+  /** The URL git is given. */
+  cloneUrl: string;
+  /** `HEAD`, a branch or tag, a `refs/…` name, or a full commit id. */
+  ref: string;
+  /** The package's directory in the repository; `''` for the whole tree. */
+  subpath: string;
+  /** Skip the cache lookup. */
+  force?: boolean;
 }
 
 /**
@@ -119,65 +132,44 @@ export interface FetchedPackage {
  * (each one accepts a mock `FetcherDeps` and asserts on the spies).
  */
 export interface FetcherDeps {
-  /** Content-addressable cache for cloned packages. */
-  cache: MarketplaceCache;
-  /** Logger for cache hits, fallbacks, and warnings. */
-  logger: Logger;
   /**
-   * Clone a git repository at a specific ref into the content-addressable
-   * cache and return the resolved {@link FetchedPackage} descriptor.
+   * Fetch one git tree through the cache: the entry's path (the repository
+   * root, sparse to `subpath` when one is given) and its verified commit. A
+   * whole-repo `file://` address is served in place instead, with the commit
+   * `local`. Throws `UnsupportedSourceUrlError` for an address the fetcher
+   * will not hand to `git` (DOR-1799).
    */
-  cloneRepository(opts: {
-    cloneUrl: string;
-    ref: string;
-    packageName: string;
-    force?: boolean;
-  }): Promise<FetchedPackage>;
-  /**
-   * Resolve a commit SHA for the given clone URL + ref via `git ls-remote`.
-   * Throws `UnsupportedSourceUrlError` for an address the fetcher will not hand
-   * to `git`, rather than returning a placeholder SHA (DOR-1799).
-   */
-  resolveCommitSha(cloneUrl: string, ref: string): Promise<string>;
+  fetchGitTree(opts: GitTreeFetch): Promise<FetchedPackage>;
 }
 
 /**
  * Fetch marketplace packages and marketplace.json documents, caching
  * everything on disk via {@link MarketplaceCache}. Pure coordination —
- * delegates git clones to the injected {@link TemplateDownloader} and
- * HTTP fetches to the global `fetch` so both are trivially mockable.
+ * delegates git to the injected {@link GitTreeSource} and HTTP fetches to the
+ * global `fetch` so both are trivially mockable.
  */
 export class PackageFetcher {
   /**
-   * Construct a fetcher bound to a specific cache, downloader, and logger.
+   * Construct a fetcher bound to a specific cache, git source, and logger.
    *
    * @param cache - Content-addressable cache for packages and marketplace.json.
-   * @param templateDownloader - Abstraction over `git clone` — allows tests
-   *   to replace the network boundary without touching disk.
+   * @param git - Ref lookup and verified tree fetch (`gitTreeSource` in
+   *   production) — lets tests replace the network in one place.
    * @param logger - Logger for cache hits, stale fallbacks, and warnings.
    */
   constructor(
     private readonly cache: MarketplaceCache,
-    private readonly templateDownloader: TemplateDownloader,
+    private readonly git: GitTreeSource,
     private readonly logger: Logger
   ) {}
 
   /**
-   * Fetch a package from a git URL. Caches by commit SHA so repeated fetches
-   * for the same SHA are no-ops.
+   * Fetch a package from a bare git URL (the legacy, pre-`source` install
+   * input) at `opts.ref`, default `HEAD`.
    *
-   * Algorithm:
-   *   1. Serve a `file://` gitUrl from disk once the directory boundary allows
-   *      it, and return (DOR-1825).
-   *   2. Refuse an address this fetcher will not hand to `git` (DOR-1799).
-   *   3. Resolve commit SHA from gitUrl + ref via `git ls-remote` (with a
-   *      deterministic fallback when git/network is unavailable).
-   *   4. Consult `cache.getPackage(packageName, sha)`; return on hit unless
-   *      `opts.force` is set.
-   *   5. Clone into a temp dir and let `cache.materializePackage()` rename it
-   *      onto the final path, so concurrent fetches of one SHA cannot collide.
-   *   6. Delegate the actual clone to `templateDownloader.cloneRepository`.
-   *   7. Return the cached path, SHA, and `fromCache: false`.
+   * A `file://` address is served in place once the directory boundary allows
+   * it (DOR-1825), with the commit `local`. Anything else goes through
+   * {@link fetchGitTree}, the path every git source form shares.
    *
    * @param opts - Package identity and fetch options.
    * @throws {UnsupportedSourceUrlError} When `opts.gitUrl` is a remote address
@@ -185,6 +177,8 @@ export class PackageFetcher {
    *   subprocess starts.
    * @throws {BoundaryError} When `opts.gitUrl` is a `file://` address outside
    *   the configured directory boundary (DOR-1825).
+   * @throws {GitRefNotFoundError | GitRemoteUnreachableError | GitFetchError}
+   *   When the ref cannot be resolved or its tree cannot be fetched.
    */
   async fetchFromGit(opts: FetchPackageOptions): Promise<FetchedPackage> {
     const gitUrl = opts.gitUrl;
@@ -193,52 +187,142 @@ export class PackageFetcher {
         `[package-fetcher] fetchFromGit called without gitUrl for package '${opts.packageName}' — use fetchPackage with a discriminated source instead`
       );
     }
+    return this.fetchGitSource({
+      packageName: opts.packageName,
+      cloneUrl: gitUrl,
+      ref: opts.ref ?? 'HEAD',
+      subpath: '',
+      force: opts.force,
+    });
+  }
 
-    if (isFileUrl(gitUrl)) {
-      const localPath = fileUrlToPath(gitUrl);
-      await this.assertLocalPathAllowed(localPath, gitUrl);
+  /**
+   * Fetch a package's tree at one exact commit, whatever ref its source
+   * names: the commit an install recorded, even after the branch it came from
+   * has moved on (DOR-2248). Every git source form is covered, because a
+   * {@link SourceKey} is what all three reduce to.
+   *
+   * The entry is cached as `<name>@<commitSha>` and holds exactly that
+   * commit's tree (the checkout's `HEAD` is verified against it). A server
+   * that will not serve a commit by id is asked for its branches and tags
+   * instead; a commit reachable from none of them fails with
+   * `GitCommitNotFoundError`, never with some other commit.
+   *
+   * @param opts.packageName - The package (the cache key's first half).
+   * @param opts.sourceKey - Where it was fetched from: `install-metadata.json`'s
+   *   `sourceKey`. Its `ref` is ignored; the commit is the ref.
+   * @param opts.commitSha - The full commit id to fetch.
+   * @returns The package's directory in the entry (below `sourceKey.subpath`)
+   *   and the commit, which always equals `opts.commitSha`.
+   * @throws {Error} When `opts.commitSha` is not a full commit id.
+   * @throws {UnsupportedSourceUrlError} When the address is one this fetcher
+   *   will not hand to `git`.
+   * @throws {GitCommitNotFoundError | GitFetchError} When the commit cannot be
+   *   fetched.
+   */
+  async fetchAtCommit(opts: {
+    packageName: string;
+    sourceKey: SourceKey;
+    commitSha: string;
+  }): Promise<FetchedPackage> {
+    const { packageName, sourceKey, commitSha } = opts;
+    if (!isFullCommitSha(commitSha)) {
+      throw new Error(`Can't fetch ${packageName} at "${commitSha}": that is not a full commit id`);
+    }
+    const fetched = await this.fetchGitTree({
+      packageName,
+      cloneUrl: sourceKey.cloneUrl,
+      ref: commitSha,
+      subpath: sourceKey.subpath,
+    });
+    return sourceKey.subpath === ''
+      ? fetched
+      : { ...fetched, path: path.join(fetched.path, sourceKey.subpath) };
+  }
+
+  /**
+   * Route a git-shaped address: a whole-repo `file://` address is a folder on
+   * this machine, served in place once the directory boundary allows it
+   * (DOR-1825), with the commit `local`; everything else is
+   * {@link fetchGitTree}. A `file://` address with a subpath is not a shape
+   * any source produces, and `fetchGitTree` refuses it with the rest of the
+   * unsupported transports.
+   *
+   * @internal
+   */
+  private async fetchGitSource(opts: GitTreeFetch): Promise<FetchedPackage> {
+    if (isFileUrl(opts.cloneUrl) && opts.subpath === '') {
+      const localPath = fileUrlToPath(opts.cloneUrl);
+      await this.assertLocalPathAllowed(localPath, opts.cloneUrl);
       this.logger.debug('package-fetcher: serving local file:// package', {
         packageName: opts.packageName,
         path: localPath,
       });
       return { path: localPath, commitSha: 'local', fromCache: true };
     }
+    return this.fetchGitTree(opts);
+  }
 
-    // Below this line the address becomes argv for `git clone`. It arrives
-    // checked when a package author wrote it (the `marketplace.json` schema)
-    // and unchecked when an operator typed `name@<url>` — the resolver builds
-    // that source descriptor by hand and no schema sees it (DOR-1799). Asked
-    // here, after the `file://` branch, so both provenances answer the same
-    // question at the same door.
-    this.assertRemoteAllowed(gitUrl);
+  /**
+   * The one path every git tree takes (DOR-2248):
+   *
+   *   1. Refuse an address this fetcher will not hand to `git` (DOR-1799).
+   *      The address arrives checked when a package author wrote it (the
+   *      `marketplace.json` schema) and unchecked when an operator typed
+   *      `name@<url>` — so both provenances answer the same question here.
+   *   2. Resolve the ref to an exact commit. A ref the remote does not have,
+   *      or a remote that cannot be asked, fails now, before any fetch.
+   *   3. Serve a tree already cached for that commit, unless `force`.
+   *   4. Otherwise fetch it into the cache, which keys the entry by the
+   *      commit the fetch REPORTS — the checkout's `HEAD`, not the lookup.
+   *
+   * @internal
+   */
+  private async fetchGitTree(opts: GitTreeFetch): Promise<FetchedPackage> {
+    const { packageName, cloneUrl, ref, subpath } = opts;
+    this.assertRemoteAllowed(cloneUrl);
 
-    const commitSha = await this.resolveCommitSha(gitUrl, opts.ref);
+    const found = await this.git.lookup(cloneUrl, ref);
+    if (found.kind === 'missing') throw new GitRefNotFoundError(ref, cloneUrl);
+    if (found.kind === 'unreachable') throw new GitRemoteUnreachableError(cloneUrl, found.reason);
 
     if (!opts.force) {
-      const cached = await this.cache.getPackage(opts.packageName, commitSha);
+      const cached = await this.cache.getPackage(packageName, found.commitSha);
       if (cached) {
         this.logger.debug('package-fetcher: cache hit', {
-          packageName: opts.packageName,
-          commitSha,
+          packageName,
+          commitSha: found.commitSha,
         });
-        return { path: cached.path, commitSha, fromCache: true };
+        return { path: cached.path, commitSha: found.commitSha, fromCache: true };
       }
     }
 
-    // Materialize concurrency-safely: clone into a unique temp dir and let the
-    // cache atomically rename it onto the final path. Two concurrent fetches of
-    // the same SHA never both clone into the same directory; the first clones,
-    // the rest await and reuse its result. The clone callback's error (git
-    // stderr + exit code) propagates verbatim so a real clone failure is not
-    // masked by a later "manifest missing" validation error.
-    const destDir = await this.cache.materializePackage(opts.packageName, commitSha, (tempDir) =>
-      this.templateDownloader.cloneRepository(gitUrl, tempDir, opts.ref)
+    const { path: destDir, commitSha } = await this.cache.materializePackage(
+      packageName,
+      found.commitSha,
+      (tempDir) =>
+        this.git.fetch({
+          cloneUrl,
+          commitSha: found.commitSha,
+          refName: found.refName,
+          subpath,
+          destDir: tempDir,
+        })
     );
-    this.logger.debug('package-fetcher: cloned package', {
-      packageName: opts.packageName,
-      commitSha,
-      destDir,
-    });
+    if (commitSha !== found.commitSha) {
+      // Only on a server that would not serve the looked-up commit by id: the
+      // ref moved in between, and the entry holds the commit that arrived.
+      this.logger.info(
+        'package-fetcher: ref moved while fetching; cached the commit that arrived',
+        {
+          packageName,
+          ref,
+          lookedUp: found.commitSha,
+          fetched: commitSha,
+        }
+      );
+    }
+    this.logger.debug('package-fetcher: fetched package', { packageName, commitSha, destDir });
     return { path: destDir, commitSha, fromCache: false };
   }
 
@@ -274,11 +358,9 @@ export class PackageFetcher {
       case 'relative-path':
         return relativePathResolver(resolved, opts);
       case 'github':
-        return githubResolver(resolved, opts, deps);
       case 'url':
-        return urlResolver(resolved, opts, deps);
       case 'git-subdir':
-        return gitSubdirResolver(resolved, opts, deps);
+        return gitResolver(resolved, opts, deps);
       case 'npm':
         return npmResolver(resolved, opts);
     }
@@ -290,16 +372,7 @@ export class PackageFetcher {
    * resolver testable in isolation with a fake deps object.
    */
   private buildFetcherDeps(): FetcherDeps {
-    return {
-      cache: this.cache,
-      logger: this.logger,
-      cloneRepository: async ({ cloneUrl, ref, packageName, force }) => {
-        // Keep the legacy fetchFromGit cache-key + clone flow so the two
-        // surfaces share the same on-disk layout.
-        return this.fetchFromGit({ packageName, gitUrl: cloneUrl, ref, force });
-      },
-      resolveCommitSha: (cloneUrl, ref) => this.resolveCommitSha(cloneUrl, ref),
-    };
+    return { fetchGitTree: (opts) => this.fetchGitSource(opts) };
   }
 
   /**
@@ -571,13 +644,17 @@ export class PackageFetcher {
 
   /**
    * Look up the commit `ref` points at in `cloneUrl`, for comparison against an
-   * installed commit. Same rules as the fetch path: a refused address throws
-   * `UnsupportedSourceUrlError`; a failed lookup returns a `tmp-<ms>` placeholder
-   * (test with `isRealCommitSha`), never a real-looking SHA.
+   * installed commit. It resolves a ref exactly as a fetch does (the same
+   * {@link GitTreeSource.lookup}), so the update check and an install can never
+   * disagree about which commit a ref names. A refused address throws
+   * `UnsupportedSourceUrlError`; a ref the remote does not have, or a remote
+   * that cannot be reached, returns a `tmp-<ms>` placeholder (test with
+   * `isRealCommitSha`), never a real-looking SHA. This is the only placeholder
+   * the fetcher still produces, and it never reaches the cache.
    *
-   * The ref is required so no caller reaches the private `'HEAD'` default by
-   * accident: an install fetches at `sourceKeyOf(...).ref`, and a lookup at any
-   * other ref would compare two different places.
+   * The ref is required so no caller reaches a default by accident: an install
+   * fetches at `sourceKeyOf(...).ref`, and a lookup at any other ref would
+   * compare two different places.
    *
    * @param cloneUrl - The URL git is given (`SourceKey.cloneUrl`).
    * @param ref - The effective ref (`SourceKey.ref`).
@@ -586,62 +663,17 @@ export class PackageFetcher {
    *   fetcher will not hand to `git`.
    */
   async lookupCommitSha(cloneUrl: string, ref: string): Promise<string> {
-    return this.resolveCommitSha(cloneUrl, ref);
-  }
-
-  /**
-   * Resolve a commit SHA for `${gitUrl}#${ref}` via `git ls-remote`.
-   *
-   * Falls back to a deterministic `tmp-${Date.now()}` placeholder when the
-   * LOOKUP fails (missing git binary, no network, malformed output). The actual
-   * clone downstream may still fail — that's fine, the cache miss path executes
-   * regardless of this return value.
-   *
-   * It does NOT swallow everything: an address this fetcher will not hand to
-   * `git` is refused before the lookup is attempted and the refusal propagates,
-   * so callers cannot treat this method as total (DOR-1799).
-   *
-   * @throws {UnsupportedSourceUrlError} When `gitUrl` is a remote address
-   *   {@link assertSafeGitRemote} refuses.
-   */
-  private async resolveCommitSha(gitUrl: string, ref?: string): Promise<string> {
-    // Its own door, not a duplicate of `fetchFromGit`'s: `gitSubdirResolver`
-    // reaches this method through `FetcherDeps.resolveCommitSha` without going
-    // anywhere near `fetchFromGit`. Deliberately OUTSIDE the try below — that
-    // catch turns a git failure into a placeholder SHA and carries on, which is
-    // right for "no network" and wrong for "we will not run this".
-    this.assertRemoteAllowed(gitUrl);
-
-    const target = ref ?? 'HEAD';
-    try {
-      // `--end-of-options` so a package author's URL or ref starting with `-`
-      // is read as a value, never as a flag. The argv array already rules out
-      // a shell, and `hardenedGitEnv` the dangerous transports; this is the
-      // cheap fourth layer. Supported since git 2.24.
-      const { stdout } = await execFileAsync(
-        'git',
-        ['ls-remote', '--end-of-options', gitUrl, target],
-        {
-          timeout: LS_REMOTE_TIMEOUT_MS,
-          // Confine git to safe transports (blocks `ext::`/`file::` command execution).
-          env: hardenedGitEnv(),
-        }
-      );
-      const firstLine = stdout.split('\n').find((line) => line.trim().length > 0);
-      if (firstLine) {
-        const sha = firstLine.split('\t')[0]?.trim();
-        if (sha && /^[0-9a-f]{7,40}$/i.test(sha)) {
-          return sha;
-        }
-      }
-      this.logger.warn('package-fetcher: git ls-remote returned no usable SHA', { gitUrl, target });
-    } catch (err) {
-      this.logger.warn('package-fetcher: git ls-remote failed, using tmp SHA', {
-        gitUrl,
-        target,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    // Deliberately outside any catch: a failure to look up becomes a
+    // placeholder, which is right for "no network" and wrong for "we will not
+    // run this" (DOR-1799).
+    this.assertRemoteAllowed(cloneUrl);
+    const found = await this.git.lookup(cloneUrl, ref);
+    if (found.kind === 'found') return found.commitSha;
+    this.logger.warn('package-fetcher: commit lookup failed, using tmp SHA', {
+      gitUrl: cloneUrl,
+      ref,
+      ...(found.kind === 'unreachable' ? { error: found.reason } : { missing: true }),
+    });
     return `tmp-${Date.now()}`;
   }
 }

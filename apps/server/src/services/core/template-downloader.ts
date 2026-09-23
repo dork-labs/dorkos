@@ -5,18 +5,16 @@
  * falls back to giget (tarball download) with a 30-second timeout.
  * Parses clone progress from git stderr for real-time feedback.
  *
- * Two surfaces live here, and only one of them takes a person's address:
+ * {@link downloadTemplate} is the workspace-template flow behind
+ * `POST /api/agents/create`. Its `source` is free-form, so it asks
+ * {@link isSupportedTemplateSource} before either strategy runs (DOR-1825).
+ * The marketplace fetches packages itself (`services/marketplace/lib/git-tree.ts`)
+ * and confines its addresses with `services/marketplace/source-url-policy.ts`,
+ * whose accepted set is deliberately different (it fetches from `ssh://`; this
+ * file cannot), so the two doors stay two doors rather than one shared
+ * predicate applied twice.
  *
- * - {@link downloadTemplate} — the workspace-template flow behind
- *   `POST /api/agents/create`. Its `source` is free-form, so it asks
- *   {@link isSupportedTemplateSource} before either strategy runs (DOR-1825).
- * - {@link cloneRepository} — the primitive the marketplace install pipeline
- *   injects. Its addresses are confined upstream by
- *   `services/marketplace/source-url-policy.ts`, whose accepted set is
- *   deliberately different (it clones from `ssh://`; this file cannot), so the
- *   two doors stay two doors rather than one shared predicate applied twice.
- *
- * Both surfaces share one credential rule, and it is not about addresses but
+ * Both share one credential rule, and it is not about addresses but
  * about what travels to them: the operator's GitHub token goes to GitHub and
  * nowhere else (DOR-1833). There are exactly two places anything is ever
  * attached, and each guards itself, because each can be reached without the
@@ -616,47 +614,3 @@ export async function downloadTemplate(
     );
   }
 }
-
-/**
- * Generic git-clone primitive for callers that need to clone an arbitrary
- * repository into a specific directory without the template-shaped pre/post
- * processing of {@link downloadTemplate}. Used by the marketplace install
- * pipeline to fetch packages into the content-addressable cache.
- *
- * Marketplace `url` sources are deliberately open — Azure DevOps, a self-hosted
- * Gitea, anything a package author names — so the token resolved here reaches
- * the clone only if {@link execGitClone} finds a GitHub host to give it to.
- *
- * @param gitUrl - Fully-qualified git URL (no shorthand resolution)
- * @param destDir - Local directory to clone into (must not exist)
- * @param _ref - Optional ref/branch (currently unused — depth-1 single-branch clone always pulls the default branch)
- */
-export async function cloneRepository(
-  gitUrl: string,
-  destDir: string,
-  _ref?: string
-): Promise<void> {
-  const auth = resolveGitAuth();
-  await execGitClone(gitUrl, destDir, auth);
-}
-
-/**
- * Dependency-injection surface for callers (e.g. the marketplace install
- * pipeline) that want to swap out the real git clone with a test double.
- * Mirrors only the `cloneRepository` primitive — `downloadTemplate` is not
- * part of this interface because the marketplace pipeline never invokes the
- * shorthand-template flow.
- */
-export interface TemplateDownloader {
-  cloneRepository(gitUrl: string, destDir: string, ref?: string): Promise<void>;
-}
-
-/**
- * Default `TemplateDownloader` binding backed by the real `cloneRepository`
- * function. Production callers (e.g. `apps/server/src/index.ts`) should pass
- * this when constructing the marketplace `PackageFetcher`; tests should pass
- * a `vi.fn()` stub instead.
- */
-export const defaultTemplateDownloader: TemplateDownloader = {
-  cloneRepository,
-};

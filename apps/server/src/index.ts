@@ -221,7 +221,7 @@ import { warnRedundantEnabledEntries } from './services/core-extensions/warn-red
 import type { CoreExtensionInfo } from './services/extensions/extension-enable-resolution.js';
 import { createExtensionsRouter } from './routes/extensions.js';
 import { createAgentWorkspace } from './services/core/agent-creator.js';
-import { defaultTemplateDownloader } from './services/core/template-downloader.js';
+import { gitTreeSource } from './services/marketplace/lib/git-tree.js';
 import { MarketplaceSourceManager } from './services/marketplace/marketplace-source-manager.js';
 import { MarketplaceCache } from './services/marketplace/marketplace-cache.js';
 import { PackageResolver } from './services/marketplace/package-resolver.js';
@@ -3952,11 +3952,14 @@ async function start() {
   if (extensionManager && adapterManager) {
     const marketplaceSourceManager = new MarketplaceSourceManager(dorkHome);
     const marketplaceCache = new MarketplaceCache(dorkHome);
-    const marketplaceFetcher = new PackageFetcher(
-      marketplaceCache,
-      defaultTemplateDownloader,
-      logger
-    );
+    // Package trees cached before their keys were verified (DOR-2248) are
+    // never read again; reclaim their disk in the background.
+    marketplaceCache.removeLegacyPackages().catch((err: unknown) => {
+      logger.warn('[Marketplace] could not remove the pre-verification package cache', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+    const marketplaceFetcher = new PackageFetcher(marketplaceCache, gitTreeSource, logger);
     const marketplaceResolver = new PackageResolver(marketplaceSourceManager, marketplaceCache);
     const marketplaceConflictDetector = new ConflictDetector(dorkHome, adapterManager);
     const marketplacePreviewBuilder = new PermissionPreviewBuilder(

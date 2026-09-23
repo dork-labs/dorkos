@@ -540,6 +540,17 @@ describe('Marketplace Routes', () => {
     });
   });
 
+  /**
+   * Put a verified tree for `name` at `commit` into the cache through its one
+   * write path, holding `file` with `content`.
+   */
+  async function seedTree(name: string, commit: string, file = 'f', content = 'x'): Promise<void> {
+    await cache.materializePackage(name, commit, async (dir) => {
+      writeFileSync(join(dir, file), content);
+      return commit;
+    });
+  }
+
   describe('GET /cache', () => {
     it('returns cache size info', async () => {
       const res = await request(fixtureServer).get('/api/marketplace/cache');
@@ -554,7 +565,7 @@ describe('Marketplace Routes', () => {
 
     it('counts cached marketplaces and packages', async () => {
       await cache.writeMarketplace('test-mp', SAMPLE_MARKETPLACE_JSON);
-      await cache.putPackage('test-pkg', 'deadbeef');
+      await seedTree('test-pkg', 'd'.repeat(40));
 
       const res = await request(fixtureServer).get('/api/marketplace/cache');
       expect(res.status).toBe(200);
@@ -579,16 +590,13 @@ describe('Marketplace Routes', () => {
 
   describe('POST /cache/prune', () => {
     it('prunes older package SHAs and reports freed bytes', async () => {
-      // Seed two cached SHAs for the same package. `putPackage` only reserves
-      // the directory, so drop a small file inside each so the freed-bytes
-      // calculation has something to measure.
-      const firstPath = await cache.putPackage('test-pkg', 'aaaaaaaa');
-      writeFileSync(join(firstPath, 'payload.txt'), 'first');
+      // Seed two cached SHAs for the same package, each with a small file so
+      // the freed-bytes calculation has something to measure.
+      await seedTree('test-pkg', 'a'.repeat(40), 'payload.txt', 'first');
       // Bump mtimes so the two entries have a stable ordering regardless
       // of filesystem timestamp granularity.
       await new Promise((resolve) => setTimeout(resolve, 10));
-      const secondPath = await cache.putPackage('test-pkg', 'bbbbbbbb');
-      writeFileSync(join(secondPath, 'payload.txt'), 'second');
+      await seedTree('test-pkg', 'b'.repeat(40), 'payload.txt', 'second');
 
       const res = await request(fixtureServer)
         .post('/api/marketplace/cache/prune')
@@ -598,7 +606,7 @@ describe('Marketplace Routes', () => {
       expect(Array.isArray(res.body.removed)).toBe(true);
       expect(res.body.removed).toHaveLength(1);
       expect(res.body.removed[0].packageName).toBe('test-pkg');
-      expect(res.body.removed[0].commitSha).toBe('aaaaaaaa');
+      expect(res.body.removed[0].commitSha).toBe('a'.repeat(40));
       expect(typeof res.body.freedBytes).toBe('number');
       expect(res.body.freedBytes).toBeGreaterThan(0);
 
@@ -608,16 +616,14 @@ describe('Marketplace Routes', () => {
     });
 
     it('defaults keepLastN to 1 when the body is empty', async () => {
-      const firstPath = await cache.putPackage('pkg', 'aaaa');
-      writeFileSync(join(firstPath, 'f'), 'a');
+      await seedTree('pkg', 'a'.repeat(40));
       await new Promise((resolve) => setTimeout(resolve, 10));
-      const secondPath = await cache.putPackage('pkg', 'bbbb');
-      writeFileSync(join(secondPath, 'f'), 'b');
+      await seedTree('pkg', 'b'.repeat(40));
 
       const res = await request(fixtureServer).post('/api/marketplace/cache/prune').send({});
       expect(res.status).toBe(200);
       expect(res.body.removed).toHaveLength(1);
-      expect(res.body.removed[0].commitSha).toBe('aaaa');
+      expect(res.body.removed[0].commitSha).toBe('a'.repeat(40));
     });
 
     it('rejects invalid keepLastN payloads', async () => {

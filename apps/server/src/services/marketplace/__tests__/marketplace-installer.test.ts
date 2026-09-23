@@ -1028,7 +1028,8 @@ describe('MarketplaceInstaller', () => {
       const manifest = buildPluginManifest({ name: 'git-plugin' });
 
       wireGitResolution(resolver, fetcher, 'git-plugin', 'dorkos-community');
-      // Simulate PackageFetcher.resolveCommitSha's offline/no-git fallback.
+      // No fetcher reports a placeholder since DOR-2248, but the installer
+      // must still refuse to record one if any ever does.
       fetcher.fetchFromGit.mockResolvedValue({
         path: '/tmp/cached/git-plugin',
         commitSha: `tmp-${Date.now()}`,
@@ -1071,7 +1072,7 @@ describe('MarketplaceInstaller', () => {
       expect(written.sourceKey).toEqual({
         cloneUrl: 'https://github.com/dork-labs/marketplace',
         subpath: 'plugins/code-reviewer',
-        ref: 'main',
+        ref: 'HEAD',
       });
       expect(written.entryVersion).toBe('1.0.0');
     });
@@ -1616,7 +1617,7 @@ describe('MarketplaceInstaller', () => {
     const MARKETPLACE_KEY = {
       cloneUrl: 'https://github.com/dork-labs/marketplace',
       subpath: 'plugins/code-reviewer',
-      ref: 'main',
+      ref: 'HEAD',
     };
 
     /** Wire a same-repo marketplace package, with an optional entry version. */
@@ -1653,7 +1654,7 @@ describe('MarketplaceInstaller', () => {
       );
 
       expect(result).toEqual({ kind: 'unchanged' });
-      expect(commitLookup).toHaveBeenCalledWith(MARKETPLACE_KEY.cloneUrl, 'main');
+      expect(commitLookup).toHaveBeenCalledWith(MARKETPLACE_KEY.cloneUrl, 'HEAD');
       expect(fetcher.fetchPackage).not.toHaveBeenCalled();
       expect(mockedValidatePackage).not.toHaveBeenCalled();
     });

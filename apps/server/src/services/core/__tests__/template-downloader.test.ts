@@ -40,7 +40,6 @@ import {
   resolveGitAuth,
   classifyGigetError,
   execGitClone,
-  cloneRepository,
   downloadTemplate,
   isGitHubCredentialHost,
   isSupportedTemplateSource,
@@ -516,35 +515,6 @@ describe('the GitHub token only ever goes to GitHub', () => {
       expect(withGitHubToken('https://github.com/org/repo.git', undefined)).toBe(
         'https://github.com/org/repo.git'
       );
-    });
-  });
-
-  describe('cloneRepository — the marketplace install path', () => {
-    it('still authenticates a github.com package clone', async () => {
-      mockEnv.GITHUB_TOKEN = 'ghp_market';
-      const mockProc = createMockProcess();
-      vi.mocked(spawn).mockReturnValue(mockProc);
-
-      const promise = cloneRepository('https://github.com/org/plugin.git', '/tmp/pkg');
-      mockProc._emit('close', 0);
-      await promise;
-
-      expect(spawnedCloneUrl()).toBe('https://x-access-token:ghp_market@github.com/org/plugin.git');
-    });
-
-    it('sends no credential when the package lives on a third-party host', async () => {
-      // A marketplace `url` source is deliberately open (Azure DevOps,
-      // self-hosted Gitea), which is exactly why the token cannot follow it.
-      mockEnv.GITHUB_TOKEN = 'ghp_market';
-      const mockProc = createMockProcess();
-      vi.mocked(spawn).mockReturnValue(mockProc);
-
-      const promise = cloneRepository('https://evil.example.com/org/plugin.git', '/tmp/pkg');
-      mockProc._emit('close', 0);
-      await promise;
-
-      expect(spawnedCloneUrl()).toBe('https://evil.example.com/org/plugin.git');
-      expect(JSON.stringify(vi.mocked(spawn).mock.calls[0])).not.toContain('ghp_market');
     });
   });
 

@@ -112,7 +112,7 @@ describe('marketplace install pipeline — integration', () => {
 
     // The template downloader must not have been invoked: local paths
     // resolve via `kind: 'local'` and skip the fetcher entirely.
-    expect(spies.templateClone).not.toHaveBeenCalled();
+    expect(spies.gitFetch).not.toHaveBeenCalled();
   });
 
   it('installs the same plugin end-to-end from its file:// spelling', async () => {
@@ -138,7 +138,7 @@ describe('marketplace install pipeline — integration', () => {
     ).toBe(true);
 
     // Served from disk, never cloned — the `file://` branch of the fetcher.
-    expect(spies.templateClone).not.toHaveBeenCalled();
+    expect(spies.gitFetch).not.toHaveBeenCalled();
   });
 
   it('installs a shape package end-to-end via MarketplaceInstaller (staged, not activated)', async () => {
@@ -163,7 +163,7 @@ describe('marketplace install pipeline — integration', () => {
     expect(spies.extensionEnable).not.toHaveBeenCalled();
 
     // The template downloader must not have been invoked (local path).
-    expect(spies.templateClone).not.toHaveBeenCalled();
+    expect(spies.gitFetch).not.toHaveBeenCalled();
   });
 
   it('warns (but still installs globally) when a shape install request carries a projectPath (DOR-386)', async () => {
@@ -231,7 +231,7 @@ describe('marketplace install pipeline — integration', () => {
       spice: 3,
     });
 
-    expect(spies.templateClone).not.toHaveBeenCalled();
+    expect(spies.gitFetch).not.toHaveBeenCalled();
   });
 
   it('installs a skill-pack package end-to-end via MarketplaceInstaller', async () => {
@@ -257,7 +257,7 @@ describe('marketplace install pipeline — integration', () => {
     // No flows touched the adapter manager or agent creator.
     expect(spies.adapterAdd).not.toHaveBeenCalled();
     expect(spies.createAgentWorkspace).not.toHaveBeenCalled();
-    expect(spies.templateClone).not.toHaveBeenCalled();
+    expect(spies.gitFetch).not.toHaveBeenCalled();
   });
 
   it('installs an adapter package end-to-end via MarketplaceInstaller', async () => {
@@ -296,7 +296,7 @@ describe('marketplace install pipeline — integration', () => {
 
     // A successful install must never call the compensating `removeAdapter`.
     expect(spies.adapterRemove).not.toHaveBeenCalled();
-    expect(spies.templateClone).not.toHaveBeenCalled();
+    expect(spies.gitFetch).not.toHaveBeenCalled();
   });
 
   it('warns (but still installs globally) when an adapter install request carries a projectPath (DOR-1776)', async () => {
@@ -451,29 +451,21 @@ describe('marketplace install pipeline — integration', () => {
   // DOR-147 happy path: a git-sourced install must persist real source
   // provenance (sourceRepo + commitSha) into the on-disk sidecar. Only the
   // git network boundary is stubbed — the harness's designated seam: the
-  // template downloader "clone" copies the valid-plugin fixture, and the
-  // fetcher's `git ls-remote` SHA resolution is pinned to a fixed SHA so
-  // the test is deterministic offline. Everything downstream — cache
-  // materialization, validation, the plugin flow, and the unmocked
-  // writeInstallMetadata — runs for real against the temp dorkHome.
+  // lookup resolves the default branch to a fixed commit, and the fetch copies
+  // the valid-plugin fixture and reports that commit, so the test is
+  // deterministic offline. Everything downstream — cache materialization,
+  // validation, the plugin flow, and the unmocked writeInstallMetadata — runs
+  // for real against the temp dorkHome.
   it('records sourceRepo and commitSha in the on-disk sidecar for a git-sourced install', async () => {
     const { installer, spies } = buildInstallerForTests(dorkHome);
     const gitUrl = 'https://example.com/valid-plugin.git';
     const commitSha = 'e2e0123456789abcdef0123456789abcdef01234';
 
-    // "Clone" by copying the fixture into the clone destination.
-    spies.templateClone.mockImplementation(async (_url: unknown, destDir: unknown) => {
-      await cp(fixturePath('valid-plugin'), destDir as string, { recursive: true });
+    spies.gitLookup.mockResolvedValue({ kind: 'found', commitSha, refName: 'HEAD' });
+    spies.gitFetch.mockImplementation(async (req: { destDir: string; commitSha: string }) => {
+      await cp(fixturePath('valid-plugin'), req.destDir, { recursive: true });
+      return req.commitSha;
     });
-
-    // Pin the fetcher's `git ls-remote` SHA resolution (its only direct
-    // system call) to a fixed value.
-    vi.spyOn(
-      installer['deps'].fetcher as unknown as {
-        resolveCommitSha(url: string, ref?: string): Promise<string>;
-      },
-      'resolveCommitSha'
-    ).mockResolvedValue(commitSha);
 
     const result = await installer.install({ name: 'valid-plugin', source: gitUrl });
     expect(result.ok).toBe(true);
