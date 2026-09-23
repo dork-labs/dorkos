@@ -573,6 +573,20 @@ it('rejects foreign private objects even when the signed-in person owns both com
       [otherId]
     )
   ).rows[0].id;
+  // A non-owner target: owners can never be demoted, so a role change aimed at
+  // the owner would return 404 even without a tenant check.
+  await pool.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
+    'isolation-other-member',
+    'Other Member',
+    'other-member@isolation.test',
+  ]);
+  const otherPlainMember = (
+    await pool.query<{ id: string }>(
+      `INSERT INTO members(community_id,user_id,display_name,handle,role)
+       VALUES($1,'isolation-other-member','Other Member','other-member','member') RETURNING id`,
+      [otherId]
+    )
+  ).rows[0].id;
   const archive = (
     await pool.query<{ id: string }>(
       'SELECT id FROM export_archives WHERE community_id=$1 LIMIT 1',
@@ -669,7 +683,7 @@ it('rejects foreign private objects even when the signed-in person owns both com
     { method: 'POST', path: `/channels/${channel}/leave`, body: {} },
     { method: 'POST', path: `/channels/${channel}/members`, body: { memberId: ownerMemberId } },
     { method: 'DELETE', path: `/channels/${channel}/members/${otherMember}`, body: {} },
-    { method: 'PATCH', path: `/members/${otherMember}/role`, body: { role: 'admin' } },
+    { method: 'PATCH', path: `/members/${otherPlainMember}/role`, body: { role: 'admin' } },
     { method: 'DELETE', path: `/members/${otherMember}`, body: {} },
   ];
   for (const operation of mutations) {
