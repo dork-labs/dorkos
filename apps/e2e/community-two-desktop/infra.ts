@@ -44,13 +44,18 @@ interface Postgres {
   volume: string | null;
 }
 
-const docker = (args: string[], input?: string) =>
+/** The throwaway Postgres image. */
+const POSTGRES_IMAGE = 'postgres:17-alpine';
+
+/**
+ * Run one docker command. Every call is bounded so a stuck daemon cannot hang
+ * the run, or its cleanup, forever; 60s covers everything but an image pull.
+ */
+const docker = (args: string[], timeout = 60_000) =>
   execFileSync('docker', args, {
     encoding: 'utf8',
-    input,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    // A stuck Docker daemon must not hang the run, or its cleanup, forever.
-    timeout: 60_000,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout,
   }).trim();
 
 async function freePort(): Promise<number> {
@@ -135,6 +140,9 @@ export class Infrastructure {
       const container = `dorkos-two-desktop-pg-${this.runId}`;
       const volume = `dorkos-two-desktop-pgdata-${this.runId}`;
       const password = randomBytes(18).toString('hex');
+      // Pull first, with room for a slow first download on a fresh machine,
+      // so the bounded `docker run` below only ever starts a local image.
+      docker(['pull', POSTGRES_IMAGE], 600_000);
       docker(['volume', 'create', ...labels, volume]);
       this.postgres = { container, port: 0, password, lifecycle: 'created', volume };
       docker([
@@ -149,7 +157,7 @@ export class Infrastructure {
         `POSTGRES_PASSWORD=${password}`,
         '-p',
         '127.0.0.1::5432',
-        'postgres:17-alpine',
+        POSTGRES_IMAGE,
       ]);
       this.postgres.port = Number(docker(['port', container, '5432/tcp']).replace(/.*:/, ''));
       this.log(`postgres: created throwaway ${container}`);
