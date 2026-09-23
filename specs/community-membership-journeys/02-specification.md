@@ -2,7 +2,7 @@
 slug: community-membership-journeys
 number: 260920-203200
 created: 2026-09-20
-status: specified
+status: implemented
 linear-issue: DOR-2179
 project: Community Membership Journeys
 ---
