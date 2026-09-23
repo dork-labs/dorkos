@@ -108,7 +108,9 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
   await step('3 member joins via invite → "You’re in …" → Open community', async () => {
     await member.goto(invite);
     await member.getByRole('button', { name: 'Continue', exact: true }).click();
-    await member.getByRole('button', { name: 'Create account', exact: true }).click();
+    await member
+      .getByRole('button', { name: 'Create an account on this host', exact: true })
+      .click();
     await member.getByLabel('Your name').fill('Desktop B');
     await member.getByLabel('Email', { exact: true }).fill('desktop-b@example.test');
     await member.getByLabel('Password', { exact: true }).fill(PASSWORD);

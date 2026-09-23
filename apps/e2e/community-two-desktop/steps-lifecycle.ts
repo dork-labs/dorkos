@@ -301,6 +301,12 @@ export async function lifecycleSteps(w: World): Promise<void> {
       await member.goto('about:blank');
       await member.goto(link);
       await member.getByRole('button', { name: 'Continue', exact: true }).click();
+      // B left in step 26, so the membership is inactive: the join page shows what
+      // rejoining restores and waits for B to confirm before anything changes.
+      const rejoin = member.getByRole('button', { name: 'Rejoin community', exact: true });
+      await expect(rejoin).toBeVisible({ timeout: 30_000 });
+      const reactivation = await shot(member, '28-member-reactivation-review');
+      await rejoin.click();
       await expect(member.getByRole('heading', { name: `You’re in ${COMMUNITY}.` })).toBeVisible({
         timeout: 30_000,
       });
@@ -331,6 +337,7 @@ export async function lifecycleSteps(w: World): Promise<void> {
       await seeNewest(a, stillA);
       await json(`${a.origin}/api/communities/${refIso}/rooms`);
       return {
+        reactivation,
         rejoined,
         removedShot,
         access,
