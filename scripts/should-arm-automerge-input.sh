@@ -19,7 +19,8 @@
 #   meta.json     `gh pr view --json number,state,isDraft,mergeStateStatus,
 #                 autoMergeRequest,reviewDecision,labels,headRefOid`
 #   checks.json   `gh pr checks --json name,bucket`, or `[]` when gh said the
-#                 pull request has no checks; anything else is unreadable
+#                 pull request has no checks; anything else is unreadable, and
+#                 merge-tail writes gh's error text here so the skip names it
 #   graphql.json  the body of merge-tail's GraphQL query (mergeQueueEntry,
 #                 reviewThreads, the head commit's check suites, and the recent
 #                 REMOVED_FROM_MERGE_QUEUE_EVENTs), as gh prints it on stdout —
@@ -28,7 +29,7 @@
 # Prints the payload (one JSON document) and exits 0, or prints exactly one
 # line and exits 1:
 #   SKIP could-not-read-pr               meta.json is not a pull request object
-#   SKIP could-not-read-checks           checks.json is not a list
+#   SKIP could-not-read-checks (…)       checks.json is not a list
 #   SKIP could-not-read-graphql (…)      graphql.json is not JSON (a proxy's HTML, nothing)
 #   SKIP graphql-error (…)               GitHub reported an error, even alongside data
 #   SKIP could-not-read-pull-request (…) JSON, but no pull request object in it
@@ -55,13 +56,17 @@ if [[ $# -ne 3 ]]; then
 fi
 meta=$1 checks=$2 graphql=$3
 
-# One line for the log: newlines flattened, cut short.
-excerpt() { tr '\n' ' ' | sed 's/ *$//' | cut -c1-160; }
+# One line for the log: newlines flattened, cut short; never blank.
+excerpt() {
+  local line
+  line=$(tr '\n' ' ' | sed 's/ *$//' | cut -c1-160)
+  echo "${line:-empty answer}"
+}
 
 jq -e 'type == "object"' "$meta" >/dev/null 2>&1 \
   || { echo "SKIP could-not-read-pr"; exit 1; }
 jq -e 'type == "array"' "$checks" >/dev/null 2>&1 \
-  || { echo "SKIP could-not-read-checks"; exit 1; }
+  || { echo "SKIP could-not-read-checks ($(excerpt < "$checks" 2>/dev/null))"; exit 1; }
 
 if ! jq -e 'type == "object"' "$graphql" >/dev/null 2>&1; then
   echo "SKIP could-not-read-graphql ($(excerpt < "$graphql" 2>/dev/null))"

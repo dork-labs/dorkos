@@ -157,10 +157,10 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" --argjson repeat "$REPEAT_EJECTION
   # every queued pull request on every tick. Verified on 2026-07-28: PRs 573,
   # 572 and 566 were at queue positions 1-3 in AWAITING_CHECKS with a null
   # autoMergeRequest.
-  # Absent is not null. `mergeQueueEntry` comes only from the GraphQL read in merge-tail
-  # read, so a payload without it was built from a failed read or from
-  # `gh pr view` alone, and defaulting it to null would call a queued PR
-  # unqueued (DOR-2271).
+  # Absent is not null. Only the GraphQL read in merge-tail supplies
+  # `mergeQueueEntry`, so a payload without it was built from a failed read
+  # or from `gh pr view` alone, and defaulting it to null would call a
+  # queued PR unqueued (DOR-2271).
   elif (has("mergeQueueEntry") | not)               then "SKIP queue-entry-unknown"
   elif .mergeQueueEntry != null                     then "SKIP already-queued"
   elif ((labels) as $l | any($hold[]; . as $h | $l | index($h)))

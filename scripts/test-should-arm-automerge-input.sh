@@ -168,11 +168,21 @@ refuses "review threads missing" "SKIP could-not-read-review-threads" \
 refuses "review thread nodes not a list" "SKIP could-not-read-review-threads" \
   "$(meta)" "$(checks)" "$(graphql | jq -c '.data.repository.pullRequest.reviewThreads.nodes = {}')"
 
+# A list of the wrong things is refused whole, never counted around.
+refuses "review thread nodes not objects" "SKIP could-not-read-pull-request (unexpected shape)" \
+  "$(meta)" "$(checks)" "$(graphql | jq -c '.data.repository.pullRequest.reviewThreads.nodes = ["x"]')"
+
 # ── the other two reads ────────────────────────────────────────────────────
 # An unreadable check list is not "no checks": the workflow writes `[]` only
 # when gh said there are none, and leaves anything else for this to refuse.
 refuses "checks empty file"     "SKIP could-not-read-checks" "$(meta)" ''                                "$(graphql)"
 refuses "checks error object"   "SKIP could-not-read-checks" "$(meta)" '{"message": "Server Error"}'     "$(graphql)"
+
+# merge-tail puts gh's error text in place of an unreadable check list, and
+# the skip names it, so the log says WHY rather than only that it failed.
+run "$(meta)" $'HTTP 502: Bad Gateway\n(https://api.github.com/graphql)' "$(graphql)"
+if [[ "$out" == "SKIP could-not-read-checks (HTTP 502: Bad Gateway"* ]]; then ok; else
+  bad "checks error is named" "got ${out:-<empty>}"; fi
 refuses "pr metadata not json"  "SKIP could-not-read-pr"     'HTTP 502'                                   "$(checks)" "$(graphql)"
 refuses "pr metadata not object" "SKIP could-not-read-pr"    '[]'                                         "$(checks)" "$(graphql)"
 

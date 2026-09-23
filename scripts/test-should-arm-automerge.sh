@@ -111,6 +111,7 @@ check "mergeability absent"       "SKIP mergeability-unknown" 'del(.mergeStateSt
 # Human review signals.
 check "changes requested"         "SKIP changes-requested"    '.reviewDecision = "CHANGES_REQUESTED"'
 check "unresolved threads"        "SKIP unresolved-threads"   '.unresolvedThreads = 3'
+check "exactly one open thread"   "SKIP unresolved-threads"   '.unresolvedThreads = 1'
 check "no review decision yet"    "ARM"                       '.reviewDecision = ""'
 
 # Check buckets. Anything unsettled or unhappy refuses.

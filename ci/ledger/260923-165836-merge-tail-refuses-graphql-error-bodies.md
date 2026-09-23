@@ -11,7 +11,7 @@ hypothesis:
   metric: 'gate.wf.merge-tail.arm.failure_rate@schedule'
   slo: 'lead-time'
   baseline: 0
-  baseline_source: 'measured 2026-09-23 with `gh run list --workflow merge-tail.yml -L 200`: 200 of 200 scheduled runs (2026-08-26 to 09-23) concluded success; the logs of the latest 60 hold no could-not-read-* or queue-history-unknown skip, so the failure this fixes has not been observed in production yet'
+  baseline_source: 'measured 2026-09-23 with `gh run list --workflow merge-tail.yml -L 200`: the latest 200 runs (2026-08-26 to 09-23: 198 schedule, 2 workflow_dispatch) all concluded success, so the 198 scheduled ones give 0; the logs of the latest 60 hold no could-not-read-* or queue-history-unknown skip, so the failure this fixes has not been observed in production yet'
   target: 0
   after_days: 14
 ratchet-release: []
@@ -31,17 +31,23 @@ and refuses, with one `SKIP <reason>` line carrying GitHub's own message, any an
 really one: not JSON, any reported GraphQL error (a partial answer nulls the failed field, and
 `mergeQueueEntry` and a removal's check suites fail toward permission when nulled), no pull request
 object, no `mergeQueueEntry` field, no review-thread list, or a check list that is not a list.
-The PR waits one tick and the tick carries on. The gate itself now refuses a payload with no
+The PR waits one tick and the tick carries on, with a counted warning. A tick in which EVERY
+examined pull request was unreadable fails (`::error::`, exit 1), like a refused arm: a lost
+permission or a broken query refuses them all, and a warning alone would stay green for as long as
+it lasted. The gate itself now refuses a payload with no
 `mergeQueueEntry` field or a non-numeric `unresolvedThreads` instead of defaulting them to the
 permissive answer. A failed label re-read before clearing `re-review` is now a counted failure, not
 "label already gone". `scripts/test-should-arm-automerge-input.sh` pins every refusal, including the
 exact NOT_FOUND body `gh` returns.
 
 Why this metric: the fix removes a latent failure with no measured occurrences, so the honest number
-is the one it must not make worse. A tick no longer fails because one pull request's answer was
-unreadable, so `failure_rate@schedule` stays at 0. The skips it now takes
-are counted on the run's `unreadable-from-github=` line and raised as a `::warning::`; check them by
-hand at the verdict date by grepping merge-tail logs for `graphql-error` and `could-not-read-`.
+is the one it must not make worse. One unreadable answer no longer fails a tick, and a tick fails
+only when it could read nothing at all, which is the inert state this metric should catch. So
+`failure_rate@schedule` stays at 0 while the reads work and rises as soon as they stop. Known cost:
+with a single open pull request, one transient error is also "nothing readable" and reds that tick.
+Partial skips are counted on each run's `unreadable-from-github=` line; check them by hand at the
+verdict date by grepping merge-tail logs for `graphql-error` and `could-not-read-`.
 
-Revert if merge-tail starts refusing most pull requests on most ticks (a routine partial-error answer
-this treats as no answer), visible as the warning on consecutive runs while PRs sit green and unarmed.
+Revert if `failure_rate@schedule` rises above 0.05 with the `is inert: GitHub gave no readable
+answer` error, while the same PRs read fine by hand: that is a routine partial-error answer this
+change treats as no answer.

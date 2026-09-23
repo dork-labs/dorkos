@@ -184,7 +184,7 @@ jobs:
           armed=0; skipped=0; failed=0; perm_denied=0
           rereviewed=0; cleared=0; review_failed=0; review_unreadable=0
           repeat_declined=0; repeat_commented=0; comment_failed=0; history_unknown=0
-          unreadable=0
+          unreadable=0; examined=0
 
           gh pr list --repo "$REPO" --state open --limit 100 \
             --json number --jq '.[].number' > "$work/prs.txt" || {
@@ -195,6 +195,7 @@ jobs:
 
           while read -r pr; do
             [[ -n "$pr" ]] || continue
+            examined=$(( examined + 1 ))
 
             # `headRefOid` is for the review-retry block below, not for arming:
             # it keys the retry ladder to the code that was actually reviewed.
@@ -208,23 +209,24 @@ jobs:
                  --json number,state,isDraft,mergeStateStatus,autoMergeRequest,reviewDecision,labels,headRefOid \
                  > "$work/meta.json" 2>"$work/err.txt"; then
               echo "PR #$pr -> SKIP could-not-read-pr ($(tr '\n' ' ' < "$work/err.txt" | cut -c1-120))"
-              skipped=$(( skipped + 1 )); continue
+              unreadable=$(( unreadable + 1 )); skipped=$(( skipped + 1 )); continue
             fi
 
             # Judged by the body, never by the exit code. A list on stdout is the
             # answer, whatever gh exited with. With no list, gh either said the
             # PR has no checks yet ("no checks reported", exit 1), which is a
             # fact the gate reads as `SKIP no-checks`, or the call failed, which
-            # is no answer: the file is left empty for the payload builder to
-            # refuse. It used to become `[]` either way, and before that a
-            # non-zero exit here stopped the whole tick under `bash -e`.
+            # is no answer: gh's error text replaces the file, so the payload
+            # builder refuses it and its log line names the error. It used to
+            # become `[]` either way, and before that a non-zero exit here
+            # stopped the whole tick under `bash -e`.
             gh pr checks "$pr" --repo "$REPO" --json name,bucket \
               > "$work/checks.json" 2>"$work/checks-err.txt" || :
             if ! jq -e 'type == "array"' "$work/checks.json" >/dev/null 2>&1; then
               if grep -q 'no checks reported' "$work/checks-err.txt"; then
                 echo '[]' > "$work/checks.json"
               else
-                : > "$work/checks.json"
+                cp "$work/checks-err.txt" "$work/checks.json"
               fi
             fi
 
@@ -358,12 +360,25 @@ jobs:
                     fi
                   fi
 
-                  jq -s --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                  # One named slot per file, never `jq -s` positions: an empty
+                  # file adds no slot to `-s`, which would shift the runs into
+                  # `checks` and the files into `reviewRuns`. An unreadable
+                  # check list (gh's error text, see above) goes in as `[]`:
+                  # it hides the red review check, so the ladder can only
+                  # decline a retry on it, never invent one.
+                  jq -c 'if type == "array" then . else [] end' "$work/checks.json" \
+                    > "$work/review-checks.json" 2>/dev/null \
+                    || echo '[]' > "$work/review-checks.json"
+                  jq -n --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
                     --arg class "$review_class" \
-                    '.[0] + {checks: .[1], reviewRuns: .[2], files: .[3],
-                             reviewClass: $class, now: $now}' \
-                    "$work/meta.json" "$work/checks.json" "$work/runs.json" "$work/files.json" \
-                    > "$work/review-payload.json"
+                    --slurpfile meta "$work/meta.json" \
+                    --slurpfile checks "$work/review-checks.json" \
+                    --slurpfile runs "$work/runs.json" \
+                    --slurpfile files "$work/files.json" \
+                    '$meta[0] + {checks: $checks[0], reviewRuns: $runs[0],
+                                 files: $files[0], reviewClass: $class, now: $now}' \
+                    > "$work/review-payload.json" 2>/dev/null \
+                    || : > "$work/review-payload.json"
                   rverdict=$(./scripts/should-redispatch-review.sh "$work/review-payload.json") \
                     || rverdict="SKIP unreadable-payload"
                   if [[ "$rverdict" == "RETRY" && "$DRY_RUN" == "true" ]]; then
@@ -621,6 +636,9 @@ jobs:
             if [[ "$perm_denied" -gt 0 ]]; then
               echo "- **permission denied on $perm_denied arm(s) — this workflow is inert**"
             fi
+            if [[ "$examined" -gt 0 && "$unreadable" -eq "$examined" ]]; then
+              echo "- **GitHub answered for none of the $examined PR(s) examined — this workflow is inert**"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
           # A workflow that evaluates everything correctly and then arms nothing
@@ -649,5 +667,14 @@ jobs:
 
           if [[ "$perm_denied" -gt 0 ]]; then
             echo "::error::merge-tail is inert: $perm_denied arm attempt(s) refused for lack of permission."
+            exit 1
+          fi
+          # A tick that could read NOTHING is the same inert shape as a refused
+          # arm: a lost permission or a broken query refuses every PR, and a
+          # warning alone would leave the run green for as long as it lasts.
+          # One unreadable PR among readable ones is a transient and stays a
+          # warning; all of them is a failure.
+          if [[ "$examined" -gt 0 && "$unreadable" -eq "$examined" ]]; then
+            echo "::error::merge-tail is inert: GitHub gave no readable answer for any of the $examined pull request(s) it examined. Each one's log line names the error."
             exit 1
           fi
