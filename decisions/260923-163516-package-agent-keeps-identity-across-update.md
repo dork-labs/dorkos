@@ -28,7 +28,7 @@ An agent package's `.dork/agent.json`, `.dork/SOUL.md`, `.dork/NOPE.md` and `.do
 - throws on an unreadable one;
 - writes SOUL.md, NOPE.md and MEMORY.md only if absent (a new `writeConventionFileIfAbsent`; today MEMORY.md is always overwritten);
 - announces an adoption, with the existing `origin: 'registered'` (not `'created'`), only when the id is not already registered at that path: a reinstall, not an update;
-- adopts nothing when the incoming package's source differs from the recorded one: the old identity files are saved as `.dork-old` and a fresh id is minted, so a different package that shares the name never inherits an agent;
+- adopts nothing when the incoming package's source (clone URL and subpath; the ref is ignored, so `@main` → `@v0.8.0` is the same package) differs from the recorded one: the old identity files are saved as `.dork-old` and a fresh id is minted, so a different package that shares the name never inherits an agent;
 - deletes the parked `uninstalled-agent.json` on every adoption;
 - clears a mesh denial on the directory, since installing is an explicit act, as registering is.
 
