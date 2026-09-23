@@ -193,6 +193,25 @@ describe('runUpdate', () => {
     expect(out).toContain('2 updates available, 1 could not be checked.');
   });
 
+  it('stays at exit 0 when a listed package vanishes before its check', async () => {
+    // Purpose: only a NAMED run treats a 404 as a failure. In a name-less run
+    // the 404 means the package was removed between the listing and its check,
+    // which is a race, not a typo, so the run still exits 0.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockResponse(200, { packages: [{ name: 'a' }, { name: 'gone' }] }))
+      .mockResolvedValueOnce(
+        mockResponse(200, { checks: [check({ packageName: 'a' })], applied: [] })
+      )
+      .mockResolvedValueOnce(mockResponse(404, { error: 'Package not installed: gone' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const code = await runUpdate({});
+
+    expect(code).toBe(0);
+    expect(printed(logSpy)).toContain('gone  could not check: Package not installed: gone');
+  });
+
   it('exits 1 when a named package is installed nowhere', async () => {
     // Purpose: `dorkos update <typo>` must fail loudly for a script, as it did
     // before the per-target isolation turned the 404 into a printed line.
