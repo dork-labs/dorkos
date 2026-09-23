@@ -330,8 +330,9 @@ test('Joining with an invitation opens the link on the Community’s site, not a
   await page.getByTestId('sidebar-header-block').focus();
   await page.keyboard.press('Meta+Shift+K');
   await expect(page.getByRole('menuitemradio', { name: /Your team|’s team/ })).toBeFocused();
-  // Down past the destinations to "Add community", then into it.
-  const add = page.getByRole('menuitem', { name: 'Add community' });
+  // Down past the destinations to the add submenu, then into it. Addressed by
+  // its stable id rather than its wording.
+  const add = page.locator('[data-menu-item-id="add-community"]');
   for (
     let step = 0;
     step < 4 && !(await add.evaluate((el) => el === document.activeElement));
@@ -373,7 +374,10 @@ test('Community actions fit the 390px phone sheet', async ({ page }, testInfo) =
     await expect(row).toHaveAccessibleName(/opens on alpha\.example\.test$/);
   }
   await expect(manage.getByRole('menuitem', { name: 'Disconnect…', exact: true })).toBeVisible();
-  const add = page.getByRole('group', { name: 'Add community' });
+  // The flattened add group, by its stable id; its rows are asserted by name.
+  const add = page.getByRole('group').filter({
+    has: page.locator('[data-menu-group-id="add-community"]'),
+  });
   await add.scrollIntoViewIfNeeded();
   for (const name of ['Connect a community', 'Join with an invitation…', 'Run your own community'])
     await expect(add.getByRole('menuitem', { name })).toBeVisible();

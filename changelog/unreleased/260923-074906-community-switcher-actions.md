@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): route community switcher actions to the right authority'
   - 'fix(client): make community switcher links say where they go'
+  - 'fix(client): keep switcher changes clear of Obsidian styles and spec copy'
 ---
 
 ### Added
