@@ -1,6 +1,6 @@
 # Administration isolation verification
 
-Status: in progress. Refs DOR-2178. This receipt covers two proofs, a strengthened deletion proof and a foreign-object matrix. It is not the full administration acceptance matrix.
+Status: in progress. Refs DOR-2178. This receipt covers two proofs, a strengthened deletion proof and a foreign-object matrix. The role matrix, every role on every administration action, has its own receipt in `04-role-matrix-verification.md`.
 
 The real HTTP/PostgreSQL deletion journey now keeps another active community populated with a private channel, a posted attachment, and an authenticated live stream while the target community is deleted. The existing journey includes an in-flight export, uncertain blob cleanup, an injected provider failure, and a later worker retry.
 
@@ -17,7 +17,7 @@ Verification:
 
 Independent review of the deletion proof as first written (commit `b0b9d87c6`, before it was cherry-picked onto `main` unchanged): zero Important findings and zero Nits.
 
-Remaining: composed acceptance with the final membership/navigation changes, the complete permission/upgrade matrix, and a coordinated backup/restore rehearsal. No live deployment or production data was changed by this proof.
+Remaining: composed acceptance with the final membership/navigation changes, the upgrade matrix (the permission matrix is now in `04-role-matrix-verification.md`), and a coordinated backup/restore rehearsal. No live deployment or production data was changed by this proof.
 
 ## Foreign-object matrix
 
