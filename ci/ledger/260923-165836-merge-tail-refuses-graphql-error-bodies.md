@@ -2,11 +2,11 @@
 id: 260923-165836
 title: merge-tail refuses a GraphQL error body instead of reading it as a clean answer
 kind: incident-fix
-status: proposed
+status: active
 actor: agent
 gates:
   - wf.merge-tail.arm
-prs: []
+prs: [2034]
 hypothesis:
   metric: 'gate.wf.merge-tail.arm.failure_rate@schedule'
   slo: 'lead-time'
