@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { communityBasePath, setShortNameRoute, tenantApiPath } from './api.js';
+import { communityBasePath, isCommunityPath, setShortNameRoute, tenantApiPath } from './api.js';
 
 describe('tenantApiPath', () => {
   it('keeps the singleton compatibility API at the host root', () => {
@@ -38,6 +38,26 @@ describe('tenantApiPath', () => {
       expect(communityBasePath('33333333-3333-4333-8333-333333333333')).toBe(
         '/c/33333333-3333-4333-8333-333333333333'
       );
+    } finally {
+      setShortNameRoute(null);
+    }
+  });
+});
+
+describe('isCommunityPath', () => {
+  it('treats the resolved short address as a community page, like /c/<uuid>', () => {
+    // Purpose: fails if a page opened at /<name> stays put when its community is not open to
+    // this person, where /c/<uuid> would go back to the chooser.
+    const id = '22222222-2222-4222-8222-222222222222';
+    expect(isCommunityPath('/acme')).toBe(false);
+    setShortNameRoute({ communityId: id, basePath: '/acme' });
+    try {
+      expect(isCommunityPath('/acme')).toBe(true);
+      expect(isCommunityPath('/acme/settings')).toBe(true);
+      expect(isCommunityPath('/acme-labs')).toBe(false);
+      expect(isCommunityPath(`/c/${id}`)).toBe(true);
+      expect(isCommunityPath('/')).toBe(false);
+      expect(isCommunityPath('/host')).toBe(false);
     } finally {
       setShortNameRoute(null);
     }

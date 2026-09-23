@@ -10,7 +10,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { sweepCommunityDeletions } from '../deletion-worker.js';
 import { runHostKeyCommand } from '../host-keys.js';
-import { shortNameHoldKey } from '../host/short-names.js';
+import { reservedBoundShortNames, shortNameHoldKey } from '../host/short-names.js';
 import {
   TENANCY_PASSWORD,
   bootstrapHost,
@@ -157,6 +157,15 @@ it('holds a released name for the cool-off, without keeping it in clear text, th
   const held = await availability('acme');
   expect(held.availability).toBe('cooling_off');
   expect(Date.parse(held.availableAt) - Date.now()).toBeGreaterThan(89 * DAY);
+  // Reported as a day, never the second of release, and never before the hold really ends.
+  const holdEnds = (
+    await h.pool.query<{ available_at: Date }>(
+      'SELECT max(available_at) AS available_at FROM released_short_names'
+    )
+  ).rows[0].available_at.getTime();
+  expect(held.availableAt).toMatch(/T00:00:00\.000Z$/);
+  expect(Date.parse(held.availableAt)).toBeGreaterThanOrEqual(holdEnds);
+  expect(Date.parse(held.availableAt) - holdEnds).toBeLessThan(DAY);
   expect((await setName(b, 'acme')).status).toBe(409);
   const hmac = createHash('sha256').update('acme').digest('hex');
   const stored = await h.pool.query<{ name_hmac: string }>(
@@ -222,6 +231,14 @@ it('frees the name of a never-claimed community at once when it is abandoned', a
   );
   const body = await created.json();
   expect(body.community.shortName).toBe('fresh-start');
+  // The creation audit names the short name among the fields it set, never its value.
+  const audit = await h.pool.query<{ changed_fields: string[] }>(
+    "SELECT changed_fields FROM host_audit_events WHERE action='community.create' AND community_id=$1",
+    [body.community.id]
+  );
+  expect(audit.rows).toEqual([
+    { changed_fields: ['name', 'description', 'admission_policy', 'short_name'] },
+  ]);
   // The same key with a different name is a different request.
   const conflict = await h.call('/api/v1/host/communities', {
     bearer: key,
@@ -275,6 +292,8 @@ it('answers every name it will not resolve with the identical 404', async () => 
   for (const name of ['never-was', 'host', 'A%21', 'not-yet', 'paused-one', 'ab']) {
     const response = await lookup(name);
     expect(response.status, name).toBe(404);
+    // A name can be taken later, so a refusal must not be cached either.
+    expect(response.headers.get('cache-control'), name).toBe('no-store');
     bodies.push(await response.text());
   }
   expect(new Set(bodies).size).toBe(1);
@@ -287,7 +306,9 @@ it('answers every name it will not resolve with the identical 404', async () => 
     200,
     'resume B'
   );
-  expect((await lookup('paused-one')).status).toBe(200);
+  const found = await lookup('paused-one');
+  expect(found.status).toBe(200);
+  expect(found.headers.get('cache-control')).toBe('no-store');
 });
 
 it('keeps pairing links on the community UUID, never its name', async () => {
@@ -336,22 +357,49 @@ it('holds a deleted community’s names and leaves no row that contains them', a
      WHERE community_id=$1`,
     [a]
   );
-  // Without the hold key the worker refuses to finish, rather than freeing the names.
-  await sweepCommunityDeletions(h.pool, h.blobStore, 100).catch(() => undefined);
+  // Without the hold key the worker refuses to finish, rather than freeing the names, and says
+  // why on the job instead of failing the whole sweep.
+  for (let pass = 0; pass < 10; pass++) {
+    await sweepCommunityDeletions(h.pool, h.blobStore, 100);
+    const job = await h.pool.query<{ last_error_class: string | null }>(
+      'SELECT last_error_class FROM community_deletion_jobs WHERE community_id=$1',
+      [a]
+    );
+    if (job.rows[0]?.last_error_class === 'SHORT_NAME_HOLDS_REQUIRED') break;
+    await h.pool.query('UPDATE community_deletion_jobs SET next_attempt_at=now()');
+  }
+  expect(
+    (
+      await h.pool.query<{ state: string; last_error_class: string }>(
+        'SELECT state,last_error_class FROM community_deletion_jobs WHERE community_id=$1',
+        [a]
+      )
+    ).rows[0]
+  ).toEqual({ state: 'retrying', last_error_class: 'SHORT_NAME_HOLDS_REQUIRED' });
   await h.pool.query('UPDATE community_deletion_jobs SET next_attempt_at=now()');
   expect((await h.pool.query('SELECT 1 FROM communities WHERE id=$1', [a])).rowCount).toBe(1);
   const holds = {
     key: shortNameHoldKey(h.config.authSecret),
     cooloffDays: h.config.limits.shortNameCooloffDays,
   };
+  // The cool-off starts from the worker's injected clock, not the wall clock.
+  const deletedAt = new Date(Date.now() + 3 * DAY);
   for (let pass = 0; pass < 10; pass++) {
     const result = await sweepCommunityDeletions(h.pool, h.blobStore, 100, {
       shortNameHolds: holds,
+      now: () => deletedAt,
     });
     if (result.completed) break;
     await h.pool.query('UPDATE community_deletion_jobs SET next_attempt_at=now()');
   }
   expect((await h.pool.query('SELECT 1 FROM communities WHERE id=$1', [a])).rowCount).toBe(0);
+  expect(
+    (
+      await h.pool.query('SELECT 1 FROM released_short_names WHERE available_at=$1', [
+        new Date(deletedAt.getTime() + holds.cooloffDays * DAY),
+      ])
+    ).rowCount
+  ).toBe(2);
   const all = await everyRow();
   for (const name of ['zeta-vanish', 'acme-labs']) {
     expect(all, name).not.toContain(name);
@@ -369,4 +417,56 @@ it('limits lookups per caller', async () => {
   } finally {
     h.config.limits.nameLookupsPerMinute = 600;
   }
+});
+
+it('counts each caller behind a trusted proxy separately, and only when told to trust it', async () => {
+  // Purpose: behind a reverse proxy every caller shares the proxy's socket address. Fails if the
+  // named header is ignored (one shared bucket), or honored when no header is configured
+  // (anyone could pick their own bucket).
+  const from = (address: string) =>
+    h.call('/api/v1/community-names/anything', { headers: { 'fly-client-ip': address } });
+  h.config.limits.nameLookupsPerMinute = 2;
+  try {
+    // Not configured: the header is ignored. This test process's own address has already used
+    // more than two lookups this minute, so a "new" caller named only by the header is refused.
+    expect((await from('203.0.113.1')).status).toBe(429);
+
+    h.config.trustedProxyHeader = 'fly-client-ip';
+    for (const address of ['198.51.100.1', '198.51.100.2']) {
+      expect((await from(address)).status, address).toBe(404);
+      expect((await from(address)).status, address).toBe(404);
+      expect((await from(address)).status, address).toBe(429);
+    }
+    // A comma list counts against the last address, the one the proxy itself appended.
+    const spoofed = await h.call('/api/v1/community-names/anything', {
+      headers: { 'fly-client-ip': '198.51.100.99, 198.51.100.1' },
+    });
+    expect(spoofed.status).toBe(429);
+
+    // The same address feeds the failed host-key limiter, so one bad program behind the proxy
+    // no longer blocks another's failed attempts.
+    h.config.limits.hostKeyAttemptsPerMinute = 1;
+    const badKey = (address: string) =>
+      h.call('/api/v1/host/communities', {
+        bearer: 'dkh_not-a-real-key',
+        headers: { 'fly-client-ip': address },
+      });
+    expect((await badKey('192.0.2.1')).status).toBe(401);
+    expect((await badKey('192.0.2.1')).status).toBe(429);
+    expect((await badKey('192.0.2.2')).status).toBe(401);
+  } finally {
+    h.config.trustedProxyHeader = undefined;
+    h.config.limits.nameLookupsPerMinute = 600;
+    h.config.limits.hostKeyAttemptsPerMinute = 100;
+  }
+});
+
+it('finds names communities hold that have since been reserved', async () => {
+  // Purpose: the server warns at startup about these; fails if a newly reserved bound name is
+  // missed, or an unreserved one is reported.
+  await expectStatus(await setName(b, 'later-kept'), 200, 'name B');
+  expect(await reservedBoundShortNames(h.pool, h.config.reservedShortNames)).toEqual([]);
+  expect(
+    await reservedBoundShortNames(h.pool, new Set([...h.config.reservedShortNames, 'later-kept']))
+  ).toEqual([{ shortName: 'later-kept', communityId: b }]);
 });

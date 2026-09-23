@@ -12,6 +12,7 @@ import {
   communityBasePath,
   describeError,
   hostRequest,
+  isCommunityPath,
   RequestError,
   request,
   shortNameBasePath,
@@ -39,6 +40,7 @@ export function CommunityApp() {
   const inviteTokenRef = useRef(inviteToken);
   const [community, setCommunity] = useState<Community | null>(null);
   const [communityLifecycle, setCommunityLifecycle] = useState<CommunityLifecycle | null>(null);
+  const [communityShortName, setCommunityShortName] = useState<string | null>(null);
   const [deletionNoticeAt, setDeletionNoticeAt] = useState<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [unadmitted, setUnadmitted] = useState(false);
@@ -64,7 +66,7 @@ export function CommunityApp() {
     [channels, selectedId]
   );
   const returnToChooser = useCallback(() => {
-    if (/^\/c\/[^/]+(?:\/|$)/u.test(window.location.pathname)) returnToChooserWithNotice();
+    if (isCommunityPath(window.location.pathname)) returnToChooserWithNotice();
   }, []);
   const eraseInviteToken = useCallback(() => {
     inviteTokenRef.current = null;
@@ -112,6 +114,7 @@ export function CommunityApp() {
       }
       setCommunityLifecycle(membership.lifecycle);
       setDeletionNoticeAt(membership.deletionNoticeAt);
+      setCommunityShortName(membership.shortName);
       return membership.lifecycle;
     },
     [returnToChooser]
@@ -198,7 +201,7 @@ export function CommunityApp() {
         if (cause instanceof RequestError && cause.status === 404) {
           // An unknown tenant ID gets the same answer as one this account cannot enter; only
           // a host with no community at all offers first-host setup.
-          if (/^\/c\//u.test(window.location.pathname)) returnToChooser();
+          if (isCommunityPath(window.location.pathname)) returnToChooser();
           setCommunity(null);
           setMe(null);
         } else if (cause instanceof RequestError && cause.code === 'COMMUNITY_SELECTION_REQUIRED') {
@@ -451,6 +454,7 @@ export function CommunityApp() {
           <Manage
             communityId={community!.id}
             communityName={community!.name}
+            communityAddress={`${window.location.origin}${communityShortName ? `/${communityShortName}` : `/c/${community!.id}`}`}
             me={me.member}
             channels={channels}
             initialSection={settingsRoute?.section ?? null}

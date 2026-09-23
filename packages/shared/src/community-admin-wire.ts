@@ -63,6 +63,25 @@ export const COMMUNITY_RESERVED_SHORT_NAMES: readonly string[] = [
   'import',
   'invite',
   'deletion',
+  // Pages a host is likely to publish, and words that would let a community pose as the host.
+  'terms',
+  'privacy',
+  'abuse',
+  'report',
+  'legal',
+  'security',
+  'account',
+  'recovery',
+  'oauth',
+  'callback',
+  'verify',
+  'reset',
+  'communities',
+  'community',
+  'support',
+  'billing',
+  'official',
+  'dorkos',
 ];
 /** Set, change, or clear (`null`) a community's short name. */
 export const CommunityAdminShortNameUpdateRequestSchema = z.strictObject({
@@ -76,7 +95,8 @@ export const CommunityAdminShortNamesSchema = z.strictObject({
 });
 /**
  * Whether a short name could be given to a community now. `cooling_off` is a released name
- * still held back from reuse until `availableAt`; the public lookup cannot tell it from an
+ * still held back from reuse until `availableAt`, given as the next UTC midnight after the hold
+ * ends so it never dates the release to the second; the public lookup cannot tell it from an
  * unknown name, by design, so a host needs this to explain a refusal.
  */
 export const CommunityAdminShortNameAvailabilitySchema = z.strictObject({

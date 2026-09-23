@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { describeError, request } from '../api.js';
+import { FocusDialog } from './CommunityAdministration.js';
 
 type Names = {
   communityId: string;
@@ -25,6 +26,8 @@ export function HostShortNames({
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  // The retired name waiting on the host's confirmation before it is released.
+  const [releasing, setReleasing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -110,8 +113,10 @@ export function HostShortNames({
           </span>
           {names.retired.length > 0 && (
             <div className="mt-3">
-              <p className="small mb-1">Old addresses that still lead here</p>
-              <ul className="stack small">
+              <p id={`${draftId}-retired`} className="small mb-1">
+                Old addresses that still lead here
+              </p>
+              <ul className="stack small" aria-labelledby={`${draftId}-retired`}>
                 {names.retired.map((retired) => (
                   <li key={retired.shortName} className="row justify-between">
                     <span className="font-mono">/{retired.shortName}</span>
@@ -119,16 +124,7 @@ export function HostShortNames({
                       type="button"
                       className="button"
                       disabled={busy}
-                      onClick={() =>
-                        void act(
-                          () =>
-                            request(
-                              `/api/v1/host/communities/${communityId}/short-names/${retired.shortName}`,
-                              'DELETE'
-                            ),
-                          `Released /${retired.shortName}. No community can take it during the cool-off.`
-                        )
-                      }
+                      onClick={() => setReleasing(retired.shortName)}
                     >
                       Release
                     </button>
@@ -138,6 +134,38 @@ export function HostShortNames({
             </div>
           )}
         </form>
+      )}
+      {releasing && (
+        <FocusDialog title={`Release /${releasing}?`} onClose={() => setReleasing(null)}>
+          <p>
+            {address(releasing)} will stop leading to {name}. Anyone with an old link lands on “No
+            community at this address.” After the cool-off, another community can take it.
+          </p>
+          <div className="row justify-end gap-2">
+            <button type="button" className="button" onClick={() => setReleasing(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="button danger"
+              disabled={busy}
+              onClick={() => {
+                const shortName = releasing;
+                setReleasing(null);
+                void act(
+                  () =>
+                    request(
+                      `/api/v1/host/communities/${communityId}/short-names/${shortName}`,
+                      'DELETE'
+                    ),
+                  `Released /${shortName}. No community can take it during the cool-off.`
+                );
+              }}
+            >
+              Release address
+            </button>
+          </div>
+        </FocusDialog>
       )}
     </details>
   );

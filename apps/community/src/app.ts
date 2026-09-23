@@ -32,6 +32,7 @@ import { registerMembershipRoutes } from './routes/memberships.js';
 import { registerHostLimitRoutes } from './routes/host-limits.js';
 import { registerHostLifecycleRoutes } from './routes/host-lifecycle.js';
 import { registerShortNameRoutes } from './routes/short-names.js';
+import { callerAddress } from './caller-address.js';
 import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
 import { registerHostLinkRoutes } from './routes/host-links.js';
@@ -88,8 +89,9 @@ export function createCommunityApp({
   const refundAttempt = (key: string) => {
     attemptTimes.get(key)?.pop();
   };
-  // Use the socket peer. Proxy headers are client-controlled until a trusted proxy is configured.
-  const peer = (c: Parameters<typeof getConnInfo>[0]) => getConnInfo(c).remote.address ?? 'unknown';
+  // The socket peer, or the address a configured trusted proxy names; see `callerAddress`.
+  const peer = (c: Parameters<typeof getConnInfo>[0]) =>
+    callerAddress(c, config.trustedProxyHeader);
   // Every server-side password check spends from this one per-account budget (see its TSDoc).
   const confirmPassword = createPasswordConfirmation({
     auth,

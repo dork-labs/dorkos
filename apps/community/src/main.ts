@@ -2,12 +2,12 @@ import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
-import { COMMUNITY_SHORT_NAME_PATTERN } from '@dorkos/shared/community-admin-wire';
 import { createCommunityApp } from './app.js';
 import { parseConfig } from './config.js';
 import { migrate } from './migrate.js';
 import { createSignalHandler, createStop } from './shutdown.js';
-import { shortNameHoldKey } from './host/short-names.js';
+import { reservedBoundShortNames, shortNameHoldKey } from './host/short-names.js';
+import { registerShortNamePages } from './short-names/pages.js';
 import { createBlobStore } from './storage/index.js';
 import { sweepExpiredAttachments } from './routes/attachments.js';
 import { sweepExpiredExports } from './routes/exports.js';
@@ -54,19 +54,17 @@ app.get(
   '/c/:communityId/*',
   serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
 );
-// A community's short address, `/<name>` and anything under it, is the browser page too, but
-// only for a name the grammar allows and nothing reserved: every other path keeps its 404.
-const shortNamePage = serveStatic({
-  path: fileURLToPath(new URL('../dist/index.html', import.meta.url)),
+registerShortNamePages(app, {
+  indexPath: fileURLToPath(new URL('../dist/index.html', import.meta.url)),
+  reservedNames: config.reservedShortNames,
 });
-const servesShortName = (name: string) =>
-  COMMUNITY_SHORT_NAME_PATTERN.test(name) && !config.reservedShortNames.has(name);
-app.get('/:name', (c, next) =>
-  servesShortName(c.req.param('name')) ? shortNamePage(c, next) : next()
-);
-app.get('/:name/*', (c, next) =>
-  servesShortName(c.req.param('name')) ? shortNamePage(c, next) : next()
-);
+// A name a community already holds may have become reserved since, by an upgrade or the host's
+// own list; that address no longer opens the community, so say so where the host will see it.
+for (const bound of await reservedBoundShortNames(pool, config.reservedShortNames)) {
+  console.warn(
+    `Community ${bound.communityId} has the web address /${bound.shortName}, which is now reserved and no longer opens it. Give the community another address on the host page.`
+  );
+}
 const shortNameHolds = {
   key: shortNameHoldKey(config.authSecret),
   cooloffDays: config.limits.shortNameCooloffDays,

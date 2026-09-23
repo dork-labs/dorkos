@@ -57,6 +57,22 @@ describe('community startup config', () => {
     expect(() => parseConfig({ ...valid, COMMUNITY_NAME_LOOKUPS_PER_MINUTE: '601' })).toThrow();
   });
 
+  it('trusts no proxy header unless one is named, and only a well-formed header name', () => {
+    // Purpose: fails if a proxy header is trusted by default (callers could choose their own
+    // limit bucket), or a malformed name is accepted silently.
+    expect(parseConfig(valid).trustedProxyHeader).toBeUndefined();
+    expect(parseConfig({ ...valid, COMMUNITY_TRUSTED_PROXY_HEADER: '' }).trustedProxyHeader).toBe(
+      undefined
+    );
+    expect(
+      parseConfig({ ...valid, COMMUNITY_TRUSTED_PROXY_HEADER: ' Fly-Client-IP ' })
+        .trustedProxyHeader
+    ).toBe('fly-client-ip');
+    expect(() =>
+      parseConfig({ ...valid, COMMUNITY_TRUSTED_PROXY_HEADER: 'X-Real-IP: 1.2.3.4' })
+    ).toThrow('COMMUNITY_TRUSTED_PROXY_HEADER');
+  });
+
   it('requires at least a week of notice before a host may delete a held community', () => {
     // Purpose: fails if a host could configure a notice too short for an owner to export.
     expect(parseConfig(valid).limits.hostDeletionNoticeDays).toBe(14);

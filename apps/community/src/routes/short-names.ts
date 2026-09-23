@@ -56,6 +56,9 @@ export function registerShortNameRoutes(
   // Exact match only: no listing, prefix search, or metadata. It confirms a live name is in
   // use, which is what a public address is for, and answers every other case identically.
   app.get('/community-names/:name', async (c) => {
+    // A name can move to another community after a cool-off, so no answer, found or not, may
+    // be reused from a cache.
+    c.header('Cache-Control', 'no-store');
     limitLookup(c);
     const name = normalizeShortName(c.req.param('name'));
     if (!name || reservedNames.has(name)) throw noCommunity();

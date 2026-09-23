@@ -59,14 +59,15 @@ export async function prepareCommunityDeletionInventory(
  * Delete one due tenant in bounded, restart-safe object and database phases.
  *
  * `shortNameHolds` is how a deleted community's short names are held back from reuse. A
- * community that has names is not finished without it, so no name is ever freed at once or
- * left behind in clear text.
+ * community that has names is not finished without it: the job stays retrying with
+ * `SHORT_NAME_HOLDS_REQUIRED`, so no name is ever freed at once or left behind in clear text.
+ * `now` is the clock a hold's cool-off starts from.
  */
 export async function sweepCommunityDeletions(
   pool: Pool,
   blobStore: BlobStore,
   blobBatchSize = DELETE_BATCH,
-  options: { shortNameHolds?: ShortNameHolds } = {}
+  options: { shortNameHolds?: ShortNameHolds; now?: () => Date } = {}
 ): Promise<{ claimed: number; deletedBlobs: number; completed: number; failed: number }> {
   if (!Number.isInteger(blobBatchSize) || blobBatchSize < 1 || blobBatchSize > 100)
     throw new Error('Invalid community deletion batch size');
@@ -259,6 +260,19 @@ export async function sweepCommunityDeletions(
       return false;
     }
 
+    const named = await client.query('SELECT 1 FROM community_short_names WHERE community_id=$1', [
+      job.community_id,
+    ]);
+    if (named.rowCount && !options.shortNameHolds) {
+      await client.query(
+        `UPDATE community_deletion_jobs
+         SET state='retrying',next_attempt_at=now()+interval '1 hour',
+             updated_at=now(),last_error_class='SHORT_NAME_HOLDS_REQUIRED'
+         WHERE community_id=$1`,
+        [job.community_id]
+      );
+      return false;
+    }
     await client.query(
       `UPDATE communities SET lifecycle='pending_owner',icon_blob_key=NULL,icon_content_type=NULL,
          suspended_from_state=NULL,suspended_at=NULL,archived_at=NULL,
@@ -271,18 +285,12 @@ export async function sweepCommunityDeletions(
     await client.query('DELETE FROM community_deletion_jobs WHERE community_id=$1', [
       job.community_id,
     ]);
-    const named = await client.query('SELECT 1 FROM community_short_names WHERE community_id=$1', [
-      job.community_id,
-    ]);
-    if (named.rowCount) {
-      if (!options.shortNameHolds)
-        throw new Error('Short-name holds are required to delete a named community');
+    if (named.rowCount && options.shortNameHolds)
       await releaseCommunityShortNames(client, job.community_id, {
         hold: true,
         holds: options.shortNameHolds,
-        at: new Date(),
+        at: options.now?.() ?? new Date(),
       });
-    }
     for (const table of [
       'member_limit_overrides',
       'community_limits',

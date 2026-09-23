@@ -145,6 +145,7 @@ async function createPendingCommunity(
       'description',
       'admission_policy',
       ...(input.body.limits ? ['limits'] : []),
+      ...(input.body.shortName ? ['short_name'] : []),
     ],
   });
   const row = await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [

@@ -4,6 +4,7 @@ import { describeError, download, request } from '../api.js';
 import { describeInstallAccess, describeReauthenticationError } from '../account-controls.js';
 import { SignOutButton } from './SignOut.js';
 import { HostLinksPanel } from './HostLinks.js';
+import { CommunityAddress } from './CommunityAddress.js';
 import { CommunityAdministration } from './CommunityAdministration.js';
 import { EraseMembershipPanel } from './Erasure.js';
 import type { Agent, Channel, Member } from '../types.js';
@@ -28,6 +29,8 @@ type Grant = {
 type Props = {
   communityId: string;
   communityName: string;
+  /** The full address members open this community at: its short one when it has one. */
+  communityAddress: string;
   me: Member;
   channels: Channel[];
   selectedChannel: Channel | null;
@@ -46,6 +49,7 @@ type Props = {
 export function Manage({
   communityId,
   communityName,
+  communityAddress,
   me,
   channels,
   selectedChannel,
@@ -337,6 +341,7 @@ export function Manage({
         )}
         {!readOnly && tab === 'community' && (
           <div className="settings-grid">
+            <CommunityAddress address={communityAddress} />
             {moderator && (
               <>
                 <section className="panel">

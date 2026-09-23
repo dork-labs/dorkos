@@ -105,6 +105,14 @@ const schema = z.object({
   COMMUNITY_HOST_DELETION_NOTICE_DAYS: z.coerce.number().int().min(7).max(365).default(14),
   COMMUNITY_SHORT_NAME_COOLOFF_DAYS: z.coerce.number().int().min(0).max(365).default(90),
   COMMUNITY_NAME_LOOKUPS_PER_MINUTE: integer('COMMUNITY_NAME_LOOKUPS_PER_MINUTE', 60, 600),
+  // The header a trusted reverse proxy sets to the caller's address. Off unless named.
+  COMMUNITY_TRUSTED_PROXY_HEADER: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined),
+    z
+      .string()
+      .regex(/^[A-Za-z0-9-]{1,64}$/)
+      .optional()
+  ),
   // Comma-separated short names this host keeps for itself, beside the built-in list.
   COMMUNITY_RESERVED_SHORT_NAMES: z.preprocess(
     (value) => (typeof value === 'string' && value.trim() !== '' ? value : undefined),
@@ -240,6 +248,8 @@ export function parseConfig(env: Record<string, unknown>) {
     /** Where each completed erasure's id-only line is also appended, outside the database. */
     erasureJournal: value.COMMUNITY_ERASURE_JOURNAL,
     hostLinks,
+    /** The header a trusted proxy puts the caller's address in; per-caller limits read it. */
+    trustedProxyHeader: value.COMMUNITY_TRUSTED_PROXY_HEADER?.toLowerCase(),
     /** Every short name no community may take: the built-in paths and this host's additions. */
     reservedShortNames: new Set([
       ...COMMUNITY_RESERVED_SHORT_NAMES,

@@ -36,6 +36,17 @@ export function communityBasePath(communityId: string): string {
     : `/c/${communityId}`;
 }
 
+/**
+ * Whether a browser path names one community: its canonical `/c/<uuid>` address, or the short
+ * address this page resolved. Only such a page goes back to the chooser when that community
+ * turns out not to be open to this person.
+ */
+export function isCommunityPath(pathname: string): boolean {
+  if (/^\/c\/[^/]+(?:\/|$)/u.test(pathname)) return true;
+  const base = shortNameRoute?.basePath;
+  return base !== undefined && (pathname === base || pathname.startsWith(`${base}/`));
+}
+
 /** Bind a v1 browser request to the immutable tenant the browser path names. */
 export function tenantApiPath(path: string, browserPath = window.location.pathname): string {
   if (!path.startsWith('/api/v1/')) return path;

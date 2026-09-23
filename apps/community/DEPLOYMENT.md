@@ -45,6 +45,8 @@ Most people can keep the default limits. Restart the service after changing one.
 | `COMMUNITY_SHORT_NAME_COOLOFF_DAYS`            |                       90 days | 365 days (0 turns it off) |
 | `COMMUNITY_NAME_LOOKUPS_PER_MINUTE`            |                     60 per IP |                600 per IP |
 
+Limits marked "per IP" count by the address that connected to the server. Behind a reverse proxy, set `COMMUNITY_TRUSTED_PROXY_HEADER` to the header your proxy puts the caller's address in (for example `Fly-Client-IP`). It is off unless you set it; see [operations](OPERATIONS.md) before turning it on.
+
 ## Optional Google and GitHub sign-in
 
 Password sign-in is always available. To offer Google sign-in, set both `COMMUNITY_GOOGLE_CLIENT_ID` and `COMMUNITY_GOOGLE_CLIENT_SECRET`. To offer GitHub sign-in, set both `COMMUNITY_GITHUB_CLIENT_ID` and `COMMUNITY_GITHUB_CLIENT_SECRET`. The service refuses to start if either pair is incomplete.

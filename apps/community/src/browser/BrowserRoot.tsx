@@ -7,10 +7,10 @@ import { OwnerClaim } from './components/OwnerClaim.js';
 import { Pairing } from './components/Pairing.js';
 import { OWNER_CLAIM_PATH } from './owner-claim.js';
 import { ShortNameRoute } from './components/ShortNameRoute.js';
-import {
-  COMMUNITY_RESERVED_SHORT_NAMES,
-  COMMUNITY_SHORT_NAME_PATTERN,
-} from '@dorkos/shared/community-admin-wire';
+import { COMMUNITY_RESERVED_SHORT_NAMES } from '@dorkos/shared/community-admin-wire';
+import { parseShortNamePath } from '../short-names/path.js';
+
+const RESERVED_SHORT_NAMES: ReadonlySet<string> = new Set(COMMUNITY_RESERVED_SHORT_NAMES);
 
 /** Select the browser surface from an exact root or tenant-qualified path. */
 export function BrowserRoot({
@@ -28,13 +28,8 @@ export function BrowserRoot({
   if (deletion) return <DeletionRecovery communityId={deletion[1]} />;
   if (pathname === '/') return <CommunityChooser signedOut={() => <CommunityApp />} />;
   // `/<name>[/...]`: a community's short address, for any name the grammar allows that no page
-  // of this app already owns.
-  const named = /^\/([^/]+)(\/.*)?$/u.exec(pathname);
-  if (
-    named &&
-    COMMUNITY_SHORT_NAME_PATTERN.test(named[1]) &&
-    !COMMUNITY_RESERVED_SHORT_NAMES.includes(named[1])
-  )
-    return <ShortNameRoute name={named[1]} rest={named[2] ?? ''} />;
+  // of this app already owns. The server reads the path the same way.
+  const named = parseShortNamePath(pathname, RESERVED_SHORT_NAMES);
+  if (named) return <ShortNameRoute name={named.name} rest={named.rest} />;
   return <CommunityApp />;
 }

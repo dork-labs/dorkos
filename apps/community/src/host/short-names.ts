@@ -64,8 +64,14 @@ export async function shortNameAvailability(
   const bound = await db.query('SELECT 1 FROM community_short_names WHERE short_name=$1', [name]);
   if (bound.rowCount) return { shortName: name, availability: 'taken', availableAt: null };
   const holdEnds = await activeHold(db, options.holds, name, options.at);
+  // The next UTC midnight after the hold ends: the name is free by then, and the exact moment
+  // it was released, which would date a deletion, is not given away.
   if (holdEnds)
-    return { shortName: name, availability: 'cooling_off', availableAt: holdEnds.toISOString() };
+    return {
+      shortName: name,
+      availability: 'cooling_off',
+      availableAt: new Date(Math.ceil(holdEnds.getTime() / DAY_MS) * DAY_MS).toISOString(),
+    };
   return { shortName: name, availability: 'available', availableAt: null };
 }
 
@@ -173,6 +179,23 @@ export async function releaseCommunityShortNames(
       options.at
     );
   }
+}
+
+/**
+ * Names a community holds that are now reserved, for example after an upgrade reserved a new
+ * path or the host added one to `COMMUNITY_RESERVED_SHORT_NAMES`. Such an address no longer
+ * opens its community, so the host should give it another.
+ */
+export async function reservedBoundShortNames(
+  db: Queryable,
+  reservedNames: ReadonlySet<string>
+): Promise<{ shortName: string; communityId: string }[]> {
+  const bound = await db.query<{ short_name: string; community_id: string }>(
+    `SELECT short_name,community_id FROM community_short_names
+     WHERE short_name=ANY($1::text[]) ORDER BY short_name`,
+    [[...reservedNames]]
+  );
+  return bound.rows.map((row) => ({ shortName: row.short_name, communityId: row.community_id }));
 }
 
 /** Lift the cool-off on one name. Returns whether a hold was there to lift. */
