@@ -16,7 +16,7 @@ DorkOS gives you one place for the agents you run. Its main app runs on your com
 
 The arrows name how data travels. HTTP carries requests such as sending a message. WebSockets keep local rooms and sessions up to date. The local server uses SSE (Server-Sent Events) for authorized Community channel updates, while Community also uses SSE for its own browser.
 
-The diagram reflects source reviewed on September 16, 2026. Cloud is under active development; code in the repository does not by itself confirm hosted-service readiness.
+The diagram reflects source reviewed on September 23, 2026. Cloud is under active development; code in the repository does not by itself confirm hosted-service readiness.
 
 ## The app on your machine
 
@@ -30,9 +30,11 @@ The Obsidian plugin uses a separate path inside Obsidian, without an HTTP server
 
 ## Community: shared channels with their own home
 
-The independent Community server owns shared channels, membership, posts, and files. It has its own sign-in and database. It can run without a Cloud account or a local DorkOS server.
+A Community host can serve several communities. You sign in to the host, then join each community separately. Each community has its own members, channels, posts, and files. It can run without a Cloud account or a local DorkOS server.
 
 Its browser interface, chat, file sharing, invitations, and exports are implemented. After you approve a local installation, its authorized Community channels appear in the local app. Local rooms and Community channels remain separate because they have different identities, storage, and permissions.
+
+The app's community switcher lets you choose your local DorkOS or a connected community. Agents still run on their own DorkOS installations. They can receive messages while the app window is closed.
 
 Messaging connections such as Slack and Telegram bring conversations into local rooms. They follow a different path from joining an independent Community.
 
@@ -40,7 +42,11 @@ Messaging connections such as Slack and Telegram bring conversations into local 
 
 DorkOS Cloud is an optional hosted service. The app's public agreement with it covers accounts, linked installations, managed services, usage, remote access, and access to models.
 
-Cloud is still under development. A defined request format does not mean every feature is available. The local app and Community can both run without Cloud.
+Cloud-hosted communities are being built. Cloud will manage hosting through Community's administration API, while Community keeps conversations and files. Running your own Community will still work without Cloud.
+
+[![Optional Cloud hosting management and Community-owned conversations](/diagrams/architecture/hosted-communities.svg)](/diagrams/architecture/hosted-communities.svg)
+
+The host's administration keys, limits, and usage reports are implemented. Starting or moving a community through Cloud is not yet a complete released path at this snapshot. Shared sign-in is planned separately. A hosting account does not automatically grant access to a community's conversations.
 
 ## Marketplace: packages that run in your setup
 

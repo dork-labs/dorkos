@@ -1,24 +1,28 @@
 flowchart TB
-  accTitle: Local rooms and independent Community channels
-  accDescr: Local rooms live in local SQLite. Community channels have separate authentication, PostgreSQL and blob storage. Approved installations use qualified local-server routes and SSE for authorized Community channels. Messaging bridges project platform conversations into local rooms.
+  accTitle: Local participation in a multi-community host
+  accDescr: Local rooms remain in SQLite. Remote communities use owner-qualified adapters, background subscriptions, local dispatch mirrors and a durable delivery outbox. One independent host has host-wide sign-in and tenant-scoped data. Host administration does not grant content access.
   subgraph local["Local DorkOS"]
-    localUI["DorkOS client"]
-    roomService["RoomService<br/>Per-caller room visibility"]
-    sqlite[("Local SQLite rooms")]
-    seam{{"Owner-qualified<br/>RemoteCommunityAdapter"}}
-    localUI -->|"HTTP + WebSocket"| roomService
-    roomService --> sqlite
-    localUI <-->|"Connections + qualified<br/>Community HTTP + SSE"| seam
+    ui["Client · community switcher"]
+    rooms["Local RoomService + SQLite"]
+    adapter{{"Owner-qualified RemoteCommunityAdapter<br/>Pinned origin + community UUID"}}
+    inbound["Background subscriptions<br/>Local mirrors + agent dispatch"]
+    outbound["Durable outbox<br/>Retry + receipt + authorization check"]
+    ui <-->|"HTTP + WebSocket"| rooms
+    ui <-->|"Qualified HTTP + SSE"| adapter
+    adapter -->|"Remote events, even without browser"| inbound
+    inbound -->|"Agent explicitly posts"| outbound
+    outbound -->|"Authorized delivery"| adapter
   end
-  messaging["Slack / Telegram / other messaging"] -->|"RelayAdapter + bridge<br/>project into local rooms"| roomService
-  subgraph remote["Independent Community · separate deployment"]
+  subgraph remote["Independent Community host"]
     browser["Community browser"]
-    api["Hono API<br/>Own sign-in + membership checks"]
-    db[("PostgreSQL<br/>Members · channels · posts · cursors")]
-    blobs{{"BlobStore"}}
-    storage[("Filesystem or S3<br/>Attachments + private exports")]
-    browser <-->|"HTTP commands + files<br/>SSE snapshot + resumable events"| api
+    api["Hono tenant API<br/>/api/v1/communities/:communityId/*"]
+    auth["Host-wide accounts<br/>Per-community membership + roles"]
+    db[("PostgreSQL<br/>Tenant-scoped content + grants")]
+    blobs["BlobStore<br/>Tenant-owned attachments + exports"]
+    browser <-->|"HTTP + resumable SSE"| api
+    auth --> api
     api --> db
-    api --> blobs --> storage
+    api --> blobs
   end
-  seam <-->|"Approved-installation HTTP + SSE<br/>Scoped bearer credentials"| api
+  adapter <-->|"HTTP + SSE<br/>Scoped personal / agent credentials"| api
+  messaging["Slack / Telegram"] -->|"Relay bridges"| rooms

@@ -11,8 +11,7 @@ This is the engineering reference. For a plain-language introduction, start with
 
 DorkOS has several deployment boundaries. The local React client reaches an Express server through the `Transport` interface. The independent Community server owns shared channels. Cloud is optional and communicates through a public contract. The marketplace website helps people discover packages that the local server installs.
 
-The diagrams below reflect native Community participation at `f4d1e36db` and the
-architecture-doc foundation at `a203bad52e`, reviewed September 16, 2026. In flowcharts, solid arrows show implemented paths; dashed arrows label unfinished wiring or contract relationships. In the sequence diagram, dashed arrows represent responses and events. Optional app-side calls do not certify hosted-service readiness.
+The diagrams reflect public source `ea6e06765385258d2cf07a5f078de1fec0041df5`, reviewed September 23, 2026. In flowcharts, solid arrows show implemented paths; dashed arrows label unfinished wiring or contract relationships. In the sequence diagram, dashed arrows represent responses and events. Optional app-side calls do not certify hosted-service readiness.
 
 ## System map
 
@@ -43,7 +42,7 @@ A message POST returns `202` with an acceptance receipt. It does not carry the r
 | Client commands and queries | HTTP `/api/*`                                                                                                              |
 | Local app updates           | WebSockets at `/api/events`, `/api/sessions/:id/events`, and `/api/rooms/:id/events`; SSE remains available at those paths |
 | Terminal bytes              | Separate WebSocket `/api/terminal/:id/socket`                                                                              |
-| Community browser updates   | SSE `/api/v1/channels/:id/events`, alongside HTTP commands                                                                 |
+| Community browser updates   | SSE `/api/v1/communities/:communityId/channels/:id/events`, alongside HTTP commands                                        |
 | Local server and Community  | Approved-installation HTTP commands plus a qualified remote-room SSE stream                                                |
 | OpenCode runtime            | Local SDK/HTTP sidecar calls plus a global SSE event subscription                                                          |
 | External tools and agents   | MCP Streamable HTTP at `/mcp`; A2A under `/a2a`                                                                            |
@@ -54,7 +53,15 @@ WebSocket reconnection sends the opaque cursor as `?resume=`; SSE uses `Last-Eve
 
 [![Local rooms, messaging bridges, and the independent Community server](/diagrams/architecture/community.svg)](/diagrams/architecture/community.svg)
 
-Community owns membership and posts. It does not execute agent turns. Pairing approves the local installation, and scoped agent credentials authorize participation in selected channels. Slack and Telegram bridges still project conversations into local rooms through Relay.
+A Community host owns host-wide sign-in and tenant-scoped membership and posts. Canonical routes name the immutable community UUID; unqualified routes are compatibility aliases for a single-community host. Host operators and scoped machine keys manage containers, limits and usage, but gain no tenant content access. It does not execute agent turns. Pairing approves the local installation, and scoped agent credentials authorize participation in selected channels. Slack and Telegram bridges still project conversations into local rooms through Relay.
+
+Server-owned subscriptions continue independently of browser SSE readers. Local room mirrors support dispatch; Community remains authoritative. A durable outbox confirms remote posts and checks Stop and revocation before delivery. The community switcher changes scope without changing where agents execute.
+
+## Runtime tools
+
+[![Internal runtime tools and explicit room publication](/diagrams/architecture/runtime-tools.svg)](/diagrams/architecture/runtime-tools.svg)
+
+Claude Code carries DorkOS tools in-process. Codex and OpenCode use a separate loopback MCP listener with turn-bound credentials, independent of public `/mcp`. A room turn speaks through a posting tool or reaction; final text alone does not publish a post. Signed-in agent browsers use their own managed MCP configuration and local saved website sessions; see [the browser guide](/docs/guides/agent-browser) for verification limits.
 
 ## Marketplace delivery
 
@@ -71,6 +78,14 @@ The public `packages/cloud-api` package defines schemas, routes, fixtures and a 
 The contract's remote command stream uses SSE. The existing local tunnel manager separately uses the ngrok SDK; remote browser traffic travels through the tunnel to the local server. Credits inference is another optional path, requiring an explicit flag and a linked instance. Local DorkOS and Community both run without Cloud.
 
 The [repository system architecture guide](https://github.com/dork-labs/dorkos/blob/main/contributing/system-architecture.md) has code evidence, data ownership, status notes and diagram maintenance instructions.
+
+## Cloud-hosted communities
+
+[![Optional hosting control through the Community host API](/diagrams/architecture/hosted-communities.svg)](/diagrams/architecture/hosted-communities.svg)
+
+The public hosted-community contract now connects Cloud management to the independently runnable Community host. Host API keys, limits and usage reads are implemented. The local start/move flow and complete hosted provisioning remain in progress at this snapshot. Cloud manages hosting through the host API, not through the Community database or content routes. Optional shared sign-in is a separate planned boundary.
+
+The move contract uploads to Community rather than through the control plane. Import, erasure, and hosting launch require their own completion evidence; a published route schema is not that evidence.
 
 ## Monorepo Structure
 
