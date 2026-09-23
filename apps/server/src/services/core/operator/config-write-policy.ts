@@ -307,14 +307,17 @@ export const CONFIG_WRITE_POLICY = {
   // Preferences only: restoring a room always reauthorizes it server-side, so
   // changing an ID cannot widen access or disclose the remembered destination.
   'ui.communityNavigation.version': 'agent-writable',
-  'ui.communityNavigation.owners[].ownerKey': 'agent-writable',
+  // Operator-only: which owner a namespace belongs to, and where the owner's
+  // next "This DorkOS" click lands. An agent that could write either could
+  // plant another owner's state or steer the operator to a route of its choice.
+  'ui.communityNavigation.owners[].ownerKey': 'operator-only',
   'ui.communityNavigation.owners[].order': 'agent-writable',
   'ui.communityNavigation.owners[].destinations[].ref': 'agent-writable',
   'ui.communityNavigation.owners[].destinations[].roomId': 'agent-writable',
   'ui.communityNavigation.owners[].destinations[].threadId': 'agent-writable',
   'ui.communityNavigation.owners[].destinations[].scrollAnchorEntryId': 'agent-writable',
-  'ui.communityNavigation.owners[].installationDestination.path': 'agent-writable',
-  'ui.communityNavigation.owners[].installationDestination.search': 'agent-writable',
+  'ui.communityNavigation.owners[].installationDestination.path': 'operator-only',
+  'ui.communityNavigation.owners[].installationDestination.search': 'operator-only',
   // Which promo cards are hidden. A preference about what the sidebar's bottom
   // slot offers, exactly like `ui.sidebar.gettingStarted.retired` above; nothing
   // it gates is a security control.
@@ -841,6 +844,8 @@ export const OPERATOR_ONLY_CONFIG_ERROR = 'Only a person can change those settin
  * - `attention` — whether the person finds out that something needs them.
  * - `authorship` — whether a stored value is shown as the person's own or as an
  *   agent's suggestion.
+ * - `navigation` — where the app takes the person when they switch back to
+ *   this DorkOS, and whose saved places those are.
  *
  * `authorship` is the newest and the narrowest (DOR-1022): it covers the record
  * of WHO wrote the display name, and nothing else on this list guards a record
@@ -867,7 +872,8 @@ export type OperatorOnlyStake =
   | 'initiative'
   | 'resources'
   | 'attention'
-  | 'authorship';
+  | 'authorship'
+  | 'navigation';
 
 /** One stake, the sentence an agent reads for it, and the paths it covers. */
 interface OperatorOnlyStakeGroup {
@@ -1101,6 +1107,20 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
     // is a true sentence about it.
     description: 'Whether a name on your roster is shown as your own or as an agent’s suggestion',
     paths: ['profile.displayNameSource.kind', 'profile.displayNameSource.agentName'],
+  },
+  {
+    stake: 'navigation',
+    // Not `reach` (nobody gets in) and not `authorship` (no name is shown as
+    // anyone's). An agent able to write the owner key could file its own state
+    // under the person's namespace, and one able to write the saved route could
+    // choose where the person lands on their next "switch back" click.
+    description:
+      'Where the app takes you when you switch back to this DorkOS, and whose saved places those are',
+    paths: [
+      'ui.communityNavigation.owners[].ownerKey',
+      'ui.communityNavigation.owners[].installationDestination.path',
+      'ui.communityNavigation.owners[].installationDestination.search',
+    ],
   },
   {
     stake: 'attention',
