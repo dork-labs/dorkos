@@ -10,7 +10,11 @@ import {
 } from '@/layers/shared/ui';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { roomDisplayTitle, useRoom } from '@/layers/entities/room';
-import { useRemoteCommunityRoom } from '@/layers/entities/community';
+import {
+  communityAccessState,
+  useCommunityConnections,
+  useRemoteCommunityRoom,
+} from '@/layers/entities/community';
 import { useSessionBorderState, type SessionBorderKind } from '@/layers/entities/session';
 import { fallbackTabLabel, parseTabHref, ROUTE_ICONS } from '../lib/tab-target';
 
@@ -75,10 +79,18 @@ export function AppTabItem({ tab, isActive, canClose, tabProps, onClose }: AppTa
   // the local rooms route for it answers 404 and names the tab "Channels".
   const community = isChannel ? target.community : null;
   const { data: localRoom } = useRoom(isChannel && !community ? target.roomId : null);
+  // Read under the connection's verified access, exactly as the channel bar
+  // does: the tab shares its cache entry, and a revoked community's title
+  // clears instead of lingering on a tab.
+  const connections = useCommunityConnections(community !== null);
+  const access = communityAccessState(
+    connections.data?.find((item) => item.ref === community)?.access
+  );
   const { data: communityRoom } = useRemoteCommunityRoom(
     community ?? '',
     target.roomId ?? '',
-    community !== null && target.roomId !== null
+    community !== null && target.roomId !== null && access.capabilities.read,
+    access.fingerprint
   );
   const room = community ? communityRoom : localRoom;
 

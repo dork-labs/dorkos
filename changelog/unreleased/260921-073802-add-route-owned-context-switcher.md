@@ -13,6 +13,10 @@ covers:
   - 'fix(client): fit the phone context switcher in the top bar'
   - 'fix(client): focus the selected context when the shortcut opens the switcher'
   - 'fix(client): name a community channel tab from its community'
+  - 'fix(client): read a community tab title under its verified access'
+  # The subjects below shipped in v0.81.0 (#1984, #1985, #1986). They are
+  # listed only because this branch's history still carries their pre-squash
+  # commits; this fragment adds no entry for them.
   - 'feat(community): add administration lifecycle API'
   - 'feat(community): enforce tenant authority boundaries'
   - 'feat(community): enforce tenant relational contract'
