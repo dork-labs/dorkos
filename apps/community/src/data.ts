@@ -2,7 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import type { Context } from 'hono';
 import type { CommunityAuth } from './auth.js';
 import { ApiError } from './http.js';
-import { hashSecret, readCookie, verifyValue } from './security.js';
+import { hashSecret, isHostApiKeyBearer, readCookie, verifyValue } from './security.js';
 import type { CommunityConfig } from './config.js';
 import { resolveCommunityContext, type CommunityContext } from './tenant-context.js';
 
@@ -47,6 +47,10 @@ function archivedReadAllowed(
 
 function bearer(c: Context): string | null {
   const header = c.req.header('authorization');
+  // A host API key is never a member credential, whatever its hash would match.
+  if (isHostApiKeyBearer(header)) {
+    throw new ApiError(401, 'UNAUTHENTICATED', 'Host API keys cannot reach community content.');
+  }
   return header?.startsWith('Bearer ') ? header.slice(7) : null;
 }
 
@@ -387,21 +391,17 @@ export async function bootstrapGrant(
   return result.rows[0].id;
 }
 
-/** Assert that a host account currently holds operational authority. */
-export async function requireHostOperator(
-  c: Context,
+/** Confirm the signed-in account's password for a sensitive action. */
+export async function reauthenticate(
   auth: CommunityAuth,
-  pool: Pool
-): Promise<{ userId: string; name: string }> {
-  const user = await requireSessionUser(c, auth);
-  const operator = await pool.query(
-    'SELECT 1 FROM host_operators WHERE user_id=$1 AND revoked_at IS NULL',
-    [user.id]
-  );
-  if (!operator.rowCount) {
-    throw new ApiError(403, 'FORBIDDEN', 'Host operator access is required.');
+  request: Request,
+  password: string
+): Promise<void> {
+  try {
+    await auth.api.verifyPassword({ headers: request.headers, body: { password } });
+  } catch {
+    throw new ApiError(403, 'FORBIDDEN', 'Reauthentication failed.');
   }
-  return { userId: user.id, name: user.name };
 }
 
 /** Lock a channel before a post or membership change and hide unauthorized private rooms. */

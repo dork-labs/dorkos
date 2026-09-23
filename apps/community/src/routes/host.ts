@@ -20,7 +20,13 @@ import {
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
-import { requireHostOperator, requireSessionUser, transaction } from '../data.js';
+import { requireSessionUser, transaction } from '../data.js';
+import {
+  assertHostActor,
+  recordHostAudit,
+  type HostActor,
+  type HostAuthority,
+} from '../host-authority.js';
 import { mintHandle } from '../handles.js';
 import { ApiError, json, readJson } from '../http.js';
 import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../security.js';
@@ -60,12 +66,9 @@ const hostProjectionSql = `SELECT c.id,c.name,c.description,c.lifecycle,c.lifecy
   j.state AS deletion_state
   FROM communities c LEFT JOIN community_deletion_jobs j ON j.community_id=c.id`;
 
-async function assertHostOperator(client: PoolClient, userId: string): Promise<void> {
-  const operator = await client.query(
-    'SELECT 1 FROM host_operators WHERE user_id=$1 AND revoked_at IS NULL FOR SHARE',
-    [userId]
-  );
-  if (!operator.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Host operator access ended.');
+/** The two revoker columns of an owner claim: exactly one names the actor. */
+function revokers(actor: HostActor): [string | null, string | null] {
+  return actor.kind === 'person' ? [actor.userId, null] : [null, actor.keyId];
 }
 
 function payloadHash(body: z.infer<typeof CommunityAdminCreateRequestSchema>): string {
@@ -83,14 +86,15 @@ function payloadHash(body: z.infer<typeof CommunityAdminCreateRequestSchema>): s
 async function createPendingCommunity(
   client: PoolClient,
   input: {
-    userId: string;
+    actor: HostActor;
+    now: Date;
     body: z.infer<typeof CommunityAdminCreateRequestSchema>;
     tokenHash: string;
     expiresAt: Date;
   }
 ): Promise<{ row: HostCommunityRow; grantId: string; expiresAt: Date; replayed: boolean }> {
   await client.query('SELECT pg_advisory_xact_lock(77281503)');
-  await assertHostOperator(client, input.userId);
+  await assertHostActor(client, input.actor, input.now);
   const hash = payloadHash(input.body);
   const receipt = await client.query<{
     payload_hash: string;
@@ -132,15 +136,24 @@ async function createPendingCommunity(
   );
   await client.query(
     `INSERT INTO community_creation_receipts(
-       idempotency_key,operator_user_id,payload_hash,community_id,owner_claim_grant_id
-     ) VALUES($1,$2,$3,$4,$5)`,
-    [input.body.idempotencyKey, input.userId, hash, community.rows[0].id, grant.rows[0].id]
+       idempotency_key,operator_user_id,operator_api_key_id,payload_hash,community_id,
+       owner_claim_grant_id
+     ) VALUES($1,$2,$3,$4,$5,$6)`,
+    [
+      input.body.idempotencyKey,
+      input.actor.kind === 'person' ? input.actor.userId : null,
+      input.actor.kind === 'api_key' ? input.actor.keyId : null,
+      hash,
+      community.rows[0].id,
+      grant.rows[0].id,
+    ]
   );
-  await client.query(
-    `INSERT INTO host_audit_events(actor_user_id,community_id,action,next_state,changed_fields)
-     VALUES($1,$2,'community.create','pending_owner',ARRAY['name','description','admission_policy'])`,
-    [input.userId, community.rows[0].id]
-  );
+  await recordHostAudit(client, input.actor, {
+    action: 'community.create',
+    communityId: community.rows[0].id,
+    nextState: 'pending_owner',
+    changedFields: ['name', 'description', 'admission_policy'],
+  });
   const row = await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [
     community.rows[0].id,
   ]);
@@ -180,9 +193,21 @@ export async function revokeTenantAccess(client: PoolClient, communityId: string
 /** Register host-only metadata, lifecycle, creation, and pending-owner claim endpoints. */
 export function registerHostRoutes(
   app: Hono,
-  deps: { pool: Pool; auth: CommunityAuth; config: CommunityConfig; blobStore: BlobStore }
+  deps: {
+    pool: Pool;
+    auth: CommunityAuth;
+    config: CommunityConfig;
+    blobStore: BlobStore;
+    authority: HostAuthority;
+    now: () => Date;
+  }
 ): void {
-  const { pool, auth, config, blobStore } = deps;
+  const { pool, auth, config, blobStore, authority, now } = deps;
+  const hostCommunityId = (value: string | undefined) => {
+    const parsed = z.uuid().safeParse(value);
+    if (!parsed.success) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+    return parsed.data;
+  };
   // Set and delete must agree on every attribute, or a browser can keep the original cookie.
   const claimCookieOptions = () => ({
     httpOnly: true,
@@ -192,11 +217,21 @@ export function registerHostRoutes(
   });
 
   app.get('/host/communities', async (c) => {
-    await requireHostOperator(c, auth, pool);
+    await authority.require(c, 'communities:read');
     const communities = await pool.query<HostCommunityRow>(
       `${hostProjectionSql} ORDER BY c.created_at,c.id`
     );
     return c.json({ communities: communities.rows.map(projectCommunity) });
+  });
+
+  app.get('/host/communities/:id', async (c) => {
+    await authority.require(c, 'communities:read');
+    const communityId = hostCommunityId(c.req.param('id'));
+    const community = await pool.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [
+      communityId,
+    ]);
+    if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community.rows[0]));
   });
 
   app.get('/memberships', async (c) => {
@@ -231,7 +266,7 @@ export function registerHostRoutes(
   });
 
   app.post('/host/communities', async (c) => {
-    const operator = await requireHostOperator(c, auth, pool);
+    const actor = await authority.require(c, 'communities:write');
     const body = await readJson(c, CommunityAdminCreateRequestSchema);
     const token = randomToken();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60_000);
@@ -247,7 +282,8 @@ export function registerHostRoutes(
     }
     const create = (client: PoolClient) =>
       createPendingCommunity(client, {
-        userId: operator.userId,
+        actor,
+        now: now(),
         body,
         tokenHash: hashSecret(token),
         expiresAt,
@@ -282,37 +318,36 @@ export function registerHostRoutes(
   });
 
   app.post('/host/communities/:id/owner-claims/reissue', async (c) => {
-    const operator = await requireHostOperator(c, auth, pool);
+    const actor = await authority.require(c, 'communities:write');
     await readJson(c, CommunityAdminClaimMutationRequestSchema);
-    const communityId = z.uuid().safeParse(c.req.param('id'));
-    if (!communityId.success) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+    const communityId = hostCommunityId(c.req.param('id'));
     const token = randomToken();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60_000);
     const grantId = await transaction(pool, async (client) => {
-      await assertHostOperator(client, operator.userId);
       const community = await client.query<{ lifecycle: string }>(
         'SELECT lifecycle FROM communities WHERE id=$1 FOR UPDATE',
-        [communityId.data]
+        [communityId]
       );
+      await assertHostActor(client, actor, now());
       if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
       if (community.rows[0].lifecycle !== 'pending_owner') {
         throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed community accepts claims.');
       }
       await client.query(
-        `UPDATE bootstrap_grants SET revoked_at=now(),revoked_by=$2
+        `UPDATE bootstrap_grants SET revoked_at=now(),revoked_by=$2,revoked_by_api_key_id=$3
          WHERE community_id=$1 AND purpose='owner_claim' AND consumed_at IS NULL AND revoked_at IS NULL`,
-        [communityId.data, operator.userId]
+        [communityId, ...revokers(actor)]
       );
       const grant = await client.query<{ id: string }>(
         `INSERT INTO bootstrap_grants(token_hash,purpose,community_id,expires_at)
          VALUES($1,'owner_claim',$2,$3) RETURNING id`,
-        [hashSecret(token), communityId.data, expiresAt]
+        [hashSecret(token), communityId, expiresAt]
       );
-      await client.query(
-        `INSERT INTO host_audit_events(actor_user_id,community_id,action,changed_fields)
-         VALUES($1,$2,'owner_claim.reissue',ARRAY['owner_claim'])`,
-        [operator.userId, communityId.data]
-      );
+      await recordHostAudit(client, actor, {
+        action: 'owner_claim.reissue',
+        communityId,
+        changedFields: ['owner_claim'],
+      });
       return grant.rows[0].id;
     });
     c.header('Cache-Control', 'no-store');
@@ -324,47 +359,46 @@ export function registerHostRoutes(
   });
 
   app.post('/host/communities/:id/owner-claims/:grantId/revoke', async (c) => {
-    const operator = await requireHostOperator(c, auth, pool);
+    const actor = await authority.require(c, 'communities:write');
     await readJson(c, CommunityAdminClaimMutationRequestSchema);
     const ids = z
       .strictObject({ communityId: z.uuid(), grantId: z.uuid() })
       .safeParse({ communityId: c.req.param('id'), grantId: c.req.param('grantId') });
     if (!ids.success) throw new ApiError(404, 'NOT_FOUND', 'Owner claim not found.');
     await transaction(pool, async (client) => {
-      await assertHostOperator(client, operator.userId);
       const community = await client.query<{ lifecycle: string }>(
         'SELECT lifecycle FROM communities WHERE id=$1 FOR UPDATE',
         [ids.data.communityId]
       );
+      await assertHostActor(client, actor, now());
       if (community.rows[0]?.lifecycle !== 'pending_owner') {
         throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed community has claims.');
       }
       const revoked = await client.query(
-        `UPDATE bootstrap_grants SET revoked_at=now(),revoked_by=$3
+        `UPDATE bootstrap_grants SET revoked_at=now(),revoked_by=$3,revoked_by_api_key_id=$4
          WHERE id=$1 AND community_id=$2 AND purpose='owner_claim'
            AND consumed_at IS NULL AND revoked_at IS NULL`,
-        [ids.data.grantId, ids.data.communityId, operator.userId]
+        [ids.data.grantId, ids.data.communityId, ...revokers(actor)]
       );
       if (!revoked.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Owner claim not found.');
-      await client.query(
-        `INSERT INTO host_audit_events(actor_user_id,community_id,action,changed_fields)
-         VALUES($1,$2,'owner_claim.revoke',ARRAY['owner_claim'])`,
-        [operator.userId, ids.data.communityId]
-      );
+      await recordHostAudit(client, actor, {
+        action: 'owner_claim.revoke',
+        communityId: ids.data.communityId,
+        changedFields: ['owner_claim'],
+      });
     });
     return c.body(null, 204);
   });
 
   app.delete('/host/communities/:id', async (c) => {
-    const operator = await requireHostOperator(c, auth, pool);
-    const communityId = z.uuid().safeParse(c.req.param('id'));
-    if (!communityId.success) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+    const actor = await authority.require(c, 'communities:write');
+    const communityId = hostCommunityId(c.req.param('id'));
     await transaction(pool, async (client) => {
-      await assertHostOperator(client, operator.userId);
       const community = await client.query<{ lifecycle: string }>(
         'SELECT lifecycle FROM communities WHERE id=$1 FOR UPDATE',
-        [communityId.data]
+        [communityId]
       );
+      await assertHostActor(client, actor, now());
       if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
       if (community.rows[0].lifecycle !== 'pending_owner') {
         throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed community can be abandoned.');
@@ -376,7 +410,7 @@ export function registerHostRoutes(
           OR EXISTS(SELECT 1 FROM managed_blobs WHERE community_id=$1)
           OR EXISTS(SELECT 1 FROM bootstrap_grants WHERE community_id=$1 AND revoked_at IS NULL)
         `,
-        [communityId.data]
+        [communityId]
       );
       if (unsafe.rowCount) {
         throw new ApiError(
@@ -386,30 +420,29 @@ export function registerHostRoutes(
         );
       }
       await client.query('DELETE FROM community_creation_receipts WHERE community_id=$1', [
-        communityId.data,
+        communityId,
       ]);
-      await client.query('DELETE FROM bootstrap_grants WHERE community_id=$1', [communityId.data]);
-      await client.query('DELETE FROM communities WHERE id=$1', [communityId.data]);
-      await client.query(
-        `INSERT INTO host_audit_events(actor_user_id,community_id,action,prior_state)
-         VALUES($1,$2,'community.abandon','pending_owner')`,
-        [operator.userId, communityId.data]
-      );
+      await client.query('DELETE FROM bootstrap_grants WHERE community_id=$1', [communityId]);
+      await client.query('DELETE FROM communities WHERE id=$1', [communityId]);
+      await recordHostAudit(client, actor, {
+        action: 'community.abandon',
+        communityId,
+        priorState: 'pending_owner',
+      });
     });
     return c.body(null, 204);
   });
 
   app.patch('/host/communities/:id/lifecycle', async (c) => {
-    const operator = await requireHostOperator(c, auth, pool);
+    const actor = await authority.require(c, 'communities:lifecycle');
     const body = await readJson(c, CommunityAdminHostLifecycleRequestSchema);
-    const communityId = z.uuid().safeParse(c.req.param('id'));
-    if (!communityId.success) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+    const communityId = hostCommunityId(c.req.param('id'));
     const community = await transaction(pool, async (client) => {
-      await assertHostOperator(client, operator.userId);
       const current = await client.query<HostCommunityRow>(
         `${hostProjectionSql} WHERE c.id=$1 FOR UPDATE OF c`,
-        [communityId.data]
+        [communityId]
       );
+      await assertHostActor(client, actor, now());
       const row = current.rows[0];
       if (!row) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
       if (row.lifecycle_version !== body.lifecycleVersion) {
@@ -438,12 +471,13 @@ export function registerHostRoutes(
           [row.id, next]
         );
       }
-      await client.query(
-        `INSERT INTO host_audit_events(
-           actor_user_id,community_id,action,prior_state,next_state,changed_fields
-         ) VALUES($1,$2,$3,$4,$5,ARRAY['lifecycle'])`,
-        [operator.userId, row.id, `community.${body.action}`, row.lifecycle, next]
-      );
+      await recordHostAudit(client, actor, {
+        action: `community.${body.action}`,
+        communityId: row.id,
+        priorState: row.lifecycle,
+        nextState: next,
+        changedFields: ['lifecycle'],
+      });
       return (await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [row.id]))
         .rows[0];
     });
