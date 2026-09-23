@@ -3,18 +3,22 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
+import { env } from 'node:process';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ZipEntryInput } from '../zip64-writer.js';
 import { bufferReader, FIXED_TIME, readWithYauzl, writeArchive } from './archive-test-helpers.js';
 
 /**
- * AC-2: the archive every common unzip tool must open. A tool that is not installed is skipped
- * with the reason logged; `ditto` exists only on macOS.
+ * AC-2: the archive every common unzip tool must open. Locally, a tool that is not installed is
+ * skipped with the reason logged. In CI (`CI` set) unzip, bsdtar and python3 are installed by the
+ * workflow, so a missing one fails its test instead of skipping it: a skip there would quietly
+ * drop the cross-check. `ditto` exists only on macOS and is never required.
  */
+const inCi = Boolean(env.CI);
+
 function available(tool: string): boolean {
   const found = spawnSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).status === 0;
-  if (!found)
-    console.warn(`[zip-cross-tools] skipping ${tool}: it is not installed on this machine`);
+  if (!found) console.warn(`[zip-cross-tools] ${tool} is not installed on this machine`);
   return found;
 }
 
@@ -26,6 +30,23 @@ const tools = {
 };
 if (process.platform !== 'darwin') {
   console.warn('[zip-cross-tools] skipping ditto: it exists only on macOS');
+}
+
+/** Run `check` when `tool` is present; skip locally, fail in CI, when it is not. */
+function withTool(
+  tool: 'unzip' | 'bsdtar' | 'python3' | 'ditto',
+  title: string,
+  check: () => unknown
+) {
+  if (tools[tool]) {
+    it(title, check);
+  } else if (inCi && tool !== 'ditto') {
+    it(title, () => {
+      throw new Error(`${tool} is required in CI; the workflow must install it`);
+    });
+  } else {
+    it.skip(`${title} (skipped: ${tool} is not installed)`, check);
+  }
 }
 
 function run(command: string, args: string[]) {
@@ -107,14 +128,14 @@ for (const forceZip64 of [false, true]) {
       if (directory) await rm(directory, { recursive: true, force: true });
     });
 
-    it.skipIf(!tools.unzip)('Info-ZIP unzip tests and extracts every entry', async () => {
+    withTool('unzip', 'Info-ZIP unzip tests and extracts every entry', async () => {
       expect(run('unzip', ['-t', path])).toContain('No errors detected');
       const out = join(directory, 'unzip');
       run('unzip', ['-q', '-o', path, '-d', out]);
       expect(await filesUnder(out)).toEqual(digests);
     });
 
-    it.skipIf(!tools.bsdtar)('bsdtar lists and extracts every entry', async () => {
+    withTool('bsdtar', 'bsdtar lists and extracts every entry', async () => {
       expect(
         run('bsdtar', ['-tf', path])
           .trim()
@@ -126,7 +147,7 @@ for (const forceZip64 of [false, true]) {
       expect(await filesUnder(out)).toEqual(digests);
     });
 
-    it.skipIf(!tools.python3)("Python's zipfile passes testzip() and reads every entry", () => {
+    withTool('python3', "Python's zipfile passes testzip() and reads every entry", () => {
       const script = [
         'import hashlib, json, sys, zipfile',
         'z = zipfile.ZipFile(sys.argv[1])',
@@ -140,7 +161,7 @@ for (const forceZip64 of [false, true]) {
       expect(result.files).toEqual(digests);
     });
 
-    it.skipIf(!tools.ditto)('macOS ditto extracts every entry', async () => {
+    withTool('ditto', 'macOS ditto extracts every entry', async () => {
       const out = join(directory, 'ditto');
       run('ditto', ['-x', '-k', path, out]);
       expect(await filesUnder(out)).toEqual(digests);

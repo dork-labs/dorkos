@@ -94,8 +94,8 @@ export class ZipWriterError extends Error {
 
 /**
  * Throw unless `name` is a relative, forward-slash path with no empty, `.` or `..` segment, no
- * backslash or control character, and at most 65,535 UTF-8 bytes. Directory entries (a trailing
- * slash) are never written.
+ * backslash, colon, control, bidirectional or zero-width character, and at most 65,535 UTF-8
+ * bytes. Directory entries (a trailing slash) are never written.
  */
 export function assertArchiveName(name: string): void {
   if (!isSafeArchiveName(name)) {
@@ -105,15 +105,57 @@ export function assertArchiveName(name: string): void {
 
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
+/**
+ * True for a character no archive name may hold: C0 and C1 controls, DEL, backslash, colon (a
+ * drive letter or an NTFS stream on Windows), bidirectional controls that reorder how a name
+ * reads, and zero-width characters that hide a difference between two names.
+ */
+function isUnsafeNameCharacter(code: number): boolean {
+  return (
+    code < 0x20 ||
+    (code >= 0x7f && code <= 0x9f) ||
+    code === 0x5c ||
+    code === 0x3a ||
+    code === 0x061c ||
+    (code >= 0x200b && code <= 0x200f) ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2060 && code <= 0x2069) ||
+    code === 0xfeff
+  );
+}
+
 /** True when `name` passes {@link assertArchiveName}. Readers apply the same baseline. */
 export function isSafeArchiveName(name: string): boolean {
   if (name.length === 0 || Buffer.byteLength(name, 'utf8') > 0xffff) return false;
   if (LONE_SURROGATE.test(name)) return false;
   for (let index = 0; index < name.length; index++) {
-    const code = name.charCodeAt(index);
-    if (code < 0x20 || code === 0x7f || code === 0x5c /* backslash */) return false;
+    if (isUnsafeNameCharacter(name.charCodeAt(index))) return false;
   }
   return name.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..');
+}
+
+/**
+ * One path segment built from a display name (already passed through `sanitizeDisplayName`):
+ * every character {@link isSafeArchiveName} refuses becomes `_`, and a segment that would be
+ * `.` or `..` becomes `_`, so `files/<id>/<segment>` is always writable.
+ */
+export function toArchiveSegment(displayName: string): string {
+  let segment = '';
+  for (const character of displayName) {
+    const code = character.codePointAt(0) ?? 0;
+    const lone = code >= 0xd800 && code <= 0xdfff;
+    segment += lone || character === '/' || isUnsafeNameCharacter(code) ? '_' : character;
+  }
+  return segment === '' || segment === '.' || segment === '..' ? '_' : segment;
+}
+
+/**
+ * The key two names collide under: Unicode NFC, lower case. Names that differ only in
+ * normalization or case land on one file on common file systems, so readers treat them as
+ * duplicates.
+ */
+export function archiveNameKey(name: string): string {
+  return name.normalize('NFC').toLowerCase();
 }
 
 /**

@@ -140,7 +140,7 @@ export class S3BlobStore implements BlobStore {
       if (options.signal?.aborted)
         throw new BlobStoreError('BLOB_ABORTED', 'Blob operation cancelled');
       if (isMissing(error)) throw new BlobStoreError('BLOB_NOT_FOUND', 'Blob not found');
-      if (error instanceof Error && error.name === 'InvalidRange') {
+      if (isRangeNotSatisfiable(error)) {
         throw new BlobStoreError('BLOB_RANGE_NOT_SATISFIABLE', 'Range is past the end of the blob');
       }
       throw error;
@@ -197,6 +197,12 @@ export class S3BlobStore implements BlobStore {
     }
     return { keys: [...keys].sort(), temporaryKeys: [], unexpectedEntries };
   }
+}
+
+function isRangeNotSatisfiable(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+  return error.name === 'InvalidRange' || status === 416;
 }
 
 function isMissing(error: unknown): boolean {

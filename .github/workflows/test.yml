@@ -550,6 +550,25 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # The community archive cross-checks (apps/community/src/archive/__tests__/
+      # zip-cross-tools.test.ts) read our ZIP64 exports with Info-ZIP unzip, bsdtar and
+      # Python's zipfile, and FAIL under CI when one is missing, so a skip can never
+      # quietly drop them. The runner image ships unzip and python3; bsdtar comes from
+      # libarchive-tools. apt runs only for what is missing.
+      - name: Install the unzip tools the archive cross-checks read with
+        run: |
+          missing=""
+          command -v unzip >/dev/null || missing="$missing unzip"
+          command -v bsdtar >/dev/null || missing="$missing libarchive-tools"
+          command -v python3 >/dev/null || missing="$missing python3"
+          if [ -n "$missing" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends $missing
+          fi
+          unzip -v | head -1
+          bsdtar --version
+          python3 --version
+
       # --summarize writes a machine-readable record of the run to
       # .turbo/runs/<id>.json. The assert step is the only reason it is here.
       #

@@ -26,7 +26,9 @@ export type ZipReaderErrorCode =
   | 'ZIP_HEADER_MISMATCH'
   | 'ZIP_OVERLAPPING_ENTRIES'
   | 'ZIP_SIZE_MISMATCH'
-  | 'ZIP_CRC_MISMATCH';
+  | 'ZIP_CRC_MISMATCH'
+  | 'ZIP_TOO_MANY_ENTRIES'
+  | 'ZIP_TOO_LARGE';
 
 /** A refused archive, with a stable code callers map to their own error. */
 export class ZipReaderError extends Error {
@@ -88,12 +90,13 @@ export async function locateCentralDirectory(
     tail.readUInt32LE(at - ZIP64_LOCATOR_BYTES) === ZIP64_LOCATOR_SIGNATURE;
   if (hasLocator) {
     const locator = at - ZIP64_LOCATOR_BYTES;
+    const locatorOffset = endOffset - ZIP64_LOCATOR_BYTES;
     const recordOffset = toSafeNumber(tail.readBigUInt64LE(locator + 8));
     const totalDisks = tail.readUInt32LE(locator + 16);
     if (tail.readUInt32LE(locator + 4) !== 0 || totalDisks > 1) {
       throw new ZipReaderError('ZIP_UNSUPPORTED', 'Multi-disk archives are not supported');
     }
-    if (recordOffset === null || recordOffset + ZIP64_END_BYTES > endOffset - ZIP64_LOCATOR_BYTES) {
+    if (recordOffset === null || recordOffset + ZIP64_END_BYTES > locatorOffset) {
       throw corrupt('The ZIP64 end record is out of place');
     }
     const record = await readExact(source, recordOffset, ZIP64_END_BYTES, signal);
@@ -111,6 +114,24 @@ export async function locateCentralDirectory(
       throw corrupt('The ZIP64 end record is out of range');
     }
     if (onDisk !== total) throw corrupt('The ZIP64 end record disagrees with itself');
+    // The record's own length field must place its end exactly at the locator.
+    const recordLength = toSafeNumber(record.readBigUInt64LE(4));
+    if (recordLength === null || recordOffset + 12 + recordLength !== locatorOffset) {
+      throw corrupt('The ZIP64 end record does not end at its locator');
+    }
+    // Each classic field holds either the sentinel or the same value as the ZIP64 record.
+    const agrees = (classic: number, sentinel: number, actual: number) =>
+      classic === sentinel || classic === actual;
+    if (
+      !agrees(disk, UINT16_SENTINEL, 0) ||
+      !agrees(directoryDisk, UINT16_SENTINEL, 0) ||
+      !agrees(entriesOnDisk, UINT16_SENTINEL, total) ||
+      !agrees(entryCount, UINT16_SENTINEL, total) ||
+      !agrees(directorySize, UINT32_SENTINEL, zip64Size) ||
+      !agrees(directoryOffset, UINT32_SENTINEL, zip64Offset)
+    ) {
+      throw corrupt('The classic end record disagrees with the ZIP64 end record');
+    }
     entryCount = total;
     directorySize = zip64Size;
     directoryOffset = zip64Offset;

@@ -250,6 +250,133 @@ describe('refusals', () => {
   });
 });
 
+describe('limits and hardening', () => {
+  const twoEntries = () =>
+    writeArchive(
+      [
+        [
+          { name: 'a.ndjson', method: 'deflated', source: Buffer.from('{"a":1}\n'.repeat(100)) },
+          { name: 'b.bin', method: 'stored', source: Buffer.alloc(50, 1), size: 50 },
+        ],
+      ],
+      []
+    );
+
+  // Purpose: the declared count is checked before any directory byte is read, so a huge count
+  // cannot exhaust memory in the duplicate check.
+  it('refuses an archive that declares more entries than allowed', async () => {
+    const { archive } = await twoEntries();
+    await expect(
+      openZipArchive(bufferReader(archive), { allowName: allowAll, maxEntries: 1 })
+    ).rejects.toMatchObject({ code: 'ZIP_TOO_MANY_ENTRIES' });
+    await expect(
+      openZipArchive(bufferReader(archive), { allowName: allowAll, maxEntries: 2 })
+    ).resolves.toBeDefined();
+    for (const maxEntries of [0, 10_000_001, 1.5]) {
+      await expect(
+        openZipArchive(bufferReader(archive), { allowName: allowAll, maxEntries })
+      ).rejects.toThrow(RangeError);
+    }
+  });
+
+  // Purpose: a declared size deflate cannot produce is refused in the directory pass, and the
+  // caller's per-entry and total limits hold.
+  it('refuses impossible ratios and sizes past the limits', async () => {
+    const { archive } = await twoEntries();
+    const [first] = directoryRecordOffsets(archive);
+    const compressed = Number(archive.readBigUInt64LE(first + 46 + 8 + 12));
+    const bomb = Buffer.from(archive);
+    bomb.writeBigUInt64LE(BigInt(compressed * 1032 + 1025), first + 46 + 8 + 4);
+    // Refused while reading the directory, before a byte is inflated.
+    const opened = await openZipArchive(bufferReader(bomb), { allowName: allowAll });
+    await expect(
+      (async () => {
+        for await (const entry of opened.entries()) void entry;
+      })()
+    ).rejects.toMatchObject({ code: 'ZIP_SIZE_MISMATCH' });
+    const limited = async (options: { maxEntryBytes?: number; maxTotalBytes?: number }) => {
+      const opened = await openZipArchive(bufferReader(archive), {
+        allowName: allowAll,
+        ...options,
+      });
+      for await (const entry of opened.entries()) void entry;
+    };
+    await expect(limited({ maxEntryBytes: 799 })).rejects.toMatchObject({ code: 'ZIP_TOO_LARGE' });
+    await expect(limited({ maxTotalBytes: 849 })).rejects.toMatchObject({ code: 'ZIP_TOO_LARGE' });
+    await expect(limited({ maxEntryBytes: 800, maxTotalBytes: 850 })).resolves.toBeUndefined();
+  });
+
+  // Purpose: when offsets ascend, a repeated offset is refused at the record that repeats it,
+  // before the rest of the directory is read.
+  it('refuses a repeated offset as soon as it appears', async () => {
+    const archive = versionOneArchive(new Uint8Array([1]), [
+      [randomUUID(), randomBytes(10)],
+      [randomUUID(), randomBytes(10)],
+      [randomUUID(), randomBytes(10)],
+    ]);
+    const [first, second] = directoryRecordOffsets(archive);
+    archive.writeUInt32LE(archive.readUInt32LE(first + 42), second + 42);
+    const opened = await openZipArchive(bufferReader(archive), { allowName: allowAll });
+    let yielded = 0;
+    const error = await (async () => {
+      for await (const entry of opened.entries()) {
+        void entry;
+        yielded++;
+      }
+    })().catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'ZIP_OVERLAPPING_ENTRIES' });
+    expect(yielded).toBe(1);
+  });
+
+  // Purpose: bytes smuggled after the end of a deflate stream (inside the declared compressed
+  // size) are refused even though the inflated bytes and checksum are right.
+  it('refuses bytes after the deflate stream', async () => {
+    const { archive } = await twoEntries();
+    const [first] = directoryRecordOffsets(archive);
+    const at = first + 46 + 8 + 12;
+    archive.writeBigUInt64LE(archive.readBigUInt64LE(at) + 4n, at);
+    await expectRefusal(archive, 'ZIP_CORRUPT');
+  });
+
+  // Purpose: the classic end record may only repeat the ZIP64 values or hold the sentinel, and
+  // the ZIP64 record must end at its locator.
+  it('refuses end records that disagree', async () => {
+    const { archive } = await twoEntries();
+    const count = Buffer.from(archive);
+    count.writeUInt16LE(7, count.length - 22 + 10);
+    await expectRefusal(count, 'ZIP_CORRUPT');
+    const length = Buffer.from(archive);
+    const zip64 = Number(length.readBigUInt64LE(length.length - 22 - 20 + 8));
+    length.writeBigUInt64LE(52n, zip64 + 4);
+    await expectRefusal(length, 'ZIP_CORRUPT');
+    const sentinel = Buffer.from(archive);
+    sentinel.writeUInt16LE(0xffff, sentinel.length - 22 + 10);
+    sentinel.writeUInt16LE(0xffff, sentinel.length - 22 + 8);
+    expect((await readAll(sentinel)).entries).toHaveLength(2);
+  });
+
+  // Purpose: names that differ only in case or Unicode normalization land on one file on
+  // common file systems, so they count as duplicates.
+  it('refuses names that collide by case or normalization', async () => {
+    await expectRefusal(
+      Buffer.from(zipSync({ 'A.txt': new Uint8Array([1]), 'a.txt': new Uint8Array([2]) })),
+      'ZIP_DUPLICATE_NAME'
+    );
+    await expectRefusal(
+      Buffer.from(zipSync({ 'caf\u00e9': new Uint8Array([1]), 'cafe\u0301': new Uint8Array([2]) })),
+      'ZIP_DUPLICATE_NAME'
+    );
+    await expectRefusal(
+      Buffer.from(zipSync({ 'a\u202egnp.exe': new Uint8Array([1]) })),
+      'ZIP_NAME_REJECTED'
+    );
+    await expectRefusal(
+      Buffer.from(zipSync({ 'c:evil': new Uint8Array([1]) })),
+      'ZIP_NAME_REJECTED'
+    );
+  });
+});
+
 describe('fuzz: damaged archives', () => {
   // Purpose: any single damaged byte or truncation either reads back exactly the original
   // contents or is refused with a ZipReaderError; it never crashes differently or returns other

@@ -1,7 +1,9 @@
 import { createDeflateRaw, crc32 } from 'node:zlib';
 import { chunksOf, coalesce, throughTransform, type ByteSource } from './streams.js';
 import {
+  archiveNameKey,
   assertArchiveName,
+  LOCAL_HEADER_BYTES,
   encodeCentralDirectoryRecord,
   encodeDataDescriptor,
   encodeEndOfCentralDirectory,
@@ -69,7 +71,12 @@ export interface ZipSegmentLayout {
 export interface ZipTailInput {
   /** Every earlier segment, in archive order. */
   segments: readonly ZipSegmentLayout[];
-  /** Entries written in the tail before the central directory (`manifest.json` last). */
+  /**
+   * Small entries written in the tail before the central directory: the icon and
+   * `manifest.json` (last). Collections that can grow (members, channel memberships, audit
+   * events) belong in data segments of their own, because a tail part can only be split between
+   * entries and a segment blob is at most 1 GiB.
+   */
   entries?: Iterable<ZipEntryInput> | AsyncIterable<ZipEntryInput>;
 }
 
@@ -162,16 +169,22 @@ export function writeZipTail(input: ZipTailInput, options: ZipWriterOptions = {}
     }
     for (const entry of segment.entries) {
       assertArchiveName(entry.name);
-      if (names.has(entry.name)) {
+      const key = archiveNameKey(entry.name);
+      if (names.has(key)) {
         throw new ZipWriterError('ZIP_DUPLICATE_NAME', 'Archive entry names must be unique');
       }
-      names.add(entry.name);
+      names.add(key);
+      // The smallest span the entry occupies: local header, name, and data.
+      const span =
+        LOCAL_HEADER_BYTES + Buffer.byteLength(entry.name, 'utf8') + entry.compressedSize;
       if (
         !Number.isSafeInteger(entry.offset) ||
+        !Number.isSafeInteger(entry.compressedSize) ||
         entry.offset < 0 ||
-        entry.offset >= segment.byteSize
+        entry.compressedSize < 0 ||
+        entry.offset + span > segment.byteSize
       ) {
-        throw new ZipWriterError('ZIP_SEGMENT_INVALID', 'Entry offset is outside its segment');
+        throw new ZipWriterError('ZIP_SEGMENT_INVALID', 'An entry does not fit in its segment');
       }
     }
     tailStart += segment.byteSize;
@@ -254,10 +267,11 @@ async function* writeEntries(
 ): AsyncGenerator<Unit> {
   for await (const entry of entries) {
     assertArchiveName(entry.name);
-    if (state.names.has(entry.name)) {
+    const key = archiveNameKey(entry.name);
+    if (state.names.has(key)) {
       throw new ZipWriterError('ZIP_DUPLICATE_NAME', 'Archive entry names must be unique');
     }
-    state.names.add(entry.name);
+    state.names.add(key);
     if (entry.size !== undefined && (!Number.isSafeInteger(entry.size) || entry.size < 0)) {
       throw new RangeError('Entry size must be a non-negative integer');
     }
@@ -328,19 +342,20 @@ async function* writeEntries(
 }
 
 async function readDeclared(source: ByteSource, size: number): Promise<Buffer> {
-  const chunks: Uint8Array[] = [];
+  // One allocation of the declared size; chunks are copied in as they arrive.
+  const data = Buffer.allocUnsafe(size);
   let total = 0;
   for await (const chunk of chunksOf(source)) {
-    total += chunk.length;
-    if (total > size) {
+    if (chunk.length > size - total) {
       throw new ZipWriterError('ZIP_SIZE_MISMATCH', 'Entry is longer than its declared size');
     }
-    chunks.push(chunk);
+    data.set(chunk, total);
+    total += chunk.length;
   }
   if (total !== size) {
     throw new ZipWriterError('ZIP_SIZE_MISMATCH', 'Entry is shorter than its declared size');
   }
-  return Buffer.concat(chunks, total);
+  return data;
 }
 
 async function* splitAtBoundaries(

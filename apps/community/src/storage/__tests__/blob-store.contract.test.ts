@@ -353,6 +353,16 @@ describe('S3 ranged reads', () => {
     await expect(
       store.get('a'.repeat(64), { range: { start: 100, end: 200 } })
     ).rejects.toMatchObject({ code: 'BLOB_RANGE_NOT_SATISFIABLE' });
+    const statusOnly = Object.assign(new Error('Unknown'), {
+      name: 'Unknown',
+      $metadata: { httpStatusCode: 416 },
+    });
+    const byStatus = storeAnswering(async () => {
+      throw statusOnly;
+    });
+    await expect(
+      byStatus.store.get('a'.repeat(64), { range: { start: 100, end: 200 } })
+    ).rejects.toMatchObject({ code: 'BLOB_RANGE_NOT_SATISFIABLE' });
     send.mockClear();
     await expect(store.get('a'.repeat(64), { range: { start: 3, end: 2 } })).rejects.toMatchObject({
       code: 'BLOB_RANGE_NOT_SATISFIABLE',

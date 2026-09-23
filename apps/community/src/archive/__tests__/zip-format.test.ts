@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import {
+  archiveNameKey,
   assertArchiveName,
   decodeEntriesIndex,
   encodeCentralDirectoryRecord,
@@ -11,6 +12,7 @@ import {
   encodeZip64EndRecord,
   encodeZip64Locator,
   localFlags,
+  toArchiveSegment,
   toDosDateTime,
   type ZipEntryRecord,
 } from '../zip-format.js';
@@ -204,20 +206,29 @@ describe('MS-DOS time', () => {
 });
 
 describe('entry names', () => {
-  // Purpose: the writer never emits a name a reader could resolve outside its folder.
+  const unsafe = [
+    '',
+    '/abs',
+    'a/../b',
+    '..',
+    'a//b',
+    'dir/',
+    'a\\b',
+    'a\u0000b',
+    './a',
+    '\ud800x',
+    'c:x',
+    'a\u0085b', // C1 control
+    'a\u202eb', // right-to-left override
+    'a\u2066b', // left-to-right isolate
+    'a\u200bb', // zero-width space
+    'a\ufeffb', // byte order mark
+  ];
+
+  // Purpose: the writer never emits a name a reader could resolve outside its folder, or one
+  // that reads differently from what it is.
   it('refuses unsafe names', () => {
-    for (const bad of [
-      '',
-      '/abs',
-      'a/../b',
-      '..',
-      'a//b',
-      'dir/',
-      'a\\b',
-      'a\u0000b',
-      './a',
-      '\ud800x',
-    ]) {
+    for (const bad of unsafe) {
       expect(() => assertArchiveName(bad)).toThrow(
         expect.objectContaining({ code: 'ZIP_NAME_INVALID' })
       );
@@ -230,6 +241,25 @@ describe('entry names', () => {
     ]) {
       expect(() => assertArchiveName(good)).not.toThrow();
     }
+  });
+
+  // Purpose: any display name becomes a segment the writer accepts, keeping what is safe.
+  it('turns any display name into a safe segment', () => {
+    for (const bad of unsafe)
+      expect(() => assertArchiveName(`files/1/${toArchiveSegment(bad)}`)).not.toThrow();
+    expect(toArchiveSegment('Résumé (final).pdf')).toBe('Résumé (final).pdf');
+    expect(toArchiveSegment('a:b\u202e.png')).toBe('a_b_.png');
+    expect(toArchiveSegment('..')).toBe('_');
+    fc.assert(
+      fc.property(fc.string({ maxLength: 60, unit: 'binary' }), (name) => {
+        expect(() => assertArchiveName(`files/1/${toArchiveSegment(name)}`)).not.toThrow();
+      })
+    );
+  });
+
+  // Purpose: the duplicate key folds case and normalization.
+  it('keys names by NFC and lower case', () => {
+    expect(archiveNameKey('Caf\u00e9')).toBe(archiveNameKey('cafe\u0301'));
   });
 });
 

@@ -10,6 +10,7 @@ import {
   FLAG_ENCRYPTED,
   FLAG_STRONG_ENCRYPTION,
   FLAG_UTF8,
+  archiveNameKey,
   isSafeArchiveName,
   LOCAL_FILE_HEADER_SIGNATURE,
   LOCAL_HEADER_BYTES,
@@ -40,8 +41,28 @@ export interface ZipReaderOptions {
    * to state what a valid archive of the caller's kind contains.
    */
   allowName(name: string): boolean;
+  /**
+   * Most entries the archive may declare, checked before the directory is read. Defaults to
+   * {@link DEFAULT_MAX_ENTRIES}; at most {@link MAX_ENTRIES_CEILING}, since the duplicate check
+   * keeps one small key per entry.
+   */
+  maxEntries?: number;
+  /** Largest uncompressed size one entry may declare. Unlimited when omitted. */
+  maxEntryBytes?: number;
+  /** Largest total uncompressed size of every entry. Unlimited when omitted. */
+  maxTotalBytes?: number;
   signal?: AbortSignal;
 }
+
+/** Entries an archive may declare unless the caller sets `maxEntries`. */
+export const DEFAULT_MAX_ENTRIES = 1_000_000;
+/** The highest `maxEntries` a caller may set. */
+export const MAX_ENTRIES_CEILING = 10_000_000;
+/**
+ * Raw deflate cannot expand input by more than about 1032 to 1, so a declared size beyond this
+ * ratio (plus slack for tiny entries) is a bomb, refused before a byte is inflated.
+ */
+const MAX_DEFLATE_RATIO = 1032;
 
 /**
  * Open a zip archive (a version 1 export written by fflate, or a segmented ZIP64 export) through
@@ -52,7 +73,14 @@ export async function openZipArchive(
   source: RangeReader,
   options: ZipReaderOptions
 ): Promise<ZipArchive> {
+  const maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
+  if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > MAX_ENTRIES_CEILING) {
+    throw new RangeError('maxEntries must be an integer from 1 to MAX_ENTRIES_CEILING');
+  }
   const location = await locateCentralDirectory(source, options.signal);
+  if (location.entryCount > maxEntries) {
+    throw new ZipReaderError('ZIP_TOO_MANY_ENTRIES', 'The archive declares too many entries');
+  }
   return new ZipArchive(
     source,
     options,
@@ -82,11 +110,21 @@ export class ZipArchive {
 
   /**
    * Stream and validate the central directory without holding its records: each entry is checked
-   * as it is read (encryption, method, name rules, duplicates by name digest, ZIP64 fields), and
-   * the count and overlap checks run after the last one.
+   * as it is read (encryption, method, name rules, duplicates by name digest, ZIP64 fields, size
+   * limits), and the count and overlap checks run after the last one.
+   *
+   * Nothing yielded here is trustworthy until the generator completes without an error: a later
+   * record can still reveal a duplicate, an overlap, or a count that disagrees with the end
+   * records. Callers must finish the pass before acting on any entry; {@link openEntry} enforces
+   * this.
    */
   async *entries(): AsyncGenerator<ZipEntry> {
     const digests = new Set<string>();
+    let totalBytes = 0;
+    // While offsets ascend (every archive we write), overlaps are refused as they appear.
+    let ascending = true;
+    let previousStart = -1;
+    let previousEnd = -1;
     let starts: Float64Array = new Float64Array(Math.min(this.entryCount, 1 << 16) || 1);
     let ends: Float64Array = new Float64Array(starts.length);
     let count = 0;
@@ -116,7 +154,10 @@ export class ZipArchive {
         const { entry, nameLength } = this.parseRecord(pending.subarray(at, at + length));
         at += length;
         if (++count > this.entryCount) throw corrupt('More entries than the end record declares');
-        const digest = createHash('sha256').update(entry.name).digest('base64').slice(0, 22);
+        const digest = createHash('sha256')
+          .update(archiveNameKey(entry.name))
+          .digest('base64')
+          .slice(0, 22);
         if (digests.has(digest)) {
           throw new ZipReaderError('ZIP_DUPLICATE_NAME', 'Two entries have the same name');
         }
@@ -126,6 +167,20 @@ export class ZipArchive {
           entry.localHeaderOffset + LOCAL_HEADER_BYTES + nameLength + entry.compressedSize;
         if (end > this.centralDirectoryOffset) {
           throw new ZipReaderError('ZIP_OVERLAPPING_ENTRIES', 'An entry runs into the directory');
+        }
+        if (ascending && entry.localHeaderOffset < previousStart) ascending = false;
+        if (ascending && entry.localHeaderOffset < previousEnd) {
+          throw new ZipReaderError('ZIP_OVERLAPPING_ENTRIES', 'Two entries overlap');
+        }
+        previousStart = entry.localHeaderOffset;
+        previousEnd = end;
+        totalBytes += entry.uncompressedSize;
+        if (
+          (this.options.maxEntryBytes !== undefined &&
+            entry.uncompressedSize > this.options.maxEntryBytes) ||
+          (this.options.maxTotalBytes !== undefined && totalBytes > this.options.maxTotalBytes)
+        ) {
+          throw new ZipReaderError('ZIP_TOO_LARGE', 'The archive is larger than allowed');
         }
         if (count > starts.length) {
           starts = grow(starts);
@@ -213,7 +268,8 @@ export class ZipArchive {
       entry.compressedSize > 0
         ? this.source.read(dataStart, dataEnd - 1, { signal })
         : chunksOf(new Uint8Array(0));
-    const output = entry.method === 0 ? raw : throughTransform(raw, createInflateRaw());
+    const inflate = entry.method === 8 ? createInflateRaw() : null;
+    const output = inflate ? throughTransform(raw, inflate) : raw;
     let produced = 0;
     let crc = 0;
     try {
@@ -231,6 +287,10 @@ export class ZipArchive {
     }
     if (produced !== entry.uncompressedSize) {
       throw new ZipReaderError('ZIP_SIZE_MISMATCH', 'An entry is smaller than it declares');
+    }
+    // The deflate stream must end exactly where the entry's compressed bytes end.
+    if (inflate && inflate.bytesWritten !== entry.compressedSize) {
+      throw corrupt('An entry has bytes after its deflate stream');
     }
     if (crc >>> 0 !== entry.crc32) {
       throw new ZipReaderError('ZIP_CRC_MISMATCH', 'An entry does not match its checksum');
@@ -278,6 +338,9 @@ export class ZipArchive {
     }
     if (method === 0 && compressedSize !== uncompressedSize) {
       throw new ZipReaderError('ZIP_SIZE_MISMATCH', 'A stored entry has two different sizes');
+    }
+    if (method === 8 && uncompressedSize > compressedSize * MAX_DEFLATE_RATIO + 1024) {
+      throw new ZipReaderError('ZIP_SIZE_MISMATCH', 'A deflated entry declares an impossible size');
     }
     const entry: ZipEntry = Object.freeze({
       name,

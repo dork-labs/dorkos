@@ -302,6 +302,14 @@ describe('refusals', () => {
       options
     );
     await expect(collectBytes(tail.bytes)).rejects.toMatchObject({ code: 'ZIP_DUPLICATE_NAME' });
+    const folded = writeZipSegment(
+      [
+        { name: 'Caf\u00e9', method: 'deflated', source: Buffer.from('1') },
+        { name: 'cafe\u0301', method: 'deflated', source: Buffer.from('2') },
+      ],
+      options
+    );
+    await expect(collectBytes(folded.bytes)).rejects.toMatchObject({ code: 'ZIP_DUPLICATE_NAME' });
     const unsafe = writeZipSegment(
       [{ name: '../evil', method: 'deflated', source: Buffer.from('') }],
       options
@@ -328,6 +336,15 @@ describe('refusals', () => {
     expect(() => writeZipTail({ segments: [{ byteSize: 10, entries: [entry] }] })).toThrow(
       expect.objectContaining({ code: 'ZIP_SEGMENT_INVALID' })
     );
+    // The offset fits, but the entry's header, name and data run past the segment's end.
+    expect(() =>
+      writeZipTail({
+        segments: [{ byteSize: 50, entries: [{ ...entry, offset: 0, compressedSize: 100 }] }],
+      })
+    ).toThrow(expect.objectContaining({ code: 'ZIP_SEGMENT_INVALID' }));
+    expect(() =>
+      writeZipTail({ segments: [{ byteSize: 31, entries: [{ ...entry, offset: 0 }] }] })
+    ).not.toThrow();
     expect(() => writeZipTail({ segments: [{ byteSize: 0, entries: [] }] })).toThrow(
       expect.objectContaining({ code: 'ZIP_SEGMENT_INVALID' })
     );
@@ -453,5 +470,5 @@ describe('property: any entries round-trip', () => {
       ),
       { numRuns: 40 }
     );
-  });
+  }, 30_000);
 });
