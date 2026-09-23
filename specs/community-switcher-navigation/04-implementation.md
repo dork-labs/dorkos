@@ -157,6 +157,12 @@ lifecycle + reachability because the descriptor carries no role, and the Communi
   either erasure runs. Send takes the draft from the store atomically, so a double Enter posts once.
 - While the owner is unconfirmed the composer holds no draft at all rather than one under an
   unresolved owner.
+- Review follow-ups: `write` refuses an address whose owner epoch or connection generation is no
+  longer current, so a late keystroke after an erase cannot bring an unreachable entry back; the
+  store holds at most 50 drafts and drops the least recently written (chosen over dropping a draft
+  when its room is deleted, which would need a room-removal signal the client does not have for
+  unopened rooms); a restored draft in a room that became read-only is kept and nothing is posted.
+  Each is mutation-checked.
 - Tests: `community-drafts.test.ts` (keying on every address part, same room id across
   Communities, thread vs channel, staged files, atomic take, `discardCommunity` scope, revocation
   and owner-change erasure); four new cases in `remote-community-drafts.test.tsx` (hook-level

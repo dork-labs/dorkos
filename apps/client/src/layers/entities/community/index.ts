@@ -19,6 +19,7 @@ export {
 export {
   communityDraftKey,
   EMPTY_COMMUNITY_DRAFT,
+  MAX_COMMUNITY_DRAFTS,
   useCommunityDraft,
   useCommunityDraftStore,
   type CommunityDraft,

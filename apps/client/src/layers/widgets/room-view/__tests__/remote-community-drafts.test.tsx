@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { PropsWithChildren } from 'react';
@@ -7,6 +7,12 @@ import {
   RemoteCommunityEntrySchema,
   type RemoteCommunityEntry,
 } from '@dorkos/shared/community-views';
+import {
+  confirmCommunityAuthority,
+  getCommunityAuthority,
+  getCommunityConnectionGeneration,
+  invalidateCommunityAuthority,
+} from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { useCommunityDraftStore, type CommunityDraftAddress } from '@/layers/entities/community';
 import {
@@ -14,14 +20,26 @@ import {
   type RemoteCommunityDraftOptions,
 } from '../model/use-remote-community-drafts';
 
+beforeEach(() => {
+  const next = invalidateCommunityAuthority();
+  confirmCommunityAuthority(next.epoch, 'owner-a');
+});
 afterEach(() => {
   cleanup();
   useCommunityDraftStore.getState().discardAll();
 });
 
-/** The composer address for owner `owner-a`, Community `a`, room `same`. */
+/** The composer address for owner `owner-a`, Community `a`, room `same`, under current authority. */
 function at(over: Partial<CommunityDraftAddress> = {}): CommunityDraftAddress {
-  return { ownerKey: 'owner-a', epoch: 1, ref: 'a', generation: 0, roomId: 'same', ...over };
+  const ref = over.ref ?? 'a';
+  return {
+    ownerKey: 'owner-a',
+    epoch: getCommunityAuthority().epoch,
+    ref,
+    generation: getCommunityConnectionGeneration(ref),
+    roomId: 'same',
+    ...over,
+  };
 }
 
 /** Hook options with sensible defaults; the draft address follows the owner. */
@@ -301,5 +319,21 @@ describe('remote community delivery drafts', () => {
     act(() => result.current.setText('typed before the owner resolved'));
     expect(result.current.text).toBe('');
     expect(useCommunityDraftStore.getState().drafts).toEqual({});
+  });
+
+  it('keeps a restored draft and posts nothing when the room has become read-only', () => {
+    const { transport, receipt, wrapper } = harness();
+    const first = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
+    act(() => first.result.current.setText('written while I could post'));
+    first.unmount();
+
+    const back = renderHook(() => useRemoteCommunityDrafts(options(receipt, { canSend: false })), {
+      wrapper,
+    });
+    expect(back.result.current.text).toBe('written while I could post');
+    act(() => back.result.current.send());
+    expect(transport.postRemoteCommunityEntry).not.toHaveBeenCalled();
+    expect(back.result.current.deliveries).toEqual([]);
+    expect(back.result.current.text).toBe('written while I could post');
   });
 });

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): bring back an unsent community draft after switching away and back'
+  - 'fix(client): refuse late community draft writes and cap how many drafts are held'
 ---
 
 ### Fixed

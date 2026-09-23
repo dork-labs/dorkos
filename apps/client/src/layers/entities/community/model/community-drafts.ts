@@ -30,6 +30,14 @@
  */
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { getCommunityAuthority, getCommunityConnectionGeneration } from '@/layers/shared/lib';
+
+/**
+ * The most drafts held at once. Writing one more drops the least recently
+ * written, so a long session of abandoned half-messages (and any files staged
+ * in them) cannot pile up in memory without bound.
+ */
+export const MAX_COMMUNITY_DRAFTS = 50;
 
 /** Everything that identifies one Community composer's draft. */
 export interface CommunityDraftAddress {
@@ -76,7 +84,13 @@ interface CommunityDraftState {
 
 /** Ways a Community draft changes. */
 export interface CommunityDraftActions {
-  /** Record what a composer currently holds; an empty draft is removed. */
+  /**
+   * Record what a composer currently holds; an empty draft is removed.
+   *
+   * Refused when the address's owner epoch or connection generation is no
+   * longer current: a write that lands after a sign-out or a revocation erased
+   * the store must not bring back an entry nothing can reach any more.
+   */
   write: (address: CommunityDraftAddress, draft: CommunityDraft) => void;
   /**
    * Read a composer's draft and clear it in one step, for Send.
@@ -101,6 +115,9 @@ export const EMPTY_COMMUNITY_DRAFT: CommunityDraft = Object.freeze({
 /**
  * The store key for one composer's draft.
  *
+ * A thread's composer and the channel's composer in the same room are separate
+ * drafts on purpose: replying in a thread must not disturb the channel message.
+ *
  * @param address - The fully qualified composer address.
  */
 export function communityDraftKey(address: CommunityDraftAddress): string {
@@ -120,12 +137,22 @@ export const useCommunityDraftStore = create<CommunityDraftState & CommunityDraf
     (set, get) => ({
       drafts: {},
 
-      write: (address, draft) =>
+      write: (address, draft) => {
+        if (
+          address.epoch !== getCommunityAuthority().epoch ||
+          address.generation !== getCommunityConnectionGeneration(address.ref)
+        )
+          return;
         set(
           (state) => {
             const key = communityDraftKey(address);
             const { [key]: _previous, ...rest } = state.drafts;
             if (draft.text === '' && draft.files.length === 0) return { drafts: rest };
+            // Keys keep insertion order and a write re-inserts, so the first
+            // keys are the least recently written.
+            const kept = Object.keys(rest);
+            for (const stale of kept.slice(0, Math.max(0, kept.length - MAX_COMMUNITY_DRAFTS + 1)))
+              delete rest[stale];
             return {
               drafts: {
                 ...rest,
@@ -140,7 +167,8 @@ export const useCommunityDraftStore = create<CommunityDraftState & CommunityDraf
           },
           false,
           'communityDrafts/write'
-        ),
+        );
+      },
 
       take: (address) => {
         const key = communityDraftKey(address);

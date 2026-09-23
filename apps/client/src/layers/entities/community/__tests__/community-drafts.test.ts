@@ -1,22 +1,46 @@
 import { QueryClient } from '@tanstack/react-query';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   confirmCommunityAuthority,
+  getCommunityAuthority,
+  getCommunityConnectionGeneration,
   invalidateCommunityAuthority,
   type ConfirmedCommunityAuthority,
 } from '@/layers/shared/lib';
 import {
   communityDraftKey,
   EMPTY_COMMUNITY_DRAFT,
+  MAX_COMMUNITY_DRAFTS,
   useCommunityDraftStore,
   type CommunityDraftAddress,
 } from '../model/community-drafts';
 import { endCommunityConnection, eraseCommunityOwnerState } from '../model/community-lifecycle';
 
-/** Owner 1's composer in Community `a`, room `general` — the base every case varies. */
+/**
+ * Owner 1's composer in Community `a`, room `general`, under the CURRENT owner
+ * epoch and connection generation — the base every case varies.
+ */
 function at(over: Partial<CommunityDraftAddress> = {}): CommunityDraftAddress {
-  return { ownerKey: 'owner-1', epoch: 1, ref: 'a', generation: 0, roomId: 'general', ...over };
+  const ref = over.ref ?? 'a';
+  return {
+    ownerKey: 'owner-1',
+    epoch: getCommunityAuthority().epoch,
+    ref,
+    generation: getCommunityConnectionGeneration(ref),
+    roomId: 'general',
+    ...over,
+  };
 }
+
+function confirmed(owner = 'owner-1'): ConfirmedCommunityAuthority {
+  const next = invalidateCommunityAuthority();
+  confirmCommunityAuthority(next.epoch, owner);
+  return { epoch: next.epoch, ownerKey: owner };
+}
+
+beforeEach(() => {
+  confirmed();
+});
 
 function write(address: CommunityDraftAddress, text: string) {
   useCommunityDraftStore.getState().write(address, { text, files: [] });
@@ -39,9 +63,9 @@ describe('Community draft store', () => {
     // Each part of the address alone keeps the draft out of reach.
     for (const other of [
       at({ ownerKey: 'owner-2' }),
-      at({ epoch: 2 }),
+      at({ epoch: getCommunityAuthority().epoch + 1 }),
       at({ ref: 'b' }),
-      at({ generation: 1 }),
+      at({ generation: getCommunityConnectionGeneration('a') + 1 }),
       at({ roomId: 'random' }),
       at({ threadId: 'root-1' }),
     ])
@@ -69,6 +93,20 @@ describe('Community draft store', () => {
       text: '',
       files: [{ id: 'f1', file }],
     });
+  });
+
+  it(`holds at most ${MAX_COMMUNITY_DRAFTS} drafts, dropping the least recently written`, () => {
+    for (let i = 0; i < MAX_COMMUNITY_DRAFTS; i++) write(at({ roomId: `room-${i}` }), `draft ${i}`);
+    // Touching room-0 makes room-1 the oldest.
+    write(at({ roomId: 'room-0' }), 'draft 0, edited');
+    write(at({ roomId: 'one-more' }), 'newest');
+
+    expect(Object.keys(useCommunityDraftStore.getState().drafts)).toHaveLength(
+      MAX_COMMUNITY_DRAFTS
+    );
+    expect(read(at({ roomId: 'room-1' }))).toBe('');
+    expect(read(at({ roomId: 'room-0' }))).toBe('draft 0, edited');
+    expect(read(at({ roomId: 'one-more' }))).toBe('newest');
   });
 
   it('forgets an address once its draft is emptied', () => {
@@ -100,12 +138,6 @@ describe('Community draft store', () => {
 });
 
 describe('Community draft lifetime', () => {
-  function confirmed(owner = 'owner-1'): ConfirmedCommunityAuthority {
-    const next = invalidateCommunityAuthority();
-    confirmCommunityAuthority(next.epoch, owner);
-    return { epoch: next.epoch, ownerKey: owner };
-  }
-
   it('erases a Community’s drafts when its connection is revoked, leaving other Communities', async () => {
     const authority = confirmed();
     const here = at({ ownerKey: authority.ownerKey, epoch: authority.epoch });
@@ -122,6 +154,27 @@ describe('Community draft lifetime', () => {
     write(at(), 'Alpha draft');
     write(at({ ref: 'b' }), 'Beta draft');
     eraseCommunityOwnerState(new QueryClient());
+    expect(useCommunityDraftStore.getState().drafts).toEqual({});
+  });
+
+  it('refuses a late write after the connection ended, so an erased draft cannot come back', async () => {
+    const authority = getCommunityAuthority() as ConfirmedCommunityAuthority;
+    const captured = at();
+    write(captured, 'typed before the revocation');
+    await endCommunityConnection(new QueryClient(), authority, 'a', 'revoked');
+
+    // A keystroke handler still holding the old address writes after the erase.
+    write(captured, 'typed after the revocation');
+    expect(useCommunityDraftStore.getState().drafts).toEqual({});
+  });
+
+  it('refuses a late write after the owner changed', () => {
+    const captured = at();
+    write(captured, 'owner 1 draft');
+    eraseCommunityOwnerState(new QueryClient());
+    confirmed('owner-2');
+
+    write(captured, 'owner 1, late');
     expect(useCommunityDraftStore.getState().drafts).toEqual({});
   });
 });
