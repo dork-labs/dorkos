@@ -12,6 +12,12 @@
 #   scripts/git-floor-probe.sh                      # the default image list
 #   scripts/git-floor-probe.sh alpine/git:v2.40.1   # one image
 #
+# With PROBE_TOKEN and PROBE_PRIVATE_REPO (an https://github.com/... repository
+# the token can read) in the environment, each image also authenticates
+# against it the way git-tree.ts would on that git — the URL-embedded token
+# before 2.31, the GIT_CONFIG_COUNT header from 2.31 — fetching commits and
+# trees but no file contents, and checks the token is gone once .git is.
+#
 # Each image prints its git version and one line per step: `ok` or `FAIL`.
 # Not run in CI: it needs Docker and pulls images.
 set -eu
@@ -22,7 +28,7 @@ if [ "${1:-}" != "--inside" ]; then
   here=$(cd "$(dirname "$0")" && pwd)
   for image in $images; do
     echo "== $image"
-    docker run --rm -v "$here:/p:ro" --entrypoint sh "$image" /p/git-floor-probe.sh --inside || true
+    docker run --rm -v "$here:/p:ro" -e PROBE_TOKEN -e PROBE_PRIVATE_REPO --entrypoint sh "$image" /p/git-floor-probe.sh --inside || true
   done
   exit 0
 fi
@@ -75,6 +81,38 @@ step fallback-all-refs git -c protocol.version=0 fetch --quiet --no-tags --end-o
 step pinned-commit-present git rev-parse --verify --quiet "$C3^{commit}"
 step sparse-checkout-after-fallback sh -c "git sparse-checkout init --cone && git sparse-checkout set --end-of-options pkg && git -c advice.detachedHead=false checkout --quiet --detach $C3 && test \"\$(cat pkg/f)\" = 3 && test ! -e other"
 
-# The token header, through the environment (never argv or .git/config). Needs
-# git 2.31+; older git fetches public repositories and fails a private one.
-step token-header-via-env env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader "GIT_CONFIG_VALUE_0=Authorization: Basic eA==" sh -c 'git config --get-urlmatch http.extraHeader https://github.com/o/r.git | grep -q Basic'
+# Whether this git reads config from the environment (2.31+). Where it does not,
+# git-tree.ts embeds the token in the remote URL instead; FAIL here is expected.
+step env-config-supported env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader "GIT_CONFIG_VALUE_0=Authorization: Basic eA==" sh -c 'git config --get-urlmatch http.extraHeader https://github.com/o/r.git | grep -q Basic'
+
+# A private GitHub repository, authenticated as git-tree.ts would on this git.
+if [ -n "${PROBE_TOKEN:-}" ] && [ -n "${PROBE_PRIVATE_REPO:-}" ]; then
+  unset GIT_ALLOW_PROTOCOL
+  minor=$(git --version | sed -n 's/^git version 2\.\([0-9]*\).*/\1/p')
+  cd /tmp && rm -rf p && mkdir p && cd p && git init -q
+  if [ "${minor:-0}" -ge 31 ]; then
+    echo "auth: environment header"
+    basic=$(printf 'x-access-token:%s' "$PROBE_TOKEN" | base64 | tr -d '\n')
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader "GIT_CONFIG_VALUE_0=Authorization: Basic $basic"
+    remote=$PROBE_PRIVATE_REPO
+  else
+    echo "auth: token in the remote URL"
+    remote=$(echo "$PROBE_PRIVATE_REPO" | sed "s#^https://#https://x-access-token:$PROBE_TOKEN@#")
+  fi
+  git remote add --end-of-options origin "$remote"
+  step private-lookup sh -c 'git ls-remote --end-of-options origin HEAD | grep -q HEAD'
+  sha=$(git ls-remote origin HEAD 2>/dev/null | cut -f1)
+  git sparse-checkout init --cone >/dev/null 2>&1 && git sparse-checkout set --end-of-options no-such-dir-probe >/dev/null 2>&1
+  git config core.repositoryformatversion 1 && git config extensions.partialClone origin &&
+    git config remote.origin.promisor true && git config remote.origin.partialclonefilter blob:none
+  step private-fetch-by-commit git fetch --quiet --no-tags --depth=1 --filter=blob:none --end-of-options origin "$sha"
+  step private-checkout git -c advice.detachedHead=false checkout --quiet --detach "$sha"
+  step private-head-is-commit sh -c "test \"\$(git rev-parse --verify HEAD)\" = $sha"
+  if [ "${minor:-0}" -lt 31 ]; then
+    step token-in-git-before-cleanup grep -qF "$PROBE_TOKEN" .git/config
+  else
+    step token-never-in-git sh -c '! grep -rqF "$PROBE_TOKEN" .git'
+  fi
+  rm -rf .git
+  step token-gone-with-git sh -c '! grep -rqF "$PROBE_TOKEN" /tmp/p'
+fi

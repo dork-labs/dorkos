@@ -20,6 +20,10 @@ let respond: (args: string[]) => Answer = () => ({ stdout: '' });
 const calls: string[][] = [];
 /** The environment each call ran with, index-aligned with `calls`. */
 const envs: NodeJS.ProcessEnv[] = [];
+/** What `git --version` prints; answered outside `calls`, since it runs once. */
+let gitVersionOutput = 'git version 2.49.1\n';
+/** How many times `git --version` ran. */
+let versionReads = 0;
 
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
@@ -33,6 +37,11 @@ vi.mock('node:child_process', async () => {
         opts: { env: NodeJS.ProcessEnv },
         callback: (...a: unknown[]) => void
       ) => {
+        if (args[0] === '--version') {
+          versionReads += 1;
+          setImmediate(() => callback(null, { stdout: gitVersionOutput, stderr: '' }));
+          return;
+        }
         calls.push(args);
         envs.push(opts.env);
         const answer = respond(args);
@@ -56,7 +65,7 @@ vi.mock('../../../core/template-downloader.js', async () => {
   return { ...actual, resolveGitAuth: () => resolveGitAuth() };
 });
 
-import { fetchTree, GitFetchError, lookupRemoteRef } from '../git-tree.js';
+import { fetchTree, GitFetchError, lookupRemoteRef, parseGitVersion } from '../git-tree.js';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -90,6 +99,7 @@ const HEADER = `Authorization: Basic ${Buffer.from('x-access-token:ghp_secret').
 beforeEach(() => {
   calls.length = 0;
   envs.length = 0;
+  gitVersionOutput = 'git version 2.49.1\n';
   resolveGitAuth.mockClear();
   respond = () => ({ stdout: '' });
 });
@@ -182,6 +192,80 @@ describe('the GitHub token', () => {
     expect(error).toBeInstanceOf(GitFetchError);
     expect(String((error as Error).message)).not.toContain('ghp_secret');
     expect(String((error as Error).message)).toContain('[REDACTED]');
+  });
+});
+
+describe('the installed git decides how the token travels', () => {
+  it.each([
+    ['git version 2.49.1\n', [2, 49]],
+    ['git version 2.39.5 (Apple Git-154)\n', [2, 39]],
+    ['git version 2.43.0.windows.1\n', [2, 43]],
+    ['git version 2.30.0\n', [2, 30]],
+    ['not git', undefined],
+  ] as const)('parses %j', (out, expected) => {
+    // Purpose: vendor suffixes must not hide the version.
+    expect(parseGitVersion(out)).toEqual(expected);
+  });
+
+  /**
+   * A fresh copy of the module, so its once-per-process version read sees
+   * `version` (restored to 2.49.1 before the next test).
+   */
+  async function withGit(version: string) {
+    vi.resetModules();
+    gitVersionOutput = version;
+    versionReads = 0;
+    return import('../git-tree.js');
+  }
+
+  it.each(['git version 2.30.0\n', 'git version 2.26.2\n', 'unreadable\n'])(
+    'embeds the token in the remote URL on %j, as execGitClone does',
+    async (version) => {
+      // Purpose: git before 2.31 ignores GIT_CONFIG_COUNT; the header would
+      // silently not be sent and a private repository would stop installing.
+      const mod = await withGit(version);
+      respond = gitReporting(A, A);
+      await mod.fetchTree({ ...req('https://github.com/org/pkg.git'), subpath: 'plugins/pkg' });
+      expect(remoteUrl()).toBe('https://x-access-token:ghp_secret@github.com/org/pkg.git');
+      for (const env of envs) expect(JSON.stringify(envConfig(env))).not.toContain('Authorization');
+
+      respond = () => ({ stdout: `${A}\trefs/heads/main\n` });
+      await mod.lookupRemoteRef('https://github.com/org/pkg.git', 'main');
+      expect(calls.at(-1)).toContain('https://x-access-token:ghp_secret@github.com/org/pkg.git');
+      expect(versionReads).toBe(1);
+    }
+  );
+
+  it('keeps the token out of a failure message on old git too', async () => {
+    const mod = await withGit('git version 2.30.0\n');
+    respond = (args) =>
+      args[0] === 'fetch'
+        ? {
+            fail: "fatal: repository 'https://x-access-token:ghp_secret@github.com/org/pkg.git/' not found",
+          }
+        : { stdout: '' };
+    const error = (await mod.fetchTree(req('https://github.com/org/pkg.git')).then(
+      () => new Error('resolved'),
+      (e: unknown) => e
+    )) as Error;
+    expect(error.message).not.toContain('ghp_secret');
+    expect(error.message).toContain('github.com/org/pkg');
+  });
+
+  it('uses the environment header from git 2.31', async () => {
+    const mod = await withGit('git version 2.31.0\n');
+    respond = gitReporting(A, A);
+    await mod.fetchTree(req('https://github.com/org/pkg.git'));
+    expect(remoteUrl()).toBe('https://github.com/org/pkg.git');
+    expect(envConfig(envs[0]!)['http.https://github.com/.extraHeader']).toBe(HEADER);
+  });
+
+  it('never embeds a token for another host, whatever the git', async () => {
+    const mod = await withGit('git version 2.26.2\n');
+    respond = gitReporting(A, A);
+    await mod.fetchTree(req('https://gitlab.example.com/org/pkg.git'));
+    expect(remoteUrl()).toBe('https://gitlab.example.com/org/pkg.git');
+    expect(versionReads).toBe(0);
   });
 });
 

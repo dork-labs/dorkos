@@ -20,10 +20,13 @@
  * attached, and each guards itself, because each can be reached without the
  * others:
  *
- * - {@link execGitClone}'s `x-access-token@` URL rewrite, gated on
- *   {@link isGitHubCredentialHost} — the host it is about to clone from.
+ * - the `x-access-token@` URL rewrite, {@link withGitHubToken}, gated on
+ *   {@link isGitHubCredentialHost} — the host `git` is about to reach. Used by
+ *   {@link execGitClone}, and by the marketplace's package fetch on git
+ *   older than 2.31.
  * - {@link gitHubAuthConfig}, the header the marketplace's package fetch hands
- *   git through its environment, gated on the same predicate.
+ *   git through its environment on git 2.31 and later, gated on the same
+ *   predicate.
  * - the `auth` option handed to giget, gated on the stricter
  *   {@link gigetTarballHostIsGitHub} — because giget sends the token to a
  *   tarball URL that, for every source but the `github:` shorthand, the remote
@@ -329,6 +332,32 @@ export function isGitHubCredentialHost(url: string): boolean {
 }
 
 /**
+ * `url` with the operator's GitHub token embedded as `x-access-token` when,
+ * and only when, `url` is a GitHub host ({@link isGitHubCredentialHost});
+ * otherwise `url` unchanged.
+ *
+ * {@link execGitClone} always authenticates this way; the marketplace's
+ * package fetch does only on git older than 2.31, which cannot read
+ * {@link gitHubAuthConfig}'s header from the environment. The result carries
+ * a live credential: never log it, and run anything git prints through
+ * {@link redactAuthTokens}.
+ *
+ * @param url - The clone or fetch address.
+ * @param auth - The token, from {@link resolveGitAuth}; `undefined` sends none.
+ * @returns The address to hand to `git`.
+ */
+export function withGitHubToken(url: string, auth: string | undefined): string {
+  // Two questions, both needed. `isGitHubCredentialHost` is the semantic one —
+  // may this token go to this host at all. The literal `https://` prefix is the
+  // mechanical one: the rewrite below is a string replace, and an address
+  // spelled `HTTPS://` would pass the first question while the replace matched
+  // nothing, leaving a clone that only looks authenticated.
+  return auth && url.startsWith('https://') && isGitHubCredentialHost(url)
+    ? url.replace('https://', `https://x-access-token:${auth}@`)
+    : url;
+}
+
+/**
  * The git config that authenticates a request to `url` with the operator's
  * GitHub token — `http.<origin>/.extraHeader` set to an `Authorization: Basic`
  * header, the form GitHub documents for `x-access-token` — or `undefined` when
@@ -336,8 +365,9 @@ export function isGitHubCredentialHost(url: string): boolean {
  * token.
  *
  * The marketplace's package fetch hands this to git through the environment
- * (`GIT_CONFIG_COUNT`), so the token is on no command line (`ps` shows every
- * process's argv) and in no `.git/config`. The key is scoped to the URL's own
+ * (`GIT_CONFIG_COUNT`, read by git 2.31 and later; older git gets
+ * {@link withGitHubToken} instead), so the token is on no command line (`ps`
+ * shows every process's argv) and in no `.git/config`. The key is scoped to the URL's own
  * origin, so git sends the header to that origin and nowhere else, redirects
  * included.
  *
@@ -464,15 +494,7 @@ export async function execGitClone(
   auth?: string,
   onProgress?: ProgressCallback
 ): Promise<void> {
-  // Two questions, both needed. `isGitHubCredentialHost` is the semantic one —
-  // may this token go to this host at all. The literal `https://` prefix is the
-  // mechanical one: the rewrite below is a string replace, and an address
-  // spelled `HTTPS://` would pass the first question while the replace matched
-  // nothing, leaving a clone that only looks authenticated.
-  const cloneUrl =
-    auth && url.startsWith('https://') && isGitHubCredentialHost(url)
-      ? url.replace('https://', `https://x-access-token:${auth}@`)
-      : url;
+  const cloneUrl = withGitHubToken(url, auth);
 
   return new Promise<void>((resolve, reject) => {
     const proc = spawn(

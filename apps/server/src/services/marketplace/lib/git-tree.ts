@@ -26,9 +26,17 @@
  * Security posture, the same as every other marketplace git call: the caller
  * has already asked `assertSafeGitRemote`; every spawn is an argv array with
  * {@link hardenedGitEnv}; `--end-of-options` precedes every author-supplied
- * value; the GitHub token travels only as {@link gitHubAuthConfig}'s header, in
- * the environment (never argv or `.git/config`), and git's output is passed
- * through {@link redactAuthTokens} before it reaches a message.
+ * value; the GitHub token goes to a GitHub host only, and git's output is
+ * passed through {@link redactAuthTokens} before it reaches a message.
+ *
+ * How the token travels depends on the git installed (read once per process,
+ * see {@link gitAuth}): from 2.31, as {@link gitHubAuthConfig}'s header in the
+ * environment (`GIT_CONFIG_COUNT`), on no command line and in no
+ * `.git/config`; before 2.31, which cannot read that, embedded in the remote
+ * URL by {@link withGitHubToken}, exactly as `execGitClone` always has. That
+ * URL lives only in the temporary repository's `.git`, which is removed before
+ * the tree is cached, with the temp directory on failure, and by the cache's
+ * startup sweep after a crash.
  *
  * Git floor, measured in Docker against this exact command sequence: 2.26
  * through 2.49 pass; 2.24 has no `sparse-checkout`. Two version traps shape
@@ -36,8 +44,6 @@
  * the checkout names the commit bare (it is always a verified full id, never
  * author text). And `sparse-checkout set --cone` does not turn cone mode on
  * before 2.35, so cone mode is set with `sparse-checkout init --cone` first.
- * The token header rides `GIT_CONFIG_COUNT`, which git reads from 2.31; on
- * older git a private GitHub repository fails to authenticate, plainly.
  *
  * @module services/marketplace/lib/git-tree
  */
@@ -51,6 +57,7 @@ import {
   isGitHubCredentialHost,
   redactAuthTokens,
   resolveGitAuth,
+  withGitHubToken,
 } from '../../core/template-downloader.js';
 
 const execFileAsync = promisify(execFile);
@@ -110,7 +117,7 @@ export type RemoteRef =
 
 /** One tree fetch: where from, which commit, and where to put it. */
 export interface TreeRequest {
-  /** The address git is given; never credentialed (the token travels in the environment). */
+  /** The address to fetch from, uncredentialed; this module adds any token. */
   cloneUrl: string;
   /** The commit to fetch, from {@link lookupRemoteRef}. */
   commitSha: string;
@@ -195,11 +202,12 @@ export async function lookupRemoteRef(cloneUrl: string, ref: string): Promise<Re
   const patterns = candidates.flatMap((name) => [name, `${name}^{}`]);
   let stdout: string;
   try {
+    const auth = await gitAuth(cloneUrl);
     ({ stdout } = await runGit(
-      ['ls-remote', END_OF_OPTIONS, cloneUrl, ...patterns],
+      ['ls-remote', END_OF_OPTIONS, auth.url, ...patterns],
       undefined,
       LS_REMOTE_TIMEOUT_MS,
-      authConfig(cloneUrl)
+      auth.config
     ));
   } catch (err) {
     return { kind: 'unreachable', reason: reasonOf(err) };
@@ -229,10 +237,10 @@ export async function lookupRemoteRef(cloneUrl: string, ref: string): Promise<Re
  *   commit it should be.
  */
 export async function fetchTree(req: TreeRequest): Promise<string> {
-  // Every step gets the auth header: a sparse checkout fetches the blobs it
-  // lacks from the remote, so the checkout needs it as much as the fetch does.
-  const auth = authConfig(req.cloneUrl);
-  const git: GitRunner = (args) => runGit(args, req.destDir, GIT_FETCH_TIMEOUT_MS, auth);
+  // Every step gets the auth: a sparse checkout fetches the blobs it lacks
+  // from the remote, so the checkout needs it as much as the fetch does.
+  const auth = await gitAuth(req.cloneUrl);
+  const git: GitRunner = (args) => runGit(args, req.destDir, GIT_FETCH_TIMEOUT_MS, auth.config);
 
   try {
     if (req.subpath !== '') {
@@ -241,13 +249,13 @@ export async function fetchTree(req: TreeRequest): Promise<string> {
       // unadvertised objects refuses the lazy blob requests that checkout
       // makes, so a refusal there starts over with the full fetch below.
       try {
-        return await attempt(git, req, true);
+        return await attempt(git, req, auth.url, true);
       } catch (err) {
         if (!REFUSAL_RE.test(reasonOf(err))) throw err;
         await emptyDir(req.destDir);
       }
     }
-    return await attempt(git, req, false);
+    return await attempt(git, req, auth.url, false);
   } catch (err) {
     if (err instanceof GitCommitNotFoundError) throw err;
     throw new GitFetchError(req.cloneUrl, reasonOf(err));
@@ -260,12 +268,17 @@ export async function fetchTree(req: TreeRequest): Promise<string> {
  * caller's cue to start over unfiltered. Unfiltered, a refusal of the commit
  * by id takes the refname or branches-and-tags fallback.
  */
-async function attempt(git: GitRunner, req: TreeRequest, filtered: boolean): Promise<string> {
+async function attempt(
+  git: GitRunner,
+  req: TreeRequest,
+  remoteUrl: string,
+  filtered: boolean
+): Promise<string> {
   await git(['init', '--quiet']);
   // A named remote, not a bare URL: a partial fetch records its promisor
   // settings under the remote's name, and the checkout needs them to fetch
   // the blobs it lacks.
-  await git(['remote', 'add', END_OF_OPTIONS, REMOTE, req.cloneUrl]);
+  await git(['remote', 'add', END_OF_OPTIONS, REMOTE, remoteUrl]);
   if (req.subpath !== '') {
     // `init --cone` first: `set --cone` alone leaves cone mode off before
     // git 2.35, and the subpath would be read as a gitignore pattern.
@@ -398,25 +411,67 @@ function parseLsRemote(stdout: string): Map<string, string> {
   return refs;
 }
 
-/** The token {@link authConfig} last resolved, and when. */
+/** The token {@link gitAuth} last resolved, and when. */
 let cachedAuth: { token: string | undefined; at: number } | undefined;
 
+/** The installed git's `[major, minor]`, read once per process. */
+let installedGit: Promise<[number, number] | undefined> | undefined;
+
 /**
- * The git config that authenticates a request to `cloneUrl`: the operator's
- * GitHub token as {@link gitHubAuthConfig}'s header for a GitHub host, nothing
- * otherwise. The token is resolved only when it could be used, so a
- * third-party host never costs a `gh auth token` call, and it is reused for
- * {@link AUTH_TTL_MS}: `resolveGitAuth` may run `gh` synchronously, and an
- * update check looks up many packages at once.
+ * Parse `git --version` output into `[major, minor]`, tolerating the suffixes
+ * vendors add: `git version 2.39.5 (Apple Git-154)`,
+ * `git version 2.43.0.windows.1`. `undefined` when there is no version in it.
+ *
+ * @param stdout - What `git --version` printed.
  */
-function authConfig(cloneUrl: string): GitConfigEntry[] {
-  if (!isGitHubCredentialHost(cloneUrl)) return [];
+export function parseGitVersion(stdout: string): [number, number] | undefined {
+  const match = /git version (\d+)\.(\d+)/.exec(stdout);
+  return match ? [Number(match[1]), Number(match[2])] : undefined;
+}
+
+/** The installed git's version, from one `git --version` per process. */
+function gitVersion(): Promise<[number, number] | undefined> {
+  installedGit ??= runGit(['--version'], undefined, LS_REMOTE_TIMEOUT_MS).then(
+    ({ stdout }) => parseGitVersion(stdout),
+    () => undefined
+  );
+  return installedGit;
+}
+
+/** How a request to one remote authenticates: the URL git is given, and env config. */
+interface GitAuth {
+  /** The remote URL: credentialed only on git older than 2.31. */
+  url: string;
+  /** Config passed through the environment: the token header on git 2.31+. */
+  config: GitConfigEntry[];
+}
+
+/**
+ * How to authenticate a request to `cloneUrl`. A GitHub host gets the
+ * operator's token; any other host gets nothing. The token is resolved only
+ * when it could be used, so a third-party host never costs a `gh auth token`
+ * call, and it is reused for {@link AUTH_TTL_MS}: `resolveGitAuth` may run
+ * `gh` synchronously, and an update check looks up many packages at once.
+ *
+ * Git 2.31 and later read {@link gitHubAuthConfig}'s header from the
+ * environment, which keeps the token off every command line. Older git cannot,
+ * so the token is embedded in the URL as `execGitClone` does; so is it when
+ * the version cannot be read, because that form works on every git.
+ */
+async function gitAuth(cloneUrl: string): Promise<GitAuth> {
+  if (!isGitHubCredentialHost(cloneUrl)) return { url: cloneUrl, config: [] };
   const now = Date.now();
   if (!cachedAuth || now - cachedAuth.at > AUTH_TTL_MS) {
     cachedAuth = { token: resolveGitAuth(), at: now };
   }
-  const header = gitHubAuthConfig(cloneUrl, cachedAuth.token);
-  return header ? [header] : [];
+  const token = cachedAuth.token;
+  if (!token) return { url: cloneUrl, config: [] };
+  const version = await gitVersion();
+  if (version && (version[0] > 2 || (version[0] === 2 && version[1] >= 31))) {
+    const header = gitHubAuthConfig(cloneUrl, token);
+    return { url: cloneUrl, config: header ? [header] : [] };
+  }
+  return { url: withGitHubToken(cloneUrl, token), config: [] };
 }
 
 /** One `git -c`-style setting, passed through the environment instead of argv. */
