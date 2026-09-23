@@ -14,6 +14,7 @@ import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog';
 
 import { cn } from '@/layers/shared/lib/utils';
 import { buttonVariants } from './button';
+import { TOUCH_TARGET_RESPONSIVE_H } from './touch-target';
 
 /** The confirmation itself — wraps a trigger and its content, and owns open/closed. */
 function AlertDialog({ ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Root>) {
@@ -160,7 +161,9 @@ function AlertDialogAction({
   return (
     <AlertDialogPrimitive.Action
       data-slot="alert-dialog-action"
-      className={cn(buttonVariants(), className)}
+      // `buttonVariants()` alone is the 36px desktop height; `Button` adds the
+      // phone touch target itself, so these exits add it the same way.
+      className={cn(buttonVariants(), TOUCH_TARGET_RESPONSIVE_H, className)}
       {...props}
     />
   );
@@ -174,7 +177,12 @@ function AlertDialogCancel({
   return (
     <AlertDialogPrimitive.Cancel
       data-slot="alert-dialog-cancel"
-      className={cn(buttonVariants({ variant: 'outline' }), 'mt-2 sm:mt-0', className)}
+      className={cn(
+        buttonVariants({ variant: 'outline' }),
+        TOUCH_TARGET_RESPONSIVE_H,
+        'mt-2 sm:mt-0',
+        className
+      )}
       {...props}
     />
   );

@@ -335,7 +335,7 @@ test('Disconnecting asks first, then removes only that Community and leaves it',
   expect(disconnected).toBe(true);
   await expect(
     page.getByText(
-      'Alpha is disconnected here, but it couldn’t be reached. To finish, remove this DorkOS under Local connections on Alpha.',
+      'Alpha is disconnected here, but it couldn’t be reached. To finish, disconnect this DorkOS under Connected installations on Alpha.',
       { exact: true }
     )
   ).toBeVisible();

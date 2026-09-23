@@ -1257,7 +1257,7 @@ describe('the context switcher’s lifecycle actions', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
     act(() => mockEndConnection.mock.calls[0]![1].onSuccess({ remoteRevoked: false }));
     expect(toast.warning).toHaveBeenCalledWith(
-      'Alpha is disconnected here, but it couldn’t be reached. To finish, remove this DorkOS under Local connections on Alpha.'
+      'Alpha is disconnected here, but it couldn’t be reached. To finish, disconnect this DorkOS under Connected installations on Alpha.'
     );
     expect(toast.success).not.toHaveBeenCalledWith('Alpha is disconnected.');
   });

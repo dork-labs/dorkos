@@ -168,6 +168,12 @@ describe('AdapterCardHeader', () => {
     expect(switchEl.getAttribute('data-state')).toBe('checked');
   });
 
+  it('names the switch after the connection it turns on and off', () => {
+    render(<AdapterCardHeader {...defaultProps()} />);
+    // A nameless switch is announced only as "switch, on" (axe button-name, critical).
+    expect(screen.getByRole('switch', { name: 'Main Telegram' })).toBeTruthy();
+  });
+
   it('renders switch in unchecked state when adapter is disabled', () => {
     render(<AdapterCardHeader {...defaultProps({ instance: disabledInstance })} />);
     const switchEl = screen.getByRole('switch');

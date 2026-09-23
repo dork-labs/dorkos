@@ -96,7 +96,7 @@ export function eraseCommunityOwnerState(queryClient: QueryClient): void {
  * @param label - The Community's name.
  */
 export function unconfirmedDisconnectMessage(label: string): string {
-  return `${label} is disconnected here, but it couldn’t be reached. To finish, remove this DorkOS under Local connections on ${label}.`;
+  return `${label} is disconnected here, but it couldn’t be reached. To finish, disconnect this DorkOS under Connected installations on ${label}.`;
 }
 
 /**

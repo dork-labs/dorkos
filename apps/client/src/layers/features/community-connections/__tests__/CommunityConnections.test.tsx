@@ -139,7 +139,7 @@ describe('community pairing controls', () => {
     await user.click(await screen.findByRole('button', { name: 'Disconnect Community A' }));
     await user.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
     expect(await screen.findByRole('status')).toHaveTextContent(
-      'Community A is disconnected here, but it couldn’t be reached. To finish, remove this DorkOS under Local connections on Community A.'
+      'Community A is disconnected here, but it couldn’t be reached. To finish, disconnect this DorkOS under Connected installations on Community A.'
     );
     await waitFor(() => expect(screen.queryByText('Community A')).not.toBeInTheDocument());
   });
