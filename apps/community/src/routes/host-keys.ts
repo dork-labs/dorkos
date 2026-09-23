@@ -10,8 +10,9 @@ import {
   CommunityAdminHostApiKeySecretResponseSchema,
 } from '@dorkos/shared/community-admin-wire';
 import type { CommunityAuth } from '../auth.js';
-import { reauthenticate, transaction } from '../data.js';
+import { transaction } from '../data.js';
 import { assertHostActor, type HostAuthority } from '../host/authority.js';
+import type { ConfirmPassword } from '../password-confirmation.js';
 import {
   issueHostApiKey,
   listHostApiKeys,
@@ -26,9 +27,15 @@ import { ApiError, json, readJson } from '../http.js';
  */
 export function registerHostKeyRoutes(
   app: Hono,
-  deps: { pool: Pool; auth: CommunityAuth; authority: HostAuthority; now: () => Date }
+  deps: {
+    pool: Pool;
+    auth: CommunityAuth;
+    authority: HostAuthority;
+    now: () => Date;
+    confirmPassword: ConfirmPassword;
+  }
 ): void {
-  const { pool, auth, authority, now } = deps;
+  const { pool, authority, now, confirmPassword } = deps;
   const keyId = (value: string | undefined) => {
     const parsed = z.uuid().safeParse(value);
     if (!parsed.success) throw new ApiError(404, 'NOT_FOUND', 'Host API key not found.');
@@ -43,7 +50,7 @@ export function registerHostKeyRoutes(
   app.post('/host/api-keys', async (c) => {
     const operator = await authority.requireSession(c);
     const body = await readJson(c, CommunityAdminHostApiKeyIssueRequestSchema);
-    await reauthenticate(auth, c.req.raw, body.password);
+    await confirmPassword(c, operator.userId, body.password);
     const at = now();
     const issued = await transaction(pool, async (client) => {
       await assertHostActor(client, operator, at);
@@ -71,7 +78,7 @@ export function registerHostKeyRoutes(
     const operator = await authority.requireSession(c);
     const id = keyId(c.req.param('id'));
     const body = await readJson(c, CommunityAdminHostApiKeyRotateRequestSchema);
-    await reauthenticate(auth, c.req.raw, body.password);
+    await confirmPassword(c, operator.userId, body.password);
     const at = now();
     const rotated = await transaction(pool, async (client) => {
       await assertHostActor(client, operator, at);

@@ -26,19 +26,20 @@ The service checks each setting before it opens its HTTP port. It rejects an inc
 
 Most people can keep the default limits. Restart the service after changing one. The maximums protect every Community, even when an environment variable requests more.
 
-| Setting                                        |             Default |               Maximum |
-| ---------------------------------------------- | ------------------: | --------------------: |
-| `COMMUNITY_POSTS_PER_TEN_MINUTES`              | 120 posts per owner | 1,000 posts per owner |
-| `COMMUNITY_AGENTS_PER_OWNER`                   |    20 active agents |     100 active agents |
-| `COMMUNITY_TEXT_BYTES`                         |     16 KiB per post |       64 KiB per post |
-| `COMMUNITY_ATTACHMENTS_PER_POST`               |    4 files per post |      8 files per post |
-| `COMMUNITY_ATTACHMENT_BYTES`                   |     10 MiB per file |       25 MiB per file |
-| `COMMUNITY_UPLOAD_BYTES_PER_DAY`               |   200 MiB per owner |       1 GiB per owner |
-| `COMMUNITY_SIGNUP_ATTEMPTS_PER_MINUTE`         |           10 per IP |            100 per IP |
-| `COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE`      |           10 per IP |            100 per IP |
-| `COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE` |           20 per IP |            100 per IP |
-| `COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE`        |            5 per IP |            100 per IP |
-| `COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`       |           20 per IP |            100 per IP |
+| Setting                                        |                       Default |               Maximum |
+| ---------------------------------------------- | ----------------------------: | --------------------: |
+| `COMMUNITY_POSTS_PER_TEN_MINUTES`              |           120 posts per owner | 1,000 posts per owner |
+| `COMMUNITY_AGENTS_PER_OWNER`                   |              20 active agents |     100 active agents |
+| `COMMUNITY_TEXT_BYTES`                         |               16 KiB per post |       64 KiB per post |
+| `COMMUNITY_ATTACHMENTS_PER_POST`               |              4 files per post |      8 files per post |
+| `COMMUNITY_ATTACHMENT_BYTES`                   |               10 MiB per file |       25 MiB per file |
+| `COMMUNITY_UPLOAD_BYTES_PER_DAY`               |             200 MiB per owner |       1 GiB per owner |
+| `COMMUNITY_SIGNUP_ATTEMPTS_PER_MINUTE`         |                     10 per IP |            100 per IP |
+| `COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE`      |                     10 per IP |            100 per IP |
+| `COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE` |                     20 per IP |            100 per IP |
+| `COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE`        |                      5 per IP |            100 per IP |
+| `COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`       |                     20 per IP |            100 per IP |
+| `COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`         | 5 wrong passwords per account |        20 per account |
 
 ## Optional Google and GitHub sign-in
 

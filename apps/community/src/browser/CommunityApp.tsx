@@ -3,7 +3,9 @@ import { Hash, Menu, Plus, Settings2, X } from 'lucide-react';
 import { Admission, type AdmissionResume } from './components/Admission.js';
 import { ChannelView } from './components/Channel.js';
 import { Manage } from './components/Manage.js';
-import { rememberCommunity, returnToChooserWithNotice } from './components/CommunityChooser.js';
+import { SignedOutPanel } from './components/SignOut.js';
+import { returnToChooserWithNotice } from './components/CommunityChooser.js';
+import { rememberCommunity } from './remembered-community.js';
 import { describeError, hostRequest, RequestError, request } from './api.js';
 import { readInviteFragment } from './invite-fragment.js';
 import { readPendingAdmission } from './admission.js';
@@ -44,6 +46,7 @@ export function CommunityApp() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [signedOut, setSignedOut] = useState(false);
   const selected = useMemo(
     () => channels.find((channel) => channel.id === selectedId) ?? null,
     [channels, selectedId]
@@ -213,6 +216,7 @@ export function CommunityApp() {
       });
     void refreshChannels();
   }, [community, refreshChannels, refreshCommunityLifecycle, returnToChooser]);
+  if (signedOut) return <SignedOutPanel />;
   if (loading)
     return (
       <main className="grid min-h-dvh place-items-center">
@@ -437,6 +441,11 @@ export function CommunityApp() {
             onCurrentMemberChanged={refreshCurrentMember}
             onLeft={() => {
               window.location.assign('/');
+            }}
+            onSignedOut={() => {
+              // Without a member the background refresh stops asking as a signed-out browser.
+              setMe(null);
+              setSignedOut(true);
             }}
             readOnly={readOnly}
           />

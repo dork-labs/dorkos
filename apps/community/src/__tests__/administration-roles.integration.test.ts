@@ -1596,6 +1596,9 @@ beforeAll(async () => {
     COMMUNITY_STORAGE_PATH: storagePath,
     COMMUNITY_AGENTS_PER_OWNER: '100',
     COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE: '100',
+    // One owner makes every route's wrong-password case within a minute; the limit itself is
+    // proven in account-controls.integration.test.ts.
+    COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE: '20',
   });
   app = createCommunityApp({
     config,
@@ -1737,12 +1740,14 @@ it('classifies every registered route, and puts every host and settings route in
   const blobStore = new FileSystemBlobStore(storagePath);
   const now = () => new Date();
   const authority = createHostAuthority({ auth, pool, now, limitKeyMiss: () => undefined });
+  // Only the route table is read here; no request ever runs.
+  const unused = async () => undefined;
   registerHostRoutes(modules, { pool, blobStore, authority, now });
   registerOwnerClaimRoutes(modules, { pool, auth, config, authority, now });
   registerMembershipRoutes(modules, { pool, auth });
   registerHostLimitRoutes(modules, { pool, config, authority, now });
-  registerHostKeyRoutes(modules, { pool, auth, authority, now });
-  registerAdministrationRoutes(modules, { pool, auth, blobStore });
+  registerHostKeyRoutes(modules, { pool, auth, authority, now, confirmPassword: unused });
+  registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });
   const administration = [
     ...new Set(modules.routes.map((route) => `${route.method} ${route.path}`)),
   ];

@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Copy, Download, KeyRound, Plus, Shield, Trash2, UserPlus } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Copy, Download, KeyRound, Plus, Shield, Trash2, Unplug, UserPlus } from 'lucide-react';
 import { describeError, download, request } from '../api.js';
+import { describeInstallAccess, describeReauthenticationError } from '../account-controls.js';
+import { SignOutButton } from './SignOut.js';
 import { CommunityAdministration } from './CommunityAdministration.js';
 import type { Agent, Channel, Member } from '../types.js';
 import type { CommunitySettingsSection } from '@dorkos/shared/community-wire';
@@ -30,6 +32,8 @@ type Props = {
   onChanged: () => void;
   onCurrentMemberChanged: () => Promise<Member>;
   onLeft: () => void;
+  /** This browser's session ended; memberships and installations are untouched. */
+  onSignedOut: () => void;
   readOnly?: boolean;
   /** The section a settings link asked for; ignored when this role or state cannot see it. */
   initialSection?: CommunitySettingsSection | null;
@@ -44,6 +48,7 @@ export function Manage({
   onChanged,
   onCurrentMemberChanged,
   onLeft,
+  onSignedOut,
   readOnly = false,
   initialSection = null,
 }: Props) {
@@ -84,6 +89,11 @@ export function Manage({
   const [successor, setSuccessor] = useState('');
   const [password, setPassword] = useState('');
   const [leaveName, setLeaveName] = useState('');
+  const [disconnectAllPassword, setDisconnectAllPassword] = useState('');
+  // Shown beside the password it is about, where a phone user is already looking.
+  const [disconnectAllError, setDisconnectAllError] = useState('');
+  // Disconnecting removes the focused row (or every row), so focus returns to the list heading.
+  const installationsHeading = useRef<HTMLHeadingElement>(null);
   const refresh = useCallback(
     async (currentModerator = moderator) => {
       try {
@@ -158,7 +168,9 @@ export function Manage({
       await refresh(current.role === 'owner' || current.role === 'admin');
       onChanged();
     } catch (cause) {
-      setError(describeError(cause));
+      // Transfer and the community export confirm a password; nothing else here can answer
+      // REAUTH_FAILED or RATE_LIMITED.
+      setError(describeReauthenticationError(cause, 'Nothing changed.'));
     } finally {
       setBusy(false);
     }
@@ -219,7 +231,7 @@ export function Manage({
   async function leave() {
     if (
       !window.confirm(
-        'Leave this community? You will lose access to channels and your local connections.'
+        `Leave ${communityName}? Your channels, installations and agents here stop working. Your account and your other communities stay.`
       )
     )
       return;
@@ -229,7 +241,45 @@ export function Manage({
       await request('/api/v1/me/leave', 'POST', { password, communityName: leaveName });
       onLeft();
     } catch (cause) {
-      setError(describeError(cause));
+      setError(describeReauthenticationError(cause, 'You are still a member.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function disconnectInstallation(grant: Grant) {
+    if (
+      !window.confirm(
+        `Disconnect ${grant.installName}? It can no longer read or post in ${communityName} until it is connected again. You stay a member.`
+      )
+    )
+      return;
+    await perform(
+      () => request(`/api/v1/me/grants/${grant.id}`, 'DELETE'),
+      `${grant.installName} is disconnected. It can no longer read or post here until it is connected again.`
+    );
+    installationsHeading.current?.focus();
+  }
+  async function disconnectAllInstallations() {
+    if (
+      !window.confirm(
+        `Disconnect all ${grants.length} installations? They can no longer read or post in ${communityName} until they are connected again. You stay a member, and this browser stays signed in.`
+      )
+    )
+      return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    setDisconnectAllError('');
+    try {
+      await request('/api/v1/me/grants', 'DELETE', { password: disconnectAllPassword });
+      setDisconnectAllPassword('');
+      setMessage(
+        'All installations are disconnected. They can no longer read or post here until they are connected again.'
+      );
+      await refresh();
+      installationsHeading.current?.focus();
+    } catch (cause) {
+      setDisconnectAllError(describeReauthenticationError(cause, 'Nothing was disconnected.'));
     } finally {
       setBusy(false);
     }
@@ -253,6 +303,7 @@ export function Manage({
                 setTab(item);
                 setError('');
                 setMessage('');
+                setDisconnectAllError('');
                 void refresh();
               }}
             >
@@ -453,7 +504,7 @@ export function Manage({
                     onClick={() =>
                       void perform(
                         () => request(`/api/v1/channels/${selectedChannel!.id}/leave`, 'POST', {}),
-                        'You left this channel.'
+                        `You left #${selectedChannel.name}. You are still a member of ${communityName}.`
                       )
                     }
                   >
@@ -734,37 +785,91 @@ export function Manage({
         )}
         {tab === 'account' && (
           <div className="settings-grid">
-            <section className="panel">
-              <h3>Local connections</h3>
-              <p className="small muted">See and remove each install that can act for you.</p>
+            <section className="panel" aria-labelledby="this-browser-title">
+              <h3 id="this-browser-title">This browser</h3>
+              <p className="small muted">
+                Signing out ends your sign-in on this browser only. You stay a member, and your
+                connected DorkOS installations keep working.
+              </p>
+              <SignOutButton onSignedOut={onSignedOut} />
+            </section>
+            <section className="panel" aria-labelledby="installations-title">
+              <h3 id="installations-title" ref={installationsHeading} tabIndex={-1}>
+                Connected installations
+              </h3>
+              <p className="small muted">
+                Each DorkOS installation you connect can act for you in {communityName}.
+                Disconnecting one does not end your membership.
+              </p>
               {grants.length === 0 ? (
-                <p className="muted">No local installs connected.</p>
+                <p className="muted mb-0">
+                  No DorkOS installations are connected to your account here.
+                </p>
               ) : (
-                grants.map((grant) => (
-                  <div
-                    key={grant.id}
-                    className="row justify-between border-b border-[var(--line)] py-2"
-                  >
-                    <div>
-                      <strong>{grant.installName}</strong>
-                      <div className="small muted">
-                        {grant.scopes.join(', ')} · {new Date(grant.createdAt).toLocaleDateString()}
-                      </div>
-                    </div>
-                    <button
-                      className="button ghost"
-                      aria-label={`Remove ${grant.installName} connection`}
-                      onClick={() =>
-                        void perform(
-                          () => request(`/api/v1/me/grants/${grant.id}`, 'DELETE'),
-                          'Connection removed.'
-                        )
-                      }
+                <ul className="m-0 list-none p-0" aria-labelledby="installations-title">
+                  {grants.map((grant) => (
+                    <li
+                      key={grant.id}
+                      className="row justify-between border-b border-[var(--line)] py-2"
                     >
-                      <Trash2 size={16} />
-                    </button>
+                      <div className="min-w-0 flex-1">
+                        <strong className="break-words">{grant.installName}</strong>
+                        <div className="small muted">
+                          {describeInstallAccess(grant.scopes)} · Connected{' '}
+                          {new Date(grant.createdAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <button
+                        className="button ghost shrink-0"
+                        type="button"
+                        disabled={busy}
+                        aria-label={`Disconnect ${grant.installName}`}
+                        onClick={() => void disconnectInstallation(grant)}
+                      >
+                        <Unplug size={16} /> Disconnect
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {grants.length > 1 && (
+                <form
+                  className="mt-4"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void disconnectAllInstallations();
+                  }}
+                >
+                  <h4 className="small font-semibold">Disconnect all installations</h4>
+                  <p className="small muted" id="disconnect-all-scope">
+                    All {grants.length} stop reading and posting in {communityName} until they are
+                    connected again. You stay a member, and this browser stays signed in.
+                  </p>
+                  <div className="field">
+                    <label htmlFor="disconnect-all-password">Confirm password</label>
+                    <input
+                      id="disconnect-all-password"
+                      type="password"
+                      autoComplete="current-password"
+                      aria-describedby={
+                        disconnectAllError
+                          ? 'disconnect-all-scope disconnect-all-error'
+                          : 'disconnect-all-scope'
+                      }
+                      aria-invalid={disconnectAllError ? true : undefined}
+                      value={disconnectAllPassword}
+                      onChange={(event) => setDisconnectAllPassword(event.target.value)}
+                    />
                   </div>
-                ))
+                  {disconnectAllError && (
+                    <p id="disconnect-all-error" className="notice error mb-3" role="alert">
+                      {disconnectAllError}
+                    </p>
+                  )}
+                  <button className="button danger" disabled={busy || !disconnectAllPassword}>
+                    <Unplug size={16} /> Disconnect all installations
+                  </button>
+                </form>
               )}
             </section>
             <section className="panel">
@@ -809,9 +914,13 @@ export function Manage({
                   <p className="small muted">Transfer ownership before you leave.</p>
                 ) : (
                   <>
-                    <p className="small muted">
-                      You will lose channel access and local connections. Your past messages stay
-                      attributed to you.
+                    <p className="small muted mb-2" id="leave-scope-ends">
+                      <strong>Ends:</strong> your membership in {communityName}, its channels, and
+                      every installation and agent you connected here.
+                    </p>
+                    <p className="small muted" id="leave-scope-stays">
+                      <strong>Stays:</strong> your account, your other communities, this
+                      browser&rsquo;s sign-in, and your past messages.
                     </p>
                     <div className="field">
                       <label htmlFor="leave-community-name">Enter {communityName}</label>
@@ -833,6 +942,7 @@ export function Manage({
                     </div>
                     <button
                       className="button danger"
+                      aria-describedby="leave-scope-ends leave-scope-stays"
                       disabled={busy || !password || leaveName !== communityName}
                       onClick={() => void leave()}
                     >

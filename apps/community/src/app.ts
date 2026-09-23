@@ -38,6 +38,7 @@ import { createBlobStore, type BlobStore } from './storage/index.js';
 import { DeliveryReceiptGate } from './delivery-receipt-gate.js';
 import { registerCommunityTestControlRoutes } from './routes/test-control.js';
 import { resolveCommunityContext } from './tenant-context.js';
+import { createPasswordConfirmation } from './password-confirmation.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
@@ -78,8 +79,19 @@ export function createCommunityApp({
     current.push(now);
     attemptTimes.set(key, current);
   };
+  /** Give back the most recent attempt spent under `key`, as for a confirmed password. */
+  const refundAttempt = (key: string) => {
+    attemptTimes.get(key)?.pop();
+  };
   // Use the socket peer. Proxy headers are client-controlled until a trusted proxy is configured.
   const peer = (c: Parameters<typeof getConnInfo>[0]) => getConnInfo(c).remote.address ?? 'unknown';
+  // Every server-side password check spends from this one per-account budget (see its TSDoc).
+  const confirmPassword = createPasswordConfirmation({
+    auth,
+    ceiling: config.limits.reauthAttemptsPerMinute,
+    spend: limitAttempts,
+    refund: refundAttempt,
+  });
   app.use('/api/*', async (c, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
       const origin = c.req.header('origin');
@@ -283,7 +295,7 @@ export function createCommunityApp({
   registerOwnerClaimRoutes(hostApi, { pool, auth, config, authority, now });
   registerMembershipRoutes(hostApi, { pool, auth });
   registerHostLimitRoutes(hostApi, { pool, config, authority, now });
-  registerHostKeyRoutes(hostApi, { pool, auth, authority, now });
+  registerHostKeyRoutes(hostApi, { pool, auth, authority, now, confirmPassword });
   app.route('/api/v1', hostApi);
 
   const communityApi = new Hono();
@@ -348,17 +360,18 @@ export function createCommunityApp({
       );
     },
   });
-  registerMemberRoutes(communityApi, { pool, auth });
+  registerMemberRoutes(communityApi, { pool, auth, confirmPassword });
   registerPairingRoutes(communityApi, {
     pool,
     auth,
     config,
+    confirmPassword,
     limitStart: (c) => limitAttempts(`pairing:${peer(c)}`, config.limits.pairingAttemptsPerMinute),
   });
   registerAgentRoutes(communityApi, { pool, auth, config });
   registerAttachmentRoutes(communityApi, { pool, auth, config, blobStore });
-  registerExportRoutes(communityApi, { pool, auth, blobStore });
-  registerAdministrationRoutes(communityApi, { pool, auth, blobStore });
+  registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
+  registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
   app.route('/api/v1', communityApi);
   app.route('/api/v1/communities/:communityId', communityApi);
   return app;

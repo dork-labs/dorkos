@@ -153,7 +153,7 @@ export async function lifecycleSteps(w: World): Promise<void> {
         'Spec community-membership-journeys, "Connect this DorkOS installation": “Disconnect this installation” ' +
           'revokes only the selected grant and deletes its local credential. Repro: connect a DorkOS app to a ' +
           'Community, choose Manage <community> > Disconnect… > Disconnect in the app, then open the Community’s ' +
-          'Settings > Account > Local connections (or GET /api/v1/me/grants): the installation’s grant is still listed.',
+          'Settings > Account > Connected installations (or GET /api/v1/me/grants): the installation’s grant is still listed.',
         async () => {
           await expect
             .poll(async () => (remaining = await grants(member))?.includes('Desktop B'), {

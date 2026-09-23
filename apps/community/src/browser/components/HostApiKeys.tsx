@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { describeError, request } from '../api.js';
+import { describeReauthenticationError } from '../account-controls.js';
 import { FocusDialog } from './CommunityAdministration.js';
 
 type Scope =
@@ -145,7 +146,7 @@ export function HostApiKeys() {
       setPassword('');
       await refresh();
     } catch (cause) {
-      setError(describeError(cause));
+      setError(describeReauthenticationError(cause, 'No key was created.'));
     } finally {
       setBusy(false);
     }
@@ -178,7 +179,11 @@ export function HostApiKeys() {
       closeConfirmation();
       await refresh();
     } catch (cause) {
-      setDialogError(describeError(cause));
+      setDialogError(
+        action === 'rotate'
+          ? describeReauthenticationError(cause, 'The key was not replaced.')
+          : describeError(cause)
+      );
     } finally {
       setBusy(false);
     }

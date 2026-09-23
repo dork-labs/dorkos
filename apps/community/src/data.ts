@@ -443,19 +443,6 @@ export async function bootstrapGrant(
   return result.rows[0].id;
 }
 
-/** Confirm the signed-in account's password for a sensitive action. */
-export async function reauthenticate(
-  auth: CommunityAuth,
-  request: Request,
-  password: string
-): Promise<void> {
-  try {
-    await auth.api.verifyPassword({ headers: request.headers, body: { password } });
-  } catch {
-    throw new ApiError(403, 'FORBIDDEN', 'Reauthentication failed.');
-  }
-}
-
 /** Lock a channel before a post or membership change and hide unauthorized private rooms. */
 export async function lockChannel(
   client: PoolClient,
