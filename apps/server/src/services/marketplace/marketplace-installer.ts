@@ -29,8 +29,6 @@ import {
   isRealCommitSha,
   isSafeGitUrl,
   resolvePackageVersion,
-  resolvePluginSource,
-  sourceKeyOf,
   type MarketplacePackageManifest,
   type PackageType,
   type PluginSource,
@@ -50,6 +48,13 @@ import type { UninstallFlow } from './flows/uninstall.js';
 import { reportInstallEvent, type InstallEvent } from './telemetry-hook.js';
 import { writeInstallMetadata } from './installed-metadata.js';
 import { locateInstallRoot } from './lib/locate-install.js';
+import {
+  deriveSourceProvenance,
+  hostOf,
+  resolvedFromSourceKey,
+  sameSourceKey,
+  sourceKeyOfFetchable,
+} from './lib/source-provenance.js';
 import { materializePackageSchedules } from './lib/materialize-schedules.js';
 import { withInstallTargetLock } from './transaction.js';
 import { validatePackageSchedules } from './lib/validate-package-schedules.js';
@@ -59,7 +64,14 @@ import {
   sameDisclosedEffects,
 } from './disclosed-effects.js';
 import { UnsupportedSourceUrlError } from './source-url-policy.js';
-import type { ConflictReport, InstallRequest, InstallResult, PermissionPreview } from './types.js';
+import type {
+  ConflictReport,
+  InstallRequest,
+  InstallResult,
+  LatestResolution,
+  PermissionPreview,
+  ResolveLatestOptions,
+} from './types.js';
 import { cp, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -209,6 +221,7 @@ export interface InstallerLike {
   preview(req: InstallRequest): Promise<PreviewResult>;
   install(req: InstallRequest): Promise<InstallResult>;
   update(req: InstallRequest): Promise<InstallResult>;
+  resolveLatest(req: InstallRequest, opts: ResolveLatestOptions): Promise<LatestResolution>;
 }
 
 /** The tuple returned by {@link MarketplaceInstaller.preview}. */
@@ -610,6 +623,87 @@ export class MarketplaceInstaller implements InstallerLike {
   }
 
   /**
+   * Work out what installing a package right now would give, for the update
+   * check, without installing anything.
+   *
+   * Reuses the install pipeline — resolve, stage into the SHA-keyed cache,
+   * validate — so the answer is what an install would actually get, and adds
+   * one short-circuit: when the source ({@link SourceKey}), the marketplace
+   * entry's version and the source's current commit all equal what the install
+   * recorded, the package is `unchanged` and nothing is staged or cloned. All
+   * three are needed: an entry can be re-pointed or re-versioned in the index
+   * while the package's own repository does not move. A sidecar with no
+   * recorded key never short-circuits.
+   *
+   * A staged tree that fails validation (including `VERSION_MISMATCH`) is
+   * `unresolved`: a version DorkOS would refuse to install is never offered.
+   * A `file://` source has no key and no commit, so it is always staged in
+   * place and validated, which costs nothing remote.
+   *
+   * Never throws. Any resolver, fetch or staging error — a refused address
+   * included (DOR-1799) — becomes `unresolved` with its message, so one bad
+   * package cannot sink a check of many. Runs no package code: stage and
+   * validate only, exactly as {@link preview} does.
+   *
+   * Inherited limit (DOR-2248): the SHA-keyed cache can hold a different tree
+   * than its key names, exactly as it can for an install.
+   *
+   * @param req - `marketplace` names the source the update flow matched; a
+   *   direct install passes `source` instead.
+   * @param opts - What the install recorded, and how to look up a commit.
+   * @returns What an install would resolve to now.
+   */
+  async resolveLatest(req: InstallRequest, opts: ResolveLatestOptions): Promise<LatestResolution> {
+    try {
+      const recordedKey = opts.installed.sourceKey;
+      const resolved =
+        req.source && !req.marketplace && recordedKey
+          ? resolvedFromSourceKey(req.name, recordedKey)
+          : await this.deps.resolver.resolve(buildResolverInput(req));
+
+      const key =
+        resolved.kind !== 'local' && resolved.pluginSource !== undefined
+          ? sourceKeyOfFetchable(this.buildFetchableSource(resolved))
+          : undefined;
+
+      if (
+        key &&
+        recordedKey &&
+        sameSourceKey(key, recordedKey) &&
+        resolved.entryVersion === opts.installed.entryVersion &&
+        isRealCommitSha(opts.installed.commitSha)
+      ) {
+        const current = await opts.commitLookup(key.cloneUrl, key.ref);
+        if (!isRealCommitSha(current)) {
+          return { kind: 'unresolved', reason: `couldn't reach ${hostOf(key.cloneUrl)}` };
+        }
+        if (current === opts.installed.commitSha) return { kind: 'unchanged' };
+      }
+
+      const staged = await this.stagePackage(resolved, req);
+      const validation = await validatePackage(staged.path);
+      if (!validation.ok) {
+        const errors = validation.issues.filter((i) => i.level === 'error').map((i) => i.message);
+        return {
+          kind: 'unresolved',
+          reason: `the new version can't be installed: ${errors.join('; ')}`,
+        };
+      }
+      return {
+        kind: 'resolved',
+        declaredVersion: validation.declaredVersion,
+        entryVersion: resolved.entryVersion,
+        // Staging's commit, not the lookup's: a push that lands between the
+        // two is reported as what an install would actually fetch.
+        commitSha: staged.commitSha,
+        sourceKey: staged.sourceKey,
+      };
+    } catch (err) {
+      return { kind: 'unresolved', reason: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /**
    * Run the resolve → fetch → validate pipeline shared by {@link install}
    * and {@link preview}. Returns the resolved source descriptor, the
    * parsed manifest, the path to the staged package on disk, and what the
@@ -834,67 +928,6 @@ function derivePluginSourceType(source: PluginSource | undefined): InstallEvent[
   if (!source) return 'github';
   if (typeof source === 'string') return 'relative-path';
   return source.source;
-}
-
-/**
- * Derive `.dork/install-metadata.json` source provenance (DOR-147) — the
- * source repo and requested ref — from a resolved package source.
- * Local-directory installs (`dorkos install ./path`) have no upstream repo
- * and return an empty object rather than fabricating one.
- *
- * `sourceRepo` is recorded exactly as the resolver already represents the
- * source: a bare `owner/repo` for `github`-form entries, a full URL for
- * `url`/`git-subdir` entries and legacy `gitUrl` resolutions, or the
- * marketplace's own source URL for same-repo relative-path packages.
- * `sourceRef` is only populated when the source explicitly requested one —
- * the resolvers' implicit `main` default is never recorded here, so its
- * absence means "no ref was requested," not "resolved to main."
- *
- * @internal
- */
-function deriveSourceProvenance(resolved: ResolvedPackageSource): {
-  sourceRepo?: string;
-  sourceRef?: string;
-} {
-  if (resolved.kind === 'local') {
-    return {};
-  }
-
-  const source = resolved.pluginSource;
-  if (source === undefined) {
-    // Legacy bare-gitUrl resolution (pre-superset install inputs).
-    return { sourceRepo: resolved.gitUrl };
-  }
-  if (typeof source === 'string') {
-    // Relative-path source: the plugin lives inside the marketplace's own
-    // repo, so the marketplace source URL IS the source repo.
-    return { sourceRepo: resolved.marketplaceSourceUrl };
-  }
-
-  switch (source.source) {
-    case 'github':
-      return { sourceRepo: source.repo, sourceRef: source.ref };
-    case 'url':
-      return { sourceRepo: source.url, sourceRef: source.ref };
-    case 'git-subdir':
-      return { sourceRepo: source.url, sourceRef: source.ref };
-    case 'npm':
-      // Not git-backed — no repo/ref to record. (Install currently throws
-      // NpmSourceNotSupportedError before reaching this point anyway.)
-      return {};
-  }
-}
-
-/**
- * The {@link SourceKey} of a concrete, fetchable source. A string source is a
- * relative path inside a `file://` marketplace (a remote one was already
- * rewritten to `git-subdir` by `buildFetchableSource`), so it has no key.
- *
- * @internal
- */
-function sourceKeyOfFetchable(source: PluginSource): SourceKey | undefined {
-  if (typeof source === 'string') return undefined;
-  return sourceKeyOf(resolvePluginSource(source, {}));
 }
 
 /**

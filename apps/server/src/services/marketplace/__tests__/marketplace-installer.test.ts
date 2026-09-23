@@ -55,6 +55,7 @@ import {
   type InstallerDeps,
 } from '../marketplace-installer.js';
 import { disclosedEffectsOf } from '../disclosed-effects.js';
+import { UnsupportedSourceUrlError } from '../source-url-policy.js';
 import { reportInstallEvent } from '../telemetry-hook.js';
 import { writeInstallMetadata } from '../installed-metadata.js';
 
@@ -1605,6 +1606,284 @@ describe('MarketplaceInstaller', () => {
 
       const metadata = mockedWriteInstallMetadata.mock.calls[0]?.[1];
       expect(metadata).not.toHaveProperty('generatedSchedulePaths');
+    });
+  });
+
+  describe('resolveLatest()', () => {
+    const INSTALLED_SHA = 'a'.repeat(40);
+    const NEW_SHA = 'b'.repeat(40);
+    /** The key a same-repo package from dork-labs/marketplace is recorded under. */
+    const MARKETPLACE_KEY = {
+      cloneUrl: 'https://github.com/dork-labs/marketplace',
+      subpath: 'plugins/code-reviewer',
+      ref: 'main',
+    };
+
+    /** Wire a same-repo marketplace package, with an optional entry version. */
+    function wireRemote(
+      resolver: { resolve: ReturnType<typeof vi.fn> },
+      fetcher: { fetchPackage: ReturnType<typeof vi.fn> },
+      entryVersion?: string
+    ): void {
+      resolver.resolve.mockResolvedValue({
+        kind: 'marketplace',
+        packageName: 'code-reviewer',
+        marketplaceName: 'dorkos-community',
+        pluginSource: './plugins/code-reviewer',
+        marketplaceSourceUrl: 'https://github.com/dork-labs/marketplace',
+        entryVersion,
+      } satisfies ResolvedPackageSource);
+      fetcher.fetchPackage.mockResolvedValue({
+        path: '/tmp/cached/code-reviewer',
+        commitSha: NEW_SHA,
+        fromCache: false,
+      });
+    }
+
+    it('reports unchanged without staging when source, entry version and commit all match', async () => {
+      // Purpose: the cheap path. An unchanged package must cost one ls-remote
+      // and no clone — a spy on staging proves nothing was fetched.
+      const { deps, resolver, fetcher } = buildDeps();
+      wireRemote(resolver, fetcher);
+      const commitLookup = vi.fn().mockResolvedValue(INSTALLED_SHA);
+
+      const result = await new MarketplaceInstaller(deps).resolveLatest(
+        { name: 'code-reviewer', marketplace: 'dorkos-community' },
+        { installed: { commitSha: INSTALLED_SHA, sourceKey: MARKETPLACE_KEY }, commitLookup }
+      );
+
+      expect(result).toEqual({ kind: 'unchanged' });
+      expect(commitLookup).toHaveBeenCalledWith(MARKETPLACE_KEY.cloneUrl, 'main');
+      expect(fetcher.fetchPackage).not.toHaveBeenCalled();
+      expect(mockedValidatePackage).not.toHaveBeenCalled();
+    });
+
+    it('stages when the entry version changed but the commit did not', async () => {
+      // Purpose: an index-only change (a re-versioned foreign entry) moves no
+      // commit in the package's repo; the check must still look.
+      const { deps, resolver, fetcher } = buildDeps();
+      wireRemote(resolver, fetcher, '2.0.0');
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [] });
+      const commitLookup = vi.fn().mockResolvedValue(INSTALLED_SHA);
+
+      const result = await new MarketplaceInstaller(deps).resolveLatest(
+        { name: 'code-reviewer', marketplace: 'dorkos-community' },
+        {
+          installed: {
+            commitSha: INSTALLED_SHA,
+            entryVersion: '1.0.0',
+            sourceKey: MARKETPLACE_KEY,
+          },
+          commitLookup,
+        }
+      );
+
+      expect(fetcher.fetchPackage).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ kind: 'resolved', entryVersion: '2.0.0' });
+    });
+
+    it('stages when the source moved (a different ref)', async () => {
+      // Purpose: the same commit read from a different place proves nothing.
+      const { deps, resolver, fetcher } = buildDeps();
+      wireRemote(resolver, fetcher);
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [] });
+      const commitLookup = vi.fn().mockResolvedValue(INSTALLED_SHA);
+
+      await new MarketplaceInstaller(deps).resolveLatest(
+        { name: 'code-reviewer', marketplace: 'dorkos-community' },
+        {
+          installed: { commitSha: INSTALLED_SHA, sourceKey: { ...MARKETPLACE_KEY, ref: 'dev' } },
+          commitLookup,
+        }
+      );
+
+      expect(fetcher.fetchPackage).toHaveBeenCalledTimes(1);
+      expect(commitLookup).not.toHaveBeenCalled();
+    });
+
+    it('never short-circuits for a sidecar written before sourceKey existed', async () => {
+      // Purpose: without a recorded key there is no proof the commit was read
+      // from the same place, so the check must stage and compare.
+      const { deps, resolver, fetcher } = buildDeps();
+      wireRemote(resolver, fetcher);
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [] });
+      const commitLookup = vi.fn().mockResolvedValue(INSTALLED_SHA);
+
+      await new MarketplaceInstaller(deps).resolveLatest(
+        { name: 'code-reviewer', marketplace: 'dorkos-community' },
+        { installed: { commitSha: INSTALLED_SHA }, commitLookup }
+      );
+
+      expect(fetcher.fetchPackage).toHaveBeenCalledTimes(1);
+    });
+
+    it('is unresolved with "couldn\'t reach <host>" when the lookup returns a placeholder', async () => {
+      // Purpose: a failed ls-remote must never be compared as a commit, and
+      // the person is told which host could not be reached.
+      const { deps, resolver, fetcher } = buildDeps();
+      wireRemote(resolver, fetcher);
+      const commitLookup = vi.fn().mockResolvedValue('tmp-123');
+
+      const result = await new MarketplaceInstaller(deps).resolveLatest(
+        { name: 'code-reviewer', marketplace: 'dorkos-community' },
+        { installed: { commitSha: INSTALLED_SHA, sourceKey: MARKETPLACE_KEY }, commitLookup }
+      );
+
+      expect(result).toEqual({ kind: 'unresolved', reason: "couldn't reach github.com" });
+      expect(fetcher.fetchPackage).not.toHaveBeenCalled();
+    });
+
+    it('is unresolved, naming the validator, when the new version fails validation', async () => {
+      // Purpose: a version DorkOS would refuse to install is never offered.
+      const { deps, resolver, fetcher } = buildDeps();
+      wireRemote(resolver, fetcher);
+      const mismatch =
+        '.dork/manifest.json says version 1.0.0 but .claude-plugin/plugin.json says 1.1.0. ' +
+        'Set both to the same version: Claude Code loads 1.1.0, DorkOS would report 1.0.0.';
+      mockedValidatePackage.mockResolvedValue({
+        ok: false,
+        issues: [{ level: 'error', code: 'VERSION_MISMATCH', message: mismatch }],
+        declaredVersion: '1.1.0',
+      });
+
+      const result = await new MarketplaceInstaller(deps).resolveLatest(
+        { name: 'code-reviewer', marketplace: 'dorkos-community' },
+        { installed: { commitSha: INSTALLED_SHA }, commitLookup: vi.fn() }
+      );
+
+      expect(result.kind).toBe('unresolved');
+      const reason = (result as { reason: string }).reason;
+      expect(reason.startsWith("the new version can't be installed: ")).toBe(true);
+      expect(reason).toContain(mismatch);
+    });
+
+    it('turns a thrown resolver error, including a refused address, into unresolved', async () => {
+      // Purpose: one bad package must never sink the whole check.
+      const { deps, resolver } = buildDeps();
+      resolver.resolve.mockRejectedValue(new UnsupportedSourceUrlError('ext::sh -c id'));
+
+      const result = await new MarketplaceInstaller(deps).resolveLatest(
+        { name: 'code-reviewer', marketplace: 'dorkos-community' },
+        { installed: {}, commitLookup: vi.fn() }
+      );
+
+      expect(result.kind).toBe('unresolved');
+      expect((result as { reason: string }).reason).toBe(
+        new UnsupportedSourceUrlError('ext::sh -c id').message
+      );
+    });
+
+    it("reports staging's commit, not the lookup's, when a push lands between the two", async () => {
+      // Purpose: the result must describe what an install would actually fetch.
+      const { deps, resolver, fetcher } = buildDeps();
+      wireRemote(resolver, fetcher);
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], declaredVersion: '1.1.0' });
+      const commitLookup = vi.fn().mockResolvedValue('c'.repeat(40));
+
+      const result = await new MarketplaceInstaller(deps).resolveLatest(
+        { name: 'code-reviewer', marketplace: 'dorkos-community' },
+        { installed: { commitSha: INSTALLED_SHA, sourceKey: MARKETPLACE_KEY }, commitLookup }
+      );
+
+      expect(result).toEqual({
+        kind: 'resolved',
+        declaredVersion: '1.1.0',
+        entryVersion: undefined,
+        commitSha: NEW_SHA,
+        sourceKey: MARKETPLACE_KEY,
+      });
+    });
+
+    it('rebuilds a direct install from its recorded key, keeping a non-default ref', async () => {
+      // Purpose: `name@url` has no ref syntax, so re-resolving the URL would
+      // check the default branch instead of the one the package came from.
+      const { deps, resolver, fetcher } = buildDeps();
+      fetcher.fetchPackage.mockResolvedValue({
+        path: '/tmp/cached/tool',
+        commitSha: NEW_SHA,
+        fromCache: false,
+      });
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], declaredVersion: '2.0.0' });
+      const key = { cloneUrl: 'https://example.com/tool.git', subpath: '', ref: 'release' };
+
+      const result = await new MarketplaceInstaller(deps).resolveLatest(
+        { name: 'tool', source: key.cloneUrl },
+        { installed: { sourceKey: key }, commitLookup: vi.fn() }
+      );
+
+      expect(resolver.resolve).not.toHaveBeenCalled();
+      expect(fetcher.fetchPackage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: { source: 'url', url: 'https://example.com/tool.git', ref: 'release' },
+        })
+      );
+      expect(result).toMatchObject({ kind: 'resolved', sourceKey: key });
+    });
+
+    it('always stages and validates a file:// package, never looking up a commit', async () => {
+      // Purpose: a local marketplace has no commit to compare; checking it is
+      // free, so it is always checked properly.
+      const { deps, resolver, fetcher } = buildDeps();
+      resolver.resolve.mockResolvedValue({
+        kind: 'marketplace',
+        packageName: 'local-pkg',
+        marketplaceName: 'personal',
+        pluginSource: './plugins/local-pkg',
+        marketplaceSourceUrl: 'file:///tmp/personal',
+      } satisfies ResolvedPackageSource);
+      fetcher.fetchPackage.mockResolvedValue({
+        path: '/tmp/personal/plugins/local-pkg',
+        commitSha: RELATIVE_PATH_SENTINEL_SHA,
+        fromCache: true,
+      });
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], declaredVersion: '1.1.0' });
+      const commitLookup = vi.fn();
+
+      const result = await new MarketplaceInstaller(deps).resolveLatest(
+        { name: 'local-pkg', marketplace: 'personal' },
+        { installed: {}, commitLookup }
+      );
+
+      expect(commitLookup).not.toHaveBeenCalled();
+      expect(mockedValidatePackage).toHaveBeenCalledWith('/tmp/personal/plugins/local-pkg');
+      expect(result).toEqual({
+        kind: 'resolved',
+        declaredVersion: '1.1.0',
+        entryVersion: undefined,
+        commitSha: undefined,
+        sourceKey: undefined,
+      });
+    });
+
+    it('computes the same key the install recorded for the same entry', async () => {
+      // Purpose: the short-circuit is only sound when install and lookup name
+      // one place. Install, capture the recorded key, and check it matches.
+      const { deps, resolver, fetcher, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'code-reviewer' });
+      wireRelativePathResolution(resolver, fetcher, 'code-reviewer', 'dorkos-community');
+      fetcher.fetchPackage.mockResolvedValue({
+        path: '/tmp/cached/code-reviewer',
+        commitSha: INSTALLED_SHA,
+        fromCache: false,
+      });
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+      const installer = new MarketplaceInstaller(deps);
+      await installer.install({ name: 'code-reviewer' });
+      const recorded = mockedWriteInstallMetadata.mock.calls[0]![1];
+      fetcher.fetchPackage.mockClear();
+
+      const result = await installer.resolveLatest(
+        { name: 'code-reviewer', marketplace: 'dorkos-community' },
+        {
+          installed: { commitSha: recorded.commitSha, sourceKey: recorded.sourceKey },
+          commitLookup: vi.fn().mockResolvedValue(INSTALLED_SHA),
+        }
+      );
+
+      expect(result).toEqual({ kind: 'unchanged' });
+      expect(fetcher.fetchPackage).not.toHaveBeenCalled();
     });
   });
 });
