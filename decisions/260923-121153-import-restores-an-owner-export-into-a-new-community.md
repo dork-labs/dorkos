@@ -1,7 +1,7 @@
 ---
 id: 260923-121153
 title: Import restores an owner export into a new community with derived IDs and historical members
-status: draft
+status: accepted
 created: 2026-09-23
 spec: community-host-operator-api
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: community-host-operator-api)
+Accepted (extracted from spec `community-host-operator-api`; approved by the operator on 2026-09-23)
 
 ## Context
 

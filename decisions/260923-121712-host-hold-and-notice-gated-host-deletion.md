@@ -1,7 +1,7 @@
 ---
 id: 260923-121712
 title: A host hold stops growth without blocking export, and host-started deletion follows only a noticed hold
-status: draft
+status: accepted
 created: 2026-09-23
 spec: community-host-operator-api
 amends: 260920-201101
@@ -12,7 +12,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: community-host-operator-api). Amends `260920-201101` only in the sentence "Host authority cannot delete an active tenant": a host may start deletion of a `held` community after its published notice date. Everything else in that ADR stands, including that the host cannot cancel or speed up an owner-requested deletion. The deletion half depends on an open operator question in the spec.
+Accepted (extracted from spec `community-host-operator-api`; approved by the operator on 2026-09-23). Amends `260920-201101` only in the sentence "Host authority cannot delete an active tenant": a host may start deletion of a `held` community after its published notice date. Everything else in that ADR stands, including that the host cannot cancel or speed up an owner-requested deletion. The operator approved both halves, the hold and the host-started deletion, on 2026-09-23.
 
 ## Context
 

@@ -2,14 +2,14 @@
 slug: community-host-operator-api
 number: 260923-121148
 created: 2026-09-23
-status: specified
+status: decomposed
 linear-issue: DOR-2243
 project: Cloud-Hosted Communities
 ---
 
 # Community host-operator API
 
-**Status:** Draft
+**Status:** Approved (operator answers, 2026-09-23); decomposed into `03-tasks.json`
 **Author:** Claude (for DOR-2243)
 **Date:** 2026-09-23
 
@@ -49,7 +49,7 @@ Finally, sign-in is email and password plus optional Google and GitHub (`auth.ts
 - Subdomains or per-community custom domains.
 - Moving a single membership between hosts, cross-host identity, or rebinding an imported person's history to their new account.
 - Online lost-owner recovery, including replacing an owner who cannot be reached. The tenancy contract's offline-only rule stands; a break-glass contract is deferred.
-- Erasing one member's content. It rewrites immutable history and must be performed by the person or their community, never by host authority, so it needs its own contract (see Open Questions).
+- Erasing one member's content. It rewrites immutable history and must be performed by the person or their community, never by host authority, so it needs its own contract. It is tracked as DOR-2247, a spec of its own, and it blocks the launch of any hosted service in this project (Open Question 7).
 - Any host route that reads channels, entries, files, the member directory, invitations, or content audit.
 - Pricing, plans, billing, or anything about how a hosted service decides who may start a community. `packages/cloud-api` carries mechanism only (its catalog-blindness rule).
 - Per-community sign-in settings. OpenID Connect is host-wide.
@@ -175,12 +175,12 @@ Setup: communities A (active) and B (`pending_owner`), a host operator with no m
 | ---------------------------- | ----------- | ------------------------------------------ | ----------------- | ---------------------------------------------------------------------------------- |
 | Active members per community | host        | `community_limits.max_active_members`      | none (unlimited)  | admission and reactivation (`routes/invites.ts`), not owner claim or first install |
 | Stored bytes per community   | host        | `community_limits.max_storage_bytes`       | none (unlimited)  | attachment and icon commit                                                         |
-| Active agents per person     | host config | `COMMUNITY_AGENTS_PER_OWNER`               | **100** (was 20)  | agent enrollment and reactivation (`routes/agents.ts`)                             |
+| Active agents per person     | host config | `COMMUNITY_AGENTS_PER_OWNER`               | 20 (maximum 100)  | agent enrollment and reactivation (`routes/agents.ts`)                             |
 | Active agents for one person | host        | `member_limit_overrides.agents_per_member` | none (use config) | same                                                                               |
 
 There is no community-wide agent cap and no history limit.
 
-`COMMUNITY_AGENTS_PER_OWNER` keeps its ceiling of 100 and its default rises to 100, the operator's product rule. A self-hoster can still lower it. A per-member override may go above the host default, up to a structural ceiling of 1,000 (see Open Questions), and may also be lower than the default. The effective limit for a person is `override ?? config`.
+`COMMUNITY_AGENTS_PER_OWNER` keeps its default of 20 and its configured maximum of 100. A self-hoster who changes nothing keeps today's behaviour; a host that wants 100 agents per person (a hosted service, for example) sets it in configuration. A per-member override may go above the host setting, up to a structural ceiling of 1,000 enforced by the wire schema and a database check (Open Question 2, resolved), and may also be lower. The effective limit for a person is `override ?? config`.
 
 **Limits never destroy anything.** Lowering a limit below current use removes no member, agent, file, or entry. It only refuses the next action that would grow past it. Messages and history are never counted.
 
@@ -239,7 +239,7 @@ Every host eventually has a community it must stop without destroying: an abuse 
 - It enters the existing `deletion_pending` state with the same seven-day `delete_after` and the same worker, blob inventory, per-blob progress, and tombstone as an owner request. `communities.delete_requested_by` becomes nullable beside `delete_requested_by_host_actor`, with a check that a pending deletion names exactly one requester.
 - The host may cancel a host-started deletion during those seven days (`DELETE /host/communities/:id/deletion`), which returns it to `held`. The host still cannot cancel or speed up an owner-requested deletion, and the owner cannot cancel a host-started one. An owner-requested deletion that started from `held` cancels back to `held`, not `archived`, so cancelling can never lift a hold (`communities.deletion_from_state` records it).
 - A `suspended` community cannot be deleted by the host directly: the owner cannot export while suspended, so the host must first move it to `held` with a notice date.
-- This amends ADR `260920-201101` ("host authority cannot delete an active tenant") narrowly; ADR `260923-121712` records it. Whether the online path should exist at all is an operator question (Open Questions).
+- This amends ADR `260920-201101` ("host authority cannot delete an active tenant") narrowly; ADR `260923-121712` records it. The operator approved this path on 2026-09-23 (Open Question 1, resolved).
 
 The lifecycle state machine becomes:
 
@@ -866,7 +866,7 @@ Each test carries a purpose comment. Every acceptance criterion below names the 
 - With `maxStorageBytes = 10 MiB`, two concurrent 6 MiB uploads produce exactly one committed attachment and one `409 STORAGE_LIMIT_REACHED`, and the refused reservation is queued for deletion. Fails without the advisory lock.
 - An owner export succeeds when counted bytes equal the storage limit. Fails if exports are counted.
 - Deleting a file frees space immediately (`pending_delete` not counted).
-- The 101st agent enrollment with default configuration returns `409 AGENT_LIMIT_REACHED` (not 429); with a member override of 150 the 101st succeeds for that member only, and another member in the same community still stops at 100. Fails if the override is community-wide, ignored, or the code is unchanged.
+- With default configuration the 21st agent enrollment returns `409 AGENT_LIMIT_REACHED` (not 429). With `COMMUNITY_AGENTS_PER_OWNER=100` the 101st is refused the same way; a member override of 150 lets the 101st succeed for that member only, and another member in the same community still stops at 100. Setting `COMMUNITY_AGENTS_PER_OWNER=101` fails configuration parsing. Fails if the default moved, the override is community-wide or ignored, or the code is unchanged.
 - The usage response for a seeded community equals independently computed sums, and a JSON key scan finds no name, handle, email, file name, or channel data. Fails if the projection widens.
 - Lowering any limit below use changes no row outside `community_limits`.
 
@@ -956,7 +956,7 @@ Real Postgres and real BlobStores for everything in `apps/community`. The OIDC i
 
 - `apps/community/API.md`: host keys, scopes, limits, usage, short names, imports, the lookup route, new error codes.
 - `apps/community/OPERATIONS.md`: issuing the first key offline, rotating keys when staff change, setting limits, holds and notice dates, host-started deletion, releasing names and their cool-off, watching, committing, and cancelling imports, and the three host links.
-- `apps/community/DEPLOYMENT.md` and `README.md`: new configuration keys, the OIDC callback URL, the agents-per-person default change to 100.
+- `apps/community/DEPLOYMENT.md` and `README.md`: new configuration keys, the OIDC callback URL, the agents-per-person setting (default 20, maximum 100) and the per-member override (up to 1,000).
 - `apps/community/RECOVERY.md`: import is not a backup; host backups remain the recovery path.
 - `docs/` (user guide for Communities): moving a community, what moves and what does not, joining again after a move, web addresses. Written for people, with the `writing-for-humans` skill.
 - `packages/cloud-api/README.md`: the communities group in the contract table.
@@ -964,8 +964,8 @@ Real Postgres and real BlobStores for everything in `apps/community`. The OIDC i
 
 ## Implementation Phases
 
-- **Phase 1 — P1 and P2 (host keys, limits, usage).** Migration 0012; `host-authority.ts`; key routes and CLI; scope checks on every host route; audit actor; limit checks in invites, attachments, icons, and agents; agent error fix and default of 100; usage route; host page sections; the adversarial matrix. Self-contained and useful to every host.
-- **Phase 2 — host hold and host-started deletion.** Migration 0013; `held` in every lifecycle check (tenant context, `lockActiveCommunity`, archived-read rules, blob reservation for owner export, owner lifecycle trigger); hold, release, notice, host deletion and cancel routes; banner; lifecycle matrix tests. Gated on the operator's answer to Open Question 1 for the deletion half; the hold half ships regardless.
+- **Phase 1 — P1 and P2 (host keys, limits, usage).** Migration 0012; `host-authority.ts`; key routes and CLI; scope checks on every host route; audit actor; limit checks in invites, attachments, icons, and agents; agent error fix (the agents-per-person default stays 20); usage route; host page sections; the adversarial matrix. Self-contained and useful to every host.
+- **Phase 2 — host hold and host-started deletion.** Migration 0013; `held` in every lifecycle check (tenant context, `lockActiveCommunity`, archived-read rules, blob reservation for owner export, owner lifecycle trigger); hold, release, notice, host deletion and cancel routes; banner; lifecycle matrix tests. The operator approved both halves on 2026-09-23 (Open Question 1).
 - **Phase 3 — P6 (short names).** Migration 0014; host set/release; cool-off holds; public lookup; server and browser path handling; connection parser; reserved-list test.
 - **Phase 4 — P3 (import).** Migration 0015; import routes, upload streaming, worker, report and commit, owner adoption, abandon and deletion changes, export `LEFT JOIN`; tamper and resume suites.
 - **Phase 5 — P5 (DorkOS app entry points).** `packages/cloud-api` contract first (its own PR, contract-first as the workspace requires), then local server routes and the switcher items. The private service implements against the published contract in its own repository.
@@ -982,13 +982,17 @@ Real Postgres and real BlobStores for everything in `apps/community`. The OIDC i
 
 ## Open Questions
 
-1. **Should the host be able to start a deletion online at all?** ADR `260920-201101` says host authority cannot delete an active tenant. A host can always drop its own database, so the real question is whether the audited path with a notice and an export window is safer than the manual one. _Recommendation:_ yes, exactly as specified: only from `held`, only after a notice date at least 7 days out that members can see, with owner export available throughout the hold, then the standard seven-day `deletion_pending` that the host (not the owner) can cancel. If the operator says no, phase 2 ships the hold alone and ADR `260923-121712` keeps only its hold half. Operator decision.
-2. **Ceiling for a per-member agent override.** The host default is 100 (hard ceiling 100 in configuration). An override needs some structural ceiling so a typo cannot allow a million agents. _Recommendation:_ 1,000, enforced by the wire schema and a database check. Operator decision.
-3. **Owner self-service for short names.** Should an owner be able to change their community's short name from Settings? _Recommendation:_ not in this spec. Keep it host authority for now; revisit once hosts have run names in practice.
-4. **Owner-granted agent overrides.** Should an owner grant a member more agents within a host-set ceiling, instead of asking the host? _Recommendation:_ not in this spec; the operator's decision is a host-set override.
-5. **Reauthentication for accounts that only use OIDC.** Password reauthentication blocks export, archive, transfer, deletion, and key issuance for them until they set a password. _Recommendation:_ a follow-up that accepts a fresh OIDC sign-in (`prompt=login`, `max_age` ≤ 5 minutes, `auth_time` checked) as reauthentication, specified on its own because it changes a security ceremony.
-6. **Export manifest version 2.** Version 1 lacks the community name, description, icon, and channel memberships, so an import loses private-channel membership and presentation. _Recommendation:_ a follow-up that adds those four to the owner export as version 2, with import accepting both versions. Kept out of this spec because it changes the owner export, which has its own reauthentication and size contract.
-7. **Member erasure.** Today a member can leave or be removed, but nothing erases what they wrote. Every host that serves people in the EU or California will be asked. _Recommendation:_ its own contract, owned by the person (self-service) and the community owner, never by host authority: it rewrites immutable history (entries, mentions, attachments, export contents) and has to decide what a thread shows in place of an erased message. Host accounts can already be closed through Better Auth; that part is not blocked.
+None. The operator answered every question on 2026-09-23; the answers are below.
+
+### Resolved by the operator (2026-09-23)
+
+1. ~~**Should the host be able to start a deletion online at all?**~~ (RESOLVED) **Answer:** yes, exactly as specified: only from `held`, only after a notice date at least 7 days out that members can see, with owner export available throughout the hold, then the standard seven-day `deletion_pending` that the host (not the owner) can cancel. **Rationale:** a host can always drop its own database; the audited path with a notice and an export window is safer than the manual one. Phase 2 ships both halves, and ADR `260923-121712` keeps both.
+2. ~~**Ceiling for a per-member agent override.**~~ (RESOLVED) **Answer:** 1,000, enforced by the wire schema and a database check. The host setting `COMMUNITY_AGENTS_PER_OWNER` keeps its default of 20 and its maximum of 100; an override may go above or below it. **Rationale:** a structural ceiling stops a typo from allowing a million agents, and 1,000 leaves room for the people who genuinely run many agents.
+3. ~~**Owner self-service for short names.**~~ (RESOLVED) **Answer:** not in this spec. Short names stay host authority. **Rationale:** revisit once hosts have run names in practice; a later contract can add it.
+4. ~~**Owner-granted agent overrides.**~~ (RESOLVED) **Answer:** not in this spec; overrides are host-set. **Rationale:** the operator's decision is a host-set override; owner grants within a host ceiling can follow as their own contract.
+5. ~~**Reauthentication for accounts that only use OIDC.**~~ (RESOLVED) **Answer:** a follow-up that accepts a fresh OIDC sign-in (`prompt=login`, `max_age` ≤ 5 minutes, `auth_time` checked) as reauthentication, specified on its own. Until it ships, those actions stay password-only and say so. **Rationale:** it changes a security ceremony and deserves its own review.
+6. ~~**Export manifest version 2.**~~ (RESOLVED) **Answer:** a follow-up that adds the community name, description, icon, and channel memberships to the owner export as version 2, with import accepting both versions. **Rationale:** it changes the owner export, which has its own reauthentication and size contract; version 1 import is useful now.
+7. ~~**Member erasure.**~~ (RESOLVED) **Answer:** its own contract, tracked as **DOR-2247** with its own spec, owned by the person (self-service) and the community owner, never by host authority. **It blocks launch** of any hosted service in this project, though not the phases of this spec. **Rationale:** it rewrites immutable history (entries, mentions, attachments, export contents) and has to decide what a thread shows in place of an erased message; every host that serves people in the EU or California will be asked. Host accounts can already be closed through Better Auth; that part is not blocked.
 
 ### Resolved while specifying
 
@@ -1002,11 +1006,11 @@ Real Postgres and real BlobStores for everything in `apps/community`. The OIDC i
 
 ## Related ADRs
 
-- `260923-121150` — Host API keys are scoped host credentials that never reach community content (draft, from this spec)
-- `260923-121151` — Host-set community limits are caps with typed errors, and usage exposes only enforcement aggregates (draft, from this spec)
-- `260923-121152` — Short names are a mutable path alias, never identity (draft, from this spec; reopens part of `260920-192429`)
-- `260923-121712` — A host hold stops growth without blocking export, and host-started deletion follows only a noticed hold (draft, from this spec; amends `260920-201101`)
-- `260923-121153` — Import restores an owner export into a new community with derived IDs and historical members (draft, from this spec)
+- `260923-121150` — Host API keys are scoped host credentials that never reach community content (accepted 2026-09-23, from this spec)
+- `260923-121151` — Host-set community limits are caps with typed errors, and usage exposes only enforcement aggregates (accepted 2026-09-23, from this spec)
+- `260923-121152` — Short names are a mutable path alias, never identity (accepted 2026-09-23, from this spec; reopens part of `260920-192429`)
+- `260923-121712` — A host hold stops growth without blocking export, and host-started deletion follows only a noticed hold (accepted 2026-09-23, from this spec; amends `260920-201101`)
+- `260923-121153` — Import restores an owner export into a new community with derived IDs and historical members (accepted 2026-09-23, from this spec)
 - `260920-192429` — Scope host accounts through immutable community memberships
 - `260920-201101` — Separate community retention from permanent tenant deletion
 - `260916-210001` — The Community is an independent Hono and Node service
@@ -1024,3 +1028,7 @@ Real Postgres and real BlobStores for everything in `apps/community`. The OIDC i
 - `packages/shared/src/community-wire.ts`, `packages/shared/src/community-admin-wire.ts`
 - `packages/cloud-api/README.md` (additive-within-a-major and catalog-blindness rules)
 - Better Auth `genericOAuth` plugin (1.7.x); RFC 4122 §4.3 (name-based UUIDs); OpenID Connect Discovery 1.0
+
+## Changelog
+
+- **2026-09-23** — Operator answered every open question. The agents-per-person default stays 20 (maximum 100, set by configuration); the per-member override ceiling is 1,000; host-started deletion is approved as specified; Q3–Q6 become follow-ups; member erasure is DOR-2247 and blocks launch. ADRs accepted. Decomposed into `03-tasks.json`.

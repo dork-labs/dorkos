@@ -1,7 +1,7 @@
 ---
 id: 260923-121151
 title: Host-set community limits are caps with typed errors, and usage exposes only enforcement aggregates
-status: draft
+status: accepted
 created: 2026-09-23
 spec: community-host-operator-api
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: community-host-operator-api)
+Accepted (extracted from spec `community-host-operator-api`; approved by the operator on 2026-09-23)
 
 ## Context
 
@@ -19,7 +19,7 @@ A host serving many communities cannot bound what one of them consumes: there is
 
 ## Decision
 
-We will store host-set per-community limits for active members and stored bytes, plus a per-member override of the agents-per-person limit, and enforce them inside the transactions that grow each quantity. A cap answers `409` with one code per limit (`MEMBER_LIMIT_REACHED`, `STORAGE_LIMIT_REACHED`, `AGENT_LIMIT_REACHED`); rate windows keep `429`. Stored bytes are summed from the existing tenant blob inventory rather than a maintained counter; exports never count. Lowering a limit only stops growth and never deletes. A separate host usage read, single or paged across communities, returns exactly the aggregates needed to enforce limits and find abandoned communities: active member and agent counts, stored bytes by purpose, limits, and the UTC date of the newest post.
+We will store host-set per-community limits for active members and stored bytes, plus a per-member override of the agents-per-person limit, and enforce them inside the transactions that grow each quantity. A cap answers `409` with one code per limit (`MEMBER_LIMIT_REACHED`, `STORAGE_LIMIT_REACHED`, `AGENT_LIMIT_REACHED`); rate windows keep `429`. Stored bytes are summed from the existing tenant blob inventory rather than a maintained counter; exports never count. Lowering a limit only stops growth and never deletes. A separate host usage read, single or paged across communities, returns exactly the aggregates needed to enforce limits and find abandoned communities: active member and agent counts, stored bytes by purpose, limits, and the UTC date of the newest post. The host-wide agents-per-person setting keeps its default of 20 and its configured maximum of 100, so a self-hoster who changes nothing sees no difference; a per-member override may be set anywhere from 1 to 1,000.
 
 ## Consequences
 

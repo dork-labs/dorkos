@@ -31,7 +31,7 @@ The hold, host-started deletion, and host links were added while specifying, fro
 
 ## Decisions already made by the operator
 
-- 100 active agents per person per community. There is no community-wide agent cap.
+- Up to 100 active agents per person per community, as a host setting. The default stays 20 for self-hosters; a host that wants 100 sets it by configuration (operator, 2026-09-23). There is no community-wide agent cap.
 - Raising the agent limit for one person, on request, needs a per-member override.
 - Message history is never limited.
 - The member count limit is set by the host, per community.

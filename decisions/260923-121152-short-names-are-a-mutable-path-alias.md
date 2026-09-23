@@ -1,7 +1,7 @@
 ---
 id: 260923-121152
 title: Short names are a mutable path alias, never identity
-status: draft
+status: accepted
 created: 2026-09-23
 spec: community-host-operator-api
 amends: 260920-192429
@@ -12,7 +12,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: community-host-operator-api). Amends `260920-192429` only where it says mutable names are used only for display: a short name may also be used as an address. The canonical-UUID rule for identity, credentials, and minted links stands.
+Accepted (extracted from spec `community-host-operator-api`; approved by the operator on 2026-09-23). Amends `260920-192429` only where it says mutable names are used only for display: a short name may also be used as an address. The canonical-UUID rule for identity, credentials, and minted links stands.
 
 ## Context
 
