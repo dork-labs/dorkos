@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 
@@ -44,6 +44,12 @@ import {
   RemoteCommunitySelectionRequiredError,
   RemoteCommunityUpgradeRequiredError,
 } from '../../services/communities/remote/pairing-service.js';
+import { RemoteConnectionAuthorizationError } from '../../services/communities/remote/connection-store.js';
+import { PinnedHttpError } from '../../services/communities/remote/pinned-origin.js';
+import {
+  CommunityAttentionCache,
+  COMMUNITY_ATTENTION_BUDGET_MS,
+} from '../../services/communities/remote/community-attention-cache.js';
 
 let directory: string;
 let app: ReturnType<typeof express>;
@@ -409,4 +415,377 @@ describe('owner-scoped attention projection', () => {
       );
     }
   );
+});
+
+describe('attention within a budget, with last confirmed counts as the fallback', () => {
+  const capabilities = { read: true, post: true, enrollAgent: true, stream: true };
+  const slowRef = CommunityRefSchema.parse('remote_owner_slow');
+  const failRef = CommunityRefSchema.parse('remote_owner_fail');
+  const liarRef = CommunityRefSchema.parse('remote_owner_lying');
+
+  function connected(target = ref): CommunityConnectionDescriptor {
+    return {
+      ref: target,
+      remoteCommunityId: `remote-${target}`,
+      label: `Community ${target}`,
+      pinnedOrigin: 'https://community.example',
+      status: 'connected',
+      connectedHumanMemberId: 'member-a',
+      expiresAt: null,
+      access: {
+        state: 'verified',
+        effective: capabilities,
+        lastKnown: { lifecycle: 'active', capabilities, verifiedAt: new Date().toISOString() },
+      },
+      attention: { state: 'unavailable', unreadCount: null, mentionCount: null, verifiedAt: null },
+    };
+  }
+
+  type Counts = { unreadCount: number; mentionCount: number };
+  /** Each remote answers from whatever behaviour the test sets for it now. */
+  let behaviour: Map<string, () => Promise<Counts>>;
+  let listed: CommunityConnectionDescriptor[];
+  let testServer: Server;
+  let service: RemoteCommunityPairingService;
+
+  function never(): Promise<Counts> {
+    return new Promise<Counts>(() => undefined);
+  }
+  function deferred() {
+    let resolve!: (counts: Counts) => void;
+    const promise = new Promise<Counts>((done) => (resolve = done));
+    return { promise, resolve };
+  }
+
+  async function start(budgetMs: number) {
+    service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+    vi.spyOn(service, 'list').mockImplementation(async () => listed);
+    vi.spyOn(service, 'status').mockImplementation(
+      async (target) => listed.find((item) => item.ref === target) ?? listed[0]!
+    );
+    vi.spyOn(service, 'disconnect').mockImplementation(async (target) => {
+      listed = listed.filter((item) => item.ref !== target);
+      return { remoteRevoked: true };
+    });
+    const testApp = express();
+    testApp.use(
+      '/api/community-connections',
+      createCommunityConnectionsRouter(
+        service,
+        navigation as never,
+        new CommunityAttentionCache(budgetMs)
+      )
+    );
+    testServer = testApp.listen(0, '127.0.0.1');
+    await once(testServer, 'listening');
+  }
+
+  async function list(author = 'author-a') {
+    const started = performance.now();
+    const response = await request(testServer)
+      .get('/api/community-connections')
+      .set('x-test-author', author);
+    expect(response.status).toBe(200);
+    const byRef = new Map(
+      (response.body.connections as CommunityConnectionDescriptor[]).map((item) => [
+        item.ref as string,
+        item.attention,
+      ])
+    );
+    return { byRef, elapsed: performance.now() - started };
+  }
+
+  beforeEach(() => {
+    behaviour = new Map();
+    listed = [connected()];
+    attentionMock.adapter.mockReset().mockImplementation((target: string) => ({
+      attention: () => {
+        const answer = behaviour.get(target);
+        return answer ? answer() : Promise.reject(new Error('no behaviour'));
+      },
+    }));
+  });
+  afterEach(async () => {
+    testServer.closeAllConnections();
+    await new Promise<void>((resolve) => testServer.close(() => resolve()));
+  });
+
+  it('answers within the real budget when one Community hangs, fails or lies', async () => {
+    await start(COMMUNITY_ATTENTION_BUDGET_MS);
+    listed = [connected(), connected(slowRef), connected(failRef), connected(liarRef)];
+    behaviour.set(ref, async () => ({ unreadCount: 3, mentionCount: 1 }));
+    behaviour.set(slowRef, never);
+    behaviour.set(failRef, () => Promise.reject(new Error('private upstream detail')));
+    behaviour.set(liarRef, async () => ({ unreadCount: 1, mentionCount: 5 }));
+
+    const { byRef, elapsed } = await list();
+
+    // The hanging Community is cut off at the budget; nothing waits for its
+    // ten-second transport timeout.
+    expect(elapsed).toBeLessThan(COMMUNITY_ATTENTION_BUDGET_MS + 500);
+    expect(byRef.get(ref)).toEqual({
+      state: 'verified',
+      unreadCount: 3,
+      mentionCount: 1,
+      verifiedAt: expect.any(String),
+    });
+    for (const target of [slowRef, failRef, liarRef]) {
+      expect(byRef.get(target)).toEqual({
+        state: 'unavailable',
+        unreadCount: null,
+        mentionCount: null,
+        verifiedAt: null,
+      });
+    }
+  });
+
+  it('never makes the list wait on a slow Community when every other answers quickly', async () => {
+    await start(100);
+    listed = [connected(), connected(slowRef)];
+    behaviour.set(ref, async () => ({ unreadCount: 2, mentionCount: 0 }));
+    behaviour.set(slowRef, never);
+    const { byRef, elapsed } = await list();
+    expect(elapsed).toBeLessThan(600);
+    expect(byRef.get(ref)?.state).toBe('verified');
+    expect(byRef.get(slowRef)?.state).toBe('unavailable');
+  });
+
+  it.each([
+    ['slow', never],
+    ['failing', () => Promise.reject(new Error('down'))],
+    ['lying', async () => ({ unreadCount: 0, mentionCount: 4 })],
+  ] as const)(
+    'shows the last confirmed counts as stale when the Community turns %s',
+    async (_kind, next) => {
+      await start(100);
+      behaviour.set(ref, async () => ({ unreadCount: 4, mentionCount: 1 }));
+      const first = (await list()).byRef.get(ref);
+      expect(first?.state).toBe('verified');
+
+      behaviour.set(ref, next);
+      const { byRef, elapsed } = await list();
+      expect(elapsed).toBeLessThan(600);
+      expect(byRef.get(ref)).toEqual({
+        state: 'stale',
+        unreadCount: 4,
+        mentionCount: 1,
+        verifiedAt: first?.verifiedAt,
+      });
+    }
+  );
+
+  it.each([
+    ['403', () => new PinnedHttpError(403)],
+    ['401', () => new PinnedHttpError(401)],
+    ['rejected grant', () => new RemoteConnectionAuthorizationError()],
+  ] as const)(
+    'never shows counts from before a %s refusal, even as stale',
+    async (_kind, refusal) => {
+      await start(100);
+      behaviour.set(ref, async () => ({ unreadCount: 4, mentionCount: 1 }));
+      expect((await list()).byRef.get(ref)?.state).toBe('verified');
+      behaviour.set(ref, () => Promise.reject(refusal()));
+      expect((await list()).byRef.get(ref)?.state).toBe('unavailable');
+      // Nor on a later read that merely times out.
+      behaviour.set(ref, never);
+      expect((await list()).byRef.get(ref)?.state).toBe('unavailable');
+    }
+  );
+
+  it('drops the counts when a refusal lands after the read stopped waiting', async () => {
+    await start(50);
+    behaviour.set(ref, async () => ({ unreadCount: 4, mentionCount: 1 }));
+    await list();
+    let refuse!: () => void;
+    behaviour.set(
+      ref,
+      () =>
+        new Promise<Counts>((_resolve, reject) => (refuse = () => reject(new PinnedHttpError(403))))
+    );
+    expect((await list()).byRef.get(ref)?.state).toBe('stale');
+    refuse();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    behaviour.set(ref, never);
+    expect((await list()).byRef.get(ref)?.state).toBe('unavailable');
+  });
+
+  it('keeps a slow request running and serves its answer on the next read', async () => {
+    await start(100);
+    behaviour.set(ref, async () => ({ unreadCount: 1, mentionCount: 0 }));
+    await list();
+    const late = deferred();
+    const calls = vi.fn(() => late.promise);
+    behaviour.set(ref, calls);
+
+    expect((await list()).byRef.get(ref)).toMatchObject({ state: 'stale', unreadCount: 1 });
+    // A second poll while the first request is still out joins it instead of
+    // asking the slow Community again.
+    expect((await list()).byRef.get(ref)).toMatchObject({ state: 'stale', unreadCount: 1 });
+    expect(calls).toHaveBeenCalledTimes(1);
+
+    late.resolve({ unreadCount: 6, mentionCount: 2 });
+    await vi.waitFor(async () => {
+      behaviour.set(ref, never);
+      expect((await list()).byRef.get(ref)).toMatchObject({
+        state: 'stale',
+        unreadCount: 6,
+        mentionCount: 2,
+      });
+    });
+  });
+
+  it('does not ask again on its own once a background answer lands', async () => {
+    await start(50);
+    const late = deferred();
+    const calls = vi.fn(() => late.promise);
+    behaviour.set(ref, calls);
+    await list();
+    late.resolve({ unreadCount: 1, mentionCount: 0 });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    // No announcement, no follow-up read: the answer waits for the next poll.
+    expect(calls).toHaveBeenCalledTimes(1);
+  });
+
+  it('forgets counts when the Community is disconnected', async () => {
+    await start(100);
+    behaviour.set(ref, async () => ({ unreadCount: 4, mentionCount: 1 }));
+    await list();
+    const removed = await request(testServer)
+      .delete(`/api/community-connections/${ref}`)
+      .set('x-test-author', 'author-a');
+    expect(removed.status).toBe(200);
+    // Reconnected, but the Community is down: the old counts must not return.
+    listed = [connected()];
+    behaviour.set(ref, () => Promise.reject(new Error('down')));
+    expect((await list()).byRef.get(ref)?.state).toBe('unavailable');
+  });
+
+  it('discards a request still in flight when the Community is disconnected', async () => {
+    await start(50);
+    const late = deferred();
+    behaviour.set(ref, () => late.promise);
+    await list();
+    await request(testServer)
+      .delete(`/api/community-connections/${ref}`)
+      .set('x-test-author', 'author-a');
+    late.resolve({ unreadCount: 9, mentionCount: 9 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    listed = [connected()];
+    behaviour.set(ref, () => Promise.reject(new Error('down')));
+    expect((await list()).byRef.get(ref)?.state).toBe('unavailable');
+  });
+
+  it.each(['reconnect-required', 'no-read'])('forgets counts once access is %s', async (change) => {
+    await start(100);
+    behaviour.set(ref, async () => ({ unreadCount: 4, mentionCount: 1 }));
+    await list();
+    const lost = connected();
+    const none = { read: false, post: false, enrollAgent: false, stream: false };
+    if (change === 'reconnect-required') {
+      lost.status = 'reconnect-required';
+      lost.access = { state: 'reconnect-required', effective: none, lastKnown: null };
+    } else {
+      lost.access = {
+        state: 'verified',
+        effective: none,
+        lastKnown: {
+          lifecycle: 'suspended',
+          capabilities: none,
+          verifiedAt: new Date().toISOString(),
+        },
+      };
+    }
+    listed = [lost];
+    await list();
+    listed = [connected()];
+    behaviour.set(ref, () => Promise.reject(new Error('down')));
+    expect((await list()).byRef.get(ref)?.state).toBe('unavailable');
+  });
+
+  it('forgets counts when the local owner changes', async () => {
+    await start(100);
+    behaviour.set(ref, async () => ({ unreadCount: 4, mentionCount: 1 }));
+    await list();
+    owner.id = 'author-b';
+    behaviour.set(ref, () => Promise.reject(new Error('down')));
+    expect((await list('author-b')).byRef.get(ref)?.state).toBe('unavailable');
+    owner.id = 'author-a';
+    expect((await list()).byRef.get(ref)?.state).toBe('unavailable');
+  });
+
+  it('forgets counts when the single-connection read finds access lost', async () => {
+    await start(100);
+    behaviour.set(ref, async () => ({ unreadCount: 4, mentionCount: 1 }));
+    await list();
+    const none = { read: false, post: false, enrollAgent: false, stream: false };
+    listed = [
+      {
+        ...connected(),
+        status: 'reconnect-required',
+        access: { state: 'reconnect-required', effective: none, lastKnown: null },
+      },
+    ];
+    const lost = await request(testServer)
+      .get(`/api/community-connections/${ref}`)
+      .set('x-test-author', 'author-a');
+    expect(lost.status).toBe(200);
+    listed = [connected()];
+    behaviour.set(ref, () => Promise.reject(new Error('down')));
+    expect((await list()).byRef.get(ref)?.state).toBe('unavailable');
+  });
+
+  it('drops the previous owner’s counts on the new owner’s single-connection read', async () => {
+    await start(100);
+    behaviour.set(ref, async () => ({ unreadCount: 4, mentionCount: 1 }));
+    await list();
+    owner.id = 'author-b';
+    behaviour.set(ref, () => Promise.reject(new Error('down')));
+    await request(testServer)
+      .get(`/api/community-connections/${ref}`)
+      .set('x-test-author', 'author-b');
+    owner.id = 'author-a';
+    expect((await list()).byRef.get(ref)?.state).toBe('unavailable');
+  });
+
+  it('keeps the last confirmed counts, without asking, while a Community is offline', async () => {
+    await start(100);
+    behaviour.set(ref, async () => ({ unreadCount: 4, mentionCount: 1 }));
+    const first = (await list()).byRef.get(ref);
+    const none = { read: false, post: false, enrollAgent: false, stream: false };
+    const offline = connected();
+    offline.access = {
+      state: 'unverified',
+      effective: none,
+      lastKnown: offline.access!.lastKnown,
+    };
+    listed = [offline];
+    const calls = vi.fn(() => Promise.resolve({ unreadCount: 9, mentionCount: 9 }));
+    behaviour.set(ref, calls);
+    expect((await list()).byRef.get(ref)).toEqual({
+      state: 'stale',
+      unreadCount: 4,
+      mentionCount: 1,
+      verifiedAt: first?.verifiedAt,
+    });
+    expect(calls).not.toHaveBeenCalled();
+    // Back online: fresh counts again.
+    listed = [connected()];
+    expect((await list()).byRef.get(ref)).toMatchObject({ state: 'verified', unreadCount: 9 });
+  });
+
+  it('serves the same fallback on the single-connection read', async () => {
+    await start(100);
+    behaviour.set(ref, async () => ({ unreadCount: 4, mentionCount: 1 }));
+    await list();
+    behaviour.set(ref, never);
+    const response = await request(testServer)
+      .get(`/api/community-connections/${ref}`)
+      .set('x-test-author', 'author-a');
+    expect(response.status).toBe(200);
+    expect(response.body.connection.attention).toMatchObject({
+      state: 'stale',
+      unreadCount: 4,
+      mentionCount: 1,
+    });
+  });
 });
