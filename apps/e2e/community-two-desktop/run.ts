@@ -107,10 +107,19 @@ async function main() {
     browser = await chromium.launch({
       ...(config.browserChannel ? { channel: config.browserChannel } : {}),
       headless: true,
+      // The runner owns Ctrl-C: Playwright's own handler would kill everything and exit mid-cleanup.
+      handleSIGINT: false,
+      handleSIGTERM: false,
     });
     await runJourney({
       browser,
-      launch: { executablePath: config.executablePath, homeRoot, runRoot, launched },
+      launch: {
+        executablePath: config.executablePath,
+        homeRoot,
+        runRoot,
+        launched,
+        onLaunched: ownSignals,
+      },
       infra,
       proof,
       isolation,
@@ -166,12 +175,25 @@ async function main() {
     }
     process.exitCode = 1;
   } finally {
+    await cleanup();
+  }
+}
+
+let cleaning: Promise<void> | undefined;
+let interrupted: NodeJS.Signals | null = null;
+/**
+ * Close every app, stop the servers, remove this run's Postgres (or drop only
+ * its databases), delete the temporary homes and write the receipt. Runs once,
+ * whether the journey ended or the run was interrupted.
+ */
+function cleanup(): Promise<void> {
+  cleaning ??= (async () => {
     receipt.steps = steps;
     receipt.findings = findings;
     receipt.finishedAt = new Date().toISOString();
     // Every app this run started, including one whose launch failed partway.
-    for (const app of launched.reverse()) await app.close().catch(() => undefined);
-    if (browser) await browser.close();
+    for (const app of [...launched].reverse()) await app.close().catch(() => undefined);
+    if (browser) await browser.close().catch(() => undefined);
     try {
       receipt.cleanup = await infra.teardown();
     } catch (cleanupError) {
@@ -179,10 +201,37 @@ async function main() {
       process.exitCode = 1;
     }
     if (!config.keepHomes) rmSync(homeRoot, { recursive: true, force: true });
+    // Closing the apps makes the journey fail as it unwinds; the signal is the real reason.
+    if (interrupted) receipt.outcome = 'INTERRUPTED';
     writeFileSync(path.join(runRoot, 'receipt.json'), JSON.stringify(receipt, null, 2));
     log(`receipt: ${path.join(runRoot, 'receipt.json')}`);
     for (const line of [receipt.cleanup].flat()) log(`cleanup: ${String(line)}`);
+  })();
+  return cleaning;
+}
+
+// Ctrl-C or a polite kill still cleans up: the same teardown, then exit 130.
+// (SIGKILL cannot be caught; the README says what a later run sweeps then.)
+function onSignal(signal: NodeJS.Signals) {
+  // A second Ctrl-C while cleaning must not cut cleanup short.
+  if (interrupted) return;
+  log(`${signal}: interrupted, cleaning up`);
+  interrupted = signal;
+  receipt.interruptedBy = signal;
+  void cleanup().finally(() => process.exit(130));
+}
+/**
+ * Make this runner's handler the only SIGINT/SIGTERM listener. Playwright adds
+ * its own when it launches Electron; that one closes everything and exits at
+ * once, before our teardown has dropped databases or removed containers.
+ */
+function ownSignals() {
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    for (const listener of process.listeners(signal))
+      if (listener !== onSignal) process.off(signal, listener);
+    if (!process.listeners(signal).includes(onSignal)) process.on(signal, onSignal);
   }
 }
+ownSignals();
 
 await main();

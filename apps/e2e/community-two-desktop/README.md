@@ -104,12 +104,14 @@ the databases it created, removes its throwaway Postgres container (or stops a
 borrowed one it started), and deletes the temporary homes. `receipt.json` lists
 what it did under `cleanup`.
 
-If a run is killed partway through, cleanup doesn't happen. The throwaway
-container and its volume are labelled, and
+Stopping a run with Ctrl-C or `kill` (SIGINT or SIGTERM) runs the same
+cleanup, then exits with code 130 and outcome `INTERRUPTED` in the receipt.
+
+Only a run that can't clean up (SIGKILL, a crash, a power cut) leaves things
+behind. The throwaway container and its volume are labelled, and
 `scripts/sweep-ephemeral-docker.sh` removes them on the next run. The temporary
 homes are `dorkos-two-desktop-homes-*` folders in the system temp folder. With
-a borrowed container, drop any leftover `two_desktop_*` databases by hand. A
-killed run can also leave its two Community servers
-(`apps/community/dist-server/main.js`) and the two DorkOS apps running. Stop
-those by their process IDs, never by name, because other people's copies may
-be running on the same machine.
+a borrowed container, drop any leftover `two_desktop_*` databases by hand. The
+two Community servers (`apps/community/dist-server/main.js`) and the two DorkOS
+apps may also still be running. Stop those by their process IDs, never by name,
+because other people's copies may be running on the same machine.

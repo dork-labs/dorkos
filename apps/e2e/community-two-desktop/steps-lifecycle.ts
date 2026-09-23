@@ -279,7 +279,7 @@ export async function lifecycleSteps(w: World): Promise<void> {
     // The spec's one public failure shape for every unusable invitation.
     await expect(alert).toContainText('This invitation cannot be used.', { timeout: 30_000 });
     await expect(member.getByRole('heading', { name: `You’re in ${COMMUNITY}.` })).toHaveCount(0);
-    assert.notEqual(await memberCanRead(member), 200, 'an expired invite admitted B');
+    // B already left in step 26, so B's read access says nothing here; the directory does.
     assert.equal(
       ((await directory(owner)) ?? []).length,
       membersBefore,

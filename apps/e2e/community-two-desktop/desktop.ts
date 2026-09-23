@@ -42,6 +42,12 @@ export interface LaunchContext {
    * runner can close (and photograph) one whose launch failed partway.
    */
   launched: ElectronApplication[];
+  /**
+   * Called after every launch. Playwright installs its own SIGINT/SIGTERM
+   * handlers for Electron (they can't be turned off), and those exit the
+   * process mid-cleanup; the runner uses this to take the signals back.
+   */
+  onLaunched: () => void;
 }
 
 /** The password every person in the journey uses; the accounts are disposable. */
@@ -117,6 +123,7 @@ export async function launchDesktop(
     },
   });
   context.launched.push(app);
+  context.onLaunched();
   const paths = await app.evaluate(({ app: electronApp, shell }) => {
     // Capture the Desktop's hand-off to the system browser without opening one.
     const g = globalThis as unknown as { __proofExternal: string[] };
