@@ -70,7 +70,7 @@ gates:
   # --- credential-free-build.yml ---
   - id: wf.credential-free-build.credential-free-build
     source: .github/workflows/credential-free-build.yml
-    purpose: Proves the app builds, tests and boots with no cloud credentials or private-repo variables present.
+    purpose: Proves the app installs, builds, typechecks, lints and boots with no cloud credentials or private-repo variables present.
 
   # --- db-check.yml ---
   - id: wf.db-check.db-check
