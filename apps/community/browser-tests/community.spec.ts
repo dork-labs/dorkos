@@ -228,25 +228,30 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     });
     await ownerPage.getByLabel('Name', { exact: true }).fill('My unsaved name');
     await ownerPage.getByLabel('Description').fill('My unsaved description');
-    await interceptNext(ownerPage, '**/settings', (route) =>
-      route.fulfill({
-        status: 409,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          code: 'STATE_CONFLICT',
-          message: 'Community settings changed.',
-          current: {
-            communityId: settingsCommunityId,
-            name: 'Gathering Place',
-            description: 'Saved elsewhere',
-            admissionPolicy: 'invite_only',
-            hasIcon: false,
-            settingsVersion: 1,
-            lifecycle: 'active',
-            lifecycleVersion: 1,
-          },
+    await interceptNext(
+      ownerPage,
+      '**/settings',
+      (route) =>
+        route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'STATE_CONFLICT',
+            message: 'Community settings changed.',
+            current: {
+              communityId: settingsCommunityId,
+              name: 'Gathering Place',
+              description: 'Saved elsewhere',
+              admissionPolicy: 'invite_only',
+              hasIcon: false,
+              settingsVersion: 1,
+              lifecycle: 'active',
+              lifecycleVersion: 1,
+            },
+          }),
         }),
-      })
+      // Only the save conflicts; reads of the same settings URL go through.
+      { filter: (route) => route.request().method() === 'PATCH' }
     );
     await ownerPage.getByRole('button', { name: 'Save presentation' }).click();
     await expect(ownerPage.getByRole('alert')).toContainText('Your edits are still here');

@@ -70,20 +70,24 @@ at the end of this file. Two of the "failures" above were that instead.
 
 ## Never use `page.route(..., { times: n })`
 
-When a `times` route runs out, Playwright unregisters it asynchronously. A
-matching request the page sends in that window can be caught with no handler
-left to answer it: it never reaches the server and the test hangs until its
-timeout. The shape that hits it is the common one, a failure route followed by a
-retry against the same URL (PR #1999, then the DOR-2228 audit, which found it at
-every `times:` site in this suite and the community browser suite).
+PR #1999 saw it happen: after a `{ times: 1 }` failure route had run, the page's
+retry against the same URL could hang. It never reached the server and the test
+waited out its timeout. The exact mechanism inside Playwright was not pinned
+down; the likely one is the moment the exhausted route is retired while the next
+matching request is already on its way. The shape is the common one, a failure
+route followed by a retry, and the DOR-2228 audit found it at every `times:` site
+in this suite and the community browser suite.
 
 Use `interceptNext` from `@dorkos/test-utils/playwright-routes` instead. It
 answers the next `count` matching requests, then passes later ones on with
-`route.fallback()` while staying registered, so there is no window. A `filter`
-option narrows which requests count (for example, only `GET`s).
-`scripts/__tests__/one-shot-routes.test.ts` fails on any new `times:` in
-`apps/e2e` or `apps/community/browser-tests` unless the line, or the one above
-it, carries `// one-shot-route-allow: <why no later request can match>`.
+`route.fallback()` and never retires its route. A `filter` option narrows which
+requests count (for example, only `GET`s).
+`pnpm run check:one-shot-routes` (a step in the required `typecheck` job) fails
+on any new `times:` line in `apps/e2e`, `apps/community/browser-tests` or
+`apps/community/acceptance` unless the line, or the one above it, carries
+`// one-shot-route-allow: <why no later request can match>`. The check is
+line-based, so it misses `{ times }` shorthand and options built elsewhere, and
+it can flag a comment like "three times:"; use the marker for those.
 
 ## Sending a message
 

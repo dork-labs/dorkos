@@ -1,20 +1,20 @@
 /**
  * Playwright route helpers that never strand a request.
  *
- * `page.route(url, handler, { times: n })` unregisters itself once it has run
- * `n` times, and that removal is asynchronous. A request the page issues while
- * the removal is still settling can be caught by the interception layer with no
- * handler left to answer it, so it never reaches the server and the test hangs
- * until its timeout. PR #1999 hit exactly this on the owner-claim spec: a
- * `times: 1` failure route followed by a retry against the same URL.
+ * What was observed: PR #1999 found that after a `page.route(url, handler,
+ * { times: 1 })` failure route had run, the page's retry against the same URL
+ * could hang. It never reached the server, and the test waited out its timeout.
+ * The exact mechanism inside Playwright was not pinned down. The likely one is
+ * the moment an exhausted route is retired while the page's next matching
+ * request is already on its way.
  *
- * The helper here stays registered for the whole page lifetime instead. It
+ * The helper here never retires its route, so that moment never comes. It
  * answers the first `count` matching requests itself, then hands every later
  * one to `route.fallback()`, which lets it reach earlier routes or the network
- * exactly as if this route were gone. No unregistering, so no window.
+ * exactly as if this route were gone.
  *
- * `scripts/__tests__/one-shot-routes.test.ts` refuses new `times:` options in
- * the browser suites so the pattern cannot creep back in.
+ * `scripts/check-one-shot-routes.ts` refuses new `times:` options in the
+ * browser suites so the pattern cannot creep back in.
  *
  * Kept structural (no `@playwright/test` import) so this package does not take
  * a Playwright dependency; a Playwright `Page` or `BrowserContext` satisfies
