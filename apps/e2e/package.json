@@ -11,6 +11,7 @@
     "capture:record": "tsx capture/record.ts",
     "capture:process": "tsx capture/process.ts",
     "capture:archive": "tsx capture/archive.ts",
+    "shard-timings": "tsx reporters/refresh-shard-timings.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
