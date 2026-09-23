@@ -569,6 +569,33 @@ describe('MarketplaceCache', () => {
     });
   });
 
+  describe('stamping when a fetch lands', () => {
+    it('stamps a fetched entry even when the fetch took longer than the grace', async () => {
+      // Purpose: a slow fetch leaves the temp directory's time from when it
+      // started; unstamped, the entry would land already "unused" and a sweep
+      // could take it from the request that is about to read it.
+      const result = await cache.materializePackage('flow', sha('a'), '', async (dir) => {
+        await writeFile(join(dir, 'README.md'), 'tree\n');
+        await ageEntry(dir, HOUR_MS);
+        return sha('a');
+      });
+
+      expect(Date.now() - (await stat(result.path)).mtimeMs).toBeLessThan(IN_USE_GRACE_MS);
+    });
+
+    it('stamps the entry another process landed first', async () => {
+      // Purpose: when the fetch finds its commit already cached (the ref moved
+      // onto an old entry), that old entry is what the caller reads now.
+      const existing = await seed('flow', sha('b'));
+      await ageEntry(existing, HOUR_MS);
+
+      const result = await cache.materializePackage('flow', sha('a'), '', fakeFetch(sha('b')));
+
+      expect(result.path).toBe(existing);
+      expect(Date.now() - (await stat(existing)).mtimeMs).toBeLessThan(IN_USE_GRACE_MS);
+    });
+  });
+
   describe('onEntryWritten', () => {
     it('tells the listener when a fetch lands a new entry, and not on a hit', async () => {
       // Purpose: this is the one door the cache grows through, so it is the

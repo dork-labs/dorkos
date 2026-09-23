@@ -94,6 +94,32 @@ describe('keepRule', () => {
     expect([...kept].sort()).toEqual([installed.path, pending.path].sort());
   });
 
+  it('keeps the staged update even when the installed commit was read more recently', () => {
+    // Purpose: rebuilding an install's file record (DOR-2245) reads the
+    // installed commit; that must not make it "newest" and cost the staged
+    // update its place.
+    const recorded: RecordedTree[] = [
+      { name: 'flow', commitSha: sha('a'), subpath: 'plugins/flow' },
+    ];
+    const installedJustRead = entry('flow', sha('a'), 'plugins/flow', 60_000);
+    const pending = entry('flow', sha('c'), 'plugins/flow', HOUR_MS);
+    const superseded = entry('flow', sha('b'), 'plugins/flow', 2 * HOUR_MS);
+
+    const kept = keepRule([installedJustRead, pending, superseded], recorded);
+    expect([...kept].sort()).toEqual([installedJustRead.path, pending.path].sort());
+  });
+
+  it('keeps the newest entry of each subfolder when an old sidecar names none', () => {
+    // Purpose: without a recorded subfolder the rule cannot tell which of a
+    // name's subfolders is the installed one, so it keeps each one's newest.
+    const recorded: RecordedTree[] = [{ name: 'flow', commitSha: sha('a') }];
+    const first = entry('flow', sha('b'), 'plugins/flow', HOUR_MS);
+    const second = entry('flow', sha('c'), 'packages/flow', 2 * HOUR_MS);
+
+    const kept = keepRule([first, second], recorded);
+    expect([...kept].sort()).toEqual([first.path, second.path].sort());
+  });
+
   it('keeps nothing for a package that is not installed', () => {
     // Purpose: browsing stages one entry per package opened; keeping the
     // newest of each for ever would grow without bound.

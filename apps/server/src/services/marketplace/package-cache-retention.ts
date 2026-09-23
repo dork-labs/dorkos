@@ -12,8 +12,11 @@
  *    person typed, while the sidecar records the manifest's. Rebuilding an
  *    install's file record fetches this commit (DOR-2245), and after a
  *    force-push it may exist nowhere else.
- * 3. It is the most recently used entry of a package that is installed, so a
- *    staged update is applied from the tree the check validated. Packages
+ * 3. It is the most recently used entry of a package that is installed,
+ *    among those rule 2 does not already keep, so a staged update is applied
+ *    from the tree the check validated. Once that update is applied, the
+ *    superseded tree can hold this place until the next update is staged,
+ *    which still bounds the cache at two entries per package. Packages
  *    that are not installed (previewed, or since uninstalled) keep nothing, or
  *    browsing would grow the cache without bound.
  *
@@ -105,9 +108,13 @@ export function keepRule(
     }
   }
 
-  // Rule 3: the most recently used entry of each installed package.
+  // Rule 3: the most recently used entry of each installed package, among the
+  // entries rule 2 does not already keep. Otherwise reading the installed
+  // commit again (DOR-2245 rebuilds a file record from it) would make it the
+  // newest and cost a staged update its place.
   const newest = new Map<string, CachedPackage>();
   for (const entry of entries) {
+    if (kept.has(entry.path)) continue;
     if (!recorded.some((tree) => tree.name === entry.packageName && sameTree(tree, entry))) {
       continue;
     }

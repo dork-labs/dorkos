@@ -635,14 +635,21 @@ export function subpathDigest(subpath: string): string {
 }
 
 /**
- * Stamp an entry as used now (its directory's mtime).
+ * Stamp an entry as used now (its directory's mtime). Best-effort: a tree
+ * DorkOS can read but not stamp (root-owned, or on a read-only disk) is still
+ * served, and keeps its old time. Such a tree loses only the grace period's
+ * protection, and a sweep cannot move a folder it may not modify either.
  *
- * @returns The stamp.
+ * @returns When the entry was last used: now, or its unchanged time.
  */
 async function stampUsed(path: string): Promise<Date> {
   const now = new Date();
-  await utimes(path, now, now);
-  return now;
+  try {
+    await utimes(path, now, now);
+    return now;
+  } catch {
+    return (await stat(path)).mtime;
+  }
 }
 
 /**

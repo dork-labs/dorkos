@@ -6,39 +6,50 @@
  *
  * @module services/marketplace/lib/directory-size
  */
-import { readdir, stat } from 'node:fs/promises';
+import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /**
- * Sum the size of every regular file under `root`. Anything that vanishes
- * mid-walk (a concurrent clear or sweep) counts as nothing.
+ * Deepest directory the walk descends into. Without following links a tree
+ * is finite, so this is a belt: a pathological tree is under-counted rather
+ * than walked for ever.
+ */
+const MAX_DEPTH = 256;
+
+/**
+ * Sum the size of every regular file under `root`.
+ *
+ * Symlinks are never followed or counted. A cached package is a git checkout,
+ * and git keeps symlinks: following `a -> .` or `root -> /` would walk for
+ * ever (and the sweep awaiting this would never settle). Anything that
+ * vanishes mid-walk (a concurrent clear or sweep) counts as nothing.
  *
  * @param root - Absolute path of the directory to measure.
  * @returns Total bytes, or `0` when `root` does not exist.
  */
 export async function directorySize(root: string): Promise<number> {
   let total = 0;
-  const walk = async (dir: string): Promise<void> => {
-    let entries: string[];
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    if (depth > MAX_DEPTH) return;
+    let entries;
     try {
-      entries = await readdir(dir);
+      entries = await readdir(dir, { withFileTypes: true });
     } catch {
       return;
     }
     for (const entry of entries) {
-      const entryPath = join(dir, entry);
-      try {
-        const info = await stat(entryPath);
-        if (info.isDirectory()) {
-          await walk(entryPath);
-        } else if (info.isFile()) {
-          total += info.size;
+      const entryPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(entryPath, depth + 1);
+      } else if (entry.isFile()) {
+        try {
+          total += (await lstat(entryPath)).size;
+        } catch {
+          // Removed while we walked — nothing left to count.
         }
-      } catch {
-        // Removed while we walked — nothing left to count.
       }
     }
   };
-  await walk(root);
+  await walk(root, 0);
   return total;
 }
