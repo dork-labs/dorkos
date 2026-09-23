@@ -230,6 +230,8 @@ vi.mock('../../services/communities/remote/remote-community-adapter.js', () => (
   remoteOriginIdempotencyKeyOf: (entry: { id: string }) =>
     entry.id === 'agent-wire-a' ? 'wire-owned-key' : undefined,
   remoteRoomAccessOf: () => ({ visibility: 'public', joined: true }),
+  remoteThreadReplySeqOf: (entry: { id: string }) =>
+    entry.id === 'root-with-replies' ? 9 : undefined,
 }));
 vi.mock('../../services/rooms/index.js', () => ({
   getRoomService: () => ({
@@ -647,6 +649,32 @@ describe('qualified remote community writes and live projections', () => {
     expect(events.status).toBe(200);
     expect(events.text).toContain('"id":"agent-wire-a"');
     expect(events.text).toContain('"originIdempotencyKey":"wire-owned-key"');
+  });
+
+  it('carries a root’s reply count and the newest reply it counted to the browser (DOR-2229)', async () => {
+    const root = {
+      ...fixture.entry,
+      id: 'root-with-replies',
+      thread: { replyCount: 3, lastReplyAt: '2026-09-16T00:05:00.000Z' },
+    };
+    fixture.adapter.listEntriesWithThreadRoot.mockResolvedValueOnce({
+      entries: [root],
+      nextCursor: null,
+    });
+    const entries = `/api/communities/${fixture.ref}/rooms/room-a/entries`;
+
+    const history = await request(testServer).get(entries);
+
+    expect(history.status).toBe(200);
+    expect(history.body.entries[0]).toMatchObject({
+      id: 'root-with-replies',
+      thread: { replyCount: 3, lastReplyAt: '2026-09-16T00:05:00.000Z' },
+      threadLastReplySeq: 9,
+    });
+    // A root with no replies carries neither.
+    const quiet = await request(testServer).get(entries);
+    expect(quiet.body.entries[0]).not.toHaveProperty('thread');
+    expect(quiet.body.entries[0]).not.toHaveProperty('threadLastReplySeq');
   });
 
   it('streams an authenticated agent marker immediately without a receipt barrier', async () => {

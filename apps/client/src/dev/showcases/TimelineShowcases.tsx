@@ -22,7 +22,7 @@ import { ChatEmptyState, TypingDots } from '@/layers/features/chat';
 import { Feed } from '@/layers/shared/ui';
 import { SESSION_CAPABILITIES, SessionMessage } from '@/layers/widgets/session';
 import { ROOM_CAPABILITIES, RoomMessage } from '@/layers/widgets/room-view';
-import type { PendingPost } from '@/layers/entities/room';
+import { threadReplySummary, type PendingPost } from '@/layers/entities/room';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -311,8 +311,7 @@ function ThreadGroupingDemo() {
             grouping={{ position: 'only' }}
           />
           <ThreadReplyRow
-            replies={replies}
-            lastReadSeq={replies[0]!.seq - 1}
+            summary={threadReplySummary(replies, replies[0]!.seq - 1)}
             open={false}
             onOpen={() => {}}
           />

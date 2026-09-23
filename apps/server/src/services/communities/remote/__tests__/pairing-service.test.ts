@@ -19,6 +19,7 @@ import {
 import {
   RemoteCommunityAdapter,
   remoteOriginIdempotencyKeyOf,
+  remoteThreadReplySeqOf,
   type RemoteNativeRoomEvent,
 } from '../remote-community-adapter.js';
 import {
@@ -61,6 +62,8 @@ const requests: Array<{ path: string; body: Record<string, string> }> = [];
 const revocations: Array<{ path: string; authorization: string | undefined }> = [];
 /** How the fake Community answers a self-revocation: a status, or drop the socket. */
 let revocationAnswer: number | 'hang-up' = 204;
+/** How the fake Community answers a reply-count read: counts, or 404 like a server from before the route. */
+let threadsAnswer: 'counts' | 404 = 'counts';
 
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'community-pairing-'));
@@ -231,6 +234,19 @@ beforeAll(async () => {
         ],
         nextCursor: null,
       });
+    } else if (req.url === `${qualified}/channels/${remoteRoomId}/threads?roots=entry-1`) {
+      if (threadsAnswer === 404) send({ code: 'NOT_FOUND', message: 'Not found.' }, 404);
+      else
+        send({
+          threads: [
+            {
+              rootEntryId: 'entry-1',
+              replyCount: 3,
+              lastReplyAt: '2026-09-23T12:05:00.000Z',
+              lastReplySeq: 9,
+            },
+          ],
+        });
     } else if (req.url === `${qualified}/channels/${remoteRoomId}/read-cursor`) {
       send({ cursor: 'resume-1', unreadCount: 0 });
     } else if (
@@ -459,6 +475,21 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
         checksum: 'checksum-1',
       },
     ]);
+    // The port's own read carries no counts; the browser's read asks for them.
+    expect(history.entries[0]!.thread).toBeUndefined();
+    const browserHistory = await adapter.listEntriesWithThreadRoot(remoteRoomId);
+    expect(browserHistory.entries[0]!.thread).toEqual({
+      replyCount: 3,
+      lastReplyAt: '2026-09-23T12:05:00.000Z',
+    });
+    expect(remoteThreadReplySeqOf(browserHistory.entries[0]!)).toBe(9);
+    // A server from before the route costs the counts and never the history.
+    threadsAnswer = 404;
+    const olderServer = await adapter.listEntriesWithThreadRoot(remoteRoomId);
+    threadsAnswer = 'counts';
+    expect(olderServer.entries.map((item) => item.id)).toEqual(['entry-1']);
+    expect(olderServer.entries[0]!.thread).toBeUndefined();
+    expect(remoteThreadReplySeqOf(olderServer.entries[0]!)).toBeUndefined();
     expect(await adapter.getReadCursor(remoteRoomId)).toBe('resume-1');
     await adapter.setReadCursor(remoteRoomId, 'resume-1' as never);
     const upload = await adapter.uploadAttachment(remoteRoomId, {

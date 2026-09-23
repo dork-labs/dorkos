@@ -6,7 +6,7 @@
  */
 import { useState } from 'react';
 import { cn } from '@/layers/shared/lib';
-import { threadReplySummary, type RoomEntry } from '@/layers/entities/room';
+import type { ThreadReplySummary } from '@/layers/entities/room';
 import { useConversation } from '../../model/conversation-context';
 import { formatAbsoluteTime, formatTime } from '../../lib/format-entry-time';
 
@@ -16,16 +16,16 @@ interface ThreadReplyRowProps {
    * on the line that opened it. Named by the host, which owns the id scheme.
    */
   id?: string;
-  /** The replies hanging off one entry. Never empty — no replies, no row. */
-  replies: RoomEntry[];
   /**
-   * How many replies the thread has in the ROOM, when that is more than the
-   * ones above — a thread reaching back past the loaded page. Omitted for every
-   * other thread, where the replies handed in are the whole of it.
+   * What the line says: how many replies, when the newest landed, and how many
+   * of them the reader has not seen.
+   *
+   * Worked out by the host, because each surface knows its thread from a
+   * different place: a local room from the replies it holds
+   * (`threadReplySummary`), a community channel from the count its server sent
+   * plus the replies that have streamed in since. The row only draws it.
    */
-  totalReplies?: number;
-  /** The reader's read cursor, frozen at the room's open, or null for a non-member. */
-  lastReadSeq: number | null;
+  summary: ThreadReplySummary;
   /** True while this thread is the one the panel is showing. */
   open: boolean;
   /** Open this thread's panel. */
@@ -48,24 +48,17 @@ interface ThreadReplyRowProps {
  *
  * **Unread is derived, never stored** (design record §3.3): a reply above the
  * reader's cursor is one they have not seen, so the row renders in accent and
- * counts them. `threadReplySummary` owns that arithmetic and says why the
- * cursor it reads is the frozen one.
+ * counts them. The host's summary owns that arithmetic — for a room,
+ * `threadReplySummary`, which says why the cursor it reads is the frozen one.
  *
  * The reply COUNT flips when it advances (design record §5.5) — the one-shot
  * mechanical-counter snap, keyed the way `EntryReactionRow` keys its rolling
  * count: a ref seeded `null` at mount, so a row arriving with three replies
  * already on it is drawn at rest and only a genuine increment moves.
  */
-export function ThreadReplyRow({
-  id,
-  replies,
-  totalReplies,
-  lastReadSeq,
-  open,
-  onOpen,
-}: ThreadReplyRowProps) {
+export function ThreadReplyRow({ id, summary, open, onOpen }: ThreadReplyRowProps) {
   const { capabilities } = useConversation();
-  const { count, lastAt, unread } = threadReplySummary(replies, lastReadSeq, totalReplies);
+  const { count, lastAt, unread } = summary;
   const time = formatTime(lastAt);
 
   // Whether this count has MOVED since the row was drawn, which is what

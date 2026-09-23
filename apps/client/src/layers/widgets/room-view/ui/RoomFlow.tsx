@@ -28,7 +28,7 @@ import type { MessageGrouping } from '@/layers/shared/model';
 import { useNow } from '@/layers/shared/model';
 import { Button, Feed, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
-import { isRoomMember, usePendingPosts } from '@/layers/entities/room';
+import { isRoomMember, threadReplySummary, usePendingPosts } from '@/layers/entities/room';
 import {
   Conversation,
   DayDivider,
@@ -401,9 +401,7 @@ export function RoomFlow({
         return (
           <ThreadReplyRow
             id={threadRowId(row.rootId)}
-            replies={row.replies}
-            totalReplies={row.totalReplies}
-            lastReadSeq={lastReadSeq}
+            summary={threadReplySummary(row.replies, lastReadSeq, row.totalReplies)}
             open={openThreadId === row.rootId}
             onOpen={() => open(row.rootId)}
           />

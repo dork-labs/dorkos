@@ -46,6 +46,7 @@ import {
   CommunityWireEventSchema,
   CommunityWireMemberListResponseSchema,
   CommunityWireReadCursorResponseSchema,
+  CommunityWireThreadSummaryListSchema,
 } from '@dorkos/shared/community-wire';
 import { CommunityAgentEnrollmentSecretResponseSchema } from '@dorkos/shared/community-private-wire';
 import { randomUUID } from 'node:crypto';
@@ -100,6 +101,7 @@ const remoteAuthorMetadata = new WeakMap<
   Readonly<{ displayName: string; kind: 'human' | 'agent' }>
 >();
 const remoteOriginIdempotencyKeys = new WeakMap<CommunityEntry, string>();
+const remoteThreadReplySeqs = new WeakMap<CommunityEntry, number>();
 const communityUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const activeAdmissions = new Map<string, Promise<CommunityMember>>();
 const remoteRoomMetadata = new WeakMap<
@@ -132,6 +134,19 @@ export function remoteAuthorOf(
 /** Read an owner-authorized native agent-post correlation key retained outside the portable DTO. */
 export function remoteOriginIdempotencyKeyOf(projected: CommunityEntry): string | undefined {
   return remoteOriginIdempotencyKeys.get(projected);
+}
+
+/**
+ * Read the server sequence of the newest reply a projected root's `thread`
+ * summary counted. A reply seen later with a higher sequence is not in that
+ * count, which is how a reader adds live replies without counting one twice.
+ *
+ * @param projected - A thread root returned by {@link RemoteCommunityAdapter.listEntriesWithThreadRoot}.
+ * @returns The sequence, or `undefined` when the root carries no summary.
+ * @internal
+ */
+export function remoteThreadReplySeqOf(projected: CommunityEntry): number | undefined {
+  return remoteThreadReplySeqs.get(projected);
 }
 
 /** Read private native visibility and joined state for a projected remote room. */
@@ -617,13 +632,58 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     };
   }
 
+  /**
+   * Put the reply count on every root in a browser history page that has
+   * replies — the "3 replies" line under it.
+   *
+   * Only this browser read asks: an agent or the cache importer reading
+   * history has no line to draw. Counts are a nicety on top of the history, so
+   * a server from before the route (404) or any other failure to read them
+   * leaves the page exactly as it was; only a revoked connection is passed on.
+   */
+  private async addThreadSummaries(
+    roomId: string,
+    entries: CommunityEntry[],
+    opts: ListCommunityEntriesOpts
+  ): Promise<void> {
+    const roots = entries.filter((item) => item.depth === 0);
+    if (roots.length === 0) return;
+    let data;
+    try {
+      data = CommunityWireThreadSummaryListSchema.parse(
+        await this.request(
+          `/api/v1/channels/${encodeURIComponent(roomId)}/threads?roots=${roots
+            .map((item) => encodeURIComponent(item.id))
+            .join(',')}`,
+          undefined,
+          { actingMemberId: opts.actingMemberId },
+          'GET'
+        )
+      );
+    } catch (error) {
+      if (error instanceof RemoteConnectionAuthorizationError) throw error;
+      return;
+    }
+    const byRoot = new Map(data.threads.map((thread) => [thread.rootEntryId, thread]));
+    for (const root of roots) {
+      const summary = byRoot.get(root.id);
+      if (!summary) continue;
+      root.thread = { replyCount: summary.replyCount, lastReplyAt: summary.lastReplyAt };
+      remoteThreadReplySeqs.set(root, summary.lastReplySeq);
+    }
+  }
+
   /** Post and retain the server-confirmed native entry for the qualified local API. */
   /** Read a browser thread including its authoritative root context entry. */
   async listEntriesWithThreadRoot(
     roomId: string,
     opts: ListCommunityEntriesOpts = {}
   ): Promise<CommunityEntryPage> {
-    if (!opts.thread) return this.listEntries(roomId, opts);
+    if (!opts.thread) {
+      const page = await this.listEntries(roomId, opts);
+      await this.addThreadSummaries(roomId, page.entries, opts);
+      return page;
+    }
     const query = new URLSearchParams();
     if (opts.cursor) query.set('cursor', opts.cursor);
     if (opts.limit) query.set('limit', String(Math.min(opts.limit, 100)));
