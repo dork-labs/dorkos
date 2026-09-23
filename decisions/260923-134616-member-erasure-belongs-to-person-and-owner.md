@@ -1,7 +1,7 @@
 ---
 id: 260923-134616
 title: Member erasure belongs to the person and the community owner, after a 72-hour cancellable window
-status: proposed
+status: accepted
 created: 2026-09-23
 spec: community-member-erasure
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed (from spec: community-member-erasure)
+Accepted (from spec: community-member-erasure)
 
 ## Context
 

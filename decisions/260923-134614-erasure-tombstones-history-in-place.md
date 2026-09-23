@@ -1,7 +1,7 @@
 ---
 id: 260923-134614
 title: Erasure tombstones a member's history in place and deletes everything else
-status: proposed
+status: accepted
 created: 2026-09-23
 spec: community-member-erasure
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed (from spec: community-member-erasure)
+Accepted (from spec: community-member-erasure)
 
 ## Context
 
