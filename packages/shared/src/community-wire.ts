@@ -628,3 +628,82 @@ export const CommunityWireErrorSchema = z.strictObject({
 });
 /** Public error response. */
 export type CommunityWireError = z.infer<typeof CommunityWireErrorSchema>;
+
+/*
+ * Browser paths a Community serves to people, not to installations.
+ *
+ * A DorkOS installation never performs membership or administration on a
+ * person's behalf: inviting, leaving and changing a Community's settings all
+ * need the person's own Community sign-in, and some need their password. So
+ * the DorkOS app opens these pages on the Community's own origin instead, and
+ * both sides agree on the paths here.
+ */
+
+/** The sections of one Community's settings page, in the order it shows them. */
+export const COMMUNITY_SETTINGS_SECTIONS = [
+  'community',
+  'members',
+  'agents',
+  'account',
+  'settings',
+] as const;
+/** One section of a Community's settings page. */
+export type CommunitySettingsSection = (typeof COMMUNITY_SETTINGS_SECTIONS)[number];
+
+/**
+ * The path that opens one Community's settings, optionally at one section.
+ *
+ * The page still decides what the signed-in person may see: a section their
+ * role does not allow falls back to one it does.
+ *
+ * @param communityId - The Community's own id on its host.
+ * @param section - The section to open, or the page's default for the person's role.
+ */
+export function communitySettingsPath(
+  communityId: string,
+  section?: CommunitySettingsSection
+): string {
+  const base = `/c/${encodeURIComponent(communityId)}/settings`;
+  return section ? `${base}/${section}` : base;
+}
+
+/**
+ * Read a settings path back.
+ *
+ * @param pathname - A browser path on the Community's origin.
+ * @returns The requested section (`null` for the default), or `null` when the
+ *   path is not a settings path at all.
+ */
+export function parseCommunitySettingsPath(
+  pathname: string
+): { section: CommunitySettingsSection | null } | null {
+  const match = /^\/c\/[^/]+\/settings(?:\/([^/]+))?\/?$/u.exec(pathname);
+  if (!match) return null;
+  const section = match[1];
+  if (section === undefined) return { section: null };
+  return (COMMUNITY_SETTINGS_SECTIONS as readonly string[]).includes(section)
+    ? { section: section as CommunitySettingsSection }
+    : { section: null };
+}
+
+/**
+ * Whether a pasted value is a Community invitation link: an http(s) address
+ * whose path is a Community's join page and whose fragment carries the invite.
+ *
+ * The fragment never reaches a server, which is why the link can be opened as
+ * it is without the DorkOS app reading or keeping the invite itself.
+ *
+ * @param value - Text the person pasted.
+ */
+export function isCommunityInvitationUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+  if (!/^\/(?:c\/[^/]+\/)?join\/?$/u.test(url.pathname)) return false;
+  const fragment = new URLSearchParams(url.hash.slice(1));
+  return Boolean(fragment.get('invite') ?? fragment.get('token'));
+}

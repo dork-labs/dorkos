@@ -217,3 +217,161 @@ test('Community switcher supports keyboard selection and a narrow accessible men
     contentType: 'image/png',
   });
 });
+
+/**
+ * Answer the Community's own site so an action that opens it has somewhere to
+ * land. The page stands in for the real host; what matters is WHICH address
+ * the DorkOS app asked the browser to open.
+ */
+async function stubCommunitySite(page: Page) {
+  await page
+    .context()
+    .route('https://alpha.example.test/**', (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<title>Alpha</title><h1>Alpha</h1>' })
+    );
+}
+
+/** Open the switcher on Alpha and step into its "Manage Alpha" submenu by keyboard. */
+async function openManageAlpha(page: Page) {
+  await page.goto('/channels?community=alpha&id=general');
+  await new BasePage(page).waitForAppReady();
+  await page.getByTestId('sidebar-header-block').focus();
+  await page.keyboard.press('Meta+Shift+K');
+  await expect(page.getByRole('menuitemradio', { name: /Alpha/ })).toBeFocused();
+  const manage = page.getByRole('menuitem', { name: 'Manage Alpha' });
+  await page.keyboard.press('ArrowDown');
+  await expect(manage).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('menuitem', { name: 'Community settings' })).toBeVisible();
+}
+
+test('Community actions open the Community’s own pages, by keyboard', async ({
+  page,
+}, testInfo) => {
+  await mockCommunitySwitcher(page);
+  await stubCommunitySite(page);
+  await openManageAlpha(page);
+
+  // The submenu opens on its first action; the note above it is not a stop.
+  await expect(page.getByRole('menuitem', { name: 'Invite people' })).toBeFocused();
+  const shot = testInfo.outputPath('community-actions-desktop.png');
+  await page.screenshot({ path: shot, animations: 'disabled' });
+  await testInfo.attach('community-actions-desktop.png', { path: shot, contentType: 'image/png' });
+  await page.keyboard.press('ArrowDown');
+  // Settings for a Community open THAT Community's settings, on its site.
+  await expect(page.getByRole('menuitem', { name: 'Community settings' })).toBeFocused();
+  const settings = page.context().waitForEvent('page');
+  await page.keyboard.press('Enter');
+  const settingsPage = await settings;
+  expect(settingsPage.url()).toBe('https://alpha.example.test/c/remote-alpha/settings');
+  await settingsPage.close();
+
+  await openManageAlpha(page);
+  const invite = page.context().waitForEvent('page');
+  await page.getByRole('menuitem', { name: 'Invite people' }).press('Enter');
+  expect((await invite).url()).toBe('https://alpha.example.test/c/remote-alpha/settings/community');
+
+  await openManageAlpha(page);
+  const leave = page.context().waitForEvent('page');
+  await page.getByRole('menuitem', { name: 'Leave community' }).press('Enter');
+  expect((await leave).url()).toBe('https://alpha.example.test/c/remote-alpha/settings/account');
+});
+
+test('Disconnecting asks first, then removes only that Community and leaves it', async ({
+  page,
+}) => {
+  await mockCommunitySwitcher(page);
+  let disconnected = false;
+  await page.route('**/api/community-connections/alpha', async (route) => {
+    if (route.request().method() !== 'DELETE') return route.fallback();
+    disconnected = true;
+    await route.fulfill({ status: 204 });
+  });
+  // Once the server has dropped the connection, it stops listing it.
+  await page.route('**/api/community-connections', async (route) => {
+    if (!disconnected || route.request().method() !== 'GET') return route.fallback();
+    await route.fulfill({ json: { connections: [] } });
+  });
+
+  await openManageAlpha(page);
+  await page.getByRole('menuitem', { name: 'Disconnect…' }).press('Enter');
+  const confirm = page.getByRole('alertdialog', { name: 'Disconnect this DorkOS from Alpha?' });
+  await expect(confirm).toBeVisible();
+  await expect(confirm).toContainText('You stay a member of Alpha');
+  await confirm.getByRole('button', { name: 'Keep connected' }).click();
+  await expect(confirm).toBeHidden();
+  expect(disconnected).toBe(false);
+  await expect(page).toHaveURL(/community=alpha/);
+
+  await openManageAlpha(page);
+  await page.getByRole('menuitem', { name: 'Disconnect…' }).press('Enter');
+  await confirm.getByRole('button', { name: 'Disconnect' }).click();
+  await expect(confirm).toBeHidden();
+  expect(disconnected).toBe(true);
+  // Routed away, and nothing of Alpha is left on screen.
+  await expect(page).not.toHaveURL(/community=alpha/);
+  await expect(page.getByText('Message 2', { exact: true })).toBeHidden();
+  await page.getByTestId('sidebar-header-block').click();
+  await expect(page.getByRole('menuitemradio', { name: /Alpha/ })).toHaveCount(0);
+});
+
+test('Joining with an invitation opens the link on the Community’s site, not a pairing', async ({
+  page,
+}) => {
+  await mockCommunitySwitcher(page);
+  await stubCommunitySite(page);
+  await page.goto('/');
+  await new BasePage(page).waitForAppReady();
+  await page.getByTestId('sidebar-header-block').focus();
+  await page.keyboard.press('Meta+Shift+K');
+  await expect(page.getByRole('menuitemradio', { name: /Your team|’s team/ })).toBeFocused();
+  // Down past the destinations to "Add community", then into it.
+  const add = page.getByRole('menuitem', { name: 'Add community' });
+  for (
+    let step = 0;
+    step < 4 && !(await add.evaluate((el) => el === document.activeElement));
+    step++
+  )
+    await page.keyboard.press('ArrowDown');
+  await expect(add).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('menuitem', { name: 'Connect a community' })).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('menuitem', { name: 'Join with an invitation…' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  const field = page.getByLabel('Invitation link');
+  await field.fill('https://alpha.example.test/c/remote-alpha');
+  await page.getByRole('button', { name: 'Open invitation' }).click();
+  await expect(page.getByRole('alert')).toContainText('That isn’t an invitation link.');
+
+  const link = 'https://alpha.example.test/c/remote-alpha/join#invite=one-time';
+  await field.fill(link);
+  const opened = page.context().waitForEvent('page');
+  await page.getByRole('button', { name: 'Open invitation' }).click();
+  expect((await opened).url()).toBe(link);
+  await expect(field).toBeHidden();
+  await expect(page).not.toHaveURL(/\/connections/);
+});
+
+test('Community actions fit the 390px phone sheet', async ({ page }, testInfo) => {
+  await mockCommunitySwitcher(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/channels?community=alpha&id=general');
+  await new BasePage(page).waitForAppReady();
+  await page.getByTestId('sidebar-header-block').click();
+  const manage = page.getByRole('group', { name: 'Manage Alpha' });
+  await expect(manage).toBeVisible();
+  for (const name of ['Invite people', 'Community settings', 'Disconnect…', 'Leave community'])
+    await expect(manage.getByRole('menuitem', { name })).toBeVisible();
+  const add = page.getByRole('group', { name: 'Add community' });
+  await add.scrollIntoViewIfNeeded();
+  for (const name of ['Connect a community', 'Join with an invitation…', 'Run your own community'])
+    await expect(add.getByRole('menuitem', { name })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+    .toBe(true);
+  await manage.scrollIntoViewIfNeeded();
+  const shot = testInfo.outputPath('community-actions-390.png');
+  await page.screenshot({ path: shot, animations: 'disabled' });
+  await testInfo.attach('community-actions-390.png', { path: shot, contentType: 'image/png' });
+});

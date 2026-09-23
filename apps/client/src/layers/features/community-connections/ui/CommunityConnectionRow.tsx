@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
-import { isCommunityAuthorityCurrent, type ConfirmedCommunityAuthority } from '@/layers/shared/lib';
-import { communityKeys, withinCommunityAuthority } from '@/layers/entities/community';
+import { type ConfirmedCommunityAuthority } from '@/layers/shared/lib';
+import {
+  communityKeys,
+  useEndCommunityConnection,
+  withinCommunityAuthority,
+} from '@/layers/entities/community';
 import { useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 
@@ -63,31 +67,23 @@ export function CommunityConnectionRow({
     if (approvalUrl && pending) approvalLink.current?.focus();
   }, [approvalUrl, pending]);
 
-  const remove = useMutation({
-    mutationFn: () =>
-      pending
-        ? transport.cancelCommunityConnection(connection.ref)
-        : transport.disconnectCommunity(connection.ref),
-    onSuccess: async () => {
-      if (!isCommunityAuthorityCurrent(authority)) return;
-      await client.cancelQueries({ queryKey: communityKeys.remote(authority, connection.ref) });
-      client.removeQueries({ queryKey: communityKeys.remote(authority, connection.ref) });
-      client.setQueryData<CommunityConnectionDescriptor[]>(
-        communityKeys.connections(authority),
-        (rows) => rows?.filter((row) => row.ref !== connection.ref)
-      );
-      onOutcome(
-        pending
-          ? `Approval for ${connection.label} was cancelled.`
-          : reconnectRequired
-            ? `${connection.label} is disconnected. Connect again to continue.`
-            : `${connection.label} is disconnected.`
-      );
-      onRemoved();
-    },
-    // Cancellation can erase local proof even when the remote host cannot answer.
-    onSettled: () => client.invalidateQueries({ queryKey: communityKeys.connections(authority) }),
-  });
+  const remove = useEndCommunityConnection();
+  function endConnection() {
+    remove.mutate(connection, {
+      onSuccess: () => {
+        onOutcome(
+          pending
+            ? `Approval for ${connection.label} was cancelled.`
+            : reconnectRequired
+              ? `${connection.label} is disconnected. Connect again to continue.`
+              : `${connection.label} is disconnected.`
+        );
+        onRemoved();
+      },
+      // Cancellation can erase local proof even when the remote host cannot answer.
+      onSettled: () => client.invalidateQueries({ queryKey: communityKeys.connections(authority) }),
+    });
+  }
   const error = remove.error ?? poll.error;
 
   return (
@@ -115,7 +111,7 @@ export function CommunityConnectionRow({
             size="sm"
             variant="outline"
             disabled={remove.isPending}
-            onClick={() => (pending || reconnectRequired ? remove.mutate() : setConfirm(true))}
+            onClick={() => (pending || reconnectRequired ? endConnection() : setConfirm(true))}
             aria-label={`${pending ? 'Cancel approval for' : 'Disconnect'} ${connection.label}`}
           >
             {pending ? 'Cancel approval' : 'Disconnect'}
@@ -158,7 +154,7 @@ export function CommunityConnectionRow({
               size="sm"
               variant="destructive"
               disabled={remove.isPending}
-              onClick={() => remove.mutate()}
+              onClick={() => endConnection()}
             >
               {remove.isPending ? 'Disconnecting…' : 'Confirm disconnect'}
             </Button>

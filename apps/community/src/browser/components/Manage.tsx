@@ -3,6 +3,7 @@ import { Copy, Download, KeyRound, Plus, Shield, Trash2, UserPlus } from 'lucide
 import { describeError, download, request } from '../api.js';
 import { CommunityAdministration } from './CommunityAdministration.js';
 import type { Agent, Channel, Member } from '../types.js';
+import type { CommunitySettingsSection } from '@dorkos/shared/community-wire';
 
 type Invite = {
   id: string;
@@ -30,6 +31,8 @@ type Props = {
   onCurrentMemberChanged: () => Promise<Member>;
   onLeft: () => void;
   readOnly?: boolean;
+  /** The section a settings link asked for; ignored when this role or state cannot see it. */
+  initialSection?: CommunitySettingsSection | null;
 };
 /** Manage channel, member, agent and account actions for the current role. */
 export function Manage({
@@ -42,10 +45,24 @@ export function Manage({
   onCurrentMemberChanged,
   onLeft,
   readOnly = false,
+  initialSection = null,
 }: Props) {
   const moderator = me.role === 'owner' || me.role === 'admin';
-  const [tab, setTab] = useState<'community' | 'members' | 'agents' | 'account' | 'settings'>(() =>
-    readOnly ? (moderator ? 'settings' : 'account') : 'community'
+  const sections: readonly CommunitySettingsSection[] = readOnly
+    ? moderator
+      ? (['account', 'settings'] as const)
+      : (['account'] as const)
+    : moderator
+      ? (['community', 'members', 'agents', 'account', 'settings'] as const)
+      : (['community', 'members', 'agents', 'account'] as const);
+  const [tab, setTab] = useState<CommunitySettingsSection>(() =>
+    initialSection && sections.includes(initialSection)
+      ? initialSection
+      : readOnly
+        ? moderator
+          ? 'settings'
+          : 'account'
+        : 'community'
   );
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -228,14 +245,7 @@ export function Manage({
             : 'Manage channels and access without leaving the conversation.'}
         </p>
         <nav className="row mb-6" aria-label="Settings sections">
-          {(readOnly
-            ? moderator
-              ? (['account', 'settings'] as const)
-              : (['account'] as const)
-            : moderator
-              ? (['community', 'members', 'agents', 'account', 'settings'] as const)
-              : (['community', 'members', 'agents', 'account'] as const)
-          ).map((item) => (
+          {sections.map((item) => (
             <button
               key={item}
               className={`button ${tab === item ? 'primary' : ''}`}

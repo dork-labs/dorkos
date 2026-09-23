@@ -18,6 +18,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -224,6 +225,9 @@ const SHEET_ROW_CLASS = cn(
  */
 const SheetCloseContext = createContext<() => void>(() => {});
 
+/** The id a flattened submenu's heading carries, so its group can be named by it. */
+const SheetGroupLabelIdContext = createContext<string | undefined>(undefined);
+
 /**
  * The value a `radio` node's options are being compared against, and where a
  * chosen one writes back to.
@@ -324,7 +328,16 @@ function SheetSeparator() {
  * the same function.
  */
 function SheetGroup({ children }: { children?: ReactNode }) {
-  return <div role="group">{children}</div>;
+  // Named by its heading, so "Move up" under "Manage Alpha" is read with the
+  // name it acts on rather than as a bare verb.
+  const labelId = useId();
+  return (
+    <SheetGroupLabelIdContext.Provider value={labelId}>
+      <div role="group" aria-labelledby={labelId}>
+        {children}
+      </div>
+    </SheetGroupLabelIdContext.Provider>
+  );
 }
 
 /**
@@ -344,8 +357,10 @@ function SheetGroupLabel({
   children?: ReactNode;
   'data-menu-item-id'?: string;
 }) {
+  const labelId = useContext(SheetGroupLabelIdContext);
   return (
     <div
+      id={labelId}
       data-menu-group-id={id}
       className="text-sidebar-foreground/60 text-2xs flex items-center gap-2 px-4 pt-3 pb-1 font-medium"
     >
@@ -356,7 +371,8 @@ function SheetGroupLabel({
 
 /** A flattened submenu's rows. `className` is the Radix width, which a full-width sheet ignores. */
 function SheetGroupBody({ children }: { children?: ReactNode; className?: string }) {
-  return <div>{children}</div>;
+  // A note inside a group lines up with the sheet's rows, not the popup's.
+  return <div className="[&>[data-slot=menu-note]]:px-4">{children}</div>;
 }
 
 /** A `radio` node's options, holding the current value for the rows below it. */
@@ -447,6 +463,7 @@ function renderNodes(nodes: SidebarMenuNode[], slots: SidebarMenuSlots): ReactNo
         return (
           <div
             key={node.id}
+            data-slot="menu-note"
             className="text-muted-foreground flex items-start gap-1.5 px-2 py-1.5 text-xs"
           >
             <Icon className="mt-0.5 size-3.5 shrink-0" />

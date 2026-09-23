@@ -48,7 +48,7 @@ export function RemoteCommunityAgents({
 }) {
   const transport = useTransport();
   const queries = useQueryClient();
-  const authority = useCommunityContentAuthority(true, accessFingerprint);
+  const authority = useCommunityContentAuthority(true, accessFingerprint, community);
   const agents = useRemoteCommunityAgents(community, canEnroll, accessFingerprint);
   const local = useRegisteredAgents();
   const [selected, setSelected] = useState('');

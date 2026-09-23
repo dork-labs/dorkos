@@ -272,8 +272,10 @@ describe('DOR-329 — a menu that opens something does not blur it on the way ou
 
   it('arms the guard inside the context switcher, so no caller can bypass it', () => {
     const switcher = SOURCE.get(SWITCHER) ?? '';
-    // The switcher builds the real rows itself and guards them.
-    expect(count(switcher, /useHeaderBlockMenu\(\)/)).toBe(1);
+    // The switcher builds the real rows itself — its lifecycle rows handed to
+    // the header menu, which appends settings, account and version — and
+    // guards the combined list once.
+    expect(count(switcher, /useHeaderBlockMenu\(contextNodes\)/)).toBe(1);
     expect(count(switcher, /useGuardedMenuNodes\(menu\.nodes\)/)).toBe(1);
     // Every content it renders restores focus through the guard and draws the
     // guarded list, never a raw one.

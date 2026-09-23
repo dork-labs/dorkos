@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { Settings } from 'lucide-react';
 import { toast } from 'sonner';
@@ -60,6 +60,15 @@ let mockConnections: Array<{
   connectedHumanMemberId: string | null;
   status: 'pending' | 'connected' | 'reconnect-required';
   expiresAt: string | null;
+  access?: {
+    state: 'verified' | 'unverified' | 'reconnect-required';
+    effective: { read: boolean; post: boolean; enrollAgent: boolean; stream: boolean };
+    lastKnown: {
+      lifecycle: 'active' | 'archived' | 'suspended' | 'deletion_pending';
+      capabilities: { read: boolean; post: boolean; enrollAgent: boolean; stream: boolean };
+      verifiedAt: string;
+    } | null;
+  } | null;
   attention?: {
     state: 'verified' | 'stale' | 'unavailable';
     unreadCount: number | null;
@@ -74,6 +83,11 @@ let mockConfig: { version?: string; latestVersion?: string | null; isDevMode?: b
   isDevMode: false,
 };
 const mockGetConfig = vi.fn(() => Promise.resolve(mockConfig));
+const mockOpenExternalLink = vi.fn((_href: string) => true);
+vi.mock('@/layers/shared/lib', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/lib')>();
+  return { ...actual, openExternalLink: (href: string) => mockOpenExternalLink(href) };
+});
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
@@ -104,10 +118,17 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
       select({ location: { pathname: mockPathname, search: mockSearch } }),
   };
 });
+const mockEndConnection = vi.fn();
 vi.mock('@/layers/entities/community', () => ({
   useCommunityConnections: () => ({ data: mockConnections }),
   useCommunityNavigation: () => ({ data: { ownerKey: 'owner-a', order: mockCommunityOrder } }),
   useMoveCommunityNavigation: () => ({ mutate: mockMoveCommunityNavigation }),
+  useEndCommunityConnection: () => ({
+    mutate: mockEndConnection,
+    reset: () => {},
+    isPending: false,
+    isError: false,
+  }),
 }));
 
 // The New menu is the header block's neighbour, not its subject: it reaches for
@@ -313,7 +334,16 @@ describe('SidebarHeaderBlock', () => {
       'true'
     );
     expect(screen.getByRole('radio', { name: /Alpha/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Add community/ })).toBeInTheDocument();
+    // "Add community" is a menu of distinct paths, flattened into a named
+    // group on a phone rather than a second popup over the sheet.
+    const add = screen.getByRole('group', { name: 'Add community' });
+    expect(within(add).getByRole('menuitem', { name: /Connect a community/ })).toBeInTheDocument();
+    expect(
+      within(add).getByRole('menuitem', { name: /Join with an invitation…/ })
+    ).toBeInTheDocument();
+    expect(
+      within(add).getByRole('menuitem', { name: /Run your own community/ })
+    ).toBeInTheDocument();
   });
 
   it('keeps Workspace settings, Account and the version line on phones', async () => {
@@ -348,8 +378,9 @@ describe('SidebarHeaderBlock', () => {
     renderMobileSwitcher();
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
     const search = await screen.findByRole('searchbox', { name: 'Find a community' });
-    expect(screen.getByRole('button', { name: 'Move Community 4 up' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Move Community 4 up' }));
+    const manage = screen.getByRole('group', { name: 'Manage Community 4' });
+    expect(within(manage).getByRole('menuitem', { name: /Move down/ })).toBeInTheDocument();
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /Move up/ }));
     expect(mockMoveCommunityNavigation).toHaveBeenCalledWith({
       ref: 'community-4',
       direction: 'up',
@@ -923,5 +954,246 @@ describe('the team name while the roster is still coming (spec `sidebar-simplifi
 
     expect(screen.queryByTestId('sidebar-team-name-skeleton')).toBeNull();
     expect(screen.getByText('Your team')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lifecycle actions (DOR-2185)
+// ---------------------------------------------------------------------------
+
+const all = { read: true, post: true, enrollAgent: true, stream: true };
+const none = { read: false, post: false, enrollAgent: false, stream: false };
+
+function alpha(
+  overrides: Partial<(typeof mockConnections)[number]> = {}
+): (typeof mockConnections)[number] {
+  return {
+    ref: 'a',
+    remoteCommunityId: 'remote-a',
+    label: 'Alpha',
+    pinnedOrigin: 'https://a.example.com',
+    connectedHumanMemberId: 'person-a',
+    status: 'connected',
+    expiresAt: null,
+    access: {
+      state: 'verified',
+      effective: all,
+      lastKnown: { lifecycle: 'active', capabilities: all, verifiedAt: '2026-09-21T00:00:00.000Z' },
+    },
+    ...overrides,
+  };
+}
+
+/** Open the phone sheet on Alpha and return its "Manage Alpha" group. */
+async function openManageAlpha() {
+  mockSearch = { community: 'a' };
+  renderMobileSwitcher();
+  fireEvent.click(screen.getByTestId('sidebar-header-block'));
+  await screen.findByRole('dialog');
+  return screen.getByRole('group', { name: 'Manage Alpha' });
+}
+
+describe('the context switcher’s lifecycle actions', () => {
+  it('opens invites, settings and leaving on the Community’s own site, at the right section', async () => {
+    mockConnections = [alpha()];
+    const manage = await openManageAlpha();
+    expect(manage).toHaveTextContent('Invites, settings and leaving open on a.example.com');
+
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /Community settings/ }));
+    expect(mockOpenExternalLink).toHaveBeenLastCalledWith(
+      'https://a.example.com/c/remote-a/settings'
+    );
+
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(
+      within(await screen.findByRole('group', { name: 'Manage Alpha' })).getByRole('menuitem', {
+        name: /Invite people/,
+      })
+    );
+    expect(mockOpenExternalLink).toHaveBeenLastCalledWith(
+      'https://a.example.com/c/remote-a/settings/community'
+    );
+
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(
+      within(await screen.findByRole('group', { name: 'Manage Alpha' })).getByRole('menuitem', {
+        name: /Leave community/,
+      })
+    );
+    expect(mockOpenExternalLink).toHaveBeenLastCalledWith(
+      'https://a.example.com/c/remote-a/settings/account'
+    );
+    // None of them opened this DorkOS's own settings.
+    expect(mockOpenSettings).not.toHaveBeenCalled();
+  });
+
+  it('opens this DorkOS’s settings, never a Community’s, from Workspace settings', async () => {
+    mockConnections = [alpha()];
+    await openManageAlpha();
+    fireEvent.click(screen.getByRole('menuitem', { name: /Workspace settings/ }));
+    expect(mockOpenSettings).toHaveBeenCalledTimes(1);
+    expect(mockOpenExternalLink).not.toHaveBeenCalled();
+  });
+
+  it('hides every action that needs the Community’s site while it is offline', async () => {
+    mockConnections = [
+      alpha({
+        access: {
+          state: 'unverified',
+          effective: none,
+          lastKnown: {
+            lifecycle: 'active',
+            capabilities: all,
+            verifiedAt: '2026-09-21T00:00:00.000Z',
+          },
+        },
+      }),
+    ];
+    const manage = await openManageAlpha();
+    expect(within(manage).queryByRole('menuitem', { name: /Invite/ })).not.toBeInTheDocument();
+    expect(within(manage).queryByRole('menuitem', { name: /settings/ })).not.toBeInTheDocument();
+    expect(within(manage).queryByRole('menuitem', { name: /Leave/ })).not.toBeInTheDocument();
+    // Disconnecting is local, so it still works offline.
+    expect(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ })).toBeInTheDocument();
+  });
+
+  it('offers no invitations for an archived Community, and still reaches its settings', async () => {
+    mockConnections = [
+      alpha({
+        access: {
+          state: 'verified',
+          effective: { ...none, read: true },
+          lastKnown: {
+            lifecycle: 'archived',
+            capabilities: { ...none, read: true },
+            verifiedAt: '2026-09-21T00:00:00.000Z',
+          },
+        },
+      }),
+    ];
+    const manage = await openManageAlpha();
+    expect(within(manage).queryByRole('menuitem', { name: /Invite/ })).not.toBeInTheDocument();
+    expect(
+      within(manage).getByRole('menuitem', { name: /Community settings/ })
+    ).toBeInTheDocument();
+  });
+
+  it('shows no Community actions while this DorkOS is selected', async () => {
+    mockConnections = [alpha()];
+    renderMobileSwitcher();
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    await screen.findByRole('dialog');
+    expect(screen.queryByRole('group', { name: /Manage/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Add community' })).toBeInTheDocument();
+  });
+
+  it('confirms before disconnecting, and then leaves only the Community it disconnected', async () => {
+    mockConnections = [alpha()];
+    commitCommunityRouteEpoch(JSON.stringify(['community', 'a', null, null]));
+    const manage = await openManageAlpha();
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
+    const confirm = await screen.findByRole('alertdialog', {
+      name: 'Disconnect this DorkOS from Alpha?',
+    });
+    expect(confirm).toHaveTextContent('You stay a member of Alpha');
+    expect(mockEndConnection).not.toHaveBeenCalled();
+
+    // "Keep connected" changes nothing.
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Keep connected' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(mockEndConnection).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(
+      within(await screen.findByRole('group', { name: 'Manage Alpha' })).getByRole('menuitem', {
+        name: /^Disconnect…$/,
+      })
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+    expect(mockEndConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ ref: 'a' }),
+      expect.anything()
+    );
+    // The server confirmed: route away from the Community that is gone.
+    act(() => mockEndConnection.mock.calls[0]![1].onSuccess());
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/', replace: true });
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+  });
+
+  it('stays put after disconnecting a Community that was not on screen', async () => {
+    mockConnections = [alpha()];
+    commitCommunityRouteEpoch(JSON.stringify(['community', 'b', null, null]));
+    const manage = await openManageAlpha();
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+    act(() => mockEndConnection.mock.calls[0]![1].onSuccess());
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('sends Connect to Connections and running your own server to the guide', async () => {
+    renderMobileSwitcher();
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    const add = within(await screen.findByRole('group', { name: 'Add community' }));
+    fireEvent.click(add.getByRole('menuitem', { name: /Connect a community/ }));
+    expect(mockOpenConnections).toHaveBeenCalledWith('messaging');
+
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(
+      within(await screen.findByRole('group', { name: 'Add community' })).getByRole('menuitem', {
+        name: /Run your own community/,
+      })
+    );
+    expect(mockOpenExternalLink).toHaveBeenCalledWith(
+      'https://dorkos.ai/docs/guides/cli-usage#community-server'
+    );
+  });
+
+  it('opens an invitation link on its own site, and refuses anything else', async () => {
+    renderMobileSwitcher();
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(
+      within(await screen.findByRole('group', { name: 'Add community' })).getByRole('menuitem', {
+        name: /Join with an invitation…/,
+      })
+    );
+    const field = await screen.findByLabelText('Invitation link');
+    fireEvent.change(field, { target: { value: 'https://a.example.com/c/remote-a' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open invitation' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('That isn’t an invitation link.');
+    expect(mockOpenExternalLink).not.toHaveBeenCalled();
+
+    const link = 'https://a.example.com/c/remote-a/join#invite=secret';
+    fireEvent.change(field, { target: { value: link } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open invitation' }));
+    expect(mockOpenExternalLink).toHaveBeenCalledWith(link);
+    await waitFor(() => expect(screen.queryByLabelText('Invitation link')).not.toBeInTheDocument());
+    // Joining is not pairing: nothing here connected this installation.
+    expect(mockOpenConnections).not.toHaveBeenCalled();
+  });
+
+  it('sends a Community that needs reconnecting to Connections › Messaging', async () => {
+    mockConnections = [alpha({ status: 'reconnect-required' })];
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    expect(mockOpenConnections).toHaveBeenCalledWith('messaging');
+  });
+
+  it('reaches the Community’s actions from the keyboard in the desktop menu', async () => {
+    mockSearch = { community: 'a' };
+    mockConnections = [alpha()];
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    // Opening focuses the selected row one frame later; let that settle so it
+    // cannot pull focus back off the submenu trigger.
+    const selected = await screen.findByRole('menuitemradio', { name: /Alpha/ });
+    await waitFor(() => expect(selected).toHaveFocus());
+    const trigger = screen.getByRole('menuitem', { name: /Manage Alpha/ });
+    fireEvent.keyDown(selected, { key: 'ArrowDown' });
+    await waitFor(() => expect(trigger).toHaveFocus());
+    fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+    const settings = await screen.findByRole('menuitem', { name: /Community settings/ });
+    fireEvent.keyDown(settings, { key: 'Enter' });
+    expect(mockOpenExternalLink).toHaveBeenCalledWith('https://a.example.com/c/remote-a/settings');
   });
 });

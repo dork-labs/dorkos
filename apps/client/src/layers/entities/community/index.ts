@@ -17,6 +17,11 @@ export {
   useRememberCommunityNavigation,
 } from './model/use-community-navigation';
 export {
+  endCommunityConnection,
+  useEndCommunityConnection,
+  type CommunityConnectionEnd,
+} from './model/community-lifecycle';
+export {
   useRemoteCommunityRooms,
   useRemoteCommunityRoom,
   useRemoteCommunityHistory,

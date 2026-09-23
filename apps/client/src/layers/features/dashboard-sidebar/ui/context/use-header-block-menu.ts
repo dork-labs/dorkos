@@ -53,12 +53,21 @@ export interface HeaderBlockMenu {
    * placeholder back on the slow installs the boot ceiling exists for.
    */
   nameUnknown: boolean;
-  /** The unguarded rows. The switcher arms the close-focus guard over them. */
+  /**
+   * The unguarded rows: the context's lifecycle rows, then settings, account
+   * and version. The switcher arms the close-focus guard over all of them.
+   */
   nodes: SidebarMenuNode[];
 }
 
-/** Build the header block menu from the roster and the server config. */
-export function useHeaderBlockMenu(): HeaderBlockMenu {
+/**
+ * Build the header block menu from the roster and the server config.
+ *
+ * @param contextNodes - The selected context's lifecycle rows, drawn first and
+ *   guarded with everything else. Built by the switcher, which knows the
+ *   selection; see `community-context-actions.ts`.
+ */
+export function useHeaderBlockMenu(contextNodes: SidebarMenuNode[] = []): HeaderBlockMenu {
   const roster = useTeamRoster();
   const transport = useTransport();
   const queryClient = useQueryClient();
@@ -96,12 +105,16 @@ export function useHeaderBlockMenu(): HeaderBlockMenu {
   return {
     teamName: teamNameFor(self?.displayName ?? null),
     nameUnknown: roster.isPending,
-    nodes: buildHeaderBlockMenuNodes({
-      onOpenSettings: () => openSettings(),
-      onOpenAccount: self === null ? null : () => openProfile(self.id),
-      version: serverConfig?.version ?? null,
-      isDevMode: serverConfig?.isDevMode ?? false,
-      onCheckForUpdates: () => void handleCheckForUpdates(),
-    }),
+    nodes: [
+      ...contextNodes,
+      ...(contextNodes.length > 0 ? [{ kind: 'separator' as const, id: 'sep-context' }] : []),
+      ...buildHeaderBlockMenuNodes({
+        onOpenSettings: () => openSettings(),
+        onOpenAccount: self === null ? null : () => openProfile(self.id),
+        version: serverConfig?.version ?? null,
+        isDevMode: serverConfig?.isDevMode ?? false,
+        onCheckForUpdates: () => void handleCheckForUpdates(),
+      }),
+    ],
   };
 }

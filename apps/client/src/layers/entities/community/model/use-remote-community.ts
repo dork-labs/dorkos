@@ -10,7 +10,7 @@ import {
 /** Discover one community independently so an outage cannot hide the other communities. */
 export function useRemoteCommunityRooms(ref: string, enabled = true, accessFingerprint = 'legacy') {
   const transport = useTransport();
-  const authority = useCommunityContentAuthority(enabled, accessFingerprint);
+  const authority = useCommunityContentAuthority(enabled, accessFingerprint, ref);
   return useQuery({
     queryKey: authority
       ? communityKeys.rooms(authority, ref)
@@ -30,7 +30,7 @@ export function useRemoteCommunityRoom(
   accessFingerprint = 'legacy'
 ) {
   const transport = useTransport();
-  const authority = useCommunityContentAuthority(enabled, accessFingerprint);
+  const authority = useCommunityContentAuthority(enabled, accessFingerprint, ref);
   return useQuery({
     queryKey: authority
       ? communityKeys.room(authority, ref, roomId)
@@ -52,7 +52,7 @@ export function useRemoteCommunityHistory(
   accessFingerprint = 'legacy'
 ) {
   const transport = useTransport();
-  const authority = useCommunityContentAuthority(enabled, accessFingerprint);
+  const authority = useCommunityContentAuthority(enabled, accessFingerprint, ref);
   return useInfiniteQuery({
     queryKey: authority
       ? communityKeys.entries(authority, ref, roomId, threadRootId)
@@ -79,7 +79,7 @@ export function useRemoteCommunityMembers(
   accessFingerprint = 'legacy'
 ) {
   const transport = useTransport();
-  const authority = useCommunityContentAuthority(enabled, accessFingerprint);
+  const authority = useCommunityContentAuthority(enabled, accessFingerprint, ref);
   return useQuery({
     queryKey: authority
       ? communityKeys.members(authority, ref, roomId)
@@ -99,7 +99,7 @@ export function useRemoteCommunityAgents(
   accessFingerprint = 'legacy'
 ) {
   const transport = useTransport();
-  const authority = useCommunityContentAuthority(enabled, accessFingerprint);
+  const authority = useCommunityContentAuthority(enabled, accessFingerprint, ref);
   return useQuery({
     queryKey: authority
       ? communityKeys.agents(authority, ref)

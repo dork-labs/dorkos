@@ -75,3 +75,47 @@ export function confirmCommunityAuthority(epoch: number, ownerKey: string): bool
   listeners.forEach((listener) => listener());
   return true;
 }
+
+/*
+ * Per-connection generations.
+ *
+ * The owner epoch above fences a whole local owner. Losing ONE Community — a
+ * disconnect here, a membership removed on its host, a revoked grant — must
+ * fence that Community's work without touching another Community or the
+ * installation (spec: "Cleanup for A never touches B"). So each connection ref
+ * carries its own counter, and content captured under an older counter is
+ * discarded on arrival, even after the route later returns to the same ref.
+ */
+let connectionGenerations: ReadonlyMap<string, number> = new Map();
+const connectionListeners = new Set<Listener>();
+
+/** Read the current generation of one Community connection ref. */
+export function getCommunityConnectionGeneration(ref: string): number {
+  return connectionGenerations.get(ref) ?? 0;
+}
+
+/** Subscribe to per-connection generation changes. */
+export function subscribeCommunityConnectionGenerations(listener: Listener): () => void {
+  connectionListeners.add(listener);
+  return () => connectionListeners.delete(listener);
+}
+
+/**
+ * Tombstone one Community connection's current generation.
+ *
+ * Call this FIRST when that connection is authoritatively removed or revoked,
+ * before closing its streams or clearing its caches: every read, event, receipt
+ * and retry captured under the old generation then fails its guard, so nothing
+ * in flight can repopulate what the cleanup is about to erase.
+ *
+ * @param ref - The local connection ref being removed or revoked.
+ * @returns The new generation for that ref.
+ */
+export function tombstoneCommunityConnection(ref: string): number {
+  const next = getCommunityConnectionGeneration(ref) + 1;
+  const updated = new Map(connectionGenerations);
+  updated.set(ref, next);
+  connectionGenerations = updated;
+  connectionListeners.forEach((listener) => listener());
+  return next;
+}
