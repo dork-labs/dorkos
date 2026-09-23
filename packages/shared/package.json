@@ -49,6 +49,10 @@
       "types": "./src/secret-file.ts",
       "default": "./dist/secret-file.js"
     },
+    "./node-pty-spawn-helper": {
+      "types": "./src/node-pty-spawn-helper.ts",
+      "default": "./dist/node-pty-spawn-helper.js"
+    },
     "./feedback": {
       "types": "./src/feedback.ts",
       "default": "./dist/feedback.js"
