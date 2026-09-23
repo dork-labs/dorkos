@@ -47,12 +47,11 @@ The pin exists to answer "which code is running here?" (DOR-2197), and `resolveL
 - Cache pruning (DOR-2249) and content hashing (DOR-2197).
 - The all-packages update route (DOR-2194, built in parallel). This spec does not touch `routes/marketplace.ts`, and changes one comment in `flows/update.ts`.
 - HTTP status codes for the new errors: they reach the route's default branch (500, message verbatim), exactly as a failed clone does today.
-- Encoding the subpath in the cache key. Two different subdirectories of one commit under one package name would share an entry. That needs a package to change its source form without its source repository gaining a commit; recorded as a known limit.
 - npm sources (not implemented) and `file://` sources (served in place, commit `local`).
 
 ## Technical Dependencies
 
-- git ≥ 2.25 on the host (already the floor: `--end-of-options` needs 2.24, `sparse-checkout` 2.25). No new packages.
+- git ≥ 2.26 on the host, **measured in Docker** with `scripts/git-floor-probe.sh` against the exact command sequence: 2.26.2, 2.30.0, 2.34.2, 2.36.3, 2.40.1, 2.43.0 (alpine and Ubuntu 24.04), 2.45.2 and 2.49.1 pass; 2.24.1 has no `sparse-checkout`; 2.25 was not available to measure. Sending the GitHub token needs git ≥ 2.31 (`GIT_CONFIG_COUNT`); on 2.26–2.30 public repositories work and a private GitHub repository fails to authenticate. No new packages.
 - Server capabilities, measured: protocol v2 (default since git 2.26; GitHub, GitLab) serves a reachable commit by SHA. Protocol v0 without `uploadpack.allowReachableSHA1InWant` answers `Server does not allow request for unadvertised object <sha>`; v2 answers `not our ref <sha>` for a commit it will not serve. A server without `uploadpack.allowFilter` warns `filtering not recognized by server, ignoring` and serves the fetch anyway.
 
 ## Detailed Design
@@ -73,32 +72,34 @@ type RemoteRef =
 - A name starting with `refs/`: ask for it and its peeled form `<name>^{}`; exact-match the name.
 - Any other name: ask for `refs/heads/<ref>`, `refs/tags/<ref>` and `refs/tags/<ref>^{}`. Branch wins over tag, the order `git clone --branch` uses. A tag resolves to its peeled commit when the remote reports one (annotated), else the tag's own line (lightweight).
 - Only lines whose name equals a candidate **exactly** count. `ls-remote`'s tail match can return `refs/heads/x/main` for `main`, and it is ignored.
-- `git ls-remote --end-of-options <url> <patterns…>`, `hardenedGitEnv`, 15 s timeout (`LS_REMOTE_TIMEOUT_MS`). The URL is credentialed by the shared GitHub-token rule (§4), so a private GitHub repository resolves.
+- `git ls-remote --end-of-options <url> <patterns…>`, `hardenedGitEnv`, 15 s timeout (`LS_REMOTE_TIMEOUT_MS`), with the GitHub token header of §4, so a private GitHub repository resolves.
 
 ### 2. The tree fetch (`fetchTree`)
 
 `fetchTree({ cloneUrl, commitSha, refName?, subpath, destDir }): Promise<string>` returns the verified commit.
 
-1. `git init --quiet` in `destDir`.
-2. If `subpath` is not empty: `git sparse-checkout set --cone --end-of-options <subpath>`.
-3. **By commit:** `git fetch --quiet --no-tags --depth=1 [--filter=blob:none] --end-of-options <url> <commitSha>`. The filter is passed only with a subpath (a whole-repo checkout needs every blob anyway).
-4. **Fallback, only when the server refuses an unadvertised commit** (stderr matches `unadvertised object` or `not our ref`):
-   - a named ref: fetch `<refName>` at depth 1 (the exact refname from the lookup, never a bare name git would re-interpret);
-   - a pinned commit: fetch every branch and tag, blob-filtered, no depth (`+refs/heads/*:refs/remotes/origin/*`, `+refs/tags/*:refs/tags/*`), then require `<commitSha>^{commit}`. Absent → `GitCommitNotFoundError`.
-     Any other fetch failure is thrown as it is (redacted).
-5. Resolve the arrived commit: `git rev-parse --verify <FETCH_HEAD or commitSha>^{commit}`.
+Each attempt runs in an empty `destDir`:
+
+1. `git init --quiet`, then `git remote add --end-of-options origin <url>` (a named remote: a partial clone records its promisor settings under it, and the checkout needs them).
+2. If `subpath` is not empty: `git sparse-checkout init --cone`, then `git sparse-checkout set --end-of-options <subpath>`. (`set --cone` alone leaves cone mode off before git 2.35.)
+3. **Filtered attempt, subpath only:** write the partial-clone settings by hand (`core.repositoryformatversion 1`, `extensions.partialClone origin`, `remote.origin.promisor true`, `remote.origin.partialclonefilter blob:none`; git 2.26 refuses a filtered fetch into a fresh repository without them), then `git fetch --quiet --no-tags --depth=1 --filter=blob:none --end-of-options origin <commitSha>`. Only the package's own blobs download, lazily, at checkout. If any step reports a refusal (`unadvertised object`, `not our ref`, or `could not fetch … from promisor remote`), empty `destDir` and make the unfiltered attempt: a server that refuses unadvertised commits refuses a partial checkout's lazy blob requests too.
+4. **Unfiltered attempt** (every whole-repository fetch, and the retry): `git fetch --quiet --no-tags --depth=1 --end-of-options origin <commitSha>`. On a refusal:
+   - a named ref: fetch `<refName>` at depth 1 (the exact refname from the lookup, never a bare name git would resolve tag-first);
+   - a pinned commit: fetch every branch and tag, unfiltered, no depth (`+refs/heads/*:refs/remotes/origin/*`, `+refs/tags/*:refs/tags/*`), then require `<commitSha>^{commit}`. Absent → `GitCommitNotFoundError`.
+     Any other failure is thrown as it is (redacted).
+5. Resolve the arrived commit: `git rev-parse --verify --quiet <FETCH_HEAD or commitSha>^{commit}`.
    - A pinned commit must equal `commitSha`, or throw.
    - A named ref fetched by commit must equal `commitSha`, or throw.
    - A named ref fetched through the fallback may differ: the ref moved between the lookup and the fetch. The arrived commit is used (and logged); it is what is on disk.
-6. `git -c advice.detachedHead=false checkout --quiet --detach --end-of-options <arrived>`.
-7. `git rev-parse --verify HEAD` must equal `<arrived>`, or throw. This is the check the cache relies on.
+6. `git -c advice.detachedHead=false checkout --quiet --detach <arrived>`, with no `--end-of-options`: `checkout --detach` rejects it up to git 2.43 ("--detach does not take a path argument"), and `<arrived>` is a verified full commit id, never author text.
+7. `git rev-parse --verify --quiet HEAD^{commit}` must equal `<arrived>`, or throw. This is the check the cache relies on.
 8. Remove `destDir/.git`. The entry is the tree and nothing else, for both forms (today a `git-subdir` entry keeps its `.git`).
 
-Any failure other than `GitCommitNotFoundError` is thrown as `GitFetchError` ("Couldn't fetch <remote>: <git's reason>"). The fetch goes through a temporary remote named `origin`, not a bare URL: a blob-filtered fetch records its promisor settings under the remote's name, and the checkout needs them to fetch the blobs it lacks.
+Any failure other than `GitCommitNotFoundError` is thrown as `GitFetchError` ("Couldn't fetch <remote>: <git's reason>").
 
-Every spawn: argv array (no shell), `hardenedGitEnv()`, `--end-of-options` before every author-supplied value, a 120 s wall clock (`GIT_FETCH_TIMEOUT_MS`, matching the clone it replaces). Errors carry git's stderr with tokens redacted (`redactAuthTokens`) and never the credentialed URL.
+Every spawn: argv array (no shell), `hardenedGitEnv()`, `--end-of-options` before every author-supplied value, a 120 s wall clock (`GIT_FETCH_TIMEOUT_MS`, matching the clone it replaces), and the §4 token header on every step (the checkout fetches lazily too). Errors carry git's stderr with tokens redacted (`redactAuthTokens`). `git-tree-guards.test.ts` pins the exact argv sequence the probe measured.
 
-The old `git-subdir` fallback ladder is removed. The "filter unsupported" rung never fires on a fetch (measured: the server warns and serves). The "sparse-checkout unsupported" rung only served git 2.24, below the stated floor.
+The old `git-subdir` fallback ladder is removed. Its "filter unsupported" rung never fires on a fetch (measured: the server warns and serves); its "sparse-checkout unsupported" rung only served git 2.24, below the floor.
 
 ### 3. Orchestration (`PackageFetcher`)
 
@@ -106,8 +107,8 @@ One private path, `fetchGitTree({ packageName, cloneUrl, ref, subpath, force })`
 
 1. `assertRemoteAllowed(cloneUrl)` (`assertSafeGitRemote`, logged).
 2. `lookupRemoteRef`. `missing` → `GitRefNotFoundError`; `unreachable` → `GitRemoteUnreachableError`. Nothing is fetched.
-3. Unless `force`, a cache hit on `<name>@<commitSha>` returns it.
-4. Otherwise `cache.materializePackage(name, commitSha, (tempDir) => git.fetch(...))`. The returned `{ path, commitSha }` is the result: its commit is the verified one.
+3. Unless `force`, a cache hit on the entry for `(name, commitSha, subpath)` returns it.
+4. Otherwise `cache.materializePackage(name, commitSha, subpath, (tempDir) => git.fetch(...))`. The returned `{ path, commitSha }` is the result: its commit is the verified one.
 
 `PackageFetcher` takes a `GitTreeSource` (`{ lookup, fetch }`, default `gitTreeSource`) in place of the `TemplateDownloader`, so tests replace the network at one seam.
 
@@ -117,7 +118,7 @@ One private path, `fetchGitTree({ packageName, cloneUrl, ref, subpath, force })`
 
 ### 4. The GitHub token
 
-The URL rewrite moves out of `execGitClone` into `withGitHubToken(url, auth)` in `template-downloader.ts`, and `execGitClone` calls it. The marketplace fetch and lookup call it too, resolving the token only for a GitHub host (`isGitHubCredentialHost`). One rewrite, one host gate. `git-subdir` sources on GitHub gain the token, under the same rule every other clone already follows.
+`gitHubAuthConfig(url, auth)` in `template-downloader.ts` returns `http.<origin>/.extraHeader` = `Authorization: Basic base64(x-access-token:<token>)`, or nothing when `url` is not a GitHub host (`isGitHubCredentialHost`, the same gate `execGitClone`'s URL rewrite asks). The marketplace fetch and lookup append it to git's environment config (`GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>`, after any entries the environment already has), so the token is in no argv (`ps` shows every process's argv), in no `.git/config`, and sent to that origin only, redirects included. The token is resolved only for a GitHub host and reused for 60 s (`AUTH_TTL_MS`), because `resolveGitAuth` may run `gh auth token` synchronously. `git-subdir` sources on GitHub gain the token, under the same rule every other clone already follows. `GIT_CONFIG_COUNT` needs git 2.31.
 
 ### 5. The resolvers
 
@@ -125,25 +126,25 @@ The URL rewrite moves out of `execGitClone` into `withGitHubToken(url, auth)` in
 
 ### 6. The cache write path (`MarketplaceCache`)
 
-- Entries live under `${dorkHome}/cache/marketplace/trees/<name>@<sha>/` (was `packages/`).
-- `materializePackage(name, expectedSha, fetch)` → `Promise<{ path; commitSha }>`. The key is the commit `fetch` returns, not the one the caller expected. Anything that is not a full commit id is refused (the temp directory is removed, an error names the package). `expectedSha` serves the fast path and the in-flight de-dup only.
+- Entries live under `${dorkHome}/cache/marketplace/trees/` (was `packages/`): `<name>@<sha>` for a whole repository, `<name>@<sha>~<digest>` for a sparse subfolder, the digest being the first 12 hex digits of the subfolder's SHA-256. A sparse checkout is a different tree from the whole repository at the same commit, and keyed by name and commit alone it was served to a whole-repository request with everything else missing. `getPackage(name, sha, subpath)` and `listPackages` (which reports the package and commit of either form) follow.
+- `materializePackage(name, expectedSha, subpath, fetch)` → `Promise<{ path; commitSha }>`. The key is the commit `fetch` returns, not the one the caller expected. Anything that is not a full commit id is refused (the temp directory is removed, an error names the package). `expectedSha` serves the fast path and the in-flight de-dup only.
 - `putPackage` (no production caller; it wrote an unverified empty entry) is removed.
-- `removeLegacyPackages()` deletes `packages/`. The server calls it once at startup, best effort, logged on failure. Entries there cannot be told apart from correct ones, so none of them is ever read.
+- `removeLeftovers()` deletes `packages/` (entries there cannot be told apart from correct ones, so none of them is ever read) and any `trees/.tmp-fetch-*` a crash left behind. The server awaits it once at startup, before the routes exist, so it cannot race a fetch; a failure is logged.
 
 ### 7. The default ref
 
-`DEFAULT_REF` in `@dorkos/marketplace` `sourceKeyOf` becomes `'HEAD'`: a source with no ref is fetched at the repository's default branch, as Claude Code does. A sidecar written before this records `ref: 'main'`; its `sourceKey` no longer matches, so the update check stages once instead of short-circuiting, then records the new key on the next install. No migration is needed.
+`DEFAULT_REF` in `@dorkos/marketplace` `sourceKeyOf` becomes `'HEAD'`: a source with no ref is fetched at the repository's default branch, as Claude Code does. A sidecar written before this records `ref: 'main'`, and an update check never rewrites a sidecar. So `matchesRecordedKey` (`lib/source-provenance.ts`) accepts `HEAD` now against a recorded `main`; that is sound because the short-circuit compares commits next, and an explicit `main` that is not the default branch resolves to a different commit and is staged. A direct install cannot name a ref, so `resolvedFromSourceKey` rebuilds its recorded `main` as `HEAD`. No migration is needed.
 
 ### Code structure
 
 | File                                                                           | Change                                                                                                                           |
 | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/server/src/services/marketplace/lib/git-tree.ts`                         | new: `isFullCommitSha`, `lookupRemoteRef`, `fetchTree`, `gitTreeSource`, `GitTreeSource`, the three errors                       |
+| `apps/server/src/services/marketplace/lib/git-tree.ts`                         | new: `isFullCommitSha`, `lookupRemoteRef`, `fetchTree`, `gitTreeSource`, `GitTreeSource`, the four errors                        |
 | `apps/server/src/services/marketplace/package-fetcher.ts`                      | `fetchGitTree`, `fetchAtCommit`, `GitTreeSource` seam, `FetcherDeps = { fetchGitTree }`, `lookupCommitSha` via `lookupRemoteRef` |
 | `apps/server/src/services/marketplace/source-resolvers/git.ts`                 | new; replaces `github.ts`, `url.ts`, `git-subdir.ts`                                                                             |
-| `apps/server/src/services/marketplace/marketplace-cache.ts`                    | `trees/`, verified key, `removeLegacyPackages`, no `putPackage`                                                                  |
-| `apps/server/src/services/core/template-downloader.ts`                         | `withGitHubToken`; `cloneRepository`, `TemplateDownloader`, `defaultTemplateDownloader` removed                                  |
-| `apps/server/src/index.ts`                                                     | `gitTreeSource`; `removeLegacyPackages()` at startup                                                                             |
+| `apps/server/src/services/marketplace/marketplace-cache.ts`                    | `trees/`, verified key with subfolder digest, `removeLeftovers`, no `putPackage`                                                 |
+| `apps/server/src/services/core/template-downloader.ts`                         | `gitHubAuthConfig`; `cloneRepository`, `TemplateDownloader`, `defaultTemplateDownloader` removed                                 |
+| `apps/server/src/index.ts`                                                     | `gitTreeSource`; `removeLeftovers()` awaited at startup                                                                          |
 | `apps/server/src/services/marketplace/marketplace-installer.ts`                | comments only (the DOR-2248 limit is gone)                                                                                       |
 | `apps/server/src/services/marketplace/flows/update.ts`                         | one comment (`ref: 'main'` → `'HEAD'`)                                                                                           |
 | `packages/marketplace/src/source-resolver.ts`                                  | `DEFAULT_REF = 'HEAD'`                                                                                                           |
@@ -175,12 +176,13 @@ Nothing new to learn. What changes for a person:
   - a protocol-v0 server with `uploadpack.allowReachableSHA1InWant=false`: a named ref falls back to its refname; a pinned commit falls back to branches + tags; a pinned commit that is absent fails with `GitCommitNotFoundError`;
   - a push between the lookup and the fetch: on the by-commit path the looked-up commit is what arrives; on the fallback path the arrived commit is returned and is what is on disk;
   - a missing ref → `missing`; an unreachable remote → `unreachable`.
-- **Cache (`marketplace-cache.test.ts`).** The key is the commit the callback returns; a non-commit return is refused and leaves nothing behind; concurrent materializations share one fetch; `removeLegacyPackages` removes `packages/` only.
+- **Cache (`marketplace-cache.test.ts`).** The key is the commit the callback returns; a non-commit return is refused and leaves nothing behind; concurrent materializations share one fetch; `removeLeftovers` removes `packages/` and crashed temp fetches only; a sparse entry is keyed apart from the whole repository.
 - **Fetcher (`package-fetcher.test.ts`)** with a fake `GitTreeSource`: a hit on the looked-up commit skips the fetch; a miss keys by the fetched commit, even when it differs from the lookup; `missing` and `unreachable` throw plain errors and fetch nothing; a refused address runs no git; `lookupCommitSha` returns a placeholder only when not `found`.
 - **Resolver (`source-resolvers/__tests__/git.test.ts`)**: all three forms pass `sourceKeyOf`'s URL, ref and subpath; the subpath is joined.
 - **Installer suites** (`install-source-matrix`, `install-address-policy`, `failure-paths`, the harness, the MCP integration test) move from the `TemplateDownloader` stub to a fake `GitTreeSource`; their assertions keep their meaning.
 - **`@dorkos/marketplace`**: `sourceKeyOf` defaults to `HEAD`.
-- **`template-downloader.test.ts`**: `withGitHubToken` gates the token exactly as `execGitClone` did.
+- **`template-downloader.test.ts`**: `gitHubAuthConfig` scopes the header to a GitHub origin and refuses every other host, exactly as `execGitClone`'s gate does.
+- **`git-tree-guards.test.ts`** (git scripted): the exact argv sequence; the token only in the environment, on every step, never in argv; existing `GIT_CONFIG_*` entries kept; the token resolved once a minute; a refused lazy blob fetch restarts unfiltered.
 
 - **End to end (`package-fetcher-git.test.ts`)**: `PackageFetcher` + real `gitTreeSource` + real cache against a bare repository addressed by path (the address policy is opened for that path only): `fetchAtCommit` at a commit `main` has moved past, for a git-subdir key and a whole-repo key, from cache the second time, through the protocol-v0 fallback, and refused for an absent or abbreviated commit; `fetchPackage` at a named branch and at the default branch.
 
@@ -195,7 +197,7 @@ Every test states its purpose, and the critical lines are mutation-checked: the 
 ## Security Considerations
 
 - Unchanged: `assertSafeGitRemote` before any git process (now at one door, `fetchGitTree`, plus `lookupCommitSha`); `hardenedGitEnv` on every spawn; `--end-of-options` before every author-supplied value; argv arrays, no shell.
-- The GitHub token goes only to a GitHub host, through one function now shared by the clone and the marketplace fetch. `git-subdir` and `ls-remote` gain it for GitHub hosts. Error messages are redacted, and the credentialed URL is never logged. It is written into the temporary checkout's `.git/config` (the temporary remote's URL), which is deleted with `.git` before the entry is promoted, or with the temp directory on failure.
+- The GitHub token goes only to a GitHub origin, as an environment-borne header (§4): not in argv, not in `.git/config`, not in a URL git could echo. `git-subdir` and `ls-remote` gain it for GitHub hosts. Error messages are still redacted. A temp fetch a crash left behind is swept at startup.
 - The cache refuses a key that is not a full commit id, so a malicious remote cannot name a directory (`assertContainedIn` still guards the path).
 
 ## Documentation
@@ -217,6 +219,18 @@ None. All decisions are in the ideation's table.
 - ADR-0232 (content-addressable cache): the key's meaning is now enforced; the root directory moves.
 - ADR 260923-122615 (a package's version resolved like an install): its commit fallback now reads a verified commit.
 - Draft ADR 260923-162950 (this spec): a cache entry is keyed by the commit its checkout verifiably holds.
+
+## Review log
+
+**Round 1 (independent review, 2026-09-23).** 18 of 19 mutants killed; the integrity model held. Adopted:
+
+- BLOCKER: `checkout --detach --end-of-options` fails on git ≤ 2.43 (Ubuntu 22.04/24.04, Debian 12, Apple Git 2.39). The checkout names the verified commit bare; the floor is now measured in Docker (`scripts/git-floor-probe.sh`), and the argv is pinned by a test.
+- `sparse-checkout set --cone` is not cone mode before 2.35, and a filtered fetch into a fresh repository fails on 2.26: `init --cone` then `set`; partial-clone settings written by hand.
+- The cache key omitted the subfolder, which was a real integrity hole (a sparse `flow@<sha>` was served to a whole-repository request). Sparse entries are keyed `<name>@<sha>~<digest>`.
+- The fallbacks were blob-filtered, and a server that refuses unadvertised commits refuses the lazy blob fetches too. A refused partial clone now restarts unfiltered, and both fallbacks are unfiltered. Test repositories serve filters, so the partial path really runs.
+- A surviving mutant (the refname fallback fetching the bare name) is killed by a protocol-v0 test where a branch and a tag share a name.
+- Legacy `main` records no longer restage on every check (`matchesRecordedKey`).
+- Crashed temp fetches are swept at startup; the token moved from argv to the environment and is resolved once a minute; stale comments fixed; an empty repository says "has no commits yet".
 
 ## References
 

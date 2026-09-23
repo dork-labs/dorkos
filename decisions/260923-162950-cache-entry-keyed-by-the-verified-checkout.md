@@ -19,7 +19,7 @@ ADR-0232 keys the package cache `<name>@<sha>` and treats an entry as immutable,
 
 ## Decision
 
-One git primitive fetches every git source form. It resolves a ref to an exact refname and commit (branch before tag, tags peeled, a full SHA as itself), fetches that commit by SHA at depth 1, and, only when a server refuses an unadvertised commit, falls back to the exact refname (or, for a pinned commit, to every branch and tag, then requires the commit). It then checks out the commit and reads `HEAD`. The cache takes its key from that verified commit, and refuses any key that is not a full commit id. A source with no ref is fetched at the repository's default branch (`HEAD`), not `main`. Entries written before this decision live under the old `packages/` root, are never read, and are removed at startup; verified entries live under `trees/`.
+One git primitive fetches every git source form. It resolves a ref to an exact refname and commit (branch before tag, tags peeled, a full SHA as itself), fetches that commit by SHA at depth 1, and, only when a server refuses an unadvertised commit, falls back to the exact refname (or, for a pinned commit, to every branch and tag, then requires the commit). It then checks out the commit and reads `HEAD`. The cache takes its key from that verified commit, and refuses any key that is not a full commit id. A sparse (`git-subdir`) checkout is a different tree from the whole repository at the same commit, so its key also carries a digest of the subfolder: `<name>@<sha>~<digest>`. The git floor is measured, not assumed: git 2.26 through 2.49 run the exact command sequence in Docker (`scripts/git-floor-probe.sh`). A source with no ref is fetched at the repository's default branch (`HEAD`), not `main`. Entries written before this decision live under the old `packages/` root, are never read, and are removed at startup; verified entries live under `trees/`.
 
 ## Consequences
 
@@ -34,5 +34,5 @@ One git primitive fetches every git source form. It resolves a ref to an exact r
 
 - Every package is fetched again once after upgrading.
 - On a server that refuses unadvertised commits, a pinned commit costs a blob-filtered fetch of every branch and tag.
-- The key still omits the subpath: two subdirectories of one commit under one package name would share an entry.
-- Sidecars that recorded `ref: 'main'` no longer match their recomputed key, so their first update check stages instead of short-circuiting.
+- Git older than 2.26 cannot install from a git source, and git older than 2.31 cannot send the GitHub token for a private repository.
+- Sidecars that recorded `ref: 'main'` need a tolerant comparison (`HEAD` now against `main` then), because an update check never rewrites them.

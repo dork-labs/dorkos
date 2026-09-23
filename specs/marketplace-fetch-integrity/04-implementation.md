@@ -15,9 +15,9 @@
 
 **Worker:** the DOR-2248 implementer (sequential, TDD); adversarial review by the orchestrator before the PR
 
-- Task #1.1: Share the GitHub token rewrite (`withGitHubToken`)
+- Task #1.1: Share the GitHub token rule (first as `withGitHubToken`; after review, `gitHubAuthConfig`, an environment-borne header)
 - Task #1.2: The git tree primitive (`lib/git-tree.ts`), real-git tests first
-- Task #1.3: Cache entries keyed by the verified commit (`trees/`, `removeLegacyPackages`, `putPackage` removed)
+- Task #1.3: Cache entries keyed by the verified commit (`trees/`, subfolder digest in sparse keys, `removeLeftovers`, `putPackage` removed)
 - Task #1.4: Every git form through one fetch (`source-resolvers/git.ts`, `GitTreeSource` seam, `fetchAtCommit`)
 - Task #1.5: A ref-less source is fetched at `HEAD`
 - Task #1.6: Guides, installer comments, changelog fragment
@@ -34,7 +34,7 @@
 - `apps/server/src/services/marketplace/marketplace-cache.ts`
 - `apps/server/src/services/marketplace/marketplace-installer.ts` (comments)
 - `apps/server/src/services/marketplace/flows/update.ts` (one comment)
-- `apps/server/src/services/core/template-downloader.ts` (`withGitHubToken`; `cloneRepository`, `TemplateDownloader`, `defaultTemplateDownloader` removed)
+- `apps/server/src/services/core/template-downloader.ts` (`gitHubAuthConfig`; `cloneRepository`, `TemplateDownloader`, `defaultTemplateDownloader` removed)
 - `apps/server/src/index.ts`
 - `packages/marketplace/src/source-resolver.ts`
 
@@ -53,8 +53,12 @@
 - `fetchAtCommit` was added at the orchestrator's request so DOR-2245 can rebuild an install recorded at an older commit.
 - A whole-repo `file://` address still takes the local-folder path ahead of `fetchGitTree` (`fetchGitSource`), exactly as `fetchFromGit` did; the spec's first draft missed that `url` sources reached it through `cloneRepository`.
 
+### Session 2 - 2026-09-23 (review round 1)
+
+All nine findings adopted, TDD; see the spec's Review log. The git floor was measured in Docker with `scripts/git-floor-probe.sh` (new): 2.26–2.49 pass, 2.24 fails, and the token header needs 2.31. New files: `scripts/git-floor-probe.sh`. Also changed: `lib/source-provenance.ts` (`matchesRecordedKey` replaces `sameSourceKey`; `resolvedFromSourceKey` reads a legacy `main` as `HEAD`), `lib/git-safety.ts` and `package-resolver.ts` (stale comments).
+
 ## Known limits
 
-- The cache key omits the subpath (spec, Non-Goals).
 - The exact-name filter on `ls-remote` output is defence in depth: the qualified patterns (`refs/heads/<ref>`, …) are what keep `x/main` out, and a mutation of the filter alone survives the suite. The pattern mutation does not.
-- Sidecars written before this change record `ref: 'main'`; their first update check stages once instead of short-circuiting.
+- On git 2.26–2.30, `GIT_CONFIG_COUNT` is ignored, so the GitHub token is not sent: public repositories install, and a private GitHub repository fails to authenticate with git's own message.
+- Sidecars written before this change keep `ref: 'main'` forever (a check never rewrites them); `matchesRecordedKey` treats that as `HEAD`, so they short-circuit like any other install.

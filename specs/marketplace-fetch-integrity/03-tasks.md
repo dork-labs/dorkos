@@ -6,7 +6,7 @@ Canonical: `03-tasks.json`. One phase.
 
 ### Task 1.1: Share the GitHub token rewrite
 
-Extract `withGitHubToken(url, auth)` from `execGitClone` in `services/core/template-downloader.ts`; `execGitClone` calls it. Tests: the token reaches only an https GitHub host on the default port with no userinfo, exactly the old gate.
+Share the GitHub token rule between `execGitClone` and the marketplace fetch. Revised after review: `gitHubAuthConfig(url, auth)` in `services/core/template-downloader.ts` returns an origin-scoped `http.extraHeader`, passed through the environment. Tests: only an https GitHub origin on the default port with no userinfo gets it.
 
 - Size: small
 - Depends on: none
@@ -20,7 +20,7 @@ New `services/marketplace/lib/git-tree.ts`: `isFullCommitSha`, `lookupRemoteRef`
 
 ### Task 1.3: Key cache entries by the verified commit
 
-`MarketplaceCache`: root `trees/`; `materializePackage(name, expectedSha, fetch)` returns `{ path, commitSha }` keyed by the commit the fetch returns and refuses a non-commit; `putPackage` removed; `removeLegacyPackages()`. Tests updated (incl. route test seeds).
+`MarketplaceCache`: root `trees/`; `materializePackage(name, expectedSha, subpath, fetch)` returns `{ path, commitSha }` keyed by the commit the fetch returns (plus a subfolder digest for sparse entries) and refuses a non-commit; `putPackage` removed; `removeLeftovers()`. Tests updated (incl. route test seeds).
 
 - Size: medium
 - Depends on: 1.2

@@ -199,7 +199,7 @@ The question it answers is "what would installing this package right now give me
 **Known limits.**
 
 - The package cache has no automatic pruning owner (DOR-2249). Each check that observes a new marketplace commit adds one cache entry per installed package from that repository.
-- A direct install (`name@url`, `github:`) is always fetched from the default branch today: neither form can carry a ref or subpath, so its recorded `sourceKey` is always `ref: 'HEAD'` (`'main'` in sidecars written before DOR-2248), `subpath: ''`, and applying an update reinstalls from the same place. If install requests gain a structured source, apply must carry the recorded key too. A direct install recorded before `sourceKey` existed is checked against the default branch, and its check says so in `note`.
+- A direct install (`name@url`, `github:`) is always fetched from the default branch today: neither form can carry a ref or subpath, so its recorded `sourceKey` is always `ref: 'HEAD'` (`'main'` in sidecars written before DOR-2248, which `resolvedFromSourceKey` reads as `HEAD` and `matchesRecordedKey` accepts against `HEAD`), `subpath: ''`, and applying an update reinstalls from the same place. If install requests gain a structured source, apply must carry the recorded key too. A direct install recorded before `sourceKey` existed is checked against the default branch, and its check says so in `note`.
 
 The update flow never touches disk on its own. Anything that mutates state lives inside the installer's transaction.
 
@@ -386,9 +386,9 @@ ${dorkHome}/cache/marketplace/
 │       ├── marketplace.json    # Last-fetched copy (TTL governed)
 │       └── .last-fetched        # ISO timestamp stamp
 └── trees/
-    ├── code-review-suite@<40-hex commit>/   # Exactly that commit's tree
-    └── flow@<40-hex commit>/                # A git-subdir entry: sparse,
-        └── plugins/flow/                    #   only the package's directory
+    ├── code-review-suite@<40-hex commit>/            # Exactly that commit's tree
+    └── flow@<40-hex commit>~<12-hex digest>/         # A git-subdir entry: sparse,
+        └── plugins/flow/                             #   only the package's directory
 ```
 
 Two cache disciplines side by side:
@@ -396,20 +396,20 @@ Two cache disciplines side by side:
 - **`marketplace.json` — 1h TTL.** Past the TTL, the cached entry is still served but flagged `stale: true` so the caller can choose to refresh in the background. On network failure, the stale entry is served verbatim — this is the offline fallback.
 - **Package trees — never expire.** The tree of commit `a1b2c3d…` is the same today, tomorrow, and a year from now, so TTL would only ever make things worse. Garbage collection is explicit: `dorkos cache prune` (keeps the last N SHAs per package name, default 1) or `dorkos cache clear` (wipes everything).
 
-**An entry's key is the commit its checkout holds** ([ADR 260923-162950](../decisions/260923-162950-cache-entry-keyed-by-the-verified-checkout.md), DOR-2248). There is one way in, `MarketplaceCache.materializePackage(name, expectedSha, fetch)`: the fetch populates a temp directory and returns the commit it checked out, the cache names the entry after that commit, and it refuses anything that is not a full commit id (`isFullCommitSha`). `expectedSha` only short-circuits a tree already cached under it and de-duplicates concurrent fetches. So no entry is ever keyed by a lookup, a placeholder, or a guess. Entries from before this rule lived under `packages/`; nothing reads them, and the server deletes that directory at startup (`removeLegacyPackages`).
+**An entry's key is the commit its checkout holds** ([ADR 260923-162950](../decisions/260923-162950-cache-entry-keyed-by-the-verified-checkout.md), DOR-2248). There is one way in, `MarketplaceCache.materializePackage(name, expectedSha, subpath, fetch)`: the fetch populates a temp directory and returns the commit it checked out, the cache names the entry after that commit, and it refuses anything that is not a full commit id (`isFullCommitSha`). `expectedSha` only short-circuits a tree already cached under it and de-duplicates concurrent fetches. So no entry is ever keyed by a lookup, a placeholder, or a guess. A sparse checkout is a different tree from the whole repository at the same commit, so a `git-subdir` entry's key carries the first 12 hex digits of its subfolder's SHA-256 (`flow@<sha>~<digest>`), and `getPackage` takes the subfolder too. Entries from before this rule lived under `packages/`; nothing reads them. At startup, before any route exists, the server calls `removeLeftovers`, which deletes that directory and any `trees/.tmp-fetch-*` a crash left behind.
 
 **How a tree is fetched** (`lib/git-tree.ts`, behind `PackageFetcher.fetchGitTree`, which all three git forms share):
 
 1. **Resolve the ref exactly** (`lookupRemoteRef`): a full commit id is itself; `HEAD` is the default branch; a `refs/…` name is taken as written; any other name is `refs/heads/<ref>`, then `refs/tags/<ref>` (the order `git clone --branch` uses), with an annotated tag peeled to its commit. `git ls-remote` is asked for those qualified names, never the bare name, because it matches the tail of every ref (`main` also returns `refs/heads/x/main`). A ref the remote lacks throws `GitRefNotFoundError`; a remote that cannot be asked throws `GitRemoteUnreachableError`. Nothing is fetched in either case.
-2. **Fetch that commit by id**: `git init`, a temporary remote, a sparse cone for a `git-subdir` subpath (blob-filtered), and `git fetch --depth=1 <commit>`. A push after the lookup cannot change what arrives.
-3. **Fallback** only when the server refuses an unadvertised commit (protocol v0 without `uploadpack.allowReachableSHA1InWant`): a named ref fetches the exact refname and keeps whichever commit arrives (the ref moved; the entry and the record follow the tree); a pinned commit fetches every branch and tag, blob-filtered, and then requires the commit, else `GitCommitNotFoundError`.
+2. **Fetch that commit by id**: `git init`, a temporary remote, and `git fetch --depth=1 <commit>`. A push after the lookup cannot change what arrives. A `git-subdir` subpath is first tried as a blob-filtered partial clone with a sparse cone (`sparse-checkout init --cone`, then `set`), so only the package's own files download.
+3. **Fallback** only when the server refuses an unadvertised object (protocol v0 without `uploadpack.allowReachableSHA1InWant`). Such a server also refuses a partial checkout's lazy blob requests, so a refused partial clone starts over unfiltered. Unfiltered, a refused commit falls back: a named ref fetches the exact refname and keeps whichever commit arrives (the ref moved; the entry and the record follow the tree); a pinned commit fetches every branch and tag and then requires the commit, else `GitCommitNotFoundError`.
 4. **Verify**: check the commit out, require `git rev-parse HEAD` to equal it, remove `.git`, return it. Any failure is a `GitFetchError` with git's reason, tokens redacted.
 
-Every git call keeps the marketplace's posture: `assertSafeGitRemote` first, `hardenedGitEnv`, argv arrays, `--end-of-options` before every author-supplied value, and the GitHub token only for a GitHub host (`withGitHubToken`, shared with `execGitClone`). A source with no ref is fetched at `HEAD`, the repository's default branch.
+Every git call keeps the marketplace's posture: `assertSafeGitRemote` first, `hardenedGitEnv`, argv arrays, and `--end-of-options` before every author-supplied value. The GitHub token goes only to a GitHub host, as an `http.<origin>/.extraHeader` passed through `GIT_CONFIG_COUNT` (`gitHubAuthConfig`), so it is on no command line and in no `.git/config`; the token is resolved at most once a minute. A source with no ref is fetched at `HEAD`, the repository's default branch.
+
+**Git floor, measured, not assumed.** `scripts/git-floor-probe.sh` replays the exact command sequence in Docker. git 2.26 through 2.49 pass (alpine/git 2.26.2, 2.30.0, 2.34.2, 2.36.3, 2.40.1, 2.43.0, 2.45.2, 2.49.1; Ubuntu 24.04's 2.43.0). git 2.24 has no `sparse-checkout`. Two version traps shaped the commands. `checkout --detach` rejects `--end-of-options` up to 2.43, so the checkout names the verified commit bare. And `sparse-checkout set --cone` leaves cone mode off before 2.35, so cone mode is set with `init --cone` first. Git 2.26 also refuses a filtered fetch into a fresh repository, so the partial-clone settings are written by hand. The token header needs git 2.31, which is when `GIT_CONFIG_COUNT` arrived; on older git a private GitHub repository fails to authenticate, plainly. Re-run the probe whenever `git-tree.ts` changes a git command; `git-tree-guards.test.ts` pins the argv it measured.
 
 `PackageFetcher.fetchAtCommit({ packageName, sourceKey, commitSha })` fetches one exact commit whatever ref the source names: the way to rebuild an install recorded at a commit its branch has since moved past.
-
-**Known limit:** the key omits the subpath, so two different subdirectories of one commit under one package name would share an entry. That needs a package to change its source form or path while its source repository gains no commit.
 
 Torn-write safety: `writeMarketplace` writes `marketplace.json` before stamping `.last-fetched`, so a crash mid-write leaves the cache in a "no stamp → cache miss" state rather than serving stale content with a fresh timestamp.
 
