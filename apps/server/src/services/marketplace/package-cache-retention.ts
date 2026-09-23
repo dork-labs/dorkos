@@ -42,6 +42,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isRealCommitSha } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { readInstallMetadataStrict } from './installed-metadata.js';
 import type { AgentScopeRef } from './installed-scanner.js';
 import { installRootsUnder, projectScopeRoot } from './lib/install-roots.js';
@@ -197,7 +198,10 @@ async function scanScopeStrict(scopeRoot: string, trees: RecordedTree[]): Promis
       throw new UnreadableInstallsError(dir, err);
     }
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
+      // The install engine's own siblings (a crash-left backup, DOR-2273) are
+      // bookkeeping, not installs: a half-written one must not pause cleanup,
+      // and one that is restored is read as an install from then on.
+      if (!entry.isDirectory() || isInstallSiblingName(entry.name)) continue;
       const tree = await readTreeStrict(join(dir, entry.name));
       if (tree) trees.push(tree);
     }

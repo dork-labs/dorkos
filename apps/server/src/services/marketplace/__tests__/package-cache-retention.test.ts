@@ -7,6 +7,7 @@ import { readProjectInstalls, recordProjectInstall } from '../lib/project-instal
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
+import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 import { MarketplaceCache, subpathDigest, type CachedPackage } from '../marketplace-cache.js';
 import { INSTALL_METADATA_PATH } from '../installed-metadata.js';
 import {
@@ -254,6 +255,23 @@ describe('with a real data directory', () => {
       } finally {
         await chmod(sidecar, 0o644);
       }
+    });
+
+    it("skips the install engine's own siblings, such as a crash-left backup", async () => {
+      // Purpose: a backup is bookkeeping (DOR-2273); a torn one must not pause
+      // cleanup, and it is not an install whose tree needs keeping.
+      await install(dorkHome, 'flow', { commitSha: sha('a') });
+      const backup = join(
+        dorkHome,
+        'plugins',
+        `flow${MARKETPLACE_BACKUP_DIR_MARKER}1727100000000-x`
+      );
+      await mkdir(join(backup, '.dork'), { recursive: true });
+      await writeFile(join(backup, INSTALL_METADATA_PATH), '{"name":');
+
+      const { trees } = await listRecordedTrees(dorkHome, []);
+
+      expect(trees).toEqual([{ name: 'flow', commitSha: sha('a') }]);
     });
 
     it('refuses when a sidecar does not parse', async () => {

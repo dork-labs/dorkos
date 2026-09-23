@@ -6,6 +6,7 @@ covers:
   - 'fix(marketplace): never follow a symlink when sizing a tree; stamp best-effort; keep a staged update beside a re-read install (DOR-2249)'
   - 'fix(marketplace): read what installs record strictly, and record project installs (DOR-2249)'
   - 'fix(marketplace): keep a fresh project-install record, recover a corrupt one, and show a paused cleanup (DOR-2249)'
+  - "fix(marketplace): skip the install engine's own siblings when reading what installs record (DOR-2249)"
 ---
 
 ### Changed
