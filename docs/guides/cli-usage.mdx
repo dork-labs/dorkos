@@ -175,11 +175,11 @@ dorkos package init <name> --type plugin|agent|skill-pack|adapter
 dorkos package validate <path>
 ```
 
-**`dorkos cache`**: manage the package clone cache at `~/.dork/cache/`.
+**`dorkos cache`**: manage the package clone cache at `~/.dork/cache/`. DorkOS tidies it on its own: after each download it keeps what your installed packages need, plus a waiting update, and removes the rest. `prune` does the same right away.
 
 ```bash
 dorkos cache list                      # Show cache counts and total size
-dorkos cache prune [--keep-last-n <N>] # Remove older cached package versions (default: keep 1)
+dorkos cache prune                     # Remove cached packages nothing installed needs
 dorkos cache clear                     # Wipe the entire cache
 ```
 

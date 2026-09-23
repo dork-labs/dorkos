@@ -2,7 +2,7 @@
 slug: marketplace-cache-retention
 number: 260923-193637
 created: 2026-09-23
-status: specified
+status: implemented
 ---
 
 # Keep the marketplace package cache small without losing what installs need
@@ -80,14 +80,14 @@ So the cache holds at most two entries per installed package, plus whatever was 
   - New exported `IN_USE_GRACE_MS` and exported `subpathDigest(subpath)` (returns `''` for `''`, used by `packageDir` and the policy).
   - `getPackage` and `materializePackage` stamp under the lock; `fetchAndPromote`'s land step runs under the lock and stamps, then notifies.
   - New `onEntryWritten(listener): () => void`.
-  - New `removeUnused(keep: (entry) => boolean): Promise<{ removed: CachedPackage[]; freedBytes: number }>`: lists entries, skips kept ones, and for each other one, under the lock, re-stats and renames it aside only if its stamp is older than `IN_USE_GRACE_MS`; then measures and deletes it.
+  - New `removeUnused(keep: (entries) => ReadonlySet<string>): Promise<{ removed; freedBytes; failed }>`: lists entries once, asks `keep` for the paths to keep, and for each other entry, under the lock, re-stats and renames it aside only if its stamp is older than `IN_USE_GRACE_MS`; then measures and deletes it. An entry that cannot be removed is reported in `failed` (the owner logs it) and the rest continue.
   - `prune({ keepLastN })` is removed (superseded; its only caller was the route).
   - `removeLeftovers()` also removes `.tmp-prune-*`.
 - `apps/server/src/services/marketplace/lib/directory-size.ts` (new): `directorySize(root)`, moved from the route's private `sumDirectorySize` so the cache can report freed bytes; the route's status endpoint imports it.
 - `apps/server/src/services/marketplace/package-cache-retention.ts` (new)
   - `RecordedTree { name; commitSha; subpath?: string }`.
   - `listRecordedTrees(dorkHome, agents)`: every installation across scopes (`scanInstallationsAcrossScopes`), its sidecar read with `readInstallMetadata`; installs without a real `commitSha` contribute nothing.
-  - `keepRule(entries, recorded): (entry) => boolean`: rules 2 and 3, pure.
+  - `keepRule(entries, recorded): ReadonlySet<string>` (paths to keep): rules 2 and 3, pure.
   - `PackageCacheRetention` with `start()` (subscribe to writes, sweep once in the background) and `sweep()` (coalesced; returns `{ removed, freedBytes }`).
 - `apps/server/src/index.ts`: construct `PackageCacheRetention` beside the cache (after `listAgentScopes` exists), `start()` it, pass it to the router.
 - `apps/server/src/routes/marketplace.ts`: new required dep `cacheRetention`; `POST /cache/prune` calls `cacheRetention.sweep()`; its body takes no options.

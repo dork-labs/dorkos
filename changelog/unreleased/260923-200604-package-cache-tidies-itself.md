@@ -1,0 +1,11 @@
+---
+covers:
+  - 'docs(specs): specify marketplace package cache retention (DOR-2249)'
+  - 'feat(marketplace): give the package cache a retention owner (DOR-2249)'
+  - 'docs(marketplace): document package cache retention (DOR-2249)'
+---
+
+### Changed
+
+- DorkOS now tidies its store of downloaded marketplace packages on its own. After each download it keeps what your installed packages need, plus an update that is waiting to be installed, and removes the rest. Before, the store only grew, and checking for updates often would have filled your disk over time. (DOR-2249)
+- `dorkos cache prune` now follows the same rule and no longer takes `--keep-last-n`. The old option could delete the exact copy an installed package came from. (DOR-2249)

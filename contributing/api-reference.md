@@ -68,7 +68,7 @@ The marketplace routes are mounted at `/api/marketplace` and backed by injected 
 | `GET`    | `/api/marketplace/installed/:name`          | Get a single installed package by name                                      |
 | `GET`    | `/api/marketplace/cache`                    | Cache status (marketplace count, package count, total bytes)                |
 | `DELETE` | `/api/marketplace/cache`                    | Wipe the entire marketplace cache                                           |
-| `POST`   | `/api/marketplace/cache/prune`              | Prune old cached packages (`{ keepLastN? }`)                                |
+| `POST`   | `/api/marketplace/cache/prune`              | Remove cached packages no install needs (no options)                        |
 | `GET`    | `/api/marketplace/packages`                 | Aggregate packages from all enabled sources                                 |
 | `GET`    | `/api/marketplace/packages/:name`           | Fetch and validate a single package entry (`?marketplace=` to pin source)   |
 | `POST`   | `/api/marketplace/packages/:name/preview`   | Build a `PermissionPreview` without installing                              |
