@@ -303,7 +303,7 @@ describe('ClaudeCodeRuntime', () => {
           expect(entries).toContainEqual({
             kind: 'accounts_access',
             scope: 'per-turn',
-            data: { accountCount: 1, changed: false },
+            data: { accountCount: 1, changed: false, serviceCatalog: true },
           });
         }
 

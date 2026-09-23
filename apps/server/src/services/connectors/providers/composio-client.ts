@@ -132,8 +132,12 @@ export interface ComposioHttpClient {
    * status so the setup card can say what it is using.
    */
   keyKind?(): ConnectorKeyKind;
-  /** List the toolkits (services) this Composio account can connect. */
-  listToolkits(): Promise<ComposioToolkitInfo[]>;
+  /**
+   * List the toolkits (services) this Composio account can connect.
+   *
+   * @param signal - Stops the page chain, including a page already in flight.
+   */
+  listToolkits(signal?: AbortSignal): Promise<ComposioToolkitInfo[]>;
   /**
    * Begin connecting `toolkit`, carrying `alias` as the human account label.
    *
@@ -256,7 +260,7 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
     return this._validated ? this._headerKind : 'unknown';
   }
 
-  async listToolkits(): Promise<ComposioToolkitInfo[]> {
+  async listToolkits(signal?: AbortSignal): Promise<ComposioToolkitInfo[]> {
     // VERIFIED-DOCS (2026-07-29): GET /api/v3.1/toolkits →
     // { items: [{ slug, name, auth_schemes?: string[], no_auth?: boolean }],
     //   next_cursor } — `auth_schemes` is an ARRAY and there is no
@@ -268,9 +272,12 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
     for (let page = 0; page < MAX_TOOLKIT_PAGES; page += 1) {
       const query = new URLSearchParams({ limit: String(TOOLKIT_PAGE_LIMIT) });
       if (cursor) query.set('cursor', cursor);
+      signal?.throwIfAborted();
       const body = await this._request<{ items?: RawToolkit[]; next_cursor?: string | null }>(
         'GET',
-        `/api/v3.1/toolkits?${query.toString()}`
+        `/api/v3.1/toolkits?${query.toString()}`,
+        undefined,
+        signal
       );
       for (const tk of body.items ?? []) {
         const authScheme = tk.no_auth ? 'NO_AUTH' : tk.auth_schemes?.[0];
@@ -462,13 +469,18 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
    * @param path - API path (may include a query string).
    * @param json - Optional JSON request body.
    */
-  private async _request<T>(method: string, path: string, json?: unknown): Promise<T> {
+  private async _request<T>(
+    method: string,
+    path: string,
+    json?: unknown,
+    signal?: AbortSignal
+  ): Promise<T> {
     await this._ensureProjectId();
-    let { response, text } = await this._issue(method, path, json, this._headerKind);
+    let { response, text } = await this._issue(method, path, json, this._headerKind, signal);
 
     if (response.status === 401 && !this._validated) {
       const alternate: ComposioAuthHeaderKind = this._headerKind === 'user' ? 'project' : 'user';
-      const retry = await this._issue(method, path, json, alternate);
+      const retry = await this._issue(method, path, json, alternate, signal);
       if (retry.response.ok) {
         this._headerKind = alternate;
         ({ response, text } = retry);
@@ -483,15 +495,19 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
     return text ? (JSON.parse(text) as T) : ({} as T);
   }
 
-  /** One raw fetch, bounded by the timeout, under the given header kind. */
+  /** One raw fetch, bounded by the timeout and the caller's signal, under the given header kind. */
   private async _issue(
     method: string,
     path: string,
     json: unknown,
-    kind: ComposioAuthHeaderKind
+    kind: ComposioAuthHeaderKind,
+    callerSignal?: AbortSignal
   ): Promise<{ response: Response; text: string }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this._timeoutMs);
+    const signal = callerSignal
+      ? AbortSignal.any([controller.signal, callerSignal])
+      : controller.signal;
     try {
       const response = await this._fetch(`${this._baseUrl}${path}`, {
         method,
@@ -500,7 +516,7 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
           ...(json !== undefined && { 'content-type': 'application/json' }),
         },
         ...(json !== undefined && { body: JSON.stringify(json) }),
-        signal: controller.signal,
+        signal,
       });
       const text = await response.text();
       return { response, text };

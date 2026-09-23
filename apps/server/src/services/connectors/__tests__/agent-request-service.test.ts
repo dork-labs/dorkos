@@ -30,7 +30,15 @@ import {
   type ConnectorAgentRequestAuthorityPort,
 } from '../agent-request-service.js';
 import { createServerPrincipal, type ServerPrincipalProof } from '../principal/server-principal.js';
-import type { ConnectorRegistry } from '../registry.js';
+import { ConnectorProviderInstanceIdSchema } from '@dorkos/shared/connector-schemas';
+import { FakeConnectorProvider } from '@dorkos/test-utils';
+import {
+  ConnectorOperatorQueryService,
+  type ConnectorServiceDirectory,
+} from '../resources/operator-query-service.js';
+import { ConnectorRegistry } from '../registry.js';
+import { ComposioConnectorProvider } from '../providers/composio.js';
+import { FetchComposioHttpClient } from '../providers/composio-client.js';
 import { MessageQueueStore } from '../../session/message-queue-store.js';
 import { PrivateSessionMessageAcceptanceService } from '../../session/private-messages/acceptance.js';
 
@@ -44,6 +52,18 @@ const INPUT: ConnectorAgentConnectionRequestInput = {
   requestedOperations: ['gmail.read', 'gmail.draft'],
   requestedEvents: [],
 };
+
+function directory(services: ReadonlyArray<readonly [string, string]>): ConnectorServiceDirectory {
+  return {
+    services: services.map(([serviceSlug, displayName]) => ({
+      serviceSlug,
+      displayName,
+      requestable: true,
+    })),
+    warnings: [],
+    routeTypes: ['composio'],
+  };
+}
 
 function principal(
   overrides: Partial<Extract<ServerPrincipalProof['claims'], { kind: 'runtime' }>> = {}
@@ -148,12 +168,9 @@ describe('ConnectorAgentRequestService', () => {
   ): ConnectorAgentRequestService {
     return new ConnectorAgentRequestService({
       db,
-      registry: {
-        listToolkits: vi.fn(async () => ({
-          toolkits: [{ slug: 'gmail', name: 'Gmail' }],
-          warnings: [],
-        })),
-      } as unknown as ConnectorRegistry,
+      services: {
+        serviceDirectory: vi.fn(async () => directory([['gmail', 'Gmail']])),
+      },
       runtimePrincipals: { revalidatePrincipal: vi.fn(async () => true) },
       authority,
       bootEpoch: 'boot-a',
@@ -260,6 +277,328 @@ describe('ConnectorAgentRequestService', () => {
     expect(JSON.stringify(first)).not.toContain('Work mail');
     expect(db.select().from(connectorReviewRequests).all()).toHaveLength(1);
     expect(db.select().from(connectorAgentRequests).all()).toHaveLength(1);
+  });
+
+  describe('a request for a service this installation cannot connect', () => {
+    // Display names verified against docs.composio.dev/toolkits/<slug> on 2026-09-23.
+    const COMPOSIO = [
+      ['gmail', 'Gmail'],
+      ['outlook', 'Outlook'],
+      ['composio_search', 'Composio Search'],
+      ['linear', 'Linear'],
+    ] as const;
+
+    function withDirectory(value: ConnectorServiceDirectory) {
+      return service({ services: { serviceDirectory: vi.fn(async () => value) } });
+    }
+
+    async function refusal(
+      requests: ConnectorAgentRequestService,
+      serviceSlug: string,
+      runtime: 'claude-code' | 'codex' | 'opencode' = 'claude-code'
+    ) {
+      const error: unknown = await requests
+        .create(principal({ runtime }), { ...INPUT, serviceSlug })
+        .then(
+          () => undefined,
+          (caught: unknown) => caught
+        );
+      expect(error).toMatchObject({ code: 'service_unavailable' });
+      expect(db.select().from(connectorReviewRequests).all()).toEqual([]);
+      return (error as Error).message;
+    }
+
+    // The in-app report: an agent guessed `composio-emails`, was told only that the
+    // service "is not available", and fell back to installing a CLI in its shell.
+    it('points a guessed name at the lookup tool without suggesting a service named after the route', async () => {
+      const message = await refusal(withDirectory(directory(COMPOSIO)), 'composio-emails');
+
+      expect(message).toContain('"composio-emails"');
+      expect(message).toContain('mcp__dorkos__connector_list_toolkits');
+      expect(message).not.toContain('Close matches');
+      expect(message).not.toContain('composio_search');
+    });
+
+    it('suggests the real service a route-prefixed guess names', async () => {
+      const message = await refusal(withDirectory(directory(COMPOSIO)), 'composio_gmail');
+
+      expect(message).toContain('Close matches: gmail.');
+    });
+
+    it('matches a service whose id is inside the guessed name', async () => {
+      const message = await refusal(withDirectory(directory(COMPOSIO)), 'gmail_inbox');
+
+      expect(message).toContain('Close matches: gmail.');
+    });
+
+    it('ignores every registered route name, not only the ones it knows by heart', async () => {
+      const message = await refusal(
+        withDirectory({
+          ...directory([
+            ['acme_search', 'Acme Search'],
+            ['gmail', 'Gmail'],
+          ]),
+          routeTypes: ['acme-connect'],
+        }),
+        'acme-mail'
+      );
+
+      expect(message).not.toContain('acme_search');
+    });
+
+    it('lists at most five close matches, shortest first', async () => {
+      const message = await refusal(
+        withDirectory(
+          directory([
+            ['google_sheets', 'Google Sheets'],
+            ['google_drive', 'Google Drive'],
+            ['googledocs', 'Google Docs'],
+            ['google_calendar', 'Google Calendar'],
+            ['google_meet', 'Google Meet'],
+            ['google_tasks', 'Google Tasks'],
+            ['google_maps', 'Google Maps'],
+          ])
+        ),
+        'google'
+      );
+
+      expect(message).toContain(
+        'Close matches: googledocs, google_maps, google_meet, google_drive, google_tasks.'
+      );
+    });
+
+    it('names the lookup tool the way this runtime calls it', async () => {
+      const requests = withDirectory(directory(COMPOSIO));
+      expect(await refusal(requests, 'mailbox', 'opencode')).toContain(
+        'dorkos_connector_list_toolkits'
+      );
+      expect(await refusal(requests, 'mailbox', 'codex')).toContain(
+        'mcp__dorkos__connector_list_toolkits'
+      );
+    });
+
+    it('accepts a service a linked account brings back, through the recovery the lookup runs', async () => {
+      // The catalog side reads its own store; this suite's seeded rows describe a
+      // provider that registry never registers.
+      const catalogDb = createDb(':memory:');
+      runMigrations(catalogDb);
+      const registry = new ConnectorRegistry({
+        db: catalogDb,
+        configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+      });
+      const managed = new FakeConnectorProvider({
+        instanceId: ConnectorProviderInstanceIdSchema.parse('provider-managed'),
+        type: 'dorkos-managed',
+        toolkits: [{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }],
+      });
+      const recoverManagedProvider = vi.fn(async () => {
+        if (!registry.resolveProviderInstance(managed.instanceId)) {
+          registry.register(managed, 'material-managed');
+        }
+      });
+      const requests = service({
+        services: new ConnectorOperatorQueryService({
+          db: catalogDb,
+          registry,
+          recoverManagedProvider,
+          sessions: { resolveSessionAgent: () => undefined },
+          agentOwnership: { ownsAgent: () => false },
+        }),
+      });
+
+      await expect(requests.create(principal(), INPUT)).resolves.toMatchObject({
+        status: 'awaiting_owner',
+        serviceSlug: 'gmail',
+      });
+      expect(recoverManagedProvider).toHaveBeenCalledOnce();
+    });
+
+    it('ignores the Composio name even when only the DorkOS-account route is registered', async () => {
+      const message = await refusal(
+        withDirectory({ ...directory(COMPOSIO), routeTypes: ['dorkos-managed'] }),
+        'composio-emails'
+      );
+
+      expect(message).not.toContain('Close matches');
+      expect(message).not.toContain('composio_search');
+    });
+
+    // ~850 services, 100 per upstream page, like Composio's real catalog.
+    function composioFetch(options: { delayMs?: number } = {}) {
+      const services = Array.from({ length: 850 }, (_, index) =>
+        index === 849
+          ? { slug: 'gmail', name: 'Gmail', auth_schemes: ['OAUTH2'] }
+          : { slug: `service_${index}`, name: `Service ${index}`, auth_schemes: ['OAUTH2'] }
+      );
+      const calls: string[] = [];
+      const aborted: string[] = [];
+      const fetchImpl = vi.fn(async (input: unknown, init?: RequestInit) => {
+        const url = new URL(String(input));
+        calls.push(url.pathname);
+        if (options.delayMs) {
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(resolve, options.delayMs);
+            init?.signal?.addEventListener('abort', () => {
+              clearTimeout(timer);
+              aborted.push(url.pathname);
+              reject(init.signal?.reason);
+            });
+          });
+        }
+        const offset = Number(url.searchParams.get('cursor') ?? '0');
+        const next = offset + 100;
+        return new Response(
+          JSON.stringify({
+            items: services.slice(offset, next),
+            next_cursor: next < services.length ? String(next) : null,
+          }),
+          { status: 200 }
+        );
+      });
+      const catalogDb = createDb(':memory:');
+      runMigrations(catalogDb);
+      const registry = new ConnectorRegistry({
+        db: catalogDb,
+        configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+      });
+      registry.register(
+        new ComposioConnectorProvider({
+          instanceId: ConnectorProviderInstanceIdSchema.parse('provider-composio'),
+          operationClient: null,
+          client: new FetchComposioHttpClient({
+            apiKey: 'ak-hermetic',
+            userId: 'owner-a',
+            baseUrl: 'https://composio.example',
+            fetchImpl: fetchImpl as unknown as typeof fetch,
+          }),
+        }),
+        'material-composio'
+      );
+      const queries = new ConnectorOperatorQueryService({
+        db: catalogDb,
+        registry,
+        sessions: { resolveSessionAgent: () => undefined },
+        agentOwnership: { ownsAgent: () => false },
+      });
+      return { calls, aborted, queries };
+    }
+
+    it('costs one upstream catalog listing per request, not one per catalog page', async () => {
+      const { calls, queries } = composioFetch();
+
+      await expect(
+        service({ services: queries }).create(principal(), INPUT)
+      ).resolves.toMatchObject({ status: 'awaiting_owner', serviceSlug: 'gmail' });
+
+      // 850 services at 100 a page is 9 upstream pages, read once.
+      expect(calls).toHaveLength(9);
+    });
+
+    it('holds its deadline even while an upstream page is still in flight', async () => {
+      const { calls, aborted, queries } = composioFetch({ delayMs: 5_000 });
+      const started = Date.now();
+
+      const message = await refusal(
+        service({ services: queries, serviceDirectoryTimeoutMs: 50 }),
+        'gmail'
+      );
+
+      expect(message).toContain('Try again');
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(calls).toHaveLength(1);
+      // The deadline reached the request on the wire, so nothing keeps running.
+      await vi.waitFor(() => expect(aborted).toHaveLength(1));
+    });
+
+    it('answers "try again" on time even when a route ignores the signal', async () => {
+      const started = Date.now();
+      const message = await refusal(
+        service({
+          serviceDirectoryTimeoutMs: 50,
+          services: {
+            serviceDirectory: vi.fn(
+              () =>
+                new Promise<ConnectorServiceDirectory>((resolve) => {
+                  setTimeout(() => resolve(directory([['gmail', 'Gmail']])), 1_500);
+                })
+            ),
+          },
+        }),
+        'gmail'
+      );
+
+      expect(message).toContain('Try again');
+      expect(Date.now() - started).toBeLessThan(1_000);
+    });
+
+    it('tells the agent who can fix it when no service is set up at all', async () => {
+      const message = await refusal(withDirectory(directory([])), 'gmail');
+
+      expect(message).toContain('DorkOS has no account services set up yet');
+      expect(message).toContain('Connections');
+      expect(message).toContain('Accounts');
+      expect(message).toContain('command-line tool in a shell does not give DorkOS access');
+      expect(message).not.toContain('connector_list_toolkits');
+    });
+
+    it('does not call a service missing when part of the service list failed to load', async () => {
+      const message = await refusal(
+        withDirectory({
+          ...directory([['linear', 'Linear']]),
+          warnings: [{ code: 'catalog_provider_unavailable', message: 'Composio is down.' }],
+        }),
+        'gmail'
+      );
+
+      expect(message).toContain('could not load the full list of services');
+      expect(message).toContain('Try again');
+      expect(message).not.toContain('Composio is down');
+    });
+
+    it('reads nothing loaded plus a warning as a retry, not as nothing set up', async () => {
+      const message = await refusal(
+        withDirectory({
+          ...directory([]),
+          warnings: [{ code: 'catalog_provider_unavailable', message: 'Composio is down.' }],
+        }),
+        'gmail'
+      );
+
+      expect(message).toContain('Try again');
+      expect(message).not.toContain('no account services set up');
+    });
+
+    it('treats a service list that ran out of time as a retry', async () => {
+      const requests = service({
+        serviceDirectoryTimeoutMs: 20,
+        services: {
+          serviceDirectory: vi.fn(
+            (signal: AbortSignal) =>
+              new Promise<ConnectorServiceDirectory>((_resolve, reject) => {
+                signal.addEventListener('abort', () => reject(signal.reason));
+              })
+          ),
+        },
+      });
+
+      expect(await refusal(requests, 'gmail')).toContain('Try again');
+    });
+
+    it('sends a Messaging-only service to the person instead of back to the lookup tool', async () => {
+      const message = await refusal(
+        withDirectory({
+          ...directory(COMPOSIO),
+          services: [
+            ...directory(COMPOSIO).services,
+            { serviceSlug: 'telegram', displayName: 'Telegram', requestable: false },
+          ],
+        }),
+        'telegram'
+      );
+
+      expect(message).toContain('Telegram connects through Messaging');
+      expect(message).not.toContain('connector_list_toolkits');
+    });
   });
 
   it('rejects a 33rd event before claiming operation or event authority', async () => {
