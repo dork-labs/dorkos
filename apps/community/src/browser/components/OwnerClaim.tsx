@@ -314,7 +314,7 @@ export function OwnerClaim() {
                 <label htmlFor="owner-claim-input">Owner claim link</label>
                 <input
                   id="owner-claim-input"
-                  type="password"
+                  type="text"
                   autoComplete="off"
                   spellCheck={false}
                   value={pastedClaim}

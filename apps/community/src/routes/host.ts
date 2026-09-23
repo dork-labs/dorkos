@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
-import { setCookie } from 'hono/cookie';
+import { deleteCookie, setCookie } from 'hono/cookie';
 import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import {
@@ -479,7 +479,13 @@ export function registerHostRoutes(
       readCookie(c.req.header('cookie') ?? null, 'community_bootstrap'),
       config.authSecret
     );
-    if (!token) throw new ApiError(403, 'FORBIDDEN', 'The owner claim is missing or invalid.');
+    // The claim cookie is single-purpose: drop it once the claim lands or is refused for good,
+    // so a stale grant never lingers in the browser. A 401 keeps it for the sign-in retry.
+    const dropClaimCookie = () => deleteCookie(c, 'community_bootstrap', { path: '/' });
+    if (!token) {
+      dropClaimCookie();
+      throw new ApiError(403, 'FORBIDDEN', 'The owner claim is missing or invalid.');
+    }
     const result = await transaction(pool, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(77281503)');
       const tokenHash = hashSecret(token);
@@ -551,7 +557,12 @@ export function registerHostRoutes(
         },
         memberId: member.rows[0].id,
       };
+    }).catch((cause: unknown) => {
+      if (cause instanceof ApiError && (cause.status === 403 || cause.status === 409))
+        dropClaimCookie();
+      throw cause;
     });
+    dropClaimCookie();
     c.header('Cache-Control', 'no-store');
     return json(c, CommunityWireBootstrapClaimResponseSchema, result);
   });

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+import { test, expect, type BrowserContext, type Page, type Route } from '@playwright/test';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
@@ -68,6 +68,21 @@ async function createPendingCommunity(page: Page, name: string) {
   const link = await page.getByLabel('Owner claim link').inputValue();
   expect(link).toMatch(new RegExp(`^${baseUrl}/claim#claim=[\\w-]+$`, 'u'));
   return { link, secret: new URL(link).hash.slice('#claim='.length) };
+}
+
+/**
+ * Intercept the next owner-claim request once, then step aside for good.
+ *
+ * Deliberately not `{ times: 1 }`: when that exhausts, Playwright turns interception off while
+ * the page's very next request is already in flight, and that request can hang forever.
+ */
+function interceptNextClaim(page: Page, handle: (route: Route) => Promise<void>) {
+  let used = false;
+  return page.route('**/api/v1/owner-claims/claim', async (route) => {
+    if (used) return route.fallback();
+    used = true;
+    await handle(route);
+  });
 }
 
 /** Record every request URL and referrer so a test can prove the secret never left the page. */
@@ -170,7 +185,39 @@ test('a host administrator creates a community and its intended owner signs up a
   try {
     await signIn(hostContext, operator.email, operator.password);
     const { link, secret } = await createPendingCommunity(hostPage, 'Second Place');
-    await expect(hostPage.getByRole('button', { name: 'Copy link' })).toBeVisible();
+    // A refused clipboard says so and leaves the whole link selected for copying by hand.
+    await hostPage.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: () => Promise.reject(new Error('blocked')) },
+      });
+    });
+    await hostPage.getByRole('button', { name: 'Copy link' }).click();
+    await expect(hostPage.getByText('Copy the selected link by hand.')).toBeVisible();
+    await expect(hostPage.getByLabel('Owner claim link')).toBeFocused();
+    expect(
+      await hostPage
+        .getByLabel('Owner claim link')
+        .evaluate((input: HTMLInputElement) =>
+          input.value.slice(input.selectionStart ?? 0, input.selectionEnd ?? 0)
+        )
+    ).toBe(link);
+    await hostPage.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: (text: string) => {
+            (window as unknown as { copiedLink: string }).copiedLink = text;
+            return Promise.resolve();
+          },
+        },
+      });
+    });
+    await hostPage.getByRole('button', { name: 'Copy link' }).click();
+    await expect(hostPage.getByText('Link copied.')).toBeVisible();
+    expect(
+      await hostPage.evaluate(() => (window as unknown as { copiedLink: string }).copiedLink)
+    ).toBe(link);
     await shot(hostPage, 'host-link');
     await expect(hostPage.getByLabel('Second Place community')).toContainText('pending owner');
 
@@ -263,15 +310,12 @@ test('a signed-in account confirms, can switch accounts, and recovers from faile
     expect(await ownerRole(operator.email, 'Third Place')).toBeNull();
 
     // A server failure keeps the claim and says what went wrong; retrying finishes it.
-    await hostPage.route(
-      '**/api/v1/owner-claims/claim',
-      (route) =>
-        route.fulfill({
-          status: 503,
-          contentType: 'application/json',
-          body: JSON.stringify({ code: 'UNAVAILABLE', message: 'The host is busy. Try again.' }),
-        }),
-      { times: 1 }
+    await interceptNextClaim(hostPage, async (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 'UNAVAILABLE', message: 'The host is busy. Try again.' }),
+      })
     );
     await hostPage.getByRole('button', { name: 'Claim community' }).click();
     await expect(hostPage.getByRole('alert')).toContainText('The host is busy');
@@ -286,14 +330,10 @@ test('a signed-in account confirms, can switch accounts, and recovers from faile
     const fourth = await createPendingCommunity(hostPage, 'Fourth Place');
     await hostPage.goto(fourth.link);
     await hostPage.getByRole('button', { name: 'Continue' }).click();
-    await hostPage.route(
-      '**/api/v1/owner-claims/claim',
-      async (route) => {
-        await route.fetch();
-        await route.abort('connectionfailed');
-      },
-      { times: 1 }
-    );
+    await interceptNextClaim(hostPage, async (route) => {
+      await route.fetch();
+      await route.abort('connectionfailed');
+    });
     await hostPage.getByRole('button', { name: 'Claim community' }).click();
     await expect(
       hostPage.getByRole('heading', { name: 'You’re the owner of Fourth Place.' })
@@ -314,19 +354,17 @@ test('a signed-in account confirms, can switch accounts, and recovers from faile
     await switchPage.getByLabel('Email').fill('kai@claim.test');
     await switchPage.getByLabel('Password').fill('password1234');
     // The account survives a failed claim, and the page says ownership was not added yet.
-    await switchPage.route(
-      '**/api/v1/owner-claims/claim',
-      (route) =>
-        route.fulfill({
-          status: 503,
-          contentType: 'application/json',
-          body: JSON.stringify({ code: 'UNAVAILABLE', message: 'The host is busy. Try again.' }),
-        }),
-      { times: 1 }
+    await interceptNextClaim(switchPage, async (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 'UNAVAILABLE', message: 'The host is busy. Try again.' }),
+      })
     );
     await switchPage.getByRole('button', { name: 'Create account and claim' }).click();
     await expect(switchPage.getByRole('alert')).toContainText(
-      'Your account was created, but you are not the owner yet.'
+      'Your account was created, but you are not the owner yet.',
+      { timeout: 15_000 }
     );
     await expect(switchPage.getByText('Signed in as Kai')).toBeVisible();
     await shot(switchPage, 'account-created-claim-failed');
@@ -345,18 +383,15 @@ test('a signed-in account confirms, can switch accounts, and recovers from faile
     const sixth = await createPendingCommunity(hostPage, 'Sixth Place');
     await hostPage.goto(sixth.link);
     await hostPage.getByRole('button', { name: 'Continue' }).click();
-    await hostPage.route(
-      '**/api/v1/owner-claims/claim',
-      (route) =>
-        route.fulfill({
-          status: 409,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            code: 'STATE_CONFLICT',
-            message: 'This community already has an owner.',
-          }),
+    await interceptNextClaim(hostPage, async (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'STATE_CONFLICT',
+          message: 'This community already has an owner.',
         }),
-      { times: 1 }
+      })
     );
     await hostPage.getByRole('button', { name: 'Claim community' }).click();
     await expect(

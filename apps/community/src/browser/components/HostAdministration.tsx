@@ -27,23 +27,18 @@ function shortId(id: string) {
  *
  * The secret stays in the link fragment, so the owner's browser never sends it in a page request.
  */
-function OwnerClaimHandoff({
-  claim,
-  copied,
-  onCopied,
-}: {
-  claim: Claim;
-  copied: boolean;
-  onCopied: () => void;
-}) {
+function OwnerClaimHandoff({ claim }: { claim: Claim }) {
   const link = ownerClaimLink(window.location.origin, claim.ownerClaimToken);
   const input = useRef<HTMLInputElement>(null);
-  async function copy() {
+  const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
+  async function copyLink() {
     try {
       await navigator.clipboard.writeText(link);
-      onCopied();
+      setCopy('copied');
     } catch {
       // Clipboard access can be refused; select the link so the person can copy it by hand.
+      setCopy('failed');
+      input.current?.focus();
       input.current?.select();
     }
   }
@@ -66,14 +61,19 @@ function OwnerClaimHandoff({
             value={link}
             onFocus={(event) => event.currentTarget.select()}
           />
-          <button className="button shrink-0" type="button" onClick={() => void copy()}>
-            {copied ? 'Copied' : 'Copy link'}
+          <button className="button shrink-0" type="button" onClick={() => void copyLink()}>
+            {copy === 'copied' ? 'Copied' : 'Copy link'}
           </button>
         </div>
       </div>
-      <p className="small muted mb-0" aria-live="polite">
-        {copied ? 'Link copied. ' : ''}Claim ID: {claim.grantId}
+      <p className="small mb-0" aria-live="polite">
+        {copy === 'copied'
+          ? 'Link copied.'
+          : copy === 'failed'
+            ? 'This browser blocked copying. Copy the selected link by hand.'
+            : ''}
       </p>
+      <p className="small muted mb-0">Claim ID: {claim.grantId}</p>
     </div>
   );
 }
@@ -85,7 +85,6 @@ export function HostAdministration() {
   const [description, setDescription] = useState('');
   const [admissionPolicy, setAdmissionPolicy] = useState<'invite_only' | 'closed'>('invite_only');
   const [claim, setClaim] = useState<Claim | null>(null);
-  const [copied, setCopied] = useState(false);
   const [revokeGrantId, setRevokeGrantId] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -141,7 +140,6 @@ export function HostAdministration() {
           description: description || null,
           admissionPolicy,
         });
-        setCopied(false);
         if (body.ownerClaimToken)
           setClaim({
             grantId: body.ownerClaimGrantId,
@@ -243,9 +241,7 @@ export function HostAdministration() {
               Create community
             </button>
           </form>
-          {claim && (
-            <OwnerClaimHandoff claim={claim} copied={copied} onCopied={() => setCopied(true)} />
-          )}
+          {claim && <OwnerClaimHandoff key={claim.grantId} claim={claim} />}
         </section>
         <section className="panel">
           <h2>Community records</h2>
@@ -287,7 +283,6 @@ export function HostAdministration() {
                                 'POST',
                                 {}
                               );
-                              setCopied(false);
                               setClaim(body);
                             }, 'A new owner claim link is ready to send.')
                           }
