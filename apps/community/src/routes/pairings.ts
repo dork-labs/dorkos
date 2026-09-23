@@ -23,7 +23,13 @@ import {
 } from '@dorkos/shared/community-private-wire';
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
-import { requireConnectionGrant, requireLiveRole, requireMember, transaction } from '../data.js';
+import {
+  requireConnectionGrant,
+  requireLiveRole,
+  requireMember,
+  revokeCallingConnectionGrant,
+  transaction,
+} from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 import { equalSecret, hashSecret, randomToken } from '../security.js';
 import { resolveCommunityContext } from '../tenant-context.js';
@@ -134,6 +140,12 @@ export function registerPairingRoutes(
         },
       },
     });
+  });
+
+  // A local install disconnecting itself: its own bearer revokes exactly its own grant.
+  app.delete('/me/connection', async (c) => {
+    await revokeCallingConnectionGrant(c, pool);
+    return c.body(null, 204);
   });
 
   app.post('/pairings/start', async (c) => {

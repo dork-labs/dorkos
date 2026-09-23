@@ -17,7 +17,7 @@
  */
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import type { PackageType } from '@dorkos/marketplace';
+import type { PackageType, SourceKey } from '@dorkos/marketplace';
 
 /** Path to the install-metadata sidecar relative to an install root. */
 export const INSTALL_METADATA_PATH = path.join('.dork', 'install-metadata.json');
@@ -30,7 +30,14 @@ export const INSTALL_METADATA_PATH = path.join('.dork', 'install-metadata.json')
 export interface InstallMetadata {
   /** Package name from the source manifest, captured at install time. */
   name: string;
-  /** Package version from the source manifest, captured at install time. */
+  /**
+   * The package's version at install time, resolved by Claude Code's chain
+   * (`resolvePackageVersion`): the version the package declares, else its
+   * marketplace entry's. Falls back to the manifest's version only when
+   * neither states one — for a Claude-Code-only package that is the
+   * synthesized `'0.0.0'`, which is why the update check reads the declared
+   * version off disk rather than trusting this field.
+   */
   version: string;
   /** Package type from the source manifest, captured at install time. */
   type: PackageType;
@@ -69,6 +76,20 @@ export interface InstallMetadata {
    * marketplace repo's resolved commit SHA.
    */
   commitSha?: string;
+  /**
+   * The marketplace entry's `version` at install time. Absent when the entry
+   * set none, for direct and local installs, and for sidecars written before
+   * this field existed.
+   */
+  entryVersion?: string;
+  /**
+   * Where the package was fetched from, normalized by `sourceKeyOf`
+   * (`@dorkos/marketplace`). The update check trusts "same commit, nothing
+   * changed" only when this matches the source it looks up now. Absent for
+   * local and `file://` installs and for sidecars written before this field
+   * existed — which never short-circuit.
+   */
+  sourceKey?: SourceKey;
   /**
    * Problems installing the package's npm libraries (DOR-1341), kept verbatim
    * so the installed-package view can keep showing them with their remedy.
@@ -128,6 +149,8 @@ export async function readInstallMetadata(installRoot: string): Promise<InstallM
       sourceRepo: typeof obj.sourceRepo === 'string' ? obj.sourceRepo : undefined,
       sourceRef: typeof obj.sourceRef === 'string' ? obj.sourceRef : undefined,
       commitSha: typeof obj.commitSha === 'string' ? obj.commitSha : undefined,
+      entryVersion: typeof obj.entryVersion === 'string' ? obj.entryVersion : undefined,
+      sourceKey: parseSourceKey(obj.sourceKey),
       // Every element is checked, not just the array-ness: this string goes
       // straight onto a UI surface, and a sidecar is a file anything on the
       // machine can have written.
@@ -149,6 +172,24 @@ export async function readInstallMetadata(installRoot: string): Promise<InstallM
   } catch {
     return null;
   }
+}
+
+/**
+ * Read a recorded {@link SourceKey} only when every field is a string. A
+ * half-formed key is dropped rather than repaired: an absent key makes the
+ * update check stage and compare, while a wrong one could let it wrongly
+ * report "nothing changed".
+ *
+ * @param value - The raw `sourceKey` value from the sidecar.
+ * @internal
+ */
+function parseSourceKey(value: unknown): SourceKey | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { cloneUrl, subpath, ref } = value as Record<string, unknown>;
+  if (typeof cloneUrl !== 'string' || typeof subpath !== 'string' || typeof ref !== 'string') {
+    return undefined;
+  }
+  return { cloneUrl, subpath, ref };
 }
 
 /**

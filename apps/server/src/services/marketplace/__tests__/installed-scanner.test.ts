@@ -9,6 +9,7 @@ import {
   scanInstalledPackages,
   scanInstallationsAcrossScopes,
   computeProvides,
+  readInstalledIdentity,
 } from '../installed-scanner.js';
 import { INSTALL_METADATA_PATH } from '../installed-metadata.js';
 
@@ -423,6 +424,89 @@ describe('scanInstalledPackages', () => {
     } finally {
       await rm(projectPath, { recursive: true, force: true });
     }
+  });
+});
+
+describe('readInstalledIdentity', () => {
+  let dorkHome: string;
+
+  beforeEach(async () => {
+    dorkHome = await mkdtemp(join(tmpdir(), 'dorkos-installed-identity-'));
+  });
+
+  afterEach(async () => {
+    await rm(dorkHome, { recursive: true, force: true });
+  });
+
+  /** Write `.claude-plugin/plugin.json` to a package root. */
+  async function writePluginJson(
+    packagePath: string,
+    plugin: Record<string, unknown>
+  ): Promise<void> {
+    await mkdir(join(packagePath, '.claude-plugin'), { recursive: true });
+    await writeFile(join(packagePath, '.claude-plugin', 'plugin.json'), JSON.stringify(plugin));
+  }
+
+  it('lists a tree whose version files disagree, at the version Claude Code runs', async () => {
+    // Purpose: flow's installs carry manifest 0.6.0 beside plugin.json 0.7.2.
+    // They must stay listed (never gated on validity) and show 0.7.2, the
+    // version the update check compares and Claude Code loads.
+    const pluginDir = join(dorkHome, 'plugins', 'flow');
+    await writeManifest(pluginDir, {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'flow',
+      version: '0.6.0',
+      description: 'Flow',
+    });
+    await writePluginJson(pluginDir, { name: 'flow', version: '0.7.2' });
+
+    const [listed] = await scanInstalledPackages(dorkHome);
+    expect(listed).toMatchObject({ name: 'flow', version: '0.7.2' });
+    expect(await readInstalledIdentity(pluginDir)).toMatchObject({
+      version: '0.7.2',
+      declaredVersion: '0.7.2',
+    });
+  });
+
+  it('keeps listing a Claude-Code-only install that fails validation for another reason', async () => {
+    // Purpose: the installed side never gates on `ok`. A package already on
+    // disk that today's rules refuse (here, a shipped agent.json declaring MCP
+    // servers) must not vanish from the list, from uninstall, or from the
+    // update check.
+    const pluginDir = join(dorkHome, 'plugins', 'cc-broken');
+    await writePluginJson(pluginDir, { name: 'cc-broken', version: '1.3.0' });
+    await mkdir(join(pluginDir, '.dork'), { recursive: true });
+    await writeFile(
+      join(pluginDir, '.dork', 'agent.json'),
+      JSON.stringify({ mcpServers: [{ name: 'x', command: 'x' }] })
+    );
+
+    const listed = await scanInstalledPackages(dorkHome);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ name: 'cc-broken', version: '1.3.0', type: 'plugin' });
+  });
+
+  it("reports a Claude-Code-only package's own version, and no declared version when it states none", async () => {
+    // Purpose: "declares none" must not read as a real 0.0.0 to the update check.
+    const withVersion = join(dorkHome, 'plugins', 'cc-versioned');
+    await writePluginJson(withVersion, { name: 'cc-versioned', version: '2.0.0' });
+    const without = join(dorkHome, 'plugins', 'cc-unversioned');
+    await writePluginJson(without, { name: 'cc-unversioned' });
+
+    expect(await readInstalledIdentity(withVersion)).toMatchObject({
+      version: '2.0.0',
+      declaredVersion: '2.0.0',
+    });
+    const identity = await readInstalledIdentity(without);
+    expect(identity).toMatchObject({ name: 'cc-unversioned', version: '0.0.0' });
+    expect(identity?.declaredVersion).toBeUndefined();
+  });
+
+  it('returns null rather than throwing for a directory it cannot read', async () => {
+    // Purpose: it sits on the installed-list and update-check paths, where
+    // one unreadable package must cost only its own entry.
+    expect(await readInstalledIdentity(join(dorkHome, 'does', 'not', 'exist'))).toBeNull();
   });
 });
 

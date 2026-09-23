@@ -19,7 +19,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { PackageType } from '@dorkos/marketplace';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
-import { validatePackage } from '@dorkos/marketplace/package-validator';
+import { readDeclaredVersion, validatePackage } from '@dorkos/marketplace/package-validator';
 import type { PackageProvides } from '@dorkos/shared/marketplace-schemas';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 import type { InstallRootDir } from './lib/install-roots.js';
@@ -40,7 +40,11 @@ export type PackageScope = 'global' | 'agent-local' | 'override';
 export interface InstalledPackage {
   /** Package name from `.dork/manifest.json`. */
   name: string;
-  /** Package version from `.dork/manifest.json`. */
+  /**
+   * The version the package declares (`readDeclaredVersion`: plugin.json's,
+   * else the manifest's), falling back to the manifest's — the same version
+   * the update check compares and Claude Code runs.
+   */
   version: string;
   /** Package type (plugin, agent, skill-pack, adapter). */
   type: PackageType;
@@ -322,9 +326,9 @@ async function hasEntries(dir: string): Promise<boolean> {
 }
 
 /**
- * Read a single installed package's `.dork/manifest.json` and translate it
- * into an {@link InstalledPackage} summary. Returns `null` when the manifest
- * is missing, unreadable, or fails validation so the walker can skip silently.
+ * Read a single installed package's identity and translate it into an
+ * {@link InstalledPackage} summary. Returns `null` when no identity can be
+ * read so the walker can skip silently.
  *
  * Provenance fields (`installedFrom`, `installedAt`) come from the
  * `.dork/install-metadata.json` sidecar via {@link readInstallMetadata}; they
@@ -332,8 +336,11 @@ async function hasEntries(dir: string): Promise<boolean> {
  * placeholder string.
  */
 async function readInstalledPackage(packagePath: string): Promise<InstalledPackage | null> {
-  const base = await readManifestSummary(packagePath);
-  if (!base) return null;
+  const identity = await readInstalledIdentity(packagePath);
+  if (!identity) return null;
+  // `declaredVersion` is the update check's concern; the listing already
+  // shows it as `version`.
+  const { declaredVersion: _declaredVersion, ...base } = identity;
 
   const metadata = await readInstallMetadata(packagePath);
   return {
@@ -347,12 +354,51 @@ async function readInstalledPackage(packagePath: string): Promise<InstalledPacka
   };
 }
 
+/** A package's identity as read off disk, never gated on validity. */
+export type InstalledIdentity = Omit<InstalledPackage, 'installedFrom' | 'installedAt'> & {
+  /** From `readDeclaredVersion`: plugin.json's version, else the manifest's; undefined when neither declares one. */
+  declaredVersion?: string;
+};
+
+/**
+ * The one reader of an installed package's identity, shared by the installed
+ * list and the update check so both show and compare the same version.
+ *
+ * `version` is the version the package declares (plugin.json's, else the
+ * manifest's) and only falls back to the manifest's — so a flow with manifest
+ * 0.6.0 beside plugin.json 0.7.2 lists as 0.7.2, what Claude Code runs.
+ * `declaredVersion` is `undefined` when neither file states one, which keeps a
+ * Claude-Code-only package's synthesized `'0.0.0'` from reading as real.
+ *
+ * NEVER gated on validity: an install that fails today's rules (a
+ * `VERSION_MISMATCH` included) stays listed, updatable and uninstallable.
+ * Total: any throw returns `null`, because it sits on the path of
+ * `GET /api/marketplace/installed` and the update check, where one unreadable
+ * package must cost only its own entry.
+ *
+ * @param installRoot - Absolute path to the package's install root.
+ * @returns The identity, or `null` when none can be read.
+ */
+export async function readInstalledIdentity(
+  installRoot: string
+): Promise<InstalledIdentity | null> {
+  try {
+    const base = await readManifestSummary(installRoot);
+    if (!base) return null;
+    const declaredVersion = await readDeclaredVersion(installRoot);
+    return { ...base, version: declaredVersion ?? base.version, declaredVersion };
+  } catch (err) {
+    logger.debug(`[InstalledScanner] Could not read ${installRoot}`, err);
+    return null;
+  }
+}
+
 /**
  * Read and parse `.dork/manifest.json` for a single package directory.
  * Returns the minimum {@link InstalledPackage} fields (name/version/type/
- * installPath) on success, or `null` when the manifest is missing,
- * unparseable, or invalid. Falls back to {@link validatePackage} for a second
- * opinion when shallow parsing rejects the file.
+ * installPath) on success, or `null` when no manifest can be read at all.
+ * Falls back to {@link validatePackage}'s manifest when shallow parsing
+ * rejects the file or there is none (a Claude-Code-only package).
  */
 async function readManifestSummary(
   packagePath: string
@@ -409,8 +455,13 @@ async function readManifestSummary(
 /**
  * Resolve a package's identity via the canonical {@link validatePackage},
  * which also synthesizes a manifest from `.claude-plugin/plugin.json` for
- * CC-native packages. Returns `null` when validation fails or produces no
- * manifest, so walkers skip the entry silently.
+ * CC-native packages. Uses the parsed manifest whenever there is one, `ok` or
+ * not — the validator returns it alongside errors — and returns `null` only
+ * when there is no manifest at all, so walkers skip the entry silently.
+ *
+ * Deliberately not gated on `ok`: this is the installed side, and a package
+ * already on disk that fails today's rules must stay visible to list,
+ * uninstall and update rather than vanish (ADR 260923-122616).
  *
  * Total by construction: an unreadable file or directory inside ONE package
  * must cost that package its listing entry, never the whole installed list.
@@ -427,7 +478,7 @@ async function validatedSummary(
     logger.debug(`[InstalledScanner] Could not validate ${packagePath}`, err);
     return null;
   }
-  if (!validated.ok || !validated.manifest) {
+  if (!validated.manifest) {
     return null;
   }
   return {

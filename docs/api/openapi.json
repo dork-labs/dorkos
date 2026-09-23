@@ -19150,6 +19150,33 @@
                           },
                           "marketplace": {
                             "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "current",
+                              "update-available",
+                              "unknown"
+                            ]
+                          },
+                          "installedVersionSource": {
+                            "type": "string",
+                            "enum": [
+                              "package",
+                              "index",
+                              "commit"
+                            ]
+                          },
+                          "latestVersionSource": {
+                            "type": "string",
+                            "enum": [
+                              "package",
+                              "index",
+                              "commit"
+                            ]
+                          },
+                          "note": {
+                            "type": "string"
                           }
                         },
                         "required": [
@@ -19157,7 +19184,8 @@
                           "installedVersion",
                           "latestVersion",
                           "hasUpdate",
-                          "marketplace"
+                          "marketplace",
+                          "status"
                         ]
                       }
                     },

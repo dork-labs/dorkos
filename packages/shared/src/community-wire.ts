@@ -44,6 +44,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   invitePreflight: '/api/v1/invites/preflight',
   inviteBind: '/api/v1/invites/bind',
   inviteRedeem: '/api/v1/invites/redeem',
+  invitePending: '/api/v1/invites/pending',
   pairingStart: '/api/v1/pairings/start',
   pairingApprove: '/api/v1/pairings/approve',
   pairingDecline: '/api/v1/pairings/decline',
@@ -64,6 +65,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   agents: '/api/v1/agents',
   me: '/api/v1/me',
   connectionAccess: '/api/v1/me/connection-access',
+  meConnection: '/api/v1/me/connection',
   members: '/api/v1/members',
   authOptions: '/api/v1/auth-options',
   memberRole: '/api/v1/members/:id/role',
@@ -410,6 +412,26 @@ export const CommunityWireInvitePreviewResponseSchema = z.strictObject({
   inviterName: z.string().min(1),
   channelName: z.string().nullable(),
 });
+/**
+ * A reload reads its still-live pending admission back from the HttpOnly cookie, so the review
+ * survives without the raw invitation. `account` is present only for a signed-in browser and
+ * says whether joining would create, keep, or reactivate that account's membership, and
+ * whether this join attempt already belongs to a different account.
+ */
+export const CommunityWireInvitePendingResponseSchema = z.strictObject({
+  expiresAt: timestamp,
+  communityName: z.string().min(1),
+  inviterName: z.string().min(1),
+  channelName: z.string().nullable(),
+  account: z
+    .strictObject({
+      membership: z.enum(['none', 'active', 'inactive']),
+      boundToAnotherAccount: z.boolean(),
+    })
+    .nullable(),
+});
+/** The pending admission a clean join URL resumes after a reload or sign-in callback. */
+export type CommunityWireInvitePending = z.infer<typeof CommunityWireInvitePendingResponseSchema>;
 /** Binding attaches a pending admission to exactly one signed-in account. */
 export const CommunityWireInviteBindResponseSchema = z.strictObject({ bound: z.literal(true) });
 /** Redemption needs no reusable invite value after preflight. */
@@ -621,6 +643,8 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'COMMUNITY_DELETION_PENDING',
   'UNAVAILABLE',
 ]);
+/** A Community's machine-readable error code; the closed set a client may branch on. */
+export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;
 /** Public error response; no database cause, credential or path is serialized. */
 export const CommunityWireErrorSchema = z.strictObject({
   code: CommunityWireErrorCodeSchema,

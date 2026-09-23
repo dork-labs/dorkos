@@ -70,6 +70,14 @@ export interface ValidatePackageResult {
    * parsing and schema validation succeeded.
    */
   manifest?: MarketplacePackageManifest;
+  /**
+   * The version the package declares about itself, from {@link readDeclaredVersion}:
+   * plugin.json's `version`, else the manifest's. Present on every result,
+   * `ok` or not. `undefined` when neither file declares one — a Claude-Code-only
+   * package with no `version` is NOT reported as `'0.0.0'`, even though the
+   * synthesized manifest still carries `'0.0.0'` because the schema requires one.
+   */
+  declaredVersion?: string;
 }
 
 /**
@@ -125,6 +133,47 @@ const SCHEDULE_SKILL_SOURCE_DIRS = [
 const PermissiveSkillFrontmatterSchema = z.unknown();
 
 /**
+ * The version a package tree states about itself: `plugin.json`'s `version`
+ * when that file declares one, else `.dork/manifest.json`'s. Reads the two
+ * files directly and NEVER gates on validity, so an install whose files
+ * disagree (or that fails validation for any other reason) still has a
+ * readable version. `undefined` when neither file declares one. Never throws.
+ *
+ * `plugin.json` comes first because Claude Code loads the plugin by it. For a
+ * package that validates the order is moot (`VERSION_MISMATCH` holds the two
+ * equal); for an install that predates that rule it makes DorkOS report what
+ * Claude Code actually runs.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @returns The declared version, or `undefined` when neither file states one.
+ */
+export async function readDeclaredVersion(packagePath: string): Promise<string | undefined> {
+  return (
+    (await readVersionField(path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH))) ??
+    (await readVersionField(path.join(packagePath, PACKAGE_MANIFEST_PATH)))
+  );
+}
+
+/**
+ * Read a JSON file's non-empty string `version` field. A missing or
+ * unreadable file, invalid JSON, a non-object, or a missing, empty or
+ * non-string `version` all read as "declares none". Never throws.
+ *
+ * @param filePath - Absolute path to the JSON file.
+ * @internal
+ */
+async function readVersionField(filePath: string): Promise<string | undefined> {
+  try {
+    const parsed: unknown = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+    if (parsed === null || typeof parsed !== 'object') return undefined;
+    const version = (parsed as Record<string, unknown>).version;
+    return typeof version === 'string' && version !== '' ? version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Validate a marketplace package on disk.
  *
  * Performs, in order:
@@ -135,6 +184,8 @@ const PermissiveSkillFrontmatterSchema = z.unknown();
  *    violation (one issue per Zod error).
  * 4. Existence check for `.claude-plugin/plugin.json` when the package type
  *    requires a Claude Code plugin manifest (everything except `agent`).
+ *    When both `.dork/manifest.json` and `plugin.json` exist, their versions
+ *    must agree (`VERSION_MISMATCH`, {@link checkVersionAgreement}).
  * 5. Recursive SKILL.md validation across all conventional skill source
  *    directories. Missing directories are silently skipped.
  * 6. Directory-name vs `manifest.name` check. Mismatches are warnings.
@@ -144,6 +195,10 @@ const PermissiveSkillFrontmatterSchema = z.unknown();
  */
 export async function validatePackage(packagePath: string): Promise<ValidatePackageResult> {
   const issues: ValidationIssue[] = [];
+  // Read before any gate, so every result — failed ones included — says what
+  // version the tree states. The update check relies on that for trees that
+  // do not validate.
+  const declaredVersion = await readDeclaredVersion(packagePath);
 
   // 1. Manifest existence — prefer .dork/manifest.json, fall back to
   //    synthesizing from .claude-plugin/plugin.json for CC-only packages.
@@ -169,7 +224,7 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
         message: `Invalid JSON in manifest: ${err instanceof Error ? err.message : String(err)}`,
         path: PACKAGE_MANIFEST_PATH,
       });
-      return { ok: false, issues };
+      return { ok: false, issues, declaredVersion };
     }
     manifestSource = PACKAGE_MANIFEST_PATH;
   } else {
@@ -182,7 +237,7 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
         message: `Required file missing: ${PACKAGE_MANIFEST_PATH} (no ${CLAUDE_PLUGIN_MANIFEST_PATH} fallback found either)`,
         path: PACKAGE_MANIFEST_PATH,
       });
-      return { ok: false, issues };
+      return { ok: false, issues, declaredVersion };
     }
     manifestRaw = synthesized;
     manifestSource = CLAUDE_PLUGIN_MANIFEST_PATH;
@@ -199,7 +254,7 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
         path: manifestSource,
       });
     }
-    return { ok: false, issues };
+    return { ok: false, issues, declaredVersion };
   }
 
   const manifest = parseResult.data;
@@ -230,6 +285,12 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
         path: CLAUDE_PLUGIN_MANIFEST_PATH,
       });
     }
+  }
+
+  // 4a. The two version files agree. Only a real manifest can disagree with
+  //     plugin.json — a synthesized one copies plugin.json's version.
+  if (manifestSource === PACKAGE_MANIFEST_PATH) {
+    await checkVersionAgreement(packagePath, manifest.version, issues);
   }
 
   // 5. Validate any bundled SKILL.md files
@@ -265,7 +326,67 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
   await checkScheduleSkillRefs(packagePath, manifest, issues);
 
   const hasErrors = issues.some((i) => i.level === 'error');
-  return { ok: !hasErrors, issues, manifest };
+  return { ok: !hasErrors, issues, manifest, declaredVersion };
+}
+
+/**
+ * Fail when `.dork/manifest.json` and `.claude-plugin/plugin.json` state
+ * different versions, or when plugin.json states none beside a manifest.
+ *
+ * Either way DorkOS and Claude Code would disagree about which version is
+ * installed for the package's whole life: DorkOS reads the manifest, Claude
+ * Code loads plugin.json (and, with no version there, falls back to the
+ * marketplace entry or the commit). Any tie-break would only choose which of
+ * the two programs is wrong (ADR 260923-122616).
+ *
+ * Runs wherever validation gates something — authoring, install, and staging
+ * a new version for the update check — and never on an installed tree, whose
+ * readers go through {@link readDeclaredVersion} instead. A missing
+ * plugin.json is step 4's concern and an unparseable one keeps its existing
+ * handling; neither is reported here. `package.json` is not compared: DorkOS
+ * does not interpret it.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param manifestVersion - The schema-validated manifest's `version`.
+ * @param issues - Mutable issue list to append a finding to.
+ * @internal
+ */
+async function checkVersionAgreement(
+  packagePath: string,
+  manifestVersion: string,
+  issues: ValidationIssue[]
+): Promise<void> {
+  let plugin: unknown;
+  try {
+    plugin = JSON.parse(
+      await fs.readFile(path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH), 'utf-8')
+    );
+  } catch {
+    return;
+  }
+  if (plugin === null || typeof plugin !== 'object') return;
+
+  const pluginVersion = (plugin as Record<string, unknown>).version;
+  if (typeof pluginVersion === 'string' && pluginVersion !== '') {
+    if (pluginVersion === manifestVersion) return;
+    issues.push({
+      level: 'error',
+      code: 'VERSION_MISMATCH',
+      message:
+        `${PACKAGE_MANIFEST_PATH} says version ${manifestVersion} but ${CLAUDE_PLUGIN_MANIFEST_PATH} says ${pluginVersion}. ` +
+        `Set both to the same version: Claude Code loads ${pluginVersion}, DorkOS would report ${manifestVersion}.`,
+      path: CLAUDE_PLUGIN_MANIFEST_PATH,
+    });
+    return;
+  }
+  issues.push({
+    level: 'error',
+    code: 'VERSION_MISMATCH',
+    message:
+      `${PACKAGE_MANIFEST_PATH} says version ${manifestVersion} but ${CLAUDE_PLUGIN_MANIFEST_PATH} has no version. ` +
+      `Add "version": "${manifestVersion}" to plugin.json so Claude Code and DorkOS agree.`,
+    path: CLAUDE_PLUGIN_MANIFEST_PATH,
+  });
 }
 
 /**

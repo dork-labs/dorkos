@@ -15,6 +15,7 @@ import {
   INSTALL_ROOTS_WITH_TYPE,
   installRootDirForType,
   installRootsUnder,
+  updateNameOf,
 } from '../install-roots.js';
 
 describe('install-roots', () => {
@@ -72,5 +73,14 @@ describe('install-roots', () => {
       ['agents', false],
       ['shapes', true],
     ]);
+  });
+});
+
+describe('updateNameOf', () => {
+  it('keeps a valid manifest name and falls back to the directory for anything else', () => {
+    // Purpose: this name reaches installer.update(), which uninstalls by name;
+    // a manifest name that could climb out of dorkHome must never be used.
+    expect(updateNameOf('flow', '/home/.dork/plugins/flow-dir')).toBe('flow');
+    expect(updateNameOf('../../../../etc/cron.d', '/home/.dork/plugins/honest')).toBe('honest');
   });
 });

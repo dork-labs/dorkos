@@ -9,6 +9,7 @@ import type {
   MarketplacePackageManifest,
   PackageType,
   ShapePackageManifest,
+  SourceKey,
 } from '@dorkos/marketplace';
 import type { NpmDependency } from './lib/npm-dependencies.js';
 import type { DisclosedEffects } from './disclosed-effects.js';
@@ -231,4 +232,45 @@ export interface InstallResult {
    * is not a record of a package that is still missing its libraries.
    */
   dependencyWarnings?: string[];
+}
+
+/**
+ * Looks up the commit a ref points at. Throws on a refused address; may return
+ * a placeholder (test it with `isRealCommitSha`). The update flow passes a
+ * memoized one, so packages from one repository share a lookup.
+ */
+export type CommitLookup = (cloneUrl: string, ref: string) => Promise<string>;
+
+/**
+ * What installing a package right now would give, as far as
+ * `MarketplaceInstaller.resolveLatest` could tell.
+ *
+ * - `unchanged`: the source, the entry version and the commit all equal what
+ *   the install recorded, so nothing was staged.
+ * - `resolved`: the package was staged and validated; these are the facts
+ *   Claude Code's chain reads a version from (`resolvePackageVersion`).
+ * - `unresolved`: the check could not answer, and `reason` says why in words
+ *   a person can read.
+ */
+export type LatestResolution =
+  | { kind: 'unchanged' }
+  | {
+      kind: 'resolved';
+      /** The version the staged tree declares (`readDeclaredVersion`). */
+      declaredVersion?: string;
+      /** The marketplace entry's own `version`. */
+      entryVersion?: string;
+      /** The commit staging fetched, when it resolved a real one. */
+      commitSha?: string;
+      /** Where it was fetched from; absent for `file://` sources. */
+      sourceKey?: SourceKey;
+    }
+  | { kind: 'unresolved'; reason: string };
+
+/** Options for `MarketplaceInstaller.resolveLatest`. */
+export interface ResolveLatestOptions {
+  /** What the install's sidecar recorded; every field may be absent on older sidecars. */
+  installed: { commitSha?: string; entryVersion?: string; sourceKey?: SourceKey };
+  /** How to look up a ref's current commit (memoized by the caller). */
+  commitLookup: CommitLookup;
 }

@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { urlResolver } from '../url.js';
+import { sourceKeyOf, type ResolvedSourceDescriptor } from '@dorkos/marketplace';
 import type { FetcherDeps, FetchedPackage, FetchPackageOptions } from '../../package-fetcher.js';
 
 function buildDeps(): FetcherDeps & {
@@ -101,5 +102,21 @@ describe('urlResolver', () => {
       deps
     );
     expect(deps.cloneRepository).toHaveBeenCalledWith(expect.objectContaining({ force: true }));
+  });
+
+  it('clones exactly the URL and ref sourceKeyOf names for the same descriptor', async () => {
+    // Purpose: the update check compares against sourceKeyOf; if the resolver
+    // computed its own URL or default ref, an install and a later lookup could
+    // describe different places and the commit short-circuit would lie.
+    const descriptor = {
+      type: 'url',
+      url: 'https://example.com/qa.git',
+    } satisfies ResolvedSourceDescriptor;
+    await urlResolver(descriptor, buildOpts(), deps);
+
+    const key = sourceKeyOf(descriptor)!;
+    expect(deps.cloneRepository).toHaveBeenCalledWith(
+      expect.objectContaining({ cloneUrl: key.cloneUrl, ref: key.ref })
+    );
   });
 });

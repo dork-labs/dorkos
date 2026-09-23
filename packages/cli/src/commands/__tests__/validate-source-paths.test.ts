@@ -73,7 +73,7 @@ const bareNameNoPluginRoot = parseMarketplace({
 
 describe('checkSourcePaths', () => {
   it('returns ok when every relative-path source is reachable', async () => {
-    const probe = vi.fn(async () => true);
+    const probe = vi.fn(async () => ({ reachable: true }));
     const builder = makeLocalCandidateBuilder('/mp');
 
     const report = await checkSourcePaths(allRelativeUnderPlugins, probe, builder, '/mp');
@@ -86,7 +86,7 @@ describe('checkSourcePaths', () => {
   });
 
   it('flags entries whose probed candidates do not exist', async () => {
-    const probe = vi.fn(async () => false);
+    const probe = vi.fn(async () => ({ reachable: false }));
     const builder = makeLocalCandidateBuilder('/mp');
 
     const report = await checkSourcePaths(brokenExplicitDotSlash, probe, builder, '/mp');
@@ -105,7 +105,7 @@ describe('checkSourcePaths', () => {
   });
 
   it('resolves sources via resolvePluginSource (pluginRoot ignored when source starts with ./)', async () => {
-    const probe = vi.fn(async () => true);
+    const probe = vi.fn(async () => ({ reachable: true }));
     const seen: string[] = [];
     const builder = (resolved: string) => {
       seen.push(resolved);
@@ -122,7 +122,7 @@ describe('checkSourcePaths', () => {
   });
 
   it('resolves sources via resolvePluginSource (pluginRoot applied for correct sources)', async () => {
-    const probe = vi.fn(async () => true);
+    const probe = vi.fn(async () => ({ reachable: true }));
     const seen: string[] = [];
     const builder = (resolved: string) => {
       seen.push(resolved);
@@ -135,7 +135,7 @@ describe('checkSourcePaths', () => {
   });
 
   it('skips object-form sources without calling the probe', async () => {
-    const probe = vi.fn(async () => true);
+    const probe = vi.fn(async () => ({ reachable: true }));
     const report = await checkSourcePaths(
       allObjectSources,
       probe,
@@ -154,7 +154,7 @@ describe('checkSourcePaths', () => {
   });
 
   it('handles mixed relative + object sources in a single marketplace', async () => {
-    const probe = vi.fn(async () => true);
+    const probe = vi.fn(async () => ({ reachable: true }));
     const report = await checkSourcePaths(
       mixedObjectAndRelative,
       probe,
@@ -180,7 +180,7 @@ describe('checkSourcePaths', () => {
     const probe = vi.fn(async (candidate: string) => {
       started.push(candidate);
       await gate;
-      return true;
+      return { reachable: true };
     });
 
     const promise = checkSourcePaths(
@@ -198,7 +198,7 @@ describe('checkSourcePaths', () => {
   });
 
   it('checks bare-name sources when pluginRoot is absent', async () => {
-    const probe = vi.fn(async () => true);
+    const probe = vi.fn(async () => ({ reachable: true }));
     const seen: string[] = [];
     const builder = (resolved: string) => {
       seen.push(resolved);
@@ -213,6 +213,96 @@ describe('checkSourcePaths', () => {
 });
 
 // -------- makeLocalCandidateBuilder / makeRemoteCandidateBuilder --------
+
+describe('checkSourcePaths — entry version vs plugin.json (ENTRY_VERSION_MISMATCH)', () => {
+  /** A one-entry marketplace whose entry sets `version` when given. */
+  function withEntryVersion(version?: string) {
+    return parseMarketplace({
+      name: 'dorkos',
+      owner: { name: 'Dork Labs' },
+      plugins: [
+        {
+          name: 'code-reviewer',
+          source: './plugins/code-reviewer',
+          ...(version !== undefined && { version }),
+        },
+      ],
+    });
+  }
+
+  it("fails when the entry's version differs from plugin.json's", async () => {
+    // Purpose: Claude Code silently uses plugin.json's version, so the
+    // entry's is never seen — a publish-time mistake worth refusing.
+    const report = await checkSourcePaths(
+      withEntryVersion('1.0.0'),
+      vi.fn(async () => ({ reachable: true, version: '1.1.0' })),
+      makeLocalCandidateBuilder('/mp'),
+      '/mp'
+    );
+
+    expect(report.ok).toBe(false);
+    expect(report.results[0]).toEqual({
+      name: 'code-reviewer',
+      status: 'version-mismatch',
+      candidate: '/mp/plugins/code-reviewer/.claude-plugin/plugin.json',
+      entryVersion: '1.0.0',
+      pluginVersion: '1.1.0',
+    });
+    const rendered = renderSourcePathResults(report, withEntryVersion('1.0.0'));
+    // Its own heading: every source WAS reachable, so the reachability line
+    // would misdescribe the failure.
+    expect(rendered.failBlock).toContain('[FAIL] Entry versions match plugin.json');
+    expect(rendered.failBlock).not.toContain('Plugin sources reachable');
+    expect(rendered.failBlock).toContain(
+      'code-reviewer: ENTRY_VERSION_MISMATCH: marketplace.json says version 1.0.0 but ' +
+        '/mp/plugins/code-reviewer/.claude-plugin/plugin.json says 1.1.0.'
+    );
+    expect(rendered.failBlock).toContain("Claude Code silently uses plugin.json's version");
+  });
+
+  it('accepts an entry version when plugin.json declares none', async () => {
+    // Purpose: Claude Code's step 2 — the entry's version is legitimately
+    // the package's version when plugin.json states none.
+    const report = await checkSourcePaths(
+      withEntryVersion('1.0.0'),
+      vi.fn(async () => ({ reachable: true })),
+      makeLocalCandidateBuilder('/mp'),
+      '/mp'
+    );
+    expect(report.ok).toBe(true);
+  });
+
+  it('accepts equal versions', async () => {
+    // Purpose: the check must not fire on agreement.
+    const report = await checkSourcePaths(
+      withEntryVersion('1.1.0'),
+      vi.fn(async () => ({ reachable: true, version: '1.1.0' })),
+      makeLocalCandidateBuilder('/mp'),
+      '/mp'
+    );
+    expect(report.ok).toBe(true);
+  });
+
+  it('still skips object-form entries, whatever version they set', async () => {
+    // Purpose: checking them would clone foreign repos during validation.
+    const marketplace = parseMarketplace({
+      name: 'dorkos',
+      owner: { name: 'Dork Labs' },
+      plugins: [{ name: 'remote', source: { source: 'github', repo: 'acme/p' }, version: '9.9.9' }],
+    });
+    const probe = vi.fn(async () => ({ reachable: true, version: '1.0.0' }));
+
+    const report = await checkSourcePaths(
+      marketplace,
+      probe,
+      makeLocalCandidateBuilder('/mp'),
+      '/mp'
+    );
+
+    expect(report.ok).toBe(true);
+    expect(probe).not.toHaveBeenCalled();
+  });
+});
 
 describe('makeLocalCandidateBuilder', () => {
   it('joins marketplaceRoot + resolvedPath + .claude-plugin/plugin.json', () => {
@@ -254,18 +344,32 @@ describe('localProbe', () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
-  it('returns true when the file exists', async () => {
+  it('reports a file that exists as reachable', async () => {
     const file = path.join(tmpRoot, 'plugin.json');
     fs.writeFileSync(file, '{}');
-    expect(await localProbe(file)).toBe(true);
+    expect(await localProbe(file)).toEqual({ reachable: true });
   });
 
-  it('returns false for a missing file', async () => {
-    expect(await localProbe(path.join(tmpRoot, 'missing.json'))).toBe(false);
+  it("returns plugin.json's version when it declares one", async () => {
+    // Purpose: the entry-version check compares against this value.
+    const file = path.join(tmpRoot, 'plugin.json');
+    fs.writeFileSync(file, JSON.stringify({ name: 'x', version: '1.1.0' }));
+    expect(await localProbe(file)).toEqual({ reachable: true, version: '1.1.0' });
   });
 
-  it('returns false when the path is a directory', async () => {
-    expect(await localProbe(tmpRoot)).toBe(false);
+  it('reports an unparseable plugin.json as reachable with no version', async () => {
+    // Purpose: a broken file is not a missing one, and must not throw.
+    const file = path.join(tmpRoot, 'plugin.json');
+    fs.writeFileSync(file, '{ not json');
+    expect(await localProbe(file)).toEqual({ reachable: true });
+  });
+
+  it('reports a missing file as unreachable', async () => {
+    expect(await localProbe(path.join(tmpRoot, 'missing.json'))).toEqual({ reachable: false });
+  });
+
+  it('reports a directory as unreachable', async () => {
+    expect(await localProbe(tmpRoot)).toEqual({ reachable: false });
   });
 });
 
@@ -282,19 +386,32 @@ describe('remoteProbe', () => {
     fetchSpy.mockRestore();
   });
 
-  it('returns true on a 2xx response', async () => {
+  it('reports a 2xx response as reachable, even when its body is not JSON', async () => {
     fetchSpy.mockResolvedValueOnce({ ok: true, status: 200 } as Response);
-    expect(await remoteProbe('https://example.com/p.json')).toBe(true);
+    expect(await remoteProbe('https://example.com/p.json')).toEqual({ reachable: true });
   });
 
-  it('returns false on a 404 response', async () => {
+  it("returns plugin.json's version from a JSON body", async () => {
+    // Purpose: the remote validator compares entry versions too.
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ name: 'x', version: '2.0.0' }),
+    } as Response);
+    expect(await remoteProbe('https://example.com/p.json')).toEqual({
+      reachable: true,
+      version: '2.0.0',
+    });
+  });
+
+  it('reports a 404 response as unreachable', async () => {
     fetchSpy.mockResolvedValueOnce({ ok: false, status: 404 } as Response);
-    expect(await remoteProbe('https://example.com/p.json')).toBe(false);
+    expect(await remoteProbe('https://example.com/p.json')).toEqual({ reachable: false });
   });
 
-  it('returns false when fetch throws (network error)', async () => {
+  it('reports a network error as unreachable', async () => {
     fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'));
-    expect(await remoteProbe('https://example.com/p.json')).toBe(false);
+    expect(await remoteProbe('https://example.com/p.json')).toEqual({ reachable: false });
   });
 });
 

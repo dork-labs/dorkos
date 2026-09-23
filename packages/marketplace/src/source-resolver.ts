@@ -27,6 +27,67 @@ export type ResolvedSourceDescriptor =
   | { type: 'git-subdir'; cloneUrl: string; subpath: string; ref?: string; sha?: string }
   | { type: 'npm'; package: string; version?: string; registry?: string };
 
+/** The descriptors git fetches from — the ones that always have a {@link SourceKey}. */
+export type GitSourceDescriptor = Extract<
+  ResolvedSourceDescriptor,
+  { type: 'github' | 'url' | 'git-subdir' }
+>;
+
+/**
+ * The ref a git source is fetched at when it names neither a `sha` nor a
+ * `ref`. Defined here and nowhere else: every resolver and the update check's
+ * commit lookup take it from {@link sourceKeyOf}.
+ */
+const DEFAULT_REF = 'main';
+
+/**
+ * The exact place a package is fetched from, normalized so two can be
+ * compared. An install records it and the update check recomputes it; the
+ * check may only trust "same commit, nothing changed" when both keys match.
+ */
+export interface SourceKey {
+  /** The URL git is actually given. */
+  cloneUrl: string;
+  /** The package's directory inside the repository; `''` for a whole-repo source. */
+  subpath: string;
+  /** The effective ref: `sha ?? ref ?? 'main'`. */
+  ref: string;
+}
+
+/**
+ * Normalize a resolved source into the {@link SourceKey} it is fetched from.
+ * The single owner of the clone URL and the default ref: the fetch resolvers
+ * take both from here rather than recomputing them, so an installed commit and
+ * a looked-up commit always describe the same place.
+ *
+ * Typed so a git descriptor (`github`, `url`, `git-subdir`) always yields a
+ * key: the fetch resolvers need no runtime assertion.
+ *
+ * @param source - A descriptor from {@link resolvePluginSource}.
+ * @returns The key, or `undefined` for sources with no clone URL
+ *   (`relative-path` over `file://`, `npm`).
+ */
+export function sourceKeyOf(source: GitSourceDescriptor): SourceKey;
+export function sourceKeyOf(source: ResolvedSourceDescriptor): SourceKey | undefined;
+export function sourceKeyOf(source: ResolvedSourceDescriptor): SourceKey | undefined {
+  switch (source.type) {
+    case 'github':
+      return { cloneUrl: source.cloneUrl, subpath: '', ref: effectiveRef(source) };
+    case 'url':
+      return { cloneUrl: source.url, subpath: '', ref: effectiveRef(source) };
+    case 'git-subdir':
+      return { cloneUrl: source.cloneUrl, subpath: source.subpath, ref: effectiveRef(source) };
+    case 'relative-path':
+    case 'npm':
+      return undefined;
+  }
+}
+
+/** Pin precedence for a git source: `sha > ref > 'main'`. */
+function effectiveRef(source: { ref?: string; sha?: string }): string {
+  return source.sha ?? source.ref ?? DEFAULT_REF;
+}
+
 /**
  * Error thrown when a source cannot be resolved (e.g., an absolute
  * `pluginRoot`, a path traversal, or a missing `marketplaceRoot` context

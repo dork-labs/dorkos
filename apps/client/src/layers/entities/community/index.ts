@@ -30,6 +30,7 @@ export {
 export {
   endCommunityConnection,
   eraseCommunityOwnerState,
+  unconfirmedDisconnectMessage,
   useEndCommunityConnection,
   type CommunityConnectionEnd,
 } from './model/community-lifecycle';

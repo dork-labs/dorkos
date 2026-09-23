@@ -31,6 +31,9 @@ import {
   scanInstalledPackages,
 } from '../installed-scanner.js';
 import { buildInstallerForTests } from './installer-harness.js';
+import { MarketplaceSourceManager } from '../marketplace-source-manager.js';
+import { UpdateFlow } from '../flows/update.js';
+import { noopLogger } from '@dorkos/shared/logger';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -683,6 +686,110 @@ describe('marketplace install pipeline — integration', () => {
         await rm(sourceRoot, { recursive: true, force: true }).catch(() => undefined);
         await rm(projectPath, { recursive: true, force: true }).catch(() => undefined);
       }
+    });
+  });
+
+  describe('update check against a local marketplace (DOR-2244)', () => {
+    const MARKETPLACE = 'local-fixtures';
+    let marketplaceRoot: string;
+
+    beforeEach(async () => {
+      // A file:// marketplace listing valid-plugin with NO entry version —
+      // the shape dork-labs/marketplace publishes, and the shape the old
+      // check answered "up to date" for forever.
+      marketplaceRoot = await mkdtemp(path.join(tmpdir(), 'dorkos-update-marketplace-'));
+      await cp(fixturePath('valid-plugin'), path.join(marketplaceRoot, 'plugins', 'valid-plugin'), {
+        recursive: true,
+      });
+      await mkdir(path.join(marketplaceRoot, '.claude-plugin'), { recursive: true });
+      await writeFile(
+        path.join(marketplaceRoot, '.claude-plugin', 'marketplace.json'),
+        JSON.stringify({
+          name: MARKETPLACE,
+          owner: { name: 'DorkOS tests' },
+          plugins: [
+            {
+              name: 'valid-plugin',
+              source: './plugins/valid-plugin',
+              description: 'A valid plugin fixture',
+            },
+          ],
+        })
+      );
+      await initBoundary(path.dirname(marketplaceRoot));
+    });
+
+    afterEach(async () => {
+      await rm(marketplaceRoot, { recursive: true, force: true }).catch(() => undefined);
+    });
+
+    /** Set the package's version in the marketplace copy's two version files. */
+    async function setMarketplaceVersion(manifest: string, plugin: string): Promise<void> {
+      const pkg = path.join(marketplaceRoot, 'plugins', 'valid-plugin');
+      for (const [file, version] of [
+        [path.join(pkg, '.dork', 'manifest.json'), manifest],
+        [path.join(pkg, '.claude-plugin', 'plugin.json'), plugin],
+      ] as const) {
+        const json = JSON.parse(await readFile(file, 'utf-8')) as Record<string, unknown>;
+        await writeFile(file, JSON.stringify({ ...json, version }));
+      }
+    }
+
+    /** Install valid-plugin 1.0.0 from the marketplace and build a real UpdateFlow. */
+    async function installAndBuildFlow(): Promise<UpdateFlow> {
+      const { installer, fetcher } = buildInstallerForTests(dorkHome);
+      const sourceManager = new MarketplaceSourceManager(dorkHome);
+      const source = await sourceManager.add({
+        name: MARKETPLACE,
+        source: pathToFileURL(marketplaceRoot).href,
+      });
+      await fetcher.fetchMarketplaceJson(source);
+      await installer.install({ name: 'valid-plugin', marketplace: MARKETPLACE });
+      return new UpdateFlow({ dorkHome, installer, sourceManager, fetcher, logger: noopLogger });
+    }
+
+    it('finds a new version, applies it, and then reports current', async () => {
+      // Purpose: the original DOR-2244 repro, end to end with the real
+      // installer. Before this change the first check said "up to date".
+      const flow = await installAndBuildFlow();
+      await setMarketplaceVersion('1.1.0', '1.1.0');
+
+      const advisory = await flow.run({ name: 'valid-plugin' });
+      expect(advisory.checks).toEqual([
+        expect.objectContaining({
+          installedVersion: '1.0.0',
+          latestVersion: '1.1.0',
+          status: 'update-available',
+          installedVersionSource: 'package',
+          latestVersionSource: 'package',
+          marketplace: MARKETPLACE,
+        }),
+      ]);
+
+      const applied = await flow.run({ name: 'valid-plugin', apply: true });
+      expect(applied.applied.map((a) => a.version)).toEqual(['1.1.0']);
+
+      const rerun = await flow.run({ name: 'valid-plugin' });
+      expect(rerun.checks[0]).toMatchObject({
+        installedVersion: '1.1.0',
+        latestVersion: '1.1.0',
+        status: 'current',
+      });
+    });
+
+    it('reports a new version with mismatched files as unknown, and keeps the install listed', async () => {
+      // Purpose: a version DorkOS would refuse to install is never offered,
+      // and the package already installed stays visible.
+      const flow = await installAndBuildFlow();
+      await setMarketplaceVersion('1.1.0', '1.2.0');
+
+      const [check] = (await flow.run({ name: 'valid-plugin', apply: true })).checks;
+
+      expect(check?.status).toBe('unknown');
+      expect(check?.note).toContain("the new version can't be installed: ");
+      expect(check?.note).toContain('.claude-plugin/plugin.json says 1.2.0');
+      const listed = await scanInstalledPackages(dorkHome);
+      expect(listed.find((p) => p.name === 'valid-plugin')?.version).toBe('1.0.0');
     });
   });
 });
