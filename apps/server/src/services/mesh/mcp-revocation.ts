@@ -156,6 +156,25 @@
  * Point 3 reasons about the first; the second is the same instruction — look with
  * the probe, conclude nothing from the snapshot.
  *
+ * ### Re-run live 2026-09-22 against 0.3.280
+ *
+ * The harness was run again, with a third always-401 server declared in the
+ * cwd's `.mcp.json` beside the two `options.mcpServers` ones, because 0.3.274
+ * stopped the first turn waiting for settings-file and plugin servers whose
+ * tools tool search defers — the one change in this range that could bring
+ * `pending` back to the first frame. Committed as
+ * `__tests__/fixtures/mcp-server-status-401-0.3.280.observed.json`:
+ *
+ * - all three came up `failed` in the first `system/init` frame, the
+ *   project-file one included, and the bearer message is the same sentence;
+ * - `errorCode` still does not cross the boundary. `McpServerStatus` is NOT
+ *   byte-identical this time: it gained `source?` and `tools[]._meta?`, both
+ *   additive, and the `status` union is unchanged;
+ * - a deferred-tool server that DOES read `pending` in the first frame is still
+ *   possible by the release note (this run's always-401 server simply failed
+ *   fast). `pending` is not evidence here, so the cost is detection one turn
+ *   later, never a wrong verdict: the probe stays the arbiter.
+ *
  * ## What it refuses to conclude
  *
  * - **Nothing held → nothing to say.** A server DorkOS has no token for is one

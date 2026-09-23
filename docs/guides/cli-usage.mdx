@@ -194,6 +194,20 @@ dorkos browser forget <site>     # Take one site away from your agents (--all fo
 
 The full guide, including setup for the `claude`, `codex` and `opencode` command-line tools, is [Signed-in Browser](/docs/guides/agent-browser).
 
+#### Community server
+
+**`dorkos community deploy`** (early): set up your own community server on Fly, with a Neon database and a private Tigris bucket for files. It shows the whole plan first, including which accounts may be charged, and creates nothing until you type the app name it will use. If setup stops partway, it keeps everything it made and tells you how to pick up where it left off. It never deletes anything that costs money on its own. It does not start DorkOS or need a DorkOS Cloud account.
+
+```bash
+dorkos community deploy --help              # Every option, and the tools you need signed in first
+dorkos community deploy --fly-org <org> --fly-region <region> \
+  --neon-org <org-id> --neon-region <region> --app-name <name> --dry-run   # Show the plan. Creates nothing
+dorkos community deploy --list-incomplete   # Setups that stopped and can be resumed
+dorkos community deploy ... --resume <run-id>   # Pick one back up with the same choices
+```
+
+The step-by-step guide, including the manual recipe, is [`apps/community/FLY.md`](https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md).
+
 #### Agent files
 
 **`dorkos harness`**: share one set of skills, instructions, and hooks with every coding agent you run. You keep them in `.agents/` in your project, and DorkOS copies or links them into the folders Claude Code, Codex, Cursor, Gemini, Copilot, and OpenCode each read.

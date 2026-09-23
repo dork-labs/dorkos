@@ -74,6 +74,13 @@ export function isAiObservabilityActive(): boolean {
   return isTracingEnabled() || bridge !== null;
 }
 
+/**
+ * Runtimes whose `session_status.costUsd` is the session's RUNNING cost, never
+ * one turn's, and which report a turn's own share as `turnCostUsd` instead.
+ * Keyed by runtime id because the status carries no other way to say so.
+ */
+const RUNNING_COST_RUNTIMES: ReadonlySet<string> = new Set(['claude-code']);
+
 /** Mutable accumulator for the harvest loop; the last-seen value of each field wins. */
 interface HarvestState {
   model?: string;
@@ -81,6 +88,8 @@ interface HarvestState {
   outputTokens?: number;
   thinkingTokens?: number;
   costUsd?: number;
+  /** The turn's own cost, when the runtime separates it from the running cost. */
+  turnCostUsd?: number;
 }
 
 /**
@@ -100,12 +109,14 @@ function harvestEvent(event: StreamEvent, state: HarvestState): void {
     turnInputTokens?: unknown;
     turnOutputTokens?: unknown;
     turnThinkingTokens?: unknown;
+    turnCostUsd?: unknown;
   };
   if (typeof data.model === 'string') state.model = data.model;
   if (typeof data.costUsd === 'number') state.costUsd = data.costUsd;
   if (typeof data.turnInputTokens === 'number') state.inputTokens = data.turnInputTokens;
   if (typeof data.turnOutputTokens === 'number') state.outputTokens = data.turnOutputTokens;
   if (typeof data.turnThinkingTokens === 'number') state.thinkingTokens = data.turnThinkingTokens;
+  if (typeof data.turnCostUsd === 'number') state.turnCostUsd = data.turnCostUsd;
 }
 
 /**
@@ -148,6 +159,13 @@ export async function* observeRuntimeTurn(
     throw err;
   } finally {
     const latencyMs = Date.now() - startedAt;
+    // The turn's own cost when the runtime reports it apart from the status
+    // `costUsd`. For a runtime whose `costUsd` is a session RUNNING total there
+    // is no fallback: a turn whose share could not be derived (the first result
+    // of a resumed session after a restart, `sdk/turn-usage.ts`) reports no cost
+    // rather than the whole session's.
+    const costUsd =
+      state.turnCostUsd ?? (RUNNING_COST_RUNTIMES.has(runtimeType) ? undefined : state.costUsd);
     if (span) {
       span.setAttr(ATTR.EVENT_COUNT, count);
       span.setAttr(ATTR.GEN_AI_SYSTEM, runtimeType);
@@ -165,7 +183,7 @@ export async function* observeRuntimeTurn(
       // a field read.
       if (state.thinkingTokens !== undefined)
         span.setAttr(ATTR.GEN_AI_THINKING_TOKENS, state.thinkingTokens);
-      if (state.costUsd !== undefined) span.setAttr(ATTR.GEN_AI_COST_USD, state.costUsd);
+      if (costUsd !== undefined) span.setAttr(ATTR.GEN_AI_COST_USD, costUsd);
       span.end();
     }
     if (bridge) {
@@ -174,7 +192,7 @@ export async function* observeRuntimeTurn(
         ...(state.model !== undefined ? { model: state.model } : {}),
         ...(state.inputTokens !== undefined ? { inputTokens: state.inputTokens } : {}),
         ...(state.outputTokens !== undefined ? { outputTokens: state.outputTokens } : {}),
-        ...(state.costUsd !== undefined ? { costUsd: state.costUsd } : {}),
+        ...(costUsd !== undefined ? { costUsd } : {}),
         latencyMs,
       });
     }

@@ -114,6 +114,29 @@ export { DORKOS_MCP_SERVER_NAME };
 export const IN_SESSION_TOOL_PREFIX = `mcp__${DORKOS_MCP_SERVER_NAME}__` as const;
 
 /**
+ * Whether an MCP tool call could be served by the in-session server THIS host
+ * registered, read from the provenance Claude Code attaches to it (SDK 0.3.274:
+ * `mcpServer` on `canUseTool`, `mcp_server` on tool hooks).
+ *
+ * The name and the {@link IN_SESSION_TOOL_PREFIX} are not proof. A project's
+ * `.mcp.json` can declare a server called `dorkos` whose tools then carry the
+ * very same `mcp__dorkos__…` names, and the SDK says in as many words: "Key
+ * trust decisions on `source`, not on the name or the tool-name prefix."
+ * `source: 'sdk'` cannot be forged — only the host can register one — and any
+ * other value, including one this code has never seen, is a configured server.
+ *
+ * ABSENT provenance passes, and must. The field is missing for every non-MCP
+ * tool (the built-ins on the read-only list) and on a CLI older than 0.3.274,
+ * which is exactly what every call looked like before the field existed; a
+ * present-but-foreign source is the only thing this check can and does refuse.
+ *
+ * @param provenance - The call's MCP server provenance, if Claude Code sent one.
+ */
+export function isHostServedOrUnattributed(provenance?: { source: string }): boolean {
+  return provenance === undefined || provenance.source === 'sdk';
+}
+
+/**
  * Qualify a registered tool name the way Claude Code exposes it.
  *
  * @param bare - The name the tool is registered under (`react_to_room_entry`).

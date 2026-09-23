@@ -160,13 +160,156 @@ describe('mapResultEvent — turn-total token metadata (AI observability, DOR-31
             'claude-haiku': { inputTokens: 250, outputTokens: 50, contextWindow: 200000 },
           },
         }),
-        makeSession(),
+        makeSession({ usageLedger: {} }),
         SESSION_ID
       )
     );
     const data = statusData(events)!;
     expect(data.turnInputTokens).toBe(1250);
     expect(data.turnOutputTokens).toBe(250);
+  });
+
+  /** A success result whose `modelUsage` carries the given running totals. */
+  function runningTotals(
+    perModel: Record<string, { inputTokens: number; outputTokens: number; costUSD: number }>
+  ): SDKMessage {
+    const total = Object.values(perModel).reduce((sum, u) => sum + u.costUSD, 0);
+    return msg({
+      type: 'result',
+      subtype: 'success',
+      total_cost_usd: total,
+      model: 'claude-haiku-4-5',
+      modelUsage: Object.fromEntries(
+        Object.entries(perModel).map(([m, u]) => [m, { ...u, contextWindow: 200000 }])
+      ),
+    });
+  }
+
+  // The figures below are the ones observed live on 2026-09-22 (a two-turn
+  // streaming query on haiku, then a resume of it; see sdk/turn-usage.ts).
+  it('reports a warm second turn as its own share, not the running total', async () => {
+    const session = makeSession({ usageLedger: {} });
+    await drain(
+      mapResultEvent(
+        runningTotals({ haiku: { inputTokens: 4252, outputTokens: 42, costUSD: 0.004462 } }),
+        session,
+        SESSION_ID
+      )
+    );
+    const second = statusData(
+      await drain(
+        mapResultEvent(
+          runningTotals({ haiku: { inputTokens: 7684, outputTokens: 75, costUSD: 0.008059 } }),
+          session,
+          SESSION_ID
+        )
+      )
+    )!;
+    expect(second.turnInputTokens).toBe(3432);
+    expect(second.turnOutputTokens).toBe(33);
+    expect(second.turnCostUsd).toBeCloseTo(0.003597, 9);
+    // The session's running cost stays the running cost: the Usage & cost item
+    // reads it as the session's spend.
+    expect(second.costUsd).toBeCloseTo(0.008059, 9);
+  });
+
+  it('reports the first turn after a resume as its own share when the totals carried over (SDK 0.3.277)', async () => {
+    // The relaunch keeps the in-memory session, so the ledger from the previous
+    // query is the baseline the carried-over totals are differenced against.
+    const session = makeSession({
+      usageLedger: { haiku: { inputTokens: 7684, outputTokens: 75, costUsd: 0.008059 } },
+    });
+    const data = statusData(
+      await drain(
+        mapResultEvent(
+          runningTotals({ haiku: { inputTokens: 11196, outputTokens: 106, costUSD: 0.011726 } }),
+          session,
+          SESSION_ID
+        )
+      )
+    )!;
+    expect(data.turnInputTokens).toBe(3512);
+    expect(data.turnOutputTokens).toBe(31);
+  });
+
+  it('reports the whole result as the turn when the totals restarted (an old transcript, or /clear)', async () => {
+    // Resuming a transcript an SDK before 0.3.277 wrote restarts the running
+    // totals at zero (observed: 3616 input tokens on a session that had spent
+    // 7699), so a DROP means everything in the result is this turn's.
+    const session = makeSession({
+      usageLedger: { haiku: { inputTokens: 7699, outputTokens: 102, costUsd: 0.008209 } },
+    });
+    const data = statusData(
+      await drain(
+        mapResultEvent(
+          runningTotals({ haiku: { inputTokens: 3616, outputTokens: 34, costUSD: 0.003786 } }),
+          session,
+          SESSION_ID
+        )
+      )
+    )!;
+    expect(data.turnInputTokens).toBe(3616);
+    expect(data.turnOutputTokens).toBe(34);
+    expect(data.turnCostUsd).toBeCloseTo(0.003786, 9);
+  });
+
+  it('does not report the whole history after an error result with lower (zeroed) totals', async () => {
+    const session = makeSession({
+      usageLedger: { haiku: { inputTokens: 7684, outputTokens: 75, costUsd: 0.008059 } },
+    });
+    const crashed = msg({
+      type: 'result',
+      subtype: 'error_during_execution',
+      errors: ['crash'],
+      modelUsage: {
+        haiku: { inputTokens: 10, outputTokens: 0, costUSD: 0, contextWindow: 200000 },
+      },
+    });
+    expect(
+      'turnInputTokens' in statusData(await drain(mapResultEvent(crashed, session, SESSION_ID)))!
+    ).toBe(false);
+
+    const next = statusData(
+      await drain(
+        mapResultEvent(
+          runningTotals({ haiku: { inputTokens: 11196, outputTokens: 106, costUSD: 0.011726 } }),
+          session,
+          SESSION_ID
+        )
+      )
+    )!;
+    expect('turnInputTokens' in next).toBe(false);
+    expect('turnCostUsd' in next).toBe(false);
+  });
+
+  it('omits the turn figures when the baseline is unknown, then counts from the next turn', async () => {
+    // A resumed session this process holds no ledger for: the first result may
+    // carry every earlier turn, and there is nothing to subtract.
+    const session = makeSession();
+    const first = statusData(
+      await drain(
+        mapResultEvent(
+          runningTotals({ haiku: { inputTokens: 11196, outputTokens: 106, costUSD: 0.011726 } }),
+          session,
+          SESSION_ID
+        )
+      )
+    )!;
+    expect('turnInputTokens' in first).toBe(false);
+    expect('turnOutputTokens' in first).toBe(false);
+    expect('turnCostUsd' in first).toBe(false);
+
+    const next = statusData(
+      await drain(
+        mapResultEvent(
+          runningTotals({ haiku: { inputTokens: 14800, outputTokens: 140, costUSD: 0.0155 } }),
+          session,
+          SESSION_ID
+        )
+      )
+    )!;
+    expect(next.turnInputTokens).toBe(3604);
+    expect(next.turnOutputTokens).toBe(34);
   });
 
   it('omits the turn-total fields when the SDK reported no modelUsage', async () => {

@@ -10,6 +10,7 @@ import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from '../deletion-worker.js';
 import { migrate } from '../migrate.js';
+import { hashSecret, randomToken, signValue } from '../security.js';
 import { bootstrapFirstHost } from './bootstrap-test-helper.js';
 import { FileSystemBlobStore, type BlobStore } from '../storage/index.js';
 
@@ -20,6 +21,7 @@ const dbName = `community_administration_http_${randomUUID().replaceAll('-', '')
 const dbUrl = new URL(adminUrl);
 dbUrl.pathname = `/${dbName}`;
 let server: ReturnType<typeof serve>;
+let app: ReturnType<typeof createCommunityApp>;
 let pool: Pool;
 let blobStore: BlobStore;
 let baseUrl = '';
@@ -64,6 +66,84 @@ async function jsonRequest(
   });
 }
 
+/**
+ * Every table that carries tenant rows. Pinned so that an empty or partial
+ * catalogue read fails loudly instead of making a snapshot vacuously equal;
+ * a new tenant table must be added here on purpose.
+ */
+const TENANT_TABLES = [
+  'admission_receipts',
+  'agent_channel_members',
+  'agent_credentials',
+  'agents',
+  'attachments',
+  'audit_events',
+  'bootstrap_grants',
+  'channel_members',
+  'channels',
+  'community_creation_receipts',
+  'community_deletion_blob_progress',
+  'community_deletion_jobs',
+  'community_deletion_tombstones',
+  'community_handles',
+  'connection_grants',
+  'connection_pairings',
+  'entries',
+  'entry_mentions',
+  'export_archive_channels',
+  'export_archives',
+  'host_audit_events',
+  'invite_uses',
+  'invites',
+  'managed_blobs',
+  'members',
+  'owner_quota_windows',
+  'pending_admissions',
+  'read_cursors',
+  'tenant_reconciliation',
+];
+
+async function readTenantTables(): Promise<string[]> {
+  const tables = (
+    await pool.query<{ table_name: string }>(
+      "SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='community_id' ORDER BY table_name"
+    )
+  ).rows.map((row) => row.table_name);
+  expect(tables).toEqual(TENANT_TABLES);
+  return tables;
+}
+
+async function rowsOf(sql: string, params: unknown[]): Promise<unknown> {
+  return (
+    await pool.query(
+      `SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]') AS rows FROM (${sql}) t`,
+      params
+    )
+  ).rows[0].rows;
+}
+
+/** Tenant rows, community rows, accounts and sessions for the given communities. */
+async function isolationSnapshot(communityIds: string[]): Promise<Record<string, unknown>> {
+  const result: Record<string, unknown> = {};
+  for (const table of await readTenantTables()) {
+    // Table identifiers come exclusively from the pinned catalogue above.
+    const quoted = '"' + table.replaceAll('"', '""') + '"';
+    result[table] = await rowsOf(`SELECT * FROM ${quoted} WHERE community_id=ANY($1::uuid[])`, [
+      communityIds,
+    ]);
+  }
+  // Authenticating with a grant records when it was last used, by design.
+  result.connection_grants = (result.connection_grants as Record<string, unknown>[]).map(
+    ({ last_used_at: _lastUsed, ...grant }) => grant
+  );
+  result.communities = await rowsOf('SELECT * FROM communities WHERE id=ANY($1::uuid[])', [
+    communityIds,
+  ]);
+  result.users = await rowsOf('SELECT * FROM "user"', []);
+  result.sessions = await rowsOf('SELECT * FROM session', []);
+  return result;
+}
+
 beforeAll(async () => {
   storagePath = await mkdtemp(join(tmpdir(), 'community-admin-blobs-'));
   await admin.query(`CREATE DATABASE ${dbName}`);
@@ -89,7 +169,7 @@ beforeAll(async () => {
     delete: (key, options) => filesystem.delete(key, options),
     listNamespace: (options) => filesystem.listNamespace(options),
   };
-  const app = createCommunityApp({ config, pool, blobStore });
+  app = createCommunityApp({ config, pool, blobStore });
   server = serve({ fetch: app.fetch, port: 0 });
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
@@ -542,7 +622,7 @@ it.each(['active', 'archived'] as const)(
   }
 );
 
-it('rejects foreign private objects even when the signed-in person owns both communities', async () => {
+it('rejects foreign objects on every id-taking community route, even for an owner of both', async () => {
   const otherId = (
     await pool.query<{ id: string }>(
       "SELECT id FROM communities WHERE id<>$1 AND lifecycle='active' ORDER BY id LIMIT 1",
@@ -551,6 +631,8 @@ it('rejects foreign private objects even when the signed-in person owns both com
   ).rows[0].id;
   const own = `/api/v1/communities/${communityId}`;
   const other = `/api/v1/communities/${otherId}`;
+
+  // Community B's objects, each created through B's own URL.
   const created = await jsonRequest(`${other}/channels`, 'POST', {
     name: 'Tenant isolation private',
     visibility: 'private',
@@ -562,14 +644,15 @@ it('rejects foreign private objects even when the signed-in person owns both com
     idempotencyKey: 'isolation-positive-entry',
   });
   expect(posted.status).toBe(201);
-  const otherMember = (
+  const entry = (await posted.json()).entry.id;
+  const otherOwner = (
     await pool.query<{ id: string }>(
       "SELECT id FROM members WHERE community_id=$1 AND role='owner'",
       [otherId]
     )
   ).rows[0].id;
-  // A non-owner target: owners can never be demoted, so a role change aimed at
-  // the owner would return 404 even without a tenant check.
+  // A non-owner target: owners can never be demoted or become successors, so
+  // probes aimed at the owner would be refused even without a tenant check.
   await pool.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
     'isolation-other-member',
     'Other Member',
@@ -616,84 +699,458 @@ it('rejects foreign private objects even when the signed-in person owns both com
     seats: 1,
   });
   expect(invitation.status).toBe(201);
-  const inviteId = (await invitation.json()).invite.id;
+  const invitationBody = await invitation.json();
+  // A join attempt started in B: its admission cookie is the object that
+  // binding and redeeming look up.
+  const admitted = await jsonRequest(
+    `${other}/invites/preflight`,
+    'POST',
+    { token: invitationBody.token },
+    ''
+  );
+  expect(admitted.status).toBe(200);
+  const foreignAdmission = cookieOf(admitted);
+  expect(foreignAdmission).toMatch(/^community_admission=/);
+  const verifier = randomBytes(32).toString('base64url');
   const pairing = await jsonRequest(`${other}/pairings/start`, 'POST', {
-    challenge: createHash('sha256').update('tenant-isolation-verifier').digest('base64url'),
+    challenge: createHash('sha256').update(verifier).digest('base64url'),
     installName: 'Isolation fixture',
     scopes: ['read'],
   });
   expect(pairing.status).toBe(201);
   const pairingId = (await pairing.json()).pairingId;
-  const readPaths = [
+  // Connection grants are minted directly: the pairing handshake that issues
+  // them is covered elsewhere, and only the stored grant matters here.
+  const otherGrantToken = randomBytes(32).toString('base64url');
+  const otherGrant = (
+    await pool.query<{ id: string }>(
+      `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name)
+       VALUES($1,$2,$3,$4,'Isolation B') RETURNING id`,
+      [otherId, otherOwner, hashSecret(otherGrantToken), ['read', 'post', 'enroll-agent']]
+    )
+  ).rows[0].id;
+  const ownGrantToken = randomBytes(32).toString('base64url');
+  await pool.query(
+    `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name)
+     VALUES($1,$2,$3,$4,'Isolation A')`,
+    [communityId, ownerMemberId, hashSecret(ownGrantToken), ['read', 'post', 'enroll-agent']]
+  );
+  const enrolled = await request(`${other}/agents`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${otherGrantToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ localAgentId: 'isolation-agent', displayName: 'Isolation Agent' }),
+  });
+  expect(enrolled.status).toBe(201);
+  const agent = (await enrolled.json()).agent.memberId;
+  const joinedAgent = await jsonRequest(`${other}/channels/${channel}/agents`, 'POST', {
+    agentId: agent,
+  });
+  expect(joinedAgent.status, await joinedAgent.clone().text()).toBe(200);
+  // Community A's own public channel, for probes that pair it with a foreign id.
+  const home = await jsonRequest(`${own}/channels`, 'POST', {
+    name: 'Isolation home',
+    visibility: 'public',
+  });
+  expect(home.status).toBe(201);
+  const ownChannel = (await home.json()).channel.id;
+
+  // Positive controls: each object really exists and is reachable in its own tenant.
+  for (const path of [
     `/attachments/${attachment}`,
     `/pairings/${pairingId}`,
     `/channels/${channel}`,
     `/channels/${channel}/entries`,
     `/channels/${channel}/members`,
-    `/channels/${channel}/events`,
+    `/channels/${channel}/read-cursor`,
     `/exports/${archive}`,
-  ];
-  // Positive controls ensure each object really exists and is accessible in its tenant.
-  for (const path of readPaths.filter((value) => !value.endsWith('/events'))) {
+  ]) {
     const response = await request(`${other}${path}`, { headers: { cookie: ownerCookie } });
     expect(response.status, `positive control ${path}`).toBe(200);
     await response.arrayBuffer();
   }
-  const tables = (
-    await pool.query<{ table_name: string }>(
-      "SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='community_id' ORDER BY table_name"
+  const grants = await request(`${other}/me/grants`, { headers: { cookie: ownerCookie } });
+  expect((await grants.json()).grants.map((grant: { id: string }) => grant.id)).toContain(
+    otherGrant
+  );
+  const agents = await request(`${other}/agents`, { headers: { cookie: ownerCookie } });
+  expect((await agents.json()).agents.map((row: { memberId: string }) => row.memberId)).toContain(
+    agent
+  );
+  const members = await request(`${other}/members`, { headers: { cookie: ownerCookie } });
+  expect(JSON.stringify(await members.json())).toContain(otherPlainMember);
+
+  type Ids = {
+    channel: string;
+    entry: string;
+    attachment: string;
+    invite: string;
+    inviteToken: string;
+    member: string;
+    pairing: string;
+    verifier: string;
+    grant: string;
+    agent: string;
+    localAgentId: string;
+    archive: string;
+    admission: string;
+  };
+  const foreign: Ids = {
+    channel,
+    entry,
+    attachment,
+    invite: invitationBody.invite.id,
+    inviteToken: invitationBody.token,
+    member: otherPlainMember,
+    pairing: pairingId,
+    verifier,
+    grant: otherGrant,
+    agent,
+    localAgentId: 'isolation-agent',
+    archive,
+    admission: foreignAdmission,
+  };
+  // The same shapes with ids that exist nowhere: a foreign id must be refused
+  // exactly as a nonexistent one is, so the response reveals nothing.
+  const missing: Ids = {
+    channel: randomUUID(),
+    entry: randomUUID(),
+    attachment: randomUUID(),
+    invite: randomUUID(),
+    inviteToken: randomBytes(48).toString('base64url'),
+    member: randomUUID(),
+    pairing: randomUUID(),
+    verifier: randomBytes(32).toString('base64url'),
+    grant: randomUUID(),
+    agent: randomUUID(),
+    localAgentId: 'isolation-agent-missing',
+    archive: randomUUID(),
+    // Correctly signed, so it reaches the lookup, but matches no join attempt.
+    admission: `community_admission=${signValue(randomToken(), 'a'.repeat(32))}`,
+  };
+  const { lifecycle_version: ownLifecycleVersion } = (
+    await pool.query<{ lifecycle_version: number }>(
+      'SELECT lifecycle_version FROM communities WHERE id=$1',
+      [communityId]
     )
-  ).rows;
-  async function snapshot() {
-    const result: Record<string, unknown> = {};
-    for (const { table_name } of tables) {
-      const quoted = '"' + table_name.replaceAll('"', '""') + '"';
-      result[table_name] = (
-        await pool.query(
-          `SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]') AS rows FROM ${quoted} t WHERE community_id=ANY($1::uuid[])`,
-          [[communityId, otherId]]
-        )
-      ).rows[0].rows;
+  ).rows[0];
+
+  type Caller = 'member' | 'grant' | 'local' | 'anonymous';
+  type Probe = {
+    route: string;
+    caller?: Caller;
+    call: (
+      ids: Ids,
+      attempt: string
+    ) => { path: string; body?: unknown; upload?: string; cookie?: string };
+  };
+  // Every community route that takes an object id, in its path or its body.
+  const probes: Probe[] = [
+    { route: 'GET /attachments/:id', call: (x) => ({ path: `/attachments/${x.attachment}` }) },
+    {
+      route: 'POST /channels/:id/attachments',
+      call: (x) => ({ path: `/channels/${x.channel}/attachments`, upload: 'proof' }),
+    },
+    { route: 'GET /channels/:id', call: (x) => ({ path: `/channels/${x.channel}` }) },
+    {
+      route: 'PATCH /channels/:id',
+      call: (x) => ({ path: `/channels/${x.channel}`, body: { name: 'Must not change' } }),
+    },
+    {
+      route: 'POST /channels/:id/join',
+      call: (x) => ({ path: `/channels/${x.channel}/join`, body: {} }),
+    },
+    {
+      route: 'POST /channels/:id/leave',
+      call: (x) => ({ path: `/channels/${x.channel}/leave`, body: {} }),
+    },
+    {
+      route: 'GET /channels/:id/members',
+      call: (x) => ({ path: `/channels/${x.channel}/members` }),
+    },
+    {
+      route: 'POST /channels/:id/members',
+      call: (x) => ({ path: `/channels/${x.channel}/members`, body: { memberId: ownerMemberId } }),
+    },
+    {
+      route: 'POST /channels/:id/members',
+      call: (x) => ({ path: `/channels/${ownChannel}/members`, body: { memberId: x.member } }),
+    },
+    {
+      route: 'DELETE /channels/:id/members/:memberId',
+      call: (x) => ({ path: `/channels/${x.channel}/members/${otherOwner}`, body: {} }),
+    },
+    {
+      route: 'DELETE /channels/:id/members/:memberId',
+      call: (x) => ({ path: `/channels/${ownChannel}/members/${x.member}`, body: {} }),
+    },
+    {
+      route: 'PATCH /members/:id/role',
+      call: (x) => ({ path: `/members/${x.member}/role`, body: { role: 'admin' } }),
+    },
+    { route: 'DELETE /members/:id', call: (x) => ({ path: `/members/${x.member}`, body: {} }) },
+    {
+      route: 'POST /owner/transfer',
+      call: (x) => ({
+        path: '/owner/transfer',
+        body: { successorMemberId: x.member, password, lifecycleVersion: ownLifecycleVersion },
+      }),
+    },
+    {
+      route: 'POST /channels/:id/entries',
+      call: (x, attempt) => ({
+        path: `/channels/${x.channel}/entries`,
+        body: { text: 'Must not post', idempotencyKey: `isolation-foreign-entry-${attempt}` },
+      }),
+    },
+    {
+      route: 'POST /channels/:id/entries',
+      call: (x, attempt) => ({
+        path: `/channels/${ownChannel}/entries`,
+        body: {
+          text: 'Must not reply across tenants',
+          parentEntryId: x.entry,
+          idempotencyKey: `isolation-foreign-parent-${attempt}`,
+        },
+      }),
+    },
+    {
+      route: 'POST /channels/:id/entries',
+      call: (x, attempt) => ({
+        path: `/channels/${ownChannel}/entries`,
+        body: {
+          text: 'Must not attach across tenants',
+          attachmentIds: [x.attachment],
+          idempotencyKey: `isolation-foreign-attachment-${attempt}`,
+        },
+      }),
+    },
+    {
+      route: 'GET /channels/:id/entries',
+      call: (x) => ({ path: `/channels/${x.channel}/entries` }),
+    },
+    {
+      route: 'GET /channels/:id/read-cursor',
+      call: (x) => ({ path: `/channels/${x.channel}/read-cursor` }),
+    },
+    {
+      route: 'PUT /channels/:id/read-cursor',
+      call: (x) => ({ path: `/channels/${x.channel}/read-cursor`, body: { cursor: '1' } }),
+    },
+    { route: 'GET /channels/:id/events', call: (x) => ({ path: `/channels/${x.channel}/events` }) },
+    {
+      route: 'POST /invites',
+      call: (x) => ({ path: '/invites', body: { channelId: x.channel, seats: 1 } }),
+    },
+    { route: 'DELETE /invites/:id', call: (x) => ({ path: `/invites/${x.invite}`, body: {} }) },
+    {
+      route: 'POST /invites/preview',
+      caller: 'anonymous',
+      call: (x) => ({ path: '/invites/preview', body: { token: x.inviteToken } }),
+    },
+    {
+      route: 'POST /invites/preflight',
+      caller: 'anonymous',
+      call: (x) => ({ path: '/invites/preflight', body: { token: x.inviteToken } }),
+    },
+    {
+      route: 'POST /invites/bind',
+      call: (x) => ({ path: '/invites/bind', body: {}, cookie: x.admission }),
+    },
+    {
+      route: 'POST /invites/redeem',
+      call: (x) => ({ path: '/invites/redeem', body: {}, cookie: x.admission }),
+    },
+    { route: 'GET /exports/:id', call: (x) => ({ path: `/exports/${x.archive}` }) },
+    { route: 'GET /pairings/:id', call: (x) => ({ path: `/pairings/${x.pairing}` }) },
+    {
+      route: 'POST /pairings/approve',
+      call: (x) => ({ path: '/pairings/approve', body: { pairingId: x.pairing } }),
+    },
+    {
+      route: 'POST /pairings/decline',
+      call: (x) => ({ path: '/pairings/decline', body: { pairingId: x.pairing } }),
+    },
+    {
+      route: 'POST /pairings/poll',
+      caller: 'local',
+      call: (x) => ({
+        path: '/pairings/poll',
+        body: { pairingId: x.pairing, verifier: x.verifier },
+      }),
+    },
+    {
+      route: 'POST /pairings/exchange',
+      caller: 'local',
+      call: (x) => ({
+        path: '/pairings/exchange',
+        body: { pairingId: x.pairing, verifier: x.verifier, code: 'not-a-code' },
+      }),
+    },
+    {
+      route: 'POST /pairings/cancel',
+      caller: 'local',
+      call: (x) => ({
+        path: '/pairings/cancel',
+        body: { pairingId: x.pairing, verifier: x.verifier },
+      }),
+    },
+    { route: 'DELETE /me/grants/:id', call: (x) => ({ path: `/me/grants/${x.grant}`, body: {} }) },
+    {
+      route: 'POST /agents/:id/rotate',
+      caller: 'grant',
+      call: (x) => ({ path: `/agents/${x.agent}/rotate`, body: {} }),
+    },
+    {
+      route: 'POST /agents/recover',
+      caller: 'grant',
+      call: (x) => ({
+        path: '/agents/recover',
+        body: { localAgentId: x.localAgentId, displayName: 'Must not recover' },
+      }),
+    },
+    { route: 'DELETE /agents/:id', call: (x) => ({ path: `/agents/${x.agent}`, body: {} }) },
+    {
+      route: 'POST /channels/:id/agents',
+      call: (x) => ({ path: `/channels/${x.channel}/agents`, body: { agentId: x.agent } }),
+    },
+    {
+      route: 'POST /channels/:id/agents',
+      call: (x) => ({ path: `/channels/${ownChannel}/agents`, body: { agentId: x.agent } }),
+    },
+    {
+      route: 'DELETE /channels/:id/agents/:agentId',
+      call: (x) => ({ path: `/channels/${x.channel}/agents/${x.agent}`, body: {} }),
+    },
+    {
+      route: 'DELETE /channels/:id/agents/:agentId',
+      call: (x) => ({ path: `/channels/${ownChannel}/agents/${x.agent}`, body: {} }),
+    },
+  ];
+  // Routes that take no object id at all: they act only on the caller, the
+  // community named in the URL, or an object they create. There is nothing
+  // foreign to pass them.
+  const exempt: Record<string, string> = {
+    'GET /community': 'reads the URL community only',
+    'GET /auth-options': 'deployment sign-in options, no object',
+    'GET /settings': 'reads the URL community only',
+    'PATCH /settings': 'edits the URL community only',
+    'PUT /settings/icon': 'edits the URL community only',
+    'DELETE /settings/icon': 'edits the URL community only',
+    'GET /icon': 'reads the URL community only',
+    'POST /owner/lifecycle': 'changes the URL community only',
+    'GET /owner/deletion': 'reads the URL community only',
+    'POST /owner/deletion': 'changes the URL community only',
+    'POST /owner/deletion/cancel': 'changes the URL community only',
+    'POST /owner/export': 'exports the URL community; takes only a password',
+    'POST /me/export': 'exports the caller; no body',
+    'GET /me': 'the caller only',
+    'POST /me/leave': 'the caller only',
+    'DELETE /me/grants': "revokes all of the caller's own grants; takes only a password",
+    'GET /me/connection-access': 'the calling grant only',
+    'GET /me/grants': "lists the caller's own grants",
+    'GET /members': 'lists the URL community',
+    'GET /channels': 'lists the URL community',
+    'POST /channels': 'creates a new channel; references nothing',
+    'GET /attention': "the caller's own unread counts",
+    'GET /invites': 'lists the URL community',
+    'GET /agents': "lists the caller's own agents",
+    'POST /pairings/start': 'creates a new pairing; references nothing',
+  };
+
+  const scoped = '/api/v1/communities/:communityId';
+  const registered = [
+    ...new Set(
+      app.routes
+        .filter((route) => route.method !== 'ALL' && route.path.startsWith(`${scoped}/`))
+        .map((route) => `${route.method} ${route.path.slice(scoped.length)}`)
+    ),
+  ].sort();
+  expect(registered.length).toBeGreaterThan(50);
+  // Routes whose foreign-id call legitimately succeeds, so they cannot share
+  // the refusal comparison; each has its own check after the matrix.
+  const separately = ['POST /agents'];
+  const probed = new Set(probes.map((probe) => probe.route));
+  expect([...probed].filter((route) => route in exempt || separately.includes(route))).toEqual([]);
+  expect(separately.filter((route) => route in exempt)).toEqual([]);
+  expect([...new Set([...probed, ...Object.keys(exempt), ...separately])].sort()).toEqual(
+    registered
+  );
+
+  async function send(probe: Probe, ids: Ids, attempt: string) {
+    const [method] = probe.route.split(' ');
+    const { path, body, upload, cookie } = probe.call(ids, attempt);
+    const caller = probe.caller ?? 'member';
+    const headers: Record<string, string> = {};
+    if (caller === 'member') headers.cookie = cookie ? `${ownerCookie}; ${cookie}` : ownerCookie;
+    if (caller === 'grant') headers.authorization = `Bearer ${ownGrantToken}`;
+    if (caller !== 'local') headers.origin = 'http://localhost:6481';
+    if (upload !== undefined) {
+      Object.assign(headers, {
+        'content-type': 'text/plain',
+        'x-file-name': 'foreign.txt',
+        'x-file-size': String(Buffer.byteLength(upload)),
+        'idempotency-key': `isolation-foreign-upload-${attempt}`,
+      });
+    } else if (body !== undefined) {
+      headers['content-type'] = 'application/json';
     }
-    return result;
-  }
-  const before = await snapshot();
-  for (const path of readPaths) {
     const response = await request(`${own}${path}`, {
-      headers: { cookie: ownerCookie },
+      method,
+      headers,
+      body: upload ?? (body === undefined ? undefined : JSON.stringify(body)),
       signal: AbortSignal.timeout(5000),
     });
-    expect(response.status, `foreign read ${path}`).toBe(404);
-    await response.arrayBuffer();
+    return { status: response.status, body: await response.text() };
   }
-  const mutations: Array<{ method: 'POST' | 'PATCH' | 'DELETE'; path: string; body: unknown }> = [
-    { method: 'DELETE', path: `/invites/${inviteId}`, body: {} },
-    { method: 'PATCH', path: `/channels/${channel}`, body: { name: 'Must not change' } },
-    {
-      method: 'POST',
-      path: `/channels/${channel}/entries`,
-      body: { text: 'Must not post', idempotencyKey: 'isolation-foreign-entry' },
+
+  const before = await isolationSnapshot([communityId, otherId]);
+  let executed = 0;
+  for (const [index, probe] of probes.entries()) {
+    const label = `${probe.route} #${index}`;
+    const refused = await send(probe, foreign, `foreign-${index}`);
+    const unknown = await send(probe, missing, `missing-${index}`);
+    expect(refused.status, `${label} must be refused`).toBeGreaterThanOrEqual(400);
+    // A malformed, unauthenticated or cross-site probe would be refused before
+    // any lookup, and would then match the nonexistent id for the wrong reason.
+    expect(refused.status, `${label} must be authenticated`).not.toBe(401);
+    expect(refused.body, `${label} must reach the lookup`).not.toContain('The request is invalid.');
+    expect(refused.body, `${label} must pass the origin check`).not.toContain(
+      'This request came from an untrusted site.'
+    );
+    expect(refused, `${label} must match a nonexistent id`).toEqual(unknown);
+    executed++;
+  }
+  expect(executed).toBe(probes.length);
+  expect(await isolationSnapshot([communityId, otherId])).toEqual(before);
+
+  // POST /agents looks up the caller's existing agent by its local id, then
+  // reactivates it and replaces its credentials. A local id that exists only
+  // in B must create a fresh agent in A and leave B's agent untouched.
+  const checked = new Set<string>();
+  const otherBefore = await isolationSnapshot([otherId]);
+  const sameLocalId = await request(`${own}/agents`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${ownGrantToken}`,
+      'content-type': 'application/json',
     },
-    { method: 'POST', path: `/channels/${channel}/join`, body: {} },
-    { method: 'POST', path: `/channels/${channel}/leave`, body: {} },
-    { method: 'POST', path: `/channels/${channel}/members`, body: { memberId: ownerMemberId } },
-    { method: 'DELETE', path: `/channels/${channel}/members/${otherMember}`, body: {} },
-    { method: 'PATCH', path: `/members/${otherPlainMember}/role`, body: { role: 'admin' } },
-    { method: 'DELETE', path: `/members/${otherMember}`, body: {} },
-  ];
-  for (const operation of mutations) {
-    const response = await jsonRequest(`${own}${operation.path}`, operation.method, operation.body);
-    expect(response.status, `foreign ${operation.method} ${operation.path}`).toBe(404);
-    await response.arrayBuffer();
-  }
-  const foreignPairing = await jsonRequest(`${own}/pairings/approve`, 'POST', { pairingId });
-  const missingPairing = await jsonRequest(`${own}/pairings/approve`, 'POST', {
-    pairingId: randomUUID(),
+    body: JSON.stringify({
+      localAgentId: foreign.localAgentId,
+      displayName: 'Own agent, same local id',
+    }),
   });
-  expect(foreignPairing.status).toBe(409);
-  expect(missingPairing.status).toBe(409);
-  expect(await foreignPairing.json()).toEqual(await missingPairing.json());
-  expect(await snapshot()).toEqual(before);
+  expect(sameLocalId.status, 'POST /agents with a local id used in B').toBe(201);
+  const ownAgent = (await sameLocalId.json()).agent.memberId;
+  expect(ownAgent).not.toBe(agent);
+  expect(
+    (await pool.query('SELECT community_id FROM agents WHERE id=$1', [ownAgent])).rows[0]
+  ).toEqual({ community_id: communityId });
+  expect(await isolationSnapshot([otherId])).toEqual(otherBefore);
+  checked.add('POST /agents');
+  expect([...checked]).toEqual(separately);
 });
 
 it('archives with immediate credential revocation and restores without revival', async () => {
@@ -725,7 +1182,12 @@ it('archives with immediate credential revocation and restores without revival',
   lifecycleVersion = archived.lifecycleVersion;
   expect(archived.lifecycle).toBe('archived');
   expect(
-    (await pool.query('SELECT revoked_at IS NOT NULL AS revoked FROM connection_grants')).rows[0]
+    (
+      await pool.query(
+        'SELECT bool_and(revoked_at IS NOT NULL) AS revoked FROM connection_grants WHERE community_id=$1',
+        [communityId]
+      )
+    ).rows[0]
   ).toEqual({ revoked: true });
   expect(
     (
@@ -871,7 +1333,12 @@ it('archives with immediate credential revocation and restores without revival',
   lifecycleVersion = restored.lifecycleVersion;
   expect(restored.lifecycle).toBe('active');
   expect(
-    (await pool.query('SELECT revoked_at IS NOT NULL AS revoked FROM connection_grants')).rows[0]
+    (
+      await pool.query(
+        'SELECT bool_and(revoked_at IS NOT NULL) AS revoked FROM connection_grants WHERE community_id=$1',
+        [communityId]
+      )
+    ).rows[0]
   ).toEqual({ revoked: true });
   expect(
     (
@@ -984,28 +1451,8 @@ it('deletes only the due tenant after every owned blob is confirmed absent', asy
       })
     ).status
   ).toBe(201);
-  const tenantTables = (
-    await pool.query<{ table_name: string }>(
-      "SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='community_id' ORDER BY table_name"
-    )
-  ).rows.map((row) => row.table_name);
-  async function survivorManifest() {
-    const result: Record<string, unknown> = {};
-    for (const table of tenantTables) {
-      // Table identifiers come exclusively from the local database catalogue.
-      const quoted = '"' + table.replaceAll('"', '""') + '"';
-      result[table] = (
-        await pool.query(
-          `SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]') AS rows FROM ${quoted} t WHERE community_id=$1`,
-          [survivorId]
-        )
-      ).rows[0].rows;
-    }
-    result.community = (
-      await pool.query('SELECT * FROM communities WHERE id=$1', [survivorId])
-    ).rows;
-    return result;
-  }
+  // Its tenant rows, its community row, and every account and session.
+  const survivorManifest = () => isolationSnapshot([survivorId]);
   const survivorBefore = await survivorManifest();
   const streamAbort = new AbortController();
   const stream = await request(`${survivorPath}/channels/${survivorChannel}/events`, {

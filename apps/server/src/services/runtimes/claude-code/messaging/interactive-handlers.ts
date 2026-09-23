@@ -27,7 +27,11 @@ import {
   type InteractiveSession,
 } from './interaction-wait.js';
 import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
-import { inSessionToolName, IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
+import {
+  inSessionToolName,
+  IN_SESSION_TOOL_PREFIX,
+  isHostServedOrUnattributed,
+} from '../mcp-tools/tool-exposure.js';
 import { recordAutoModeStop } from '../../../observability/auto-mode-stops.js';
 import {
   approvalTimeoutDenial,
@@ -920,6 +924,13 @@ export interface ToolApprovalContext {
   blockedPath?: string;
   decisionReason?: string;
   suggestions?: PermissionUpdate[];
+  /**
+   * For `mcp__*` tools, the server serving the call and where it was defined
+   * (SDK 0.3.274). `source: 'sdk'` is a server this host registered in-process;
+   * anything else came from configuration. Absent for non-MCP tools and on
+   * older CLIs. The auto-allow reads it through `isHostServedOrUnattributed`.
+   */
+  mcpServer?: { name: string; source: string };
 }
 
 /**
@@ -1007,6 +1018,11 @@ export function createCanUseTool(
     // table below, which raises a card.
     if (
       (READ_ONLY_TOOLS.has(toolName) || DORKOS_AGENT_TOOLS.has(toolName)) &&
+      // The name says "a DorkOS tool"; only the provenance can say the call is
+      // served by the server DorkOS registered. A configured server that named
+      // itself `dorkos` presents the same `mcp__dorkos__…` names, and its call
+      // falls through to the mode table like any other foreign tool.
+      isHostServedOrUnattributed(context.mcpServer) &&
       isAutoAllowedCall(toolName, input) &&
       // The owner-facing verbs skip the card only for a session that resolves an
       // agent identity: without one the rooms verbs run as the OWNER — who sees
@@ -1027,7 +1043,13 @@ export function createCanUseTool(
       // it — which is exactly the stop the host-context note exists to remove.
       // Only `auto`: every other mode asks by design, so counting its cards
       // would bury the signal under the modes that are supposed to produce them.
-      if (session.permissionMode === 'auto' && toolName.startsWith(IN_SESSION_TOOL_PREFIX)) {
+      if (
+        session.permissionMode === 'auto' &&
+        toolName.startsWith(IN_SESSION_TOOL_PREFIX) &&
+        // A configured server wearing the `dorkos` name is not a DorkOS tool,
+        // and its stops are not the ones this measurement counts.
+        isHostServedOrUnattributed(context.mcpServer)
+      ) {
         recordAutoModeStop({ sessionId: session.sdkSessionId ?? 'unknown', toolName });
       }
       // info, not debug: from here the turn makes no progress until a person

@@ -28,6 +28,11 @@ export async function* mapSystemEvent(
   // Handle system/init messages
   if ('subtype' in message && message.subtype === 'init') {
     session.sdkSessionId = message.session_id;
+    // A query that starts a brand-new transcript starts its running usage
+    // totals at zero, so the ledger those totals are differenced against is
+    // known to be empty. A resumed one may carry totals from turns this process
+    // never saw, so its ledger is left as it is (see `sdk/turn-usage.ts`).
+    if (!session.hasStarted) session.usageLedger = {};
     session.hasStarted = true;
     const initModel = (message as Record<string, unknown>).model as string | undefined;
     if (initModel) {

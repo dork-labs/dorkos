@@ -13,6 +13,7 @@
     "test:pg": "vitest run --config vitest.pg.config.ts --reporter=default --reporter=json --outputFile.json=vitest-pg-report.json && node scripts/assert-pg-tests.mjs",
     "test:s3": "vitest run --config vitest.s3.config.ts",
     "test:browser": "pnpm build && node -e \"require('node:fs').rmSync('browser-report.json',{force:true})\" && playwright test --config playwright.config.ts && tsx scripts/assert-browser-tests.ts",
+    "test:backup-restore": "node scripts/rehearse-backup-restore.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "db:migrate": "tsx src/migrate.ts"

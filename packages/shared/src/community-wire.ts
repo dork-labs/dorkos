@@ -220,12 +220,20 @@ export const CommunityWireChannelSchema = z.strictObject({
 export type CommunityWireChannel = z.infer<typeof CommunityWireChannelSchema>;
 /**
  * Tenant-authorized aggregate activity for the currently authenticated human.
- * Counts deliberately omit channel, author, and entry identity.
+ * Counts deliberately omit channel, author, and entry identity. Every mention
+ * is also unread activity, so a response claiming more mentions than unread
+ * messages is rejected here, at the trust boundary, rather than surviving until
+ * it poisons a local response built from many remotes.
  */
-export const CommunityWireAttentionResponseSchema = z.strictObject({
-  unreadCount: z.number().int().nonnegative(),
-  mentionCount: z.number().int().nonnegative(),
-});
+export const CommunityWireAttentionResponseSchema = z
+  .strictObject({
+    unreadCount: z.number().int().nonnegative(),
+    mentionCount: z.number().int().nonnegative(),
+  })
+  .refine((attention) => attention.mentionCount <= attention.unreadCount, {
+    message: 'Mentions must be a subset of unread activity.',
+    path: ['mentionCount'],
+  });
 /** Create a channel; authority is derived from the session, never this body. */
 export const CommunityWireChannelCreateRequestSchema = z.strictObject({
   name: z.string().min(1),

@@ -237,3 +237,23 @@ independent cause rather than by argument alone.
 The `[ede_diagnostic]` line is still composed the same way and still filtered
 out of the informational system message, so section 3 holds unchanged. Section 4
 also holds: `apps/server/src` still mentions neither refusal subtype.
+
+## Re-run on 0.3.280 (2026-09-22) — a fourth suppressed cause, `permission-stop`
+
+Same recipe, darwin-arm64 binary, read by string rather than by symbol:
+
+- The shape predicate is unchanged: `e==="aborted_streaming"||e==="aborted_tools"`.
+- The person-initiated set is unchanged: `user-cancel`, `remote-cancel`,
+  `shutdown`, `interrupt`, `turn-abort`.
+- The suppression set grew to four:
+  `new Set(["interrupt","turn-abort","refusal-fallback-edit","permission-stop"])`.
+- `permission-stop` is new. It maps to `turn_teardown`
+  (`case"permission-stop":return"turn_teardown"`) and is raised when a permission
+  decision is `deny` with `endsTurn` set and the turn is not already aborted. The
+  per-turn predicate now reads `r==="turn-abort"||r==="permission-stop"`.
+
+**What this costs DorkOS: nothing, for the same reason as last time.**
+`isStoppedTurnResult` ANDs the shape with DorkOS's own stop record, so a turn a
+denial ended cannot suppress its error frame on its own. DorkOS also never
+returns `interrupt: true` with a deny, which is the likeliest source of
+`endsTurn`; that mapping was not verified. Sections 3 and 4 hold unchanged.

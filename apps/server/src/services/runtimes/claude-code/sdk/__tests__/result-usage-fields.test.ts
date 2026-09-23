@@ -23,6 +23,9 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
     pendingInteractions: new Map(),
     eventQueue: [],
     lastRequestUsage: { inputTokens: 1000, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    // A brand-new session: its running usage totals start at zero, so the
+    // result's totals are this turn's (`sdk/turn-usage.ts`).
+    usageLedger: {},
     ...overrides,
   } as unknown as AgentSession;
 }

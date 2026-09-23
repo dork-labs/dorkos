@@ -2,6 +2,34 @@
   "version": 1,
   "specs": [
     {
+      "id": "260922-223212",
+      "slug": "worktree-project-config-root",
+      "title": "Take project settings from the trusted checkout for worktree agents",
+      "created": "2026-09-22",
+      "status": "ideation"
+    },
+    {
+      "id": "260922-223211",
+      "slug": "mcp-apps-read-through-cli",
+      "title": "Read MCP App resources through the Claude Code connection",
+      "created": "2026-09-22",
+      "status": "ideation"
+    },
+    {
+      "id": "260922-223210",
+      "slug": "verbatim-delivered-prompts",
+      "title": "Deliver room, relay and scheduled text verbatim to Claude Code",
+      "created": "2026-09-22",
+      "status": "ideation"
+    },
+    {
+      "id": "260922-223209",
+      "slug": "claude-structured-startup-errors",
+      "title": "Explain Claude Code startup and API failures in plain words",
+      "created": "2026-09-22",
+      "status": "ideation"
+    },
+    {
       "id": "260920-200102",
       "slug": "community-self-host-launcher",
       "title": "Guided Community self-host launch",

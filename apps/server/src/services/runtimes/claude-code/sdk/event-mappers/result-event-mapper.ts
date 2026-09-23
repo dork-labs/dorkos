@@ -9,6 +9,7 @@ import {
   mapErrorCategory,
 } from '../sdk-error-mapping.js';
 import { sumContextTokens } from '../context-tokens.js';
+import { advanceUsageLedger, readModelUsageTotals, type TurnUsage } from '../turn-usage.js';
 
 /**
  * Map a Claude rate-limit type to a human-readable window label. Authored
@@ -176,36 +177,31 @@ export async function* mapResultEvent(
     // $ai_generation bridge; ADR 260713-143958 Phase 7). Unlike the context/cache
     // figures above — which describe the current window and deliberately avoid the
     // aggregate — a per-turn generation event WANTS the sum across every request in
-    // the turn, which is exactly what `modelUsage` carries. Summed across models so
-    // a turn that switched models still reports one honest total. Undefined when
-    // the SDK reported no `modelUsage` — absent OR empty (older SDKs / error
-    // results) — so "no data" never masquerades as a zero-token turn.
+    // the turn. `modelUsage` carries that sum, but as a RUNNING TOTAL over the
+    // session's lifetime (every earlier warm turn, and since SDK 0.3.277 every
+    // turn before a resume too), so the turn's share is a difference against the
+    // session's ledger — `sdk/turn-usage.ts` owns that arithmetic and its
+    // evidence. Summed across models so a turn that switched models still reports
+    // one honest total.
     //
-    // `thinkingTokens` (SDK 0.3.257) rides the same sum with one difference: it
-    // is written ONLY when at least one model actually reported it. The field is
-    // absent on turns the CLI did not record it for, and a `0` there would read
-    // as "the model did not think" — a claim nobody made. Absent says "not
-    // reported", which is the only thing that is true.
-    let turnInputTokens: number | undefined;
-    let turnOutputTokens: number | undefined;
-    let turnThinkingTokens: number | undefined;
+    // Undefined — so "no data" never masquerades as a zero-token turn — when the
+    // SDK reported no `modelUsage` (absent OR empty: older SDKs, error results),
+    // and when the baseline is unknown (the first result of a resumed session this
+    // process holds no ledger for, whose totals may include turns it never saw).
+    //
+    // `thinkingTokens` (SDK 0.3.257) rides the same difference but is written ONLY
+    // when at least one model actually reported it. The field is absent on turns
+    // the CLI did not record it for, and a `0` there would read as "the model did
+    // not think" — a claim nobody made.
+    let turn: TurnUsage | undefined;
     if (modelUsageMap && Object.keys(modelUsageMap).length > 0) {
-      let inSum = 0;
-      let outSum = 0;
-      let thinkingSum = 0;
-      let sawThinking = false;
-      for (const usage of Object.values(modelUsageMap)) {
-        inSum += (usage.inputTokens as number | undefined) ?? 0;
-        outSum += (usage.outputTokens as number | undefined) ?? 0;
-        const thinking = usage.thinkingTokens as number | undefined;
-        if (typeof thinking === 'number') {
-          thinkingSum += thinking;
-          sawThinking = true;
-        }
-      }
-      turnInputTokens = inSum;
-      turnOutputTokens = outSum;
-      if (sawThinking) turnThinkingTokens = thinkingSum;
+      const step = advanceUsageLedger(
+        readModelUsageTotals(modelUsageMap),
+        session.usageLedger,
+        result.subtype !== 'success'
+      );
+      session.usageLedger = step.ledger;
+      turn = step.turn;
     }
 
     // Stamp `usage` onto the result status so the merged Usage & cost item has
@@ -264,9 +260,16 @@ export async function* mapResultEvent(
         contextMaxTokens,
         cacheReadTokens,
         cacheCreationTokens,
-        ...(turnInputTokens !== undefined ? { turnInputTokens } : {}),
-        ...(turnOutputTokens !== undefined ? { turnOutputTokens } : {}),
-        ...(turnThinkingTokens !== undefined ? { turnThinkingTokens } : {}),
+        ...(turn
+          ? {
+              turnInputTokens: turn.inputTokens,
+              turnOutputTokens: turn.outputTokens,
+              turnCostUsd: turn.costUsd,
+              ...(turn.thinkingTokens !== undefined
+                ? { turnThinkingTokens: turn.thinkingTokens }
+                : {}),
+            }
+          : {}),
         ...(terminalReason ? { terminalReason } : {}),
         // Attached only beside an ABORT reason, which is the only ending whose
         // settlement it changes. Every other terminal would carry a fact no
