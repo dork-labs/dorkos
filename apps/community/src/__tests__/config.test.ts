@@ -32,6 +32,15 @@ describe('community startup config', () => {
     expect(() => parseConfig({ ...valid, COMMUNITY_TEXT_BYTES: '0' })).toThrow();
   });
 
+  it('keeps the agents-per-person default at 20 with a maximum of 100', () => {
+    // Purpose: a per-member override may go higher (to 1,000); the host-wide setting may not.
+    expect(parseConfig(valid).limits.agentsPerOwner).toBe(20);
+    expect(parseConfig({ ...valid, COMMUNITY_AGENTS_PER_OWNER: '100' }).limits.agentsPerOwner).toBe(
+      100
+    );
+    expect(() => parseConfig({ ...valid, COMMUNITY_AGENTS_PER_OWNER: '101' })).toThrow();
+  });
+
   it('selects filesystem storage and validates its persistent path', () => {
     expect(parseConfig(valid).storage).toEqual({
       kind: 'filesystem',

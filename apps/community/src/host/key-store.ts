@@ -4,9 +4,9 @@ import {
   CommunityAdminHostApiKeyScopeSchema,
   type CommunityAdminHostApiKeySchema,
 } from '@dorkos/shared/community-admin-wire';
-import { recordHostAudit, type HostApiKeyScope, type HostPersonActor } from './host-authority.js';
-import { ApiError } from './http.js';
-import { hashSecret, mintHostApiKeySecret } from './security.js';
+import { recordHostAudit, type HostApiKeyScope, type HostPersonActor } from './authority.js';
+import { ApiError } from '../http.js';
+import { hashSecret, mintHostApiKeySecret } from '../security.js';
 
 /** A host API key as the wire shows it: never its secret or hash. */
 export type HostApiKeyProjection = z.infer<typeof CommunityAdminHostApiKeySchema>;
