@@ -61,6 +61,10 @@ All nine findings adopted, TDD; see the spec's Review log. The git floor was mea
 
 Closed the git 2.26–2.30 private-repository regression: `gitAuth` reads `git --version` once per process (`parseGitVersion` tolerates Apple and Windows suffixes); from 2.31 the environment header, before (or unreadable) the URL rewrite `withGitHubToken`, re-extracted from `execGitClone`. Tested with a stubbed version; measured with `scripts/git-floor-probe.sh` against a private repository on 2.26.2, 2.30.0 (URL) and 2.49.1 (header), including that the token is in `.git/config` on the URL path and gone once `.git` is removed.
 
+### Session 4 - 2026-09-23 (delta review, round 3)
+
+Closed a silent broken-checkout path: git 2.30–2.36 exit 0 from a partial checkout whose lazy blob fetch was refused, with `HEAD` right and the file missing (reproduced in Docker by the probe). The checkout now fails on an `error:` line or a non-empty `git ls-files --deleted`, any failure of the filtered attempt restarts once unfiltered, and `getPackage` serves only a non-empty entry.
+
 ## Known limits
 
 - The exact-name filter on `ls-remote` output is defence in depth: the qualified patterns (`refs/heads/<ref>`, …) are what keep `x/main` out, and a mutation of the filter alone survives the suite. The pattern mutation does not.

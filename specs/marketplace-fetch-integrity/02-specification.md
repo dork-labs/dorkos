@@ -82,7 +82,7 @@ Each attempt runs in an empty `destDir`:
 
 1. `git init --quiet`, then `git remote add --end-of-options origin <url>` (a named remote: a partial clone records its promisor settings under it, and the checkout needs them).
 2. If `subpath` is not empty: `git sparse-checkout init --cone`, then `git sparse-checkout set --end-of-options <subpath>`. (`set --cone` alone leaves cone mode off before git 2.35.)
-3. **Filtered attempt, subpath only:** write the partial-clone settings by hand (`core.repositoryformatversion 1`, `extensions.partialClone origin`, `remote.origin.promisor true`, `remote.origin.partialclonefilter blob:none`; git 2.26 refuses a filtered fetch into a fresh repository without them), then `git fetch --quiet --no-tags --depth=1 --filter=blob:none --end-of-options origin <commitSha>`. Only the package's own blobs download, lazily, at checkout. If any step reports a refusal (`unadvertised object`, `not our ref`, or `could not fetch … from promisor remote`), empty `destDir` and make the unfiltered attempt: a server that refuses unadvertised commits refuses a partial checkout's lazy blob requests too.
+3. **Filtered attempt, subpath only:** write the partial-clone settings by hand (`core.repositoryformatversion 1`, `extensions.partialClone origin`, `remote.origin.promisor true`, `remote.origin.partialclonefilter blob:none`; git 2.26 refuses a filtered fetch into a fresh repository without them), then `git fetch --quiet --no-tags --depth=1 --filter=blob:none --end-of-options origin <commitSha>`. Only the package's own blobs download, lazily, at checkout. If any step of it fails, for any reason, empty `destDir` and make the unfiltered attempt, once: a server that refuses unadvertised commits refuses a partial checkout's lazy blob requests too, and git words that differently by version. A genuine failure fails again unfiltered and is reported from there.
 4. **Unfiltered attempt** (every whole-repository fetch, and the retry): `git fetch --quiet --no-tags --depth=1 --end-of-options origin <commitSha>`. On a refusal:
    - a named ref: fetch `<refName>` at depth 1 (the exact refname from the lookup, never a bare name git would resolve tag-first);
    - a pinned commit: fetch every branch and tag, unfiltered, no depth (`+refs/heads/*:refs/remotes/origin/*`, `+refs/tags/*:refs/tags/*`), then require `<commitSha>^{commit}`. Absent → `GitCommitNotFoundError`.
@@ -92,7 +92,7 @@ Each attempt runs in an empty `destDir`:
    - A named ref fetched by commit must equal `commitSha`, or throw.
    - A named ref fetched through the fallback may differ: the ref moved between the lookup and the fetch. The arrived commit is used (and logged); it is what is on disk.
 6. `git -c advice.detachedHead=false checkout --quiet --detach <arrived>`, with no `--end-of-options`: `checkout --detach` rejects it up to git 2.43 ("--detach does not take a path argument"), and `<arrived>` is a verified full commit id, never author text.
-7. `git rev-parse --verify --quiet HEAD^{commit}` must equal `<arrived>`, or throw. This is the check the cache relies on.
+7. The checkout must print no `error:` line, `git rev-parse --verify --quiet HEAD^{commit}` must equal `<arrived>`, and `git ls-files --deleted` must be empty; otherwise throw. Measured in Docker, git 2.30–2.36 can report a refused lazy blob as `error: invalid object … for '<path>'`, exit 0 with `HEAD` right, and leave the file missing, so `HEAD` alone is not enough. These are the checks the cache relies on.
 8. Remove `destDir/.git`. The entry is the tree and nothing else, for both forms (today a `git-subdir` entry keeps its `.git`).
 
 Any failure other than `GitCommitNotFoundError` is thrown as `GitFetchError` ("Couldn't fetch <remote>: <git's reason>").
@@ -233,6 +233,8 @@ None. All decisions are in the ideation's table.
 - Crashed temp fetches are swept at startup; the token moved from argv to the environment and is resolved once a minute; stale comments fixed; an empty repository says "has no commits yet".
 
 **Round 2 (delta review).** Private GitHub repositories on git 2.26–2.30 were a regression: the header path is invisible to git before 2.31, and the old clone's URL rewrite worked there. Closed: the installed git's version is read once per process, and before 2.31 (or when unreadable) the token is embedded in the remote URL as `execGitClone` does. Both branches are tested with a stubbed version, and both were measured in Docker against a private repository.
+
+**Round 3 (delta review).** New blocker: on git 2.30–2.36 (measured: 2.30.0, 2.32.0, 2.34.2, 2.36.3) a partial checkout whose lazy blob fetch is refused exits 0 with `HEAD` right and the file missing, and the broken tree was cached. Fixed: an `error:` line from checkout or a non-empty `git ls-files --deleted` fails the attempt; any failure of the filtered attempt restarts once unfiltered; `getPackage` serves only a non-empty entry. The probe reproduces the silent failure on those versions and shows it detected on every version.
 
 ## References
 
