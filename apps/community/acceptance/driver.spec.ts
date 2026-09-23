@@ -76,8 +76,10 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await pageMemberA.getByRole('button', { name: 'Join community' }).click();
       // Admission pauses on a confirmation whose primary action opens the
       // community; connecting an installation is a separate next step
-      // (specs/community-membership-journeys/02-specification.md §UX).
-      await expect(pageMemberA.getByText('You’re in Acceptance A.')).toBeVisible();
+      // (specs/community-membership-journeys/02-specification.md, Management experience).
+      await expect(
+        pageMemberA.getByRole('heading', { name: 'You’re in Acceptance A.' })
+      ).toBeVisible();
       await pageMemberA.getByRole('button', { name: 'Open community' }).click();
       await expect(pageMemberA.getByLabel(/Message #general/i)).toBeVisible();
 
