@@ -169,10 +169,33 @@ The flow is rollback-safe without git: the package is moved to a temporary stagi
 
 Advisory by default. See [ADR-0233](../decisions/0233-marketplace-update-is-advisory-by-default.md) for the full rationale.
 
-1. Enumerate installed packages (or a single package when called with a name).
-2. Look up each one's latest available version in the marketplace catalog via the source manager + fetcher.
-3. Compare installed vs latest using `semver.gt()`. Return the comparison.
-4. **If and only if `apply: true` was set**, delegate to the injected `InstallerLike.install()` with `force: true`. The installer handles uninstall-without-purge → reinstall, which preserves `.dork/data/` and `.dork/secrets.json` across versions. Every apply runs the full permission preview + conflict detection pipeline — there is no fast path.
+The question it answers is "what would installing this package right now give me?", read by Claude Code's own version rule ([ADR 260923-122615](../decisions/260923-122615-package-version-resolved-like-an-install.md)). A package's version is, in order: the `version` it declares (`plugin.json`, else `.dork/manifest.json`, via `readDeclaredVersion`), else its marketplace entry's `version`, else the commit it was fetched at (`resolvePackageVersion` in `@dorkos/marketplace`). Our own marketplace sets no entry `version`, so the entry step is for third-party marketplaces.
+
+1. **Enumerate installs** in the request's scope (a project's roots first, then `dorkHome`). Each install is read through the installed scanner's `readInstalledIdentity`, the same reader the Installed list uses. It never gates on validity, so Claude-Code-only installs and installs whose version files disagree are checked too. Its `.dork/install-metadata.json` sidecar supplies `commitSha`, `entryVersion` and `sourceKey`.
+2. **Find where it would be reinstalled from.** A direct install (`name@url`, `github:`; no `installedFrom`) is checked against its own recorded source. Anything else searches marketplaces: `installedFrom` first if enabled, then every enabled source. The MATCHED source's name is what the installer receives, never `installedFrom` blindly.
+3. **Ask the installer** (`MarketplaceInstaller.resolveLatest`). It reuses the install pipeline (resolve → stage into the SHA-keyed cache → `validatePackage`), with one short-circuit: when **all three** of these equal what the install recorded, the package is `unchanged` and nothing is staged or cloned:
+   - the same `sourceKey` (clone URL, subpath, effective ref, normalized by `sourceKeyOf`);
+   - the same marketplace entry `version` (both absent counts as the same);
+   - the same commit, from a memoized `git ls-remote` of the key's ref. A ref that is already a full 40-hex SHA is its own commit, with no `ls-remote`.
+
+   A sidecar with no `sourceKey` (written before it existed) never short-circuits. A staged version that fails validation (`VERSION_MISMATCH` included) is `unresolved`: a version DorkOS would refuse to install is never offered. `resolveLatest` never throws; any error, a refused address included, becomes `unresolved` with its message.
+
+4. **Compare** and return one check per package with a `status`:
+   - `update-available` when both sides are semver and the latest is strictly newer, or when they differ and either side is a commit or not semver;
+   - `current` when equal, or when the marketplace is on an older version (with a `rollback` note: a downgrade is never offered as an update);
+   - `unknown`, with a `note` saying why: the source could not be reached, no enabled marketplace lists the package, the new version can't be installed, the install records no version at all, or a named package is not installed in this scope.
+
+   Nothing is dropped, and an `unknown` check is never reported as current. `hasUpdate` is kept and always equals `status === 'update-available'`. The route answers 404 for a name installed in no scope at all, since it can see every scope and the flow cannot.
+
+5. **If and only if `apply: true` was set**, reinstall every `update-available` package through the injected `InstallerLike.update()`. The installer handles uninstall-without-purge → reinstall, which preserves `.dork/data/` and `.dork/secrets.json` across versions, and runs the full install pipeline, validation included. It installs with `force: true`, so conflicts are detected but do not block the reinstall. An apply never runs on `unknown` or `current`.
+
+**Memos.** `UpdateFlow` is one instance per server and holds two memos for 60 seconds (`UPDATE_MEMO_TTL_MS`): the commit lookup per (clone URL, ref) and the marketplace index per source. The CLI sends one request per package, so a per-run memo would never span packages. Each stores the in-flight promise, so concurrent checks share one lookup, and a failure or placeholder commit is dropped as soon as it settles. Both are cleared after every apply and by `POST /sources/:name/refresh` (`dorkos marketplace refresh`). The honest claim is "shared within one CLI run or UI burst": without a refresh, a push from the last minute can still read as current.
+
+**Known limits.**
+
+- The SHA-keyed cache can hold a different tree than its key names: `git-subdir` clones the default branch shallowly and then checks out the ref, `github`/`url` sources ignore the ref, and a push between the lookup and the clone lands under the looked-up key. `resolveLatest` inherits this exactly as install does; it is filed as DOR-2248.
+- The package cache has no automatic pruning owner (DOR-2249). Each check that observes a new marketplace commit adds one cache entry per installed package from that repository.
+- Applying an update to a direct install goes through `name@url`, which cannot carry a ref or subpath, so a direct install from a non-default ref reinstalls from the default branch. A direct install recorded before `sourceKey` existed is checked against the default branch, and its check says so in `note`.
 
 The update flow never touches disk on its own. Anything that mutates state lives inside the installer's transaction.
 
@@ -579,7 +602,7 @@ dorkos cache clear -y                         # Wipe the entire cache (requires 
 
 `dorkos marketplace add <url>` derives a default name from the URL's last path segment (minus `.git`); pass `--name` as the explicit escape hatch. `dorkos marketplace refresh` without a name iterates every configured source via `Promise.allSettled`, so a single failing source never aborts the batch.
 
-`dorkos update` without a package name iterates the installed list client-side — there is no `update-all` endpoint on the server.
+`dorkos update` without a package name lists installs across every scope (forwarding `--project` when given) and checks each one in the scope it was found in, so an agent's install is checked with that agent's directory as its project. A server error for one package prints as `could not check` and the run continues. There is no `update-all` endpoint on the server yet (DOR-2194).
 
 ## 12. Telemetry hook
 

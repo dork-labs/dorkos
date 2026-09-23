@@ -2,7 +2,8 @@
  * Marketplace installer orchestrator.
  *
  * The single entry point for every marketplace install path — CLI,
- * HTTP, and (eventually) the update flow. Ties together the resolver,
+ * HTTP, and the update flow, whose checks call `resolveLatest` and whose
+ * applies call `update`. Ties together the resolver,
  * fetcher, validator, permission preview builder, conflict detector, and
  * the four type-specific install flows. Emits exactly one telemetry event
  * per terminal state via {@link reportInstallEvent}.
@@ -511,10 +512,11 @@ export class MarketplaceInstaller implements InstallerLike {
     const wasActiveShape =
       this.deps.shapeUpdateHooks?.getActiveShapeName() === resolved.packageName;
 
-    // 2. Uninstall WITH purge so the install root is fully removed and
-    //    `atomicMove(stagingDir, installRoot)` does not later trip on
-    //    `ENOTEMPTY`. We do our own data preservation around the call so
-    //    `.dork/data/` and `.dork/secrets.json` survive the round trip.
+    // 2. Uninstall WITHOUT purge: the package is removed, but `.dork/data/`
+    //    and `.dork/secrets.json` stay behind in the install root. Step 3
+    //    copies them aside and removes that data-only root, so
+    //    `atomicMove(stagingDir, installRoot)` does not trip on `ENOTEMPTY`,
+    //    and step 5 copies them back into the fresh install.
     //    `deactivateShape: false` keeps `ui.shapes.active` intact: this
     //    uninstall is the first half of a replace, not a removal — clearing
     //    the pointer here would silently drop the user's cockpit to "no
