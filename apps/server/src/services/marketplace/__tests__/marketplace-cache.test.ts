@@ -170,6 +170,15 @@ describe('MarketplaceCache', () => {
       expect(result!.cachedAt).toBeInstanceOf(Date);
     });
 
+    it('does not serve an empty entry directory', async () => {
+      // Purpose: an empty directory is a crashed or colliding fetch; serving it
+      // as a hit reads as "manifest missing" forever.
+      await mkdir(join(cache.cacheRoot, 'trees', `code-review-suite@${sha('a')}`), {
+        recursive: true,
+      });
+      expect(await cache.getPackage('code-review-suite', sha('a'), '')).toBeNull();
+    });
+
     it('never reads an entry from the pre-verification packages/ root', async () => {
       // Purpose: entries written before DOR-2248 may hold a different tree than
       // their key names, and nothing can tell them apart from correct ones.

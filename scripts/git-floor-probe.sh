@@ -24,7 +24,9 @@ set -eu
 
 if [ "${1:-}" != "--inside" ]; then
   images="$*"
-  [ -n "$images" ] || images="alpine/git:v2.24.1 alpine/git:v2.26.2 alpine/git:1.0.25 alpine/git:v2.34.1 alpine/git:v2.36.3 alpine/git:v2.40.1 alpine/git:v2.43.0 alpine/git:v2.45.2 alpine/git:v2.49.1"
+  # alpine/git tags do not always name the git inside: 1.0.25 is git 2.30.0 and
+  # v2.30.2 is git 2.32.0. Each run prints the real version.
+  [ -n "$images" ] || images="alpine/git:v2.24.1 alpine/git:v2.26.2 alpine/git:1.0.25 alpine/git:v2.30.2 alpine/git:v2.34.1 alpine/git:v2.36.3 alpine/git:v2.40.1 alpine/git:v2.43.0 alpine/git:v2.45.2 alpine/git:v2.49.1"
   here=$(cd "$(dirname "$0")" && pwd)
   for image in $images; do
     echo "== $image"
@@ -67,6 +69,7 @@ step fetch-filtered-by-commit git fetch --quiet --no-tags --depth=1 --filter=blo
 step checkout-detach git -c advice.detachedHead=false checkout --quiet --detach "$C1"
 step only-subpath-checked-out sh -c 'test -f pkg/f && test ! -e other'
 step head-is-commit sh -c "test \"\$(git rev-parse --verify HEAD)\" = $C1"
+step no-deleted-files sh -c 'test -z "$(git ls-files --deleted)"'
 
 # A server that refuses unadvertised objects (protocol v0, no allow*SHA1InWant).
 git -C /tmp/b.git config uploadpack.allowReachableSHA1InWant false
@@ -76,6 +79,21 @@ fresh d2
 step refused-by-commit sh -c "git -c protocol.version=0 fetch --quiet --no-tags --depth=1 --end-of-options origin $C3 2>&1 | grep -qi 'unadvertised object\|not our ref'"
 step fallback-refname git -c protocol.version=0 fetch --quiet --no-tags --depth=1 --end-of-options origin refs/heads/same-name
 step refname-is-the-branch sh -c "test \"\$(git rev-parse 'FETCH_HEAD^{commit}')\" = $C2"
+# A partial clone of an ADVERTISED commit on that server: the fetch succeeds,
+# then checkout's lazy blob request is refused. Git 2.30–2.36 can print
+# `error: invalid object` and exit 0 with the file missing; git-tree.ts must
+# see the failure all the same (an exit code, an `error:` line, or
+# `ls-files --deleted`) and retry unfiltered.
+fresh d4
+git sparse-checkout init --cone >/dev/null 2>&1 && git sparse-checkout set --end-of-options pkg >/dev/null 2>&1
+git config core.repositoryformatversion 1 && git config extensions.partialClone origin &&
+  git config remote.origin.promisor true && git config remote.origin.partialclonefilter blob:none
+git -c protocol.version=0 fetch --quiet --no-tags --depth=1 --filter=blob:none --end-of-options origin "$C2" >/dev/null 2>&1
+err=$(git -c protocol.version=0 -c advice.detachedHead=false checkout --quiet --detach "$C2" 2>&1); code=$?
+deleted=$(git ls-files --deleted 2>/dev/null)
+errline=$(echo "$err" | grep -c '^error:')
+echo "info refused-lazy-checkout: exit=$code error-lines=$errline deleted=[$(echo $deleted)]"
+step refused-lazy-checkout-detected sh -c "[ $code -ne 0 ] || [ $errline -gt 0 ] || [ -n '$deleted' ]"
 fresh d3
 step fallback-all-refs git -c protocol.version=0 fetch --quiet --no-tags --end-of-options origin '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
 step pinned-commit-present git rev-parse --verify --quiet "$C3^{commit}"

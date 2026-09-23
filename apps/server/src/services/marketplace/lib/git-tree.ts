@@ -88,12 +88,8 @@ const PARTIAL_CLONE_CONFIG = [
 /** A full commit id: SHA-1 (40 hex) or SHA-256 (64 hex), lowercase as git prints it. */
 const FULL_COMMIT_SHA_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
-/**
- * What git prints when a server will not serve an object it did not
- * advertise: a commit asked for by id, or (as "could not fetch … from promisor
- * remote") a blob a partial checkout asks for lazily.
- */
-const REFUSAL_RE = /unadvertised object|not our ref|from promisor remote/i;
+/** What git prints when a server will not serve a commit it did not advertise. */
+const REFUSAL_RE = /unadvertised object|not our ref/i;
 
 /**
  * True when `value` is a full commit id. False for every placeholder the
@@ -245,13 +241,16 @@ export async function fetchTree(req: TreeRequest): Promise<string> {
   try {
     if (req.subpath !== '') {
       // A subpath is first tried as a blob-filtered partial clone, which
-      // downloads only the package's own files. A server that refuses
-      // unadvertised objects refuses the lazy blob requests that checkout
-      // makes, so a refusal there starts over with the full fetch below.
+      // downloads only the package's own files. It is an optimisation, so ANY
+      // failure of it starts over once with the full fetch below: a server
+      // that refuses unadvertised objects refuses the lazy blob requests
+      // checkout makes, and git words that differently by version ("could not
+      // fetch … from promisor remote", "bad pack header" on 2.26, a silent
+      // "invalid object" on 2.30–2.36). A real failure fails again, unfiltered,
+      // and is reported from there.
       try {
         return await attempt(git, req, auth.url, true);
-      } catch (err) {
-        if (!REFUSAL_RE.test(reasonOf(err))) throw err;
+      } catch {
         await emptyDir(req.destDir);
       }
     }
@@ -264,7 +263,7 @@ export async function fetchTree(req: TreeRequest): Promise<string> {
 
 /**
  * One try at {@link fetchTree} in an empty `req.destDir`. `filtered` is the
- * partial-clone optimisation: it fetches by id only, and any refusal is the
+ * partial-clone optimisation: it fetches by id only, and any failure is the
  * caller's cue to start over unfiltered. Unfiltered, a refusal of the commit
  * by id takes the refname or branches-and-tags fallback.
  */
@@ -326,10 +325,27 @@ async function attempt(
 
   // No `--end-of-options` here: `checkout --detach` rejects it up to git
   // 2.43, and `arrived` is a verified full commit id, never author text.
-  await git(['-c', 'advice.detachedHead=false', 'checkout', '--quiet', '--detach', arrived]);
+  const checkout = await git([
+    '-c',
+    'advice.detachedHead=false',
+    'checkout',
+    '--quiet',
+    '--detach',
+    arrived,
+  ]);
+  // Git 2.30–2.36 (measured) can report a blob it failed to fetch lazily as
+  // `error: invalid object … for '<path>'` and still exit 0, leaving HEAD
+  // right and the file missing. So an `error:` line fails the checkout, and
+  // every file the index expects must be on disk.
+  const reported = checkout.stderr.split('\n').find((line) => /^error:/i.test(line.trim()));
+  if (reported) throw Object.assign(new Error(reported.trim()), { stderr: reported });
   const head = await commitOf(git, 'HEAD');
   if (head !== arrived) {
     throw new Error(`checked out ${head}, expected ${arrived}`);
+  }
+  const { stdout: missing } = await git(['ls-files', '--deleted']);
+  if (missing.trim() !== '') {
+    throw new Error(`the checkout is missing files: ${missing.trim().split('\n')[0]}`);
   }
 
   await rm(path.join(req.destDir, '.git'), { recursive: true, force: true });

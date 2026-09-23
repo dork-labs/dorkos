@@ -13,7 +13,7 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** One scripted git answer: stdout, or a failure with stderr. */
-type Answer = { stdout: string } | { fail: string };
+type Answer = { stdout: string; stderr?: string } | { fail: string };
 
 /** Picks git's answer for a given argv. */
 let respond: (args: string[]) => Answer = () => ({ stdout: '' });
@@ -49,7 +49,7 @@ vi.mock('node:child_process', async () => {
           if ('fail' in answer) {
             callback(Object.assign(new Error('Command failed: git'), { stderr: answer.fail }));
           } else {
-            callback(null, { stdout: answer.stdout, stderr: '' });
+            callback(null, { stdout: answer.stdout, stderr: answer.stderr ?? '' });
           }
         });
       }
@@ -336,7 +336,76 @@ describe('verification', () => {
       ['rev-parse', '--verify', '--quiet', 'FETCH_HEAD^{commit}'],
       ['-c', 'advice.detachedHead=false', 'checkout', '--quiet', '--detach', A],
       ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'],
+      ['ls-files', '--deleted'],
     ]);
+  });
+
+  it.each([
+    ['a checkout that exits 0 but reports an error', 'checkout'],
+    ['a checkout that leaves files missing', 'ls-files'],
+  ])('refuses %s (git 2.30–2.36 does this), retrying unfiltered once', async (_label, verb) => {
+    // Purpose: git 2.30–2.36 can print `error: invalid object … for 'pkg/f'`
+    // after a failed lazy blob fetch, exit 0 and leave HEAD right. Without
+    // these checks the broken tree was cached and served forever.
+    const destDir = await mkdtemp(path.join(tmpdir(), 'git-tree-guards-'));
+    let broken = 0;
+    const brokenAnswer = (args: string[]): Answer | undefined => {
+      if (verb === 'checkout' && args.includes('checkout')) {
+        broken += 1;
+        return { stdout: '', stderr: `error: invalid object 100644 ${B} for 'pkg/f'\n` };
+      }
+      if (verb === 'ls-files' && args[0] === 'ls-files') {
+        broken += 1;
+        return { stdout: 'pkg/f\n' };
+      }
+      return undefined;
+    };
+    try {
+      // Broken both times: the retry happens once, then the failure is reported.
+      respond = (args) => brokenAnswer(args) ?? gitReporting(A, A)(args);
+      const error = await fetchTree({
+        ...req('https://gitlab.example.com/o/r.git'),
+        subpath: 'pkg',
+        destDir,
+      }).then(
+        () => undefined,
+        (e: unknown) => e
+      );
+      expect(error).toBeInstanceOf(GitFetchError);
+      expect(broken).toBe(2);
+      expect(calls.filter((a) => a[0] === 'fetch')).toHaveLength(2);
+
+      // Broken only on the filtered try: the unfiltered retry succeeds.
+      calls.length = 0;
+      broken = 0;
+      respond = (args) =>
+        (broken === 0 ? brokenAnswer(args) : undefined) ?? gitReporting(A, A)(args);
+      await expect(
+        fetchTree({ ...req('https://gitlab.example.com/o/r.git'), subpath: 'pkg', destDir })
+      ).resolves.toBe(A);
+      expect(calls.filter((a) => a[0] === 'fetch')[1]).not.toContain('--filter=blob:none');
+    } finally {
+      await rm(destDir, { recursive: true, force: true });
+    }
+  });
+
+  it('retries a subpath unfiltered after ANY filtered failure, once', async () => {
+    // Purpose: git words a refused partial clone differently by version
+    // (`bad pack header` on 2.26); the optimisation must never be the
+    // reason a package fails to install.
+    const destDir = await mkdtemp(path.join(tmpdir(), 'git-tree-guards-'));
+    try {
+      respond = (args) =>
+        args[0] === 'fetch' && args.includes('--filter=blob:none')
+          ? { fail: 'fatal: protocol error: bad pack header' }
+          : gitReporting(A, A)(args);
+      await expect(
+        fetchTree({ ...req('https://gitlab.example.com/o/r.git'), subpath: 'pkg', destDir })
+      ).resolves.toBe(A);
+      expect(calls.filter((a) => a[0] === 'fetch')).toHaveLength(2);
+    } finally {
+      await rm(destDir, { recursive: true, force: true });
+    }
   });
 
   it('starts a subpath over unfiltered when the server refuses the lazy blob fetch', async () => {

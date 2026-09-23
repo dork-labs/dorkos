@@ -213,7 +213,7 @@ export class MarketplaceCache {
    * @param commitSha - The commit whose tree is wanted.
    * @param subpath - The subfolder a sparse entry holds; `''` for the whole
    *   repository. Part of the key: a sparse checkout is a different tree.
-   * @returns A descriptor when present, `null` otherwise.
+   * @returns A descriptor when a non-empty entry is present, `null` otherwise.
    */
   async getPackage(
     packageName: string,
@@ -221,11 +221,11 @@ export class MarketplaceCache {
     subpath: string
   ): Promise<CachedPackage | null> {
     const path = this.packageDir(packageName, commitSha, subpath);
+    // The same test the write path's fast path applies: an empty directory is
+    // a crashed or colliding fetch, never an entry to serve.
+    if (!(await isNonEmptyDir(path))) return null;
     try {
       const info = await stat(path);
-      if (!info.isDirectory()) {
-        return null;
-      }
       return {
         packageName,
         commitSha,
