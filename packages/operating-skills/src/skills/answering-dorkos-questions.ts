@@ -183,9 +183,9 @@ rather not share, and press submit. Never report their issue as filed. If
 \`truncated\` comes back true the link could not hold the whole body, so hand them
 \`fullBody\` as well.
 
-If they would rather do it themselves: **Send feedback** in the app goes straight
-to the DorkOS team; **Help and feedback > Report on GitHub** opens this same
-page; \`dorkos feedback\` does it from a terminal. Neither that command nor this
+If they would rather do it themselves: **Help and feedback > Send feedback** in
+the app goes straight to the DorkOS team, and its **Open one instead** link at
+the bottom opens this same page; \`dorkos feedback\` does it from a terminal. Neither that command nor this
 tool is off limits to you, so never say it is, and never file an issue on their
 behalf through some other tool.
 

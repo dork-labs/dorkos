@@ -277,7 +277,7 @@ if (!gotTheLock) {
   // its own process inside a UtilityProcess never comes back (see `admin/`).
   setupAdminActions({ getRendererUrl });
 
-  // "Capture app view" in the feedback dialog. The shell answers it because it
+  // "Capture app" in the feedback dialog. The shell answers it because it
   // has a real window to photograph, where the browser has to redraw the page
   // from its own DOM and guess (see `capture/`).
   setupAppViewCapture({ getRendererUrl });

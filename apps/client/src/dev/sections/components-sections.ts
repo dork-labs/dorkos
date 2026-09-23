@@ -106,11 +106,15 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
       'drop',
       'capture',
       'point',
+      'composer',
+      'email',
+      'signed out',
+      'draft',
     ],
   },
   {
-    id: 'point-at-element-still',
-    title: 'Point at element (still)',
+    id: 'point-at-it-still',
+    title: 'Point at it (still)',
     page: 'components',
     category: 'Feedback',
     keywords: [

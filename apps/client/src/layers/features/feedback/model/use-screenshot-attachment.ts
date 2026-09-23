@@ -2,7 +2,7 @@
  * The one screenshot a feedback submission may carry, and the five ways a
  * person can hand one over (feedback-attachments PR 2, PR 3 and PR 4).
  *
- * Paste, drag-and-drop, the file picker, one-click "Capture app view" and
+ * Paste, drag-and-drop, the file picker, one-click "Capture app" and
  * pointing at a single element all land here, go through the same compression
  * step, and end up as the same bounded `data:` URL. One image at a time on
  * purpose: a second attach replaces
@@ -107,20 +107,6 @@ export interface ScreenshotAttachmentOptions {
    * so the whole window refuses file drops while one is open.
    */
   enabled?: boolean;
-  /**
-   * Called when a file drag first enters the surface, so the host can reveal
-   * the drop target. Without it, dragging a picture onto a dialog whose
-   * attachments panel is collapsed gives the user nowhere visible to aim.
-   */
-  onFileDragIn?: () => void;
-  /**
-   * Called once an image is attached, so the host can reveal it.
-   *
-   * Paste is the path that needs this: ⌘V works anywhere on the dialog, so
-   * without it an image can land in a collapsed panel and the person who
-   * pasted it sees nothing happen at all.
-   */
-  onAttached?: () => void;
 }
 
 /** What {@link useScreenshotAttachment} hands back to the dialog. */
@@ -148,8 +134,11 @@ export interface UseScreenshotAttachment {
    * same state machine — one image, the newest attempt wins.
    *
    * @param element - The element the person pointed at.
+   * @returns The attached picture, so the caller can tell it apart from one
+   *   attached later some other way, or `null` when the capture failed or was
+   *   superseded.
    */
-  captureElement: (element: Element) => Promise<void>;
+  captureElement: (element: Element) => Promise<string | null>;
   /** Drop the attached image. */
   clear: () => void;
   /**
@@ -178,7 +167,7 @@ export interface UseScreenshotAttachment {
 export function useScreenshotAttachment(
   options: ScreenshotAttachmentOptions = {}
 ): UseScreenshotAttachment {
-  const { onFileDragIn, onAttached, enabled = false } = options;
+  const { enabled = false } = options;
   const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -201,30 +190,28 @@ export function useScreenshotAttachment(
    * same "newest attempt wins" rule. A second state machine beside this one is
    * how two paths end up both writing an image.
    */
-  const attachFrom = useCallback(
-    async (produce: () => Promise<string>): Promise<void> => {
-      const mine = ++generation.current;
-      setIsPreparing(true);
-      try {
-        const compressed = await produce();
-        // Superseded while working: the image was removed, the dialog was
-        // reopened, or a second picture is already on its way. Any of the three
-        // makes this result stale, and writing it would resurrect something the
-        // user believed was gone.
-        if (mine !== generation.current) return;
-        setDataUrl(compressed);
-        onAttached?.();
-      } catch (error) {
-        if (mine !== generation.current) return;
-        toast.error(refusalMessage(error));
-      } finally {
-        // Only the live attempt owns the flag; a stale one clearing it would
-        // re-enable Send while the newer picture is still encoding.
-        if (mine === generation.current) setIsPreparing(false);
-      }
-    },
-    [onAttached]
-  );
+  const attachFrom = useCallback(async (produce: () => Promise<string>): Promise<string | null> => {
+    const mine = ++generation.current;
+    setIsPreparing(true);
+    try {
+      const compressed = await produce();
+      // Superseded while working: the image was removed, the dialog was
+      // reopened, or a second picture is already on its way. Any of the three
+      // makes this result stale, and writing it would resurrect something the
+      // user believed was gone.
+      if (mine !== generation.current) return null;
+      setDataUrl(compressed);
+      return compressed;
+    } catch (error) {
+      if (mine !== generation.current) return null;
+      toast.error(refusalMessage(error));
+      return null;
+    } finally {
+      // Only the live attempt owns the flag; a stale one clearing it would
+      // re-enable Send while the newer picture is still encoding.
+      if (mine === generation.current) setIsPreparing(false);
+    }
+  }, []);
 
   const attach = useCallback(
     async (file: File): Promise<void> => {
@@ -240,7 +227,9 @@ export function useScreenshotAttachment(
   const capture = useCallback(
     // Compressed like every other picture: the shell hands back a full-size PNG
     // of a retina window, which is several times the size the wire accepts.
-    (): Promise<void> => attachFrom(async () => compressImage(await captureAppView())),
+    async (): Promise<void> => {
+      await attachFrom(async () => compressImage(await captureAppView()));
+    },
     [attachFrom]
   );
 
@@ -248,7 +237,7 @@ export function useScreenshotAttachment(
     // `cropShotToElement` owns the compression too — cropping first is what makes
     // the bound worth spending on the part someone pointed at rather than on a
     // whole window that happens to contain it.
-    (element: Element): Promise<void> =>
+    (element: Element): Promise<string | null> =>
       attachFrom(async () => cropShotToElement(await captureAppShot(), element)),
     [attachFrom]
   );
@@ -319,16 +308,12 @@ export function useScreenshotAttachment(
     [attach]
   );
 
-  const onDragEnter = useCallback(
-    (event: DragEvent) => {
-      if (!dragCarriesFiles(event.dataTransfer)) return;
-      event.preventDefault();
-      dragDepth.current += 1;
-      if (dragDepth.current === 1) onFileDragIn?.();
-      setIsDraggingOver(true);
-    },
-    [onFileDragIn]
-  );
+  const onDragEnter = useCallback((event: DragEvent) => {
+    if (!dragCarriesFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepth.current += 1;
+    setIsDraggingOver(true);
+  }, []);
 
   const onDragOver = useCallback((event: DragEvent) => {
     // Claim the drag only when it is ours; anything else must keep falling

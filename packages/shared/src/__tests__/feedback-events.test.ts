@@ -20,6 +20,9 @@ import {
   FEEDBACK_EVENT_NAMES,
   MAX_FEEDBACK_MESSAGE_LEN,
   MAX_FEEDBACK_SCREENSHOT_DATA_URL_LEN,
+  MAX_FEEDBACK_ELEMENT_SELECTOR_LEN,
+  MAX_FEEDBACK_ELEMENT_NAME_LEN,
+  MAX_FEEDBACK_ELEMENT_LABEL_LEN,
   MAX_BREADCRUMBS,
   MAX_TRANSCRIPT_LEN,
   MAX_LOG_EXCERPT_LEN,
@@ -305,6 +308,88 @@ describe('feedback event registry', () => {
           screenshotUploadId: 'upload_abc',
         });
         expect(res.success).toBe(false);
+      });
+    });
+
+    describe('element (DOR-2232)', () => {
+      const base = { kind: 'bug' as const, message: 'Messages vanish when I scroll up.' };
+
+      it('round-trips the pointed-at element beside the words, not in them', () => {
+        const element = {
+          selector: '[data-testid="message-list"]',
+          slot: 'scroll-area',
+          testId: 'message-list',
+        };
+        const res = FeedbackSubmissionSchema.safeParse({ ...base, element });
+        expect(res.success && res.data.element).toEqual(element);
+        expect(res.success && res.data.message).toBe(base.message);
+      });
+
+      it('accepts an element that is only a selector', () => {
+        const res = FeedbackSubmissionSchema.safeParse({
+          ...base,
+          element: { selector: 'main > div:nth-of-type(2)' },
+        });
+        expect(res.success).toBe(true);
+      });
+
+      it('rejects an element with no selector, or an empty one', () => {
+        expect(
+          FeedbackSubmissionSchema.safeParse({ ...base, element: { slot: 'button' } }).success
+        ).toBe(false);
+        expect(
+          FeedbackSubmissionSchema.safeParse({ ...base, element: { selector: '' } }).success
+        ).toBe(false);
+      });
+
+      it('bounds the selector and both names at their caps', () => {
+        const at = (n: number) => 'a'.repeat(n);
+        const ok = FeedbackSubmissionSchema.safeParse({
+          ...base,
+          element: {
+            selector: at(MAX_FEEDBACK_ELEMENT_SELECTOR_LEN),
+            slot: at(MAX_FEEDBACK_ELEMENT_NAME_LEN),
+            testId: at(MAX_FEEDBACK_ELEMENT_NAME_LEN),
+          },
+        });
+        expect(ok.success).toBe(true);
+        for (const element of [
+          { selector: at(MAX_FEEDBACK_ELEMENT_SELECTOR_LEN + 1) },
+          { selector: 'div', slot: at(MAX_FEEDBACK_ELEMENT_NAME_LEN + 1) },
+          { selector: 'div', testId: at(MAX_FEEDBACK_ELEMENT_NAME_LEN + 1) },
+        ]) {
+          expect(FeedbackSubmissionSchema.safeParse({ ...base, element }).success).toBe(false);
+        }
+      });
+
+      it('carries the element’s accessible name, bounded', () => {
+        const ok = FeedbackSubmissionSchema.safeParse({
+          ...base,
+          element: { selector: 'button', label: 'Set up a daily run' },
+        });
+        expect(ok.success && ok.data.element?.label).toBe('Set up a daily run');
+        const over = FeedbackSubmissionSchema.safeParse({
+          ...base,
+          element: { selector: 'button', label: 'a'.repeat(MAX_FEEDBACK_ELEMENT_LABEL_LEN + 1) },
+        });
+        expect(over.success).toBe(false);
+      });
+
+      it('rejects unknown keys inside element (strict)', () => {
+        const res = FeedbackSubmissionSchema.safeParse({
+          ...base,
+          element: { selector: 'div', componentName: 'MessageList' },
+        });
+        expect(res.success).toBe(false);
+      });
+
+      it('never rides the metrics event', () => {
+        const event = buildFeedbackEvent(
+          { ...base, element: { selector: 'div' } },
+          { surface: 'cockpit', distinctId: VALID_DISTINCT_ID, timestamp: VALID_TIMESTAMP }
+        );
+        expect(JSON.stringify(event)).not.toContain('element');
+        expect(FeedbackEventSchema.safeParse(event).success).toBe(true);
       });
     });
 

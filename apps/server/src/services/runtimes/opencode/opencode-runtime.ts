@@ -342,7 +342,9 @@ export class OpenCodeRuntime implements AgentRuntime {
         const agent = this.meshCore?.getByPath(cwd);
         const accessContext =
           connectionsApplied && this.connectorRuntimeTools && agent
-            ? await this.accountsAccess.select(this.connectorRuntimeTools, agent.id, sessionId)
+            ? await this.accountsAccess.select(this.connectorRuntimeTools, agent.id, sessionId, {
+                serviceCatalog: dorkosApplied,
+              })
             : undefined;
         const turnOpts = accessContext
           ? {

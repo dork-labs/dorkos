@@ -21,6 +21,7 @@ import { ConnectorExecutionBroker } from '../execution-broker.js';
 import { ConnectorUsageStore } from '../usage-store.js';
 import { createConnectorRuntimeMcpServer } from '../runtime-mcp-server.js';
 import { ConnectorRegistry } from '../../registry.js';
+import { ConnectorAgentRequestService } from '../../agent-request-service.js';
 import { ConnectorRuntimePrincipalService } from '../../principal/runtime-principal-service.js';
 import {
   createServerPrincipal,
@@ -197,6 +198,70 @@ describe('createConnectorRuntimeMcpServer', () => {
       arguments: { requestId: 'request-a', agentId: 'agent-other' },
     });
     expect(forbidden.isError).toBe(true);
+    await Promise.all([client.close(), server.close()]);
+  });
+
+  it('points a guessed service id at the service catalog on the wire', async () => {
+    const principal = createServerPrincipal({
+      kind: 'runtime',
+      owner: OWNER,
+      bindingId: 'binding-guess',
+      runtime: 'opencode',
+      canonicalSessionId: 'session-guess',
+      agentId: 'agent-guess',
+      agentPath: '/agents/guess',
+      canonicalCwd: '/agents/guess',
+    });
+    const requests = new ConnectorAgentRequestService({
+      db: createDb(':memory:'),
+      services: {
+        serviceDirectory: vi.fn(async () => ({
+          services: [
+            { serviceSlug: 'gmail', displayName: 'Gmail', requestable: true },
+            { serviceSlug: 'composio_search', displayName: 'Composio Search', requestable: true },
+          ],
+          warnings: [],
+          routeTypes: ['composio'],
+        })),
+      },
+      runtimePrincipals: { revalidatePrincipal: vi.fn(async () => true) },
+      authority: {} as never,
+      bootEpoch: 'boot-guess',
+    });
+    const capabilityRegistry = composeRegistry([connectorExecutionDomain], {
+      logger: noopLogger,
+      connectorExecutionDeps: {
+        authorization: {} as never,
+        broker: {} as never,
+        access: {} as never,
+        requests,
+      },
+    });
+    const server = createConnectorRuntimeMcpServer(capabilityRegistry, principal);
+    const client = new Client({ name: 'connector-guess-test', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
+
+    const requestTool = (await client.listTools()).tools.find(
+      (tool) => tool.name === 'connectors.request_connection'
+    );
+    expect(requestTool?.description).toContain('connector_list_toolkits');
+    expect(requestTool?.description).toContain('command-line login in a shell');
+
+    const refused = await client.callTool({
+      name: 'connectors.request_connection',
+      arguments: {
+        version: 1,
+        serviceSlug: 'composio_gmail',
+        reason: 'List the emails I can read.',
+        requestedOperations: ['get_emails'],
+      },
+    });
+    expect(refused.isError).toBe(true);
+    const body = payload(refused);
+    expect(body.code).toBe('CONNECTOR_REQUEST_REFUSED');
+    expect(body.error).toContain('Close matches: gmail.');
+    expect(body.error).toContain('dorkos_connector_list_toolkits');
     await Promise.all([client.close(), server.close()]);
   });
 

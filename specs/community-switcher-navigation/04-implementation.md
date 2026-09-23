@@ -1,13 +1,13 @@
 # Implementation Summary: Community context and navigation contract
 
 **Created:** 2026-09-20
-**Last Updated:** 2026-09-21
+**Last Updated:** 2026-09-23
 **Spec:** specs/community-switcher-navigation/02-specification.md
 
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 0 / 11
+**Tasks Completed:** 4 / 11 (1.1, 1.2, 2.2 and 3.2; audited against main 5cd6dd794 on 2026-09-23)
 
 ## Tasks Completed
 
@@ -98,6 +98,45 @@ Decisions to confirm: Create community is hidden because the local descriptor ca
 host-operator signal; Community sign-out stays on the Community's site; Invite visibility uses
 lifecycle + reachability because the descriptor carries no role, and the Community page rechecks.
 
+### Session 3 - 2026-09-23 (status audit)
+
+- Sessions 1 and 2 landed on main as #1986 (7f90b1c17, attention aggregates), #1992 (d5d73c251, the switcher, contextual navigation and phone sheet) and #2002 (538a6c580, lifecycle actions and connection cleanup).
+- The Phase 4 proof is PR #2015, still open. Along the way it found and fixed four gaps: ⌘⇧K inside text fields, the unannounced failed switch, a missing `menu` parent on the phone sheet, and sheet and popover scrolling. Those fixes are not on main yet. It reports two other gaps as not met: DOR-2240 and DOR-2241.
+
+### Session 4 - 2026-09-23 (Phase 4 proof, PR #2015)
+
+**Tasks 4.1 and 4.2:** Prove switching, accessibility and cross-community isolation (DOR-2186).
+
+- `apps/client/src/app/__tests__/community-rapid-switch.test.tsx` drives the real router `onLoad`
+  epoch commit and the real keyed `ChannelsPage` through A→B→A→this DorkOS→B with every history read
+  and event stream in flight, then releases the stale answers newest-first. No stale read or event
+  changes the cache under any key, B's keys never hold A, only B's stream stays open, the read
+  cursor written is B's own, and the route ends on B. It also covers hops inside one frame, a send
+  in A whose receipt lands while B is open, and a read that lands after the local owner changed.
+  Mutation-checked: dropping the route fence, the read-completion guard, the epoch from cache keys,
+  the epoch increment on A→B→A, the surface key, or both stream-event checks each turns it red.
+  Either stream-event check alone and the drafts receipt guard are shadowed by another fence in
+  these journeys; the receipt guard is caught by `remote-community-drafts.test.tsx`.
+- `apps/e2e/tests/connections/community-switching-proof.spec.ts` repeats the journey in the real
+  shell with held responses and records every animation frame: a Community's messages are only ever
+  painted under its own name and address, and Alpha's event stream is closed before any Beta answer
+  arrives (page-clock timings). Back/Forward walks the same history without a stale frame.
+- `apps/e2e/tests/connections/community-switcher-access.spec.ts` proves the keyboard-only journey
+  (⌘⇧K from anywhere, arrows, Home/End, typeahead, Enter, Escape returning focus to where it was),
+  row names and states in words, axe clean in both themes on desktop and on the phone sheet, 44px
+  rows, reduced motion, 200% zoom, long labels, fifty Communities at desktop and 390px, that the
+  shell loads no Community detail until one is chosen, that the labelled target frame paints before
+  the Community answers, and that a failed switch is announced.
+- Fixed on the way: ⌘⇧K was ignored in text fields; a failed switch was silent; the phone sheet's
+  action rows had no menu parent; the phone sheet and the desktop popover could not scroll, so a
+  long list or 200% zoom left rows unreachable.
+- Closed tenancy receipt row M11's local-app half with named proofs and a guard check.
+- Review follow-ups: a newer choice wins over a failed older read (no navigation back, no message);
+  the failure message appears only once the way back has landed; ⌘⇧K ignores a key an input method
+  is still composing, is listed in the shortcut reference, and Escape returns focus to where the
+  shortcut was pressed (the message box, verified in the browser); the phone sheet's action menu
+  now supports Up/Down/Home/End.
+
 ## Files Modified/Created
 
 **Source files:**
@@ -134,15 +173,14 @@ lifecycle + reachability because the descriptor carries no role, and the Communi
 
 ## Known Issues
 
-- The desktop switcher, contextual body, phone trigger, responsive sheet, search, and explicit
-  order actions are present. Browser proof at 390px/200% zoom and post-selection heading focus
-  remain in Task 2.3.
-- Effective `read`, `post`, and `enrollAgent` capabilities will come from the reviewed Community
-  administration contract. The local app must consume that server projection rather than infer
-  write access from lifecycle, membership, or a restored read-only connection.
-- The implementation is stacked on accepted DOR-2191 head
-  `1d3be34510d072831cb58d49052879332dc96c1c`; do not open a PR until that dependency lands and the
-  branch is reconciled with current `main`.
+- None beyond Remaining Work. The earlier notes are resolved on main: the effective-capability projection landed in #1984 (7d365fc36), and the DOR-2191 stacking dependency merged as #1957.
+
+## Remaining Work
+
+- **DOR-2240 (Task 2.3):** after a selection on the phone, focus should move to the target page's heading. `focusPageHeading` in `CommunityContextSwitcher.tsx` finds nothing because no route renders a heading inside `main`, so this needs a page-heading decision first.
+- **DOR-2241 (Task 1.4):** a draft should be restored after A→B→A. Drafts live in the keyed room surface and are scoped to the route epoch, so leaving a room drops them. They never cross owners or Communities. Restoring them needs a draft-store design.
+- **DOR-2242 (Task 3.1):** Create community should be in the switcher for a host operator. The local connection descriptor carries no host-operator signal, so this needs a small contract addition first.
+- **PR #2015 (Tasks 1.3, 2.1, 2.3, 4.1, 4.2):** merging it lands the Phase 4 proof and its four fixes: failed-switch announcement, ⌘⇧K in text fields, the phone sheet's `menu` role, and popover and sheet scrolling.
 
 ## Implementation Notes
 

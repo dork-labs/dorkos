@@ -11,7 +11,7 @@ interface TitleBarProps {
 /**
  * The bar for a page whose identity is just its name.
  *
- * Most routes are this: Workspaces, Connections, Marketplace, Product feedback.
+ * Most routes are this: Workspaces, Connections, Marketplace, Your reports.
  * They used to be a one-line component file each, all saying the same sentence
  * with a different string in it — so they are a declaration in `router.tsx` now
  * (`header: () => <TitleBar title="Workspaces" />`) and the files are gone.

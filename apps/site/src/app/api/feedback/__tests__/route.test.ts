@@ -204,6 +204,45 @@ describe('POST /api/feedback — screenshot field', () => {
   });
 });
 
+describe('POST /api/feedback — pointed-at element (DOR-2232)', () => {
+  beforeEach(() => {
+    vi.mocked(createFeedbackIssue).mockResolvedValue(null);
+  });
+
+  const element = {
+    selector: '[data-testid="message-list"]',
+    slot: 'scroll-area',
+    testId: 'message-list',
+    label: 'Messages',
+  };
+
+  it('accepts an element and hands it to the Linear issue builder beside the message', async () => {
+    const res = await POST(post({ ...VALID_SUBMISSION, element }));
+
+    expect(res.status).toBe(200);
+    expect(createFeedbackIssue).toHaveBeenCalledWith(
+      expect.objectContaining({ element, message: VALID_SUBMISSION.message })
+    );
+    // It lives in the issue body only; the row has no column for it.
+    const inserted = mockValues.mock.calls[0][0] as Record<string, unknown>;
+    expect(inserted).not.toHaveProperty('element');
+  });
+
+  it('returns 400 for an over-cap selector or name, and an unknown key inside element', async () => {
+    for (const bad of [
+      { selector: 'a'.repeat(241) },
+      { selector: 'div', slot: 'a'.repeat(129) },
+      { selector: 'div', testId: 'a'.repeat(129) },
+      { selector: 'div', componentName: 'MessageList' },
+      { slot: 'button' },
+      { selector: 'div', label: 'a'.repeat(81) },
+    ]) {
+      const res = await POST(post({ ...VALID_SUBMISSION, element: bad }));
+      expect(res.status).toBe(400);
+    }
+  });
+});
+
 describe('POST /api/feedback — honeypot', () => {
   it('drops the submission and persists nothing when the honeypot field is filled', async () => {
     const res = await POST(post({ ...VALID_SUBMISSION, website: 'i-am-a-bot' }));

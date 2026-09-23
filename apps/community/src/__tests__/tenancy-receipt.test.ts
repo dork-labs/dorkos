@@ -49,6 +49,25 @@ function liveTestTitles(file: string): Set<string> {
 const requirements = readRequirements();
 const entries = readReceipt();
 
+/**
+ * Proofs that live in the local DorkOS app's own suites, cited in a row's
+ * Scope note as `- local app: \`file\` — title`. No receipt runner executes
+ * them (they run in the client unit suite and the e2e browser projects), so
+ * they are not receipt proofs; this only keeps each citation pointing at a real
+ * test, and keeps the receipt from promising a proof that never landed.
+ */
+function localAppProofs(): { file: string; title: string }[] {
+  const receipt = readFileSync(
+    resolve(repoRoot, 'specs/community-tenancy-contract/05-isolation-receipt.md'),
+    'utf8'
+  );
+  return receipt
+    .split('\n')
+    .map((line) => /^- local app: `([^`]+)` — (.+)$/.exec(line))
+    .filter((match) => match !== null)
+    .map((match) => ({ file: match[1]!, title: match[2]!.trim() }));
+}
+
 describe('tenant isolation receipt', () => {
   it('reads a non-empty matrix and criteria list from the spec', () => {
     // A parser that silently finds nothing would make every other check vacuous.
@@ -59,6 +78,23 @@ describe('tenant isolation receipt', () => {
   it('has exactly one receipt entry for every matrix row and 4.2 criterion, and nothing stale', () => {
     const quoted = entries.map((entry) => `${entry.id[0]}:${entry.requirement}`).sort();
     expect(quoted).toEqual([...requirements].sort());
+  });
+
+  it('points every local-app citation at a real test, and promises no proof still to come', () => {
+    const cited = localAppProofs();
+    expect(cited.length).toBeGreaterThan(0);
+    for (const proof of cited) {
+      expect(existsSync(resolve(repoRoot, proof.file)), proof.file).toBe(true);
+      expect(
+        liveTestTitles(proof.file).has(proof.title),
+        `no test "${proof.title}" declared in ${proof.file}`
+      ).toBe(true);
+    }
+    const receipt = readFileSync(
+      resolve(repoRoot, 'specs/community-tenancy-contract/05-isolation-receipt.md'),
+      'utf8'
+    );
+    expect(receipt).not.toMatch(/will be proven/i);
   });
 
   it.each(entries.map((entry) => [entry.id, entry] as const))(

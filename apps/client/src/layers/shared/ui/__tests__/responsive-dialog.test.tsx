@@ -293,6 +293,45 @@ describe('ResponsiveDialogContent', () => {
   });
 });
 
+describe('shape-only props follow the dialog’s own shape, fixed at open', () => {
+  function Tree({ open = true }: { open?: boolean }) {
+    return (
+      <ResponsiveDialog open={open}>
+        <ResponsiveDialogContent
+          data-testid="content"
+          className="base"
+          desktopProps={{ className: 'max-w-md', 'aria-label': 'desktop only' }}
+        >
+          <ResponsiveDialogBody alignWithHeader data-testid="body">
+            body
+          </ResponsiveDialogBody>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+    );
+  }
+
+  it('applies them to the centered dialog', () => {
+    mockUseIsMobile.mockReturnValue(false);
+    render(<Tree />);
+    expect(screen.getByTestId('content')).toHaveClass('base', 'max-w-md');
+    expect(screen.getByTestId('content')).toHaveAttribute('aria-label', 'desktop only');
+    expect(screen.getByTestId('body')).toHaveClass('px-4', '-mx-4');
+  });
+
+  it('never gives them to a drawer, even when the window widens while it is open', () => {
+    mockUseIsMobile.mockReturnValue(true);
+    const { rerender } = render(<Tree />);
+    mockUseIsMobile.mockReturnValue(false);
+    rerender(<Tree />);
+
+    // Still a drawer (the shape is fixed at open), so still flush to its gutter.
+    expect(screen.getByTestId('drawer-root')).toBeInTheDocument();
+    expect(screen.getByTestId('body')).not.toHaveClass('-mx-4');
+    expect(screen.getByTestId('content')).not.toHaveClass('max-w-md');
+    expect(screen.getByTestId('content')).not.toHaveAttribute('aria-label');
+  });
+});
+
 describe('useResponsiveDialog', () => {
   it('throws when used outside a ResponsiveDialog', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});

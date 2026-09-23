@@ -99,6 +99,12 @@ export interface CreateFeedbackIssueInput {
    * and embedding it — callers pass the raw `data:` URL and nothing else.
    */
   screenshot?: { dataUrl: string };
+  /**
+   * The one element the reporter pointed at in the app, when they did. Rendered
+   * as its own block under the message and never used for the title: the title
+   * is the reporter's own words (DOR-2232).
+   */
+  element?: { selector: string; slot?: string; testId?: string; label?: string };
 }
 
 /** Result of a successful issue create. */
@@ -365,14 +371,50 @@ function fenceBlock(text: string): string {
 }
 
 /**
- * Description = full message + a rendered identity block + diagnostics +
- * attachments. The message is reporter prose and renders unescaped, so a
+ * Wrap a value in inline code that nothing inside it can close early.
+ *
+ * The element's names come from an unauthenticated endpoint with only a length
+ * cap, so a backtick in one must not end the span and let the rest render as
+ * markdown. The delimiter is one backtick longer than the longest run inside,
+ * and padded with a space when the value starts or ends with one (CommonMark
+ * strips exactly one such space on each side).
+ */
+function inlineCode(value: string): string {
+  const text = oneLine(value);
+  const longestRun = text.match(/`+/g)?.reduce((max, run) => Math.max(max, run.length), 0) ?? 0;
+  const ticks = '`'.repeat(longestRun + 1);
+  const pad = text.startsWith('`') || text.endsWith('`') ? ' ' : '';
+  return `${ticks}${pad}${text}${pad}${ticks}`;
+}
+
+/**
+ * The one line naming the element the reporter pointed at, for example
+ * "Pointed at: [data-testid="message-list"] (label Messages, slot scroll-area,
+ * testid message-list)", with every value in inline code and only the names
+ * the element actually had.
+ */
+function buildElementLine(element: NonNullable<CreateFeedbackIssueInput['element']>): string {
+  const names = [
+    element.label ? `label ${inlineCode(element.label)}` : null,
+    element.slot ? `slot ${inlineCode(element.slot)}` : null,
+    element.testId ? `testid ${inlineCode(element.testId)}` : null,
+  ].filter((name): name is string => name !== null);
+  const suffix = names.length > 0 ? ` (${names.join(', ')})` : '';
+  return `Pointed at: ${inlineCode(element.selector)}${suffix}`;
+}
+
+/**
+ * Description = full message + the element pointed at + a rendered identity
+ * block + diagnostics + attachments. The message is reporter prose and renders unescaped, so a
  * submitter can imitate the blocks below it — when parsing, the LAST
  * occurrence of a `Key:` line is the authoritative one, since the genuine
  * block is appended after the message.
  */
 function buildDescription(input: CreateFeedbackIssueInput, screenshotLine?: string): string {
   const sections = [input.message.trim()];
+
+  // Right under the words it gives context to, and never above them.
+  if (input.element) sections.push(buildElementLine(input.element));
 
   const identityLines: string[] = [];
   const reporterLine = buildReporterLine(input);

@@ -10,7 +10,16 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
+import {
+  act,
+  render,
+  screen,
+  fireEvent,
+  createEvent,
+  cleanup,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { Settings } from 'lucide-react';
 import { toast } from 'sonner';
@@ -359,6 +368,9 @@ describe('SidebarHeaderBlock', () => {
     const sheet = await screen.findByRole('dialog');
     expect(await screen.findByRole('menuitem', { name: /v0\.58\.0 beta/ })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /Account/ })).toBeInTheDocument();
+    // A menu item is only a menu item inside a menu (axe aria-required-parent).
+    const actions = within(sheet).getByRole('menu', { name: 'Actions' });
+    expect(within(actions).getByRole('menuitem', { name: /Account/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('menuitem', { name: /Workspace settings/ }));
     expect(mockOpenSettings).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(sheet).not.toBeInTheDocument());
@@ -620,7 +632,7 @@ describe('SidebarHeaderBlock', () => {
     await waitFor(() => expect(selected).toHaveFocus());
   });
 
-  it('returns to the prior route when the target destination read fails', async () => {
+  it('returns to the prior route and says so when the target destination read fails', async () => {
     mockConnections = [
       {
         ref: 'a',
@@ -648,7 +660,12 @@ describe('SidebarHeaderBlock', () => {
         replace: true,
       })
     );
-    expect(toast.error).not.toHaveBeenCalled();
+    // "Switch request failure: remain in the old committed context …; announce the failure."
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Couldn’t open Alpha.', {
+        description: 'You’re still where you were. Try again in a moment.',
+      })
+    );
   });
 
   it('reenables selection when the initial qualified navigation rejects', async () => {
@@ -704,19 +721,60 @@ describe('SidebarHeaderBlock', () => {
     });
   });
 
-  it('opens from the global context shortcut without stealing text-entry keys', async () => {
+  it('opens from the global context shortcut, from a message box too', async () => {
     renderBlock();
     await act(async () => undefined);
     fireEvent.keyDown(document.body, { key: 'K', metaKey: true, shiftKey: true });
     expect(await screen.findByText('Switch context')).toBeVisible();
 
     fireEvent.keyDown(document, { key: 'Escape' });
-    const input = document.createElement('input');
-    document.body.append(input);
-    input.focus();
-    fireEvent.keyDown(input, { key: 'K', metaKey: true, shiftKey: true });
+    await waitFor(() => expect(screen.queryByText('Switch context')).not.toBeInTheDocument());
+    // Landing in a channel puts the cursor in its composer; the shortcut has
+    // to work from there, or it is dead where people switch from.
+    const composer = document.createElement('div');
+    composer.setAttribute('contenteditable', 'true');
+    composer.tabIndex = 0;
+    document.body.append(composer);
+    composer.focus();
+    const event = createEvent.keyDown(composer, { key: 'K', metaKey: true, shiftKey: true });
+    fireEvent(composer, event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(await screen.findByText('Switch context')).toBeVisible();
+    // Closing without choosing puts focus back in the message box.
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByText('Switch context')).not.toBeInTheDocument());
+    await waitFor(() => expect(composer).toHaveFocus());
+    composer.remove();
+  });
+
+  it('returns focus to the trigger when the message box is gone by the time the menu closes', async () => {
+    renderBlock();
+    await act(async () => undefined);
+    const composer = document.createElement('div');
+    composer.setAttribute('contenteditable', 'true');
+    composer.tabIndex = 0;
+    document.body.append(composer);
+    composer.focus();
+    fireEvent.keyDown(composer, { key: 'K', metaKey: true, shiftKey: true });
+    expect(await screen.findByText('Switch context')).toBeVisible();
+    // The page under the menu changes and the message box goes away.
+    composer.remove();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByText('Switch context')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('sidebar-header-block')).toHaveFocus());
+  });
+
+  it('leaves a key that is still composing text to the input method', async () => {
+    renderBlock();
+    await act(async () => undefined);
+    fireEvent.keyDown(document.body, {
+      key: 'K',
+      metaKey: true,
+      shiftKey: true,
+      isComposing: true,
+    });
+    await act(async () => undefined);
     expect(screen.queryByText('Switch context')).not.toBeInTheDocument();
-    input.remove();
   });
 
   it('announces mentions separately from other unread activity', async () => {
@@ -819,6 +877,67 @@ describe('SidebarHeaderBlock', () => {
       expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
     );
     expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('lets a newer choice win: a failed read for the older one neither navigates back nor speaks', async () => {
+    let rejectRemembered!: (error: Error) => void;
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectRemembered = reject;
+        })
+    );
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+
+    // The person goes somewhere else (Back, a link) while Alpha's read waits.
+    commitCommunityRouteEpoch('test:newer-choice');
+    rejectRemembered(new Error('offline'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
+    );
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('says "still where you were" only once the way back has landed', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockRejectedValue(new Error('offline'));
+    mockNavigate
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('navigation interrupted'));
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
+    );
     expect(toast.error).not.toHaveBeenCalled();
   });
 

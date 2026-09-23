@@ -428,6 +428,57 @@ describe('ConnectorOperatorQueryService', () => {
     ).resolves.toMatchObject({ services: [{ serviceSlug: 'telegram' }] });
   });
 
+  it('gives agent requests the catalog read itself: recovery first, every page, Messaging marked', async () => {
+    const recoveredRegistry = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+    });
+    // More than one provider page, so an unpaged read would miss the last service.
+    const recovered = new FakeConnectorProvider({
+      instanceId: ConnectorProviderInstanceIdSchema.parse('provider-recovered'),
+      type: 'composio',
+      toolkits: Array.from({ length: 150 }, (_, index) => ({
+        slug: index === 149 ? 'gmail' : `service-${String(index).padStart(3, '0')}`,
+        displayName: index === 149 ? 'Gmail' : `Service ${index}`,
+        authKind: 'oauth2' as const,
+      })),
+    });
+    const recoverManagedProvider = vi.fn(async () => {
+      if (!recoveredRegistry.resolveProviderInstance(recovered.instanceId)) {
+        recoveredRegistry.register(recovered, 'material-recovered');
+      }
+    });
+    const queries = new ConnectorOperatorQueryService({
+      db,
+      registry: recoveredRegistry,
+      recoverManagedProvider,
+      relay: {
+        getManifest: (type) => (type === 'telegram' ? { displayName: 'Telegram' } : undefined),
+        getCatalog: () => [{ manifest: { type: 'telegram', displayName: 'Telegram' } }],
+      },
+      sessions: { resolveSessionAgent: () => undefined },
+      agentOwnership: { ownsAgent: () => false },
+    });
+
+    const directory = await queries.serviceDirectory(new AbortController().signal);
+
+    expect(recoverManagedProvider).toHaveBeenCalledOnce();
+    expect(directory.services).toHaveLength(151);
+    expect(directory.services).toContainEqual({
+      serviceSlug: 'gmail',
+      displayName: 'Gmail',
+      requestable: true,
+    });
+    expect(directory.services).toContainEqual({
+      serviceSlug: 'telegram',
+      displayName: 'Telegram',
+      requestable: false,
+    });
+    expect(directory.warnings).toEqual([]);
+    // Types only: a person's label for a route never hides a service word.
+    expect(directory.routeTypes).toEqual(['composio']);
+  });
+
   it('retains native message services when an account provider catalog fails', async () => {
     const failing = new FakeConnectorProvider({
       instanceId: ConnectorProviderInstanceIdSchema.parse('provider-failing'),

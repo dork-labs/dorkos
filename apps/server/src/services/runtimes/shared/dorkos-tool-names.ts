@@ -45,3 +45,29 @@ export const CODEX_DORKOS_TOOL_PREFIX = `mcp__${DORKOS_MCP_SERVER_NAME}__`;
  * concatenation.
  */
 export const OPENCODE_DORKOS_TOOL_PREFIX = `${DORKOS_MCP_SERVER_NAME}_`;
+
+/**
+ * What Claude Code puts in front of a `dorkos` MCP tool name: `mcp__server__tool`.
+ * The in-session server's `IN_SESSION_TOOL_PREFIX` is this value.
+ */
+export const CLAUDE_CODE_DORKOS_TOOL_PREFIX = `mcp__${DORKOS_MCP_SERVER_NAME}__` as const;
+
+/**
+ * Spell a `dorkos` server tool the way one runtime's model has to call it; a
+ * bare name in prose is a name the model cannot call (DOR-1292).
+ *
+ * @param runtime - The runtime whose prefix applies.
+ * @param tool - The tool's registered name on the `dorkos` server.
+ */
+export function dorkosToolNameFor(
+  runtime: 'claude-code' | 'codex' | 'opencode',
+  tool: string
+): string {
+  const prefix =
+    runtime === 'opencode'
+      ? OPENCODE_DORKOS_TOOL_PREFIX
+      : runtime === 'codex'
+        ? CODEX_DORKOS_TOOL_PREFIX
+        : CLAUDE_CODE_DORKOS_TOOL_PREFIX;
+  return `${prefix}${tool}`;
+}

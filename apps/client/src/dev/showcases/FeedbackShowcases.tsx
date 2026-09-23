@@ -145,7 +145,7 @@ function CopyToastFallbackDemo() {
 }
 
 /**
- * A still of the "Point at element" picker, mid-aim.
+ * A still of the "Point at it" picker, mid-aim.
  *
  * A STILL and not the real thing, deliberately: the picker covers the whole
  * window and swallows every pointer event, so mounting a live one inside a
@@ -200,12 +200,13 @@ export function FeedbackShowcases() {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackBugOpen, setFeedbackBugOpen] = useState(false);
   const [feedbackShotOpen, setFeedbackShotOpen] = useState(false);
+  const [feedbackSignedOutOpen, setFeedbackSignedOutOpen] = useState(false);
 
   return (
     <>
       <PlaygroundSection
         title="Feedback dialog"
-        description="Message-first send dialog: kind selector, identity line with anonymous toggle, and a collapsible Attachments & details panel (diagnostics, conversation, and a screenshot you paste, drop, pick, capture in one click, or point at one element to get). The third button opens it with a screenshot already attached — the thumbnail, the Remove control, and the Screenshot tab in the full preview. Both capture paths really run here: 'Capture app view' hides the dialog and photographs this page, and 'Point at element' hands you a crosshair, crops the picture to whatever you click, and comes back with the element's name in the message."
+        description="Composer-style send dialog (DOR-2232): kind pills, one message box with the thumbnails and a toolbar (Capture app, Point at it, add an image) inside its border, 'Also send' chips with a preview eye, then who we reply to, then Send. Send stays off until there are words; with an attachment and no words the footer says why. The third button opens it with a screenshot already attached; the fourth opens it signed out, which swaps the 'Replying to' line for the 'Your email' field (remembered in this browser). Both capture paths really run here: 'Capture app' hides the dialog and photographs this page, and 'Point at it' hands you a crosshair, crops the picture to whatever you click, and comes back with the element as a captioned thumbnail and the message box asking about it. The draft survives closing: close one mid-report and reopen it."
       >
         <ShowcaseDemo>
           <div className="flex flex-wrap gap-2">
@@ -217,6 +218,9 @@ export function FeedbackShowcases() {
             </Button>
             <Button variant="outline" onClick={() => setFeedbackShotOpen(true)}>
               Open (screenshot attached)
+            </Button>
+            <Button variant="outline" onClick={() => setFeedbackSignedOutOpen(true)}>
+              Open (signed out)
             </Button>
           </div>
           <FeedbackDialog
@@ -237,12 +241,17 @@ export function FeedbackShowcases() {
             initialScreenshotDataUrl={SAMPLE_SCREENSHOT_DATA_URL}
             currentUser={{ email: 'you@example.com', name: 'You' }}
           />
+          <FeedbackDialog
+            open={feedbackSignedOutOpen}
+            onOpenChange={setFeedbackSignedOutOpen}
+            currentUser={null}
+          />
         </ShowcaseDemo>
       </PlaygroundSection>
 
       <PlaygroundSection
-        title="Point at element (still)"
-        description="What the picker looks like mid-aim: the app dims, the thing under the pointer lights up with the name the codebase uses for it, and the bar says how to commit or get out. A still, not the live picker — a real one covers the whole window and swallows every click, which would take this page over. To drive the real one, open the feedback dialog above, expand Attachments & details, and press Point at element."
+        title="Point at it (still)"
+        description="What the picker looks like mid-aim: the app dims, the thing under the pointer lights up with the name the codebase uses for it, and the bar says how to commit or get out. A still, not the live picker — a real one covers the whole window and swallows every click, which would take this page over. To drive the real one, open the feedback dialog above and press Point at it in the message box."
       >
         <ShowcaseDemo>
           <PointAtElementStill />

@@ -242,10 +242,17 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
           </>
         )}
 
-        <DropdownMenuSeparator />
         {/* Help and feedback, which used to be its own `?` trigger beside the
-            footer's icons. One row has room for one fold, so it folds here. */}
-        <HelpMenuItems />
+            footer's icons. One row has room for one fold, so it folds here —
+            on a desktop. The You tab draws the same actions as rows of their
+            own (`HelpRows` in the strip), so the phone's fold leaves them out
+            rather than offering them twice. */}
+        {!labelled && (
+          <>
+            <DropdownMenuSeparator />
+            <HelpMenuItems />
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

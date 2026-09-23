@@ -5886,6 +5886,31 @@
       ]
     },
     {
+      "id": "260923-122615",
+      "slug": "package-version-resolved-like-an-install",
+      "title": "A marketplace package's latest version is what an install would resolve, by Claude Code's chain",
+      "status": "draft",
+      "created": "2026-09-23",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/marketplace/flows/update.ts",
+        "apps/server/src/services/marketplace/marketplace-installer.ts",
+        "packages/marketplace/src/**"
+      ]
+    },
+    {
+      "id": "260923-122616",
+      "slug": "package-version-files-must-agree",
+      "title": "A package's version files must agree, and a mismatch fails validation",
+      "status": "draft",
+      "created": "2026-09-23",
+      "supersedes": null,
+      "affects": [
+        "packages/marketplace/src/package-validator.ts",
+        "packages/cli/src/commands/validate-source-paths.ts"
+      ]
+    },
+    {
       "id": "260923-121150",
       "slug": "host-api-keys-are-scoped-host-credentials",
       "title": "Host API keys are scoped host credentials that never reach community content",

@@ -120,9 +120,16 @@ function ResponsiveDropdownMenuContent({
   // Only the close-focus handler crosses over: the drawer has no anchor for the
   // menu's placement props, but a row that opens a dialog still needs the
   // DOR-329 guard to stop the drawer's focus restore from blurring it.
+  //
+  // The cap and the one scrolling region are what `DrawerContent` asks of
+  // every caller: without them a long menu (many communities, or any menu at
+  // 200% zoom) grew past the top of the screen, and its first rows could not
+  // be reached at all.
   return (
-    <DrawerContent onCloseAutoFocus={props.onCloseAutoFocus}>
-      <div className="pb-6">{children}</div>
+    <DrawerContent className="max-h-[85vh]" onCloseAutoFocus={props.onCloseAutoFocus}>
+      <div data-slot="drawer-scroll" className="min-h-0 overflow-y-auto pb-6">
+        {children}
+      </div>
     </DrawerContent>
   );
 }
