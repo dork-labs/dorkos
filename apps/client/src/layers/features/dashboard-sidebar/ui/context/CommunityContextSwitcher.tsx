@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { ChevronDown, HardDrive, UsersRound } from 'lucide-react';
+import { toast } from 'sonner';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import {
   communitySettingsPath,
@@ -204,15 +205,14 @@ export function CommunityContextSwitcher({
           connection.label.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase())
         )
       : destinations;
+  // ⌘⇧K opens the switcher from anywhere, a message box included (spec,
+  // Shell surfaces → Desktop). Landing in a channel puts the cursor in its
+  // composer, so a shortcut that stood down for text fields was dead exactly
+  // where people switch from. Nothing else binds ⌘⇧K, so it takes nothing
+  // from the field.
   useEffect(() => {
     const openSwitcher = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'k') {
-        const target = event.target as HTMLElement | null;
-        if (
-          target?.isContentEditable ||
-          target?.closest('input, textarea, select, [contenteditable="true"]')
-        )
-          return;
         event.preventDefault();
         setOpen(true);
       }
@@ -261,16 +261,24 @@ export function CommunityContextSwitcher({
       // A target may render its labelled skeleton before its remote destination
       // resolves, but a failed read cannot leave it selected. Restore only while
       // this exact route and owner remain current; a newer choice always wins.
-      if (
+      const restore =
         targetCommitted &&
-        capturedRoute?.isCurrent() &&
-        isCommunityAuthorityCurrent(capturedOwner)
-      )
+        capturedRoute?.isCurrent() === true &&
+        isCommunityAuthorityCurrent(capturedOwner);
+      if (restore) {
         await navigate({
           to: previousLocation.pathname,
           search: previousLocation.search,
           replace: true,
         } as never).catch(() => {});
+        // Say so (spec: "announce the failure"): the label snapping back is
+        // easy to miss, and a screen reader hears nothing at all. Silent when
+        // the person has already chosen somewhere else, or when navigation
+        // itself was interrupted before the target committed.
+        toast.error(`Couldn’t open ${connection.label}.`, {
+          description: 'You’re still where you were. Try again in a moment.',
+        });
+      }
     } finally {
       pendingSelection.current = false;
       setPendingRef(null);
@@ -375,7 +383,10 @@ export function CommunityContextSwitcher({
         </ResponsiveDropdownMenuTrigger>
         <ResponsiveDropdownMenuContent
           align="start"
-          className="w-64"
+          // Fifty communities are taller than any window: the popover stops at
+          // the space Radix says is left below the trigger and scrolls, so the
+          // last rows stay reachable by pointer and keyboard alike.
+          className="max-h-(--radix-dropdown-menu-content-available-height) w-64 overflow-y-auto"
           onCloseAutoFocus={guarded.onCloseAutoFocus}
         >
           <ResponsiveDropdownMenuLabel>Switch context</ResponsiveDropdownMenuLabel>
@@ -465,11 +476,18 @@ export function CommunityContextSwitcher({
           {guarded.nodes.length > 0 && (
             <>
               <ResponsiveDropdownMenuSeparator />
-              <SidebarMenuNodes
-                variant={isMobile ? 'sheet' : 'dropdown'}
-                nodes={guarded.nodes}
-                onSheetClose={() => handleOpenChange(false)}
-              />
+              {/* The sheet's action rows are menu items, and a menu item needs a
+                  menu around it to be one; the dropdown gets that from Radix. */}
+              <div
+                role={isMobile ? 'menu' : undefined}
+                aria-label={isMobile ? 'Actions' : undefined}
+              >
+                <SidebarMenuNodes
+                  variant={isMobile ? 'sheet' : 'dropdown'}
+                  nodes={guarded.nodes}
+                  onSheetClose={() => handleOpenChange(false)}
+                />
+              </div>
             </>
           )}
         </ResponsiveDropdownMenuContent>

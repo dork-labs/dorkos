@@ -1,13 +1,13 @@
 # Implementation Summary: Community context and navigation contract
 
 **Created:** 2026-09-20
-**Last Updated:** 2026-09-21
+**Last Updated:** 2026-09-23
 **Spec:** specs/community-switcher-navigation/02-specification.md
 
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 0 / 11
+**Tasks Completed:** 10 / 11 (4.2 is proven except post-selection heading focus; see Known Issues)
 
 ## Tasks Completed
 
@@ -98,6 +98,35 @@ Decisions to confirm: Create community is hidden because the local descriptor ca
 host-operator signal; Community sign-out stays on the Community's site; Invite visibility uses
 lifecycle + reachability because the descriptor carries no role, and the Community page rechecks.
 
+### Session 3 - 2026-09-23
+
+**Tasks 4.1 and 4.2:** Prove switching, accessibility and cross-community isolation (DOR-2186).
+
+- `apps/client/src/app/__tests__/community-rapid-switch.test.tsx` drives the real router `onLoad`
+  epoch commit and the real keyed `ChannelsPage` through A→B→A→this DorkOS→B with every history read
+  and event stream in flight, then releases the stale answers newest-first. No stale read or event
+  changes the cache under any key, B's keys never hold A, only B's stream stays open, the read
+  cursor written is B's own, and the route ends on B. It also covers hops inside one frame, a send
+  in A whose receipt lands while B is open, and a read that lands after the local owner changed.
+  Mutation-checked: dropping the route fence, the read-completion guard, the epoch from cache keys,
+  the epoch increment on A→B→A, the surface key, or both stream-event checks each turns it red.
+  Either stream-event check alone and the drafts receipt guard are shadowed by another fence in
+  these journeys; the receipt guard is caught by `remote-community-drafts.test.tsx`.
+- `apps/e2e/tests/connections/community-switching-proof.spec.ts` repeats the journey in the real
+  shell with held responses and records every animation frame: a Community's messages are only ever
+  painted under its own name and address, and Alpha's event stream is closed before any Beta answer
+  arrives (page-clock timings). Back/Forward walks the same history without a stale frame.
+- `apps/e2e/tests/connections/community-switcher-access.spec.ts` proves the keyboard-only journey
+  (⌘⇧K from anywhere, arrows, Home/End, typeahead, Enter, Escape returning focus to the trigger),
+  row names and states in words, axe clean in both themes on desktop and on the phone sheet, 44px
+  rows, reduced motion, 200% zoom, long labels, fifty Communities at desktop and 390px, that the
+  shell loads no Community detail until one is chosen, that the labelled target frame paints before
+  the Community answers, and that a failed switch is announced.
+- Fixed on the way: ⌘⇧K was ignored in text fields; a failed switch was silent; the phone sheet's
+  action rows had no menu parent; the phone sheet and the desktop popover could not scroll, so a
+  long list or 200% zoom left rows unreachable.
+- Closed tenancy receipt row M11's local-app half with named proofs and a guard check.
+
 ## Files Modified/Created
 
 **Source files:**
@@ -134,9 +163,14 @@ lifecycle + reachability because the descriptor carries no role, and the Communi
 
 ## Known Issues
 
-- The desktop switcher, contextual body, phone trigger, responsive sheet, search, and explicit
-  order actions are present. Browser proof at 390px/200% zoom and post-selection heading focus
-  remain in Task 2.3.
+- **Post-selection heading focus is not met.** The spec moves focus to the new page heading after a
+  phone selection, but no route renders a heading inside `main` (the Community channel surface has
+  none), so `focusPageHeading` finds nothing; the composer's mount focus and the sheet's focus
+  restore then decide where focus lands. Fixing it needs a page-heading decision, not a test.
+- **Drafts are not restored after A→B→A.** The spec restores a Community room's draft from its
+  qualified key on return, but drafts live in the keyed surface's state and are also scoped to the
+  route epoch, so switching away discards them. They never cross owners or Communities (proven);
+  keeping them needs a draft store design that reconciles with the epoch fence.
 - Effective `read`, `post`, and `enrollAgent` capabilities will come from the reviewed Community
   administration contract. The local app must consume that server projection rather than infer
   write access from lifecycle, membership, or a restored read-only connection.
