@@ -10,13 +10,11 @@
  */
 import { stat, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { EvalSandbox, Oracle } from '../types.js';
 
 /** Resolves an absolute path from the eval's sandbox (e.g. a plugin install dir). */
 export type SandboxPath = (sandbox: EvalSandbox) => string;
-
-/** Marketplace install-transaction backup suffix (`<target>.dorkos-bak-<ts>-<uuid>`). */
-const BACKUP_MARKER = '.dorkos-bak-';
 
 /** Resolve true iff `p` exists on disk. */
 async function pathExists(p: string): Promise<boolean> {
@@ -249,8 +247,9 @@ export function dirEmptyOrAbsent(dirOf: SandboxPath, label?: string): Oracle {
 }
 
 /**
- * Oracle: the resolved directory holds NO crash-left `*.dorkos-bak-*` sibling —
- * proof the marketplace install/uninstall transaction cleaned up atomically
+ * Oracle: the resolved directory holds NO marketplace install sibling (a
+ * `*.dorkos-bak-*` backup or record, or any other kind the install engine
+ * writes) — proof the marketplace install/uninstall transaction cleaned up
  * (`transaction.ts`, ADR-0304).
  *
  * @param dirOf - Resolves the directory to scan from the sandbox.
@@ -263,7 +262,7 @@ export function noBackupSiblings(dirOf: SandboxPath, label?: string): Oracle {
     let leftovers: string[] = [];
     try {
       const entries = await readdir(dir);
-      leftovers = entries.filter((e) => e.includes(BACKUP_MARKER));
+      leftovers = entries.filter(isInstallSiblingName);
     } catch {
       // A missing directory has no backup siblings.
     }

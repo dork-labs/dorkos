@@ -32,6 +32,22 @@ describe('scanSkillDirectory', () => {
     await fs.writeFile(path.join(dir, SKILL_FILENAME), content, 'utf-8');
   }
 
+  it('never reads a marketplace install sibling as a skill (DOR-2273)', async () => {
+    // A crash-left backup of a schedule skill is a full copy; read as a skill
+    // it would arm the same schedule a second time.
+    await createSkill('nightly', '---\nname: nightly\ndescription: Real\n---\nBody');
+    await createSkill(
+      `nightly.dorkos-bak-${Date.now()}-9f1c2d3e-0000-4000-8000-000000000000`,
+      '---\nname: nightly\ndescription: Backup\n---\nBody'
+    );
+
+    const results = await scanSkillDirectory(tmpDir, SkillFrontmatterSchema, {
+      requireNameMatch: false,
+    });
+
+    expect(results).toHaveLength(1);
+  });
+
   it('scans directory with multiple valid skills', async () => {
     await createSkill('skill-a', '---\nname: skill-a\ndescription: First\n---\nBody A');
     await createSkill('skill-b', '---\nname: skill-b\ndescription: Second\n---\nBody B');

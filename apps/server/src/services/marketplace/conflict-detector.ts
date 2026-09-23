@@ -13,7 +13,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import matter from 'gray-matter';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
-import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { AdapterManager } from '../relay/adapter-manager.js';
 import {
   INSTALL_ROOT_DIRS,
@@ -437,8 +437,8 @@ async function listSubdirectories(dir: string): Promise<string[]> {
 }
 
 /**
- * List package directories under an install root, skipping crash-left
- * install backups (`<name>.dorkos-bak-<timestamp>-<uuid>`, DOR-175). A
+ * List package directories under an install root, skipping the install
+ * engine's own siblings (`<name>.dorkos-bak-<timestamp>-<uuid>`, DOR-175). A
  * backup is a byte-for-byte copy of a previous installation carrying the
  * same skills and extensions, so without this skip the detector would raise
  * phantom conflicts — including a blocking `skill-name` error against a
@@ -446,7 +446,7 @@ async function listSubdirectories(dir: string): Promise<string[]> {
  */
 async function listInstalledPackageNames(installRoot: string): Promise<string[]> {
   const names = await listSubdirectories(installRoot);
-  return names.filter((name) => !name.includes(MARKETPLACE_BACKUP_DIR_MARKER));
+  return names.filter((name) => !isInstallSiblingName(name));
 }
 
 /** One installed package located on disk: its absolute root, name, and root kind. */

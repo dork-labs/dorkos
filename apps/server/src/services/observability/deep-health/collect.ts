@@ -10,6 +10,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { AgentManifestLocation } from './checks.js';
 
 /** The per-agent settings file, relative to the agent's project folder. */
@@ -39,11 +40,16 @@ export function collectAgentManifests(directories: readonly string[]): AgentMani
  * created inside DorkOS (including DorkBot) keep their manifests.
  *
  * @param dorkHome - The resolved DorkOS data directory.
- * @returns Absolute paths of every folder directly under `<dorkHome>/agents`.
+ * @returns Absolute paths of every folder directly under `<dorkHome>/agents`,
+ *   except the marketplace install engine's own siblings.
  */
 export function listAgentHomeDirectories(dorkHome: string): string[] {
   const agentsHome = path.join(dorkHome, 'agents');
-  return readDirNames(agentsHome).map((name) => path.join(agentsHome, name));
+  // A crash-left install backup of an agent carries the same manifest id, and
+  // two folders claiming one id reads as a fault that is not there (DOR-2273).
+  return readDirNames(agentsHome)
+    .filter((name) => !isInstallSiblingName(name))
+    .map((name) => path.join(agentsHome, name));
 }
 
 /** The `id` a manifest claims, or `null` when it has none we can read. */

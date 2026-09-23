@@ -22,6 +22,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MarketplacePackageManifestSchema, PackageNameSchema } from '@dorkos/marketplace';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { hasSchedule, isInvalidSchedule, readScheduleField } from '@dorkos/skills/schedule-schema';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { listSkillDirs, CLAUDE_PLUGIN_ROOT_TOKEN, type SkillEntry } from '../scan/scanner.js';
@@ -682,7 +683,10 @@ function scanPluginsRoot(
   const plugins: InstalledPlugin[] = [];
   const unreadableManifests: UnreadablePackageManifest[] = [];
   for (const entry of readdirSync(pluginsRoot, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
+    // The install engine's own siblings (a crash-left backup of the previous
+    // install, say) carry a valid manifest and every skill, and are never a
+    // package of their own.
+    if (!entry.isDirectory() || isInstallSiblingName(entry.name)) continue;
     const pluginDir = join(pluginsRoot, entry.name);
     const location: InstalledLocation =
       scope === 'global'

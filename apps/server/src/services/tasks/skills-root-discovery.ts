@@ -61,6 +61,7 @@ import type { ScheduleBlock, SkillFrontmatter, TaskDefinition } from '@dorkos/sk
 import { parseSkillFile, type ParsedSkill } from '@dorkos/skills/parser';
 import { scanSkillDirectory } from '@dorkos/skills/scanner';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { describeScheduleProblem } from './cron-validation.js';
 import { reservedDirsFor, type TaskRoot } from './skills-roots.js';
@@ -299,6 +300,7 @@ async function scanSymlinkedSkills<T>(
   for (const entry of entries) {
     if (!entry.isSymbolicLink()) continue;
     if (entry.name.startsWith('.') || reservedDirsFor(root).includes(entry.name)) continue;
+    if (isInstallSiblingName(entry.name)) continue; // a marketplace install's own copy (DOR-2273)
     const filePath = path.join(dir, entry.name, SKILL_FILENAME);
     try {
       const content = await fs.readFile(filePath, 'utf-8');
@@ -424,6 +426,7 @@ export async function taskRootShape(root: TaskRoot): Promise<string> {
   const parts: string[] = [];
   for (const entry of entries) {
     if (entry.name.startsWith('.') || reserved.includes(entry.name)) continue;
+    if (isInstallSiblingName(entry.name)) continue;
     if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
     try {
       const stat = await fs.stat(path.join(root.dir, entry.name, SKILL_FILENAME));
@@ -469,6 +472,7 @@ export async function linkedSkillDirs(root: TaskRoot): Promise<string[]> {
   for (const entry of entries) {
     if (!entry.isSymbolicLink()) continue;
     if (entry.name.startsWith('.') || reservedDirsFor(root).includes(entry.name)) continue;
+    if (isInstallSiblingName(entry.name)) continue; // a marketplace install's own copy (DOR-2273)
     try {
       const target = path.resolve(dir, await fs.readlink(path.join(dir, entry.name)));
       dirs.push(await resolveThroughAncestors(target));

@@ -1,22 +1,33 @@
 /**
  * File-scoped transaction engine for marketplace package installs.
  *
- * Provides {@link runTransaction}: a generic stage then activate then cleanup or
+ * Provides {@link runTransaction}: a generic stage then activate then commit or
  * rollback wrapper used by every install flow. The transactional guarantee is
  * entirely filesystem-scoped and git-free: `stage` builds the package contents
- * in an isolated temp directory, and `activate` performs the single mutating
- * operation (typically an atomic rename onto the install target). If the
- * target already exists it is moved aside to a sibling backup before `activate`
- * runs, so a failed activation restores the previous installation byte-for-byte.
+ * in an isolated temp directory, and `activate` performs the mutating
+ * operation (typically an atomic rename onto the install target). Before
+ * `activate` runs the transaction writes a record beside the target — the
+ * existing target moved aside as a backup, or a marker saying there was none —
+ * and commits by renaming or removing that record once `activate` returns
+ * (`./install-recovery.ts` has the record grammar).
  *
- * On success the backup (if any) and the staging directory are removed. On a
- * `stage` failure the target is never touched (no backup was taken yet). On an
- * `activate` failure any partial target is removed and the backup is restored
- * before the original error is re-raised. Every cleanup and restore step is
- * wrapped defensively so a cleanup error never masks the original transaction
- * error. Cleanup errors on the success path are logged but never fail the
- * transaction (the install already succeeded, so a leftover temp dir or backup is
- * a janitorial concern, not a correctness one).
+ * On a `stage` failure the target is never touched (no record was written
+ * yet). On an `activate` failure the record is rolled back — the partial
+ * target removed and the backup, if any, put back — before the original error
+ * is re-raised; a rollback error is logged, never allowed to mask it. On
+ * success the committed backup and the staging directory are removed, and a
+ * failure there is logged but never fails the install.
+ *
+ * ## Why a crash cannot lose the previous install (DOR-2273)
+ *
+ * A crash can land between any two of those steps, and cleanup code does not
+ * run after a crash. So recovery reads the record instead: every transaction
+ * first settles whatever an earlier, interrupted transaction left beside its
+ * target, and the server does the same for every global install root at
+ * startup and every registered project once Mesh is up
+ * (`./backup-janitor.ts`). An uncommitted record is rolled back, a committed
+ * one deleted — so a backup is only ever deleted once the install that
+ * replaced it finished.
  *
  * ## Why the whole transaction is serialised per target (DOR-711)
  *
@@ -87,6 +98,37 @@
  * needs an on-disk lock, which is a separate decision (stale-holder reaping is
  * the part that is easy to get wrong) and is not made here.
  *
+ * The transaction records narrow it (DOR-2273). Each names the process that
+ * wrote it, so a transaction that finds another live process's record beside
+ * its target refuses to start instead of moving that process's half-activated
+ * target aside, and crash recovery never undoes a record whose writer is
+ * still running. The check runs twice — before staging and again right
+ * before the record is written, because staging includes an `npm install`
+ * that can take minutes, time enough for the other server to write a record
+ * of its own. What is left is the gap between that second check and the
+ * rename that writes this transaction's record: two servers would have to
+ * both check the same project's same package within that gap.
+ *
+ * ## The update window belongs to DOR-2245
+ *
+ * `MarketplaceInstaller.update()` is an uninstall, a removal of the data-only
+ * install root, then an install. The uninstall stages the live install (and
+ * the preserved `.dork/data/` and secrets) under the system temp directory,
+ * where no record describes it, so a crash between the uninstall and this
+ * transaction's commit still loses the package and leaves that data only in
+ * the temp directory. Crash recovery here covers installs, not that window;
+ * DOR-2245 replaces the temp-dir uninstall with an in-place one that writes a
+ * journal recovery can finish.
+ *
+ * ## What a rollback does not undo
+ *
+ * Rolling back — after a failed `activate`, a failed commit, or a crash —
+ * restores the target directory. It does not undo what `activate` did outside
+ * it: a Mesh registration, the agent-created hook, an extension enabled. The
+ * crash path matches the failure path here; the adapter flow keeps its own
+ * compensation, and the Mesh reconciler drops a registration whose directory
+ * went away.
+ *
  * This design supersedes the git backup-branch rollback of ADR-0231: it is
  * scoped to the actual install location (not `process.cwd()`), it restores
  * gitignored files under `.dork/` that a `git reset` cannot touch, and it has
@@ -95,24 +137,24 @@
  * @module services/marketplace/transaction
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { randomUUID } from 'node:crypto';
-import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { withFileLock } from '@dorkos/shared/atomic-write';
-import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
-import { atomicMove } from './lib/atomic-move.js';
+import {
+  beginInstallRecord,
+  commitInstallRecord,
+  discardCommittedRecord,
+  discardSupersededRecords,
+  keptReason,
+  recoverInterruptedInstall,
+  rollBackInstallRecord,
+  settleableBy,
+  type InstallRecord,
+} from './install-recovery.js';
 
 /** Staging directory prefix passed to `mkdtemp`. */
 const STAGING_DIR_PREFIX = 'dorkos-install-';
-
-/**
- * Suffix marker used when moving an existing target aside for backup, e.g.
- * `<target>.dorkos-bak-<timestamp>-<uuid>`. Re-exported so
- * `./backup-janitor.ts` derives the sweep pattern from this single source of
- * truth instead of duplicating the literal.
- */
-export const BACKUP_SUFFIX = MARKETPLACE_BACKUP_DIR_MARKER;
 
 /**
  * Options for {@link runTransaction}. The `stage` callback prepares the
@@ -132,7 +174,8 @@ export interface TransactionOptions<T> {
    * Absolute path to the install target that `activate` writes onto (e.g.
    * `<projectPath>/.dork/plugins/<name>` or `<dorkHome>/plugins/<name>`). When
    * this path already exists it is moved aside to a sibling backup before
-   * `activate` runs, so a failed activation restores it byte-for-byte.
+   * `activate` runs, so a failed or interrupted activation restores it
+   * byte-for-byte.
    */
   target: string;
   /** Prepare package contents in the supplied staging directory. */
@@ -267,12 +310,13 @@ export async function withInstallTargetLock<T>(target: string, fn: () => Promise
  * Run a file-scoped marketplace install transaction, serialised against every
  * other transaction aimed at the same `target`.
  *
- * Lifecycle: create temp staging dir → `stage` → (if `target` exists, move it
- * aside to a sibling backup) → `activate` → cleanup. On a `stage` error the
- * staging dir is removed and `target` is left untouched. On an `activate`
- * error any partially-written `target` is removed, the backup (if one was
- * taken) is restored onto `target`, and the staging dir is removed before the
- * original error is re-raised.
+ * Lifecycle: settle any interrupted earlier transaction on `target` → create
+ * temp staging dir → `stage` → write the record (move an existing `target`
+ * aside as a backup, or mark it absent) → `activate` → commit the record →
+ * cleanup. On a `stage` error the staging dir is removed and `target` is left
+ * untouched. On an `activate` or commit error the record is rolled back
+ * (partial `target` removed, backup restored) and the staging dir is removed
+ * before the original error is re-raised.
  *
  * The whole lifecycle — staging included — runs inside
  * {@link withInstallTargetLock}, so a second transaction against that
@@ -306,9 +350,15 @@ export async function runTransaction<T>(opts: TransactionOptions<T>): Promise<T>
  * @internal
  */
 async function runTransactionUnlocked<T>(opts: TransactionOptions<T>): Promise<T> {
+  // Phase 0: settle what an interrupted earlier transaction left beside the
+  // target, so this one moves aside the last committed install and never a
+  // half-written one (DOR-2273). Throws rather than stacking a second record
+  // on top of one it could not roll back, or one another live process owns.
+  await settleInterruptedInstall(opts.target);
+
   const stagingDir = await mkdtemp(path.join(tmpdir(), `${STAGING_DIR_PREFIX}${opts.name}-`));
 
-  // Phase 1: stage. No backup is taken yet, so a stage failure leaves the
+  // Phase 1: stage. No record is written yet, so a stage failure leaves the
   // target untouched and only the staging dir needs cleaning up.
   try {
     await opts.stage({ path: stagingDir });
@@ -317,63 +367,131 @@ async function runTransactionUnlocked<T>(opts: TransactionOptions<T>): Promise<T
     throw err;
   }
 
-  // Phase 2: move any existing target aside so a failed activation can restore
-  // it. `undefined` means the target did not exist (a fresh install).
-  const backupPath = await _internal.moveTargetAside(opts.target);
-
-  // Phase 3: activate. On failure, remove the partial target and restore the
-  // backup before re-raising the original error.
+  // Phase 2: check again, then write the record — the existing target moved
+  // aside, or a marker that there was none. Staging can take minutes (npm),
+  // long enough for another server to have started on this target; moving
+  // its half-activated target aside as our backup would destroy its install.
+  // From the record on, a crash is rolled back.
+  let record: InstallRecord;
+  let superseded: InstallRecord[];
   try {
-    const result = await opts.activate({ path: stagingDir });
-    await runSuccessCleanup(stagingDir, backupPath);
-    return result;
+    superseded = (await settleInterruptedInstall(opts.target)).kept;
+    record = await _internal.beginRecord(opts.target);
   } catch (err) {
-    await runActivateFailureRollback(stagingDir, opts.target, backupPath);
+    await runStageFailureCleanup(stagingDir);
     throw err;
+  }
+
+  // Phase 3: activate, then commit. A failure in either rolls the record back
+  // before re-raising the original error.
+  let result: T;
+  let committed: InstallRecord | undefined;
+  try {
+    result = await opts.activate({ path: stagingDir });
+    committed = await _internal.commitRecord(record);
+  } catch (err) {
+    await runRollback(stagingDir, opts.target, record);
+    throw err;
+  }
+  await runSuccessCleanup(stagingDir, committed);
+  await releaseSupersededRecords(superseded);
+  return result;
+}
+
+/** What {@link settleInterruptedInstall} leaves for its caller. */
+export interface SettledInstallTarget {
+  /**
+   * Records recovery could not safely settle and kept (a backup from before
+   * commit records existed, beside a target that exists). Pass them to
+   * {@link releaseSupersededRecords} once the caller's own change to the
+   * target has finished.
+   */
+  kept: InstallRecord[];
+}
+
+/**
+ * Settle whatever an interrupted install left beside `target`, before a new
+ * change to it starts (DOR-2273): an uncommitted install is undone, and the
+ * leftovers of a finished one deleted. Every install does this (twice: see
+ * the module header), and so does uninstall, so neither acts on a
+ * half-written package.
+ *
+ * The caller must hold `target`'s {@link withInstallTargetLock}, so nothing in
+ * this process is still writing the records it reads.
+ *
+ * @param target - Absolute path of the install target.
+ * @returns The records recovery kept, for the caller to release once its
+ *   change finishes.
+ * @throws When an interrupted install cannot be undone, or when another
+ *   running DorkOS app may be mid-install on `target`; nothing was changed.
+ */
+export async function settleInterruptedInstall(target: string): Promise<SettledInstallTarget> {
+  let report;
+  try {
+    report = await recoverInterruptedInstall(target);
+  } catch (err) {
+    throw new Error(
+      `An earlier install at ${target} was interrupted and could not be undone, so nothing was changed: ${errMessage(err)}`,
+      { cause: err }
+    );
+  }
+  if (report.inFlight.length > 0) {
+    const now = Date.now();
+    const minutes = Math.max(1, Math.ceil((settleableBy(report.inFlight, now) - now) / 60_000));
+    throw new Error(
+      `Another DorkOS app may be changing ${target} right now, so nothing was changed. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`
+    );
+  }
+  for (const { record, outcome } of report.settled) {
+    console.warn(
+      `[marketplace/transaction] settled an interrupted install at ${target} (${record.kind} record ${record.path}: ${outcome})`
+    );
+  }
+  for (const record of report.kept) {
+    console.warn(
+      `[marketplace/transaction] kept ${record.path} and ${target} as they are: ${keptReason(record)}`
+    );
+  }
+  for (const { record, error } of report.discardFailures) {
+    console.warn(
+      `[marketplace/transaction] failed to remove finished install leftovers ${record.path}: ${errMessage(error)}`
+    );
+  }
+  return { kept: report.kept };
+}
+
+/**
+ * Delete the records {@link settleInterruptedInstall} kept, now that the
+ * caller's own change to the target has finished and superseded them.
+ * Best-effort: a failure is logged, and the record stays kept.
+ *
+ * @param kept - {@link SettledInstallTarget.kept} from the settle that ran first.
+ */
+export async function releaseSupersededRecords(kept: readonly InstallRecord[]): Promise<void> {
+  for (const { record, error } of await discardSupersededRecords(kept)) {
+    console.warn(
+      `[marketplace/transaction] failed to remove superseded install record ${record.path}: ${errMessage(error)}`
+    );
   }
 }
 
 /**
- * Move an existing `target` aside to a uniquely-named sibling backup so a
- * failed activation can restore it. Returns the backup path, or `undefined`
- * when `target` did not exist (a fresh install needs no backup).
- *
- * The backup is a sibling (`<target>.dorkos-bak-<timestamp>-<uuid>`) so it lands
- * on the same filesystem as `target`, keeping both the move-aside and the
- * restore a cheap atomic rename. {@link atomicMove} still guards the
- * cross-device case. The random UUID suffix guarantees a fresh path even under
- * pathological same-millisecond timing, so the move never overwrites a stale
- * backup left behind by a crashed prior install.
- *
- * @internal
- */
-async function moveTargetAside(target: string): Promise<string | undefined> {
-  if (!(await pathExists(target))) return undefined;
-  const backupPath = `${target}${BACKUP_SUFFIX}${Date.now()}-${randomUUID()}`;
-  await atomicMove(target, backupPath);
-  return backupPath;
-}
-
-/**
- * Clean up after a successful activation. Removes the target backup (if one was
- * taken) and the staging directory: the install landed, so the previous
- * contents are no longer needed. Both steps are best-effort: errors are logged
- * but never thrown, because the install already completed.
+ * Clean up after a committed install: delete the superseded backup (if one
+ * was taken) and the staging directory. Both are best-effort — the install is
+ * already committed, and a leftover backup is settled by the next recovery.
  *
  * @internal
  */
 async function runSuccessCleanup(
   stagingDir: string,
-  backupPath: string | undefined
+  committed: InstallRecord | undefined
 ): Promise<void> {
-  if (backupPath) {
+  if (committed) {
     try {
-      await _internal.removePath(backupPath);
+      await discardCommittedRecord(committed);
     } catch (err) {
       console.warn(
-        `[marketplace/transaction] failed to remove target backup ${backupPath}: ${
-          err instanceof Error ? err.message : String(err)
-        }`
+        `[marketplace/transaction] failed to remove target backup ${committed.path}: ${errMessage(err)}`
       );
     }
   }
@@ -381,17 +499,15 @@ async function runSuccessCleanup(
     await _internal.cleanupStaging(stagingDir);
   } catch (err) {
     console.warn(
-      `[marketplace/transaction] failed to remove staging dir ${stagingDir}: ${
-        err instanceof Error ? err.message : String(err)
-      }`
+      `[marketplace/transaction] failed to remove staging dir ${stagingDir}: ${errMessage(err)}`
     );
   }
 }
 
 /**
- * Remove the staging directory after a `stage` failure. No backup was taken
- * yet, so the target is untouched. Wrapped defensively so a cleanup error
- * never masks the original stage error.
+ * Remove the staging directory after a failure before activation. No record
+ * is on disk, so the target is untouched. Wrapped defensively so a cleanup
+ * error never masks the original error.
  *
  * @internal
  */
@@ -400,71 +516,48 @@ async function runStageFailureCleanup(stagingDir: string): Promise<void> {
     await _internal.cleanupStaging(stagingDir);
   } catch (cleanupErr) {
     console.warn(
-      `[marketplace/transaction] cleanup failed after stage error: ${
-        cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
-      }`
+      `[marketplace/transaction] cleanup failed after stage error: ${errMessage(cleanupErr)}`
     );
   }
 }
 
 /**
- * Restore the target on an `activate` failure. Removes any partially-written
- * target, restores the backup onto it (when one was taken), and removes the
- * staging directory. Each step is wrapped defensively so a cleanup or restore
- * error never masks the original activate error.
+ * Undo an uncommitted transaction after `activate` or the commit failed: roll
+ * the record back (the same rollback crash recovery runs) and remove the
+ * staging directory. A rollback failure is logged, never thrown, so it cannot
+ * mask the original error — and it leaves the record on disk, so the next
+ * recovery of this target finishes the job instead of losing the backup.
  *
  * @internal
  */
-async function runActivateFailureRollback(
+async function runRollback(
   stagingDir: string,
   target: string,
-  backupPath: string | undefined
+  record: InstallRecord
 ): Promise<void> {
-  // Only restore the backup when the target was actually moved aside. A fresh
-  // install (no backup) just needs the partial target removed.
-  if (backupPath) {
-    try {
-      // `activate` may have partially written the target before throwing; clear
-      // it so the restore rename has a clean destination.
-      await _internal.removePath(target);
-    } catch (removeErr) {
-      console.warn(
-        `[marketplace/transaction] failed to remove partial target ${target} before restore: ${
-          removeErr instanceof Error ? removeErr.message : String(removeErr)
-        }`
-      );
-    }
-    try {
-      await atomicMove(backupPath, target);
-    } catch (restoreErr) {
-      console.warn(
-        `[marketplace/transaction] failed to restore target backup ${backupPath} to ${target}: ${
-          restoreErr instanceof Error ? restoreErr.message : String(restoreErr)
-        }`
-      );
-    }
-  } else {
-    // Fresh install: remove whatever `activate` managed to write.
-    try {
-      await _internal.removePath(target);
-    } catch (removeErr) {
-      console.warn(
-        `[marketplace/transaction] failed to remove partial target ${target}: ${
-          removeErr instanceof Error ? removeErr.message : String(removeErr)
-        }`
-      );
-    }
+  try {
+    await rollBackInstallRecord(target, record);
+  } catch (rollbackErr) {
+    console.warn(
+      `[marketplace/transaction] failed to roll back ${target} from ${record.path}; the next install or restart will retry: ${errMessage(rollbackErr)}`
+    );
   }
-
   try {
     await _internal.cleanupStaging(stagingDir);
   } catch (cleanupErr) {
     console.warn(
-      `[marketplace/transaction] cleanup failed during rollback: ${
-        cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
-      }`
+      `[marketplace/transaction] cleanup failed during rollback: ${errMessage(cleanupErr)}`
     );
   }
+}
+
+/**
+ * Render an unknown caught value as a log-friendly message.
+ *
+ * @internal
+ */
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**
@@ -478,38 +571,13 @@ async function cleanupStaging(stagingDir: string): Promise<void> {
 }
 
 /**
- * Remove an arbitrary path (file or directory) recursively. Used to clear a
- * partially-written target and to reap a target backup on success. Extracted
- * as a helper so tests can spy on it.
- *
- * @internal
- */
-async function removePath(target: string): Promise<void> {
-  await rm(target, { recursive: true, force: true });
-}
-
-/**
- * Returns true when `target` exists on disk (file or directory).
- *
- * @internal
- */
-async function pathExists(target: string): Promise<boolean> {
-  try {
-    await stat(target);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * @internal Test-only export. The supported transactional API is
  * {@link runTransaction}; these helpers are exposed only so tests can stub
- * filesystem interactions with `vi.spyOn` (e.g. to simulate a cleanup or
- * restore failure without corrupting the runner's temp dir).
+ * steps with `vi.spyOn` (e.g. to stop a transaction at a crash point, or to
+ * simulate a cleanup failure without corrupting the runner's temp dir).
  */
 export const _internal = {
-  moveTargetAside,
+  beginRecord: beginInstallRecord,
+  commitRecord: commitInstallRecord,
   cleanupStaging,
-  removePath,
 };

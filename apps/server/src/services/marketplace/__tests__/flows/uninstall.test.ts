@@ -27,6 +27,9 @@ import {
   type UninstallShapeScheduleTeardown,
 } from '../../flows/uninstall.js';
 import { InvalidPackageNameError } from '../../lib/package-paths.js';
+import { currentRecordOwner, formatRecordOwner } from '../../lib/record-owner.js';
+import { _internal as recoveryInternal } from '../../install-recovery.js';
+import { randomUUID } from 'node:crypto';
 
 /** Construct a no-op logger that satisfies the {@link Logger} interface. */
 function buildLogger(): Logger {
@@ -214,6 +217,171 @@ describe('UninstallFlow', () => {
     expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-a');
     expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-b');
     expect(deps.adapterManager.removeAdapter).not.toHaveBeenCalled();
+  });
+
+  it('settles an interrupted reinstall first, so it removes the whole install and leaves no backup (DOR-2273)', async () => {
+    // A crash mid-reinstall left v2 half-written with v1 moved aside. Removing
+    // only the half-written v2 would leave v1's backup for a later recovery to
+    // put back: the package would come back after being uninstalled.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const pluginsRoot = path.join(deps.dorkHome, 'plugins');
+    const installRoot = path.join(pluginsRoot, 'plugin-a');
+    await mkdir(installRoot, { recursive: true });
+    await writeFile(path.join(installRoot, 'half-written.txt'), 'v2', 'utf-8');
+    await stageInstalledPackage({
+      installRoot: path.join(
+        pluginsRoot,
+        `plugin-a.dorkos-bak-${Date.now()}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}`
+      ),
+      manifest: buildPluginManifest({ name: 'plugin-a', extensions: ['ext-a'] }),
+      extensions: [{ id: 'ext-a', manifest: { id: 'ext-a' } }],
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await new UninstallFlow(deps).uninstall({ name: 'plugin-a' });
+
+    expect(result.ok).toBe(true);
+    expect(await readdir(pluginsRoot)).toEqual([]);
+    // The side effects ran against the restored v1, read after settling.
+    expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-a');
+  });
+
+  it('reports not installed when settling removes a half-written fresh install (DOR-2273)', async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const pluginsRoot = path.join(deps.dorkHome, 'plugins');
+    await stageInstalledPackage({
+      installRoot: path.join(pluginsRoot, 'plugin-a'),
+      manifest: buildPluginManifest({ name: 'plugin-a' }),
+    });
+    await writeFile(
+      path.join(
+        pluginsRoot,
+        `plugin-a.dorkos-bak-${Date.now()}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}.absent`
+      ),
+      ''
+    );
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(new UninstallFlow(deps).uninstall({ name: 'plugin-a' })).rejects.toBeInstanceOf(
+      PackageNotInstalledError
+    );
+    expect(await readdir(pluginsRoot)).toEqual([]);
+  });
+
+  it('finds a package a crash left only in its backup, and removes it for good (DOR-2273)', async () => {
+    // The target is missing and v1 sits in a backup beside it. "Not
+    // installed" here would let a later recovery restore the package the
+    // person just asked to remove.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const pluginsRoot = path.join(deps.dorkHome, 'plugins');
+    await stageInstalledPackage({
+      installRoot: path.join(
+        pluginsRoot,
+        `plugin-a.dorkos-bak-${Date.now()}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}`
+      ),
+      manifest: buildPluginManifest({ name: 'plugin-a' }),
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await new UninstallFlow(deps).uninstall({ name: 'plugin-a' });
+
+    expect(result.ok).toBe(true);
+    expect(await readdir(pluginsRoot)).toEqual([]);
+  });
+
+  it('moves on to the next candidate when settling empties the first (DOR-2273)', async () => {
+    // A half-written fresh install in the project scope is removed by
+    // settling; the real install is the global one, and that is what goes.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const project = await mkdtemp(path.join(tmpdir(), 'uninstall-project-'));
+    cleanupDirs.push(project);
+    const projectPlugins = path.join(project, '.dork', 'plugins');
+    await mkdir(path.join(projectPlugins, 'plugin-a'), { recursive: true });
+    await writeFile(
+      path.join(
+        projectPlugins,
+        `plugin-a.dorkos-bak-${Date.now()}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}.absent`
+      ),
+      ''
+    );
+    const globalRoot = path.join(deps.dorkHome, 'plugins', 'plugin-a');
+    await stageInstalledPackage({
+      installRoot: globalRoot,
+      manifest: buildPluginManifest({ name: 'plugin-a' }),
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await new UninstallFlow(deps).uninstall({
+      name: 'plugin-a',
+      projectPath: project,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await readdir(projectPlugins)).toEqual([]);
+    expect(await pathExists(globalRoot)).toBe(false);
+  });
+
+  it('does not keep offering a candidate that settled to nothing (DOR-2273)', async () => {
+    // A `.committed` leftover that cannot be deleted sits beside a missing
+    // project target. Offered again every pass, it would hide the global
+    // install the person asked to remove.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const project = await mkdtemp(path.join(tmpdir(), 'uninstall-project-'));
+    cleanupDirs.push(project);
+    const projectPlugins = path.join(project, '.dork', 'plugins');
+    const stuck = path.join(
+      projectPlugins,
+      `plugin-a.dorkos-bak-${Date.now()}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}.committed`
+    );
+    await mkdir(stuck, { recursive: true });
+    const realRemove = recoveryInternal.removePath;
+    vi.spyOn(recoveryInternal, 'removePath').mockImplementation(async (p) => {
+      if (p === stuck) throw new Error('EBUSY');
+      return realRemove(p);
+    });
+    const globalRoot = path.join(deps.dorkHome, 'plugins', 'plugin-a');
+    await stageInstalledPackage({
+      installRoot: globalRoot,
+      manifest: buildPluginManifest({ name: 'plugin-a' }),
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await new UninstallFlow(deps).uninstall({
+      name: 'plugin-a',
+      projectPath: project,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await pathExists(globalRoot)).toBe(false);
+  });
+
+  it('removes a kept pre-commit-records backup along with the package (DOR-2273)', async () => {
+    // Kept beside a live install because nothing proved which copy was whole;
+    // left after the uninstall, it would be restored as if the crash were new.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const pluginsRoot = path.join(deps.dorkHome, 'plugins');
+    await stageInstalledPackage({
+      installRoot: path.join(pluginsRoot, 'plugin-a'),
+      manifest: buildPluginManifest({ name: 'plugin-a' }),
+    });
+    await stageInstalledPackage({
+      installRoot: path.join(
+        pluginsRoot,
+        `plugin-a.dorkos-bak-${Date.now() - 11 * 60_000}-${randomUUID()}`
+      ),
+      manifest: buildPluginManifest({ name: 'plugin-a' }),
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await new UninstallFlow(deps).uninstall({ name: 'plugin-a' });
+
+    expect(await readdir(pluginsRoot)).toEqual([]);
   });
 
   /**

@@ -1,16 +1,29 @@
 /**
- * Tests for {@link sweepStaleInstallBackups}, the startup janitor that
- * removes crash-left `*.dorkos-bak-*` marketplace install backups (DOR-175,
- * ADR-0304).
+ * Tests for {@link recoverInterruptedInstalls}, the sweep that settles
+ * interrupted marketplace installs across whole scopes at server startup
+ * (DOR-175, DOR-2273). What each kind of record means is tested in
+ * `install-recovery.test.ts`; these tests cover the sweep: which directories
+ * it reads, that it finds every target with records, that one bad entry never
+ * stops the rest, and that a target left to another process is looked at
+ * again.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { noopLogger } from '@dorkos/shared/logger';
-import { sweepStaleInstallBackups, _internal } from '../backup-janitor.js';
-import { BACKUP_SUFFIX } from '../transaction.js';
+import {
+  globalSweepDirs,
+  projectSweepDirs,
+  projectsOfAgents,
+  recoverInterruptedInstalls,
+  retryInFlightTargetsLater,
+  _internal,
+  type InstallSweepSummary,
+} from '../backup-janitor.js';
+import { IN_FLIGHT_FLOOR_MS, _internal as recoveryInternal } from '../install-recovery.js';
+import { currentRecordOwner, formatRecordOwner } from '../lib/record-owner.js';
 
 /** Returns true when `target` exists on disk. */
 async function pathExists(target: string): Promise<boolean> {
@@ -22,205 +35,191 @@ async function pathExists(target: string): Promise<boolean> {
   }
 }
 
-/**
- * Build a backup directory name exactly as `transaction.ts`'s
- * `moveTargetAside` does: `<target-basename><BACKUP_SUFFIX><timestamp>-<uuid>`.
- */
-function backupName(targetBasename: string, timestamp: number): string {
-  return `${targetBasename}${BACKUP_SUFFIX}${timestamp}-${randomUUID()}`;
+/** A record name exactly as the transaction writes it, owned by this process. */
+function recordName(
+  targetName: string,
+  suffix: '' | '.absent' | '.committed' = '',
+  createdAt = Date.now()
+): string {
+  return `${targetName}.dorkos-bak-${createdAt}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}${suffix}`;
 }
 
-describe('sweepStaleInstallBackups', () => {
+/** Write a package directory holding one version file. */
+async function writePackage(dir: string, version: string): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(dir, 'version.txt'), version, 'utf8');
+}
+
+/** An empty summary, to compare against. */
+const nothing: InstallSweepSummary = { settled: 0, kept: 0, discarded: 0, inFlightTargets: [] };
+
+describe('recoverInterruptedInstalls', () => {
   let dorkHome: string;
+  let project: string;
 
   beforeEach(async () => {
-    dorkHome = await mkdtemp(path.join(tmpdir(), 'backup-janitor-test-'));
+    dorkHome = await mkdtemp(path.join(tmpdir(), 'backup-janitor-home-'));
+    project = await mkdtemp(path.join(tmpdir(), 'backup-janitor-project-'));
   });
 
   afterEach(async () => {
     vi.restoreAllMocks();
     vi.useRealTimers();
-    await rm(dorkHome, { recursive: true, force: true }).catch(() => undefined);
+    await rm(dorkHome, { recursive: true, force: true });
+    await rm(project, { recursive: true, force: true });
   });
 
-  it('removes a stale backup dir under <dorkHome>/plugins', async () => {
+  it('restores a crash-left backup instead of deleting it, even a day old (DOR-2273)', async () => {
+    // The old sweep deleted any backup older than 24h — here, the only copy of
+    // a plugin whose reinstall crashed before the new version landed.
     const pluginsRoot = path.join(dorkHome, 'plugins');
-    await mkdir(pluginsRoot, { recursive: true });
-    const staleTimestamp = Date.now() - 25 * 60 * 60 * 1000; // 25h old
-    const stalePath = path.join(pluginsRoot, backupName('code-review-suite', staleTimestamp));
-    await mkdir(stalePath, { recursive: true });
-    await writeFile(path.join(stalePath, 'marker.txt'), 'leftover', 'utf8');
+    const old = Date.now() - 25 * 60 * 60 * 1000;
+    await writePackage(path.join(pluginsRoot, recordName('code-review-suite', '', old)), 'v1');
 
-    const removed = await sweepStaleInstallBackups(dorkHome, noopLogger);
+    const summary = await recoverInterruptedInstalls(globalSweepDirs(dorkHome), noopLogger);
 
-    expect(removed).toBe(1);
-    expect(await pathExists(stalePath)).toBe(false);
-  });
-
-  it('removes a stale backup dir under <dorkHome>/agents', async () => {
-    const agentsRoot = path.join(dorkHome, 'agents');
-    await mkdir(agentsRoot, { recursive: true });
-    const staleTimestamp = Date.now() - 48 * 60 * 60 * 1000; // 48h old
-    const stalePath = path.join(agentsRoot, backupName('my-agent', staleTimestamp));
-    await mkdir(stalePath, { recursive: true });
-
-    const removed = await sweepStaleInstallBackups(dorkHome, noopLogger);
-
-    expect(removed).toBe(1);
-    expect(await pathExists(stalePath)).toBe(false);
-  });
-
-  it('removes a stale backup dir under <dorkHome>/shapes (DOR-355 regression)', async () => {
-    // Shapes install to shapes/, a root the janitor originally never swept —
-    // a crash mid-Shape-reinstall left an unreclaimed .dorkos-bak orphan.
-    const shapesRoot = path.join(dorkHome, 'shapes');
-    await mkdir(shapesRoot, { recursive: true });
-    const staleTimestamp = Date.now() - 25 * 60 * 60 * 1000; // 25h old
-    const stalePath = path.join(shapesRoot, backupName('linear-ops', staleTimestamp));
-    await mkdir(stalePath, { recursive: true });
-    await writeFile(path.join(stalePath, 'marker.txt'), 'leftover', 'utf8');
-
-    const removed = await sweepStaleInstallBackups(dorkHome, noopLogger);
-
-    expect(removed).toBe(1);
-    expect(await pathExists(stalePath)).toBe(false);
-  });
-
-  it('spares a fresh backup dir (default 24h threshold) — guards a live transaction', async () => {
-    const pluginsRoot = path.join(dorkHome, 'plugins');
-    await mkdir(pluginsRoot, { recursive: true });
-    const freshPath = path.join(pluginsRoot, backupName('code-review-suite', Date.now()));
-    await mkdir(freshPath, { recursive: true });
-
-    const removed = await sweepStaleInstallBackups(dorkHome, noopLogger);
-
-    expect(removed).toBe(0);
-    expect(await pathExists(freshPath)).toBe(true);
-  });
-
-  it('spares a backup dir just inside a custom maxAgeMs threshold', async () => {
-    const agentsRoot = path.join(dorkHome, 'agents');
-    await mkdir(agentsRoot, { recursive: true });
-    const oneMinuteAgo = Date.now() - 60_000;
-    const livePath = path.join(agentsRoot, backupName('my-agent', oneMinuteAgo));
-    await mkdir(livePath, { recursive: true });
-
-    // A 5-minute threshold: a transaction that started 1 minute ago is still
-    // plausibly in flight, so the sweep must not race it.
-    const removed = await sweepStaleInstallBackups(dorkHome, noopLogger, {
-      maxAgeMs: 5 * 60_000,
-    });
-
-    expect(removed).toBe(0);
-    expect(await pathExists(livePath)).toBe(true);
-  });
-
-  it('spares a backup timestamped exactly at the cutoff (>= is spared; 1ms older is swept)', async () => {
-    // Pin the boundary semantics of `timestamp >= cutoff → spared` with a
-    // frozen clock, so the comparison is exercised at exact equality rather
-    // than depending on wall-clock drift between setup and sweep.
-    const frozenNow = new Date('2026-07-17T12:00:00.000Z').getTime();
-    vi.useFakeTimers();
-    vi.setSystemTime(frozenNow);
-
-    const maxAgeMs = 60_000;
-    const pluginsRoot = path.join(dorkHome, 'plugins');
-    await mkdir(pluginsRoot, { recursive: true });
-    // cutoff = frozenNow - maxAgeMs. Exactly-at-cutoff → spared (>=).
-    const atCutoffPath = path.join(pluginsRoot, backupName('at-cutoff', frozenNow - maxAgeMs));
-    // One millisecond older than the cutoff → swept.
-    const justPastPath = path.join(
-      pluginsRoot,
-      backupName('past-cutoff', frozenNow - maxAgeMs - 1)
+    expect(summary).toEqual({ ...nothing, settled: 1 });
+    expect(await readFile(path.join(pluginsRoot, 'code-review-suite', 'version.txt'), 'utf8')).toBe(
+      'v1'
     );
-    await mkdir(atCutoffPath, { recursive: true });
-    await mkdir(justPastPath, { recursive: true });
-
-    const removed = await sweepStaleInstallBackups(dorkHome, noopLogger, { maxAgeMs });
-
-    expect(removed).toBe(1);
-    expect(await pathExists(atCutoffPath)).toBe(true);
-    expect(await pathExists(justPastPath)).toBe(false);
+    expect(await readdir(pluginsRoot)).toEqual(['code-review-suite']);
   });
 
-  it('never touches directories that are not backups, even in a swept root', async () => {
+  it('sweeps every root a transaction writes into, global and per project', async () => {
+    // Install roots, and the skills roots schedules are materialised into —
+    // where a crash-left backup would be one more live schedule. The project
+    // scope is the one the old sweep never reached.
+    const dirs = [...globalSweepDirs(dorkHome), ...projectSweepDirs(project)];
+    expect(dirs).toEqual([
+      path.join(dorkHome, 'plugins'),
+      path.join(dorkHome, 'agents'),
+      path.join(dorkHome, 'shapes'),
+      path.join(dorkHome, 'skills'),
+      path.join(project, '.dork', 'plugins'),
+      path.join(project, '.dork', 'agents'),
+      path.join(project, '.dork', 'shapes'),
+      path.join(project, '.agents', 'skills'),
+    ]);
+    for (const dir of dirs) await writePackage(path.join(dir, recordName('pkg')), 'v1');
+
+    const summary = await recoverInterruptedInstalls(dirs, noopLogger);
+
+    expect(summary.settled).toBe(dirs.length);
+    for (const dir of dirs) {
+      expect(await readdir(dir)).toEqual(['pkg']);
+    }
+  });
+
+  it('sweeps the project an installed agent lives in, as well as the agent', () => {
+    // An agent installed into a project is registered at
+    // `<project>/.dork/agents/<name>`; its own records sit in `<project>/.dork`.
+    const installed = path.join(project, '.dork', 'agents', 'researcher');
+    const plain = path.join(project, 'elsewhere');
+
+    expect(projectsOfAgents([installed, plain, installed])).toEqual([installed, project, plain]);
+  });
+
+  it('deletes committed leftovers and counts them', async () => {
     const pluginsRoot = path.join(dorkHome, 'plugins');
-    const installedPlugin = path.join(pluginsRoot, 'code-review-suite');
-    await mkdir(installedPlugin, { recursive: true });
-    await writeFile(path.join(installedPlugin, 'plugin.json'), '{}', 'utf8');
+    await writePackage(path.join(pluginsRoot, 'flow'), 'v2');
+    await writePackage(path.join(pluginsRoot, recordName('flow', '.committed')), 'v1');
 
-    const removed = await sweepStaleInstallBackups(dorkHome, noopLogger, { maxAgeMs: 0 });
+    const summary = await recoverInterruptedInstalls(globalSweepDirs(dorkHome), noopLogger);
 
-    expect(removed).toBe(0);
-    expect(await pathExists(installedPlugin)).toBe(true);
+    expect(summary).toEqual({ ...nothing, discarded: 1 });
+    expect(await readdir(pluginsRoot)).toEqual(['flow']);
   });
 
-  it('tolerates a missing dorkHome/plugins and dorkHome/agents (fresh install, nothing on disk yet)', async () => {
-    // dorkHome exists but neither plugins/ nor agents/ has been created.
-    const removed = await sweepStaleInstallBackups(dorkHome, noopLogger);
-    expect(removed).toBe(0);
-  });
-
-  it('tolerates an fs error removing one stale backup and still sweeps the rest', async () => {
+  it('never touches installs, or names that only look like records', async () => {
     const pluginsRoot = path.join(dorkHome, 'plugins');
-    await mkdir(pluginsRoot, { recursive: true });
-    const staleTimestamp = Date.now() - 25 * 60 * 60 * 1000;
-    const badPath = path.join(pluginsRoot, backupName('bad-plugin', staleTimestamp));
-    const goodPath = path.join(pluginsRoot, backupName('good-plugin', staleTimestamp));
-    await mkdir(badPath, { recursive: true });
-    await mkdir(goodPath, { recursive: true });
+    await writePackage(path.join(pluginsRoot, 'code-review-suite'), 'installed');
+    const lookalike = path.join(pluginsRoot, `weird-plugin.dorkos-bak-not-a-timestamp`);
+    await writePackage(lookalike, 'not ours');
+    const warn = vi.fn();
 
-    const realRemove = _internal.removeBackup;
-    vi.spyOn(_internal, 'removeBackup').mockImplementation(async (target) => {
-      if (target === badPath) throw new Error('EACCES: permission denied');
-      return realRemove(target);
+    const summary = await recoverInterruptedInstalls(globalSweepDirs(dorkHome), {
+      ...noopLogger,
+      warn,
     });
 
-    const warnSpy = vi.fn();
-    const removed = await sweepStaleInstallBackups(dorkHome, { ...noopLogger, warn: warnSpy });
-
-    // The good backup is still removed despite the bad one failing.
-    expect(removed).toBe(1);
-    expect(await pathExists(goodPath)).toBe(false);
-    expect(warnSpy).toHaveBeenCalled();
+    expect(summary).toEqual(nothing);
+    expect(await pathExists(lookalike)).toBe(true);
+    expect(await pathExists(path.join(pluginsRoot, 'code-review-suite'))).toBe(true);
+    // Only the lookalike is worth a word; an installed package is not.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('weird-plugin.dorkos-bak-'));
   });
 
-  it('skips a backup-marked name whose timestamp segment cannot be parsed, without throwing', async () => {
-    const pluginsRoot = path.join(dorkHome, 'plugins');
-    await mkdir(pluginsRoot, { recursive: true });
-    // Matches BACKUP_SUFFIX but the segment after it is not `<digits>-...`.
-    const malformedPath = path.join(pluginsRoot, `weird-plugin${BACKUP_SUFFIX}not-a-timestamp`);
-    await mkdir(malformedPath, { recursive: true });
-
-    const warnSpy = vi.fn();
-    const removed = await sweepStaleInstallBackups(dorkHome, { ...noopLogger, warn: warnSpy });
-
-    expect(removed).toBe(0);
-    expect(await pathExists(malformedPath)).toBe(true);
-    expect(warnSpy).toHaveBeenCalled();
+  it('tolerates a scope with no install roots yet', async () => {
+    expect(await recoverInterruptedInstalls(globalSweepDirs(dorkHome), noopLogger)).toEqual(
+      nothing
+    );
   });
 
-  it('tolerates a readdir error on one root and still sweeps the other', async () => {
+  it('keeps going when one target cannot be settled, and keeps that target’s backup', async () => {
     const pluginsRoot = path.join(dorkHome, 'plugins');
-    const agentsRoot = path.join(dorkHome, 'agents');
-    await mkdir(pluginsRoot, { recursive: true });
-    await mkdir(agentsRoot, { recursive: true });
-    const staleTimestamp = Date.now() - 25 * 60 * 60 * 1000;
-    const agentBackup = path.join(agentsRoot, backupName('my-agent', staleTimestamp));
-    await mkdir(agentBackup, { recursive: true });
+    const badBackup = path.join(pluginsRoot, recordName('bad-plugin'));
+    await writePackage(badBackup, 'v1');
+    await writePackage(path.join(pluginsRoot, recordName('good-plugin')), 'v1');
+    const realMove = recoveryInternal.move;
+    vi.spyOn(recoveryInternal, 'move').mockImplementation(async (from, to) => {
+      if (from === badBackup) throw new Error('EACCES: permission denied');
+      return realMove(from, to);
+    });
+    const warn = vi.fn();
 
-    const realRead = _internal.readEntries;
-    vi.spyOn(_internal, 'readEntries').mockImplementation(async (dir) => {
-      if (dir === pluginsRoot) {
-        const err = Object.assign(new Error('EACCES'), { code: 'EACCES' });
-        throw err;
-      }
+    const summary = await recoverInterruptedInstalls(globalSweepDirs(dorkHome), {
+      ...noopLogger,
+      warn,
+    });
+
+    expect(summary.settled).toBe(1);
+    expect(await pathExists(path.join(pluginsRoot, 'good-plugin'))).toBe(true);
+    expect(await pathExists(badBackup)).toBe(true);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('bad-plugin'));
+  });
+
+  it('keeps going when one directory cannot be read', async () => {
+    const pluginsRoot = path.join(dorkHome, 'plugins');
+    await mkdir(pluginsRoot, { recursive: true });
+    await writePackage(path.join(dorkHome, 'agents', recordName('my-agent')), 'v1');
+    const realRead = _internal.readNames;
+    vi.spyOn(_internal, 'readNames').mockImplementation(async (dir) => {
+      if (dir === pluginsRoot) throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
       return realRead(dir);
     });
 
-    const removed = await sweepStaleInstallBackups(dorkHome, noopLogger);
+    const summary = await recoverInterruptedInstalls(globalSweepDirs(dorkHome), noopLogger);
 
-    expect(removed).toBe(1);
-    expect(await pathExists(agentBackup)).toBe(false);
+    expect(summary.settled).toBe(1);
+    expect(await pathExists(path.join(dorkHome, 'agents', 'my-agent'))).toBe(true);
+  });
+
+  it('reports a target another process may be installing, and settles it on the retry', async () => {
+    // A young backup written before owners were stamped: nothing proves its
+    // writer is gone, so only the age floor may settle it — and a target left
+    // at startup must not wait for the next restart.
+    const pluginsRoot = path.join(dorkHome, 'plugins');
+    const legacy = path.join(pluginsRoot, `flow.dorkos-bak-${Date.now()}-${randomUUID()}`);
+    await writePackage(legacy, 'v1');
+
+    const summary = await recoverInterruptedInstalls(globalSweepDirs(dorkHome), noopLogger);
+    expect(summary).toEqual({ ...nothing, inFlightTargets: [path.join(pluginsRoot, 'flow')] });
+    expect(await pathExists(legacy)).toBe(true);
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] });
+    const retried = new Promise<InstallSweepSummary>((resolve) =>
+      retryInFlightTargetsLater(summary.inFlightTargets, noopLogger, resolve)
+    );
+    vi.advanceTimersByTime(IN_FLIGHT_FLOOR_MS);
+
+    expect(await retried).toEqual({ ...nothing, settled: 1 });
+    expect(await readFile(path.join(pluginsRoot, 'flow', 'version.txt'), 'utf8')).toBe('v1');
+  });
+
+  it('schedules no retry when nothing was left', () => {
+    vi.useFakeTimers();
+    retryInFlightTargetsLater([], noopLogger, () => undefined);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
