@@ -389,10 +389,12 @@ export default defineConfig({
   // So a healthy shard is `boot + (suite − boot) / shards` — about 16m20s at
   // three shards — and the deadline is 1.75× that, rounded up to the next five
   // minutes: 30 minutes. The 1.75 is deliberately looser than the 1.5 the flat
-  // number was originally set at, because `--shard` divides by TEST COUNT and
-  // not by duration: the split is 110/109/109 of 328, but shards 1 and 2 are
-  // pure `chromium` while shard 3 carries all six test-mode projects, and no
-  // measurement yet says those thirds take equally long.
+  // number was originally set at, because `--shard` then divided by TEST COUNT
+  // and not by duration. That turned out to matter: the count cut put every
+  // test-mode project on shard 3, which ran at 92% of this deadline in
+  // September 2026. The cut is now by measured duration
+  // (`reporters/balanced-shard-reporter.ts`); the multiplier is unchanged, and
+  // whether it can come down is a separate experiment.
   //
   // The ladder this sits in is on the job in .github/workflows/browser-test.yml:
   // shard ~16m (healthy) → Playwright gives up at 30m → the step is killed at
@@ -415,6 +417,10 @@ export default defineConfig({
     ['json', { outputFile: 'test-results/results.json' }],
     CI ? ['github'] : ['list'],
     ['./reporters/manifest-reporter.ts'],
+    // Owns `--shard`: cuts the suite by measured duration instead of by test
+    // count, whole spec files at a time. Inert on an unsharded run. Why, and
+    // how it stays balanced as specs are added: reporters/balanced-shard.ts.
+    ['./reporters/balanced-shard-reporter.ts'],
   ],
 
   use: {
