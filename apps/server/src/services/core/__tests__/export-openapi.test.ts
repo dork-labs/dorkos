@@ -88,6 +88,34 @@ describe('export-openapi', () => {
     expect(search?.get?.description).toContain('warnings');
   });
 
+  it('documents the all-packages update door: a read, and an apply that must say so', () => {
+    const spec = generateOpenAPISpec();
+    const updates = spec.paths?.['/api/marketplace/updates'];
+
+    expect(Object.keys(updates ?? {}).sort()).toEqual(['get', 'post']);
+    // The read takes no body, and the apply names the per-installation result.
+    expect(updates?.get?.requestBody).toBeUndefined();
+    expect(Object.keys(updates?.post?.responses ?? {}).sort()).toEqual([
+      '200',
+      '400',
+      '403',
+      '404',
+      '502',
+    ]);
+    const body = (
+      updates?.post?.requestBody as {
+        content: { 'application/json': { schema: { required?: string[] } } };
+      }
+    ).content['application/json'].schema;
+    expect(body.required).toEqual(['apply']);
+    expect(JSON.stringify(updates?.post?.requestBody)).toContain('installPaths');
+    expect(JSON.stringify(updates?.post?.responses?.['404'])).toContain('packageNames');
+    const result = JSON.stringify(updates?.get?.responses?.['200']);
+    for (const field of ['installPath', 'scope', 'agentPath', 'applied', 'applyError']) {
+      expect(result).toContain(field);
+    }
+  });
+
   it('produces valid JSON output', () => {
     const spec = generateOpenAPISpec();
     const json = JSON.stringify(spec, null, 2);

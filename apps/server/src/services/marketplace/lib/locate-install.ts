@@ -31,6 +31,14 @@ export interface LocateInstallInput {
   name: string;
   /** Project path, when the caller is looking for a project-scoped install too. */
   projectPath?: string;
+  /**
+   * One exact install root the caller already resolved — an update replacing
+   * the installation its check found. Only a candidate the name and scope would
+   * yield anyway is kept, so this can narrow the probe but never widen it to an
+   * arbitrary path. Without it, the first existing root wins, and a plugin and
+   * an agent sharing a name resolve to the plugin.
+   */
+  installRoot?: string;
 }
 
 /** A place an install of a given name could be, and the type that root implies. */
@@ -50,7 +58,7 @@ export interface InstallRootCandidate {
  *
  * A project's roots stay ahead of the global ones because a project install
  * shadows a global package of the same name for that project, matching the
- * installed scanner's merged view and the update flow's walk. First-match-wins
+ * installed scanner's merged view, which the update flow checks. First-match-wins
  * across that order, so when two different-type packages share a name (a plugin
  * *and* a Shape both called "linear-ops"), a lookup by name always resolves to
  * the earlier root. The conflict detector surfaces that collision as a warning
@@ -63,12 +71,15 @@ export function installRootCandidates(input: LocateInstallInput): InstallRootCan
   const scopeRoots = input.projectPath
     ? [projectScopeRoot(input.projectPath), input.dorkHome]
     : [input.dorkHome];
-  return scopeRoots.flatMap((scopeRoot) =>
+  const candidates = scopeRoots.flatMap((scopeRoot) =>
     installRootsUnder(scopeRoot).map(({ dir, representativeType }) => ({
       installRoot: path.join(dir, input.name),
       inferredType: representativeType,
     }))
   );
+  return input.installRoot === undefined
+    ? candidates
+    : candidates.filter((candidate) => candidate.installRoot === input.installRoot);
 }
 
 /**
