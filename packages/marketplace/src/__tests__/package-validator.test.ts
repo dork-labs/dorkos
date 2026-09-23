@@ -261,6 +261,142 @@ describe('validatePackage', () => {
     });
   });
 
+  describe('VERSION_MISMATCH', () => {
+    /** A plugin package whose manifest says `manifestVersion`; plugin.json as given (raw). */
+    async function makeVersionedPackage(manifestVersion: string, pluginJson: string | null) {
+      const dir = await tempDir();
+      const pkg = path.join(dir, 'versioned');
+      await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
+        schemaVersion: 1,
+        name: 'versioned',
+        version: manifestVersion,
+        type: 'plugin',
+        description: 'A plugin with two version files',
+        category: 'productivity',
+      });
+      if (pluginJson !== null) {
+        await writeText(path.join(pkg, CLAUDE_PLUGIN_MANIFEST_PATH), pluginJson);
+      }
+      return pkg;
+    }
+
+    it('fails when plugin.json states a different version than the manifest', async () => {
+      // Purpose: flow shipped manifest 0.6.0 beside plugin.json 0.7.2, so DorkOS
+      // and Claude Code reported different versions of one install. That must
+      // not publish or install.
+      const pkg = await makeVersionedPackage(
+        '0.6.0',
+        JSON.stringify({ name: 'versioned', version: '0.7.2' })
+      );
+
+      const result = await validatePackage(pkg);
+
+      expect(result.ok).toBe(false);
+      const mismatches = result.issues.filter((i) => i.code === 'VERSION_MISMATCH');
+      expect(mismatches).toEqual([
+        {
+          level: 'error',
+          code: 'VERSION_MISMATCH',
+          message:
+            '.dork/manifest.json says version 0.6.0 but .claude-plugin/plugin.json says 0.7.2. ' +
+            'Set both to the same version: Claude Code loads 0.7.2, DorkOS would report 0.6.0.',
+          path: CLAUDE_PLUGIN_MANIFEST_PATH,
+        },
+      ]);
+    });
+
+    it('fails when plugin.json declares no version beside a versioned manifest', async () => {
+      // Purpose: Claude Code would fall back to the entry or the commit while
+      // DorkOS reports the manifest's version — the same disagreement.
+      const pkg = await makeVersionedPackage('1.0.0', JSON.stringify({ name: 'versioned' }));
+
+      const result = await validatePackage(pkg);
+
+      expect(result.ok).toBe(false);
+      expect(result.issues.filter((i) => i.code === 'VERSION_MISMATCH')).toEqual([
+        {
+          level: 'error',
+          code: 'VERSION_MISMATCH',
+          message:
+            '.dork/manifest.json says version 1.0.0 but .claude-plugin/plugin.json has no version. ' +
+            'Add "version": "1.0.0" to plugin.json so Claude Code and DorkOS agree.',
+          path: CLAUDE_PLUGIN_MANIFEST_PATH,
+        },
+      ]);
+    });
+
+    it('says nothing when the two files agree', async () => {
+      // Purpose: the check must not fire on the ordinary, correct package.
+      const pkg = await makeVersionedPackage(
+        '1.0.0',
+        JSON.stringify({ name: 'versioned', version: '1.0.0' })
+      );
+
+      const result = await validatePackage(pkg);
+
+      expect(result.issues.some((i) => i.code === 'VERSION_MISMATCH')).toBe(false);
+      expect(result.ok).toBe(true);
+    });
+
+    it('says nothing for a manifest-only agent package', async () => {
+      // Purpose: an agent needs no plugin.json, so there is nothing to disagree with.
+      const result = await validatePackage(path.join(FIXTURES_DIR, 'valid-agent'));
+
+      expect(result.issues.some((i) => i.code === 'VERSION_MISMATCH')).toBe(false);
+    });
+
+    it('leaves an unparseable plugin.json to its existing handling', async () => {
+      // Purpose: a broken plugin.json is not a version disagreement; reporting
+      // one would bury the real problem under a misleading message.
+      const pkg = await makeVersionedPackage('1.0.0', '{ not json');
+
+      const result = await validatePackage(pkg);
+
+      expect(result.issues.some((i) => i.code === 'VERSION_MISMATCH')).toBe(false);
+    });
+
+    it('reports declaredVersion on a failed result', async () => {
+      // Purpose: the update check reads the version of a tree that does not
+      // validate; the result must still carry it.
+      const pkg = await makeVersionedPackage(
+        '0.6.0',
+        JSON.stringify({ name: 'versioned', version: '0.7.2' })
+      );
+      expect((await validatePackage(pkg)).declaredVersion).toBe('0.7.2');
+
+      const dir = await tempDir();
+      const invalid = path.join(dir, 'schema-invalid');
+      await writeJson(path.join(invalid, PACKAGE_MANIFEST_PATH), {
+        schemaVersion: 1,
+        name: 'schema-invalid',
+        version: '2.0.0',
+      });
+      const invalidResult = await validatePackage(invalid);
+      expect(invalidResult.ok).toBe(false);
+      expect(invalidResult.issues.some((i) => i.code === 'MANIFEST_SCHEMA_INVALID')).toBe(true);
+      expect(invalidResult.declaredVersion).toBe('2.0.0');
+    });
+
+    it('keeps "declares no version" apart from a real 0.0.0 for Claude-Code-only packages', async () => {
+      // Purpose: the synthesized manifest must say 0.0.0 (the schema requires a
+      // version), but that placeholder must never be reported as the package's.
+      const dir = await tempDir();
+      const none = path.join(dir, 'cc-none');
+      await writeJson(path.join(none, CLAUDE_PLUGIN_MANIFEST_PATH), { name: 'cc-none' });
+      const noneResult = await validatePackage(none);
+      expect(noneResult.ok).toBe(true);
+      expect(noneResult.manifest?.version).toBe('0.0.0');
+      expect(noneResult.declaredVersion).toBeUndefined();
+
+      const zero = path.join(dir, 'cc-zero');
+      await writeJson(path.join(zero, CLAUDE_PLUGIN_MANIFEST_PATH), {
+        name: 'cc-zero',
+        version: '0.0.0',
+      });
+      expect((await validatePackage(zero)).declaredVersion).toBe('0.0.0');
+    });
+  });
+
   describe('PACKAGED_MCP_SERVERS_FORBIDDEN', () => {
     async function writeAgentPackage(
       pkg: string,
