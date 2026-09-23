@@ -120,6 +120,9 @@ remedy_has wait_on_first_ejection 'EJECTED(failed_checks)' 'Do not push and do n
 remedy_has rearm_after_flake 'EJECTED(failed_checks)' 'gh pr merge --auto 1931'
 remedy_has first_ejection_cites_rate 'EJECTED(failed_checks)' '85%'
 remedy_has repeat_is_real 'EJECTED_REPEAT(failed_checks,2)' 'treat it as real'
+# The same check failing twice on one head is a regression only the queue sees
+# (#1964: re-armed unchanged four times, 17 queue builds). Never re-arm it.
+remedy_has repeat_not_rearmed 'EJECTED_REPEAT(failed_checks,2)' 'do not re-arm it'
 remedy_has repeat_names_pr 'EJECTED_REPEAT(failed_checks,2)' 'pr-1931-'
 remedy_has timeout_is_not_yours 'EJECTED(checks_timed_out)' 'Do not push and do not rerun'
 remedy_has stall_is_not_yours 'STALLED_IN_QUEUE(120)' 'Do not push, rerun or re-arm'

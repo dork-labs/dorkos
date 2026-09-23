@@ -47,7 +47,9 @@ green() {
     {"name": "fragment-present", "bucket": "pass"},
     {"name": "no-fragment-under-skip-label", "bucket": "skipping"},
     {"name": "review", "bucket": "pass"}
-  ]
+  ],
+  "headSince": "2026-09-21T15:00:00Z",
+  "queueRemovals": []
 }
 JSON
 }
@@ -113,6 +115,44 @@ check "fail outranks pending"     "SKIP failing-checks"       '.checks[0].bucket
 # Precedence: a held PR that is also broken still reports the hold, so the
 # operator sees the human signal rather than chasing CI.
 check "hold outranks failure"     "SKIP held-by-label"        '.labels = [{"name": "hold"}] | .checks[0].bucket = "fail"'
+
+# The queue's memory. The browser suite runs only in the merge queue, so a PR
+# that breaks a browser test is fully green on the PR and, before this rule, was
+# re-armed unchanged after every ejection: #1964 went round five times for one
+# assertion. Pinned in BOTH directions, because the failure that matters here is
+# the refusal quietly never matching (the queue burns builds again) and the one
+# that hurts next is it matching too much (a flaky first ejection stops arming).
+E1='{"at": "2026-09-21T16:00:00Z", "reason": "failed_checks", "failedChecks": ["browser-shard (2/3)", "browser-test"]}'
+E2='{"at": "2026-09-21T17:00:00Z", "reason": null, "failedChecks": ["browser-test", "browser-shard (2/3)"]}'
+OTHER='{"at": "2026-09-21T17:00:00Z", "reason": "failed_checks", "failedChecks": ["test-shard (1/4)"]}'
+check "first queue ejection"         "ARM"                        ".queueRemovals = [$E1]"
+check "same check, same head, 2x"    "SKIP repeat-queue-failure"  ".queueRemovals = [$E1, $E2]"
+check "reason null still counts"     "SKIP repeat-queue-failure"  ".queueRemovals = [$E1, $E2] | .queueRemovals[].reason = null"
+check "new commit resets it"         "ARM"                        ".queueRemovals = [$E1, $E2] | .headSince = \"2026-09-21T18:00:00Z\""
+check "one before, one after push"   "ARM"                        ".queueRemovals = [$E1, $E2] | .headSince = \"2026-09-21T16:30:00Z\""
+check "different checks each time"   "ARM"                        ".queueRemovals = [$E1, $OTHER]"
+check "no failed check, no count"    "ARM"                        ".queueRemovals = [$E1, $E2] | .queueRemovals[].failedChecks = [] | .queueRemovals[].reason = \"merged\""
+check "one check repeats in three"   "SKIP repeat-queue-failure"  ".queueRemovals = [$E1, $OTHER, $E2]"
+check "queue history absent"         "SKIP queue-history-unknown" 'del(.queueRemovals)'
+check "queue history null"           "SKIP queue-history-unknown" '.queueRemovals = null'
+check "head push time unknown"       "SKIP queue-history-unknown" ".queueRemovals = [$E1] | .headSince = null"
+check "unknown push, no ejections"   "ARM"                        '.headSince = null'
+check "hold outranks repeat"         "SKIP held-by-label"         ".queueRemovals = [$E1, $E2] | .labels = [\"hold\"]"
+check "red PR check outranks repeat" "SKIP failing-checks"        ".queueRemovals = [$E1, $E2] | .checks[0].bucket = \"fail\""
+
+# merge-tail names the repeated checks in its comment from --repeat-failure,
+# which must agree with the verdict: the same names on a repeat, nothing on a
+# first ejection or once a new commit has reset the count.
+expect_names() {
+  local name=$1 expected=$2 mutation=$3 got
+  got=$(green | jq "$mutation" | "$gate" --repeat-failure - 2>/dev/null | paste -sd, -)
+  if [[ "$got" == "$expected" ]]; then pass=$(( pass + 1 )); else
+    fail=$(( fail + 1 )); printf 'FAIL  %-34s expected %-26s got %s\n' "$name" "${expected:-<empty>}" "${got:-<empty>}"
+  fi
+}
+expect_names "names on a repeat"           "browser-shard (2/3),browser-test" ".queueRemovals = [$E1, $E2]"
+expect_names "no names on a first eject"   ""                                 ".queueRemovals = [$E1]"
+expect_names "no names after a new commit" ""                                 ".queueRemovals = [$E1, $E2] | .headSince = \"2026-09-21T18:00:00Z\""
 
 # Missing fields must never read as permission. An empty object has no state, so
 # it is not open.

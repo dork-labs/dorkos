@@ -374,7 +374,9 @@ throttles its `*/10` schedule: over 200 scheduled runs (2026-08-25 to 09-19) the
 gap was 162 minutes and the p90 305, so it runs roughly every 2-3 hours, not every 10
 minutes. It is a backstop. It arms a PR that is open, not a draft, no hold label (`hold`, `do-not-merge`, `wip`,
 `blocked`), not conflicting, no requested changes, no unresolved review threads
-(outdated ones count), and every check settled green with none cancelled. The decision
+(outdated ones count), and every check settled green with none cancelled. It will not
+re-arm a PR the queue has rejected twice for the same check on the same head commit;
+it comments on the PR once instead, and a new commit clears it. The decision
 is `scripts/should-arm-automerge.sh`. Arm your own green PR yourself instead of
 waiting for it; arming is idempotent and safe (one arming path arrives in phase 1b):
 
@@ -609,14 +611,20 @@ catch, which corrupts the numbers the pipeline is tuned by.
   it covers a package you changed, run its tests locally (`pnpm vitest run <path>`)
   and fix only if they fail. Once the evidence says it is not yours (the same job red
   on `main` or in other groups, or a flake or infra error in its log), re-arm it
-  yourself with `gh pr merge --auto <n>`. merge-tail would re-arm it too, but only on
-  its next run, 2-3 hours away.
-- **`EJECTED_REPEAT(failed_checks,k)`: now look.** A failure counts as real only on
-  a second ejection by the **same job** with no change in between. Find the job in
-  each merge-group run
+  **once** yourself with `gh pr merge --auto <n>`. Green PR checks are not that
+  evidence: the browser tests run only in the queue, so a PR that breaks one reads
+  green everywhere else.
+- **`EJECTED_REPEAT(failed_checks,k)`: stop re-arming.** If the **same check** failed
+  again on the **same head commit**, it is a regression only the queue can see, not a
+  flake. Do not re-arm. Find the job in each merge-group run
   (`gh run list --event merge_group -L 100 --json headBranch,name,conclusion,databaseId`,
-  keeping rows whose `headBranch` contains `pr-<n>-`). Same job: reproduce, fix,
-  push. Different jobs: still likely flaky; re-arm with `gh pr merge --auto <n>`.
+  keeping rows whose `headBranch` contains `pr-<n>-`), read its log, fix it, push.
+  merge-tail will not re-arm such a PR either: it comments once and waits for a new
+  commit. PR #1964 was re-armed unchanged four times after the same browser assertion
+  failed, costing 17 queue builds, its own and every PR stacked behind it. The one
+  exception is the same check red on `main` too (a break that landed there, like the
+  wall-clock fixture of 2026-09-17): wait for the fix on `main`, then re-arm. Different
+  checks each time: still likely flaky; re-arm with `gh pr merge --auto <n>`.
 - **`EJECTED(merge_conflict)`** (or `invalid_merge_commit`, `git_tree_invalid`):
   rebase onto `origin/main` and push once. **`EJECTED(manual)`**: someone removed
   it on purpose; read the timeline before re-arming. **`EJECTED(checks_timed_out)`**
