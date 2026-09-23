@@ -2,6 +2,7 @@
 covers:
   - 'feat(community): sign out, and disconnect one or every installation, from the Community site'
   - 'fix(community): limit password guesses on leave and disconnect-all, and name a wrong password'
+  - 'fix(community): route every password confirmation through the guess limit'
 ---
 
 ### Added
@@ -16,4 +17,4 @@ covers:
 
 ### Security
 
-- Limit password guesses when leaving a community or disconnecting all installations. After 5 wrong passwords in a minute, from one account or one network address, the Community refuses these actions for the rest of that minute, even with the right password. A server owner can change the number with `COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`. (DOR-2181)
+- Limit password guesses everywhere a community site asks for your password: leaving, disconnecting all installations, handing over ownership, exporting the whole community, archiving, restoring or deleting it, and creating or replacing a host API key. After 5 wrong passwords in a minute, from one account or one network address, these actions are refused for the rest of that minute, even with the right password. A wrong password now always says "That password is not right." and that nothing changed. A server owner can change the number with `COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`. (DOR-2181)

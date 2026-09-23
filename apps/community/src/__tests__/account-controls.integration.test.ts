@@ -207,11 +207,13 @@ describe('password confirmation names its failure and limits guesses', () => {
     let b: string;
     let person: TenancyMember;
     let personInB: TenancyMember;
+    let operator: string;
 
     beforeAll(async () => {
       limited = await startTenancyHarness('reauth_limit', { reauthAttemptsPerMinute: 3 });
       const host = await bootstrapHost(limited, 'Limit Owner', 'owner@reauth-limit.test');
       a = host.communityId;
+      operator = host.cookie;
       const pending = await createPendingCommunity(limited, host.cookie, 'Limit B');
       b = pending.communityId;
       const bOwner = await claimAsNewAccount(limited, pending.token, 'B', 'b@reauth-limit.test');
@@ -261,6 +263,38 @@ describe('password confirmation names its failure and limits guesses', () => {
       vi.setSystemTime(new Date(Date.now() + 61_000));
       expect((await disconnectAll(person.cookie, a, TENANCY_PASSWORD)).status).toBe(204);
       expect((await leave(personInB.cookie, b, TENANCY_PASSWORD)).status).toBe(204);
+    });
+
+    it('shares that budget with owner transfer, owner export and host key issue', async () => {
+      // The previous test's guesses from this address fall out of the window first.
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(Date.now() + 120_000));
+      const base = `/api/v1/communities/${a}`;
+      const transfer = (password: string) =>
+        limited.call(`${base}/owner/transfer`, {
+          cookie: operator,
+          body: { successorMemberId: person.memberId, password, lifecycleVersion: 1 },
+        });
+      const exportAll = (password: string) =>
+        limited.call(`${base}/owner/export`, { cookie: operator, body: { password } });
+      const issueKey = (password: string) =>
+        limited.call('/api/v1/host/api-keys', {
+          cookie: operator,
+          body: { label: 'Guessing', scopes: ['communities:read'], expiresInDays: 30, password },
+        });
+      for (const attempt of [transfer('guess-1'), exportAll('guess-2'), issueKey('guess-3')]) {
+        const response = await attempt;
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({ code: 'REAUTH_FAILED' });
+      }
+      const fourth = await exportAll('guess-4');
+      expect(fourth.status).toBe(429);
+      expect((await issueKey(TENANCY_PASSWORD)).status).toBe(429);
+      const keys = await limited.pool.query('SELECT count(*)::int AS count FROM host_api_keys');
+      expect(keys.rows[0].count).toBe(0);
+
+      vi.setSystemTime(new Date(Date.now() + 61_000));
+      expect((await issueKey(TENANCY_PASSWORD)).status).toBe(201);
     });
   });
 });

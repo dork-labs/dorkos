@@ -83,6 +83,14 @@ export function createCommunityApp({
   };
   // Use the socket peer. Proxy headers are client-controlled until a trusted proxy is configured.
   const peer = (c: Parameters<typeof getConnInfo>[0]) => getConnInfo(c).remote.address ?? 'unknown';
+  // Every server-side password check spends this one guess budget (see its TSDoc).
+  const confirmPassword = createPasswordConfirmation({
+    auth,
+    ceiling: config.limits.reauthAttemptsPerMinute,
+    peer,
+    exhausted: attemptsExhausted,
+    record: limitAttempts,
+  });
   app.use('/api/*', async (c, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
       const origin = c.req.header('origin');
@@ -283,7 +291,7 @@ export function createCommunityApp({
   });
   const hostApi = new Hono();
   registerHostRoutes(hostApi, { pool, auth, config, blobStore, authority, now });
-  registerHostKeyRoutes(hostApi, { pool, auth, authority, now });
+  registerHostKeyRoutes(hostApi, { pool, auth, authority, now, confirmPassword });
   app.route('/api/v1', hostApi);
 
   const communityApi = new Hono();
@@ -348,13 +356,6 @@ export function createCommunityApp({
       );
     },
   });
-  const confirmPassword = createPasswordConfirmation({
-    auth,
-    ceiling: config.limits.reauthAttemptsPerMinute,
-    peer,
-    exhausted: attemptsExhausted,
-    record: limitAttempts,
-  });
   registerMemberRoutes(communityApi, { pool, auth, confirmPassword });
   registerPairingRoutes(communityApi, {
     pool,
@@ -365,8 +366,8 @@ export function createCommunityApp({
   });
   registerAgentRoutes(communityApi, { pool, auth, config });
   registerAttachmentRoutes(communityApi, { pool, auth, config, blobStore });
-  registerExportRoutes(communityApi, { pool, auth, blobStore });
-  registerAdministrationRoutes(communityApi, { pool, auth, blobStore });
+  registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
+  registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
   app.route('/api/v1', communityApi);
   app.route('/api/v1/communities/:communityId', communityApi);
   return app;

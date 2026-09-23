@@ -171,14 +171,7 @@ export function registerMemberRoutes(
   app.post('/owner/transfer', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireOwnerTransferRequestSchema);
-    try {
-      await auth.api.verifyPassword({
-        headers: c.req.raw.headers,
-        body: { password: body.password },
-      });
-    } catch {
-      throw new ApiError(403, 'FORBIDDEN', 'Reauthentication failed.');
-    }
+    await confirmPassword(c, actor.user_id, body.password);
     const lifecycleVersion = await transaction(pool, async (client) => {
       const community = await client.query<{ lifecycle: string; lifecycle_version: number }>(
         'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR UPDATE',

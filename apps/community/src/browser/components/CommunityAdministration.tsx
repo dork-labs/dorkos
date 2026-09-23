@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Download, ImagePlus, Trash2 } from 'lucide-react';
 import { describeError, download, RequestError, request, tenantApiPath } from '../api.js';
+import { describeReauthenticationError } from '../account-controls.js';
 import type { Member } from '../types.js';
 
 type Settings = {
@@ -250,7 +251,8 @@ export function CommunityAdministration({
         if (dialog && cause instanceof RequestError && cause.code === 'STATE_CONFLICT') {
           await refresh();
         }
-        setError(describeError(cause));
+        // Only the password-confirmed actions can answer REAUTH_FAILED or RATE_LIMITED.
+        setError(describeReauthenticationError(cause, 'Nothing changed.'));
       }
     } finally {
       setBusy(false);

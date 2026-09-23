@@ -168,7 +168,9 @@ export function Manage({
       await refresh(current.role === 'owner' || current.role === 'admin');
       onChanged();
     } catch (cause) {
-      setError(describeError(cause));
+      // Transfer and the community export confirm a password; nothing else here can answer
+      // REAUTH_FAILED or RATE_LIMITED.
+      setError(describeReauthenticationError(cause, 'Nothing changed.'));
     } finally {
       setBusy(false);
     }

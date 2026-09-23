@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Context } from 'hono';
 import { describe, expect, it } from 'vitest';
 import type { CommunityAuth } from './auth.js';
@@ -73,5 +76,25 @@ describe('createPasswordConfirmation', () => {
       '429 RATE_LIMITED'
     );
     expect(await refusal(confirm(context('10.0.0.8'), 'account-3', RIGHT))).toBe('accepted');
+  });
+});
+
+describe('every server-side password check', () => {
+  // A route that calls Better Auth's verifyPassword itself skips the guess limit (the server-side
+  // call never reaches Better Auth's HTTP limiter) and answers a wrong password with some other
+  // code. This fails the moment one appears; route it through createPasswordConfirmation instead.
+  it('goes through createPasswordConfirmation', () => {
+    const root = fileURLToPath(new URL('.', import.meta.url));
+    const sources = (readdirSync(root, { recursive: true, encoding: 'utf8' }) as string[])
+      .filter((file) => /\.tsx?$/u.test(file))
+      .filter((file) => !/(^|\/)__tests__\/|\.test\.tsx?$/u.test(file));
+    // The scan really reaches the route modules and the one permitted caller.
+    expect(sources).toEqual(expect.arrayContaining(['routes/members.ts', 'routes/host-keys.ts']));
+    expect(readFileSync(join(root, 'password-confirmation.ts'), 'utf8')).toMatch(/verifyPassword/u);
+    const offenders = sources
+      .filter((file) => file !== 'password-confirmation.ts')
+      .filter((file) => /\bverifyPassword\b/u.test(readFileSync(join(root, file), 'utf8')))
+      .map((file) => relative(root, join(root, file)));
+    expect(offenders).toEqual([]);
   });
 });
