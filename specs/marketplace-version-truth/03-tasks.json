@@ -227,8 +227,8 @@
       "parallelWith": [
         "2.11"
       ],
-      "issue": null,
-      "parentIssue": null
+      "issue": "DOR-2251",
+      "parentIssue": "DOR-2244"
     },
     {
       "id": "2.8",
