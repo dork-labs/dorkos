@@ -11,6 +11,9 @@
  * - The table must name every administration route the app registers, and every other route
  *   must be listed as outside administration with a reason, so a new route fails this file
  *   until someone classifies it.
+ * - A community whose admission is closed admits no one: creating, previewing, starting,
+ *   binding and redeeming an invitation are refused for every role, and the close is raced
+ *   against an invitation and a join in both orders.
  */
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -108,7 +111,7 @@ interface Action<T> {
   refused?: Partial<Record<Role, number>>;
   /** Owner-only actions that also require the current password. */
   reauth?: boolean;
-  prepare?: () => Promise<T>;
+  prepare?: (role: Role) => Promise<T>;
   call: (prepared: T, secret: string) => Call;
   effect?: (body: Buffer, role: Role, prepared: T) => Promise<void>;
 }
@@ -459,6 +462,47 @@ const OWNER = ['owner'] as const;
 // A role that reaches the route's own lookup, rather than failing membership, sees 404 for an
 // object it cannot address; the other refusals are role checks.
 const notRequester = { admin: 404, member: 404, hostMember: 404 } as const;
+// A closed community refuses every new admission with 409, whoever asks.
+const closedToEveryone = Object.fromEntries(SESSION_ROLES.map((role) => [role, 409]));
+
+async function closeAdmission(): Promise<void> {
+  await ok(
+    {
+      method: 'PATCH',
+      path: scoped('/settings'),
+      body: { admissionPolicy: 'closed' },
+      headers: { 'if-match': `"${(await alpha()).settings_version}"` },
+    },
+    'owner'
+  );
+}
+
+async function createInvite(): Promise<string> {
+  const { token } = (await ok(
+    { method: 'POST', path: scoped('/invites'), body: { seats: 1 } },
+    'owner',
+    201
+  )) as { token: string };
+  return token;
+}
+
+async function startJoining(token: string): Promise<string> {
+  const preflight = await send(
+    { method: 'POST', path: scoped('/invites/preflight'), body: { token } },
+    'signedOut'
+  );
+  await expectStatus(preflight, 200, 'invite preflight');
+  return responseCookies(preflight);
+}
+
+/**
+ * Close admission without the close's own revocation, leaving a live invitation or admission
+ * behind. Closing through the API revokes both, so this is the defence-in-depth case: an
+ * invitation that somehow survived must still admit no one.
+ */
+async function closeLeavingInvitations(): Promise<void> {
+  await pool.query("UPDATE communities SET admission_policy='closed' WHERE id=$1", [alphaId]);
+}
 
 const actions: Action<unknown>[] = [
   // ── Host plane ─────────────────────────────────────────────────────────────
@@ -1190,6 +1234,97 @@ const actions: Action<unknown>[] = [
       expect(row.rowCount).toBe(0);
     },
   }),
+  // ── A closed community admits no one new ──────────────────────────────────
+  define({
+    rule: 'Create an invitation while closed: refused for everyone',
+    route: 'POST /invites',
+    variant: 'closed community',
+    allowed: [],
+    status: 201,
+    refused: { owner: 409, admin: 409 },
+    prepare: closeAdmission,
+    call: () => ({ method: 'POST', path: scoped('/invites'), body: { seats: 1 } }),
+  }),
+  define<{ token: string }>({
+    rule: 'Preview a surviving invitation while closed: refused for everyone',
+    route: 'POST /invites/preview',
+    variant: 'closed community',
+    allowed: [],
+    status: 200,
+    refused: { ...closedToEveryone, signedOut: 409, agent: 409 },
+    prepare: async () => {
+      const token = await createInvite();
+      await closeLeavingInvitations();
+      return { token };
+    },
+    call: ({ token }) => ({ method: 'POST', path: scoped('/invites/preview'), body: { token } }),
+  }),
+  define<{ token: string }>({
+    rule: 'Start joining with a surviving invitation while closed: refused for everyone',
+    route: 'POST /invites/preflight',
+    variant: 'closed community',
+    allowed: [],
+    status: 200,
+    refused: { ...closedToEveryone, signedOut: 409, agent: 409 },
+    prepare: async () => {
+      const token = await createInvite();
+      await closeLeavingInvitations();
+      return { token };
+    },
+    call: ({ token }) => ({ method: 'POST', path: scoped('/invites/preflight'), body: { token } }),
+  }),
+  define<{ cookie: string }>({
+    rule: 'Bind a surviving join attempt while closed: refused for everyone',
+    route: 'POST /invites/bind',
+    variant: 'closed community',
+    allowed: [],
+    status: 200,
+    refused: closedToEveryone,
+    prepare: async () => {
+      const cookie = await startJoining(await createInvite());
+      await closeLeavingInvitations();
+      return { cookie };
+    },
+    call: ({ cookie }) => ({ method: 'POST', path: scoped('/invites/bind'), body: {}, cookie }),
+  }),
+  define<{ cookie: string; userId: string }>({
+    rule: 'Redeem a surviving, bound join attempt while closed: refused, and no one is admitted',
+    route: 'POST /invites/redeem',
+    variant: 'closed community',
+    allowed: [],
+    status: 200,
+    refused: closedToEveryone,
+    prepare: async (role) => {
+      const admission = await startJoining(await createInvite());
+      // Each role joins as itself; a caller with no session binds a throwaway account.
+      let session: string;
+      let userId: string;
+      if (role === 'signedOut' || role === 'agent') {
+        const person = await account(`Joiner ${randomUUID().slice(0, 8)}`);
+        session = person.cookie;
+        userId = person.userId;
+      } else {
+        session = sessions[role];
+        userId = userIds[role];
+      }
+      await expectStatus(
+        await send(
+          {
+            method: 'POST',
+            path: scoped('/invites/bind'),
+            body: {},
+            cookie: `${session}; ${admission}`,
+          },
+          'signedOut'
+        ),
+        200,
+        'invite bind'
+      );
+      await closeLeavingInvitations();
+      return { cookie: admission, userId };
+    },
+    call: ({ cookie }) => ({ method: 'POST', path: scoped('/invites/redeem'), body: {}, cookie }),
+  }),
 ];
 
 /**
@@ -1221,10 +1356,6 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'GET /attention': "the caller's own unread counts",
   'POST /channels/:id/attachments': 'ordinary upload',
   'GET /attachments/:id': 'ordinary reading',
-  'POST /invites/preview': 'a person holding an invitation reads it',
-  'POST /invites/preflight': 'a person holding an invitation starts to join',
-  'POST /invites/bind': 'a person joining binds their account',
-  'POST /invites/redeem': 'a person joining redeems their invitation',
   'GET /agents': "the caller's own agents",
   'POST /agents': 'the caller enrolls their own agent',
   'POST /agents/recover': "the caller recovers their own agent's credential",
@@ -1418,7 +1549,7 @@ for (const action of actions) {
       const expected = allowed ? action.status : refusalStatus(action, role);
       it(`${role} is ${allowed ? 'allowed' : 'refused'} (${expected})`, async () => {
         if (role === 'agent') await ensureAgentCredential();
-        const prepared = action.prepare ? await action.prepare() : undefined;
+        const prepared = action.prepare ? await action.prepare(role) : undefined;
         const call = action.call(prepared, password);
         const before = allowed ? undefined : await snapshot();
         const body = await expectStatus(
@@ -1433,7 +1564,7 @@ for (const action of actions) {
     }
     if (action.reauth) {
       it('owner without the current password is refused (403)', async () => {
-        const prepared = action.prepare ? await action.prepare() : undefined;
+        const prepared = action.prepare ? await action.prepare('owner') : undefined;
         const before = await snapshot();
         await expectStatus(
           await send(action.call(prepared, wrongPassword), 'owner'),
@@ -1445,3 +1576,135 @@ for (const action of actions) {
     }
   });
 }
+
+/**
+ * Closing admission races an invitation or an admission. The test holds A's row so both
+ * requests queue behind it in a chosen order, then lets them run. Postgres grants the row to
+ * waiters in arrival order, so each ordering is exercised on purpose rather than by luck.
+ */
+describe('closing admission while someone is invited or joining', () => {
+  async function waitForLockWaiters(count: number): Promise<void> {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const waiting = await admin.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM pg_stat_activity
+         WHERE datname=$1 AND wait_event_type='Lock'`,
+        [dbName]
+      );
+      if (waiting.rows[0].n >= count) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`Expected ${count} requests waiting on the community row`);
+  }
+
+  /** Queue `first`, then `second`, behind a held community row, then release it. */
+  async function race(
+    first: () => Promise<Response>,
+    second: () => Promise<Response>
+  ): Promise<[Response, Response]> {
+    const holder = await pool.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [alphaId]);
+      const one = first();
+      await waitForLockWaiters(1);
+      const two = second();
+      await waitForLockWaiters(2);
+      await holder.query('COMMIT');
+      return await Promise.all([one, two]);
+    } finally {
+      holder.release();
+    }
+  }
+
+  function close(version: number) {
+    return () =>
+      send(
+        {
+          method: 'PATCH',
+          path: scoped('/settings'),
+          body: { admissionPolicy: 'closed' },
+          headers: { 'if-match': `"${version}"` },
+        },
+        'owner'
+      );
+  }
+
+  const invite = () =>
+    send({ method: 'POST', path: scoped('/invites'), body: { seats: 1 } }, 'admin');
+
+  async function openInvitations(): Promise<number> {
+    return (
+      await pool.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM invites WHERE community_id=$1 AND revoked_at IS NULL',
+        [alphaId]
+      )
+    ).rows[0].n;
+  }
+
+  it('an invitation created just after the close is refused', async () => {
+    const [closed, created] = await race(close((await alpha()).settings_version), invite);
+    expect(closed.status).toBe(200);
+    await expectStatus(created, 409, 'invitation after the close');
+    expect(await openInvitations()).toBe(0);
+  });
+
+  it('an invitation created just before the close is revoked by it', async () => {
+    const version = (await alpha()).settings_version;
+    const [created, closed] = await race(invite, close(version));
+    expect(created.status).toBe(201);
+    expect(closed.status).toBe(200);
+    expect(await openInvitations()).toBe(0);
+  });
+
+  async function boundAdmission(): Promise<{ cookie: string; userId: string }> {
+    const admission = await startJoining(await createInvite());
+    const person = await account(`Racer ${randomUUID().slice(0, 8)}`);
+    const cookie = `${person.cookie}; ${admission}`;
+    await expectStatus(
+      await send({ method: 'POST', path: scoped('/invites/bind'), body: {}, cookie }, 'signedOut'),
+      200,
+      'invite bind'
+    );
+    return { cookie, userId: person.userId };
+  }
+
+  async function membersFor(userId: string): Promise<number> {
+    return (
+      await pool.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM members WHERE community_id=$1 AND user_id=$2',
+        [alphaId, userId]
+      )
+    ).rows[0].n;
+  }
+
+  it('a join redeemed just after the close admits no one', async () => {
+    const { cookie, userId } = await boundAdmission();
+    const redeem = () =>
+      send({ method: 'POST', path: scoped('/invites/redeem'), body: {}, cookie }, 'signedOut');
+    const [closed, redeemed] = await race(close((await alpha()).settings_version), redeem);
+    expect(closed.status).toBe(200);
+    await expectStatus(redeemed, 409, 'redeem after the close');
+    expect(await membersFor(userId)).toBe(0);
+  });
+
+  it('a join redeemed just before the close stays a member', async () => {
+    const { cookie, userId } = await boundAdmission();
+    const redeem = () =>
+      send({ method: 'POST', path: scoped('/invites/redeem'), body: {}, cookie }, 'signedOut');
+    const version = (await alpha()).settings_version;
+    const [redeemed, closed] = await race(redeem, close(version));
+    expect(redeemed.status).toBe(200);
+    expect(closed.status).toBe(200);
+    expect(await membersFor(userId)).toBe(1);
+    // Closing admission leaves existing members alone.
+    expect(
+      (
+        await pool.query('SELECT active FROM members WHERE community_id=$1 AND user_id=$2', [
+          alphaId,
+          userId,
+        ])
+      ).rows
+    ).toEqual([{ active: true }]);
+  });
+});
