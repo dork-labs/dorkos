@@ -1,31 +1,16 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
 import { describeError, RequestError, request } from '../api.js';
+import {
+  forgetCommunity,
+  readRememberedCommunity,
+  readStorage,
+  rememberCommunity,
+  writeStorage,
+} from '../remembered-community.js';
+import { SignedOutPanel, SignOutButton } from './SignOut.js';
 
-const LAST_COMMUNITY_KEY = 'communityLastAuthorizedId';
 const ROUTE_NOTICE_KEY = 'communityChooserNotice';
-
-function readStorage(storage: () => Storage, key: string): string | null {
-  try {
-    return storage().getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeStorage(storage: () => Storage, key: string, value: string | null): void {
-  try {
-    if (value === null) storage().removeItem(key);
-    else storage().setItem(key, value);
-  } catch {
-    /* Without storage the chooser simply remembers nothing. */
-  }
-}
-
-/** Remember an authorized canonical selection without treating it as authority. */
-export function rememberCommunity(communityId: string): void {
-  writeStorage(() => localStorage, LAST_COMMUNITY_KEY, communityId);
-}
 
 /**
  * Send the person back to the chooser after a community route they cannot enter.
@@ -82,10 +67,9 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
   const [error, setError] = useState('');
   const [hostOperator, setHostOperator] = useState(false);
   const [routeNotice] = useState(takeRouteNotice);
-  const [remembered, setRemembered] = useState(() =>
-    readStorage(() => localStorage, LAST_COMMUNITY_KEY)
-  );
+  const [remembered, setRemembered] = useState(() => readRememberedCommunity());
   const [revision, setRevision] = useState(0);
+  const [signedOutView, setSignedOutView] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -93,11 +77,11 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
     void request<{ memberships: CommunityWireMembershipSummary[] }>('/api/v1/memberships')
       .then(({ memberships: next }) => {
         if (!current) return;
-        const last = readStorage(() => localStorage, LAST_COMMUNITY_KEY);
+        const last = readRememberedCommunity();
         // A remembered choice is only a convenience: one this account can no longer see is
         // forgotten rather than trusted.
         if (last && !next.some((membership) => membership.communityId === last)) {
-          writeStorage(() => localStorage, LAST_COMMUNITY_KEY, null);
+          forgetCommunity();
           setRemembered(null);
         }
         const recovering = next.find(
@@ -137,6 +121,7 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
     if (ready) heading.current?.focus();
   }, [ready]);
 
+  if (signedOutView) return <SignedOutPanel />;
   if (unauthenticated) return signedOut();
   if (!ready)
     return (
@@ -219,6 +204,15 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
               );
             })}
           </ul>
+        )}
+        {!error && (
+          <div className="mt-6 border-t border-[var(--line)] pt-4">
+            <p className="small muted">
+              Signing out ends your sign-in on this browser only. Your memberships and connected
+              DorkOS installations keep working.
+            </p>
+            <SignOutButton onSignedOut={() => setSignedOutView(true)} />
+          </div>
         )}
       </section>
     </main>
