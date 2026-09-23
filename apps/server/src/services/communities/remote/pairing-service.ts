@@ -369,6 +369,13 @@ export class RemoteCommunityPairingService {
       const bearer = await this.store.storedPersonalToken(ref, ownerKey);
       // A connected record that lost its bearer cannot confirm anything, so it
       // reports unconfirmed rather than claiming the grant is gone.
+      //
+      // A reconnect-required record with no bearer reports true without a
+      // call. That is "assumed ended, not confirmed": requireReconnect dropped
+      // the bearer because the Community rejected it, so a grant refused only
+      // for a missing scope could in theory still be live there. It is rare,
+      // because grants are approved with fixed scopes, and reporting false
+      // here would warn on every ordinary revocation.
       const remoteRevoked = bearer
         ? await this.revokeRemoteGrant(bearer, record)
         : record.status !== 'connected';
