@@ -88,10 +88,15 @@ export class RemoteCommunityUpgradeRequiredError extends Error {
 export const COMMUNITY_ACCESS_BUDGET_MS = 750;
 
 /**
- * How long a re-check that finished after its read stopped waiting still
- * speaks for the Community. Longer than the client's 30-second poll, so a
- * Community that is merely slow keeps the answer it gave last poll instead of
- * flickering offline on every read.
+ * Decides only what a list read reports for a Community that missed
+ * {@link COMMUNITY_ACCESS_BUDGET_MS}: its stored state when some re-check
+ * finished within this window, offline otherwise. It is not a revocation
+ * window. Stored access is at most one re-check old, and a re-check is always
+ * running or recently finished (bounded by its request timeouts, about 15 s),
+ * so a refusal is stored within that time whatever this value is. The 90 s only
+ * matters while no re-check has finished: longer than the client's 30-second
+ * poll, so a Community that is merely slow keeps the answer it gave last poll
+ * instead of flickering offline on every read.
  */
 export const COMMUNITY_ACCESS_FRESH_MS = 90_000;
 

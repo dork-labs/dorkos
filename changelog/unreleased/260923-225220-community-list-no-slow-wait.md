@@ -2,6 +2,7 @@
 covers:
   - 'fix(communities): stop one slow community from holding up the community list (DOR-2223)'
   - 'fix(communities): give each community a time limit to confirm your access, too (DOR-2223)'
+  - 'fix(communities): never show counts from before a community refused them (DOR-2223)'
 ---
 
 ### Fixed

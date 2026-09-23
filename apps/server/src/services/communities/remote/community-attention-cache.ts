@@ -6,6 +6,8 @@
  */
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import type { CommunityConnectionAttention } from '@dorkos/shared/community-connections';
+import { RemoteConnectionAuthorizationError } from './connection-store.js';
+import { PinnedHttpError } from './pinned-origin.js';
 
 /**
  * How long one list read waits for a Community's counts before it answers with
@@ -36,6 +38,18 @@ const UNAVAILABLE: CommunityConnectionAttention = {
   verifiedAt: null,
 };
 
+/**
+ * Whether the Community refused to show counts at all (401/403, or a grant it
+ * rejected), as opposed to being slow or down. After a refusal the counts
+ * confirmed before it must never be shown again, even as stale.
+ */
+function isRefusal(error: unknown): boolean {
+  return (
+    error instanceof RemoteConnectionAuthorizationError ||
+    (error instanceof PinnedHttpError && (error.status === 401 || error.status === 403))
+  );
+}
+
 /** Refuse counts that cannot be real, so a lying Community never becomes the fallback. */
 function checkCounts(counts: CommunityAttentionCounts): CommunityAttentionCounts {
   const { unreadCount, mentionCount } = counts;
@@ -63,7 +77,9 @@ function checkCounts(counts: CommunityAttentionCounts): CommunityAttentionCounts
  * slow is not asked again by every poll that times out on it.
  *
  * Entries are owner-scoped and live only in memory, never beside credentials.
- * They hold nothing but two counts and a time. Callers drop an entry the moment
+ * They hold nothing but two counts and a time. A refusal (401/403) drops the
+ * entry at once, so counts from before lost permission never come back as
+ * stale. Callers also drop an entry the moment
  * a connection stops being readable (disconnect, revocation, lost read access)
  * and drop every other owner's entries whenever an owner reads, so neither a
  * removed Community nor a previous owner's counts can resurface.
@@ -93,7 +109,7 @@ export class CommunityAttentionCache {
     fetchCounts: () => Promise<CommunityAttentionCounts>
   ): Promise<CommunityConnectionAttention> {
     const entry = this.entry(owner, ref);
-    const pending = entry.pending ?? this.start(entry, fetchCounts);
+    const pending = entry.pending ?? this.start(owner, ref, entry, fetchCounts);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const answered = await Promise.race([
       pending.then(
@@ -168,6 +184,8 @@ export class CommunityAttentionCache {
   }
 
   private start(
+    owner: string,
+    ref: CommunityRef,
     entry: Entry,
     fetchCounts: () => Promise<CommunityAttentionCounts>
   ): Promise<ConfirmedCounts> {
@@ -179,6 +197,11 @@ export class CommunityAttentionCache {
         const confirmed = { ...checkCounts(counts), verifiedAt: this.now().toISOString() };
         entry.confirmed = confirmed;
         return confirmed;
+      })
+      .catch((error: unknown) => {
+        // Lost read permission: drop the entry, but only if it is still this one.
+        if (isRefusal(error) && this.owners.get(owner)?.get(ref) === entry) this.forget(owner, ref);
+        throw error;
       })
       .finally(() => {
         if (entry.pending === pending) entry.pending = undefined;

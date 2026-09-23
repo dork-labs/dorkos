@@ -44,6 +44,8 @@ import {
   RemoteCommunitySelectionRequiredError,
   RemoteCommunityUpgradeRequiredError,
 } from '../../services/communities/remote/pairing-service.js';
+import { RemoteConnectionAuthorizationError } from '../../services/communities/remote/connection-store.js';
+import { PinnedHttpError } from '../../services/communities/remote/pinned-origin.js';
 import {
   CommunityAttentionCache,
   COMMUNITY_ATTENTION_BUDGET_MS,
@@ -571,6 +573,41 @@ describe('attention within a budget, with last confirmed counts as the fallback'
       });
     }
   );
+
+  it.each([
+    ['403', () => new PinnedHttpError(403)],
+    ['401', () => new PinnedHttpError(401)],
+    ['rejected grant', () => new RemoteConnectionAuthorizationError()],
+  ] as const)(
+    'never shows counts from before a %s refusal, even as stale',
+    async (_kind, refusal) => {
+      await start(100);
+      behaviour.set(ref, async () => ({ unreadCount: 4, mentionCount: 1 }));
+      expect((await list()).byRef.get(ref)?.state).toBe('verified');
+      behaviour.set(ref, () => Promise.reject(refusal()));
+      expect((await list()).byRef.get(ref)?.state).toBe('unavailable');
+      // Nor on a later read that merely times out.
+      behaviour.set(ref, never);
+      expect((await list()).byRef.get(ref)?.state).toBe('unavailable');
+    }
+  );
+
+  it('drops the counts when a refusal lands after the read stopped waiting', async () => {
+    await start(50);
+    behaviour.set(ref, async () => ({ unreadCount: 4, mentionCount: 1 }));
+    await list();
+    let refuse!: () => void;
+    behaviour.set(
+      ref,
+      () =>
+        new Promise<Counts>((_resolve, reject) => (refuse = () => reject(new PinnedHttpError(403))))
+    );
+    expect((await list()).byRef.get(ref)?.state).toBe('stale');
+    refuse();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    behaviour.set(ref, never);
+    expect((await list()).byRef.get(ref)?.state).toBe('unavailable');
+  });
 
   it('keeps a slow request running and serves its answer on the next read', async () => {
     await start(100);
