@@ -15,6 +15,7 @@ describe('parseTabHref', () => {
       sessionId: 'abc',
       dir: '/Users/kai/api',
       roomId: null,
+      community: null,
     });
   });
 
@@ -24,6 +25,7 @@ describe('parseTabHref', () => {
       sessionId: null,
       dir: '/tmp',
       roomId: null,
+      community: null,
     });
   });
 
@@ -33,6 +35,17 @@ describe('parseTabHref', () => {
       sessionId: null,
       dir: null,
       roomId: null,
+      community: null,
+    });
+  });
+
+  it('reads the community off a community channel tab', () => {
+    expect(parseTabHref('/channels?community=alpha&id=general')).toEqual({
+      pathname: '/channels',
+      sessionId: null,
+      dir: null,
+      roomId: 'general',
+      community: 'alpha',
     });
   });
 
@@ -42,6 +55,7 @@ describe('parseTabHref', () => {
       sessionId: null,
       dir: null,
       roomId: 'room_1',
+      community: null,
     });
   });
 
@@ -51,6 +65,7 @@ describe('parseTabHref', () => {
       sessionId: null,
       dir: null,
       roomId: null,
+      community: null,
     });
   });
 
@@ -64,7 +79,13 @@ describe('parseTabHref', () => {
   });
 
   it('degrades to the dashboard rather than throwing on nonsense', () => {
-    expect(parseTabHref('')).toEqual({ pathname: '/', sessionId: null, dir: null, roomId: null });
+    expect(parseTabHref('')).toEqual({
+      pathname: '/',
+      sessionId: null,
+      dir: null,
+      roomId: null,
+      community: null,
+    });
   });
 });
 

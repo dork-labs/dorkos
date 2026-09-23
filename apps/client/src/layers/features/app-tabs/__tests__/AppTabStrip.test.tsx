@@ -28,6 +28,16 @@ vi.mock('@/layers/entities/room', async (importOriginal) => ({
   useRoom: (roomId: string | null) => ({ data: roomById(roomId) }),
 }));
 
+const communityRoom = vi.fn<(ref: string, roomId: string, enabled: boolean) => unknown>(
+  () => undefined
+);
+vi.mock('@/layers/entities/community', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/community')>()),
+  useRemoteCommunityRoom: (ref: string, roomId: string, enabled: boolean) => ({
+    data: enabled ? communityRoom(ref, roomId, enabled) : undefined,
+  }),
+}));
+
 import { AppTabStrip } from '../ui/AppTabStrip';
 import { APP_TAB_PANEL_ID } from '../ui/AppTabItem';
 
@@ -112,6 +122,19 @@ describe('AppTabStrip', () => {
     roomById.mockImplementation((roomId) => (roomId === 'room-1' ? channelRoom() : null));
     renderStrip([GENERAL_CHANNEL]);
     expect(screen.getByRole('tab', { name: /#general/ })).toBeInTheDocument();
+  });
+
+  it('names a community channel tab from that community, never the local rooms', () => {
+    // A community room id is not a local room id. Asking the local rooms route
+    // for it answered 404 twice and left the tab reading "Channels".
+    communityRoom.mockImplementation((ref, roomId) =>
+      ref === 'alpha' && roomId === 'general'
+        ? { kind: 'channel', slug: 'general', title: 'General' }
+        : undefined
+    );
+    renderStrip([{ id: 't9', href: '/channels?community=alpha&id=general' }]);
+    expect(screen.getByRole('tab', { name: /#general/ })).toBeInTheDocument();
+    expect(roomById).not.toHaveBeenCalledWith('general');
   });
 
   it('names a DM channel tab after its title, with no # mark', () => {
