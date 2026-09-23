@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { NativeImage } from 'electron';
 
 /**
- * The shell's "Capture app view" channel (feedback-attachments PR 3).
+ * The shell's "Capture app" channel (feedback-attachments PR 3).
  *
  * What a real `capturePage()` produces cannot be checked here — there is no
  * compositor under vitest, and the picture itself is a real-Electron fact named

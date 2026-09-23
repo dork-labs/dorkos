@@ -8,7 +8,7 @@
  * most expensive read on the site and the only public one that returns
  * free-text content.
  *
- * Allowance: the app's "Product feedback" panel fetches through the local
+ * Allowance: the app's "Your reports" panel fetches through the local
  * server's proxy on mount and on window focus, so a person moving between
  * windows can produce a small burst from one address, and a household or office
  * shares that address. Sixty per ten minutes is far above any real panel and

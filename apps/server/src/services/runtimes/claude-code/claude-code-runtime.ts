@@ -574,7 +574,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         ? await this.accountsAccess.select(
             this.connectorRuntimeTools,
             meshAgent.id,
-            session.sdkSessionId || sessionId
+            session.sdkSessionId || sessionId,
+            // The connection tools and the service lookup share the in-session server.
+            { serviceCatalog: true }
           )
         : undefined;
     if (accessContext)

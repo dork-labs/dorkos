@@ -31,6 +31,7 @@ import { isHomeSurfacePath, TOUR_ANCHORS } from '@/layers/shared/config';
 import { cn, openLink, setAskDorkBotOrigin } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
+import { HelpRows } from '@/layers/features/report-issue';
 import { FOOTER_LABELLED_ROW, SidebarFooterMenu } from './SidebarFooterMenu';
 
 /** The system agent's fixed name on disk — how the roster is asked for DorkBot. */
@@ -137,6 +138,15 @@ export function SidebarFooterStrip() {
           <AskDorkBotButton labelled={isMobile} />
         </div>
       </div>
+      {/* On a phone the fold is "Account and settings", which is not where
+          anyone looks to report a problem, so help and feedback sit here in
+          plain sight as rows of their own (DOR-2232). */}
+      {isMobile && (
+        <HelpRows
+          rowClassName={FOOTER_LABELLED_ROW}
+          className="bg-sidebar-accent/60 mt-2 rounded-lg p-1"
+        />
+      )}
     </div>
   );
 }

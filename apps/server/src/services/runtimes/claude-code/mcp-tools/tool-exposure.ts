@@ -92,7 +92,10 @@
  * @module services/runtimes/claude-code/mcp-tools/tool-exposure
  */
 
-import { DORKOS_MCP_SERVER_NAME } from '../../shared/dorkos-tool-names.js';
+import {
+  CLAUDE_CODE_DORKOS_TOOL_PREFIX,
+  DORKOS_MCP_SERVER_NAME,
+} from '../../shared/dorkos-tool-names.js';
 
 /**
  * The name the in-session MCP server is created under.
@@ -111,7 +114,7 @@ export { DORKOS_MCP_SERVER_NAME };
  * Prose that teaches a tool must render this in front of it; a bare name in a
  * system-prompt block is a name the model cannot call.
  */
-export const IN_SESSION_TOOL_PREFIX = `mcp__${DORKOS_MCP_SERVER_NAME}__` as const;
+export const IN_SESSION_TOOL_PREFIX = CLAUDE_CODE_DORKOS_TOOL_PREFIX;
 
 /**
  * Whether an MCP tool call could be served by the in-session server THIS host

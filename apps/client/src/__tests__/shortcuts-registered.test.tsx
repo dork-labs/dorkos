@@ -42,7 +42,10 @@ import { useProfileShortcut } from '@/layers/features/profile';
 import { useAskShortcut } from '@/layers/features/ask';
 import { useAppTabShortcuts } from '@/layers/features/app-tabs';
 import { useSessionPopoverShortcut } from '@/layers/features/status';
-import { useNewSessionShortcut } from '@/layers/features/dashboard-sidebar';
+import {
+  useNewSessionShortcut,
+  useSwitchContextShortcut,
+} from '@/layers/features/dashboard-sidebar';
 import { useControlCenterShortcut } from '@/layers/widgets/control-center';
 import { useMessageSearchShortcut } from '@/layers/features/command-palette';
 import { SidebarProvider } from '@/layers/shared/ui';
@@ -116,6 +119,13 @@ const PROVED: Record<string, Prover> = {
     // on the keyboard layout and the physical key is what the chord means.
     renderHook(() => useMessageSearchShortcut());
     return press({ key: 'F', code: 'KeyF', metaKey: true, shiftKey: true });
+  },
+  'switch-context': () => {
+    // Unconditional window-level chord, text fields included: the context
+    // switcher opens from anywhere, a message box too. The switcher's own tests
+    // (SidebarHeaderBlock.test.tsx) prove what it does with it.
+    renderHook(() => useSwitchContextShortcut(() => {}));
+    return press({ key: 'K', code: 'KeyK', metaKey: true, shiftKey: true });
   },
   'answer-next-ask': () => {
     // Unconditional: the hook installs its listener whatever is waiting, which

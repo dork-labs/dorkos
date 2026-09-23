@@ -17,6 +17,7 @@ export default defineConfig({
     include: [
       'capture/**/__tests__/**/*.test.ts',
       'multi-window/**/__tests__/**/*.test.ts',
+      'community-two-desktop/**/__tests__/**/*.test.ts',
       'reporters/**/__tests__/**/*.test.ts',
       '__tests__/**/*.test.ts',
     ],

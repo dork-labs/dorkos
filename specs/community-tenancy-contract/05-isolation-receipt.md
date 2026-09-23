@@ -120,7 +120,12 @@ Scope: only pairing approval has a held-lock test that removes the member betwee
 - `apps/community/src/__tests__/remote-adapter-conformance.integration.test.ts` — rejects a cursor from a different real community with the same channel, epoch, and signing secret
 - `apps/community/src/__tests__/tenancy-concurrency.integration.test.ts` — keeps concurrent posts, invites, and cursors of two communities on one host apart, each channel gap-free
 
-Scope: this row covers the Community host's own website switcher. The local DorkOS app's switcher and its cache belong to DOR-2184 and will be proven in DOR-2184 (#1992).
+Scope: this row covers the Community host's own website switcher. The local DorkOS app's switcher and its cache are proven by DOR-2186. Those proofs run in the app's own suites (the client unit tests and the `chromium-connections` browser project), not in this receipt's runners, so they are listed here rather than above. The guard checks that each one names a real test:
+
+- local app: `apps/e2e/tests/connections/community-switching-proof.spec.ts` — A→B→A→this DorkOS→B with reads and streams in flight never paints A under another context
+- local app: `apps/client/src/app/__tests__/community-rapid-switch.test.tsx` — discards every stale read and stream event after A→B→A→this DorkOS→B, and lands on B
+- local app: `apps/client/src/app/__tests__/community-rapid-switch.test.tsx` — discards a read that lands after the local owner changed, even back on the same route
+- local app: `apps/client/src/layers/entities/community/__tests__/remote-stream.test.tsx` — isolates identical IDs during a route change and ignores late events from the old stream
 
 ### M12
 

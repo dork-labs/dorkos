@@ -7,4 +7,12 @@ export default defineConfig([
   // the local pre-commit gate red on somebody else's throwaway file.
   { ignores: ['.turbo/**', 'test-results/**', 'playwright-report/**', '.temp/**'] },
   ...baseConfig,
+  // The two-Desktop acceptance run composes the environment of the processes it
+  // launches (two packaged apps, two Community servers) and reads its own
+  // opt-in settings in one place, config.ts. process.env is that interface,
+  // not an app config read an env.ts could own.
+  {
+    files: ['community-two-desktop/**/*.ts'],
+    rules: { 'no-restricted-syntax': 'off' },
+  },
 ]);

@@ -154,6 +154,26 @@ function encodeCatalogCursor(offset: number, query: string): string {
   );
 }
 
+/** One catalog service, reduced to what an agent service request needs. */
+export interface ConnectorServiceDirectoryEntry {
+  /** Exact service id an agent passes as `serviceSlug`. */
+  readonly serviceSlug: string;
+  /** Human-facing service name. */
+  readonly displayName: string;
+  /** False for a Messaging-only row: the person sets it up; an agent cannot ask for it. */
+  readonly requestable: boolean;
+}
+
+/** The whole service catalog, as agent requests validate against it. */
+export interface ConnectorServiceDirectory {
+  /** Every listed service, Messaging-only rows included. */
+  readonly services: readonly ConnectorServiceDirectoryEntry[];
+  /** Non-empty when some route could not list every service it offers. */
+  readonly warnings: readonly { readonly code: string; readonly message: string }[];
+  /** Type of every registered route, e.g. `composio`. Never a person's label for it. */
+  readonly routeTypes: readonly string[];
+}
+
 /** SQLite-backed owner resource projection service. */
 export class ConnectorOperatorQueryService {
   private readonly db: Db;
@@ -183,11 +203,55 @@ export class ConnectorOperatorQueryService {
     limit?: number;
     signal: AbortSignal;
   }): Promise<ConnectorCatalogResourcePage> {
-    this.registry.assertAvailable();
-    await this.recoverManagedProvider?.();
     const query = input.query?.trim().toLowerCase() ?? '';
     const offset = decodeCatalogCursor(input.cursor, query);
     const limit = input.limit ?? 50;
+    const { all, warnings } = await this.collectCatalog({
+      query,
+      includeAuthenticationSetup: input.includeAuthenticationSetup === true,
+      signal: input.signal,
+    });
+    const page = all.slice(offset, offset + limit);
+    return ConnectorCatalogResourcePageSchema.parse({
+      services: page,
+      ...(offset + page.length < all.length
+        ? { nextCursor: encodeCatalogCursor(offset + page.length, query) }
+        : {}),
+      warnings,
+    });
+  }
+
+  /**
+   * Every service the catalog lists, unpaged, marked by whether an agent may ask
+   * for it. The same read as {@link catalog} — managed recovery, provider
+   * paging, Relay rows, warnings — so a service the agent-facing lookup lists is
+   * a service an agent request accepts, and one it omits is refused (DOR-2231).
+   */
+  async serviceDirectory(signal: AbortSignal): Promise<ConnectorServiceDirectory> {
+    const { all, warnings } = await this.collectCatalog({
+      query: '',
+      includeAuthenticationSetup: false,
+      signal,
+    });
+    return {
+      services: all.map((service) => ({
+        serviceSlug: service.serviceSlug,
+        displayName: service.displayName,
+        requestable: service.intents.some((intent) => intent.kind === 'account'),
+      })),
+      warnings,
+      routeTypes: this.registry.listProviders().map((provider) => provider.type),
+    };
+  }
+
+  private async collectCatalog(input: {
+    query: string;
+    includeAuthenticationSetup: boolean;
+    signal: AbortSignal;
+  }) {
+    this.registry.assertAvailable();
+    await this.recoverManagedProvider?.();
+    const query = input.query;
     const services = new Map<
       string,
       {
@@ -317,14 +381,7 @@ export class ConnectorOperatorQueryService {
           left.displayName.localeCompare(right.displayName) ||
           left.serviceSlug.localeCompare(right.serviceSlug)
       );
-    const page = all.slice(offset, offset + limit);
-    return ConnectorCatalogResourcePageSchema.parse({
-      services: page,
-      ...(offset + page.length < all.length
-        ? { nextCursor: encodeCatalogCursor(offset + page.length, query) }
-        : {}),
-      warnings,
-    });
+    return { all, warnings };
   }
 
   /** List every stable connection owned by the verified operator. */

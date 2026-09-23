@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { BasePage } from '../../pages/BasePage.js';
+import { realOwnerKey } from './community-mocks.js';
 
 const access = {
   state: 'verified',
@@ -102,10 +103,8 @@ async function mockCommunitySwitcher(page: Page) {
     const method = route.request().method();
     const path = new URL(route.request().url()).pathname;
     if (path.startsWith('/api/community-connections/navigation') && method !== 'GET') {
-      const real = await route.fetch();
-      expect(real.status(), `${method} ${path}`).toBe(200);
-      const { ownerKey } = (await real.json()) as { ownerKey: string };
-      await route.fulfill({ json: navigationState(ownerKey) });
+      const ownerKey = await realOwnerKey(route, `${method} ${path}`);
+      if (ownerKey) await route.fulfill({ json: navigationState(ownerKey) }).catch(() => {});
       return;
     }
     if (method !== 'GET') return route.continue();
@@ -114,10 +113,8 @@ async function mockCommunitySwitcher(page: Page) {
       return;
     }
     if (path === '/api/community-connections/navigation') {
-      const real = await route.fetch();
-      expect(real.status()).toBe(200);
-      const { ownerKey } = (await real.json()) as { ownerKey: string };
-      await route.fulfill({ json: navigationState(ownerKey) });
+      const ownerKey = await realOwnerKey(route, `${method} ${path}`);
+      if (ownerKey) await route.fulfill({ json: navigationState(ownerKey) }).catch(() => {});
       return;
     }
     if (path === '/api/community-connections/navigation/alpha/destination') {

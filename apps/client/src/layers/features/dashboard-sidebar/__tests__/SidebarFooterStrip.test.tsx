@@ -128,6 +128,9 @@ vi.mock('@/layers/features/profile', () => ({
 // Same treatment: the help rows are the report-issue slice's subject.
 vi.mock('@/layers/features/report-issue', () => ({
   HelpMenuItems: () => <div data-testid="help-menu-items" />,
+  HelpRows: ({ rowClassName }: { rowClassName?: string }) => (
+    <div role="group" aria-label="Help and feedback" data-row-class={rowClassName} />
+  ),
 }));
 
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -515,6 +518,32 @@ describe('SidebarFooterStrip', () => {
       renderStrip();
       const ask = screen.getByRole('button', { name: 'Ask DorkBot' });
       expect(ask.className).toContain('min-h-11');
+    });
+
+    it('offers help and feedback as rows in plain sight, in the You tab’s own row shape', () => {
+      renderStrip();
+      const group = screen.getByRole('group', { name: 'Help and feedback' });
+      // What the rows do is the report-issue slice's subject; here, only that
+      // they are drawn, and drawn as thumb-sized rows like the ones above them.
+      expect(group.getAttribute('data-row-class')).toContain('min-h-11');
+    });
+
+    it('leaves them out of the fold on a phone, so they are not offered twice', async () => {
+      const user = userEvent.setup();
+      renderStrip();
+      await user.click(screen.getByTestId('sidebar-footer-menu-trigger'));
+      await screen.findByRole('menu');
+      expect(screen.queryByTestId('help-menu-items')).not.toBeInTheDocument();
+    });
+
+    it('keeps them in the fold, and draws no rows, under a pointer', async () => {
+      phone = false;
+      useEmulatedViewport();
+      const user = userEvent.setup();
+      renderStrip();
+      expect(screen.queryByRole('group', { name: 'Help and feedback' })).not.toBeInTheDocument();
+      await user.click(screen.getByTestId('sidebar-footer-menu-trigger'));
+      expect(await screen.findByTestId('help-menu-items')).toBeInTheDocument();
     });
 
     it('is still ONE nav — four destinations and no second implementation', () => {

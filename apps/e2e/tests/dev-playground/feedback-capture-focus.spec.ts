@@ -1,7 +1,7 @@
 import { test, expect } from '../../fixtures';
 
 /**
- * "Capture app view" must not cost the person their focus (DOR-1956).
+ * "Capture app" must not cost the person their focus (DOR-1956).
  *
  * The capture hides everything floating above the app for two frames so the
  * dialog is not in its own screenshot. The first implementation did that with
@@ -55,8 +55,7 @@ test.describe('Dev Playground — capturing the app view keeps the dialog focuse
     await message.fill('the sidebar looks wrong');
     await expect(message).toBeFocused();
 
-    await dialog.getByRole('button', { name: /attachments & details/i }).click();
-    const capture = dialog.getByRole('button', { name: 'Capture app view' });
+    const capture = dialog.getByRole('button', { name: 'Capture app' });
     await expect(capture).toBeEnabled();
 
     // Watch focus WHILE the capture runs, not after it. Radix's focus scope

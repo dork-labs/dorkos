@@ -109,3 +109,21 @@ describe('ResponsiveDropdownMenuContent — onCloseAutoFocus', () => {
     await vi.waitFor(() => expect(onCloseAutoFocus).toHaveBeenCalled());
   });
 });
+
+describe('ResponsiveDropdownMenuContent — drawer height', () => {
+  it('caps the drawer and scrolls inside it, so a tall menu keeps its first rows reachable', async () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(
+      <ResponsiveDropdownMenu open>
+        <ResponsiveDropdownMenuTrigger>open</ResponsiveDropdownMenuTrigger>
+        <ResponsiveDropdownMenuContent>
+          <button type="button">First row</button>
+        </ResponsiveDropdownMenuContent>
+      </ResponsiveDropdownMenu>
+    );
+    const drawer = await screen.findByRole('dialog');
+    expect(drawer).toHaveClass('max-h-[85vh]');
+    const body = screen.getByRole('button', { name: 'First row' }).parentElement!;
+    expect(body).toHaveClass('min-h-0', 'overflow-y-auto');
+  });
+});

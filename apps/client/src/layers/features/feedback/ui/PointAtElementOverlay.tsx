@@ -138,7 +138,7 @@ interface Target {
  * click-outside became right-click — the other reflex for "not this" — beside
  * Escape and the visible Cancel button.
  *
- * Pointer-only by nature, and offered a layer up in `ScreenshotField` only on a
+ * Pointer-only by nature, and offered a layer up in `ComposerToolbar` only on a
  * wide viewport — the gate there is a 768px media query, not a touch test, and
  * that TSDoc says why the approximation is the right shape.
  */

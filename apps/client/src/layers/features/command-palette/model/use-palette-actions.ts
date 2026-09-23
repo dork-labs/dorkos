@@ -343,6 +343,10 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
         case 'openFeedback':
           openFeedback();
           return;
+        case 'openYourReports':
+          // Not in the typed router table, like every other door to this page.
+          (navigate as (opts: { to: string }) => void)({ to: '/feedback-requests' });
+          return;
         case 'openTasks':
           openTasks();
           return;

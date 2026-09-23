@@ -14,7 +14,7 @@
  * switches — pressing Send IS the consent (see the feedback-reporter and
  * `@dorkos/shared/telemetry-events` for the reasoning).
  *
- * `GET /api/feedback/mine` — thin proxy for the "Product feedback"
+ * `GET /api/feedback/mine` — thin proxy for the "Your reports"
  * tracking view (feedback-pipeline Part 4, decision 260803-205035). Resolves
  * this install's own anonymous `instanceId` and forwards to the site's
  * `GET /api/feedback/mine` via {@link listMyFeedback}, so the client never
@@ -178,8 +178,8 @@ router.post('/', async (req, res) => {
   });
 
   // Always 200 with an honest `ok` — a failed forward is not a client error to
-  // retry; the UI reads `ok` to choose between "Thanks, sent." and the GitHub
-  // fallback message.
+  // retry; the UI reads `ok` to choose between "Sent. Thank you!" and the
+  // try-again message that keeps the person's words in the form.
   return res.json(result);
 });
 

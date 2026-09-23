@@ -5884,6 +5884,31 @@
         "apps/client/src/layers/widgets/room-view/**",
         "packages/shared/src/community-connections.ts"
       ]
+    },
+    {
+      "id": "260923-122615",
+      "slug": "package-version-resolved-like-an-install",
+      "title": "A marketplace package's latest version is what an install would resolve, by Claude Code's chain",
+      "status": "draft",
+      "created": "2026-09-23",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/marketplace/flows/update.ts",
+        "apps/server/src/services/marketplace/marketplace-installer.ts",
+        "packages/marketplace/src/**"
+      ]
+    },
+    {
+      "id": "260923-122616",
+      "slug": "package-version-files-must-agree",
+      "title": "A package's version files must agree, and a mismatch fails validation",
+      "status": "draft",
+      "created": "2026-09-23",
+      "supersedes": null,
+      "affects": [
+        "packages/marketplace/src/package-validator.ts",
+        "packages/cli/src/commands/validate-source-paths.ts"
+      ]
     }
   ]
 }
