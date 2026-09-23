@@ -21,7 +21,7 @@ import {
 } from '../data.js';
 import { mintHandle } from '../handles.js';
 import { ApiError, json, readJson } from '../http.js';
-import { agentLimitReached, effectiveAgentLimit } from '../limits.js';
+import { agentLimitReached, effectiveAgentLimit } from '../host/limits.js';
 import { hashSecret, randomToken } from '../security.js';
 
 const uuid = z.uuid();

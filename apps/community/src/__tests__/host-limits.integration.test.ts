@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { assertMemberRoom } from '../limits.js';
+import { assertMemberRoom } from '../host/limits.js';
 import { runHostKeyCommand } from '../host-keys.js';
 import { responseCookies } from './bootstrap-test-helper.js';
 import {

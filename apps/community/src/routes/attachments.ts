@@ -16,7 +16,7 @@ import {
   requirePrincipal,
   transaction,
 } from '../data.js';
-import { assertStorageRoom, assertStorageWithinLimit } from '../limits.js';
+import { assertStorageRoom, assertStorageWithinLimit } from '../host/limits.js';
 import { ApiError, json } from '../http.js';
 import {
   BlobStoreError,

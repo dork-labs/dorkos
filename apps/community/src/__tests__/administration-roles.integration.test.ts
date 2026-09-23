@@ -33,8 +33,8 @@ import { registerMembershipRoutes } from '../routes/memberships.js';
 import { registerHostLimitRoutes } from '../routes/host-limits.js';
 import { registerOwnerClaimRoutes } from '../routes/owner-claims.js';
 import { registerHostKeyRoutes } from '../routes/host-keys.js';
-import { createHostAuthority } from '../host-authority.js';
-import { issueHostApiKey } from '../host-key-store.js';
+import { createHostAuthority } from '../host/authority.js';
+import { issueHostApiKey } from '../host/key-store.js';
 import { hashSecret, randomToken } from '../security.js';
 import { FileSystemBlobStore } from '../storage/index.js';
 import {

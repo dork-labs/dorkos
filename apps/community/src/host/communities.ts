@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
-import { ApiError } from './http.js';
+import { ApiError } from '../http.js';
 
 /** One community row as the host plane reads it: metadata and state, never content. */
 export interface HostCommunityRow {

@@ -17,7 +17,7 @@ import {
   type Member,
 } from '../data.js';
 import { AdminSettingsConflict, ApiError, json, readJson } from '../http.js';
-import { assertStorageRoom, assertStorageWithinLimit } from '../limits.js';
+import { assertStorageRoom, assertStorageWithinLimit } from '../host/limits.js';
 import {
   BlobStoreError,
   completeManagedBlobCommit,
@@ -30,7 +30,7 @@ import {
 } from '../storage/index.js';
 import { prepareCommunityDeletionInventory } from '../deletion-worker.js';
 import { resolveCommunityContext } from '../tenant-context.js';
-import { revokeTenantAccess } from '../host-communities.js';
+import { revokeTenantAccess } from '../host/communities.js';
 
 interface SettingsRow {
   id: string;

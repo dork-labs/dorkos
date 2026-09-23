@@ -4,7 +4,7 @@ import type {
   CommunityAdminLimitsSchema,
   CommunityAdminUsageSchema,
 } from '@dorkos/shared/community-admin-wire';
-import { ApiError } from './http.js';
+import { ApiError } from '../http.js';
 
 type Queryable = Pick<Pool | PoolClient, 'query'>;
 

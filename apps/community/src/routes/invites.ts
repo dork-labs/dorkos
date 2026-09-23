@@ -26,7 +26,7 @@ import {
   transaction,
 } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
-import { assertMemberRoom } from '../limits.js';
+import { assertMemberRoom } from '../host/limits.js';
 import { inspectInvite, issueInvite } from '../invites.js';
 import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../security.js';
 import { mintHandle } from '../handles.js';

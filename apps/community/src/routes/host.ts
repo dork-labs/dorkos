@@ -15,13 +15,13 @@ import {
   projectCommunity,
   revokeTenantAccess,
   type HostCommunityRow,
-} from '../host-communities.js';
+} from '../host/communities.js';
 import {
   assertHostActor,
   recordHostAudit,
   type HostActor,
   type HostAuthority,
-} from '../host-authority.js';
+} from '../host/authority.js';
 import { ApiError, json, readJson } from '../http.js';
 import { hashSecret, randomToken } from '../security.js';
 import type { BlobStore } from '../storage/index.js';

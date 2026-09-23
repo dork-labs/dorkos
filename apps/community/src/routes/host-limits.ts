@@ -11,10 +11,10 @@ import {
 } from '@dorkos/shared/community-admin-wire';
 import type { CommunityConfig } from '../config.js';
 import { transaction } from '../data.js';
-import { parseHostCommunityId } from '../host-communities.js';
-import { assertHostActor, recordHostAudit, type HostAuthority } from '../host-authority.js';
+import { parseHostCommunityId } from '../host/communities.js';
+import { assertHostActor, recordHostAudit, type HostAuthority } from '../host/authority.js';
 import { ApiError, json, readJson } from '../http.js';
-import { effectiveAgentLimit, readLimits, readUsage } from '../limits.js';
+import { effectiveAgentLimit, readLimits, readUsage } from '../host/limits.js';
 
 const UsagePageQuerySchema = z.strictObject({
   after: z.uuid().optional(),
