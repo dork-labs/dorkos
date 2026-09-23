@@ -19,6 +19,7 @@ export { MobileCommunityContextSwitcher } from './ui/context/CommunityContextSwi
 // (`shortcuts-registered.test.tsx`) can mount and fire it without standing up
 // the whole menu around it.
 export { useNewSessionShortcut } from './model/use-new-session-shortcut';
+export { useSwitchContextShortcut } from './model/use-switch-context-shortcut';
 // The footer strip on its own. It is persistent chrome — `AppShell` mounts it
 // OUTSIDE the `sidebar.body` swap region, so a marketplace takeover replaces
 // the body and leaves the strip standing (spec R2, P2 AC-8). It is also the one

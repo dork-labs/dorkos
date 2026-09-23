@@ -281,7 +281,12 @@ describe('DOR-329 — a menu that opens something does not blur it on the way ou
     // guarded list, never a raw one.
     const contents = count(switcher, /<ResponsiveDropdownMenuContent\b/);
     expect(contents).toBeGreaterThan(0);
-    expect(count(switcher, /onCloseAutoFocus=\{guarded\.onCloseAutoFocus\}/)).toBe(contents);
+    // The content's handler may add the switcher's own focus return, but only
+    // after running the guard first, so an opened dialog still keeps focus.
+    expect(count(switcher, /onCloseAutoFocus=\{handleCloseAutoFocus\}/)).toBe(contents);
+    expect(switcher).toMatch(
+      /function handleCloseAutoFocus\(event: Event\) \{\n\s*guarded\.onCloseAutoFocus\(event\);/
+    );
     expect(count(switcher, /<SidebarMenuNodes\b/)).toBe(contents);
     expect(count(switcher, /nodes=\{guarded\.nodes\}/)).toBe(contents);
     // Its props take no rows and no close handler, so a caller has nothing to

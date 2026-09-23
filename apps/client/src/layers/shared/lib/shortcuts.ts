@@ -90,6 +90,14 @@ export const SHORTCUTS = {
     label: 'Search messages',
     group: 'navigation',
   },
+  // The context switcher (spec `community-switcher-navigation`): this DorkOS
+  // or one of your communities, from anywhere, a message box included.
+  SWITCH_CONTEXT: {
+    id: 'switch-context',
+    key: 'mod+shift+k',
+    label: 'Switch context',
+    group: 'navigation',
+  },
   SHORTCUTS_PANEL: {
     id: 'shortcuts-panel',
     key: '?',
