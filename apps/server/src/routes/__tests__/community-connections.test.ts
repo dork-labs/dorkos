@@ -265,6 +265,18 @@ describe('local connection route authority and public projection', () => {
       code: 'COMMUNITY_OWNER_CHANGED',
     });
   });
+
+  it('serves a request whose owner precondition matches the signed-in owner', async () => {
+    // The other half of the fence: a check that refused every request carrying
+    // the header would lock the owner out of their own communities.
+    for (const path of ['/api/community-connections', '/api/community-connections/navigation']) {
+      const response = await request(server)
+        .get(path)
+        .set('x-test-author', 'author-a')
+        .set('x-dorkos-community-owner', 'author-a');
+      expect(response.status).toBe(200);
+    }
+  });
 });
 
 describe('owner-scoped attention projection', () => {

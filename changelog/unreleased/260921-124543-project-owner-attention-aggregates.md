@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): project owner attention aggregates'
+  - 'fix(community): deduplicate attention mentions'
 ---
 
 ### Added
