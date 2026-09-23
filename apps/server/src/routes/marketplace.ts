@@ -1,7 +1,7 @@
 /**
  * Marketplace management routes -- sources, cache status, installed
  * package listing, plus package discovery/preview/install/uninstall/update
- * under `/api/marketplace/*`.
+ * and the all-packages update check under `/api/marketplace/*`.
  *
  * The router is constructed via a factory that injects its dependencies
  * (source manager, cache, fetcher, installer, uninstall flow, update flow,
@@ -46,6 +46,8 @@ import {
 import { UnsupportedSourceUrlError } from '../services/marketplace/source-url-policy.js';
 import {
   PackageNotInstalledForUpdateError,
+  installationUpdateName,
+  selectInstallations,
   type UpdateFlow,
 } from '../services/marketplace/flows/update.js';
 import {
@@ -61,9 +63,11 @@ import { updatedAtProvider, enrichWithUpdatedAt } from '../services/marketplace/
 import type { MarketplaceSource, NotifyPluginsChanged } from '../services/marketplace/types.js';
 import {
   scanInstalledPackages,
+  scanInstallationRecords,
   scanInstallationsAcrossScopes,
   computeProvides,
   type AgentScopeRef,
+  type InstallationRecord,
   type InstalledPackage,
 } from '../services/marketplace/installed-scanner.js';
 import { updateNameOf } from '../services/marketplace/lib/install-roots.js';
@@ -176,6 +180,20 @@ const UpdateRequestBodySchema = z.object({
 });
 
 /**
+ * Body schema for `POST /api/marketplace/updates`. `apply` must be the literal
+ * `true`: the read is `GET /updates`, and an empty or advisory POST must never
+ * be the request that reinstalls every package.
+ */
+const ApplyUpdatesBodySchema = z.object({
+  apply: z.literal(true),
+  names: z.array(z.string().min(1)).min(1).optional(),
+  projectPath: z.string().optional(),
+});
+
+/** Machine-readable code on the 403 for a batch that would need approval per install. */
+const BATCH_UPDATE_NEEDS_APPROVAL_CODE = 'batch_update_needs_approval';
+
+/**
  * Body schema for `POST /api/marketplace/cache/prune`: no options. Strict, so
  * the retired `keepLastN` is refused rather than silently ignored.
  */
@@ -267,6 +285,8 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
  * - `POST /packages/:name/install` — install a package
  * - `POST /packages/:name/uninstall` — uninstall a package
  * - `POST /packages/:name/update` — advisory update check (with `apply: true` option)
+ * - `GET /updates` — advisory update check of every installation in view
+ * - `POST /updates` — reinstall every stale installation in view, or the named ones
  *
  * @param deps - Injected dependencies (source manager, cache, fetcher,
  *   installer, uninstall flow, update flow, dorkHome).
@@ -418,6 +438,20 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       throw err;
     }
   };
+
+  /**
+   * The installations one update request covers, from ONE scan: one project's
+   * merged view when a (canonical) `projectPath` was given, else every scope —
+   * the global roots plus each registered agent's project. The same two views
+   * `GET /installed` lists, so a row and its check describe the same set.
+   *
+   * @param projectPath - The confined, canonical project path, when given.
+   */
+  const scanUpdateView = (projectPath: string | undefined): Promise<InstallationRecord[]> =>
+    scanInstallationRecords(
+      dorkHome,
+      projectPath ? { projectPath } : { agents: listAgentScopes?.() ?? [] }
+    );
 
   /**
    * Refuse a package-source write unless the caller is the operator (DOR-502).
@@ -918,6 +952,104 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       return res.json(result);
     } catch (err) {
       logger.error(`[Marketplace] Failed to update package ${req.params.name}`, err);
+      const mapped = mapErrorToStatus(err);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  // GET /updates -- advisory update check of every installation in view.
+  //
+  // One scan, handed to the flow, which answers one check per installation with
+  // that installation's identity (`installPath` joins it to `GET /installed`).
+  // A read: nothing installed changes, so it is not gated, exactly like the
+  // per-package route without `apply`.
+  router.get('/updates', async (req, res) => {
+    try {
+      const requested =
+        typeof req.query.projectPath === 'string' ? req.query.projectPath : undefined;
+      const confined = await confineProjectPath(res, requested);
+      if (confined.refused) return confined.refused;
+      const installations = await scanUpdateView(confined.projectPath);
+      return res.json(await updateFlow.checkInstallations({ installations }));
+    } catch (err) {
+      logger.error('[Marketplace] Failed to check installed packages for updates', err);
+      const mapped = mapErrorToStatus(err);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  // POST /updates -- reinstall every stale installation in view, or only the
+  // installations of the named packages. Each reinstall stays in the scope its
+  // installation was found in; a failed one is reported on that installation
+  // and the rest carry on.
+  router.post('/updates', async (req, res) => {
+    const parsed = ApplyUpdatesBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+    }
+
+    try {
+      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      if (confined.refused) return confined.refused;
+      const installations = selectInstallations(
+        await scanUpdateView(confined.projectPath),
+        parsed.data.names
+      );
+
+      // The gate and the notification carry the caller's own spelling of the
+      // requested project (see `confineProjectPath`); the scan and the effect
+      // use the canonical one. Agent scopes are spelled as the registry has them.
+      const callerSpelling = (agentPath: string | undefined): string | undefined =>
+        agentPath !== undefined && agentPath === confined.projectPath
+          ? parsed.data.projectPath
+          : agentPath;
+
+      // Every reinstall is authorized as `marketplace.install` — what the
+      // per-package route asks for one — BEFORE any network work, with the
+      // per-package input shape. The first refusal stops the whole batch.
+      const asked = new Set<string>();
+      for (const record of installations) {
+        const name = installationUpdateName(record);
+        const projectPath = callerSpelling(record.package.agentPath);
+        const key = `${name}\n${projectPath ?? ''}`;
+        if (asked.has(key)) continue;
+        asked.add(key);
+        const decision = authorize(req, res, 'marketplace.install', {
+          name,
+          ...(projectPath !== undefined && { projectPath }),
+        });
+        if (decision.outcome === 'allowed') continue;
+        // A batch cannot carry one approval token per package, and a 202 would
+        // send the caller round a loop. Unreachable while install is tier `act`
+        // (which never asks); correct if that tier is ever raised.
+        if (decision.outcome === 'approval_required') {
+          return res.status(403).json({
+            error:
+              'Updating several packages at once cannot wait for a person to approve each ' +
+              'install. Update them one at a time with POST /api/marketplace/packages/:name/update.',
+            code: BATCH_UPDATE_NEEDS_APPROVAL_CODE,
+          });
+        }
+        return gateResponse(res, decision);
+      }
+
+      const result = await updateFlow.checkInstallations({ installations, apply: true });
+      // One refresh per reinstall that landed, in that installation's scope —
+      // the per-package route's event, carrying the RESOLVED manifest name
+      // (DOR-264). A failed reinstall changed nothing and stays silent.
+      for (const check of result.checks) {
+        if (!check.applied) continue;
+        onPluginsChanged({
+          projectPath: callerSpelling(check.agentPath),
+          packageName: check.applied.packageName,
+          action: 'install',
+        });
+      }
+      return res.json(result);
+    } catch (err) {
+      logger.error('[Marketplace] Failed to apply updates', err);
       const mapped = mapErrorToStatus(err);
       return res.status(mapped.status).json(mapped.body);
     }

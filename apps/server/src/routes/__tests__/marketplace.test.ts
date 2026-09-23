@@ -28,7 +28,16 @@ vi.mock('../../lib/boundary.js', async (importActual) => {
   };
 });
 
+// The update doors must scan every scope ONCE per request, so the one record
+// scan is wrapped in a spy that still runs the real walk.
+vi.mock('../../services/marketplace/installed-scanner.js', async (importActual) => {
+  const actual =
+    await importActual<typeof import('../../services/marketplace/installed-scanner.js')>();
+  return { ...actual, scanInstallationRecords: vi.fn(actual.scanInstallationRecords) };
+});
+
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
+import { scanInstallationRecords } from '../../services/marketplace/installed-scanner.js';
 import {
   InvalidPackageNameError,
   PathEscapeError,
@@ -129,14 +138,18 @@ function createFakeUninstallFlow(): FakeUninstallFlow {
   return { uninstall: vi.fn() };
 }
 
-/** Minimal UpdateFlow stub — `run` and the memo reset the refresh route calls. */
+/**
+ * Minimal UpdateFlow stub — the per-package `run`, the all-packages
+ * `checkInstallations`, and the memo reset the refresh route calls.
+ */
 interface FakeUpdateFlow {
   run: ReturnType<typeof vi.fn>;
+  checkInstallations: ReturnType<typeof vi.fn>;
   clearMemos: ReturnType<typeof vi.fn>;
 }
 
 function createFakeUpdateFlow(): FakeUpdateFlow {
-  return { run: vi.fn(), clearMemos: vi.fn() };
+  return { run: vi.fn(), checkInstallations: vi.fn(), clearMemos: vi.fn() };
 }
 
 function buildSamplePluginManifest(): PluginPackageManifest {
@@ -1783,6 +1796,245 @@ describe('Marketplace Routes', () => {
         'sample-plugin',
         'other-plugin',
       ]);
+    });
+  });
+
+  describe('GET /updates', () => {
+    let agentDir: string;
+
+    beforeEach(() => {
+      agentDir = join(dorkHome, 'agent-alpha');
+      writePackageManifest(join(dorkHome, 'plugins', 'sample-plugin'), {
+        ...buildSamplePluginManifest(),
+      });
+      writePackageManifest(join(agentDir, '.dork', 'plugins', 'sample-plugin'), {
+        ...buildSamplePluginManifest(),
+      });
+      agentScopes = [{ projectPath: agentDir, id: 'alpha', name: 'Alpha' }];
+      updateFlow.checkInstallations.mockResolvedValue({ checks: [] });
+    });
+
+    it('scans every scope once and checks what it found, without applying', async () => {
+      // Purpose: the whole point of the door — one scan, not one per package,
+      // and a read that never reinstalls anything.
+      const result = { checks: [{ packageName: 'sample-plugin', status: 'current' }] };
+      updateFlow.checkInstallations.mockResolvedValue(result);
+
+      const res = await request(fixtureServer).get('/api/marketplace/updates');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(result);
+      expect(vi.mocked(scanInstallationRecords)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(scanInstallationRecords)).toHaveBeenCalledWith(dorkHome, {
+        agents: agentScopes,
+      });
+      expect(updateFlow.checkInstallations).toHaveBeenCalledTimes(1);
+      const [arg] = updateFlow.checkInstallations.mock.calls[0]!;
+      expect(arg.apply).toBeUndefined();
+      expect(arg.installations.map((r: { package: { scope: string } }) => r.package.scope)).toEqual(
+        ['global', 'override']
+      );
+      expect(onPluginsChanged).not.toHaveBeenCalled();
+    });
+
+    it("checks one project's view, at the path the boundary resolved", async () => {
+      // Purpose: the same view `GET /installed?projectPath` lists, keyed to the
+      // canonical path rather than the caller's spelling.
+      const res = await request(fixtureServer)
+        .get('/api/marketplace/updates')
+        .query({ projectPath: '/work/link-to-project' });
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(scanInstallationRecords)).toHaveBeenCalledWith(dorkHome, {
+        projectPath: '/resolved/project',
+      });
+    });
+
+    it('returns 403 and checks nothing when projectPath is outside the boundary', async () => {
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+      );
+
+      const res = await request(fixtureServer)
+        .get('/api/marketplace/updates')
+        .query({ projectPath: '/etc/evil' });
+
+      expect(res.status).toBe(403);
+      expect(updateFlow.checkInstallations).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /updates', () => {
+    let agentDir: string;
+    const globalRoot = () => join(dorkHome, 'plugins', 'sample-plugin');
+
+    beforeEach(() => {
+      agentDir = join(dorkHome, 'agent-alpha');
+      writePackageManifest(globalRoot(), { ...buildSamplePluginManifest() });
+      writePackageManifest(join(agentDir, '.dork', 'plugins', 'sample-plugin'), {
+        ...buildSamplePluginManifest(),
+      });
+      writePackageManifest(join(dorkHome, 'plugins', 'other-plugin'), {
+        ...buildSamplePluginManifest(),
+        name: 'other-plugin',
+      });
+      agentScopes = [{ projectPath: agentDir, id: 'alpha', name: 'Alpha' }];
+      updateFlow.checkInstallations.mockResolvedValue({ checks: [] });
+    });
+
+    it('refuses a body that does not say apply: true, and runs nothing', async () => {
+      // Purpose: an empty or advisory POST must never be the request that
+      // reinstalls every package; the read is GET.
+      for (const body of [{}, { apply: false }]) {
+        const res = await request(fixtureServer).post('/api/marketplace/updates').send(body);
+        expect(res.status).toBe(400);
+      }
+      expect(updateFlow.checkInstallations).not.toHaveBeenCalled();
+    });
+
+    it('applies to every installation of the named packages only', async () => {
+      // Purpose: `names` narrows the batch, and a name covers the package in
+      // every scope it is installed in.
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/updates')
+        .send({ apply: true, names: ['sample-plugin'] });
+
+      expect(res.status).toBe(200);
+      const [arg] = updateFlow.checkInstallations.mock.calls[0]!;
+      expect(arg.apply).toBe(true);
+      expect(
+        arg.installations.map((r: { package: { name: string; scope: string } }) => [
+          r.package.name,
+          r.package.scope,
+        ])
+      ).toEqual([
+        ['sample-plugin', 'global'],
+        ['sample-plugin', 'override'],
+      ]);
+    });
+
+    it('returns 404 naming every unknown package, before anything runs', async () => {
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/updates')
+        .send({ apply: true, names: ['sample-plugin', 'flwo', 'gone'] });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Packages not installed: flwo, gone');
+      expect(updateFlow.checkInstallations).not.toHaveBeenCalled();
+    });
+
+    it('refreshes once per reinstall that landed, in that installation’s own scope', async () => {
+      // Purpose: every reinstall must reach projection and the command cache
+      // exactly as a per-package apply does, with the project it landed in —
+      // and a failed one must not claim a change.
+      updateFlow.checkInstallations.mockResolvedValue({
+        checks: [
+          {
+            packageName: 'sample-plugin',
+            scope: 'global',
+            applied: { packageName: 'sample-plugin' },
+          },
+          {
+            packageName: 'sample-plugin',
+            scope: 'override',
+            agentPath: agentDir,
+            applied: { packageName: 'sample-plugin' },
+          },
+          { packageName: 'other-plugin', scope: 'global', applyError: 'disk full' },
+          { packageName: 'current-one', scope: 'global', status: 'current' },
+        ],
+      });
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/updates')
+        .send({ apply: true });
+
+      expect(res.status).toBe(200);
+      expect(onPluginsChanged.mock.calls.map(([ctx]) => ctx)).toEqual([
+        { projectPath: undefined, packageName: 'sample-plugin', action: 'install' },
+        { projectPath: agentDir, packageName: 'sample-plugin', action: 'install' },
+      ]);
+    });
+
+    it('names the requested project the way the caller spelled it', async () => {
+      // Purpose: listeners match the project as the person picked it; only the
+      // effect itself runs against the canonical path.
+      updateFlow.checkInstallations.mockResolvedValue({
+        checks: [
+          {
+            packageName: 'sample-plugin',
+            scope: 'agent-local',
+            agentPath: '/resolved/project',
+            applied: { packageName: 'sample-plugin' },
+          },
+        ],
+      });
+
+      await request(fixtureServer)
+        .post('/api/marketplace/updates')
+        .send({ apply: true, projectPath: '/work/link-to-project' });
+
+      expect(vi.mocked(scanInstallationRecords)).toHaveBeenCalledWith(dorkHome, {
+        projectPath: '/resolved/project',
+      });
+      expect(onPluginsChanged).toHaveBeenCalledWith({
+        projectPath: '/work/link-to-project',
+        packageName: 'sample-plugin',
+        action: 'install',
+      });
+    });
+
+    it('lets an agent apply a batch, as install is tier act', async () => {
+      // Purpose: authorizing each reinstall must not start asking for approval
+      // an ordinary install never needs.
+      agentHeader = 'agent-token';
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/updates')
+        .send({ apply: true });
+
+      expect(res.status).toBe(200);
+      expect(updateFlow.checkInstallations).toHaveBeenCalled();
+    });
+
+    it('refuses a batch that would need a person to approve each install, and runs nothing', async () => {
+      // Purpose: a batch cannot carry one approval token per package, so a 202
+      // would send the caller round a loop. If install is ever raised to a tier
+      // that asks, the batch is refused and points at the one-package door.
+      gateRegistry = composeRegistry(
+        [
+          {
+            ...marketplaceDomain,
+            capabilities: marketplaceDomain.capabilities.map((c) =>
+              c.id === 'marketplace.install' ? { ...c, tier: 'destructive' as const } : c
+            ),
+          },
+        ],
+        { logger: noopLogger, marketplaceDeps: {} as MarketplaceMcpDeps }
+      );
+      agentHeader = 'agent-token';
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/updates')
+        .send({ apply: true });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('batch_update_needs_approval');
+      expect(res.body.error).toContain('/api/marketplace/packages/:name/update');
+      expect(updateFlow.checkInstallations).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 and applies nothing when projectPath is outside the boundary', async () => {
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+      );
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/updates')
+        .send({ apply: true, projectPath: '/etc/evil' });
+
+      expect(res.status).toBe(403);
+      expect(updateFlow.checkInstallations).not.toHaveBeenCalled();
     });
   });
 

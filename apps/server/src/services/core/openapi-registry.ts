@@ -412,6 +412,28 @@ const LocalUpdateResultSchema = z.object({
 });
 
 /**
+ * Simplified documentation mirror of the update flow's `InstallationUpdateCheck`:
+ * one installation's check, its identity in the installed list's own field names,
+ * and after an apply, its outcome. Keep in sync with
+ * `apps/server/src/services/marketplace/flows/update.ts`.
+ */
+const LocalInstallationUpdateCheckSchema = LocalUpdateCheckResultSchema.extend({
+  installPath: z.string(),
+  type: PackageTypeSchema,
+  scope: z.enum(['global', 'agent-local', 'override']),
+  agentPath: z.string().optional(),
+  agentId: z.string().optional(),
+  agentName: z.string().optional(),
+  applied: LocalInstallResultSchema.optional(),
+  applyError: z.string().optional(),
+});
+
+/** Simplified documentation mirror of the update flow's `InstallationUpdatesResult`. */
+const LocalInstallationUpdatesResultSchema = z.object({
+  checks: z.array(LocalInstallationUpdateCheckSchema),
+});
+
+/**
  * Simplified documentation mirror of {@link import('../marketplace/flows/uninstall.js').UninstallResult}.
  * Keep in sync with `apps/server/src/services/marketplace/flows/uninstall.ts`.
  */
@@ -2685,6 +2707,76 @@ registry.registerPath({
     },
     404: {
       description: 'Package not installed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/marketplace/updates',
+  tags: ['Marketplace'],
+  summary: 'Check every installed package for updates',
+  description:
+    'Advisory: one check per installation in view, and nothing installed changes. Without ' +
+    '`projectPath`, every installation in every scope (global, then each registered ' +
+    "agent's project); with it, that project's merged view. Each check carries the " +
+    "installation's identity; `installPath` matches the installed list's.",
+  request: {
+    query: z.object({ projectPath: z.string().optional() }),
+  },
+  responses: {
+    200: {
+      description: 'One check per installation, in scan order',
+      content: { 'application/json': { schema: LocalInstallationUpdatesResultSchema } },
+    },
+    403: {
+      description: 'projectPath outside the directory boundary',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/updates',
+  tags: ['Marketplace'],
+  summary: 'Update every stale installed package, or the named ones',
+  description:
+    'Reinstalls every installation in view whose check is `update-available`, each in the ' +
+    'scope it was found in, one at a time. A failed reinstall is reported on its ' +
+    'installation as `applyError` and the rest carry on. Each reinstall is authorized as ' +
+    '`marketplace.install` before anything runs. A batch that would need a person to ' +
+    'approve each install is refused (`batch_update_needs_approval`); use the one-package ' +
+    'route instead.',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            apply: z.literal(true),
+            names: z.array(z.string()).optional(),
+            projectPath: z.string().optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'One check per installation, with `applied` or `applyError` where one ran',
+      content: { 'application/json': { schema: LocalInstallationUpdatesResultSchema } },
+    },
+    400: {
+      description: 'Validation error (including a body without `apply: true`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Refused by the permission check, or projectPath outside the boundary',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'A named package is not installed in view',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
