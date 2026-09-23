@@ -12,9 +12,9 @@ flowchart TB
     local --> runtime
     local --> tunnel
   end
-  control["Optional Cloud control plane<br/>Service under development"]
+  control["Optional Cloud control plane<br/>Public hosted-service boundary"]
   inference["Inference endpoint<br/>URL + scoped token returned at runtime"]
-  contract["Public contract: packages/cloud-api<br/>Schemas + route table + fixtures<br/>Accounts · instances · managed services<br/>entitlements · seats · remote access · inference"]
+  contract["Public contract: packages/cloud-api<br/>Schemas + route table + fixtures<br/>Accounts · instances · managed services<br/>entitlements · seats · remote access · inference<br/>Hosted-community start / claim / moves"]
   edge["Tunnel service"]
   browser["Remote browser"]
   legacy -->|"HTTPS: device link, heartbeat,<br/>managed actions + event pull/ack"| control
@@ -24,3 +24,5 @@ flowchart TB
   tunnel -->|"Outbound tunnel connection"| edge
   browser -->|"HTTPS / WSS"| edge
   edge -->|"Forward app traffic through tunnel"| local
+  community["Community host API · implemented<br/>Scoped keys · limits · usage<br/>Community owns content and storage"]
+  control -.->|"Planned hosting orchestration<br/>HTTPS host API; no database access"| community
