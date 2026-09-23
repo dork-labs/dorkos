@@ -1,6 +1,6 @@
 ---
 covers:
-  - 'fix(community): end access on the community when you disconnect, and show its real reason when it says no'
+  - 'fix(community): revoke the grant on Disconnect, and pass Community refusals through'
 ---
 
 ### Fixed
