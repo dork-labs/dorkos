@@ -13,7 +13,6 @@ import process from 'node:process';
 import * as pty from 'node-pty';
 import { ensureNodePtySpawnHelperExecutable } from '@dorkos/shared/node-pty-spawn-helper';
 import {
-  CommunityLiveGateNotArmedError,
   communityLiveGateRecoveryCommand,
   parseCommunityLiveGateConfig,
 } from './community-deploy-live-config.js';
@@ -24,6 +23,10 @@ import {
   whileLauncherRuns,
   writePrivateClipboardShim,
 } from './community-deploy-live-capture.js';
+import {
+  describeCommunityLiveGateFailure,
+  explainCommunityLiveGateFailure,
+} from './community-deploy-live-failure.js';
 import {
   parsePublishedVersion,
   runCommunityLiveGateCommand as command,
@@ -45,8 +48,10 @@ import { readFlySessionCredential } from '../src/commands/community-deploy/tigri
 
 const TIMEOUT_MS = 12 * 60_000;
 /**
- * How long the gate waits for the first secret after the interrupted launcher has exited. The
- * launcher copied it before prompting, so it is already sent or lost; this only covers delivery.
+ * How long the gate waits for a secret after the launcher that sends it has exited. A launcher
+ * copies a secret before it prompts or exits, so by then the secret is already sent or lost; this
+ * only covers delivery. It bounds the first secret, after the interrupted launcher, and the second,
+ * should the resumed launcher exit cleanly without sending it.
  */
 const DELIVERED_CAPTURE_MS = 30_000;
 
@@ -127,6 +132,8 @@ async function main(): Promise<void> {
   const receiptPath = join(receiptDirectory, `${appName}.json`);
   let bootstrap: string | null = null;
   let recoveryCommand: string | null = null;
+  // Set once cleanup returns: from then on nothing the run created is left to reconcile.
+  let cleanedUp = false;
   // Held outside the try so a throw on any path still closes the capture socket.
   let clipboard: Awaited<ReturnType<typeof receiveClipboard>> | null = null;
   // Likewise the launcher, so a failure elsewhere never leaves its PTY waiting on a prompt.
@@ -263,7 +270,10 @@ async function main(): Promise<void> {
     // Every wait while the resumed launcher runs is raced against it, so a launcher that dies
     // ends the wait with a gate error instead of an unhandled rejection that skips recovery.
     const resumed = launcher.exited;
-    bootstrap = await whileLauncherRuns(resumed, capture.next(TIMEOUT_MS));
+    bootstrap = await whileLauncherRuns(resumed, capture.next(TIMEOUT_MS), {
+      ms: DELIVERED_CAPTURE_MS,
+      step: 'bootstrap-capture-after-launcher-exit',
+    });
     await capture.close();
     const proof = await whileLauncherRuns(
       resumed,
@@ -320,6 +330,9 @@ async function main(): Promise<void> {
     } finally {
       credential.dispose();
     }
+    // Clearing `recoveryCommand` alone would not do: the catch re-finds the journal, which stays on
+    // disk until the very end, and would print a recovery command for resources already deleted.
+    cleanedUp = true;
     const after = {
       flyAppIds: (await readFlyApps(fly, config.flyOrganization)).map((item) => item.id),
       neonProjectIds: (await readNeonProjects(neon, config.neonOrganization)).map(
@@ -348,18 +361,10 @@ async function main(): Promise<void> {
     );
     await rm(durableHome, { recursive: true, force: true });
   } catch (error) {
-    // A launcher that failed before the gate read its journal may still have written one, and
-    // may already have created resources. Find it now rather than stay silent about them.
-    recoveryCommand ??= await readRunId().then(
-      (runId) => (runId ? recoveryFor(runId) : null),
-      () => null
-    );
-    if (recoveryCommand)
-      throw new CommunityLiveGateError(
-        error instanceof CommunityLiveGateError ? error.step : 'execution',
-        recoveryCommand
-      );
-    throw error;
+    throw await explainCommunityLiveGateFailure(error, { cleanedUp, recoveryCommand }, async () => {
+      const runId = await readRunId();
+      return runId ? recoveryFor(runId) : null;
+    });
   } finally {
     if (bootstrap) Buffer.from(bootstrap).fill(0);
     launcher?.kill();
@@ -371,12 +376,6 @@ async function main(): Promise<void> {
 }
 
 void main().catch((error: unknown) => {
-  process.stderr.write(
-    `${error instanceof CommunityLiveGateError || error instanceof CommunityLiveGateNotArmedError ? error.message : 'Community live gate failed'}\n`
-  );
-  if (error instanceof CommunityLiveGateError && error.recoveryCommand)
-    process.stderr.write(
-      `Retained resources can be reconciled with:\n  ${error.recoveryCommand}\n`
-    );
+  process.stderr.write(describeCommunityLiveGateFailure(error));
   process.exitCode = 1;
 });
