@@ -309,3 +309,53 @@ export async function pairInstall(
   );
   return (await exchanged.json()).token as string;
 }
+
+/**
+ * Wait until at least `count` backends in the harness database are waiting on
+ * a lock (optionally only those whose query contains `fragment`). Paired with
+ * {@link holdingLock} it forces requests to overlap instead of hoping
+ * `Promise.all` interleaves them.
+ */
+export async function waitForLockWaiters(
+  h: TenancyHarness,
+  count: number,
+  fragment = ''
+): Promise<void> {
+  for (let attempt = 0; attempt < 250; attempt++) {
+    const { rows } = await h.pool.query<{ waiting: number }>(
+      `SELECT count(*)::int AS waiting FROM pg_stat_activity
+       WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE $1`,
+      [`%${fragment}%`]
+    );
+    if (rows[0].waiting >= count) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`Fewer than ${count} requests reached the held lock`);
+}
+
+/**
+ * Take a row lock with `sql` in a transaction of its own, run `during` while it
+ * is held, and commit when `during` calls `release` (or roll back if it throws).
+ */
+export async function holdingLock<T>(
+  h: TenancyHarness,
+  sql: string,
+  params: unknown[],
+  during: (release: () => Promise<void>) => Promise<T>
+): Promise<T> {
+  const holder = await h.pool.connect();
+  let open = false;
+  try {
+    await holder.query('BEGIN');
+    open = true;
+    await holder.query(sql, params);
+    return await during(async () => {
+      if (!open) return;
+      open = false;
+      await holder.query('COMMIT');
+    });
+  } finally {
+    if (open) await holder.query('ROLLBACK');
+    holder.release();
+  }
+}

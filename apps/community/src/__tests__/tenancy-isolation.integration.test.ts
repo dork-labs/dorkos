@@ -19,10 +19,12 @@ import {
   createChannel,
   createPendingCommunity,
   expectStatus,
+  holdingLock,
   pairInstall,
   startTenancyHarness,
   type TenancyHarness,
   type TenancyMember,
+  waitForLockWaiters,
 } from './tenancy-test-harness.js';
 import { hashSecret } from '../security.js';
 import { responseCookies } from './bootstrap-test-helper.js';
@@ -192,8 +194,9 @@ it('refuses an A post that mentions a B person or a B agent, and writes nothing'
   ).toBe(0);
 });
 
-it('lands racing pairing approvals, invite redemptions, and reused idempotency keys only in their own tenant', async () => {
-  // One pairing started for B; the shared account approves it through both paths at once.
+it('lands pairing approvals, invite redemptions, and reused idempotency keys sent through both tenants only in their own tenant', async () => {
+  // One pairing started for B; the shared account approves it through both paths
+  // together. The A path fails its tenant-qualified lookup whatever the order.
   const verifier = 'v'.repeat(43);
   const started = await expectStatus(
     await h.call(`${tenant(b)}/pairings/start`, {
@@ -234,7 +237,7 @@ it('lands racing pairing approvals, invite redemptions, and reused idempotency k
     ).rows
   ).toEqual([{ community_id: b, member_id: sharedInB.memberId }]);
 
-  // One B invitation; a new account binds and redeems it through both paths at once.
+  // One B invitation; a new account binds and redeems it through both paths together.
   const issued = await expectStatus(
     await h.call(`${tenant(b)}/invites`, { cookie: bOwner.cookie, body: { seats: 1 } }),
     201,
@@ -277,7 +280,7 @@ it('lands racing pairing approvals, invite redemptions, and reused idempotency k
     ).rows
   ).toEqual([{ community_id: b }]);
 
-  // The same idempotency key, in both tenants at once, is two independent posts.
+  // The same idempotency key, used in both tenants, is two independent posts.
   const first = await Promise.all([
     post(a, channelA, sharedInA.cookie, { text: 'key in A', idempotencyKey: 'shared-key' }),
     post(b, channelB, sharedInB.cookie, { text: 'key in B', idempotencyKey: 'shared-key' }),
@@ -386,24 +389,37 @@ it('keeps role and ownership changes in A out of B, even when both tenants trans
       )
     ).rows[0].lifecycle_version;
   // A passes to the shared account while B passes to the account removed from A.
-  const transfers = await Promise.all([
-    h.call(`${tenant(a)}/owner/transfer`, {
-      cookie: operator.cookie,
-      body: {
-        successorMemberId: sharedInA.memberId,
-        password: TENANCY_PASSWORD,
-        lifecycleVersion: await version(a),
-      },
-    }),
-    h.call(`${tenant(b)}/owner/transfer`, {
-      cookie: bOwner.cookie,
-      body: {
-        successorMemberId: leaverInB.memberId,
-        password: TENANCY_PASSWORD,
-        lifecycleVersion: await version(b),
-      },
-    }),
-  ]);
+  const versions = { a: await version(a), b: await version(b) };
+  // Hold both community rows so the two transfers are provably in flight
+  // together, each waiting on its own tenant's row, before either proceeds.
+  const transfers = await holdingLock(
+    h,
+    'SELECT id FROM communities WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE',
+    [[a, b]],
+    async (release) => {
+      const pending = Promise.all([
+        h.call(`${tenant(a)}/owner/transfer`, {
+          cookie: operator.cookie,
+          body: {
+            successorMemberId: sharedInA.memberId,
+            password: TENANCY_PASSWORD,
+            lifecycleVersion: versions.a,
+          },
+        }),
+        h.call(`${tenant(b)}/owner/transfer`, {
+          cookie: bOwner.cookie,
+          body: {
+            successorMemberId: leaverInB.memberId,
+            password: TENANCY_PASSWORD,
+            lifecycleVersion: versions.b,
+          },
+        }),
+      ]);
+      await waitForLockWaiters(h, 2, 'FROM communities WHERE id=$1 FOR UPDATE');
+      await release();
+      return pending;
+    }
+  );
   expect(transfers.map((response) => response.status)).toEqual([200, 200]);
   const roles = await h.pool.query<{ id: string; role: string; active: boolean }>(
     'SELECT id, role, active FROM members WHERE id=ANY($1::uuid[])',

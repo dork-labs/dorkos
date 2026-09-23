@@ -8,6 +8,7 @@
  * order is assumed, and nothing sleeps. A lock cycle surfaces as a PostgreSQL
  * deadlock error (a non-2xx status) or as a request timeout; either fails here.
  */
+import { createHash, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { sweepCommunityDeletions } from '../deletion-worker.js';
 import {
@@ -18,10 +19,12 @@ import {
   createChannel,
   createPendingCommunity,
   expectStatus,
+  holdingLock,
   preflightOwnerClaim,
   startTenancyHarness,
   type TenancyHarness,
   type TenancyMember,
+  waitForLockWaiters,
 } from './tenancy-test-harness.js';
 
 let h: TenancyHarness;
@@ -497,8 +500,20 @@ it('settles racing owner claims per community while active tenants are busy and 
     .join('; ')}`;
 
   const claim = (cookie: string) => h.call('/api/v1/owner-claims/claim', { cookie, body: {} });
-  const [claims, eClaim, activeReissues, busy] = await Promise.all([
-    Promise.all(dRacers.map(claim)),
+  // Force D's two claimants to overlap: hold D's row until both are waiting (one
+  // on the row, the other behind the claim lock), then let them go.
+  const claims = await holdingLock(
+    h,
+    'SELECT id FROM communities WHERE id=$1 FOR UPDATE',
+    [d.communityId],
+    async (release) => {
+      const racing = Promise.all(dRacers.map(claim));
+      await waitForLockWaiters(h, 2);
+      await release();
+      return racing;
+    }
+  );
+  const [eClaim, activeReissues, busy] = await Promise.all([
     claim(eCookie),
     Promise.all(
       [a, b].map((communityId) =>
@@ -561,3 +576,59 @@ it('settles racing owner claims per community while active tenants are busy and 
   expect(await crossTenantRows()).toEqual([]);
   expect(await deadlocks()).toBe(deadlocksBefore);
 }, 60_000);
+
+it('refuses a pairing approval whose member is removed after the request passed its membership check', async () => {
+  const approver = await admit(h, a, operator.cookie, {
+    name: 'Approver',
+    email: 'approver@concurrency.test',
+  });
+  const verifier = randomBytes(32).toString('base64url');
+  const started = await expectStatus(
+    await h.call(`${tenant(a)}/pairings/start`, {
+      headers: { origin: '' },
+      body: {
+        installName: 'Held approval',
+        challenge: createHash('sha256').update(verifier).digest('base64url'),
+        scopes: ['read'],
+      },
+    }),
+    201,
+    'start pairing'
+  );
+  const { pairingId } = await started.json();
+
+  // Hold the pairing row. The approval passes its pre-transaction membership
+  // check, then waits on this row inside its transaction; the member is removed
+  // while it waits, and only then does the approval continue.
+  const approval = await holdingLock(
+    h,
+    'SELECT id FROM connection_pairings WHERE id=$1 FOR UPDATE',
+    [pairingId],
+    async (release) => {
+      const pending = h.call(`${tenant(a)}/pairings/approve`, {
+        cookie: approver.cookie,
+        body: { pairingId },
+      });
+      await waitForLockWaiters(h, 1, 'FROM connection_pairings WHERE id=$1 AND community_id=$2');
+      await expectStatus(
+        await h.call(`${tenant(a)}/members/${approver.memberId}`, {
+          method: 'DELETE',
+          cookie: operator.cookie,
+        }),
+        204,
+        'remove the approver while its approval waits'
+      );
+      await release();
+      return pending;
+    }
+  );
+
+  expect(approval.status).toBe(403);
+  expect(
+    (
+      await h.pool.query('SELECT member_id, approved_at FROM connection_pairings WHERE id=$1', [
+        pairingId,
+      ])
+    ).rows
+  ).toEqual([{ member_id: null, approved_at: null }]);
+});

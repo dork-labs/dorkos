@@ -215,3 +215,10 @@ Tasks 2.1 through 2.3 reached VERIFY:
 - `tenancy-egress.integration.test.ts` blocks every non-local TCP connect and DNS lookup in the process, proves the block works, then runs first install through a second community, pairing, agents, export, recovery and every background sweep with no outbound attempt.
 - `browser-tests/switching.spec.ts` observes, at the host, that switching from A to B ends A's event stream before B receives any request. `canonical-link-isolation.test.ts` adds credential, encoded-path and DNS-change refusal for canonical links.
 - Each new proof was mutation-checked: dropping a tenant filter, sharing a sequence across tenants, leaking a role change across memberships, skipping grant revocation, adding a silent outbound call, un-pinning DNS, accepting URL credentials, and prefetching B before leaving A each turn the matching test red.
+
+### Session 11 - 2026-09-23 — review fixes for #2000
+
+- A proof now counts only if the runner report shows it passed. `apps/community/scripts/tenancy-receipt.ts` reads `vitest-pg-report.json` at the end of `test:pg` and `browser-report.json` at the end of `test:browser`; `test:pg` also runs the cited unit files with a JSON reporter and checks that report. A cited test in `describe.skip`, behind a false condition, or commented out now fails the receipt; files no receipt runner executes (`*.s3.test.ts`, `acceptance/`) are refused.
+- Matrix row M10 gains a held-lock test: a pairing approval passes its pre-transaction membership check, waits on the held pairing row, the member is removed, and the approval then returns 403 with nothing approved. Deleting `requirePairingMember` from the approval turns it red.
+- Racing owner claims and the two simultaneous ownership transfers now wait behind a held row lock until every request is blocked, so their overlap is forced rather than hoped for.
+- The egress guard also refuses `dns.resolve*`, `Resolver` queries (callback and promise), and UDP sends and connects to non-local addresses.

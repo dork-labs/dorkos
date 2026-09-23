@@ -11,13 +11,13 @@ project: Multi-Community Hosting
 
 This receipt maps every row of the specification's **Adversarial verification matrix** (task 4.1) and every acceptance criterion of task 4.2 to the tests that prove it. Each proof names a test file and the exact title of one test in it.
 
-The receipt is checked, not trusted. `apps/community/src/__tests__/tenancy-receipt.test.ts` reads the matrix straight out of `02-specification.md` and the 4.2 criteria straight out of `03-tasks.json`, and fails when:
+The receipt is checked in two steps, and only the second one decides whether a proof counts.
 
-- a matrix row or criterion has no entry here, or an entry here quotes text that is no longer in the spec;
-- an entry has no proof;
-- a proof names a file that does not exist, or a title that is not a live (not skipped, not todo) test in that file.
-
-Integration files (`*.integration.test.ts`) run against real PostgreSQL through `pnpm --filter @dorkos/community test:pg`; `browser-tests/*.spec.ts` run through `test:browser`; the server file runs in the ordinary unit suite.
+1. **Structure, on every unit run.** `apps/community/src/__tests__/tenancy-receipt.test.ts` reads the matrix straight out of `02-specification.md` and the 4.2 criteria straight out of `03-tasks.json`. It fails when a row or criterion has no entry here, an entry quotes text that is no longer in the spec, an entry has no proof, a proof names a file that does not exist or that no receipt runner executes (for example `*.s3.test.ts` or `acceptance/`), or the cited title is not declared in that file. This step reads source text only, so it is a fast pre-filter, not proof.
+2. **Execution, after the suites run.** `apps/community/scripts/tenancy-receipt.ts` checks each proof against the report its runner wrote, and fails unless the cited file and title appear there as passed. A test in a skipped block, behind a false condition, or commented out never appears as passed, so it fails this step. A title with `${…}` must match at least one reported test, and every test it matches must have passed.
+   - Real PostgreSQL proofs (`apps/community/src/**/*.integration.test.ts`): `test:pg` checks `vitest-pg-report.json` last.
+   - Browser proofs (`apps/community/browser-tests/*.spec.ts`): `test:browser` checks `browser-report.json` last.
+   - Unit proofs (`apps/community/src` and `apps/server/src`): `test:pg` also runs just those files with a JSON reporter and checks that report.
 
 ## Adversarial verification matrix (task 4.1)
 
@@ -71,7 +71,7 @@ Integration files (`*.integration.test.ts`) run against real PostgreSQL through 
 > A grants, agents, invites, pairings, cursors, idempotency keys, exports, and download IDs cannot be replayed in B.
 
 - `apps/community/src/__tests__/administration.integration.test.ts` — rejects foreign objects on every id-taking community route, even for an owner of both
-- `apps/community/src/__tests__/tenancy-isolation.integration.test.ts` — lands racing pairing approvals, invite redemptions, and reused idempotency keys only in their own tenant
+- `apps/community/src/__tests__/tenancy-isolation.integration.test.ts` — lands pairing approvals, invite redemptions, and reused idempotency keys sent through both tenants only in their own tenant
 - `apps/community/src/__tests__/tenancy-concurrency.integration.test.ts` — keeps concurrent posts, invites, and cursors of two communities on one host apart, each channel gap-free
 - `apps/community/src/__tests__/remote-adapter-conformance.integration.test.ts` — rejects a cursor from a different real community with the same channel, epoch, and signing secret
 
@@ -101,7 +101,7 @@ Integration files (`*.integration.test.ts`) run against real PostgreSQL through 
 
 > concurrent requests cannot approve a pairing, redeem an invite, transfer ownership, or attach a cross-tenant relation after a tenant/credential recheck.
 
-- `apps/community/src/__tests__/tenancy-isolation.integration.test.ts` — lands racing pairing approvals, invite redemptions, and reused idempotency keys only in their own tenant
+- `apps/community/src/__tests__/tenancy-concurrency.integration.test.ts` — refuses a pairing approval whose member is removed after the request passed its membership check
 - `apps/community/src/__tests__/tenancy-isolation.integration.test.ts` — keeps role and ownership changes in A out of B, even when both tenants transfer at once
 - `apps/community/src/__tests__/tenancy-concurrency.integration.test.ts` — keeps concurrent posts, invites, and cursors of two communities on one host apart, each channel gap-free
 - `apps/community/src/__tests__/admission.integration.test.ts` — admits exactly one contender for the final seat and leaves the other unadmitted
@@ -118,7 +118,7 @@ Integration files (`*.integration.test.ts`) run against real PostgreSQL through 
 - `apps/community/src/__tests__/remote-adapter-conformance.integration.test.ts` — rejects a cursor from a different real community with the same channel, epoch, and signing secret
 - `apps/community/src/__tests__/tenancy-concurrency.integration.test.ts` — keeps concurrent posts, invites, and cursors of two communities on one host apart, each channel gap-free
 
-Scope: this row covers the Community host's own website switcher. The local DorkOS app's switcher and its cache belong to DOR-2184 and are proven there.
+Scope: this row covers the Community host's own website switcher. The local DorkOS app's switcher and its cache belong to DOR-2184 and will be proven in DOR-2184 (#1992).
 
 ### M12
 
@@ -170,7 +170,7 @@ Scope: the public origin is deployment configuration (`COMMUNITY_PUBLIC_URL`), n
 
 > The service works with Cloud egress unavailable.
 
-- `apps/community/src/__tests__/tenancy-egress.integration.test.ts` — refuses a direct outbound connection, so the journey below cannot reach anything off the host
+- `apps/community/src/__tests__/tenancy-egress.integration.test.ts` — refuses direct outbound TCP, DNS, and UDP, so the journey below cannot reach anything off the host
 - `apps/community/src/__tests__/tenancy-egress.integration.test.ts` — runs install, chat, files, local pairing, agents, export, a second community, recovery, and every sweep with egress blocked
 
 ### U5
