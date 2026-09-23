@@ -362,11 +362,15 @@ export function registerAttachmentRoutes(
     const body = new ReadableStream<Uint8Array>({
       async pull(controller) {
         try {
-          await authorize();
           const next = await iterator.next();
+          // The end of the stream carries no bytes, so access that ends after the last one went
+          // out is not refused here. Refusing it errored a response the client had already read
+          // in full (its content-length was met) and reset the connection under the client's
+          // next request on it. Every chunk is still checked after it is read and before it is
+          // sent, so no byte leaves once access has ended.
+          if (next.done) return controller.close();
           await authorize();
-          if (next.done) controller.close();
-          else controller.enqueue(next.value);
+          controller.enqueue(next.value);
         } catch (error) {
           blob.body.destroy();
           controller.error(error);

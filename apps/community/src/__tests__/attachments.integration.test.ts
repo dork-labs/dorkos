@@ -1048,6 +1048,230 @@ describe('attachments over real HTTP and Postgres', () => {
       );
     }
   });
+
+  // Access that ends after the last byte went out must not error the response: the client has
+  // already read it in full, and an errored stream resets the kept-alive connection under the
+  // client's next request (DOR-2250). The held end of the stream makes the ordering exact.
+  async function readAllThenEndAfterRevocation(
+    blobKey: string,
+    path: string,
+    cookie: string,
+    revoke: () => Promise<unknown>
+  ) {
+    let releaseEnd!: () => void;
+    const end = new Promise<void>((resolve) => {
+      releaseEnd = resolve;
+    });
+    const originalGet = blobStore.get.bind(blobStore);
+    const spy = vi.spyOn(blobStore, 'get').mockImplementation(async (key, options) => {
+      const read = await originalGet(key, options);
+      if (key !== blobKey) return read;
+      const chunks: Buffer[] = [];
+      for await (const chunk of read.body) chunks.push(Buffer.from(chunk));
+      return {
+        byteSize: read.byteSize,
+        body: Readable.from(
+          (async function* () {
+            yield Buffer.concat(chunks);
+            await end;
+          })()
+        ),
+      };
+    });
+    try {
+      const response = await app.request(path, { headers: { cookie } });
+      expect(response.status).toBe(200);
+      const size = Number(response.headers.get('content-length'));
+      const reader = response.body!.getReader();
+      const first = await reader.read();
+      expect(first.value?.byteLength).toBe(size);
+      await revoke();
+      releaseEnd();
+      return await reader.read();
+    } finally {
+      releaseEnd();
+      spy.mockRestore();
+    }
+  }
+
+  it('ends a fully sent file download cleanly when access ends after the last byte', async () => {
+    const file = (
+      await pool.query<{ id: string; blob_key: string }>(
+        "SELECT id,blob_key FROM attachments WHERE idempotency_key='files-one'"
+      )
+    ).rows[0];
+    try {
+      const last = await readAllThenEndAfterRevocation(
+        file.blob_key,
+        `/api/v1/attachments/${file.id}`,
+        bobCookie,
+        () =>
+          pool.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
+            channelId,
+            bobId,
+          ])
+      );
+      expect(last).toEqual({ done: true, value: undefined });
+    } finally {
+      await pool.query(
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+        [communityId, channelId, bobId]
+      );
+    }
+  });
+
+  it('keeps the connection usable when access ends after a download was read in full', async () => {
+    const file = (
+      await pool.query<{ id: string; blob_key: string }>(
+        "SELECT id,blob_key FROM attachments WHERE idempotency_key='files-one'"
+      )
+    ).rows[0];
+    let releaseEnd!: () => void;
+    const end = new Promise<void>((resolve) => {
+      releaseEnd = resolve;
+    });
+    const originalGet = blobStore.get.bind(blobStore);
+    // A slow end of stream, as a loaded disk gives: every byte is out, the stream is not done.
+    const spy = vi.spyOn(blobStore, 'get').mockImplementation(async (key, options) => {
+      const read = await originalGet(key, options);
+      if (key !== file.blob_key) return read;
+      const chunks: Buffer[] = [];
+      for await (const chunk of read.body) chunks.push(Buffer.from(chunk));
+      return {
+        byteSize: read.byteSize,
+        body: Readable.from(
+          (async function* () {
+            yield Buffer.concat(chunks);
+            await end;
+          })()
+        ),
+      };
+    });
+    try {
+      const downloaded = await request(`/api/v1/attachments/${file.id}`, {
+        headers: { cookie: bobCookie },
+      });
+      expect(await downloaded.text()).toBe('hello');
+      await pool.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
+        channelId,
+        bobId,
+      ]);
+      // The client saw a complete response, so its next request reuses the same connection.
+      const next = request('/health');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      releaseEnd();
+      expect((await next).status).toBe(200);
+    } finally {
+      releaseEnd();
+      spy.mockRestore();
+      await pool.query(
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+        [communityId, channelId, bobId]
+      );
+    }
+  });
+
+  /** Create a personal archive that includes `channelId`, then run `use` on it. */
+  async function withPersonalArchive(
+    use: (archive: { id: string; blobKey: string }) => Promise<void>
+  ) {
+    const created = await post('/api/v1/me/export', {}, ownerCookie);
+    expect(created.status).toBe(201);
+    const id = (await created.json()).archiveId;
+    const archive = (
+      await pool.query<{ blob_key: string; channel_ids: string[] }>(
+        `SELECT e.blob_key,array_agg(s.channel_id) AS channel_ids FROM export_archives e
+         JOIN export_archive_channels s ON s.export_archive_id=e.id WHERE e.id=$1 GROUP BY e.blob_key`,
+        [id]
+      )
+    ).rows[0];
+    expect(archive.channel_ids).toContain(channelId);
+    // The owner reaches the channel directly and through the agent it owns; both have to go.
+    const ownedAgents = (
+      await pool.query<{ agent_id: string }>(
+        `SELECT acm.agent_id FROM agent_channel_members acm JOIN agents a ON a.id=acm.agent_id
+         WHERE acm.channel_id=$1 AND a.owner_member_id=$2`,
+        [channelId, ownerId]
+      )
+    ).rows.map((row) => row.agent_id);
+    try {
+      await use({ id, blobKey: archive.blob_key });
+    } finally {
+      await pool.query(
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+        [communityId, channelId, ownerId]
+      );
+      for (const agentId of ownedAgents)
+        await pool.query(
+          'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+          [communityId, channelId, agentId]
+        );
+    }
+  }
+  async function revokeOwnerChannelAccess() {
+    await pool.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
+      channelId,
+      ownerId,
+    ]);
+    await pool.query(
+      `DELETE FROM agent_channel_members acm USING agents a
+       WHERE a.id=acm.agent_id AND acm.channel_id=$1 AND a.owner_member_id=$2`,
+      [channelId, ownerId]
+    );
+  }
+
+  it('ends a fully sent archive download cleanly when access ends after the last byte', async () => {
+    await withPersonalArchive(async (archive) => {
+      const last = await readAllThenEndAfterRevocation(
+        archive.blobKey,
+        `/api/v1/exports/${archive.id}`,
+        ownerCookie,
+        revokeOwnerChannelAccess
+      );
+      expect(last).toEqual({ done: true, value: undefined });
+    });
+  });
+
+  it('stops an in-flight archive download when channel access ends', async () => {
+    await withPersonalArchive(async (archive) => {
+      let releaseRest!: () => void;
+      const rest = new Promise<void>((resolve) => {
+        releaseRest = resolve;
+      });
+      const originalGet = blobStore.get.bind(blobStore);
+      const spy = vi.spyOn(blobStore, 'get').mockImplementation(async (key, options) => {
+        const read = await originalGet(key, options);
+        if (key !== archive.blobKey) return read;
+        const chunks: Buffer[] = [];
+        for await (const chunk of read.body) chunks.push(Buffer.from(chunk));
+        const bytes = Buffer.concat(chunks);
+        return {
+          byteSize: read.byteSize,
+          body: Readable.from(
+            (async function* () {
+              yield bytes.subarray(0, 1);
+              await rest;
+              yield bytes.subarray(1);
+            })()
+          ),
+        };
+      });
+      try {
+        const response = await app.request(`/api/v1/exports/${archive.id}`, {
+          headers: { cookie: ownerCookie },
+        });
+        expect(response.status).toBe(200);
+        const reader = response.body!.getReader();
+        expect((await reader.read()).value?.byteLength).toBe(1);
+        await revokeOwnerChannelAccess();
+        releaseRest();
+        await expect(reader.read()).rejects.toThrow('Export access has ended.');
+      } finally {
+        releaseRest();
+        spy.mockRestore();
+      }
+    });
+  });
 });
 
 describe('private archives and recoverable leave', () => {

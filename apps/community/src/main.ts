@@ -5,6 +5,7 @@ import { Pool } from 'pg';
 import { createCommunityApp } from './app.js';
 import { parseConfig } from './config.js';
 import { migrate } from './migrate.js';
+import { createStop } from './shutdown.js';
 import { createBlobStore } from './storage/index.js';
 import { sweepExpiredAttachments } from './routes/attachments.js';
 import { sweepExpiredExports } from './routes/exports.js';
@@ -84,10 +85,15 @@ const cleanup = setInterval(() => {
   });
 }, 60_000);
 cleanup.unref();
-const stop = () =>
-  server.close(() => {
-    clearInterval(cleanup);
-    void pool.end();
+const stop = createStop({ server, pool, timers: [cleanup] });
+const onSignal = () => {
+  stop().catch((error: unknown) => {
+    console.error(
+      'Community server did not stop cleanly',
+      error instanceof Error ? error.name : 'unknown'
+    );
+    process.exitCode = 1;
   });
-process.on('SIGINT', stop);
-process.on('SIGTERM', stop);
+};
+process.on('SIGINT', onSignal);
+process.on('SIGTERM', onSignal);

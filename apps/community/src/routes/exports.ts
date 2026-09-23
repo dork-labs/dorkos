@@ -456,19 +456,16 @@ export function registerExportRoutes(
     const body = new ReadableStream<Uint8Array>({
       async pull(controller) {
         try {
+          const next = await iterator.next();
+          // See the attachment download: the end of the stream carries no bytes, so it is never
+          // refused, and each chunk is checked after it is read and before it is sent.
+          if (next.done) return controller.close();
           const current = await requireMember(c, auth, pool);
           if (current.id !== member.id || (archive.scope === 'owner' && current.role !== 'owner'))
             throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
           if (archive.scope === 'personal')
             await requireCurrentChannels(pool, member.id, archive.channel_ids);
-          const next = await iterator.next();
-          const after = await requireMember(c, auth, pool);
-          if (after.id !== member.id || (archive.scope === 'owner' && after.role !== 'owner'))
-            throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
-          if (archive.scope === 'personal')
-            await requireCurrentChannels(pool, member.id, archive.channel_ids);
-          if (next.done) controller.close();
-          else controller.enqueue(next.value);
+          controller.enqueue(next.value);
         } catch (error) {
           blob.body.destroy();
           controller.error(error);

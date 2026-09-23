@@ -37,6 +37,11 @@ let restoreProcess;
 let runDirectory;
 /** Containers this run started, by name; cleanup never touches any other container. */
 const ownedContainers = new Set();
+/**
+ * Set once a signal handler owns cleanup. `main()` then unwinds as its resources vanish, and its
+ * `finally` must not stop the same processes and containers a second time.
+ */
+let interrupting = false;
 
 function fail(message) {
   throw new Error(`Community backup rehearsal: ${message}`);
@@ -345,6 +350,7 @@ async function stopOwnedContainers() {
 }
 
 async function interrupted(signal) {
+  interrupting = true;
   process.stderr.write(
     `Community backup rehearsal: ${signal} received, removing owned resources\n`
   );
@@ -501,6 +507,7 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
+    if (interrupting) return;
     await Promise.allSettled([stopOwned(sourceProcess), stopOwned(restoreProcess)]);
     await stopOwnedContainers();
     // Preserve only the non-secret proof manifest. All database dumps, blob copies and generated secrets stay in the private fixture directory.
