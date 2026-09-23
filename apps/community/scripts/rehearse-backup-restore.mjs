@@ -111,6 +111,9 @@ function startCommunity(databaseUrl, blobDirectory, port) {
   const child = spawn(process.execPath, ['dist-server/main.js'], {
     cwd: community,
     stdio: ['ignore', 'ignore', 'pipe'],
+    // Its own process group, so Ctrl-C reaches only this script, which then stops the server
+    // with exactly one SIGTERM. A second signal would make the server exit at once, with code 1.
+    detached: true,
     env: {
       ...Object.fromEntries(
         INHERITED_ENV.filter((name) => process.env[name] !== undefined).map((name) => [

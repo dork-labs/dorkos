@@ -458,7 +458,7 @@ export function registerExportRoutes(
         try {
           const next = await iterator.next();
           // See the attachment download: the end of the stream carries no bytes, so it is never
-          // refused, and each chunk is checked after it is read and before it is sent.
+          // refused, and each chunk is checked after it is read and before it is queued.
           if (next.done) return controller.close();
           const current = await requireMember(c, auth, pool);
           if (current.id !== member.id || (archive.scope === 'owner' && current.role !== 'owner'))

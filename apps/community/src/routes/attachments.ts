@@ -366,8 +366,9 @@ export function registerAttachmentRoutes(
           // The end of the stream carries no bytes, so access that ends after the last one went
           // out is not refused here. Refusing it errored a response the client had already read
           // in full (its content-length was met) and reset the connection under the client's
-          // next request on it. Every chunk is still checked after it is read and before it is
-          // sent, so no byte leaves once access has ended.
+          // next request on it. Every chunk is still checked after it is read from storage and
+          // before it is queued, so no chunk is read out after a failed check. The stream queues
+          // one chunk ahead, so a chunk that passed its check just before access ended can still go.
           if (next.done) return controller.close();
           await authorize();
           controller.enqueue(next.value);
