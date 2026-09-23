@@ -1708,3 +1708,44 @@ describe('closing admission while someone is invited or joining', () => {
     ).toEqual([{ active: true }]);
   });
 });
+
+it('a token not signed for this community gets the same refusal whether it is open or closed', async () => {
+  // Made-up tokens: garbage, a well-formed one with a forged signature, and a real invitation
+  // signed for community B. None of them may learn whether A is closed.
+  const { token: signedForB } = (await ok(
+    {
+      method: 'POST',
+      path: `/api/v1/communities/${betaId}/invites`,
+      body: { seats: 1 },
+    },
+    'otherOwner',
+    201
+  )) as { token: string };
+  const forged = [
+    '1',
+    config.inviteKeyId,
+    randomUUID(),
+    String(Date.now() + 86_400_000),
+    'a'.repeat(32),
+    'b'.repeat(43),
+  ].join('.');
+  const tokens = { garbage: 'not-an-invitation', forged, signedForB };
+  async function refusals(): Promise<Record<string, { status: number; body: string }>> {
+    const result: Record<string, { status: number; body: string }> = {};
+    for (const [name, token] of Object.entries(tokens)) {
+      for (const step of ['preview', 'preflight']) {
+        const response = await send(
+          { method: 'POST', path: scoped(`/invites/${step}`), body: { token } },
+          'signedOut'
+        );
+        result[`${step} ${name}`] = { status: response.status, body: await response.text() };
+      }
+    }
+    return result;
+  }
+  const open = await refusals();
+  for (const [label, refusal] of Object.entries(open))
+    expect(refusal.status, `${label} while open`).toBe(403);
+  await closeAdmission();
+  expect(await refusals()).toEqual(open);
+});

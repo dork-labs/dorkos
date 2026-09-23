@@ -108,25 +108,25 @@ export function Manage({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  // A failed read leaves the invite form in place; the server still refuses an invitation to
+  // a closed community with a plain reason.
+  const readAdmission = useCallback(
+    () =>
+      request<{ admissionPolicy: 'invite_only' | 'closed' }>('/api/v1/settings')
+        .then((body) => {
+          const closed = body.admissionPolicy === 'closed';
+          setAdmissionClosed(closed);
+          // Closing revoked every invitation, including a link still shown from before.
+          if (closed) setInviteLink('');
+        })
+        .catch(() => undefined),
+    []
+  );
   // Read on every visit to this tab: the owner may have just closed or reopened admission
-  // under Settings. A failed read leaves the invite form in place, and the server still
-  // refuses an invitation to a closed community with a plain reason.
+  // under Settings.
   useEffect(() => {
-    if (!moderator || readOnly || tab !== 'community') return;
-    let live = true;
-    request<{ admissionPolicy: 'invite_only' | 'closed' }>('/api/v1/settings')
-      .then((body) => {
-        if (!live) return;
-        const closed = body.admissionPolicy === 'closed';
-        setAdmissionClosed(closed);
-        // Closing revoked every invitation, including a link still shown from before.
-        if (closed) setInviteLink('');
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [moderator, readOnly, tab]);
+    if (moderator && !readOnly && tab === 'community') void readAdmission();
+  }, [moderator, readOnly, tab, readAdmission]);
   async function perform(operation: () => Promise<unknown>, success: string) {
     setBusy(true);
     setError('');
@@ -168,6 +168,8 @@ export function Manage({
       await refresh();
     } catch (cause) {
       setError(describeError(cause));
+      // The community may have been closed since this panel last looked.
+      void readAdmission();
     } finally {
       setBusy(false);
     }

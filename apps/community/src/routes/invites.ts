@@ -67,10 +67,13 @@ class AdmissionClosed extends ApiError {
 }
 
 /**
- * Refuse new admission while the owner has closed the community. With `lock`, the check holds
- * the community row in share mode until commit, so it serializes with the settings update that
- * closes admission (which takes the row for update and then revokes every invitation): an
- * invitation or admission either commits first and is revoked by the close, or sees `closed`.
+ * Refuse new admission while the owner has closed the community. The write paths call this
+ * after `lockActiveCommunity` has taken the community row in share mode in the same
+ * transaction; that lock is what serializes them with the settings update that closes
+ * admission (it takes the row for update, then revokes every invitation), so an invitation or
+ * admission either commits first and is revoked by the close, or reads `closed` here. With
+ * `lock` the read also takes that share lock itself, so it stays correct for any caller; the
+ * read-only preview reads without it.
  */
 async function assertAdmissionOpen(
   client: PoolClient | Pool,
@@ -131,9 +134,11 @@ async function validInvite(
   );
   const communityId = community.rows[0]?.id;
   if (!communityId) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
-  await assertAdmissionOpen(client, communityId, lock);
   const signed = inspectInvite(token, communityId, config);
   if (!signed) throw new ApiError(403, 'FORBIDDEN', 'This invitation is invalid or expired.');
+  // Only a link genuinely signed for this community learns that it is closed; a made-up token
+  // gets the same public failure whether the community is open or closed.
+  await assertAdmissionOpen(client, communityId, lock);
   if (lock) {
     const issuer = await client.query<{ issuer_member_id: string }>(
       'SELECT issuer_member_id FROM invites WHERE id=$1 AND community_id=$2',

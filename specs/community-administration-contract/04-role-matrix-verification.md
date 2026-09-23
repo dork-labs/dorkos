@@ -85,7 +85,11 @@ The closed rows are refused for everyone, and nothing changes. The first closes 
 
 The export download returns `404` to members of A who did not request the export, because the lookup is scoped to the requester; it returns `403` to accounts that are not members of A at all.
 
-Totals: 387 role cells (87 allowed, 300 refused), 6 wrong-password cells, 4 race tests and one route-classification test: **398 tests**.
+Totals: 387 role cells (87 allowed, 300 refused), 6 wrong-password cells, 4 race tests, one public-failure test and one route-classification test: **399 tests**.
+
+### A made-up invitation learns nothing
+
+The "closed" reason goes only to a link genuinely signed for this community. A signed-out caller sends three tokens to preview and to start joining: garbage, a well-formed token with a forged signature, and a real invitation signed for community B. The six refusals are recorded while A is open, all `403`, then again after A is closed. Status and body must be identical, which keeps the membership specification's same public failure shape.
 
 ### Closing while someone is invited or joining
 
@@ -102,31 +106,32 @@ The agent credential is live while A is active. Suspend, archive and deletion al
 
 ## Verification
 
-- The matrix file against a fresh PostgreSQL 17 container, one worker: **398 passed**, three runs in a row, no flakes (24 to 31 seconds each).
-- Whole PostgreSQL suite: **15 files, 571 passed**, 4 declared skips. Community unit tests: **43 passed**. Community browser suite: **3 passed**. Packaged acceptance driver (`apps/community/acceptance/run.sh`), which joins through a real invitation: **passed** on the second run of the same image. The first run timed out much later in the journey, waiting for a local agent turn to be claimed; the invitation and join steps had already passed.
+- The matrix file against a fresh PostgreSQL 17 container, one worker: **398 passed**, three runs in a row, no flakes (24 to 31 seconds each), then **399 passed** with the public-failure test added.
+- Whole PostgreSQL suite: **15 files, 572 passed**, 4 declared skips. Community unit tests: **43 passed**. Community browser suite: **3 passed**. Packaged acceptance driver (`apps/community/acceptance/run.sh`), which joins through a real invitation: **passed** on the second run of the same image. The first run timed out much later in the journey, waiting for a local agent turn to be claimed; the invitation and join steps had already passed.
 - Every role cell matched the specification. No role was allowed something the specification forbids, and none was refused something it allows. The one gap was not a role: a closed community still admitted people.
 - The owned PostgreSQL container was stopped afterward. No live deployment or production data was touched.
 
 Each check below was a temporary edit, run, then reverted. The source was clean again afterward.
 
-| Temporary break                                                               | Result                                                                               |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Settings update drops the owner-only check on name and admission policy       | 2 fail: admin edits name, admin edits admission policy                               |
-| The host-operator request check accepts any signed-in account                 | 5 fail: every non-operator account lists host communities                            |
-| That check and the in-transaction host-operator check both accept any account | 35 fail: every host action, for owner, admin, member, removed member and other owner |
-| Icon download no longer accepts a host operator                               | 1 fails: host-only icon download, an allowed cell                                    |
-| Archive and restore accept an admin                                           | 2 fail: admin archives, admin restores                                               |
-| Role changes accept an admin                                                  | 1 fails: admin changes a role                                                        |
-| Administration reauthentication accepts any password                          | 4 fail: wrong-password archive, restore, deletion request and deletion cancel        |
-| The whole closed-admission fix removed (the code before this change)          | 36 fail: every closed row for the roles that reach it, and two races                 |
-| Creating an invitation drops the closed check                                 | 3 fail: owner and admin create while closed, and the close-then-create race          |
-| Preview and start-joining drop the closed check                               | 18 fail: every role in both rows                                                     |
-| Binding drops the closed check                                                | 7 fail: every signed-in role                                                         |
-| Redeeming drops the closed check                                              | 8 fail: every signed-in role, and the close-then-redeem race                         |
+| Temporary break                                                                                     | Result                                                                                    |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Settings update drops the owner-only check on name and admission policy                             | 2 fail: admin edits name, admin edits admission policy                                    |
+| The host-operator request check accepts any signed-in account                                       | 5 fail: every non-operator account lists host communities                                 |
+| That check and the in-transaction host-operator check both accept any account                       | 35 fail: every host action, for owner, admin, member, removed member and other owner      |
+| Icon download no longer accepts a host operator                                                     | 1 fails: host-only icon download, an allowed cell                                         |
+| Archive and restore accept an admin                                                                 | 2 fail: admin archives, admin restores                                                    |
+| Role changes accept an admin                                                                        | 1 fails: admin changes a role                                                             |
+| Administration reauthentication accepts any password                                                | 4 fail: wrong-password archive, restore, deletion request and deletion cancel             |
+| The whole closed-admission fix removed (the code before this change)                                | 36 fail: every closed row for the roles that reach it, and two races                      |
+| Creating an invitation drops the closed check                                                       | 3 fail: owner and admin create while closed, and the close-then-create race               |
+| Preview and start-joining drop the closed check                                                     | 18 fail: every role in both rows                                                          |
+| Binding drops the closed check                                                                      | 7 fail: every signed-in role                                                              |
+| The closed check runs before the invitation's signature is verified (the first version of this fix) | 1 fails: the made-up-token test (made-up tokens got `409` while closed, `403` while open) |
+| Redeeming drops the closed check                                                                    | 8 fail: every signed-in role, and the close-then-redeem race                              |
 
 Every host mutation checks the operator twice, once per request and again inside the transaction. Removing only the first check turns only the list red; the mutations stay refused. The test proves the combined result.
 
 ## Where the code and the specification differed
 
-- **A closed community still admitted people. Fixed here.** The settings model says changing the admission policy to `closed` revokes every outstanding invitation and pending admission. The code did that, but nothing checked the policy afterwards: with A closed, an admin created a new invitation (`201`) and a new account joined through it. Now, while a community is closed, creating an invitation, previewing one, starting to join, binding and redeeming are all refused with `409 STATE_CONFLICT` and the message "This community is closed to new members." Each check reads the community row in share mode inside the same transaction, so it serializes with the close, which takes that row for update before revoking. Existing members keep their access, and an owner claim for a new pending community still works: that is how a community gets its first owner, not an admission. In the app, the invite panel shows the reason instead of the Create invite button, and hides a link made before the close, which was revoked with it. Checked in the browser suite at desktop width and at 390 pixels.
+- **A closed community still admitted people. Fixed here.** The settings model says changing the admission policy to `closed` revokes every outstanding invitation and pending admission. The code did that, but nothing checked the policy afterwards: with A closed, an admin created a new invitation (`201`) and a new account joined through it. Now, while a community is closed, creating an invitation, previewing one, starting to join, binding and redeeming are all refused with `409 STATE_CONFLICT` and the message "This community is closed to new members." The join steps check only after the invitation's signature is verified, so a made-up token gets the same `403` whether the community is open or closed. On the write paths the community row is already held in share mode in the same transaction, so each check serializes with the close, which takes that row for update before revoking. Existing members keep their access, and an owner claim for a new pending community still works: that is how a community gets its first owner, not an admission. In the app, the invite panel shows the reason instead of the Create invite button, and hides a link made before the close, which was revoked with it. Checked in the browser suite at desktop width and at 390 pixels.
 - **The host list includes the description.** The management experience lists name, short ID, lifecycle state, owner-present and cleanup status for the host list. The API also returns the description, which owners and admins set. It holds no member, content or file data, which the matrix asserts. Left as it is.
