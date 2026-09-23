@@ -137,9 +137,17 @@ export const CommunityWireMembershipSummarySchema = z.strictObject({
   lifecycle: CommunityAdminLifecycleSchema,
   /** While held: the date after which the host plans to delete the community, if published. */
   deletionNoticeAt: timestamp.nullable(),
+  /** The community's current short address, if it has one. */
+  shortName: z.string().nullable(),
   memberId: id,
   displayName: z.string().min(1),
   role: z.enum(['owner', 'admin', 'member']),
+});
+/** Public exact-match short-name lookup: the community a live name leads to. */
+export const CommunityWireShortNameLookupSchema = z.strictObject({
+  communityId: z.uuid(),
+  /** The current name, which differs from the one asked for when that one was retired. */
+  shortName: z.string().min(3).max(32),
 });
 /** Authenticated communities visible through the current account's own memberships. */
 export const CommunityWireMembershipListResponseSchema = z.strictObject({
@@ -826,6 +834,8 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'STORAGE_LIMIT_REACHED',
   'AGENT_LIMIT_REACHED',
   'COMMUNITY_HELD',
+  'SHORT_NAME_TAKEN',
+  'SHORT_NAME_RESERVED',
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;
@@ -885,13 +895,18 @@ export const COMMUNITY_HOST_ADMIN_PATH = '/host';
  * Read a settings path back.
  *
  * @param pathname - A browser path on the Community's origin.
+ * @param basePath - The community's base path when it was reached by its short name
+ *   (`/<name>`); omitted, the canonical `/c/<id>` base is read.
  * @returns The requested section (`null` for the default), or `null` when the
  *   path is not a settings path at all.
  */
 export function parseCommunitySettingsPath(
-  pathname: string
+  pathname: string,
+  basePath?: string
 ): { section: CommunitySettingsSection | null } | null {
-  const match = /^\/c\/[^/]+\/settings(?:\/([^/]+))?\/?$/u.exec(pathname);
+  // A community reached by its short name has `/<name>` as its base instead of `/c/<id>`.
+  const base = basePath ? basePath.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&') : String.raw`\/c\/[^/]+`;
+  const match = new RegExp(`^${base}\\/settings(?:\\/([^/]+))?\\/?$`, 'u').exec(pathname);
   if (!match) return null;
   const section = match[1];
   if (section === undefined) return { section: null };

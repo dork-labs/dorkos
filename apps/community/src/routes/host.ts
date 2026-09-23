@@ -10,6 +10,12 @@ import {
 import type { CommunityConfig } from '../config.js';
 import { transaction } from '../data.js';
 import {
+  assignShortName,
+  releaseCommunityShortNames,
+  shortNameHoldKey,
+  type ShortNameHolds,
+} from '../host/short-names.js';
+import {
   hostProjectionSql,
   parseHostCommunityId,
   projectCommunity,
@@ -42,6 +48,7 @@ function payloadHash(body: z.infer<typeof CommunityAdminCreateRequestSchema>): s
               },
             }
           : {}),
+        ...(body.shortName ? { shortName: body.shortName } : {}),
       })
     )
     .digest('hex');
@@ -56,6 +63,8 @@ async function createPendingCommunity(
     body: z.infer<typeof CommunityAdminCreateRequestSchema>;
     tokenHash: string;
     expiresAt: Date;
+    reservedNames: ReadonlySet<string>;
+    holds: ShortNameHolds;
   }
 ): Promise<{ row: HostCommunityRow; grantId: string; expiresAt: Date; replayed: boolean }> {
   await client.query('SELECT pg_advisory_xact_lock(77281503)');
@@ -105,6 +114,14 @@ async function createPendingCommunity(
        VALUES($1,$2,$3)`,
       [community.rows[0].id, input.body.limits.maxActiveMembers, input.body.limits.maxStorageBytes]
     );
+  if (input.body.shortName)
+    await assignShortName(client, {
+      communityId: community.rows[0].id,
+      shortName: input.body.shortName,
+      reservedNames: input.reservedNames,
+      holds: input.holds,
+      at: input.now(),
+    });
   await client.query(
     `INSERT INTO community_creation_receipts(
        idempotency_key,operator_user_id,operator_api_key_id,payload_hash,community_id,
@@ -153,6 +170,10 @@ export function registerHostRoutes(
   }
 ): void {
   const { pool, config, blobStore, authority, now } = deps;
+  const holds: ShortNameHolds = {
+    key: shortNameHoldKey(config.authSecret),
+    cooloffDays: config.limits.shortNameCooloffDays,
+  };
 
   app.get('/host/communities', async (c) => {
     await authority.require(c, 'communities:read');
@@ -198,6 +219,8 @@ export function registerHostRoutes(
         body,
         tokenHash: hashSecret(token),
         expiresAt,
+        reservedNames: config.reservedShortNames,
+        holds,
       });
     let result: Awaited<ReturnType<typeof createPendingCommunity>> | undefined;
     if (count.rows[0].count === 1) {
@@ -263,6 +286,8 @@ export function registerHostRoutes(
       await client.query('DELETE FROM bootstrap_grants WHERE community_id=$1', [communityId]);
       // Host-set limits are metadata the host may give an unclaimed community; they go with it.
       await client.query('DELETE FROM community_limits WHERE community_id=$1', [communityId]);
+      // Nobody ever reached a never-claimed community by its name, so the name is free at once.
+      await releaseCommunityShortNames(client, communityId, { hold: false });
       await client.query('DELETE FROM communities WHERE id=$1', [communityId]);
       await recordHostAudit(client, actor, {
         action: 'community.abandon',

@@ -32,6 +32,7 @@ import { registerHostRoutes } from '../routes/host.js';
 import { registerMembershipRoutes } from '../routes/memberships.js';
 import { registerHostLimitRoutes } from '../routes/host-limits.js';
 import { registerHostLifecycleRoutes } from '../routes/host-lifecycle.js';
+import { registerShortNameRoutes } from '../routes/short-names.js';
 import { registerOwnerClaimRoutes } from '../routes/owner-claims.js';
 import { registerHostKeyRoutes } from '../routes/host-keys.js';
 import { createHostAuthority } from '../host/authority.js';
@@ -240,6 +241,39 @@ async function account(name: string): Promise<{ userId: string; cookie: string }
   const email = `${name.toLowerCase().replaceAll(' ', '-')}@roles.test`;
   const userId = await seedCredentialAccount(pool, { name, email, password });
   return { userId, cookie: await signIn(email) };
+}
+
+let shortNameSequence = 0;
+/** A short name no earlier matrix cell has used. */
+function freshName(): string {
+  shortNameSequence += 1;
+  return `roles-name-${shortNameSequence}`;
+}
+
+async function setAlphaName(name: string): Promise<void> {
+  await ok(
+    {
+      method: 'PUT',
+      path: `/api/v1/host/communities/${alphaId}/short-name`,
+      body: { shortName: name },
+    },
+    'founder',
+    200
+  );
+}
+
+/** Give A a fresh current short name and return it. */
+async function nameAlpha(): Promise<string> {
+  const name = freshName();
+  await setAlphaName(name);
+  return name;
+}
+
+/** Give A a name, then rename it, and return the name that is now retired. */
+async function retiredAlphaName(): Promise<{ name: string }> {
+  const name = await nameAlpha();
+  await nameAlpha();
+  return { name };
 }
 
 /** Issue a live key straight into the database, as the offline command would. */
@@ -599,6 +633,7 @@ const actions: Action<unknown>[] = [
           'name',
           'ownerPresent',
           'settingsVersion',
+          'shortName',
         ]);
       }
     },
@@ -646,6 +681,7 @@ const actions: Action<unknown>[] = [
         'name',
         'ownerPresent',
         'settingsVersion',
+        'shortName',
       ]);
     },
   }),
@@ -830,6 +866,85 @@ const actions: Action<unknown>[] = [
       const row = await pool.query('SELECT lifecycle FROM communities WHERE id=$1', [id]);
       expect(row.rows).toEqual([{ lifecycle: 'held' }]);
     },
+  }),
+  define<{ name: string }>({
+    rule: 'Look up a community by its short name: anyone, signed in or not',
+    route: 'GET /community-names/:name',
+    allowed: ROLES,
+    status: 200,
+    prepare: async () => ({ name: await nameAlpha() }),
+    call: ({ name }) => ({ method: 'GET', path: `/api/v1/community-names/${name}` }),
+    effect: async (body) => {
+      expect(JSON.parse(body.toString('utf8')).communityId).toBe(alphaId);
+    },
+  }),
+  define({
+    rule: 'Check whether a short name is free: host operator only',
+    route: 'GET /host/short-names/:name',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({ method: 'GET', path: '/api/v1/host/short-names/free-name' }),
+    effect: async (body) => {
+      expect(JSON.parse(body.toString('utf8')).availability).toBe('available');
+    },
+  }),
+  define({
+    rule: "Read a community's short names: host operator only",
+    route: 'GET /host/communities/:id/short-names',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({ method: 'GET', path: `/api/v1/host/communities/${alphaId}/short-names` }),
+    effect: async (body) => {
+      expect(JSON.parse(body.toString('utf8')).communityId).toBe(alphaId);
+    },
+  }),
+  define<{ name: string }>({
+    rule: "Set a community's short name: host operator only",
+    route: 'PUT /host/communities/:id/short-name',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: async () => ({ name: freshName() }),
+    call: ({ name }) => ({
+      method: 'PUT',
+      path: `/api/v1/host/communities/${alphaId}/short-name`,
+      body: { shortName: name },
+    }),
+    effect: async (body, _role, { name }) => {
+      expect(JSON.parse(body.toString('utf8')).shortName).toBe(name);
+    },
+  }),
+  define<{ name: string }>({
+    rule: 'Release a retired short name: host operator only',
+    route: 'DELETE /host/communities/:id/short-names/:name',
+    allowed: HOST_ROLES,
+    status: 204,
+    prepare: retiredAlphaName,
+    call: ({ name }) => ({
+      method: 'DELETE',
+      path: `/api/v1/host/communities/${alphaId}/short-names/${name}`,
+    }),
+    effect: async (_body, _role, { name }) => {
+      expect(
+        (await pool.query('SELECT 1 FROM community_short_names WHERE short_name=$1', [name]))
+          .rowCount
+      ).toBe(0);
+    },
+  }),
+  define<{ name: string }>({
+    rule: 'Lift the cool-off on a released short name: host operator only',
+    route: 'DELETE /host/short-name-holds/:name',
+    allowed: HOST_ROLES,
+    status: 204,
+    prepare: async () => {
+      const { name } = await retiredAlphaName();
+      await ok(
+        { method: 'DELETE', path: `/api/v1/host/communities/${alphaId}/short-names/${name}` },
+        'founder',
+        204
+      );
+      return { name };
+    },
+    call: ({ name }) => ({ method: 'DELETE', path: `/api/v1/host/short-name-holds/${name}` }),
   }),
   define<{ key: string }>({
     rule: 'Create a pending_owner community: host operator yes, owner only if also host operator',
@@ -1843,6 +1958,7 @@ it('classifies every registered route, and puts every host and settings route in
   registerMembershipRoutes(modules, { pool, auth });
   registerHostLimitRoutes(modules, { pool, config, authority, now });
   registerHostLifecycleRoutes(modules, { pool, config, blobStore, authority, now });
+  registerShortNameRoutes(modules, { pool, config, authority, now, limitLookup: () => undefined });
   registerHostKeyRoutes(modules, { pool, auth, authority, now, confirmPassword: unused });
   registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });
   const administration = [

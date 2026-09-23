@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { transaction } from './data.js';
+import { releaseCommunityShortNames, type ShortNameHolds } from './host/short-names.js';
 import { BlobStoreError, reconcileTenantNamespace, type BlobStore } from './storage/index.js';
 
 const DELETE_BATCH = 25;
@@ -54,11 +55,18 @@ export async function prepareCommunityDeletionInventory(
   return (await countMissingDeletionInventory(pool, communityId)) === 0;
 }
 
-/** Delete one due tenant in bounded, restart-safe object and database phases. */
+/**
+ * Delete one due tenant in bounded, restart-safe object and database phases.
+ *
+ * `shortNameHolds` is how a deleted community's short names are held back from reuse. A
+ * community that has names is not finished without it, so no name is ever freed at once or
+ * left behind in clear text.
+ */
 export async function sweepCommunityDeletions(
   pool: Pool,
   blobStore: BlobStore,
-  blobBatchSize = DELETE_BATCH
+  blobBatchSize = DELETE_BATCH,
+  options: { shortNameHolds?: ShortNameHolds } = {}
 ): Promise<{ claimed: number; deletedBlobs: number; completed: number; failed: number }> {
   if (!Number.isInteger(blobBatchSize) || blobBatchSize < 1 || blobBatchSize > 100)
     throw new Error('Invalid community deletion batch size');
@@ -263,6 +271,18 @@ export async function sweepCommunityDeletions(
     await client.query('DELETE FROM community_deletion_jobs WHERE community_id=$1', [
       job.community_id,
     ]);
+    const named = await client.query('SELECT 1 FROM community_short_names WHERE community_id=$1', [
+      job.community_id,
+    ]);
+    if (named.rowCount) {
+      if (!options.shortNameHolds)
+        throw new Error('Short-name holds are required to delete a named community');
+      await releaseCommunityShortNames(client, job.community_id, {
+        hold: true,
+        holds: options.shortNameHolds,
+        at: new Date(),
+      });
+    }
     for (const table of [
       'member_limit_overrides',
       'community_limits',

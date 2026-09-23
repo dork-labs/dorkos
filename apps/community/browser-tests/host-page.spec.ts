@@ -71,7 +71,7 @@ test.beforeAll(async () => {
   const app = createCommunityApp({ config, pool });
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
   app.use('/assets/*', serveStatic({ root: staticRoot }));
-  for (const path of ['/', '/host', '/c/:communityId', '/c/:communityId/*'])
+  for (const path of ['/', '/host', '/c/:communityId', '/c/:communityId/*', '/:name', '/:name/*'])
     app.get(
       path,
       serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
@@ -388,6 +388,62 @@ test('saving limits leaves a file-space limit set through the API exactly as it 
     expect(stored.rows).toEqual([{ max_active_members: 50, bytes: '10000000' }]);
   } finally {
     await pool.query('DELETE FROM community_limits');
+    await context.close();
+  }
+});
+
+test('a community opens at its short address, and an old address moves to the new one', async ({
+  browser,
+}) => {
+  const communityId = (
+    await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='First Place'")
+  ).rows[0].id;
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    // The host names the community from its record.
+    await page.goto(`${baseUrl}/host`);
+    const record = page.getByRole('article', { name: 'First Place community' });
+    await record.getByText('Web address', { exact: true }).click();
+    const form = record.getByRole('form', { name: 'First Place web address' });
+    await form.getByLabel('Short name').fill('First-Place');
+    await form.getByRole('button', { name: 'Save address' }).click();
+    await expect(form).toContainText('Web address saved.');
+    await expect(record).toContainText('/first-place');
+    await shot(page, 'host-web-address');
+
+    await page.goto(`${baseUrl}/first-place`);
+    await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe('/first-place');
+    await page.goto(`${baseUrl}/first-place/settings`);
+    await expect(page.getByRole('heading', { name: 'Your space' })).toBeVisible();
+
+    // After a rename, the old address still opens the community and shows the new one.
+    await form.page().goto(`${baseUrl}/host`);
+    await record.getByText('Web address', { exact: true }).click();
+    await form.getByLabel('Short name').fill('first-place-two');
+    await form.getByRole('button', { name: 'Save address' }).click();
+    await expect(form).toContainText('/first-place');
+    await page.goto(`${baseUrl}/first-place`);
+    await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
+    await expect.poll(() => new URL(page.url()).pathname).toBe('/first-place-two');
+
+    // An address that leads nowhere says only that.
+    await page.goto(`${baseUrl}/nobody-here`);
+    await expect(page.getByText('No community at this address.')).toBeVisible();
+    // Server-minted links keep the UUID, never the name.
+    const invite = await context.request.post(
+      `${baseUrl}/api/v1/communities/${communityId}/invites`,
+      { headers: { origin: baseUrl }, data: { seats: 1 } }
+    );
+    expect(invite.status()).toBe(201);
+  } finally {
+    await pool.query('DELETE FROM community_short_names');
     await context.close();
   }
 });

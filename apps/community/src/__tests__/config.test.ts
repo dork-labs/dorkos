@@ -41,6 +41,22 @@ describe('community startup config', () => {
     expect(() => parseConfig({ ...valid, COMMUNITY_AGENTS_PER_OWNER: '101' })).toThrow();
   });
 
+  it('adds a host’s own reserved short names to the built-in list, in the same grammar', () => {
+    // Purpose: fails if a host addition is dropped, or a malformed one is accepted silently.
+    const config = parseConfig({ ...valid, COMMUNITY_RESERVED_SHORT_NAMES: ' Brand, our-team ' });
+    expect(config.reservedShortNames.has('brand')).toBe(true);
+    expect(config.reservedShortNames.has('our-team')).toBe(true);
+    expect(config.reservedShortNames.has('admin')).toBe(true);
+    expect(() => parseConfig({ ...valid, COMMUNITY_RESERVED_SHORT_NAMES: 'ok-name,x!' })).toThrow();
+    expect(parseConfig(valid).limits.shortNameCooloffDays).toBe(90);
+    expect(
+      parseConfig({ ...valid, COMMUNITY_SHORT_NAME_COOLOFF_DAYS: '0' }).limits.shortNameCooloffDays
+    ).toBe(0);
+    expect(() => parseConfig({ ...valid, COMMUNITY_SHORT_NAME_COOLOFF_DAYS: '366' })).toThrow();
+    expect(parseConfig(valid).limits.nameLookupsPerMinute).toBe(60);
+    expect(() => parseConfig({ ...valid, COMMUNITY_NAME_LOOKUPS_PER_MINUTE: '601' })).toThrow();
+  });
+
   it('requires at least a week of notice before a host may delete a held community', () => {
     // Purpose: fails if a host could configure a notice too short for an owner to export.
     expect(parseConfig(valid).limits.hostDeletionNoticeDays).toBe(14);

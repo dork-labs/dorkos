@@ -2,10 +2,12 @@ import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
+import { COMMUNITY_SHORT_NAME_PATTERN } from '@dorkos/shared/community-admin-wire';
 import { createCommunityApp } from './app.js';
 import { parseConfig } from './config.js';
 import { migrate } from './migrate.js';
 import { createSignalHandler, createStop } from './shutdown.js';
+import { shortNameHoldKey } from './host/short-names.js';
 import { createBlobStore } from './storage/index.js';
 import { sweepExpiredAttachments } from './routes/attachments.js';
 import { sweepExpiredExports } from './routes/exports.js';
@@ -52,6 +54,23 @@ app.get(
   '/c/:communityId/*',
   serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
 );
+// A community's short address, `/<name>` and anything under it, is the browser page too, but
+// only for a name the grammar allows and nothing reserved: every other path keeps its 404.
+const shortNamePage = serveStatic({
+  path: fileURLToPath(new URL('../dist/index.html', import.meta.url)),
+});
+const servesShortName = (name: string) =>
+  COMMUNITY_SHORT_NAME_PATTERN.test(name) && !config.reservedShortNames.has(name);
+app.get('/:name', (c, next) =>
+  servesShortName(c.req.param('name')) ? shortNamePage(c, next) : next()
+);
+app.get('/:name/*', (c, next) =>
+  servesShortName(c.req.param('name')) ? shortNamePage(c, next) : next()
+);
+const shortNameHolds = {
+  key: shortNameHoldKey(config.authSecret),
+  cooloffDays: config.limits.shortNameCooloffDays,
+};
 const server = serve({ fetch: app.fetch, port: config.port });
 const cleanup = setInterval(() => {
   void sweepExpiredAttachments(pool, blobStore).catch((error: unknown) => {
@@ -78,12 +97,14 @@ const cleanup = setInterval(() => {
       error instanceof Error ? error.name : 'unknown'
     );
   });
-  void sweepCommunityDeletions(pool, blobStore).catch((error: unknown) => {
-    console.error(
-      'Community deletion unavailable',
-      error instanceof Error ? error.name : 'unknown'
-    );
-  });
+  void sweepCommunityDeletions(pool, blobStore, undefined, { shortNameHolds }).catch(
+    (error: unknown) => {
+      console.error(
+        'Community deletion unavailable',
+        error instanceof Error ? error.name : 'unknown'
+      );
+    }
+  );
   void sweepCommunityDeletionTombstones(pool).catch((error: unknown) => {
     console.error(
       'Community deletion receipt cleanup unavailable',

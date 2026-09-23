@@ -8,7 +8,14 @@ import { SignedOutPanel } from './components/SignOut.js';
 import { returnToChooserWithNotice } from './components/CommunityChooser.js';
 import { rememberCommunity } from './remembered-community.js';
 import { ErasureBanner } from './components/Erasure.js';
-import { describeError, hostRequest, RequestError, request } from './api.js';
+import {
+  communityBasePath,
+  describeError,
+  hostRequest,
+  RequestError,
+  request,
+  shortNameBasePath,
+} from './api.js';
 import { readInviteFragment } from './invite-fragment.js';
 import { readPendingAdmission } from './admission.js';
 import {
@@ -43,7 +50,9 @@ export function CommunityApp() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // A DorkOS app opens `/c/<id>/settings[/<section>]` for invite, leave and
   // settings: those need this person's own sign-in, never the installation's.
-  const [settingsRoute] = useState(() => parseCommunitySettingsPath(window.location.pathname));
+  const [settingsRoute] = useState(() =>
+    parseCommunitySettingsPath(window.location.pathname, shortNameBasePath())
+  );
   const [settings, setSettings] = useState(settingsRoute !== null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -131,7 +140,7 @@ export function CommunityApp() {
         setCommunity(metadata);
         rememberCommunity(metadata.id);
         if (window.location.pathname === '/' || window.location.pathname === '/join')
-          window.history.replaceState(null, '', `/c/${metadata.id}`);
+          window.history.replaceState(null, '', communityBasePath(metadata.id));
         const joinPath = /\/join$/u.test(window.location.pathname);
         if (inviteTokenRef.current && joinPath) {
           setMe(null);
@@ -169,7 +178,7 @@ export function CommunityApp() {
           setMe(current);
           setUnadmitted(false);
           // Joined: the join URL has nothing left to resume, so a later reload enters directly.
-          if (joinPath) window.history.replaceState(null, '', `/c/${metadata.id}`);
+          if (joinPath) window.history.replaceState(null, '', communityBasePath(metadata.id));
           await refreshChannels();
         } catch (cause) {
           if (!active) return;
@@ -296,8 +305,8 @@ export function CommunityApp() {
       />
     );
   const leaveSettingsPath = () => {
-    if (community && parseCommunitySettingsPath(window.location.pathname))
-      window.history.replaceState(null, '', `/c/${community.id}`);
+    if (community && parseCommunitySettingsPath(window.location.pathname, shortNameBasePath()))
+      window.history.replaceState(null, '', communityBasePath(community.id));
   };
   const choose = (id: string) => {
     setSelectedId(id);
