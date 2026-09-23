@@ -60,7 +60,8 @@ export function AdapterCardHeader({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <Switch checked={instance.enabled} onCheckedChange={onToggle} />
+          {/* Named after the connection, so it is announced as "Main Telegram, switch, on". */}
+          <Switch aria-label={primaryName} checked={instance.enabled} onCheckedChange={onToggle} />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

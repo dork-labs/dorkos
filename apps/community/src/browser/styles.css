@@ -5,7 +5,8 @@
   --panel: #fffefa;
   --panel-alt: #f0eee8;
   --ink: #202522;
-  --muted: #67716b;
+  /* 4.5:1 or better on every light surface, including the panel-alt notice fill. */
+  --muted: #5f6963;
   --line: #d9ded6;
   --accent: #276c51;
   --accent-hover: #1e5842;
@@ -72,8 +73,11 @@ button[aria-disabled='true'] {
   cursor: not-allowed;
   background: var(--panel-alt);
 }
+/* Underlined, so a link inside muted text is not told apart by colour alone. */
 a {
   color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
 }
 :focus-visible {
   outline: 3px solid var(--accent);
@@ -506,6 +510,16 @@ p {
   }
   .drawer {
     width: 100%;
+  }
+  /* Every control is at least a 44px touch target on a phone. */
+  .button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .field input,
+  .field textarea,
+  .field select {
+    min-height: 44px;
   }
 }
 
