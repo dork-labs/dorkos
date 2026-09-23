@@ -244,6 +244,11 @@ vi.mock('../../services/rooms/index.js', () => ({
 
 import { createRemoteCommunitiesRouter } from '../remote-communities.js';
 import { RemoteConnectionAuthorizationError } from '../../services/communities/remote/connection-store.js';
+import {
+  PinnedHttpError,
+  PinnedOriginError,
+} from '../../services/communities/remote/pinned-origin.js';
+import { CommunityRoomNotFoundError } from '@dorkos/shared/community-adapter';
 
 function app() {
   const instance = express();
@@ -668,6 +673,63 @@ describe('qualified remote community writes and live projections', () => {
     expect(events.status).toBe(200);
     expect(events.text.match(/"id":"agent-wire-a"/g)).toHaveLength(1);
     expect(events.text).toContain('"originIdempotencyKey":"wire-owned-key"');
+  });
+
+  it('passes the agent limit through as a refusal, not an outage', async () => {
+    fixture.adapter.recoverAgent.mockRejectedValueOnce(new PinnedHttpError(429, 'RATE_LIMITED'));
+    const response = await request(testServer)
+      .post(`/api/communities/${fixture.ref}/agents/mesh-manifest-a/enroll`)
+      .send({});
+    expect(response.status).toBe(429);
+    expect(response.body).toEqual({
+      code: 'COMMUNITY_LIMIT_REACHED',
+      error: 'You’ve reached this community’s limit on active agents. Remove one to add another.',
+    });
+  });
+
+  it('answers a private channel the caller has not joined exactly like a missing one', async () => {
+    const entries = `/api/communities/${fixture.ref}/rooms/room-hidden/entries`;
+    fixture.adapter.listEntriesWithThreadRoot.mockRejectedValueOnce(
+      new CommunityRoomNotFoundError(fixture.ref, 'room-hidden')
+    );
+    const hidden = await request(testServer).get(entries);
+    fixture.adapter.listEntriesWithThreadRoot.mockRejectedValueOnce(
+      new CommunityRoomNotFoundError(fixture.ref, 'room-missing')
+    );
+    const missing = await request(testServer).get(
+      `/api/communities/${fixture.ref}/rooms/room-missing/entries`
+    );
+    expect(hidden.status).toBe(404);
+    expect(hidden.body).toEqual(missing.body);
+    expect(hidden.body).toEqual({
+      code: 'COMMUNITY_NOT_FOUND',
+      error: 'That isn’t available in this community.',
+    });
+  });
+
+  it('keeps 502 for a Community that failed or could not be reached', async () => {
+    for (const error of [new PinnedHttpError(500), new PinnedOriginError('REMOTE_UNAVAILABLE')]) {
+      fixture.adapter.postEntry.mockRejectedValueOnce(error);
+      const response = await request(testServer)
+        .post(`/api/communities/${fixture.ref}/rooms/room-a/entries`)
+        .send({ text: 'hello', idempotencyKey: 'outage-key' });
+      expect(response.status).toBe(502);
+      expect(response.body).toEqual({ error: 'Community unavailable.' });
+    }
+  });
+
+  it('passes a read-only community through with its own reason', async () => {
+    fixture.adapter.postEntry.mockRejectedValueOnce(
+      new PinnedHttpError(423, 'COMMUNITY_DELETION_PENDING')
+    );
+    const response = await request(testServer)
+      .post(`/api/communities/${fixture.ref}/rooms/room-a/entries`)
+      .send({ text: 'hello', idempotencyKey: 'read-only-key' });
+    expect(response.status).toBe(423);
+    expect(response.body).toEqual({
+      code: 'COMMUNITY_READ_ONLY',
+      error: 'This community is being deleted.',
+    });
   });
 
   it('enrolls the browser Mesh manifest id through trusted server-side author resolution', async () => {

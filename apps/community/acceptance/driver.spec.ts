@@ -84,7 +84,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       const inviteUrl = await pageA.getByLabel('One-time invite link').inputValue();
       await pageMemberA.goto(inviteUrl);
       await pageMemberA.getByRole('button', { name: 'Continue' }).click();
-      await pageMemberA.getByRole('button', { name: 'Create account' }).click();
+      await pageMemberA.getByRole('button', { name: 'Create an account on this host' }).click();
       await pageMemberA.getByLabel('Your name').fill('Casey Member');
       await pageMemberA.getByLabel('Email').fill('casey@acceptance.test');
       await pageMemberA.getByLabel('Password').fill('acceptance-password');

@@ -5911,6 +5911,88 @@
       ]
     },
     {
+      "id": "260923-121150",
+      "slug": "host-api-keys-are-scoped-host-credentials",
+      "title": "Host API keys are scoped host credentials that never reach community content",
+      "status": "accepted",
+      "created": "2026-09-23",
+      "extractedFrom": "community-host-operator-api",
+      "specSlug": "community-host-operator-api",
+      "supersedes": null,
+      "affects": [
+        "apps/community/src/routes/host.ts",
+        "apps/community/src/data.ts",
+        "apps/community/src/schema.ts",
+        "packages/shared/src/community-admin-wire.ts"
+      ]
+    },
+    {
+      "id": "260923-121151",
+      "slug": "host-set-community-limits-are-caps-with-typed-errors",
+      "title": "Host-set community limits are caps with typed errors, and usage exposes only enforcement aggregates",
+      "status": "accepted",
+      "created": "2026-09-23",
+      "extractedFrom": "community-host-operator-api",
+      "specSlug": "community-host-operator-api",
+      "supersedes": null,
+      "affects": [
+        "apps/community/src/routes/agents.ts",
+        "apps/community/src/routes/invites.ts",
+        "apps/community/src/routes/attachments.ts",
+        "apps/community/src/storage/managed-blobs.ts",
+        "apps/community/src/config.ts",
+        "packages/shared/src/community-wire.ts"
+      ]
+    },
+    {
+      "id": "260923-121152",
+      "slug": "short-names-are-a-mutable-path-alias",
+      "title": "Short names are a mutable path alias, never identity",
+      "status": "accepted",
+      "created": "2026-09-23",
+      "extractedFrom": "community-host-operator-api",
+      "specSlug": "community-host-operator-api",
+      "supersedes": null,
+      "amends": ["260920-192429"],
+      "affects": [
+        "apps/community/src/main.ts",
+        "apps/community/src/browser/BrowserRoot.tsx",
+        "apps/server/src/services/communities/remote/pinned-origin.ts"
+      ]
+    },
+    {
+      "id": "260923-121153",
+      "slug": "import-restores-an-owner-export-into-a-new-community",
+      "title": "Import restores an owner export into a new community with derived IDs and historical members",
+      "status": "accepted",
+      "created": "2026-09-23",
+      "extractedFrom": "community-host-operator-api",
+      "specSlug": "community-host-operator-api",
+      "supersedes": null,
+      "affects": [
+        "apps/community/src/routes/exports.ts",
+        "apps/community/src/schema.ts",
+        "apps/community/src/routes/host.ts"
+      ]
+    },
+    {
+      "id": "260923-121712",
+      "slug": "host-hold-and-notice-gated-host-deletion",
+      "title": "A host hold stops growth without blocking export, and host-started deletion follows only a noticed hold",
+      "status": "accepted",
+      "created": "2026-09-23",
+      "extractedFrom": "community-host-operator-api",
+      "specSlug": "community-host-operator-api",
+      "supersedes": null,
+      "amends": ["260920-201101"],
+      "affects": [
+        "apps/community/src/routes/host.ts",
+        "apps/community/src/tenant-context.ts",
+        "apps/community/src/data.ts",
+        "apps/community/src/deletion-worker.ts"
+      ]
+    },
+    {
       "id": "260923-134614",
       "slug": "erasure-tombstones-history-in-place",
       "title": "Erasure tombstones a member's history in place and deletes everything else",

@@ -73,6 +73,14 @@ dorkos uninstall code-review-suite
 
 There's no CLI command that lists everything you've installed. For that, open the **Installed** panel in DorkOS (see the other tab).
 
+`dorkos update` tells you one of three things about each package:
+
+- **A newer version is available.** For example, `flow  0.7.2 → 0.7.3  (dorkos-community)`. Run the command again with `--apply` to install it.
+- **It's up to date.** For example, `flow  up to date (0.7.3)`.
+- **It couldn't be checked, and why.** For example, `flow  could not check: couldn't reach github.com` when you're offline. DorkOS never calls a package up to date when it couldn't check it.
+
+Leave out the package name to check every package you have, wherever it's installed. A problem with one package doesn't stop the rest.
+
 </Step>
 
 </Steps>

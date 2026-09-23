@@ -31,7 +31,7 @@ import path from 'node:path';
 import { hardenedGitEnv } from '../../../lib/git-safety.js';
 import { assertSafeGitRemote } from '../source-url-policy.js';
 import type { Logger } from '@dorkos/shared/logger';
-import type { ResolvedSourceDescriptor } from '@dorkos/marketplace';
+import { sourceKeyOf, type ResolvedSourceDescriptor } from '@dorkos/marketplace';
 import type { FetchedPackage, FetchPackageOptions, FetcherDeps } from '../package-fetcher.js';
 
 /**
@@ -64,8 +64,11 @@ export async function gitSubdirResolver(
     throw err;
   }
 
-  const ref = resolved.sha ?? resolved.ref ?? 'main';
-  const commitSha = await deps.resolveCommitSha(resolved.cloneUrl, ref);
+  // The key owns the clone URL and the pin precedence (`sha > ref > 'main'`),
+  // so the commit recorded here and the one the update check looks up later
+  // are read from the same place.
+  const key = sourceKeyOf(resolved);
+  const commitSha = await deps.resolveCommitSha(key.cloneUrl, key.ref);
 
   if (!opts.force) {
     const cached = await deps.cache.getPackage(opts.packageName, commitSha);
@@ -83,7 +86,7 @@ export async function gitSubdirResolver(
   // of the same package (e.g. a UI preview + install) never both clone into
   // (and corrupt) the same directory; the second reuses the first's result.
   const destDir = await deps.cache.materializePackage(opts.packageName, commitSha, (tempDir) =>
-    cloneSubdirWithFallback(resolved, ref, tempDir, deps)
+    cloneSubdirWithFallback(resolved, key.ref, tempDir, deps)
   );
 
   return {

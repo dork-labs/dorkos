@@ -2,7 +2,13 @@ import type { Pool, PoolClient } from 'pg';
 import type { Context } from 'hono';
 import type { CommunityAuth } from './auth.js';
 import { ApiError } from './http.js';
-import { hashSecret, readCookie, verifyValue } from './security.js';
+import {
+  bearerCredential,
+  hashSecret,
+  isHostApiKeyBearer,
+  readCookie,
+  verifyValue,
+} from './security.js';
 import type { CommunityConfig } from './config.js';
 import { resolveCommunityContext, type CommunityContext } from './tenant-context.js';
 
@@ -47,7 +53,11 @@ function archivedReadAllowed(
 
 function bearer(c: Context): string | null {
   const header = c.req.header('authorization');
-  return header?.startsWith('Bearer ') ? header.slice(7) : null;
+  // A host API key is never a member credential, whatever its hash would match.
+  if (isHostApiKeyBearer(header)) {
+    throw new ApiError(401, 'UNAUTHENTICATED', 'Host API keys cannot reach community content.');
+  }
+  return bearerCredential(header);
 }
 
 /** Lock the selected community and refuse member traffic outside its active lifecycle. */
@@ -99,6 +109,52 @@ export async function requireConnectionGrant(
     tokenHash,
     lifecycle: tenant.lifecycle === 'archived' ? ('archived' as const) : ('active' as const),
   };
+}
+
+/**
+ * Revoke the personal grant whose bearer made this request.
+ *
+ * This is how a local install disconnects itself: it holds only its own
+ * bearer, never the person's browser session, so the bearer is the proof. It
+ * works in every lifecycle a person can still revoke from (a suspended or
+ * closing community must still let an install go) and does not require the
+ * grant's scopes or a live membership, because ending access is always safe.
+ * A bearer whose grant is already revoked succeeds again, so a retry after a
+ * lost response is harmless; a bearer that matches no grant is refused.
+ *
+ * @param c - The request carrying the install's bearer.
+ * @param pool - Database pool.
+ */
+export async function revokeCallingConnectionGrant(c: Context, pool: Pool): Promise<void> {
+  const token = bearer(c);
+  if (!token) throw new ApiError(401, 'UNAUTHENTICATED', 'A connected local install is required.');
+  const tenant = await resolveCommunityContext(c, pool, {
+    allowSuspended: true,
+    allowDeletionPending: true,
+  });
+  const tokenHash = hashSecret(token);
+  await transaction(pool, async (client) => {
+    const revoked = await client.query<{ id: string; member_id: string }>(
+      `UPDATE connection_grants SET revoked_at=now()
+       WHERE token_hash=$1 AND community_id=$2 AND revoked_at IS NULL
+       RETURNING id,member_id`,
+      [tokenHash, tenant.communityId]
+    );
+    const grant = revoked.rows[0];
+    if (grant) {
+      await client.query(
+        'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
+        [tenant.communityId, grant.member_id, 'grant.revoke', grant.id]
+      );
+      return;
+    }
+    const known = await client.query(
+      'SELECT 1 FROM connection_grants WHERE token_hash=$1 AND community_id=$2',
+      [tokenHash, tenant.communityId]
+    );
+    if (!known.rowCount)
+      throw new ApiError(401, 'UNAUTHENTICATED', 'This connection is unavailable.');
+  });
 }
 
 /** Recheck a personal grant on the mutation connection after it waited on a channel lock. */
@@ -387,21 +443,17 @@ export async function bootstrapGrant(
   return result.rows[0].id;
 }
 
-/** Assert that a host account currently holds operational authority. */
-export async function requireHostOperator(
-  c: Context,
+/** Confirm the signed-in account's password for a sensitive action. */
+export async function reauthenticate(
   auth: CommunityAuth,
-  pool: Pool
-): Promise<{ userId: string; name: string }> {
-  const user = await requireSessionUser(c, auth);
-  const operator = await pool.query(
-    'SELECT 1 FROM host_operators WHERE user_id=$1 AND revoked_at IS NULL',
-    [user.id]
-  );
-  if (!operator.rowCount) {
-    throw new ApiError(403, 'FORBIDDEN', 'Host operator access is required.');
+  request: Request,
+  password: string
+): Promise<void> {
+  try {
+    await auth.api.verifyPassword({ headers: request.headers, body: { password } });
+  } catch {
+    throw new ApiError(403, 'FORBIDDEN', 'Reauthentication failed.');
   }
-  return { userId: user.id, name: user.name };
 }
 
 /** Lock a channel before a post or membership change and hide unauthorized private rooms. */

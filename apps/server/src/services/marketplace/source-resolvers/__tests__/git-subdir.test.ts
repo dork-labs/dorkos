@@ -25,6 +25,7 @@ vi.mock('node:fs/promises', () => ({
 
 import { spawn } from 'node:child_process';
 import { readdir, rm } from 'node:fs/promises';
+import { sourceKeyOf, type ResolvedSourceDescriptor } from '@dorkos/marketplace';
 import { gitSubdirResolver } from '../git-subdir.js';
 import type { FetcherDeps, FetchPackageOptions } from '../../package-fetcher.js';
 
@@ -177,6 +178,26 @@ describe('gitSubdirResolver', () => {
 
     const setCall = vi.mocked(spawn).mock.calls[2]?.[1] as string[];
     expect(setCall.indexOf('--end-of-options')).toBe(setCall.indexOf('--stdin') - 1);
+  });
+
+  it('looks up and checks out exactly the URL and ref sourceKeyOf names', async () => {
+    // Purpose: the install records sourceKeyOf's key and the update check
+    // compares against it. A resolver with its own default ref would record a
+    // commit read from a different place than the one later looked up.
+    vi.mocked(spawn).mockImplementation(() => makeFakeChild(0));
+    const deps = buildDeps();
+    const descriptor = {
+      type: 'git-subdir',
+      cloneUrl: 'https://github.com/foo/monorepo.git',
+      subpath: 'plugins/qa',
+    } satisfies ResolvedSourceDescriptor;
+
+    await gitSubdirResolver(descriptor, buildOpts(), deps);
+
+    const key = sourceKeyOf(descriptor)!;
+    expect(deps.resolveCommitSha).toHaveBeenCalledWith(key.cloneUrl, key.ref);
+    const argv = vi.mocked(spawn).mock.calls.map((c) => c[1] as string[]);
+    expect(argv[3]).toEqual(['checkout', '--end-of-options', key.ref]);
   });
 
   it('short-circuits with cache hit before any spawn call', async () => {

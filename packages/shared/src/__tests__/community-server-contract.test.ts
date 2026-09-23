@@ -19,6 +19,7 @@ import {
   CommunityWireErrorSchema,
   CommunityWireInviteListResponseSchema,
   CommunityWireInvitePreflightResponseSchema,
+  CommunityWireInvitePendingResponseSchema,
   CommunityWirePairingPollRequestSchema,
   CommunityWirePairingCancelRequestSchema,
   CommunityWirePairingApproveResponseSchema,
@@ -294,6 +295,23 @@ describe('community server port additions', () => {
         channelName: null,
       }).granted
     ).toBe(true);
+    const pending = {
+      expiresAt: '2026-09-17T00:00:00.000Z',
+      communityName: 'Builders',
+      inviterName: 'Owner',
+      channelName: null,
+      account: { membership: 'inactive', boundToAnotherAccount: false },
+    };
+    expect(CommunityWireInvitePendingResponseSchema.parse(pending).account?.membership).toBe(
+      'inactive'
+    );
+    expect(
+      CommunityWireInvitePendingResponseSchema.parse({ ...pending, account: null }).account
+    ).toBe(null);
+    // The resumed review never carries the invitation or its admission value back to the page.
+    expect(
+      CommunityWireInvitePendingResponseSchema.safeParse({ ...pending, token: 'secret' }).success
+    ).toBe(false);
     expect(
       CommunityWirePairingPollRequestSchema.parse({ pairingId: 'pair-1', verifier: 'verifier-1' })
     ).toEqual({ pairingId: 'pair-1', verifier: 'verifier-1' });

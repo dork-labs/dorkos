@@ -253,6 +253,48 @@ describe('PackageResolver', () => {
     });
   });
 
+  describe("the entry's own version (entryVersion)", () => {
+    /** A cached marketplace listing `pkg`, with `version` on its entry when given. */
+    function cachedWithVersion(name: string, version?: string): CachedMarketplace {
+      const cached = buildCachedMarketplace(name, ['pkg']);
+      if (version !== undefined) cached.json.plugins[0] = { ...cached.json.plugins[0], version };
+      return cached;
+    }
+
+    it('carries the entry version on an explicit-marketplace resolution', async () => {
+      // Purpose: Claude Code's step 2 needs the entry's version, read where the
+      // entry is read; without it the install could not record it.
+      const resolver = new PackageResolver(
+        buildSourceManagerStub({ get: new Map([['mp', buildSource('mp')]]) }),
+        buildCacheStub(new Map([['mp', cachedWithVersion('mp', '3.0.0')]]))
+      );
+      expect((await resolver.resolve('pkg@mp')).entryVersion).toBe('3.0.0');
+    });
+
+    it('carries the entry version on a bare-name resolution', async () => {
+      // Purpose: bare-name installs go through a different branch; it must
+      // carry the field too.
+      const resolver = new PackageResolver(
+        buildSourceManagerStub({ list: [buildSource('mp')] }),
+        buildCacheStub(new Map([['mp', cachedWithVersion('mp', '3.1.0')]]))
+      );
+      expect((await resolver.resolve('pkg')).entryVersion).toBe('3.1.0');
+    });
+
+    it('leaves it undefined when the entry sets no version', async () => {
+      // Purpose: our own marketplace sets none; nothing may be invented.
+      const resolver = new PackageResolver(
+        buildSourceManagerStub({
+          list: [buildSource('mp')],
+          get: new Map([['mp', buildSource('mp')]]),
+        }),
+        buildCacheStub(new Map([['mp', cachedWithVersion('mp')]]))
+      );
+      expect((await resolver.resolve('pkg@mp')).entryVersion).toBeUndefined();
+      expect((await resolver.resolve('pkg')).entryVersion).toBeUndefined();
+    });
+  });
+
   describe('bare name resolution', () => {
     it('returns the single hit when only one enabled marketplace contains the package', async () => {
       const sources = buildSourceManagerStub({

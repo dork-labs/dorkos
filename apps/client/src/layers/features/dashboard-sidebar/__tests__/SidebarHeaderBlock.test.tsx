@@ -98,7 +98,7 @@ vi.mock('@/layers/shared/lib', async (importOriginal) => {
   return { ...actual, openExternalLink: (href: string) => mockOpenExternalLink(href) };
 });
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
@@ -128,7 +128,11 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
   };
 });
 const mockEndConnection = vi.fn();
-vi.mock('@/layers/entities/community', () => ({
+vi.mock('@/layers/entities/community', async (importOriginal) => ({
+  // The real wording, so the warning below is checked against what people see.
+  unconfirmedDisconnectMessage: (
+    await importOriginal<typeof import('@/layers/entities/community')>()
+  ).unconfirmedDisconnectMessage,
   useCommunityConnections: () => ({ data: mockConnections }),
   useCommunityNavigation: () => ({ data: { ownerKey: 'owner-a', order: mockCommunityOrder } }),
   useMoveCommunityNavigation: () => ({ mutate: mockMoveCommunityNavigation }),
@@ -1240,9 +1244,22 @@ describe('the context switcher’s lifecycle actions', () => {
       expect.anything()
     );
     // The server confirmed: route away from the Community that is gone.
-    act(() => mockEndConnection.mock.calls[0]![1].onSuccess());
+    act(() => mockEndConnection.mock.calls[0]![1].onSuccess({ remoteRevoked: true }));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/', replace: true });
+    expect(toast.success).toHaveBeenCalledWith('Alpha is disconnected.');
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+  });
+
+  it('warns when this DorkOS disconnected but the Community could not be told', async () => {
+    mockConnections = [alpha()];
+    const manage = await openManageAlpha();
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+    act(() => mockEndConnection.mock.calls[0]![1].onSuccess({ remoteRevoked: false }));
+    expect(toast.warning).toHaveBeenCalledWith(
+      'Alpha is disconnected here, but it couldn’t be reached. To finish, remove this DorkOS under Local connections on Alpha.'
+    );
+    expect(toast.success).not.toHaveBeenCalledWith('Alpha is disconnected.');
   });
 
   it('stays put after disconnecting a Community that was not on screen', async () => {
@@ -1251,7 +1268,7 @@ describe('the context switcher’s lifecycle actions', () => {
     const manage = await openManageAlpha();
     fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
-    act(() => mockEndConnection.mock.calls[0]![1].onSuccess());
+    act(() => mockEndConnection.mock.calls[0]![1].onSuccess({ remoteRevoked: true }));
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 

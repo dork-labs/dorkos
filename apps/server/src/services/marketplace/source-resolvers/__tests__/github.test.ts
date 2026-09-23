@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { githubResolver } from '../github.js';
+import { sourceKeyOf, type ResolvedSourceDescriptor } from '@dorkos/marketplace';
 import type { FetcherDeps, FetchedPackage, FetchPackageOptions } from '../../package-fetcher.js';
 
 function buildDeps(): FetcherDeps & {
@@ -137,5 +138,23 @@ describe('githubResolver', () => {
     );
 
     expect(deps.cloneRepository).toHaveBeenCalledWith(expect.objectContaining({ force: true }));
+  });
+
+  it('clones exactly the URL and ref sourceKeyOf names for the same descriptor', async () => {
+    // Purpose: the update check compares against sourceKeyOf; if the resolver
+    // computed its own URL or default ref, an install and a later lookup could
+    // describe different places and the commit short-circuit would lie.
+    const descriptor = {
+      type: 'github',
+      repo: 'dorkos/qa-plugin',
+      cloneUrl: 'https://github.com/dorkos/qa-plugin.git',
+      ref: 'develop',
+    } satisfies ResolvedSourceDescriptor;
+    await githubResolver(descriptor, buildOpts(), deps);
+
+    const key = sourceKeyOf(descriptor)!;
+    expect(deps.cloneRepository).toHaveBeenCalledWith(
+      expect.objectContaining({ cloneUrl: key.cloneUrl, ref: key.ref })
+    );
   });
 });

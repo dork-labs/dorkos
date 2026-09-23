@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolvePluginSource, ResolvePluginSourceError } from '../source-resolver.js';
+import { resolvePluginSource, ResolvePluginSourceError, sourceKeyOf } from '../source-resolver.js';
 
 describe('resolvePluginSource — relative-path source', () => {
   it('prepends pluginRoot to a bare name', () => {
@@ -184,5 +184,55 @@ describe('resolvePluginSource — object-form sources ignore pluginRoot', () => 
       version: '1.2.3',
       registry: undefined,
     });
+  });
+});
+
+describe('sourceKeyOf', () => {
+  it("gives a github source resolvePluginSource's .git clone URL and the 'main' default ref", () => {
+    // Purpose: install and the update check must name the same place; the
+    // github form's URL is built once, in resolvePluginSource, with `.git`.
+    const descriptor = resolvePluginSource({ source: 'github', repo: 'o/r' }, {});
+    expect(sourceKeyOf(descriptor)).toEqual({
+      cloneUrl: 'https://github.com/o/r.git',
+      subpath: '',
+      ref: 'main',
+    });
+  });
+
+  it('lets a pinned sha beat a ref', () => {
+    // Purpose: a pinned package is fetched at its sha, so that is its ref.
+    const sha = 'c'.repeat(40);
+    const descriptor = resolvePluginSource(
+      { source: 'url', url: 'https://example.com/r.git', ref: 'dev', sha },
+      {}
+    );
+    expect(sourceKeyOf(descriptor)).toEqual({
+      cloneUrl: 'https://example.com/r.git',
+      subpath: '',
+      ref: sha,
+    });
+  });
+
+  it('keeps the ref and subpath of a git-subdir source', () => {
+    // Purpose: two packages from one monorepo differ only by subpath; the key
+    // must tell them apart.
+    const descriptor = resolvePluginSource(
+      { source: 'git-subdir', url: 'https://example.com/mono.git', path: 'plugins/a', ref: 'v2' },
+      {}
+    );
+    expect(sourceKeyOf(descriptor)).toEqual({
+      cloneUrl: 'https://example.com/mono.git',
+      subpath: 'plugins/a',
+      ref: 'v2',
+    });
+  });
+
+  it('returns undefined for sources with no clone URL', () => {
+    // Purpose: a file:// relative path and an npm package have no git place to
+    // compare, so no key may be invented for them.
+    expect(
+      sourceKeyOf(resolvePluginSource('./plugins/a', { marketplaceRoot: '/mp' }))
+    ).toBeUndefined();
+    expect(sourceKeyOf(resolvePluginSource({ source: 'npm', package: 'x' }, {}))).toBeUndefined();
   });
 });

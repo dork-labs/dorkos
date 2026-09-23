@@ -12,12 +12,9 @@
  */
 import path from 'node:path';
 import { access } from 'node:fs/promises';
-import type { ResolvedSourceDescriptor } from '@dorkos/marketplace';
+import { RELATIVE_PATH_SENTINEL_SHA, type ResolvedSourceDescriptor } from '@dorkos/marketplace';
 import type { FetchedPackage, FetchPackageOptions } from '../package-fetcher.js';
 import { PackageNotFoundError } from '../errors.js';
-
-/** Sentinel commit SHA used for relative-path resolutions. */
-export const RELATIVE_PATH_SENTINEL_SHA = 'relative-path';
 
 /**
  * Resolve a relative-path plugin source against an already-cloned

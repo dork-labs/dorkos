@@ -191,13 +191,12 @@ describe('local connection route authority and public projection', () => {
           .set('x-test-author', 'author-b')
       ).status
     ).toBe(403);
-    expect(
-      (
-        await request(server)
-          .delete(`/api/community-connections/${ref}`)
-          .set('x-test-author', 'author-a')
-      ).status
-    ).toBe(204);
+    const disconnected = await request(server)
+      .delete(`/api/community-connections/${ref}`)
+      .set('x-test-author', 'author-a');
+    expect(disconnected.status).toBe(200);
+    // A pending request never received a grant, so nothing is left on the Community.
+    expect(disconnected.body).toEqual({ remoteRevoked: true });
     expect(
       (await request(server).get('/api/community-connections').set('x-test-author', 'author-a'))
         .body.connections

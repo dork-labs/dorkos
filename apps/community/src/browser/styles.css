@@ -60,6 +60,18 @@ button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
+/* One membership row: name and detail on the left, its state on the right. */
+.button.community-choice {
+  width: 100%;
+  justify-content: space-between;
+  text-align: left;
+}
+/* Still focusable and announced, so a keyboard or screen-reader user can learn why it is
+   closed; the status text, not the fill, carries the meaning. */
+button[aria-disabled='true'] {
+  cursor: not-allowed;
+  background: var(--panel-alt);
+}
 a {
   color: var(--accent);
 }

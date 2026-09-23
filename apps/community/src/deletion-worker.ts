@@ -258,6 +258,8 @@ export async function sweepCommunityDeletions(
       job.community_id,
     ]);
     for (const table of [
+      'member_limit_overrides',
+      'community_limits',
       'entry_mentions',
       'export_archive_channels',
       'read_cursors',

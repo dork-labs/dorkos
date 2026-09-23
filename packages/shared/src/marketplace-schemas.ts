@@ -521,16 +521,36 @@ export interface UpdateOptions {
 }
 
 /**
+ * Where a package's version came from, in Claude Code's order: the version
+ * the package declares, its marketplace entry's, or the commit it was fetched
+ * at. Declared here as a literal union because this package does not depend
+ * on `@dorkos/marketplace`, whose `VersionSource` is its twin.
+ */
+export type UpdateVersionSource = 'package' | 'index' | 'commit';
+
+/**
  * A single comparison result for one installed package.
  *
  * Mirrors `UpdateCheckResult` in `apps/server/src/services/marketplace/flows/update.ts`.
  */
 export interface UpdateCheckResult {
   packageName: string;
+  /** The installed version, or the full commit SHA when its source is `'commit'`. */
   installedVersion: string;
+  /** What installing now would give; `''` when `status === 'unknown'`. */
   latestVersion: string;
+  /** Always `status === 'update-available'`. */
   hasUpdate: boolean;
+  /** The marketplace the package was checked against; `''` for direct installs and unknowns. */
   marketplace: string;
+  /** `unknown` means the check could not answer; `note` says why. Never read as current. */
+  status: 'current' | 'update-available' | 'unknown';
+  /** Which step of Claude Code's chain the installed version came from. */
+  installedVersionSource?: UpdateVersionSource;
+  /** Which step of Claude Code's chain the latest version came from. */
+  latestVersionSource?: UpdateVersionSource;
+  /** Why a check is `unknown`, or a caveat on a known answer (a rollback, a default branch). */
+  note?: string;
 }
 
 /**
