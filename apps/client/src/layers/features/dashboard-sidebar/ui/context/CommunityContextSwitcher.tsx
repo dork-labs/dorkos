@@ -9,7 +9,7 @@ import {
   useOpenConnections,
   useTransport,
 } from '@/layers/shared/model';
-import { getCommunityAuthority, isCommunityAuthorityCurrent } from '@/layers/shared/lib';
+import { cn, getCommunityAuthority, isCommunityAuthorityCurrent } from '@/layers/shared/lib';
 import {
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuContent,
@@ -22,6 +22,7 @@ import {
   Input,
   SidebarMenuNodes,
   Skeleton,
+  TOUCH_TARGET_MIN_H,
   useGuardedMenuNodes,
 } from '@/layers/shared/ui';
 import {
@@ -367,23 +368,25 @@ export function CommunityContextSwitcher({
                 }
                 className={pendingRef !== null ? 'opacity-50' : undefined}
               >
-                <span className="min-w-0 flex-1 truncate">{connection.label}</span>
-                {mentions > 0 && (
-                  <span
-                    className="bg-primary text-primary-foreground rounded-full px-1.5 text-xs"
-                    aria-label={`${mentions} ${mentions === 1 ? 'mention' : 'mentions'}`}
-                  >
-                    @{mentions}
-                  </span>
-                )}
-                {otherUnread > 0 && (
-                  <span
-                    className="bg-muted text-muted-foreground rounded-full px-1.5 text-xs"
-                    aria-label={`${otherUnread} other unread`}
-                  >
-                    {otherUnread}
-                  </span>
-                )}
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="min-w-0 truncate">{connection.label}</span>
+                  {mentions > 0 && (
+                    <span
+                      className="bg-primary text-primary-foreground shrink-0 rounded-full px-1.5 text-xs"
+                      aria-label={`${mentions} ${mentions === 1 ? 'mention' : 'mentions'}`}
+                    >
+                      @{mentions}
+                    </span>
+                  )}
+                  {otherUnread > 0 && (
+                    <span
+                      className="bg-muted text-muted-foreground shrink-0 rounded-full px-1.5 text-xs"
+                      aria-label={`${otherUnread} other unread`}
+                    >
+                      {otherUnread}
+                    </span>
+                  )}
+                </span>
               </ResponsiveDropdownMenuRadioItem>
             );
           })}
@@ -436,7 +439,10 @@ export function MobileCommunityContextSwitcher() {
   return (
     <CommunityContextSwitcher
       compact
-      triggerClassName="hover:bg-accent focus-visible:ring-ring text-foreground flex shrink-0 items-center rounded-md px-1 py-1.5 outline-hidden focus-visible:ring-2"
+      triggerClassName={cn(
+        'hover:bg-accent focus-visible:ring-ring text-foreground flex shrink-0 items-center rounded-md px-1 py-1.5 outline-hidden focus-visible:ring-2',
+        TOUCH_TARGET_MIN_H
+      )}
     />
   );
 }

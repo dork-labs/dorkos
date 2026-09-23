@@ -246,9 +246,9 @@ function ResponsiveDropdownMenuRadioItem({
     return (
       <DropdownMenuRadioItem ref={itemRef} value={value} disabled={disabled} className={className}>
         {Icon || description ? (
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             {Icon && <Icon className="size-(--size-icon-xs) shrink-0" />}
-            <div className="text-left">
+            <div className="min-w-0 text-left">
               <div>{children}</div>
               {description && <div className="text-muted-foreground text-3xs">{description}</div>}
             </div>

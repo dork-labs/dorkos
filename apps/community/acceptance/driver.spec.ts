@@ -1537,8 +1537,9 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       // Switch the local app's context to Community A without choosing a room.
       // The sidebar shows only the route-selected community's channels (spec
-      // community-switcher-navigation, "Route and selection model"), so A's
-      // unread badge is read in A's context, before its room is opened. This
+      // community-switcher-navigation, "Overview" and "Shell surfaces →
+      // Desktop"), so A's unread badge is read in A's context, before its room
+      // is opened. This
       // fresh page load refetches the room query; no polling delay is part of
       // this causal barrier.
       await localPage.goto(`${env.local}/channels?community=${encodeURIComponent(refA)}`);
