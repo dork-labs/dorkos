@@ -140,7 +140,7 @@ export function selectInstallations(
 - **Apply scope in `run` (the fix).** `run` scans `{ projectPath }` (or `{ agents: [] }` without one). Among records with the requested name, it prefers a project-scoped one (the project shadows the global package for that project, as the old walk's project-first order did), else the first. It applies with `projectPath: match.package.agentPath`, never `req.projectPath`. A single-package apply still throws, so the route's error mapping (409, 400, …) is unchanged.
 - **`selectInstallations`.** With no `names`, or an empty list, it returns the records unchanged. Otherwise it keeps records whose update name is in `names`. If any name matches no record, it throws `PackageNotInstalledForUpdateError` for every unmatched name, and nothing runs.
 - **`PackageNotInstalledForUpdateError`** takes one name or several: `packageNames: string[]`, and the message is `Package not installed: a` or `Packages not installed: a, b`. The per-package route's use is unchanged.
-- **`mapWithConcurrency` moves** from `services/session/agent-session-fanout.ts` (private) to `apps/server/src/lib/map-with-concurrency.ts` (exported, TSDoc, its own test), and the fan-out imports it. One helper instead of two.
+- **`mapWithConcurrency` moves** from `services/session/agent-session-fanout.ts` (private) to `@dorkos/shared/map-with-concurrency` (exported, TSDoc, its own test), and the fan-out imports it. One helper instead of two. (Decided during execution: `apps/server/src/lib` is at the 25-file directory limit the pre-commit `dir-size` gate enforces, and a pure, browser-safe pool belongs beside the other shared helpers anyway.)
 
 ### 3. The routes (`routes/marketplace.ts`)
 
@@ -225,7 +225,7 @@ Each test carries a purpose comment and can fail.
   - `{ agents }` yields one record per installation with agent identity;
   - `{ projectPath }` yields the merged view with `override` shadowing;
   - the three list helpers still return what their existing tests pin.
-- **`mapWithConcurrency`:** results in input order, never more than `width` in flight, and an empty input.
+- **`mapWithConcurrency`** (`packages/shared`): results in input order, never more than `width` in flight, and an empty input.
 - **`UpdateFlow`** (`flows/update.test.ts`). The name-less `run({})` tests move to `checkInstallations` fed by `scanInstallationRecords`, with the assertions unchanged. New tests:
   - every check carries its installation's identity, and the same name in two scopes is two checks;
   - an agent-scope installation (invisible to the old walk) is checked;

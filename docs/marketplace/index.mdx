@@ -79,7 +79,9 @@ There's no CLI command that lists everything you've installed. For that, open th
 - **It's up to date.** For example, `flow  up to date (0.7.3)`.
 - **It couldn't be checked, and why.** For example, `flow  could not check: couldn't reach github.com` when you're offline. DorkOS never calls a package up to date when it couldn't check it.
 
-Leave out the package name to check every package you have, wherever it's installed. A problem with one package doesn't stop the rest.
+Leave out the package name to check every package you have, wherever it's installed. A package installed for one agent shows that agent's name, like `flow [Alpha]  0.7.2 → 0.7.3`, so the same package in two places shows up as two lines. A problem with one package doesn't stop the rest. With `--apply`, the command lists what it updated and anything it couldn't update, with the reason.
+
+`--apply` updates each package where it's installed. If you add `--project` to update a package that's installed for everything, it stays installed for everything. It isn't moved into that project.
 
 </Step>
 

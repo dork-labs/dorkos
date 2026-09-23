@@ -360,7 +360,7 @@ export class UninstallFlow {
    * used to miss by hardcoding `plugins` (DOR-994). A project's roots stay
    * ahead of the global ones because a project install shadows a global package
    * of the same name for that project, matching the installed scanner's merged
-   * view and the update flow's walk.
+   * view, which the update flow checks.
    *
    * Shared with `MarketplaceInstaller.update()`, which probes the same order to
    * decide which target to lock across its whole uninstall-then-install round

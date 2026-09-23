@@ -4,11 +4,11 @@ Spec: `specs/marketplace-update-all/02-specification.md` · generated from `03-t
 
 ## P1 — One scan and the per-installation flow
 
-### Task 1.1: Share mapWithConcurrency from lib/
+### Task 1.1: Share mapWithConcurrency from @dorkos/shared
 
 **Size:** small · **Depends on:** none · **Parallel with:** 1.2
 
-Move the private `mapWithConcurrency` out of `apps/server/src/services/session/agent-session-fanout.ts` into `apps/server/src/lib/map-with-concurrency.ts` (exported, with TSDoc). The fan-out imports it. Test `apps/server/src/lib/__tests__/map-with-concurrency.test.ts`: results come back in input order; never more than `width` calls in flight (count them with deferred promises); an empty input resolves `[]` without calling `fn`.
+Move the private `mapWithConcurrency` out of `apps/server/src/services/session/agent-session-fanout.ts` into `packages/shared/src/map-with-concurrency.ts`, exported as `@dorkos/shared/map-with-concurrency` (with TSDoc; `apps/server/src/lib` is at the dir-size limit). The fan-out imports it. Test `packages/shared/src/__tests__/map-with-concurrency.test.ts`: results come back in input order; never more than `width` calls in flight (count them with deferred promises); an empty input resolves `[]` without calling `fn`.
 
 ### Task 1.2: Scanner yields InstallationRecord once per installation
 

@@ -50,7 +50,7 @@ export interface InstallRootCandidate {
  *
  * A project's roots stay ahead of the global ones because a project install
  * shadows a global package of the same name for that project, matching the
- * installed scanner's merged view and the update flow's walk. First-match-wins
+ * installed scanner's merged view, which the update flow checks. First-match-wins
  * across that order, so when two different-type packages share a name (a plugin
  * *and* a Shape both called "linear-ops"), a lookup by name always resolves to
  * the earlier root. The conflict detector surfaces that collision as a warning
