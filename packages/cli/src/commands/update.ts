@@ -1,21 +1,29 @@
 /**
  * CLI handler for `dorkos update [name]`.
  *
- * Advisory by default — calls `POST /api/marketplace/packages/:name/update`
- * (with `apply: false`) and prints one line per package: a newer version, up
- * to date, or could not check (and why). Pass `--apply` to reinstall the
- * packages that have an update.
+ * Advisory by default: prints one line per package — a newer version, up to
+ * date, or could not check (and why). Pass `--apply` to reinstall the packages
+ * that have an update.
  *
- * When no `<name>` is given, the CLI lists installed packages through
- * `GET /api/marketplace/installed` (forwarding `--project`) and checks each
- * one in the scope it was found in, so an agent's install is checked in that
- * agent's project. One package failing never stops the rest. An
- * all-packages endpoint is deferred (DOR-2194), so the iteration lives
- * client-side.
+ * - **With a name**, it asks the one-package door,
+ *   `POST /api/marketplace/packages/:name/update`.
+ * - **Without one**, it asks the all-packages door in ONE request:
+ *   `GET /api/marketplace/updates` to check, `POST /api/marketplace/updates`
+ *   with `apply: true` to update. The server checks every installation in view
+ *   (every scope, or `--project`'s view) and answers one line's worth per
+ *   installation, so the same package in two places prints as two lines, each
+ *   naming where it lives.
  *
  * @module commands/update
  */
 import { parseArgs } from 'node:util';
+import type {
+  InstallationUpdateCheck,
+  InstallationUpdatesResult,
+  UpdateCheckResult,
+  UpdateResult,
+  UpdateVersionSource,
+} from '@dorkos/shared/marketplace-schemas';
 import { ApiError, apiCall } from '../lib/api-client.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
@@ -29,46 +37,8 @@ export interface UpdateArgs {
   projectPath?: string;
 }
 
-/** Where a version came from, in Claude Code's order. Mirrors `VersionSource` on the server. */
-type VersionSource = 'package' | 'index' | 'commit';
-
-/** A single update check result. Mirrors `UpdateCheckResult` on the server. */
-interface UpdateCheckResult {
-  packageName: string;
-  installedVersion: string;
-  latestVersion: string;
-  hasUpdate: boolean;
-  marketplace: string;
-  status: 'current' | 'update-available' | 'unknown';
-  installedVersionSource?: VersionSource;
-  latestVersionSource?: VersionSource;
-  note?: string;
-}
-
-/** Mirrors `InstallResult` on the server, narrowed to fields we render. */
-interface AppliedUpdate {
-  packageName: string;
-  version: string;
-  installPath: string;
-}
-
-/** Update API response shape. Mirrors `UpdateResult` on the server. */
-interface UpdateResultBody {
-  checks: UpdateCheckResult[];
-  applied: AppliedUpdate[];
-}
-
-/** Response shape for `GET /api/marketplace/installed`, narrowed to what targeting needs. */
-interface InstalledListBody {
-  packages: { name: string; agentPath?: string; scope?: string }[];
-}
-
-/** One package to check, in the scope it was found in. */
-interface UpdateTarget {
-  name: string;
-  /** The scope to check it in; absent for a global install. */
-  projectPath?: string;
-}
+/** A check as this command prints it: any check, with its place when it has one. */
+type PrintableCheck = UpdateCheckResult & Partial<InstallationUpdateCheck>;
 
 /** One-line usage string surfaced in error messages. */
 const USAGE_LINE = 'Usage: dorkos update [<name>] [--apply] [--project <path>]';
@@ -106,68 +76,15 @@ export function parseUpdateArgs(rawArgs: string[]): UpdateArgs {
 /**
  * Implements `dorkos update [name]`.
  *
- * Each target is checked on its own: a server error for one package prints as
- * `could not check` and the run goes on. Only failing to reach the server at
- * all ends the run early.
- *
  * @param args - Parsed update arguments.
- * @returns The intended process exit code: `0` on success, `1` when the
- *   server was unreachable, a named package is installed nowhere, or any
- *   requested apply failed. Packages that could not be checked do not change
- *   it on their own.
+ * @returns The intended process exit code: `0` on success, `1` when the server
+ *   was unreachable or refused the request, a named package is installed
+ *   nowhere, or any requested reinstall failed. Packages that could not be
+ *   checked do not change it on their own.
  */
 export async function runUpdate(args: UpdateArgs): Promise<number> {
   try {
-    const targets = args.name
-      ? [{ name: args.name, projectPath: args.projectPath }]
-      : await listTargets(args.projectPath);
-
-    if (targets.length === 0) {
-      console.log('No installed packages to check.');
-      return 0;
-    }
-
-    const allChecks: UpdateCheckResult[] = [];
-    const allApplied: AppliedUpdate[] = [];
-    let failedTargets = 0;
-    let namedNotInstalled = false;
-
-    for (const target of targets) {
-      const body: Record<string, unknown> = { apply: Boolean(args.apply) };
-      if (target.projectPath) body.projectPath = target.projectPath;
-
-      try {
-        const result = await apiCall<UpdateResultBody>(
-          'POST',
-          `/api/marketplace/packages/${encodeURIComponent(target.name)}/update`,
-          body
-        );
-        allChecks.push(...result.checks);
-        allApplied.push(...result.applied);
-      } catch (err) {
-        // Anything but an answer from the server (it could not be reached at
-        // all) ends the run below; an error for ONE package does not.
-        if (!(err instanceof ApiError)) throw err;
-        failedTargets += 1;
-        // The route answers 404 for a name installed in no scope: a named
-        // run asked about a package that is not there (often a typo).
-        if (args.name && err.status === 404) namedNotInstalled = true;
-        allChecks.push(couldNotCheck(target.name, err.message));
-      }
-    }
-
-    renderUpdateChecks(allChecks, Boolean(args.apply));
-
-    if (args.apply && allApplied.length > 0) {
-      console.log('');
-      console.log('Applied:');
-      for (const a of allApplied) {
-        console.log(`  ${a.packageName}@${a.version} → ${a.installPath}`);
-      }
-    }
-
-    // With --apply, a target the server refused is an apply that did not land.
-    return namedNotInstalled || (args.apply && failedTargets > 0) ? 1 : 0;
+    return args.name ? await updateOne(args.name, args) : await updateAll(args);
   } catch (err) {
     console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
     return 1;
@@ -175,29 +92,83 @@ export async function runUpdate(args: UpdateArgs): Promise<number> {
 }
 
 /**
- * List every installed package to check, each in the scope it was found in.
- *
- * With `--project` the listing is that project's merged view (global plus
- * project installs) and every target is checked there. Without it the listing
- * spans every scope, and an agent's install is checked with that agent's
- * directory as its project, so the server walks the same scope the listing
- * found it in. Targets are de-duplicated on (name, scope), because the route
- * checks by name.
- *
- * @param projectPath - The `--project` value, when given.
+ * One package, through the per-package door. An error for it prints as a
+ * `could not check` line; a 404 (installed nowhere, often a typo) or any error
+ * during `--apply` exits 1.
  */
-async function listTargets(projectPath: string | undefined): Promise<UpdateTarget[]> {
-  const query = projectPath ? `?projectPath=${encodeURIComponent(projectPath)}` : '';
-  const installed = await apiCall<InstalledListBody>('GET', `/api/marketplace/installed${query}`);
-  const byKey = new Map<string, UpdateTarget>();
-  for (const pkg of installed.packages) {
-    const target = { name: pkg.name, projectPath: projectPath ?? pkg.agentPath };
-    byKey.set(`${target.name}\n${target.projectPath ?? ''}`, target);
+async function updateOne(name: string, args: UpdateArgs): Promise<number> {
+  const body: Record<string, unknown> = { apply: Boolean(args.apply) };
+  if (args.projectPath) body.projectPath = args.projectPath;
+
+  let result: UpdateResult;
+  try {
+    result = await apiCall<UpdateResult>(
+      'POST',
+      `/api/marketplace/packages/${encodeURIComponent(name)}/update`,
+      body
+    );
+  } catch (err) {
+    // Anything but an answer from the server (it could not be reached at all)
+    // is rethrown to the caller's single catch.
+    if (!(err instanceof ApiError)) throw err;
+    renderUpdateChecks([couldNotCheck(name, err.message)], Boolean(args.apply));
+    return err.status === 404 || args.apply ? 1 : 0;
   }
-  return [...byKey.values()];
+
+  renderUpdateChecks(result.checks, Boolean(args.apply));
+  if (args.apply && result.applied.length > 0) {
+    console.log('');
+    console.log('Applied:');
+    for (const a of result.applied)
+      console.log(`  ${a.packageName}@${a.version} → ${a.installPath}`);
+  }
+  return 0;
 }
 
-/** A check result standing in for a target the server returned an error for. */
+/**
+ * Every installation in view, in one request. The server isolates failures per
+ * installation, so there is nothing left to loop over here.
+ */
+async function updateAll(args: UpdateArgs): Promise<number> {
+  const result = args.apply
+    ? await apiCall<InstallationUpdatesResult>('POST', '/api/marketplace/updates', {
+        apply: true,
+        ...(args.projectPath && { projectPath: args.projectPath }),
+      })
+    : await apiCall<InstallationUpdatesResult>(
+        'GET',
+        `/api/marketplace/updates${
+          args.projectPath ? `?projectPath=${encodeURIComponent(args.projectPath)}` : ''
+        }`
+      );
+
+  if (result.checks.length === 0) {
+    console.log('No installed packages to check.');
+    return 0;
+  }
+
+  renderUpdateChecks(result.checks, Boolean(args.apply));
+
+  const applied = result.checks.flatMap((c) =>
+    c.applied ? [{ check: c, result: c.applied }] : []
+  );
+  if (applied.length > 0) {
+    console.log('');
+    console.log('Applied:');
+    for (const { check, result: a } of applied) {
+      console.log(`  ${labelOf(check)}@${a.version} → ${a.installPath}`);
+    }
+  }
+  const failed = result.checks.filter((c) => c.applyError !== undefined);
+  if (failed.length > 0) {
+    console.log('');
+    console.log('Could not update:');
+    for (const c of failed) console.log(`  ${labelOf(c)}: ${c.applyError}`);
+  }
+  return failed.length > 0 ? 1 : 0;
+}
+
+/** A check result standing in for a package the server returned an error for. */
 function couldNotCheck(packageName: string, reason: string): UpdateCheckResult {
   return {
     packageName,
@@ -210,8 +181,18 @@ function couldNotCheck(packageName: string, reason: string): UpdateCheckResult {
   };
 }
 
+/**
+ * A package's name as a line starts with: bare for a global installation, and
+ * followed by its agent (or project) for any other, so the same package in two
+ * places reads as two different lines.
+ */
+function labelOf(check: PrintableCheck): string {
+  const place = check.agentName ?? check.agentPath;
+  return place ? `${check.packageName} [${place}]` : check.packageName;
+}
+
 /** A version as a person reads it: a commit prints as `commit <short sha>`. */
-function formatVersion(version: string, source: VersionSource | undefined): string {
+function formatVersion(version: string, source: UpdateVersionSource | undefined): string {
   return source === 'commit' ? `commit ${version.slice(0, 7)}` : version;
 }
 
@@ -220,19 +201,20 @@ function formatVersion(version: string, source: VersionSource | undefined): stri
  * The summary never claims everything is up to date while any package could
  * not be checked.
  */
-function renderUpdateChecks(checks: UpdateCheckResult[], apply: boolean): void {
+function renderUpdateChecks(checks: PrintableCheck[], apply: boolean): void {
   for (const check of checks) {
+    const label = labelOf(check);
     const installed = formatVersion(check.installedVersion, check.installedVersionSource);
     if (check.status === 'unknown') {
-      console.log(`${check.packageName}  could not check: ${check.note ?? 'no reason given'}`);
+      console.log(`${label}  could not check: ${check.note ?? 'no reason given'}`);
       continue;
     }
     if (check.status === 'update-available') {
       const latest = formatVersion(check.latestVersion, check.latestVersionSource);
       const from = check.marketplace ? `  (${check.marketplace})` : '';
-      console.log(`${check.packageName}  ${installed} → ${latest}${from}`);
+      console.log(`${label}  ${installed} → ${latest}${from}`);
     } else {
-      console.log(`${check.packageName}  up to date (${installed})`);
+      console.log(`${label}  up to date (${installed})`);
     }
     // A caveat on a known answer: a rollback, or a check of the default branch.
     if (check.note) console.log(`  ${check.note}`);
