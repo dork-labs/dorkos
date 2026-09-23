@@ -40,6 +40,7 @@ import type { Session, SessionListWarning } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import { aggregateSessionList } from './aggregate-session-list.js';
+import { mapWithConcurrency } from '@dorkos/shared/map-with-concurrency';
 
 /**
  * Where else an agent's conversations can be, beyond its own folder, and which
@@ -95,25 +96,6 @@ export function setAgentSessionSources(next: AgentSessionSources | null): void {
  * concurrent {@link aggregateSessionList} calls at this width.
  */
 export const AGENT_SESSION_FANOUT_CONCURRENCY = 5;
-
-/** Map `items` through `fn` with at most `concurrency` in flight, preserving input order. */
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  async function worker(): Promise<void> {
-    while (cursor < items.length) {
-      const index = cursor++;
-      results[index] = await fn(items[index]!);
-    }
-  }
-  const width = Math.min(Math.max(concurrency, 1), items.length);
-  await Promise.all(Array.from({ length: width }, () => worker()));
-  return results;
-}
 
 /**
  * A membership test for one agent's roots, ready to run over many sessions.

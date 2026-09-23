@@ -361,6 +361,10 @@
       "types": "./src/canonical-directory.ts",
       "default": "./dist/canonical-directory.js"
     },
+    "./map-with-concurrency": {
+      "types": "./src/map-with-concurrency.ts",
+      "default": "./dist/map-with-concurrency.js"
+    },
     "./paths": {
       "types": "./src/paths.ts",
       "default": "./dist/paths.js"
