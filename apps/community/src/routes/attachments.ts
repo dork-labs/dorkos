@@ -16,6 +16,7 @@ import {
   requirePrincipal,
   transaction,
 } from '../data.js';
+import { assertStorageRoom, assertStorageWithinLimit } from '../host/limits.js';
 import { ApiError, json } from '../http.js';
 import {
   BlobStoreError,
@@ -212,6 +213,14 @@ export function registerAttachmentRoutes(
     if (declaredLength && Number(declaredLength) !== metadata.byteSize)
       throw new ApiError(400, 'STATE_CONFLICT', 'The declared file size does not match.');
     if (!c.req.raw.body) throw new ApiError(400, 'STATE_CONFLICT', 'File bytes are required.');
+    // Refuse on the declared size before a person uploads a file that cannot fit. A retry of an
+    // upload that already landed skips this, so it still gets its original receipt.
+    const uploaderField = principal.kind === 'agent' ? 'uploader_agent_id' : 'uploader_member_id';
+    const landed = await pool.query(
+      `SELECT 1 FROM attachments WHERE ${uploaderField}=$1 AND channel_id=$2 AND idempotency_key=$3`,
+      [principal.id, c.req.param('id'), metadata.idempotencyKey]
+    );
+    if (!landed.rowCount) await assertStorageRoom(pool, principal.community_id, metadata.byteSize);
     const reservation = await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), principal);
       requireJoined(channel);
@@ -280,6 +289,7 @@ export function registerAttachmentRoutes(
         );
         if (!quota.rowCount) throw new ApiError(429, 'RATE_LIMITED', 'Daily upload limit reached.');
         await prepareManagedBlobCommit(client, reservation, stored);
+        await assertStorageWithinLimit(client, principal.community_id, stored.byteSize);
         const inserted = await client.query<AttachmentRow>(
           `INSERT INTO attachments(community_id,channel_id,uploader_member_id,uploader_agent_id,blob_key,display_name,content_type,byte_size,checksum,idempotency_key,request_hash)
            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,

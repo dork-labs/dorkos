@@ -29,9 +29,12 @@ import { parseConfig, type CommunityConfig } from '../config.js';
 import { migrate } from '../migrate.js';
 import { registerAdministrationRoutes } from '../routes/administration.js';
 import { registerHostRoutes } from '../routes/host.js';
+import { registerMembershipRoutes } from '../routes/memberships.js';
+import { registerHostLimitRoutes } from '../routes/host-limits.js';
+import { registerOwnerClaimRoutes } from '../routes/owner-claims.js';
 import { registerHostKeyRoutes } from '../routes/host-keys.js';
-import { createHostAuthority } from '../host-authority.js';
-import { issueHostApiKey } from '../host-key-store.js';
+import { createHostAuthority } from '../host/authority.js';
+import { issueHostApiKey } from '../host/key-store.js';
 import { hashSecret, randomToken } from '../security.js';
 import { FileSystemBlobStore } from '../storage/index.js';
 import {
@@ -673,6 +676,72 @@ const actions: Action<unknown>[] = [
     effect: async (_body, _role, { id }) => {
       const key = await pool.query('SELECT revoked_at FROM host_api_keys WHERE id=$1', [id]);
       expect(key.rows[0].revoked_at).not.toBeNull();
+    },
+  }),
+  define<{ version: number }>({
+    rule: 'Set community limits: host operator yes, community roles no',
+    route: 'PUT /host/communities/:id/limits',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: async () => {
+      const row = await pool.query<{ limits_version: number }>(
+        'SELECT limits_version FROM community_limits WHERE community_id=$1',
+        [alphaId]
+      );
+      return { version: row.rows[0]?.limits_version ?? 1 };
+    },
+    call: ({ version }) => ({
+      method: 'PUT',
+      path: `/api/v1/host/communities/${alphaId}/limits`,
+      body: { limitsVersion: version, maxActiveMembers: 1_000_000, maxStorageBytes: null },
+    }),
+    effect: async (_body, _role, { version }) => {
+      const row = await pool.query(
+        'SELECT max_active_members,limits_version FROM community_limits WHERE community_id=$1',
+        [alphaId]
+      );
+      expect(row.rows).toEqual([{ max_active_members: 1_000_000, limits_version: version + 1 }]);
+    },
+  }),
+  define({
+    rule: "Set one member's agent limit: host operator yes, and only the override comes back",
+    route: 'PUT /host/communities/:id/members/:memberId/limits',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({
+      method: 'PUT',
+      path: `/api/v1/host/communities/${alphaId}/members/${ownerMemberId}/limits`,
+      body: { agentsPerMember: 100 },
+    }),
+    effect: async (body) => {
+      const override = JSON.parse(body.toString('utf8')) as Record<string, unknown>;
+      expect(Object.keys(override).sort()).toEqual([
+        'agentsPerMember',
+        'communityId',
+        'effectiveAgentsPerMember',
+        'memberId',
+      ]);
+    },
+  }),
+  define({
+    rule: 'Read one community usage: host operator yes, community roles no',
+    route: 'GET /host/communities/:id/usage',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({ method: 'GET', path: `/api/v1/host/communities/${alphaId}/usage` }),
+    effect: async (body) => {
+      expect(JSON.parse(body.toString('utf8')).communityId).toBe(alphaId);
+    },
+  }),
+  define({
+    rule: 'Page through every community usage: host operator yes, community roles no',
+    route: 'GET /host/usage',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({ method: 'GET', path: '/api/v1/host/usage?limit=100' }),
+    effect: async (body) => {
+      const page = JSON.parse(body.toString('utf8')) as { items: { communityId: string }[] };
+      expect(page.items.map((item) => item.communityId)).toContain(alphaId);
     },
   }),
   define<{ key: string }>({
@@ -1673,7 +1742,10 @@ it('classifies every registered route, and puts every host and settings route in
   const authority = createHostAuthority({ auth, pool, now, limitKeyMiss: () => undefined });
   // Only the route table is read here; no request ever runs.
   const unused = async () => undefined;
-  registerHostRoutes(modules, { pool, auth, config, blobStore, authority, now });
+  registerHostRoutes(modules, { pool, blobStore, authority, now });
+  registerOwnerClaimRoutes(modules, { pool, auth, config, authority, now });
+  registerMembershipRoutes(modules, { pool, auth });
+  registerHostLimitRoutes(modules, { pool, config, authority, now });
   registerHostKeyRoutes(modules, { pool, auth, authority, now, confirmPassword: unused });
   registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });
   const administration = [

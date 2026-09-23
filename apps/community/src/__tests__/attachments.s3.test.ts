@@ -135,3 +135,45 @@ it('uploads, binds, downloads and exports through real MinIO HTTP storage', asyn
   expect(manifest.attachments[0].id).toBe(file.id);
   expect(strFromU8(zip[`attachments/${file.id}`])).toBe('hello minio');
 });
+
+it('refuses an upload past the storage limit before any bytes reach the bucket', async () => {
+  // Purpose: fails if the declared-size check runs after the object is written, leaving the
+  // refused file in object storage.
+  const communityId = (await pool.query<{ id: string }>('SELECT id FROM communities')).rows[0].id;
+  const counted = await pool.query<{ n: string }>(
+    `SELECT COALESCE(sum(byte_size),0)::text AS n FROM managed_blobs
+     WHERE community_id=$1 AND purpose IN ('attachment','icon') AND state IN ('stored','committed')`,
+    [communityId]
+  );
+  await pool.query('INSERT INTO community_limits(community_id,max_storage_bytes) VALUES($1,$2)', [
+    communityId,
+    Number(counted.rows[0].n),
+  ]);
+  const signIn = await request('/api/auth/sign-in/email', {
+    method: 'POST',
+    headers: { origin: config.publicUrl, 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'minio-owner@example.test', password: 'password1234' }),
+  });
+  const cookie = signIn.headers
+    .getSetCookie()
+    .map((header) => header.split(';')[0])
+    .join('; ');
+  const channel = await request('/api/v1/channels', { headers: { cookie } });
+  const channelId = (await channel.json()).channels[0].id;
+  const before = (await s3.send(new ListObjectsV2Command({ Bucket: bucket }))).KeyCount;
+  const refused = await request(`/api/v1/channels/${channelId}/attachments`, {
+    method: 'POST',
+    headers: {
+      cookie,
+      origin: config.publicUrl,
+      'content-type': 'text/plain',
+      'idempotency-key': 'minio-full',
+      'x-file-name': 'full.txt',
+      'x-file-size': '5',
+    },
+    body: 'hello',
+  });
+  expect(refused.status).toBe(409);
+  expect((await refused.json()).code).toBe('STORAGE_LIMIT_REACHED');
+  expect((await s3.send(new ListObjectsV2Command({ Bucket: bucket }))).KeyCount).toBe(before);
+});

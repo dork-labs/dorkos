@@ -1,13 +1,13 @@
 import { fileURLToPath } from 'node:url';
 import { Pool, type PoolClient } from 'pg';
 import { CommunityAdminHostApiKeyScopeSchema } from '@dorkos/shared/community-admin-wire';
-import type { HostApiKeyScope } from './host-authority.js';
+import type { HostApiKeyScope } from './host/authority.js';
 import {
   issueHostApiKey,
   listHostApiKeys,
   revokeHostApiKey,
   type HostApiKeyProjection,
-} from './host-key-store.js';
+} from './host/key-store.js';
 
 const usage = `Usage:
   host-keys.js issue --label <text> --scope <scope> [--scope <scope>...] [--expires-in-days <1-365>]

@@ -45,6 +45,27 @@ describe('describeAdmissionFailure', () => {
     });
   });
 
+  it('says a full community is full, and that the same invitation works once there is room', () => {
+    // Purpose: fails if a full community reads as a dead link that needs a new invitation.
+    const cause = new RequestError(
+      409,
+      'MEMBER_LIMIT_REACHED',
+      'This community is full. Ask its owner to make room.'
+    );
+    for (const context of [check, join]) {
+      const failure = describeAdmissionFailure(cause, context);
+      expect(failure).toEqual({
+        title: 'Membership was not added.',
+        detail: 'This community is full. Ask its owner to make room.',
+        recovery: 'wait-for-room',
+      });
+      expect(recoveryInstruction(failure.recovery)).toBe(
+        'Your invitation still works. Open it again once the owner has made room.'
+      );
+      expect(recoveryInstruction(failure.recovery)).not.toMatch(/new (invitation )?link/u);
+    }
+  });
+
   it('asks to reopen the link when the join attempt itself is gone or bound elsewhere', () => {
     expect(
       describeAdmissionFailure(

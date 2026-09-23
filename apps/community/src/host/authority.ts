@@ -2,10 +2,10 @@ import type { Context } from 'hono';
 import type { Pool, PoolClient } from 'pg';
 import type { z } from 'zod';
 import type { CommunityAdminHostApiKeyScopeSchema } from '@dorkos/shared/community-admin-wire';
-import type { CommunityAuth } from './auth.js';
-import { requireSessionUser } from './data.js';
-import { ApiError } from './http.js';
-import { HOST_API_KEY_PATTERN, bearerCredential, hashSecret } from './security.js';
+import type { CommunityAuth } from '../auth.js';
+import { requireSessionUser } from '../data.js';
+import { ApiError } from '../http.js';
+import { HOST_API_KEY_PATTERN, bearerCredential, hashSecret } from '../security.js';
 
 /** One host API key scope. No scope reaches community content or manages keys. */
 export type HostApiKeyScope = z.infer<typeof CommunityAdminHostApiKeyScopeSchema>;

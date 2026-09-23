@@ -488,6 +488,12 @@ it('rows 9 and 10: a key never manages keys, and a read key changes nothing and 
       `/api/v1/host/communities/${a}/lifecycle`,
       { action: 'suspend', lifecycleVersion: version },
     ],
+    [
+      'PUT',
+      `/api/v1/host/communities/${a}/limits`,
+      { limitsVersion: 1, maxActiveMembers: 1, maxStorageBytes: 0 },
+    ],
+    ['PUT', `/api/v1/host/communities/${a}/members/${randomUUID()}/limits`, { agentsPerMember: 1 }],
   ] as const;
   for (const [method, path, body] of mutations) {
     const response = await call(path, { method, bearer: keys.read.secret, body });
