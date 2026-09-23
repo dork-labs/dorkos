@@ -42,8 +42,10 @@ DOR-2173 owns the host website chooser in Task 3.3. DOR-2184 owns the separate l
 
 Owned by DOR-2174, **Prove tenant isolation and upgrade compatibility end to end**.
 
-- [ ] **4.1 Run the adversarial two-community isolation matrix.** Test every endpoint family, credential type, normalized reference, canonical-link selection, object mismatch, and race.
-- [ ] **4.2 Prove populated upgrade and standalone compatibility.** Verify unchanged identities, content, files, connections, and Cloud independence.
+- [x] **4.1 Run the adversarial two-community isolation matrix.** Test every endpoint family, credential type, normalized reference, canonical-link selection, object mismatch, and race.
+- [x] **4.2 Prove populated upgrade and standalone compatibility.** Verify unchanged identities, content, files, connections, and Cloud independence.
+
+Every matrix row and every task 4.2 acceptance criterion maps to named tests in `05-isolation-receipt.md`; `apps/community/src/__tests__/tenancy-receipt.test.ts` fails if a row loses its proof.
 
 ## Dependency graph
 
