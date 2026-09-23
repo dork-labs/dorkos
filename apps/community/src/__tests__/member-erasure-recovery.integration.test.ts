@@ -57,7 +57,8 @@ afterAll(async () => {
   await h?.close();
 });
 
-describe('crash and repeat (AC-8)', () => {
+// Each test runs whole erasures several times over; under load they outlast the 30s default.
+describe('crash and repeat (AC-8)', { timeout: 120_000 }, () => {
   // Purpose: a long erasure keeps its lease after every step, for its own request and for
   // the account request it belongs to, so a second worker never resumes it mid-run.
   it('renews the lease of the membership and its account request after each step', async () => {
