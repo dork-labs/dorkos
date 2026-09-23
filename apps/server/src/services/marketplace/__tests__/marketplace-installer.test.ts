@@ -1659,6 +1659,26 @@ describe('MarketplaceInstaller', () => {
       expect(mockedValidatePackage).not.toHaveBeenCalled();
     });
 
+    it("short-circuits a record written before DOR-2248, whose default ref reads 'main'", async () => {
+      // Purpose: the sidecar is never rewritten by a check, so without this a
+      // pre-DOR-2248 install would restage on every check, forever.
+      const { deps, resolver, fetcher } = buildDeps();
+      wireRemote(resolver, fetcher);
+      const commitLookup = vi.fn().mockResolvedValue(INSTALLED_SHA);
+
+      const result = await new MarketplaceInstaller(deps).resolveLatest(
+        { name: 'code-reviewer', marketplace: 'dorkos-community' },
+        {
+          installed: { commitSha: INSTALLED_SHA, sourceKey: { ...MARKETPLACE_KEY, ref: 'main' } },
+          commitLookup,
+        }
+      );
+
+      expect(result).toEqual({ kind: 'unchanged' });
+      expect(commitLookup).toHaveBeenCalledWith(MARKETPLACE_KEY.cloneUrl, 'HEAD');
+      expect(fetcher.fetchPackage).not.toHaveBeenCalled();
+    });
+
     it('stages when the entry version changed but the commit did not', async () => {
       // Purpose: an index-only change (a re-versioned foreign entry) moves no
       // commit in the package's repo; the check must still look.

@@ -53,7 +53,7 @@ import {
   deriveSourceProvenance,
   hostOf,
   resolvedFromSourceKey,
-  sameSourceKey,
+  matchesRecordedKey,
   sourceKeyOfFetchable,
 } from './lib/source-provenance.js';
 import { materializePackageSchedules } from './lib/materialize-schedules.js';
@@ -668,7 +668,7 @@ export class MarketplaceInstaller implements InstallerLike {
       if (
         key &&
         recordedKey &&
-        sameSourceKey(key, recordedKey) &&
+        matchesRecordedKey(key, recordedKey) &&
         resolved.entryVersion === opts.installed.entryVersion &&
         isRealCommitSha(opts.installed.commitSha)
       ) {
