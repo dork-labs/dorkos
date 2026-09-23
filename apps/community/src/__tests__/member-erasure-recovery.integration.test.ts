@@ -58,6 +58,54 @@ afterAll(async () => {
 });
 
 describe('crash and repeat (AC-8)', () => {
+  // Purpose: a long erasure keeps its lease after every step, for its own request and for
+  // the account request it belongs to, so a second worker never resumes it mid-run.
+  it('renews the lease of the membership and its account request after each step', async () => {
+    const s = await scene('lease');
+    const account = await h.pool.query<{ id: string }>(
+      `INSERT INTO erasure_requests(kind,user_id,state,execute_after,started_at,next_attempt_at)
+       VALUES('account',$1,'running',now(),now(),now()+interval '1 minute') RETURNING id`,
+      [s.p.userId]
+    );
+    await h.pool.query(
+      `INSERT INTO erasure_requests(kind,community_id,member_id,parent_request_id,state,
+         execute_after,started_at,next_attempt_at)
+       VALUES('membership',$1,$2,$3,'running',now(),now(),now()+interval '1 minute')`,
+      [s.communityId, s.p.memberId, account.rows[0].id]
+    );
+    const leases: { step: string; leased: boolean }[] = [];
+    await eraseMembership(h.pool, s.communityId, s.p.memberId, {
+      requestId: account.rows[0].id,
+      log: () => undefined,
+      hooks: {
+        afterStep: async (step) => {
+          const rows = await h.pool.query<{ leased: boolean }>(
+            `SELECT next_attempt_at>now()+interval '4 minutes' AS leased FROM erasure_requests
+             WHERE state='running' AND (id=$1 OR member_id=$2)`,
+            [account.rows[0].id, s.p.memberId]
+          );
+          // Reset, so the next step must renew again.
+          await h.pool.query(
+            `UPDATE erasure_requests SET next_attempt_at=now()+interval '1 minute'
+             WHERE state='running' AND (id=$1 OR member_id=$2)`,
+            [account.rows[0].id, s.p.memberId]
+          );
+          if (step !== 'seal')
+            leases.push({
+              step,
+              leased: rows.rows.every((row) => row.leased) && rows.rowCount === 2,
+            });
+        },
+      },
+    });
+    expect(leases).toEqual(
+      ['end-access', 'files', 'exports', 'tombstones', 'mentions'].map((step) => ({
+        step,
+        leased: true,
+      }))
+    );
+  });
+
   it('ends in the same state whichever step the worker died after', async () => {
     const baseline = await scene('crash');
     await requestErasure(baseline.p.cookie, baseline.communityId);
@@ -228,7 +276,7 @@ describe('files and export races (AC-4)', () => {
     const response = await pending;
     expect(response.status).toBe(409);
     expect((await response.json()).message).toContain('changed while this export was being made');
-    await drainCleanup(h, [s.communityId]);
+    await drainCleanup(h);
     const added = (await readdir(storageDirectory(h))).filter((key) => !blobsBefore.has(key));
     expect(added).toEqual([]);
     expect(
@@ -299,7 +347,7 @@ describe('files and export races (AC-4)', () => {
     push(bytes.slice(4));
     push(null);
     expect([401, 403]).toContain((await uploadResponse).status);
-    await drainCleanup(h, [s.communityId]);
+    await drainCleanup(h);
     expect(await scanBlobs(storageDirectory(h), [text])).toEqual([]);
     expect(
       (await h.pool.query('SELECT 1 FROM attachments WHERE uploader_member_id=$1', [s.p.memberId]))
@@ -533,7 +581,7 @@ describe('backup re-application (AC-12)', () => {
       );
       const result = await reapplyErasures(h.pool, parseErasureJournal(journalText));
       expect(result).toMatchObject({ members: 1, accounts: 1 });
-      await drainCleanup(h, [s.communityId]);
+      await drainCleanup(h);
       const hits = (await scanDatabase(h.pool, needles)).filter(
         (hit) => hit.communityId === s.communityId || hit.communityId === null
       );

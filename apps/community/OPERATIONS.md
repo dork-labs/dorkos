@@ -143,6 +143,8 @@ docker compose -f apps/community/compose.yml up -d community
 
 From a source checkout, `pnpm --filter @dorkos/community erasure:reapply < erasure-journal.log` does the same. It prints only counts, and running it twice changes nothing.
 
+A few things inside the community stay on purpose, because they are not attributed to the person in the database: their name typed as plain words in someone else's message, their handle inside code or a quote, an email-shaped string such as `bob@handle`, and the names of channels they created. Two more stay briefly. A message that names their old `@handle` and is posted in the moment between the last mention pass and the end of the erasure keeps that text. And a local install's pairing request that nobody approved or declined names only the install, not a person, so it stays until it is cleaned up, at most 70 minutes after it started.
+
 Erasure cannot reach everything. Deleted rows stay in PostgreSQL's free space until it is vacuumed, and in its write-ahead log and point-in-time recovery archives for as long as you keep them. Your database and file backups keep erased data for as long as you keep them. On S3 storage, the app deletes objects without a version ID, so a versioned bucket keeps old versions: use an unversioned bucket, or a lifecycle rule that expires noncurrent versions. Copies on members' own computers, such as downloaded exports and anything their DorkOS installation or agents saved, are theirs and are not touched.
 
 ## Storage and hosting choices

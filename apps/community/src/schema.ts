@@ -768,7 +768,7 @@ export const entries = pgTable(
   (table) => [
     uniqueIndex('entries_community_id_unique').on(table.communityId, table.id),
     uniqueIndex('entries_channel_seq_unique').on(table.channelId, table.seq),
-    // Partial, so erasure's rewrite of idempotency_key is not a row-key update (0012).
+    // Partial, so erasure's rewrite of idempotency_key is not a row-key update (0013).
     uniqueIndex('entries_author_key_unique')
       .on(table.authorMemberId, table.channelId, table.idempotencyKey)
       .where(sql`${table.authorMemberId} IS NOT NULL`),

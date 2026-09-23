@@ -331,6 +331,35 @@ export async function scanDatabase(pool: Pool, needles: readonly string[]): Prom
   return hits;
 }
 
+/**
+ * Every uuid column of every tenant table (enumerated from the catalogue) that holds `id` in
+ * one community's rows, as `table.column`.
+ */
+export async function scanUuidColumns(
+  pool: Pool,
+  communityId: string,
+  id: string
+): Promise<string[]> {
+  const columns = await pool.query<{ table_name: string; column_name: string }>(
+    `SELECT c.table_name,c.column_name FROM information_schema.columns c
+     JOIN information_schema.tables t ON t.table_schema=c.table_schema AND t.table_name=c.table_name
+     WHERE c.table_schema='public' AND t.table_type='BASE TABLE' AND c.data_type='uuid'
+       AND EXISTS (SELECT 1 FROM information_schema.columns k WHERE k.table_schema='public'
+         AND k.table_name=c.table_name AND k.column_name='community_id')
+     ORDER BY c.table_name,c.column_name`
+  );
+  const found: string[] = [];
+  for (const { table_name: table, column_name: column } of columns.rows) {
+    const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
+    const rows = await pool.query(
+      `SELECT 1 FROM ${quote(table)} WHERE community_id=$1 AND ${quote(column)}=$2 LIMIT 1`,
+      [communityId, id]
+    );
+    if (rows.rowCount) found.push(`${table}.${column}`);
+  }
+  return found;
+}
+
 /** Search every object in a filesystem BlobStore directory, returning the keys that match. */
 export async function scanBlobs(
   directory: string,
@@ -404,16 +433,20 @@ export async function runErasures(
 }
 
 /**
- * Finish every queued blob deletion, advancing the sweep's retry clock past its one-hour
- * wait each round, and let these communities' unused pairings expire and be swept.
+ * Let unused pairing requests in these communities reach the sweep, as they would 70 minutes
+ * after they started (ten to expire, an hour of grace), and sweep them.
  */
-export async function drainCleanup(h: TenancyHarness, communityIds: string[]): Promise<void> {
+export async function sweepAbandonedPairings(h: TenancyHarness, communityIds: string[]) {
   await h.pool.query(
-    `UPDATE connection_pairings SET expires_at=now()-interval '2 hours'
+    `UPDATE connection_pairings SET expires_at=now()-interval '61 minutes'
      WHERE consumed_at IS NULL AND community_id=ANY($1::uuid[])`,
     [communityIds]
   );
   await sweepExpiredPairings(h.pool);
+}
+
+/** Finish every queued blob deletion, advancing the sweep's retry clock each round. */
+export async function drainCleanup(h: TenancyHarness): Promise<void> {
   for (let round = 0; round < 10; round++) {
     await h.pool.query(
       "UPDATE pending_blob_deletions SET next_attempt_at=now()-interval '1 second'"

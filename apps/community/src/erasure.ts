@@ -30,6 +30,15 @@ export class ErasureError extends Error {
   }
 }
 
+/**
+ * The verification rows Better Auth keeps for one account, matched by exact shape, never by
+ * substring (a substring match on `al@x.io` would also delete `sal@x.io`'s rows): a random
+ * identifier such as `reset-password:<token>` whose value is the user id or the email, or an
+ * identifier that is the email or ends in `:<email>` or `-<email>` (one-time codes).
+ */
+export const VERIFICATION_OF_ACCOUNT = `value=$1 OR lower(value)=$2 OR lower(identifier)=$2
+  OR right(lower(identifier), char_length($2)+1) IN (':' || $2, '-' || $2)`;
+
 /** One step of the membership procedure, named for crash and lock tests. */
 export type ErasureStep =
   'end-access' | 'files' | 'exports' | 'tombstones' | 'mentions' | 'seal' | 'account';
@@ -51,6 +60,25 @@ export interface ErasureOptions {
   batchSize?: number;
   /** Receives each completion line; defaults to standard output. */
   log?: (line: string) => void;
+  /** The running account request this erasure belongs to; its lease is renewed too. */
+  requestId?: string;
+}
+
+/** How long a claimed request stays the worker's before another replica may resume it. */
+const LEASE = "interval '5 minutes'";
+
+/**
+ * Extend the lease of the running requests this erasure works for, after each step, so a
+ * long erasure is never resumed by a second worker while the first is still making progress.
+ */
+async function renewLease(target: Target): Promise<void> {
+  await target.pool.query(
+    `UPDATE erasure_requests SET next_attempt_at=GREATEST(next_attempt_at,now()+${LEASE})
+     WHERE state='running' AND (
+       id=$3::uuid OR (kind='membership' AND community_id=$1 AND member_id=$2)
+     )`,
+    [target.communityId, target.memberId, target.options.requestId ?? null]
+  );
 }
 
 interface MemberRow {
@@ -182,10 +210,8 @@ async function endAccess(target: Target): Promise<void> {
       'DELETE FROM owner_quota_windows WHERE owner_member_id=$1 AND community_id=$2',
       ids
     );
-    await client.query(
-      'DELETE FROM admission_receipts WHERE community_id=$2 AND (member_id=$1 OR account_id=$3)',
-      [...ids, member.user_id]
-    );
+    // Admission receipts go with their pending admission (ON DELETE CASCADE) just below, and
+    // remove() above already deleted the ones naming this member.
     if (member.user_id) {
       await client.query('DELETE FROM invite_uses WHERE community_id=$1 AND user_id=$2', [
         member.community_id,
@@ -552,6 +578,7 @@ export async function eraseMembership(
   }
   const step = async (name: ErasureStep, run: () => Promise<void>) => {
     await run();
+    await renewLease(target);
     await options.hooks?.afterStep?.(name);
   };
   await step('end-access', () => endAccess(target));
@@ -566,6 +593,9 @@ export async function eraseMembership(
   const line = JSON.stringify({ event: 'community.member_erased', communityId, memberId });
   for (let round = 0; round < SEAL_ROUNDS; round++) {
     // Anything the member or their agents did between steps, and posts made since step 5.
+    // Named leftover: a post naming the old @handle that commits after this round's mention
+    // pass and before the husk keeps its text. It resolved to no one when posted, because the
+    // member was no longer active (OPERATIONS.md, "Erasure requests").
     const next = await recordWatermark(target);
     await endAccess(target);
     await eraseFiles(target);
@@ -590,13 +620,13 @@ export async function eraseMembership(
  * admissions, verification rows, and finally the account itself, whose sessions and
  * sign-in methods cascade.
  *
- * @param requestId - The running account request the memberships are recorded under.
+ * `options.requestId` is the running account request the memberships are recorded under.
  * @returns `erased`, or `gone` when the account no longer exists.
  */
 export async function eraseAccount(
   pool: Pool,
   userId: string,
-  options: ErasureOptions & { requestId?: string } = {}
+  options: ErasureOptions = {}
 ): Promise<'erased' | 'gone'> {
   for (let round = 0; round < ACCOUNT_ROUNDS; round++) {
     const memberships = await pool.query<{ id: string; community_id: string }>(
@@ -639,14 +669,12 @@ export async function eraseAccount(
       ]);
       if (operator.rowCount) throw new ErasureError('HOST_OPERATOR');
       await client.query('DELETE FROM invite_uses WHERE user_id=$1', [userId]);
-      await client.query('DELETE FROM admission_receipts WHERE account_id=$1', [userId]);
+      // Its admission receipts cascade with it.
       await client.query('DELETE FROM pending_admissions WHERE account_id=$1', [userId]);
-      // Better Auth keeps random identifiers (reset-password:<token>) with the user id as value.
-      await client.query(
-        `DELETE FROM verification WHERE value=$1
-           OR position(lower($2) IN lower(value))>0 OR position(lower($2) IN lower(identifier))>0`,
-        [userId, account.rows[0].email]
-      );
+      await client.query(`DELETE FROM verification WHERE ${VERIFICATION_OF_ACCOUNT}`, [
+        userId,
+        account.rows[0].email.toLowerCase(),
+      ]);
       // Completed before the account row goes: its foreign key then clears user_id.
       await client.query(
         `UPDATE erasure_requests SET state='completed',started_at=COALESCE(started_at,now()),

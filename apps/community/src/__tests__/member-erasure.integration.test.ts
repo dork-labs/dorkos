@@ -27,7 +27,9 @@ import {
   runErasures,
   scanBlobs,
   scanDatabase,
+  scanUuidColumns,
   seedCanaries,
+  sweepAbandonedPairings,
   storageDirectory,
   type Hit,
   type Person,
@@ -77,8 +79,21 @@ function scopedHits(hits: Hit[], communityId: string) {
   return hits.filter((hit) => hit.communityId === communityId);
 }
 
+/**
+ * An unused pairing request names an install but no person, so erasure cannot find it; it
+ * lives until the sweep, at most 70 minutes after it started. Named here until then.
+ */
+let abandonedPairingsSwept = false;
+
 /** The matches erasure may leave, each named so nobody later claims otherwise (AC-10). */
 function isNamedLeftover(hit: Hit): boolean {
+  if (
+    !abandonedPairingsSwept &&
+    hit.table === 'connection_pairings' &&
+    hit.column === 'install_name' &&
+    hit.needle === CANARY.abandoned
+  )
+    return true;
   if (hit.table === 'channels' && hit.column === 'name' && hit.rowId === before.adminChannelId)
     return true;
   if (hit.table !== 'entries' || hit.column !== 'text') return false;
@@ -213,7 +228,10 @@ beforeAll(async () => {
     blobsB: await blobs(communityB),
     adminChannelId: adminChannel.channel.id,
   };
-  needles = await personNeedles(h.pool, pA, [seededA.agent.handle, seededB.agent.handle]);
+  needles = [
+    ...(await personNeedles(h.pool, pA, [seededA.agent.handle, seededB.agent.handle])),
+    pA.userId,
+  ];
 }, 120_000);
 
 afterAll(async () => {
@@ -250,6 +268,23 @@ describe('residue scan (AC-1, AC-10)', () => {
       `verification.value:${PERSON.email}`,
     ])
       expect(columns, expected).toContain(expected);
+    // The account id sits in every admission record in A; name them so the scan must see them.
+    const inAColumns = new Set(
+      scopedHits(hits, communityA)
+        .filter((hit) => hit.needle === pA.userId.toLowerCase())
+        .map((hit) => `${hit.table}.${hit.column}`)
+    );
+    for (const expected of [
+      'members.user_id',
+      'invite_uses.user_id',
+      'pending_admissions.account_id',
+      'admission_receipts.account_id',
+    ])
+      expect(inAColumns, expected).toContain(expected);
+    // So does the member id, in uuid columns the text scan cannot see.
+    expect(await scanUuidColumns(h.pool, communityA, pA.memberId)).toEqual(
+      expect.arrayContaining(['admission_receipts.member_id', 'connection_grants.member_id'])
+    );
     // Hashes of P's payloads and file bytes are found where they are stored.
     const hashes = needles.filter((needle) => /^[a-f0-9]{64}$/.test(needle));
     expect(hashes.length).toBeGreaterThanOrEqual(6);
@@ -286,7 +321,7 @@ describe('residue scan (AC-1, AC-10)', () => {
         memberId: pA.memberId,
       }),
     ]);
-    await drainCleanup(h, [communityA]);
+    await drainCleanup(h);
 
     const hits = await scanDatabase(h.pool, needles);
     const inA = scopedHits(hits, communityA);
@@ -295,6 +330,24 @@ describe('residue scan (AC-1, AC-10)', () => {
     const leftoverRows = new Set(inA.map((hit) => hit.rowId));
     for (const row of [before.qCode, before.qFreeText, before.qEmailShaped, before.adminChannelId])
       expect(leftoverRows).toContain(row);
+    // The member id survives only where the husk must be pointed at: the husk itself, its
+    // entries, agents and handle, the audit trail, and the erasure request.
+    expect(await scanUuidColumns(h.pool, communityA, pA.memberId)).toEqual([
+      'agents.owner_member_id',
+      'audit_events.actor_member_id',
+      'community_handles.member_id',
+      'entries.author_member_id',
+      'erasure_requests.member_id',
+      'members.id',
+    ]);
+    // The unused pairing request is gone once the sweep reaches it.
+    await sweepAbandonedPairings(h, [communityA]);
+    abandonedPairingsSwept = true;
+    expect(
+      scopedHits(await scanDatabase(h.pool, needles), communityA).filter(
+        (hit) => !isNamedLeftover(hit)
+      )
+    ).toEqual([]);
 
     // B still holds every canary of P.
     const inB = new Set(scopedHits(hits, communityB).map((hit) => hit.needle));
@@ -490,9 +543,18 @@ describe('residue scan (AC-1, AC-10)', () => {
     );
     expect(requested.erasure.kind).toBe('account');
     expect(await runErasures(h.pool, hoursFromNow(73))).toBeGreaterThanOrEqual(1);
-    await drainCleanup(h, [communityA, communityB]);
+    await drainCleanup(h);
+    await sweepAbandonedPairings(h, [communityA, communityB]);
     const hits = await scanDatabase(h.pool, needles);
     expect(hits.filter((hit) => !isNamedLeftover(hit))).toEqual([]);
+    expect(await scanUuidColumns(h.pool, communityB, pB.memberId)).toEqual([
+      'agents.owner_member_id',
+      'audit_events.actor_member_id',
+      'community_handles.member_id',
+      'entries.author_member_id',
+      'erasure_requests.member_id',
+      'members.id',
+    ]);
     // The only object left holding any needle is the owner export made after the first
     // erasure, which copies the named leftovers and nothing else.
     const leftoverWords = [CANARY.channel, pA.handle, 'Zephyrine', 'Quill'];
@@ -510,11 +572,17 @@ describe('residue scan (AC-1, AC-10)', () => {
       expect(
         (await h.pool.query(`SELECT 1 FROM ${table} WHERE ${column}=$1`, [pA.userId])).rowCount
       ).toBe(0);
+    // The one line that names the account id is the completion record hosts keep outside
+    // their backups to re-apply the erasure; it carries the random id and nothing else.
+    const record = JSON.stringify({ event: 'community.account_erased', userId: pA.userId });
     expect(
-      logs.filter((line) =>
-        needles.some((needle) => line.toLowerCase().includes(needle.toLowerCase()))
+      logs.filter(
+        (line) =>
+          line !== record &&
+          needles.some((needle) => line.toLowerCase().includes(needle.toLowerCase()))
       )
     ).toEqual([]);
+    expect(logs).toContain(record);
     const husk = (
       await h.pool.query('SELECT display_name,user_id FROM members WHERE id=$1', [pB.memberId])
     ).rows[0];

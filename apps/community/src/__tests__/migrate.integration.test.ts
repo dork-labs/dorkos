@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { Pool } from 'pg';
-import { migrate } from '../migrate.js';
+import { COMMUNITY_MIGRATIONS, migrate } from '../migrate.js';
 import { inspectBackout } from '../backout.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
@@ -217,7 +217,7 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();
@@ -407,7 +407,7 @@ it('expands a populated version-four database without changing files or cleanup 
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
     expect(
       (
         await db.query(
@@ -1095,5 +1095,230 @@ it('keeps version-eleven host audit rows, receipts, and revoked claims valid, an
   } finally {
     await db.end();
     await admin.query(`DROP DATABASE IF EXISTS ${upgradeName}`);
+  }
+});
+
+// Purpose: the migrator refuses a database whose recorded history skips a listed version,
+// and changes nothing when it does.
+it('refuses to run an unapplied migration below the newest applied one', async () => {
+  const gapName = `community_gap_${randomUUID().replaceAll('-', '')}`;
+  const gapUrl = new URL(adminUrl!);
+  gapUrl.pathname = `/${gapName}`;
+  await admin.query(`CREATE DATABASE ${gapName}`);
+  const db = new Pool({ connectionString: gapUrl.toString() });
+  try {
+    await db.query(
+      'CREATE TABLE community_migrations(version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())'
+    );
+    await db.query('INSERT INTO community_migrations(version) VALUES (1),(3)');
+    await expect(migrate(gapUrl.toString())).rejects.toThrow(
+      'Community migrations 2 were never applied, but 3 was'
+    );
+    expect(
+      (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows
+    ).toEqual([{ version: 1 }, { version: 3 }]);
+  } finally {
+    await db.end();
+    await admin.query(`DROP DATABASE IF EXISTS ${gapName} WITH (FORCE)`);
+  }
+});
+
+/** Apply every migration before member erasure, recorded as already migrated. */
+async function applyBeforeErasure(db: Pool): Promise<void> {
+  await db.query(
+    'CREATE TABLE community_migrations(version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())'
+  );
+  for (const [version, filename] of COMMUNITY_MIGRATIONS) {
+    if (filename === '0013_member_erasure.sql') break;
+    await db.query(
+      await readFile(
+        fileURLToPath(new URL(`../../migrations/${filename}`, import.meta.url)),
+        'utf8'
+      )
+    );
+    await db.query('INSERT INTO community_migrations(version) VALUES($1)', [version]);
+  }
+}
+
+// Purpose: the member-erasure migration on a populated database backfills what it must
+// (content versions, where a pending deletion returns to, a redaction epoch), keeps the
+// author idempotency rule identical through its new partial index, enforces the member
+// presence check, and still accepts the writes code from before it makes (old code against
+// the new schema).
+it('upgrades a populated database to member erasure without changing what old code does', async () => {
+  const name = `community_erasure_upgrade_${randomUUID().replaceAll('-', '')}`;
+  const url = new URL(adminUrl);
+  url.pathname = `/${name}`;
+  await admin.query(`CREATE DATABASE ${name}`);
+  const db = new Pool({ connectionString: url.toString() });
+  try {
+    await applyBeforeErasure(db);
+    const one = async (sql: string, params: unknown[] = []): Promise<string> =>
+      (await db.query(sql, params)).rows[0].id;
+    await db.query(
+      `INSERT INTO "user"(id,name,email,"emailVerified") VALUES
+         ('u-owner','Owner','owner@upgrade.test',true),('u-member','Member','member@upgrade.test',true)`
+    );
+    const seed = async (label: string) => {
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+        const community = (
+          await client.query<{ id: string }>(
+            "INSERT INTO communities(name,lifecycle) VALUES($1,'pending_owner') RETURNING id",
+            [label]
+          )
+        ).rows[0].id;
+        const owner = (
+          await client.query<{ id: string }>(
+            `INSERT INTO members(community_id,user_id,display_name,handle,role)
+             VALUES($1,'u-owner','Owner','owner','owner') RETURNING id`,
+            [community]
+          )
+        ).rows[0].id;
+        await client.query(
+          "UPDATE communities SET lifecycle='active',activated_at=now() WHERE id=$1",
+          [community]
+        );
+        await client.query('COMMIT');
+        return { community, owner };
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    };
+    const active = await seed('Active');
+    const deleting = await seed('Deleting');
+    await db.query(
+      `UPDATE communities SET lifecycle='deletion_pending',delete_requested_at=now(),
+         delete_after=now()+interval '7 days',delete_requested_by=$2 WHERE id=$1`,
+      [deleting.community, deleting.owner]
+    );
+    const member = await one(
+      `INSERT INTO members(community_id,user_id,display_name,handle,role)
+       VALUES($1,'u-member','Member','member','member') RETURNING id`,
+      [active.community]
+    );
+    const channel = await one(
+      "INSERT INTO channels(community_id,name,visibility,last_seq) VALUES($1,'general','public',1) RETURNING id",
+      [active.community]
+    );
+    await db.query(
+      `INSERT INTO entries(community_id,channel_id,seq,author_member_id,author_display_name,text,
+         idempotency_key,payload_hash) VALUES($1,$2,1,$3,'Member','hello','k1','h')`,
+      [active.community, channel, member]
+    );
+
+    await migrate(url.toString());
+
+    // Backfills.
+    const versions = await db.query(
+      'SELECT community_id FROM community_content_versions ORDER BY community_id'
+    );
+    expect(versions.rows.map((row) => row.community_id).sort()).toEqual(
+      [active.community, deleting.community].sort()
+    );
+    const origins = await db.query(
+      `SELECT id,deletion_from_state,deletion_from_prior_state,redaction_epoch IS NOT NULL AS epoch
+       FROM communities ORDER BY id`
+    );
+    expect(origins.rows).toEqual(
+      [
+        {
+          id: active.community,
+          deletion_from_state: null,
+          deletion_from_prior_state: null,
+          epoch: true,
+        },
+        {
+          id: deleting.community,
+          deletion_from_state: 'archived',
+          deletion_from_prior_state: null,
+          epoch: true,
+        },
+      ].sort((a, b) => a.id.localeCompare(b.id))
+    );
+
+    // The author idempotency rule is exactly as before: same author, channel, and key conflict;
+    // another author with the same key does not.
+    const insert = (author: string, key: string) =>
+      db.query(
+        `INSERT INTO entries(community_id,channel_id,seq,author_member_id,author_display_name,text,
+           idempotency_key,payload_hash)
+         SELECT $1,$2,coalesce(max(seq),0)+1,$3,'x','x',$4,'h' FROM entries WHERE channel_id=$2`,
+        [active.community, channel, author, key]
+      );
+    await expect(insert(member, 'k1')).rejects.toThrow(/entries_author_key_unique/);
+    await insert(active.owner, 'k1');
+    await insert(member, 'k2');
+
+    // The presence check: a member row needs an account unless it is an erased husk, and a
+    // husk can be neither linked nor active.
+    const husk = (userId: string | null, active_: boolean, erased: boolean) =>
+      db.query(
+        `INSERT INTO members(community_id,user_id,display_name,handle,role,active,erased_at)
+         VALUES($1,$2,'Husk',$3,'member',$4,$5)`,
+        [
+          active.community,
+          userId,
+          `h-${randomUUID().slice(0, 8)}`,
+          active_,
+          erased ? new Date() : null,
+        ]
+      );
+    await expect(husk(null, false, false)).rejects.toThrow(/members_user_presence/);
+    await expect(husk(null, true, true)).rejects.toThrow(/members_erased_husk/);
+    await expect(husk('u-member', false, true)).rejects.toThrow(/members_erased_husk/);
+    await husk(null, false, true);
+
+    // Old code against the new schema. A community created the old way gets its version row.
+    const fresh = await one(
+      "INSERT INTO communities(name,lifecycle) VALUES('Fresh','pending_owner') RETURNING id"
+    );
+    expect(
+      (
+        await db.query('SELECT version FROM community_content_versions WHERE community_id=$1', [
+          fresh,
+        ])
+      ).rows
+    ).toEqual([{ version: '1' }]);
+    // The old owner deletion cancel sets only the columns it knew; leaving deletion_pending
+    // clears the new origin columns so every lifecycle check still passes.
+    await db.query(
+      `UPDATE communities SET lifecycle='archived',archived_at=now(),
+         delete_requested_at=NULL,delete_after=NULL,delete_requested_by=NULL,
+         lifecycle_version=lifecycle_version+1 WHERE id=$1`,
+      [deleting.community]
+    );
+    // The old deletion request sets only the columns it knew.
+    await db.query(
+      `UPDATE communities SET lifecycle='deletion_pending',archived_at=NULL,
+         delete_requested_at=now(),delete_after=now()+interval '7 days',delete_requested_by=$2,
+         lifecycle_version=lifecycle_version+1 WHERE id=$1`,
+      [active.community, active.owner]
+    );
+    // The old export insert names no content version.
+    await db.query(
+      `INSERT INTO managed_blobs(blob_key,community_id,purpose,community_lifecycle_version,state,
+         byte_size,checksum,stored_at,committed_at)
+       VALUES($1,$2,'export',1,'committed',1,'c',now(),now())`,
+      ['e'.repeat(64), active.community]
+    );
+    await db.query(
+      `INSERT INTO export_archives(community_id,requester_member_id,scope,blob_key,byte_size,expires_at)
+       VALUES($1,$2,'owner',$3,1,now()+interval '1 hour')`,
+      [active.community, active.owner, 'e'.repeat(64)]
+    );
+    // The old owner export's inner join still reads every linked member.
+    const exported = await db.query(
+      `SELECT m.id FROM members m JOIN "user" u ON u.id=m.user_id WHERE m.community_id=$1`,
+      [active.community]
+    );
+    expect(exported.rowCount).toBe(2);
+  } finally {
+    await db.end();
+    await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
   }
 });

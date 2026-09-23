@@ -116,7 +116,7 @@ it('deletes the erased member’s objects and every live export from S3', async 
     'request erasure'
   );
   await runErasures(h.pool, hoursFromNow(73));
-  await drainCleanup(h, [communityId]);
+  await drainCleanup(h);
   expect((await objectNames()).filter((name) => blobs.includes(name))).toEqual([]);
   expect(
     (await h.pool.query('SELECT 1 FROM managed_blobs WHERE blob_key=ANY($1::text[])', [blobs]))

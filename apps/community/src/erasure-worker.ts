@@ -54,7 +54,10 @@ export async function sweepErasures(
     if (request.kind === 'account') {
       await eraseAccount(pool, request.user_id!, { ...options, requestId: request.id });
     } else {
-      await eraseMembership(pool, request.community_id!, request.member_id!, options);
+      await eraseMembership(pool, request.community_id!, request.member_id!, {
+        ...options,
+        requestId: request.id,
+      });
     }
     return { claimed: 1, completed: 1, failed: 0 };
   } catch (error) {

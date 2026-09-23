@@ -79,9 +79,42 @@ async function requireAccount(c: Context, auth: CommunityAuth) {
   return session;
 }
 
+/** Wrong passwords one account may try on erasure routes in {@link REAUTH_FAILURE_WINDOW_MS}. */
+export const REAUTH_FAILURE_LIMIT = 5;
+const REAUTH_FAILURE_WINDOW_MS = 15 * 60_000;
+
+/**
+ * Per-account count of recent wrong passwords, so a stolen session cannot guess the password
+ * that erasure asks for. In memory, like the app's other attempt limits.
+ */
+class ReauthFailures {
+  private readonly failures = new Map<string, number[]>();
+
+  private recent(userId: string, now: number): number[] {
+    const times = (this.failures.get(userId) ?? []).filter(
+      (time) => now - time < REAUTH_FAILURE_WINDOW_MS
+    );
+    if (times.length) this.failures.set(userId, times);
+    else this.failures.delete(userId);
+    return times;
+  }
+
+  assertAllowed(userId: string): void {
+    if (this.recent(userId, Date.now()).length >= REAUTH_FAILURE_LIMIT)
+      throw new ApiError(429, 'RATE_LIMITED', 'Too many wrong passwords. Try again later.');
+  }
+
+  record(userId: string): void {
+    const now = Date.now();
+    if (this.failures.size > 10_000) this.failures.delete(this.failures.keys().next().value!);
+    this.failures.set(userId, [...this.recent(userId, now), now]);
+  }
+}
+
 async function reauthenticate(
   c: Context,
   auth: CommunityAuth,
+  failures: ReauthFailures,
   pool: Pool,
   session: { user: { id: string }; session: { createdAt: Date } },
   password: string | undefined
@@ -101,12 +134,14 @@ async function reauthenticate(
   if (decision === 'sign-in-again')
     throw new ApiError(403, 'REAUTH_REQUIRED', 'Sign in again, then try once more.');
   if (decision === 'check-password') {
+    failures.assertAllowed(session.user.id);
     try {
       await auth.api.verifyPassword({
         headers: c.req.raw.headers,
         body: { password: password! },
       });
     } catch {
+      failures.record(session.user.id);
       throw new ApiError(403, 'FORBIDDEN', 'Reauthentication failed.');
     }
   }
@@ -149,6 +184,7 @@ export function registerAccountErasureRoutes(
   app: Hono,
   { pool, auth }: { pool: Pool; auth: CommunityAuth }
 ): void {
+  const failures = new ReauthFailures();
   app.get('/account/former-memberships', async (c) => {
     const session = await requireAccount(c, auth);
     const result = await pool.query<{
@@ -206,7 +242,7 @@ export function registerAccountErasureRoutes(
     const body = await readJson(c, CommunityWireErasureCreateRequestSchema);
     if (body.kind === 'account' && body.confirmEmail !== session.user.email)
       throw new ApiError(409, 'STATE_CONFLICT', 'Enter your account email exactly.');
-    await reauthenticate(c, auth, pool, session, body.password);
+    await reauthenticate(c, auth, failures, pool, session, body.password);
     const userId = session.user.id;
     const outcome = await transaction(pool, async (client) => {
       // Lock the account, then its memberships: an owner claim waits on the account row and an

@@ -263,6 +263,22 @@ describe('authority (AC-6)', () => {
     expect(mine.erasures).toEqual([]);
   });
 
+  // Purpose: a stolen session cannot guess the password erasure asks for; after five wrong
+  // passwords even the right one waits, and another account is unaffected.
+  it('limits wrong passwords per account', async () => {
+    const s = await scene('guess');
+    const attempt = (cookie: string, password: string) =>
+      h.call('/api/v1/account/erasures', {
+        cookie,
+        body: { kind: 'membership', communityId: s.communityId, password },
+      });
+    for (let tries = 0; tries < 5; tries++)
+      expect((await attempt(s.p.cookie, `wrong-${tries}`)).status).toBe(403);
+    expect((await attempt(s.p.cookie, 'wrong-again')).status).toBe(429);
+    expect((await attempt(s.p.cookie, PASSWORD)).status).toBe(429);
+    expect((await attempt(s.q.cookie, PASSWORD)).status).toBe(201);
+  });
+
   it('asks a password account for its password and a provider-only account to sign in again', async () => {
     const s = await scene('reauth');
     expect(
@@ -358,6 +374,20 @@ describe('guards (AC-7)', () => {
       201,
       'account erasure'
     );
+    // Better Auth's verification rows: this account's (by user id or email, exact shapes) and
+    // a neighbour whose email merely contains this one, which must survive.
+    const neighbour = `x${email}`;
+    await h.pool.query(
+      `INSERT INTO verification(id,identifier,value,"expiresAt") VALUES
+         ('mine-reset','reset-password:tok-a',$1,now()+interval '1 hour'),
+         ('mine-email','email-verification',$2,now()+interval '1 hour'),
+         ('mine-otp',$3,'123456',now()+interval '1 hour'),
+         ('mine-plain',$2,'654321',now()+interval '1 hour'),
+         ('other-email','email-verification',$4,now()+interval '1 hour'),
+         ('other-otp',$5,'111111',now()+interval '1 hour'),
+         ('other-reset','reset-password:tok-b','some-other-user',now()+interval '1 hour')`,
+      [s.p.userId, email, `sign-in-otp-${email}`, neighbour, `sign-in-otp-${neighbour}`]
+    );
     // During the window: a pending community cannot be claimed by this account.
     const pending = await createPendingCommunity(h, host.cookie, 'Claim target');
     const claimCookie = `${s.p.cookie}; ${await preflightOwnerClaim(h, pending.token)}`;
@@ -414,6 +444,10 @@ describe('guards (AC-7)', () => {
     ]);
     expect(husks.rows.every((row) => row.erased_at !== null)).toBe(true);
     expect((await h.pool.query('SELECT 1 FROM "user" WHERE id=$1', [s.p.userId])).rowCount).toBe(0);
+    const left = await h.pool.query<{ id: string }>(
+      "SELECT id FROM verification WHERE id LIKE 'mine-%' OR id LIKE 'other-%' ORDER BY id"
+    );
+    expect(left.rows.map((row) => row.id)).toEqual(['other-email', 'other-otp', 'other-reset']);
   });
 
   it('refuses redemption and owner claim for a live session while its account erasure runs', async () => {
