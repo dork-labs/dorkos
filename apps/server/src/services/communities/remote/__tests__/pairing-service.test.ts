@@ -694,6 +694,58 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       expect(unknown).toMatchObject({ status: 404, remoteCode: undefined });
     });
 
+    it('still revokes a reconnect-required connection whose bearer is stored', async () => {
+      // A grant refused for a missing scope can still be live on the Community.
+      const { store, service, ref } = await connected('reconnect-owner');
+      const file = join(directory, 'communities', 'remote', 'connections.json');
+      const records = JSON.parse(await readFile(file, 'utf8')) as Array<{
+        ref: string;
+        status: string;
+      }>;
+      records.find((record) => record.ref === ref)!.status = 'reconnect-required';
+      await writeFile(file, JSON.stringify(records));
+      expect(await service.disconnect(ref, 'reconnect-owner')).toEqual({ remoteRevoked: true });
+      expect(revocations).toEqual([
+        { path: `${qualified}/me/connection`, authorization: `Bearer ${token}` },
+      ]);
+      await expectLocalCopyGone(store, ref, 'reconnect-owner');
+    });
+
+    it('reports a failed revoke of a reconnect-required grant as unconfirmed', async () => {
+      const { store, service, ref } = await connected('reconnect-offline-owner');
+      const file = join(directory, 'communities', 'remote', 'connections.json');
+      const records = JSON.parse(await readFile(file, 'utf8')) as Array<{
+        ref: string;
+        status: string;
+      }>;
+      records.find((record) => record.ref === ref)!.status = 'reconnect-required';
+      await writeFile(file, JSON.stringify(records));
+      revocationAnswer = 'hang-up';
+      expect(await service.disconnect(ref, 'reconnect-offline-owner')).toEqual({
+        remoteRevoked: false,
+      });
+      expect(revocations).toHaveLength(1);
+      await expectLocalCopyGone(store, ref, 'reconnect-offline-owner');
+    });
+
+    it('makes no call once a rejected grant has already dropped its bearer', async () => {
+      const { store, service, ref } = await connected('dropped-bearer-owner');
+      await store.requireReconnect(ref, 'dropped-bearer-owner');
+      expect(await service.disconnect(ref, 'dropped-bearer-owner')).toEqual({
+        remoteRevoked: true,
+      });
+      expect(revocations).toEqual([]);
+      await expectLocalCopyGone(store, ref, 'dropped-bearer-owner');
+    });
+
+    it('reports a connected record that lost its bearer as unconfirmed', async () => {
+      const { store, service, ref } = await connected('lost-bearer-owner');
+      await new EncryptedFileCredentialStore(directory).delete(`community:${ref}:personal`);
+      expect(await service.disconnect(ref, 'lost-bearer-owner')).toEqual({ remoteRevoked: false });
+      expect(revocations).toEqual([]);
+      await expectLocalCopyGone(store, ref, 'lost-bearer-owner');
+    });
+
     it('does not call the Community for a pending request, which has no grant', async () => {
       approved = false;
       const store = new RemoteConnectionStore(directory);

@@ -361,11 +361,17 @@ export class RemoteCommunityPairingService {
     this.enter(ref);
     try {
       const record = await this.store.get(ref, ownerKey);
-      // A pending request never received a grant, and a reconnect-required one
-      // was already refused by the Community: nothing is left to end there.
-      // Revocation never throws, so the local copy is always removed below.
-      const remoteRevoked =
-        record.status === 'connected' ? await this.revokeRemoteGrant(ref, ownerKey, record) : true;
+      // Revoke whenever a bearer is still stored, reconnect-required included:
+      // a grant the Community refused for a missing scope can still be live
+      // there, and the revoke is idempotent. A pending request never received
+      // a grant, so it has no bearer and makes no call. Revocation never
+      // throws, so the local copy is always removed below.
+      const bearer = await this.store.storedPersonalToken(ref, ownerKey);
+      // A connected record that lost its bearer cannot confirm anything, so it
+      // reports unconfirmed rather than claiming the grant is gone.
+      const remoteRevoked = bearer
+        ? await this.revokeRemoteGrant(bearer, record)
+        : record.status !== 'connected';
       await this.store.disconnect(ref, ownerKey);
       return { remoteRevoked };
     } finally {
@@ -374,8 +380,7 @@ export class RemoteCommunityPairingService {
   }
 
   private async revokeRemoteGrant(
-    ref: CommunityRef,
-    ownerKey: string,
+    bearer: string,
     record: { pinnedOrigin: string; remoteCommunityId: string }
   ): Promise<boolean> {
     try {
@@ -386,7 +391,7 @@ export class RemoteCommunityPairingService {
         undefined,
         {
           method: 'DELETE',
-          authorization: await this.store.personalToken(ref, ownerKey),
+          authorization: bearer,
           accept: [204],
         }
       );

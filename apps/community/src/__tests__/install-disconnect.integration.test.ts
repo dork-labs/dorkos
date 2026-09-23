@@ -13,6 +13,8 @@ import { RemoteConnectionStore } from '../../../server/src/services/communities/
 import { RemoteCommunityPairingService } from '../../../server/src/services/communities/remote/pairing-service.js';
 import {
   bootstrapHost,
+  claimAsNewAccount,
+  createPendingCommunity,
   expectStatus,
   pairInstall,
   startTenancyHarness,
@@ -94,6 +96,26 @@ it('refuses a bearer that is not a grant, and a request with none', async () => 
     (await h.call(`${tenant()}/me/connection`, { method: 'DELETE', bearer: 'not-a-grant' })).status
   ).toBe(401);
   expect((await h.call(`${tenant()}/me/connection`, { method: 'DELETE' })).status).toBe(401);
+});
+
+it('refuses one community’s bearer at another community’s address', async () => {
+  const pending = await createPendingCommunity(h, ownerCookie, 'Community B');
+  await claimAsNewAccount(h, pending.token, 'B Owner', 'b-owner@disconnect.test');
+  const install = await pairInstall(h, communityId, ownerCookie);
+  const grant = await grantIdOf(install);
+
+  expect(
+    (
+      await h.call(`/api/v1/communities/${pending.communityId}/me/connection`, {
+        method: 'DELETE',
+        bearer: install,
+      })
+    ).status
+  ).toBe(401);
+
+  // The grant in community A is untouched and still works there.
+  expect(await listedGrantIds()).toContain(grant);
+  expect((await h.call(`${tenant()}/me/connection-access`, { bearer: install })).status).toBe(200);
 });
 
 it('lets an install disconnect from a suspended community', async () => {

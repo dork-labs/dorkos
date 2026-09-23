@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(community): revoke the grant on Disconnect, and pass Community refusals through'
+  - 'fix(community): revoke any stored grant on Disconnect, and prove the tenant fence'
 ---
 
 ### Fixed
