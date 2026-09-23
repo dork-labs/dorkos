@@ -13,7 +13,7 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import { useSearch } from '@tanstack/react-router';
 import { MessagesSquare } from 'lucide-react';
-import { Button, Skeleton } from '@/layers/shared/ui';
+import { Button, PageHeading, Skeleton } from '@/layers/shared/ui';
 import {
   useLoadedRoomEntries,
   usePendingPosts,
@@ -87,6 +87,16 @@ function HomeNotice({
  * to, which is a press.
  */
 export function HomeRoomPage() {
+  return (
+    <>
+      <PageHeading>Home</PageHeading>
+      <HomeRoomBody />
+    </>
+  );
+}
+
+/** The room, or the one honest state that stands in for it. */
+function HomeRoomBody() {
   const team = useTeamRoom();
   /**
    * Whether the caret is in the room's composer.

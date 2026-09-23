@@ -1,6 +1,11 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { FeatureDisabledState, PageContainer, QueryErrorState } from '@/layers/shared/ui';
+import {
+  FeatureDisabledState,
+  PageContainer,
+  PageHeading,
+  QueryErrorState,
+} from '@/layers/shared/ui';
 import { icons } from '@dorkos/icons/registry';
 import { useTasksEnabled, useTasks, useTaskTemplateDialog } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
@@ -9,8 +14,22 @@ import type { Task } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { CreateTaskDialog, TasksEmptyState, TasksList } from '@/layers/features/tasks';
 
-/** Tasks page -- full-viewport task management surface at /tasks. */
+/**
+ * Tasks page -- full-viewport task management surface at /tasks.
+ *
+ * Headed "Schedules", the word its tab in the bar uses (`HOME_TABS`).
+ */
 export function TasksPage() {
+  return (
+    <>
+      <PageHeading>Schedules</PageHeading>
+      <TasksPageBody />
+    </>
+  );
+}
+
+/** Every state of the `/tasks` page below its heading. */
+function TasksPageBody() {
   const tasksEnabled = useTasksEnabled();
   const { data: allTasks = [], isLoading, isError, refetch } = useTasks(tasksEnabled);
   const [dialogOpen, setDialogOpen] = useState(false);

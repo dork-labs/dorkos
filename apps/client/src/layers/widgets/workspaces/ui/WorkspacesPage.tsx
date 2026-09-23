@@ -10,6 +10,7 @@ import {
   TableCell,
   TableHead,
   TableHeader,
+  PageHeading,
   TableRow,
 } from '@/layers/shared/ui';
 import { useWorktreeScan, type WorktreeScanEntry } from '@/layers/entities/workspace';
@@ -158,7 +159,7 @@ export function WorkspacesPage() {
           navigating by heading finds the page's sections hanging under nothing.
           The bar's title is a `nav` landmark, not a heading, and cannot stand in
           for one. */}
-      <h1 className="sr-only">Workspaces</h1>
+      <PageHeading>Workspaces</PageHeading>
       {/* A gist, not an explanation. The empty state below says what a worktree
           is and why one exists; saying it twice on one screen — once here in
           the intro, once in the card underneath it — was the same idea in two
