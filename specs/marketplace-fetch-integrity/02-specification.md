@@ -2,14 +2,14 @@
 slug: marketplace-fetch-integrity
 number: 260923-163012
 created: 2026-09-23
-status: specified
+status: implemented
 linear-issue: DOR-2248
 project: Marketplace Package Management
 ---
 
 # A cached package holds exactly the commit its key names
 
-**Status:** Draft
+**Status:** Implemented
 **Author:** Claude Code
 **Date:** 2026-09-23
 **Input:** [`01-ideation.md`](./01-ideation.md) (decisions 1–11 carried forward)
@@ -94,13 +94,15 @@ type RemoteRef =
 7. `git rev-parse --verify HEAD` must equal `<arrived>`, or throw. This is the check the cache relies on.
 8. Remove `destDir/.git`. The entry is the tree and nothing else, for both forms (today a `git-subdir` entry keeps its `.git`).
 
+Any failure other than `GitCommitNotFoundError` is thrown as `GitFetchError` ("Couldn't fetch <remote>: <git's reason>"). The fetch goes through a temporary remote named `origin`, not a bare URL: a blob-filtered fetch records its promisor settings under the remote's name, and the checkout needs them to fetch the blobs it lacks.
+
 Every spawn: argv array (no shell), `hardenedGitEnv()`, `--end-of-options` before every author-supplied value, a 120 s wall clock (`GIT_FETCH_TIMEOUT_MS`, matching the clone it replaces). Errors carry git's stderr with tokens redacted (`redactAuthTokens`) and never the credentialed URL.
 
 The old `git-subdir` fallback ladder is removed. The "filter unsupported" rung never fires on a fetch (measured: the server warns and serves). The "sparse-checkout unsupported" rung only served git 2.24, below the stated floor.
 
 ### 3. Orchestration (`PackageFetcher`)
 
-One private path, `fetchGitTree({ packageName, cloneUrl, ref, subpath, force })`, used by the git resolver and the legacy bare-`gitUrl` path (`fetchFromGit`, ref `HEAD`):
+One private path, `fetchGitTree({ packageName, cloneUrl, ref, subpath, force })`, used by the git resolver, the legacy bare-`gitUrl` path (`fetchFromGit`, ref `HEAD`) and `fetchAtCommit`. A whole-repo `file://` address is served in place before it (commit `local`), exactly as `fetchFromGit` always did, so a `url` source naming a local folder still installs:
 
 1. `assertRemoteAllowed(cloneUrl)` (`assertSafeGitRemote`, logged).
 2. `lookupRemoteRef`. `missing` → `GitRefNotFoundError`; `unreachable` → `GitRemoteUnreachableError`. Nothing is fetched.
@@ -108,6 +110,8 @@ One private path, `fetchGitTree({ packageName, cloneUrl, ref, subpath, force })`
 4. Otherwise `cache.materializePackage(name, commitSha, (tempDir) => git.fetch(...))`. The returned `{ path, commitSha }` is the result: its commit is the verified one.
 
 `PackageFetcher` takes a `GitTreeSource` (`{ lookup, fetch }`, default `gitTreeSource`) in place of the `TemplateDownloader`, so tests replace the network at one seam.
+
+`fetchAtCommit({ packageName, sourceKey, commitSha })` fetches one exact commit whatever ref the source names, for every git form (a `SourceKey` is what all three reduce to), returning the package directory below `sourceKey.subpath`. It refuses anything but a full commit id. This is the API for rebuilding an install recorded at a commit its branch has moved past (DOR-2245): the pinned path of §2, with its branches-and-tags fallback.
 
 `lookupCommitSha(cloneUrl, ref)` (the update check's API, unchanged signature) uses the same `lookupRemoteRef`, so the update check and an install resolve a ref the same way. It keeps its contract: `found` → the commit; anything else → a `tmp-<ms>` placeholder that `isRealCommitSha` rejects. This is the only place a placeholder remains, and it is never a fetch result or a key.
 
@@ -132,18 +136,18 @@ The URL rewrite moves out of `execGitClone` into `withGitHubToken(url, auth)` in
 
 ### Code structure
 
-| File                                                                           | Change                                                                                                          |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `apps/server/src/services/marketplace/lib/git-tree.ts`                         | new: `isFullCommitSha`, `lookupRemoteRef`, `fetchTree`, `gitTreeSource`, `GitTreeSource`, the three errors      |
-| `apps/server/src/services/marketplace/package-fetcher.ts`                      | `fetchGitTree`, `GitTreeSource` seam, `FetcherDeps = { fetchGitTree }`, `lookupCommitSha` via `lookupRemoteRef` |
-| `apps/server/src/services/marketplace/source-resolvers/git.ts`                 | new; replaces `github.ts`, `url.ts`, `git-subdir.ts`                                                            |
-| `apps/server/src/services/marketplace/marketplace-cache.ts`                    | `trees/`, verified key, `removeLegacyPackages`, no `putPackage`                                                 |
-| `apps/server/src/services/core/template-downloader.ts`                         | `withGitHubToken`; `cloneRepository`, `TemplateDownloader`, `defaultTemplateDownloader` removed                 |
-| `apps/server/src/index.ts`                                                     | `gitTreeSource`; `removeLegacyPackages()` at startup                                                            |
-| `apps/server/src/services/marketplace/marketplace-installer.ts`                | comments only (the DOR-2248 limit is gone)                                                                      |
-| `apps/server/src/services/marketplace/flows/update.ts`                         | one comment (`ref: 'main'` → `'HEAD'`)                                                                          |
-| `packages/marketplace/src/source-resolver.ts`                                  | `DEFAULT_REF = 'HEAD'`                                                                                          |
-| `contributing/marketplace-installs.md`, `contributing/marketplace-registry.md` | fetch + cache sections, known limits                                                                            |
+| File                                                                           | Change                                                                                                                           |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/services/marketplace/lib/git-tree.ts`                         | new: `isFullCommitSha`, `lookupRemoteRef`, `fetchTree`, `gitTreeSource`, `GitTreeSource`, the three errors                       |
+| `apps/server/src/services/marketplace/package-fetcher.ts`                      | `fetchGitTree`, `fetchAtCommit`, `GitTreeSource` seam, `FetcherDeps = { fetchGitTree }`, `lookupCommitSha` via `lookupRemoteRef` |
+| `apps/server/src/services/marketplace/source-resolvers/git.ts`                 | new; replaces `github.ts`, `url.ts`, `git-subdir.ts`                                                                             |
+| `apps/server/src/services/marketplace/marketplace-cache.ts`                    | `trees/`, verified key, `removeLegacyPackages`, no `putPackage`                                                                  |
+| `apps/server/src/services/core/template-downloader.ts`                         | `withGitHubToken`; `cloneRepository`, `TemplateDownloader`, `defaultTemplateDownloader` removed                                  |
+| `apps/server/src/index.ts`                                                     | `gitTreeSource`; `removeLegacyPackages()` at startup                                                                             |
+| `apps/server/src/services/marketplace/marketplace-installer.ts`                | comments only (the DOR-2248 limit is gone)                                                                                       |
+| `apps/server/src/services/marketplace/flows/update.ts`                         | one comment (`ref: 'main'` → `'HEAD'`)                                                                                           |
+| `packages/marketplace/src/source-resolver.ts`                                  | `DEFAULT_REF = 'HEAD'`                                                                                                           |
+| `contributing/marketplace-installs.md`, `contributing/marketplace-registry.md` | fetch + cache sections, known limits                                                                                             |
 
 ### API / data model changes
 
@@ -178,7 +182,9 @@ Nothing new to learn. What changes for a person:
 - **`@dorkos/marketplace`**: `sourceKeyOf` defaults to `HEAD`.
 - **`template-downloader.test.ts`**: `withGitHubToken` gates the token exactly as `execGitClone` did.
 
-Every test states its purpose, and the critical lines are mutation-checked: dropping the HEAD comparison, the exact-name match, the tag peel, the cache's commit check, or the fallback's refname each turns a test red.
+- **End to end (`package-fetcher-git.test.ts`)**: `PackageFetcher` + real `gitTreeSource` + real cache against a bare repository addressed by path (the address policy is opened for that path only): `fetchAtCommit` at a commit `main` has moved past, for a git-subdir key and a whole-repo key, from cache the second time, through the protocol-v0 fallback, and refused for an absent or abbreviated commit; `fetchPackage` at a named branch and at the default branch.
+
+Every test states its purpose, and the critical lines are mutation-checked: the tag peel, the branch-before-tag order, the qualified `ls-remote` patterns, the HEAD comparison, the by-id commit check, the refname fallback, the pinned-commit check, the cache's commit gate and key, the `missing` refusal, the token host gate, the `trees/` root, and `fetchAtCommit`'s use of the commit as the ref each turn a test red.
 
 ## Performance Considerations
 
@@ -189,7 +195,7 @@ Every test states its purpose, and the critical lines are mutation-checked: drop
 ## Security Considerations
 
 - Unchanged: `assertSafeGitRemote` before any git process (now at one door, `fetchGitTree`, plus `lookupCommitSha`); `hardenedGitEnv` on every spawn; `--end-of-options` before every author-supplied value; argv arrays, no shell.
-- The GitHub token goes only to a GitHub host, through one function now shared by the clone and the marketplace fetch. `git-subdir` and `ls-remote` gain it for GitHub hosts. Error messages are redacted, and the credentialed URL is never logged. It is written to `FETCH_HEAD` inside the temporary checkout, which is deleted with `.git` before the entry is promoted, or with the temp directory on failure.
+- The GitHub token goes only to a GitHub host, through one function now shared by the clone and the marketplace fetch. `git-subdir` and `ls-remote` gain it for GitHub hosts. Error messages are redacted, and the credentialed URL is never logged. It is written into the temporary checkout's `.git/config` (the temporary remote's URL), which is deleted with `.git` before the entry is promoted, or with the temp directory on failure.
 - The cache refuses a key that is not a full commit id, so a malicious remote cannot name a directory (`assertContainedIn` still guards the path).
 
 ## Documentation

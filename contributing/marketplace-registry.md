@@ -114,10 +114,11 @@ Azure DevOps, self-hosted):
 }
 ```
 
-**4. git-subdir object** — sparse clone of a subdirectory inside a
-monorepo. DorkOS uses partial sparse clone (`--filter=blob:none` +
-cone-mode sparse-checkout) with a 3-step fallback ladder for older
-self-hosted git servers.
+**4. git-subdir object** — one subdirectory of a monorepo. DorkOS fetches
+exactly the commit the ref resolves to (`--depth=1`, `--filter=blob:none`,
+cone-mode sparse-checkout) and keeps only that directory. Every git form
+(`github`, `url`, `git-subdir`) honours `ref` and `sha`, and a source with
+neither is fetched at the repository's default branch.
 
 ```json
 {

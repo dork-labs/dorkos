@@ -647,9 +647,6 @@ export class MarketplaceInstaller implements InstallerLike {
    * package cannot sink a check of many. Runs no package code: stage and
    * validate only, exactly as {@link preview} does.
    *
-   * Inherited limit (DOR-2248): the SHA-keyed cache can hold a different tree
-   * than its key names, exactly as it can for an install.
-   *
    * @param req - `marketplace` names the source the update flow matched; a
    *   direct install passes `source` instead.
    * @param opts - What the install recorded, and how to look up a commit.
@@ -779,8 +776,8 @@ export class MarketplaceInstaller implements InstallerLike {
         force: req.force,
       });
       // A placeholder commit is never recorded as provenance (DOR-147, "never
-      // fabricate"): remote same-repo packages resolve the marketplace repo's
-      // real commit, while file:// ones and a failed ls-remote return a sentinel.
+      // fabricate"): a remote git fetch reports the commit its checkout holds
+      // (DOR-2248), while file:// and relative-path sources report a sentinel.
       const commitSha = isRealCommitSha(fetched.commitSha) ? fetched.commitSha : undefined;
       return { path: fetched.path, commitSha, sourceKey: sourceKeyOfFetchable(source) };
     }

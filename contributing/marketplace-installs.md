@@ -82,14 +82,19 @@ apps/server/src/services/marketplace/
 ├── marketplace-source-manager.ts # ~/.dork/marketplaces.json CRUD
 ├── marketplace-cache.ts         # ~/.dork/cache/marketplace/ with TTL
 ├── package-resolver.ts          # name@source → resolved source descriptor
-├── package-fetcher.ts           # Git clone + marketplace.json fetch
+├── package-fetcher.ts           # Verified git fetch through the cache + marketplace.json fetch
 ├── permission-preview.ts        # Build human-readable preview
 ├── conflict-detector.ts         # Detect slot/skill/task/cron/adapter collisions
 ├── transaction.ts               # Stage → activate → cleanup/rollback engine
 ├── telemetry-hook.ts            # Singleton reporter for InstallEvent
 ├── types.ts                     # Shared types (InstallRequest, PermissionPreview, ...)
+├── source-resolvers/
+│   ├── git.ts                   # github, url and git-subdir: one fetch
+│   ├── relative-path.ts         # A path inside a local marketplace
+│   └── npm.ts                   # Not supported yet (throws)
 ├── lib/
 │   ├── atomic-move.ts           # Cross-device-safe fs.rename replacement
+│   ├── git-tree.ts              # Resolve a ref exactly; fetch one commit, verify HEAD
 │   └── npm-dependencies.ts      # Staged `npm install` + the preview's reader
 ├── flows/
 │   ├── install-plugin.ts
@@ -193,9 +198,8 @@ The question it answers is "what would installing this package right now give me
 
 **Known limits.**
 
-- The SHA-keyed cache can hold a different tree than its key names: `git-subdir` clones the default branch shallowly and then checks out the ref, `github`/`url` sources ignore the ref, and a push between the lookup and the clone lands under the looked-up key. `resolveLatest` inherits this exactly as install does; it is filed as DOR-2248.
 - The package cache has no automatic pruning owner (DOR-2249). Each check that observes a new marketplace commit adds one cache entry per installed package from that repository.
-- A direct install (`name@url`, `github:`) is always fetched from the default branch today: neither form can carry a ref or subpath, so its recorded `sourceKey` is always `ref: 'main'`, `subpath: ''`, and applying an update reinstalls from the same place. If install requests gain a structured source, apply must carry the recorded key too. A direct install recorded before `sourceKey` existed is checked against the default branch, and its check says so in `note`.
+- A direct install (`name@url`, `github:`) is always fetched from the default branch today: neither form can carry a ref or subpath, so its recorded `sourceKey` is always `ref: 'HEAD'` (`'main'` in sidecars written before DOR-2248), `subpath: ''`, and applying an update reinstalls from the same place. If install requests gain a structured source, apply must carry the recorded key too. A direct install recorded before `sourceKey` existed is checked against the default branch, and its check says so in `note`.
 
 The update flow never touches disk on its own. Anything that mutates state lives inside the installer's transaction.
 
@@ -381,19 +385,31 @@ ${dorkHome}/cache/marketplace/
 │   └── dorkos-community/
 │       ├── marketplace.json    # Last-fetched copy (TTL governed)
 │       └── .last-fetched        # ISO timestamp stamp
-└── packages/
-    ├── code-review-suite@a3f4b21/      # Content-addressable by commit SHA
-    │   └── (cloned package)
-    └── code-review-suite@b8c1d99/
-        └── (cloned package)
+└── trees/
+    ├── code-review-suite@<40-hex commit>/   # Exactly that commit's tree
+    └── flow@<40-hex commit>/                # A git-subdir entry: sparse,
+        └── plugins/flow/                    #   only the package's directory
 ```
 
 Two cache disciplines side by side:
 
 - **`marketplace.json` — 1h TTL.** Past the TTL, the cached entry is still served but flagged `stale: true` so the caller can choose to refresh in the background. On network failure, the stale entry is served verbatim — this is the offline fallback.
-- **Cloned packages — never expire.** A clone of `code-review-suite@a1b2c3d` is identical today, tomorrow, and a year from now, so TTL would only ever make things worse. Garbage collection is explicit: `dorkos cache prune` (keeps the last N SHAs per package name, default 1) or `dorkos cache clear` (wipes everything).
+- **Package trees — never expire.** The tree of commit `a1b2c3d…` is the same today, tomorrow, and a year from now, so TTL would only ever make things worse. Garbage collection is explicit: `dorkos cache prune` (keeps the last N SHAs per package name, default 1) or `dorkos cache clear` (wipes everything).
 
-The cache performs pure file I/O — no network. Callers (source manager, package fetcher) handle the actual upstream fetch and hand the result to `MarketplaceCache.writeMarketplace` / `MarketplaceCache.putPackage`.
+**An entry's key is the commit its checkout holds** ([ADR 260923-162950](../decisions/260923-162950-cache-entry-keyed-by-the-verified-checkout.md), DOR-2248). There is one way in, `MarketplaceCache.materializePackage(name, expectedSha, fetch)`: the fetch populates a temp directory and returns the commit it checked out, the cache names the entry after that commit, and it refuses anything that is not a full commit id (`isFullCommitSha`). `expectedSha` only short-circuits a tree already cached under it and de-duplicates concurrent fetches. So no entry is ever keyed by a lookup, a placeholder, or a guess. Entries from before this rule lived under `packages/`; nothing reads them, and the server deletes that directory at startup (`removeLegacyPackages`).
+
+**How a tree is fetched** (`lib/git-tree.ts`, behind `PackageFetcher.fetchGitTree`, which all three git forms share):
+
+1. **Resolve the ref exactly** (`lookupRemoteRef`): a full commit id is itself; `HEAD` is the default branch; a `refs/…` name is taken as written; any other name is `refs/heads/<ref>`, then `refs/tags/<ref>` (the order `git clone --branch` uses), with an annotated tag peeled to its commit. `git ls-remote` is asked for those qualified names, never the bare name, because it matches the tail of every ref (`main` also returns `refs/heads/x/main`). A ref the remote lacks throws `GitRefNotFoundError`; a remote that cannot be asked throws `GitRemoteUnreachableError`. Nothing is fetched in either case.
+2. **Fetch that commit by id**: `git init`, a temporary remote, a sparse cone for a `git-subdir` subpath (blob-filtered), and `git fetch --depth=1 <commit>`. A push after the lookup cannot change what arrives.
+3. **Fallback** only when the server refuses an unadvertised commit (protocol v0 without `uploadpack.allowReachableSHA1InWant`): a named ref fetches the exact refname and keeps whichever commit arrives (the ref moved; the entry and the record follow the tree); a pinned commit fetches every branch and tag, blob-filtered, and then requires the commit, else `GitCommitNotFoundError`.
+4. **Verify**: check the commit out, require `git rev-parse HEAD` to equal it, remove `.git`, return it. Any failure is a `GitFetchError` with git's reason, tokens redacted.
+
+Every git call keeps the marketplace's posture: `assertSafeGitRemote` first, `hardenedGitEnv`, argv arrays, `--end-of-options` before every author-supplied value, and the GitHub token only for a GitHub host (`withGitHubToken`, shared with `execGitClone`). A source with no ref is fetched at `HEAD`, the repository's default branch.
+
+`PackageFetcher.fetchAtCommit({ packageName, sourceKey, commitSha })` fetches one exact commit whatever ref the source names: the way to rebuild an install recorded at a commit its branch has since moved past.
+
+**Known limit:** the key omits the subpath, so two different subdirectories of one commit under one package name would share an entry. That needs a package to change its source form or path while its source repository gains no commit.
 
 Torn-write safety: `writeMarketplace` writes `marketplace.json` before stamping `.last-fetched`, so a crash mid-write leaves the cache in a "no stamp → cache miss" state rather than serving stale content with a fresh timestamp.
 
