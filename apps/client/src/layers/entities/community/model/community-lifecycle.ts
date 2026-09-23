@@ -23,6 +23,7 @@ import {
   type ConfirmedCommunityAuthority,
 } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
+import { useCommunityDraftStore } from './community-drafts';
 import { communityKeys } from './use-community-connections';
 import { communityNavigationKeys } from './use-community-navigation';
 
@@ -48,8 +49,11 @@ export async function endCommunityConnection(
   ref: string,
   end: CommunityConnectionEnd
 ): Promise<void> {
-  // 1. Tombstone before anything else can run.
+  // 1. Tombstone before anything else can run. The new generation is also in
+  // every draft address, so this Community's unsent drafts are unreachable
+  // from here on; erasing them follows with the rest of its content.
   tombstoneCommunityConnection(ref);
+  useCommunityDraftStore.getState().discardCommunity(authority.ownerKey, ref);
   // 2 + 3. Close the old generation's reads, then erase its content. The key is
   // owner- and ref-qualified, so no other Community's cache is under it.
   await queryClient.cancelQueries({ queryKey: communityKeys.remote(authority, ref) });
@@ -66,6 +70,23 @@ export async function endCommunityConnection(
     queryKey: communityNavigationKeys.authority(authority.epoch),
   });
   void queryClient.invalidateQueries({ queryKey: communityKeys.connections(authority) });
+}
+
+/**
+ * Erase every Community's local state for the owner that just stopped being
+ * current: its cached queries and its unsent drafts.
+ *
+ * This is the app's authority cleanup, registered once with
+ * `registerCommunityAuthorityCleanup` so that it runs inside
+ * `invalidateCommunityAuthority` — after the epoch has moved and before any
+ * listener can render for the next owner.
+ *
+ * @param queryClient - The app's query cache.
+ */
+export function eraseCommunityOwnerState(queryClient: QueryClient): void {
+  void queryClient.cancelQueries({ queryKey: communityKeys.all });
+  queryClient.removeQueries({ queryKey: communityKeys.all });
+  useCommunityDraftStore.getState().discardAll();
 }
 
 /**

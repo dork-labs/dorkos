@@ -36,7 +36,11 @@ import {
   TransportProvider,
 } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { communityNavigationKeys } from '@/layers/entities/community';
+import {
+  communityNavigationKeys,
+  eraseCommunityOwnerState,
+  useCommunityDraftStore,
+} from '@/layers/entities/community';
 import { ChannelsPage } from '@/layers/widgets/room-view';
 import { createCommunityRouteMemory } from '../community-route-memory';
 
@@ -211,10 +215,7 @@ function setup() {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   // The same owner-change cleanup `main.tsx` registers for the app.
-  disposeCleanup = registerCommunityAuthorityCleanup(() => {
-    void client.cancelQueries({ queryKey: ['communities'] });
-    client.removeQueries({ queryKey: ['communities'] });
-  });
+  disposeCleanup = registerCommunityAuthorityCleanup(() => eraseCommunityOwnerState(client));
   const owner = invalidateCommunityAuthority();
   confirmCommunityAuthority(owner.epoch, OWNER);
   client.setQueryData(communityNavigationKeys.authority(owner.epoch), navigation);
@@ -288,6 +289,7 @@ afterEach(() => {
   cleanup();
   disposeCleanup();
   invalidateCommunityAuthority();
+  useCommunityDraftStore.getState().discardAll();
   vi.clearAllMocks();
 });
 
@@ -469,5 +471,55 @@ describe('rapid Community switching', () => {
     });
     expect(document.body.textContent).not.toContain(TEXT.a);
     expect(cachedContent().filter(({ key }) => key.includes(OWNER))).toEqual([]);
+  });
+
+  it('brings each Community’s unsent draft back after A→B→A, never shows it in the other, and drops both when the owner changes', async () => {
+    const { streams, go, client, transport } = setup();
+    const composer = () => screen.findByRole('combobox');
+    const type = async (text: string) =>
+      fireEvent.change(await composer(), { target: { value: text } });
+    const shown = async () => ((await composer()) as HTMLTextAreaElement).value;
+
+    act(() => go({ community: 'a', id: ROOM }));
+    await waitFor(() => expect(streams).toHaveLength(1));
+    await type('Alpha draft, not sent');
+
+    // B shares the room id; A's words must not be in its composer.
+    act(() => go({ community: 'b', id: ROOM }));
+    await waitFor(() => expect(streams).toHaveLength(2));
+    expect(await shown()).toBe('');
+    assertFrameIsolated();
+    await type('Beta draft, not sent');
+
+    act(() => go({}));
+    expect(document.body.textContent).not.toContain('draft, not sent');
+
+    act(() => go({ community: 'a', id: ROOM }));
+    await waitFor(() => expect(streams).toHaveLength(3));
+    expect(await shown()).toBe('Alpha draft, not sent');
+
+    act(() => go({ community: 'b', id: ROOM }));
+    await waitFor(() => expect(streams).toHaveLength(4));
+    expect(await shown()).toBe('Beta draft, not sent');
+    // Nothing was sent by switching.
+    expect(transport.postRemoteCommunityEntry).not.toHaveBeenCalled();
+
+    // A new local owner finds neither draft, even back on the same route.
+    const ownerTwo = {
+      ownerKey: 'owner-2',
+      installationDestination: { path: '/', search: {} },
+      order: ['a', 'b'],
+      destinations: [],
+    };
+    vi.mocked(transport.getCommunityNavigation).mockResolvedValue(ownerTwo as never);
+    act(() => {
+      const next = invalidateCommunityAuthority();
+      confirmCommunityAuthority(next.epoch, 'owner-2');
+      client.setQueryData(communityNavigationKeys.authority(next.epoch), ownerTwo);
+    });
+    expect(useCommunityDraftStore.getState().drafts).toEqual({});
+    act(() => go({ community: 'a', id: ROOM }));
+    expect(await shown()).toBe('');
+    expect(document.body.textContent).not.toContain('draft, not sent');
   });
 });
