@@ -4,6 +4,7 @@ import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-con
 import { type ConfirmedCommunityAuthority } from '@/layers/shared/lib';
 import {
   communityKeys,
+  unconfirmedDisconnectMessage,
   useEndCommunityConnection,
   withinCommunityAuthority,
 } from '@/layers/entities/community';
@@ -70,13 +71,15 @@ export function CommunityConnectionRow({
   const remove = useEndCommunityConnection();
   function endConnection() {
     remove.mutate(connection, {
-      onSuccess: () => {
+      onSuccess: ({ remoteRevoked }) => {
         onOutcome(
           pending
             ? `Approval for ${connection.label} was cancelled.`
-            : reconnectRequired
-              ? `${connection.label} is disconnected. Connect again to continue.`
-              : `${connection.label} is disconnected.`
+            : !remoteRevoked
+              ? unconfirmedDisconnectMessage(connection.label)
+              : reconnectRequired
+                ? `${connection.label} is disconnected. Connect again to continue.`
+                : `${connection.label} is disconnected.`
         );
         onRemoved();
       },

@@ -22,7 +22,10 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
-import { useEndCommunityConnection } from '@/layers/entities/community';
+import {
+  unconfirmedDisconnectMessage,
+  useEndCommunityConnection,
+} from '@/layers/entities/community';
 
 /** Props for {@link JoinCommunityDialog}. */
 export interface JoinCommunityDialogProps {
@@ -142,9 +145,10 @@ export function DisconnectCommunityDialog({
   function confirm() {
     if (!connection) return;
     end.mutate(connection, {
-      onSuccess: () => {
+      onSuccess: ({ remoteRevoked }) => {
         onOpenChange(false);
-        toast.success(`${connection.label} is disconnected.`);
+        if (remoteRevoked) toast.success(`${connection.label} is disconnected.`);
+        else toast.warning(unconfirmedDisconnectMessage(connection.label));
         onDisconnected(connection);
       },
     });

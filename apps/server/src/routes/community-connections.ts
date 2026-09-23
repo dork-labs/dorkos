@@ -14,6 +14,7 @@ import {
   CommunityConnectionStatusResponseSchema,
   CommunityConnectionPollResponseSchema,
   CommunityConnectionDescriptorSchema,
+  CommunityDisconnectResponseSchema,
   type CommunityConnectionDescriptor,
 } from '@dorkos/shared/community-connections';
 import {
@@ -334,8 +335,9 @@ export function createCommunityConnectionsRouter(
       return;
     }
     try {
-      await connectionService.disconnect(ref.data, owner);
-      res.status(204).end();
+      res.json(
+        CommunityDisconnectResponseSchema.parse(await connectionService.disconnect(ref.data, owner))
+      );
     } catch (error) {
       failure(res, error);
     }
