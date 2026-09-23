@@ -45,6 +45,12 @@ import {
 } from '../services/marketplace/flows/uninstall.js';
 import { UnsupportedSourceUrlError } from '../services/marketplace/source-url-policy.js';
 import {
+  GitCommitNotFoundError,
+  GitFetchError,
+  GitRefNotFoundError,
+  GitRemoteUnreachableError,
+} from '../services/marketplace/lib/git-tree.js';
+import {
   PackageNotInstalledForUpdateError,
   pickInstallation,
   type UpdateFlow,
@@ -265,6 +271,17 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
   // forms do work, so it goes back verbatim.
   if (err instanceof UnsupportedSourceUrlError) {
     return { status: 400, body: { error: err.message } };
+  }
+  // Git's own failures (DOR-2248). A branch, tag or commit the repository does
+  // not have is a not-found; a remote that could not be reached, or a fetch that
+  // failed or could not be verified, is the upstream's fault — a bad gateway.
+  // Each message already says what went wrong in words, and names the remote
+  // without credentials, so it goes back verbatim.
+  if (err instanceof GitRefNotFoundError || err instanceof GitCommitNotFoundError) {
+    return { status: 404, body: { error: err.message } };
+  }
+  if (err instanceof GitRemoteUnreachableError || err instanceof GitFetchError) {
+    return { status: 502, body: { error: err.message } };
   }
   return {
     status: 500,

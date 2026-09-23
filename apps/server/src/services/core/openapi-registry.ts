@@ -2725,6 +2725,10 @@ registry.registerPath({
       description: 'Package not installed',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+    502: {
+      description: "The package's git remote could not be reached, or its fetch failed",
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 
@@ -2802,6 +2806,10 @@ registry.registerPath({
     404: {
       description: 'A named package or install path is not installed in view',
       content: { 'application/json': { schema: NotInstalledForUpdateSchema } },
+    },
+    502: {
+      description: "The package's git remote could not be reached, or its fetch failed",
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });

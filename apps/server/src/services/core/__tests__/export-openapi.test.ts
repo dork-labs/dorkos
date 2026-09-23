@@ -100,6 +100,7 @@ describe('export-openapi', () => {
       '400',
       '403',
       '404',
+      '502',
     ]);
     const body = (
       updates?.post?.requestBody as {

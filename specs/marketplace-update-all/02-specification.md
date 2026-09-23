@@ -2,14 +2,14 @@
 slug: marketplace-update-all
 number: 260923-162659
 created: 2026-09-23
-status: specified
+status: implemented
 linear-issue: DOR-2194
 project: Marketplace Package Management
 ---
 
 # Check and apply updates across every installed package in one request
 
-**Status:** Draft
+**Status:** Implemented
 **Author:** Claude Code
 **Date:** 2026-09-23
 **Input:** [`01-ideation.md`](./01-ideation.md) (decisions 1–10 carried forward)

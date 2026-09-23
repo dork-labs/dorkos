@@ -68,6 +68,12 @@ import {
   type UninstallFlow,
 } from '../../services/marketplace/flows/uninstall.js';
 import type { UpdateFlow } from '../../services/marketplace/flows/update.js';
+import {
+  GitCommitNotFoundError,
+  GitFetchError,
+  GitRefNotFoundError,
+  GitRemoteUnreachableError,
+} from '../../services/marketplace/lib/git-tree.js';
 import type { InstallResult, PermissionPreview } from '../../services/marketplace/types.js';
 import { createMarketplaceRouter } from '../marketplace.js';
 import {
@@ -1740,6 +1746,27 @@ describe('Marketplace Routes', () => {
         .send({});
       expect(advisory.status).toBe(200);
       expect(updateFlow.run).toHaveBeenCalledTimes(1);
+    });
+
+    it("answers git's own failures with honest statuses and plain messages, not a 500", async () => {
+      // Purpose: a missing branch or commit is a not-found and an unreachable
+      // or failed fetch is a bad gateway; each message already says what went
+      // wrong in words, so it goes back as-is.
+      const url = 'https://github.com/dork-labs/marketplace.git';
+      const cases: [Error, number][] = [
+        [new GitRefNotFoundError('release', url), 404],
+        [new GitCommitNotFoundError('a'.repeat(40), url), 404],
+        [new GitRemoteUnreachableError(url, 'connection timed out'), 502],
+        [new GitFetchError(url, 'the fetched tree did not match its commit'), 502],
+      ];
+      for (const [error, status] of cases) {
+        updateFlow.run.mockRejectedValueOnce(error);
+        const res = await request(fixtureServer)
+          .post('/api/marketplace/packages/sample-plugin/update')
+          .send({ apply: true });
+        expect(res.status).toBe(status);
+        expect(res.body).toEqual({ error: error.message });
+      }
     });
 
     it('returns the advisory check result when apply is omitted', async () => {

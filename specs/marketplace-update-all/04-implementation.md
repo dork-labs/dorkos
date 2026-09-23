@@ -49,15 +49,13 @@
 
 ## Known Issues
 
-- Deferred to the DOR-2248 rebase: an `AbortSignal.timeout(...)` on `fetchAndParseMarketplaceJson`'s bare `fetch` (`package-fetcher.ts`, DOR-2248's file).
-- `marketplace-installer.ts` now sits at 501 lines, one over the lint `max-lines` warning; DOR-2248 removes lines from the same file, so the rebase clears it.
-
-- **DOR-2248's typed git errors** (`GitRefNotFoundError`, `GitCommitNotFoundError`, `GitRemoteUnreachableError`, `GitFetchError`, in `lib/git-tree.ts` on that branch) are not mapped by `mapErrorToStatus` yet, because they do not exist on this base. A check already carries them as a per-installation `unknown` with DOR-2248's plain message, since `resolveLatest` turns every throw into `unresolved`. A failed reinstall in the all-packages door already carries them as that installation's `applyError`. What remains is the status for an error that escapes a route: the per-package apply, and anything the doors throw outside a check. Proposed: 404 for ref or commit not found, 502 for unreachable or fetch failed, each with the error's own message. This lands once DOR-2248 has merged.
+- `marketplace-installer.ts` sits at 501 counted lines, one over the lint `max-lines` warning (a warning, not an error); splitting that file is its own job.
 
 ## Implementation Notes
 
 ### Session 1
 
+- **Rebased onto DOR-2248 and DOR-2273.** DOR-2248's typed git errors map to 404 (ref or commit not found) and 502 (remote unreachable, fetch failed) with their own plain messages; `fetchAndParseMarketplaceJson` has a 15-second `AbortSignal.timeout`, so a slow marketplace server cannot hold a check slot. The exact-root narrowing composes with DOR-2273's install-record probe: it only filters the candidate list the probe walks.
 - **Deviation from the issue:** `UpdateFlow.run({})` never walked agent scopes, so the "capability that exists" was only half there. The door scans every scope itself, through the scanner.
 - **Round 1 review adopted** (see the spec's Review log). `mapWithConcurrency` was first moved to `@dorkos/shared`; the server-wide semaphore replaced its use here, so the move was undone and the session fan-out keeps its own copy, as on base.
 - **Found and fixed:** an apply named with `--project` moved a globally installed package into that project. Reproduced with the real installer before the fix; the flow unit test and the integration test both fail on the base.

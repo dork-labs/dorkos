@@ -19346,6 +19346,16 @@
                 }
               }
             }
+          },
+          "502": {
+            "description": "The package's git remote could not be reached, or its fetch failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -19866,6 +19876,16 @@
                     "packageNames",
                     "installPaths"
                   ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The package's git remote could not be reached, or its fetch failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

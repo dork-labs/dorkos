@@ -611,15 +611,17 @@ Where `InstallRequestBody` is:
 
 Error mapping is centralised in `mapErrorToStatus()`:
 
-| Error class                         | HTTP status |
-| ----------------------------------- | ----------- |
-| `InvalidPackageError`               | 400         |
-| `ConflictError`                     | 409         |
-| `PackageNotInstalledError`          | 404         |
-| `PackageNotInstalledForUpdateError` | 404         |
-| `PackageNotFoundError`              | 404         |
-| `MarketplaceNotFoundError`          | 404         |
-| (anything else)                     | 500         |
+| Error class                                     | HTTP status |
+| ----------------------------------------------- | ----------- |
+| `InvalidPackageError`                           | 400         |
+| `ConflictError`                                 | 409         |
+| `PackageNotInstalledError`                      | 404         |
+| `PackageNotInstalledForUpdateError`             | 404         |
+| `GitRefNotFoundError`, `GitCommitNotFoundError` | 404         |
+| `GitRemoteUnreachableError`, `GitFetchError`    | 502         |
+| `PackageNotFoundError`                          | 404         |
+| `MarketplaceNotFoundError`                      | 404         |
+| (anything else)                                 | 500         |
 
 SSE streaming for clone progress is planned (the spec mentions it following the `discovery/scan` pattern) but deliberately not shipped with this spec — a half-implemented SSE is worse than a unary JSON response that works. A follow-up `POST /packages/:name/install/stream` variant will land in a dedicated task. The current `POST /packages/:name/install` handler has a `// TODO` marker for the wiring point.
 
