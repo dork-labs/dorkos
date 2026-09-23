@@ -151,7 +151,7 @@ function BindingEdgeInner({
               {selected && d?.onDelete && (
                 <button
                   onClick={handleDelete}
-                  className="text-destructive/60 hover:bg-destructive/10 hover:text-destructive ml-0.5 shrink-0 rounded-sm p-0.5"
+                  className="text-destructive/80 hover:bg-destructive/10 hover:text-destructive ml-0.5 shrink-0 rounded-sm p-0.5"
                   aria-label="Remove connection"
                 >
                   <X className="size-3" />

@@ -224,7 +224,14 @@
   --muted-foreground: 0 0% 32%;
   --accent: 0 0% 94%;
   --accent-foreground: 0 0% 9%;
-  --destructive: 0 84.2% 60.2%;
+  /* Destructive red is both TEXT (error messages, "Delete" menu items) and a
+     FILL under a white label (the destructive button, badges). Both clear WCAG
+     AA (4.5:1): 5.4:1 as text on the app background, 4.6:1 on the sidebar and
+     on a `bg-destructive/10` tint, 5.7:1 under white. The old `0 84.2% 60.2%`
+     measured 3.1-3.8:1. Only OKLCH lightness moved (0.637 -> 0.538); hue and
+     chroma held, which is why the HSL hue reads 356 rather than 0.
+     `__tests__/destructive-contrast.test.ts` keeps it there. */
+  --destructive: 356 76% 45%;
   --destructive-foreground: 0 0% 98%;
   --border: 0 0% 83%;
   --input: 0 0% 83%;
@@ -480,7 +487,14 @@
   --muted-foreground: 0 0% 64%;
   --accent: 0 0% 12%;
   --accent-foreground: 0 0% 87%;
-  --destructive: 0 72% 50.5%;
+  /* Lighter than the light theme's red, because on a near-black ground text
+     has to climb away from it: 5.8:1 on the background, 4.8:1 on a hovered
+     (`--accent`) row, 4.7:1 on a `bg-destructive/20` menu highlight. The old
+     `0 72% 50.5%` measured 3.4-4.1:1. No red can be readable text on black AND
+     hold a white label, so in dark mode a solid destructive fill is dimmed with
+     `dark:bg-destructive/60` (the destructive button's own treatment, 7.4:1
+     under white). Only OKLCH lightness moved (0.576 -> 0.660). */
+  --destructive: 2.5 95% 62%;
   --destructive-foreground: 0 0% 98%;
   --border: 0 0% 25%;
   --input: 0 0% 25%;
@@ -2027,7 +2041,10 @@ body {
   --color-muted-foreground: var(--text-muted);
   --color-accent: var(--interactive-accent);
   --color-accent-foreground: var(--text-on-accent);
-  --color-destructive: #e53e3e;
+  /* Readable red on Obsidian's light surfaces and under a white label; a dark
+     vault gets the lighter red in the `.theme-dark` rule below. Kept in sync
+     with apps/obsidian-plugin/src/styles/plugin.css. */
+  --color-destructive: #ca1c27;
   --color-destructive-foreground: #fff;
   --color-border: var(--background-modifier-border);
   --color-input: var(--background-modifier-form-field);
@@ -2086,4 +2103,11 @@ body {
   color: var(--text-normal);
   background-color: var(--background-secondary);
   font-family: var(--font-interface);
+}
+
+/* Error text on a dark vault: the red above is 2.7:1 on Obsidian's dark
+   #262626, this is 4.8:1. Obsidian marks a dark vault with `.theme-dark` on the
+   body. Kept in sync with apps/obsidian-plugin/src/styles/plugin.css. */
+.theme-dark .copilot-view-content {
+  --color-destructive: #ff554b;
 }

@@ -49,7 +49,7 @@ export function ResetSettingsDialog({ open, onOpenChange }: ResetSettingsDialogP
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             onClick={handleReset}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90 dark:bg-destructive/60"
           >
             Reset settings
           </AlertDialogAction>

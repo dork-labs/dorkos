@@ -206,6 +206,35 @@ describe('the plugin bridges the client’s colour family', () => {
     }
   });
 
+  it('pins the Obsidian destructive red to the SAME literals the client uses, per vault theme', () => {
+    // Same drift as the green above: the client writes `--color-destructive`
+    // in its `.copilot-view-content` block, this plugin writes both that and the
+    // raw `--destructive`. The AA math is owned by the client's
+    // `destructive-contrast` guard; matching its literals carries it here.
+    // `.theme-dark` blocks are read on their own, because `copilotBlock` would
+    // concatenate them after the light block and `tokenValue` reads the first.
+    const themeDark = (css: string) =>
+      [...css.matchAll(/\.theme-dark \.copilot-view-content\s*\{([\s\S]*?)\n\}/g)]
+        .map((m) => m[1]!)
+        .join('\n');
+    const clientLight = tokenValue(copilotBlock(CLIENT_CSS), '--color-destructive');
+    const clientDark = tokenValue(themeDark(CLIENT_CSS), '--color-destructive');
+    expect({ clientLight, clientDark }).toEqual({ clientLight: '#ca1c27', clientDark: '#ff554b' });
+    const pluginLight = copilotBlock(PLUGIN_CSS);
+    const pluginDark = themeDark(PLUGIN_CSS);
+    expect({
+      light: tokenValue(pluginLight, '--color-destructive'),
+      lightRaw: tokenValue(pluginLight, '--destructive'),
+      dark: tokenValue(pluginDark, '--color-destructive'),
+      darkRaw: tokenValue(pluginDark, '--destructive'),
+    }).toEqual({
+      light: clientLight,
+      lightRaw: clientLight,
+      dark: clientDark,
+      darkRaw: clientDark,
+    });
+  });
+
   it("declares `--size-icon-*`, so `button.tsx`'s default icon size resolves (DOR-1750)", () => {
     // button.tsx's base class is `[&_svg:not([class*='size-'])]:size-(--size-icon-sm)`
     // — the default size for every unsized svg a `<Button>` renders, and

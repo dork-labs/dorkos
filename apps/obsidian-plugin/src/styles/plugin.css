@@ -382,7 +382,13 @@
   --color-muted-foreground: var(--text-muted);
   --color-accent: var(--interactive-accent);
   --color-accent-foreground: var(--text-on-accent);
-  --color-destructive: #e53e3e;
+  /*
+   * The destructive red, dark enough to be readable text on Obsidian's light
+   * surfaces (5.2:1 on #f6f6f6) and to hold a white label (5.7:1). The former
+   * #e53e3e was 3.8:1 and 4.1:1. Dark vaults get a lighter red below. Same
+   * literals as the client's Obsidian block (`index.css`).
+   */
+  --color-destructive: #ca1c27;
   --color-destructive-foreground: #fff;
   --color-border: var(--background-modifier-border);
   --color-input: var(--background-modifier-form-field);
@@ -403,7 +409,7 @@
   --muted-foreground: var(--text-muted);
   --accent: var(--interactive-accent);
   --accent-foreground: var(--text-on-accent);
-  --destructive: #e53e3e;
+  --destructive: #ca1c27;
   --destructive-foreground: #fff;
   --border: var(--background-modifier-border);
   --input: var(--background-modifier-form-field);
@@ -529,4 +535,12 @@
 .theme-dark .copilot-view-content {
   --status-warning-dot: hsl(38 92% 60%);
   --brand: hsl(24 88% 55%);
+  /*
+   * Error text on a dark vault: the light theme's red is 2.7:1 on #262626,
+   * this is 4.8:1. It is too light to hold a white label, so a solid
+   * destructive fill relies on `dark:bg-destructive/60`, which in this build
+   * follows the OS colour scheme rather than the vault's theme.
+   */
+  --color-destructive: #ff554b;
+  --destructive: #ff554b;
 }
