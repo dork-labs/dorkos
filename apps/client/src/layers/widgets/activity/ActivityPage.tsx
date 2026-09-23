@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { PageContainer } from '@/layers/shared/ui';
+import { PageContainer, PageHeading } from '@/layers/shared/ui';
 import {
   useFullActivityFeed,
   useActivityFilters,
@@ -36,37 +36,40 @@ export function ActivityPage() {
   const allItems = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data]);
 
   return (
-    <PageContainer width="wide" className="space-y-4">
-      {/* The filters, and the first thing on the page rather than a passenger in
+    <>
+      <PageHeading>Activity</PageHeading>
+      <PageContainer width="wide" className="space-y-4">
+        {/* The filters, and the first thing on the page rather than a passenger in
           the header (spec §3.4, phase H1). They belong to what they filter: the
           bar above is the four home surfaces now, and a row of category chips
           wedged into it left no room for the tabs on a phone. */}
-      <ActivityFilterBar />
+        <ActivityFilterBar />
 
-      {/* How busy the week has been — zero DOM until the session list answers */}
-      <ActivityWeekSummary />
+        {/* How busy the week has been — zero DOM until the session list answers */}
+        <ActivityWeekSummary />
 
-      {/* Extension-contributed sections — zero DOM when no extension contributes */}
-      <ExtensionSections />
+        {/* Extension-contributed sections — zero DOM when no extension contributes */}
+        <ExtensionSections />
 
-      {/* Digest banner — only visible when there is a prior visit with new events */}
-      <ActivitySinceLastVisit lastVisitedAt={lastVisitedAt} items={allItems} />
+        {/* Digest banner — only visible when there is a prior visit with new events */}
+        <ActivitySinceLastVisit lastVisitedAt={lastVisitedAt} items={allItems} />
 
-      {/* Time-grouped event rows */}
-      <ActivityTimeline
-        items={allItems}
-        isLoading={isLoading}
-        isError={isError}
-        onRetry={() => void refetch()}
-        isFiltered={isFiltered}
-      />
+        {/* Time-grouped event rows */}
+        <ActivityTimeline
+          items={allItems}
+          isLoading={isLoading}
+          isError={isError}
+          onRetry={() => void refetch()}
+          isFiltered={isFiltered}
+        />
 
-      {/* Cursor-based pagination trigger */}
-      <ActivityLoadMore
-        onLoadMore={() => void fetchNextPage()}
-        isFetching={isFetchingNextPage}
-        hasNextPage={!!hasNextPage}
-      />
-    </PageContainer>
+        {/* Cursor-based pagination trigger */}
+        <ActivityLoadMore
+          onLoadMore={() => void fetchNextPage()}
+          isFetching={isFetchingNextPage}
+          hasNextPage={!!hasNextPage}
+        />
+      </PageContainer>
+    </>
   );
 }

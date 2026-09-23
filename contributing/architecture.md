@@ -2,6 +2,8 @@
 
 > **Sync note:** A condensed, user-facing version of this guide is published on the docs site at `docs/contributing/architecture.mdx`. When you change the architecture here, update that page too so the two do not drift.
 
+For the current cross-system boundaries, use [the system architecture guide](system-architecture.md). Its [Cloud-hosted Community view](system-architecture.md#cloud-hosted-communities-planned-management-path) distinguishes optional hosting management from Community content authority. Its [runtime tools view](system-architecture.md#runtime-tools-and-room-publication) distinguishes internal turn-scoped MCP from external `/mcp`.
+
 ## Overview
 
 Start with [the system architecture map](system-architecture.md) for deployment boundaries, protocols, replaceable interfaces, Community, Cloud, and marketplace delivery. This guide covers local implementation details.

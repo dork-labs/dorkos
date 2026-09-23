@@ -3,6 +3,7 @@ import { describeError, request } from '../api.js';
 import { ownerClaimLink } from '../owner-claim.js';
 import { FocusDialog } from './CommunityAdministration.js';
 import { HostApiKeys } from './HostApiKeys.js';
+import { HostCommunityLimits } from './HostCommunityLimits.js';
 
 type Lifecycle = 'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
 type Community = {
@@ -320,6 +321,9 @@ export function HostAdministration() {
                         </button>
                       )}
                     </div>
+                    {community.lifecycle !== 'deletion_pending' && (
+                      <HostCommunityLimits communityId={community.id} name={community.name} />
+                    )}
                     {pending && (
                       <div className="field mt-3 mb-0">
                         <label htmlFor={`revoke-${community.id}`}>Owner claim ID</label>

@@ -76,6 +76,12 @@ Community SSE sends a snapshot watermark, replay, then live entries. It reads co
 
 Use a real PostgreSQL HTTP test whenever changing Community authorization, ordering, cursor, replay, or raw-attachment behavior. Test local subscription changes through the actual composition path as well as the adapter seam.
 
+### Host automation and optional Cloud hosting
+
+Host API keys are scoped machine credentials for `/api/v1/host/*`. The host separates them from member sessions and personal/agent participation credentials, and refuses them on tenant content routes. Key administration requires a host operator's session; one machine key cannot create another. See [host authority](../apps/community/src/host/authority.ts), [key routes](../apps/community/src/routes/host-keys.ts), and [limits and usage](../apps/community/src/routes/host-limits.ts).
+
+Cloud-hosted communities are a planned consumer of this general host API. The public image retains independent operation; Cloud manages hosting rather than becoming a member or accessing the host database. Machine keys and host-set limits have landed. Import, read-only holds, optional OIDC, and the local app's hosted start/move flow remain separate implementation work at `ea6e06765`. The [system map](system-architecture.md#cloud-hosted-communities-planned-management-path) and [public host specification](../specs/community-host-operator-api/02-specification.md) separate shipped primitives from that intended connection.
+
 ### Files and exports
 
 Uploads are written to `BlobStore` before a post references them. The Community checks membership while a download streams. An unused upload expires after one hour. Personal exports include only posts and files the requester still has a right to receive; full owner exports require password confirmation. Neither attachment nor export APIs expose a storage path, object URL, bearer, or local filesystem path.

@@ -243,11 +243,14 @@ describe('HomeRoomPage — the room', () => {
     const { container } = renderHome();
     await screen.findByPlaceholderText('Message #team…');
 
-    // The masthead's own heading. The working chip is NOT asserted here: it
+    // The masthead's own heading: the page's one `h1` is its undrawn outline
+    // heading, never a second, drawn name for the room. The working chip is NOT asserted here: it
     // never rendered inside this tree even before R1, so a `queryByTestId` for
     // it passed no matter what the code did — a test that cannot fail. The bar's
     // own chips are proven where they render, in `HomeRoomChips.test.tsx`.
-    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
+    const headings = screen.getAllByRole('heading', { level: 1 });
+    expect(headings.map((heading) => heading.textContent)).toEqual(['Home']);
+    expect(headings[0]).toHaveClass('sr-only');
 
     // And what the host contributes above the feed is untouched — the whole
     // point of removing a masthead rather than the chrome around it.

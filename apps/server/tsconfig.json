@@ -106,7 +106,6 @@
     "src/services/marketplace/__tests__/telemetry-hook.test.ts", // 1
     "src/services/marketplace/__tests__/telemetry-privacy.test.ts", // 1
     "src/services/marketplace/__tests__/telemetry-reporter.test.ts", // 1
-    "src/services/marketplace/source-resolvers/__tests__/git-subdir.test.ts", // 1
     "src/services/mesh/__tests__/ensure-dorkbot.test.ts", // 2
     "src/services/observability/__tests__/file-span-processor.test.ts", // 1
     "src/services/observability/__tests__/trace-proxies.test.ts", // 1

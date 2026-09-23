@@ -28,8 +28,11 @@ import { registerAgentRoutes } from './routes/agents.js';
 import { registerAttachmentRoutes } from './routes/attachments.js';
 import { registerExportRoutes } from './routes/exports.js';
 import { registerHostRoutes } from './routes/host.js';
+import { registerMembershipRoutes } from './routes/memberships.js';
+import { registerHostLimitRoutes } from './routes/host-limits.js';
+import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
-import { createHostAuthority } from './host-authority.js';
+import { createHostAuthority } from './host/authority.js';
 import { registerAdministrationRoutes } from './routes/administration.js';
 import { createBlobStore, type BlobStore } from './storage/index.js';
 import { DeliveryReceiptGate } from './delivery-receipt-gate.js';
@@ -288,7 +291,10 @@ export function createCommunityApp({
       limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
   });
   const hostApi = new Hono();
-  registerHostRoutes(hostApi, { pool, auth, config, blobStore, authority, now });
+  registerHostRoutes(hostApi, { pool, blobStore, authority, now });
+  registerOwnerClaimRoutes(hostApi, { pool, auth, config, authority, now });
+  registerMembershipRoutes(hostApi, { pool, auth });
+  registerHostLimitRoutes(hostApi, { pool, config, authority, now });
   registerHostKeyRoutes(hostApi, { pool, auth, authority, now, confirmPassword });
   app.route('/api/v1', hostApi);
 

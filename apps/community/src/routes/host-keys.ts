@@ -11,14 +11,14 @@ import {
 } from '@dorkos/shared/community-admin-wire';
 import type { CommunityAuth } from '../auth.js';
 import { transaction } from '../data.js';
+import { assertHostActor, type HostAuthority } from '../host/authority.js';
 import type { ConfirmPassword } from '../password-confirmation.js';
-import { assertHostActor, type HostAuthority } from '../host-authority.js';
 import {
   issueHostApiKey,
   listHostApiKeys,
   revokeHostApiKey,
   rotateHostApiKey,
-} from '../host-key-store.js';
+} from '../host/key-store.js';
 import { ApiError, json, readJson } from '../http.js';
 
 /**

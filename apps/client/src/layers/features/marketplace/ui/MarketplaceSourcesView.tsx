@@ -12,6 +12,7 @@ import {
   DialogTitle,
   Input,
   Label,
+  PageHeading,
   Skeleton,
 } from '@/layers/shared/ui';
 import {
@@ -195,7 +196,7 @@ export function MarketplaceSourcesView() {
           {/* Not drawn (design decision E1): the bar overhead already says
               "Marketplace Sources". Kept for the outline — the bar's title is
               a `nav` landmark, not a heading. */}
-          <h1 className="sr-only">Marketplace sources</h1>
+          <PageHeading>Marketplace sources</PageHeading>
           <p className="text-muted-foreground text-sm">
             Git registries that publish marketplace packages.
           </p>

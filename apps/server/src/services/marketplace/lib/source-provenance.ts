@@ -20,21 +20,49 @@ import {
 import type { ResolvedPackageSource } from '../package-resolver.js';
 
 /**
+ * The ref a source with no ref of its own was recorded at before DOR-2248,
+ * when the fetch assumed `main`; since then it is `HEAD`, the repository's
+ * default branch. A sidecar is never rewritten by an update check, so both
+ * spellings stay in circulation.
+ */
+const LEGACY_DEFAULT_REF = 'main';
+
+/**
  * Rebuild a direct install's source from the key it recorded. The resolver's
  * `name@url` input has no ref or subpath syntax, so re-resolving the URL would
  * silently check the default branch instead of the one the package came from.
+ *
+ * A direct install cannot name a ref, so a recorded `main` is the pre-DOR-2248
+ * spelling of "the default branch" and is rebuilt as `HEAD`: checking `main`
+ * would fail on a repository whose default branch is called something else.
  */
 export function resolvedFromSourceKey(packageName: string, key: SourceKey): ResolvedPackageSource {
+  const ref = key.ref === LEGACY_DEFAULT_REF ? 'HEAD' : key.ref;
   const pluginSource: PluginSource =
     key.subpath === ''
-      ? { source: 'url', url: key.cloneUrl, ref: key.ref }
-      : { source: 'git-subdir', url: key.cloneUrl, path: key.subpath, ref: key.ref };
+      ? { source: 'url', url: key.cloneUrl, ref }
+      : { source: 'git-subdir', url: key.cloneUrl, path: key.subpath, ref };
   return { kind: 'git', packageName, pluginSource };
 }
 
-/** Field-by-field equality of two {@link SourceKey}s. */
-export function sameSourceKey(a: SourceKey, b: SourceKey): boolean {
-  return a.cloneUrl === b.cloneUrl && a.subpath === b.subpath && a.ref === b.ref;
+/**
+ * True when `current`, the key an install would fetch from now, names the
+ * place `recorded` was fetched from: the same clone URL, subpath and ref, or
+ * `HEAD` now where the record says `main` (its pre-DOR-2248 spelling of the
+ * default branch). The tolerance is safe because the update check compares
+ * commits next: an explicit `main` that is not the default branch resolves to
+ * a different commit than `HEAD`, and the package is staged.
+ *
+ * @param current - The key recomputed from the source as it is listed now.
+ * @param recorded - The key in the install's sidecar.
+ */
+export function matchesRecordedKey(current: SourceKey, recorded: SourceKey): boolean {
+  if (current.cloneUrl !== recorded.cloneUrl || current.subpath !== recorded.subpath) {
+    return false;
+  }
+  return (
+    current.ref === recorded.ref || (current.ref === 'HEAD' && recorded.ref === LEGACY_DEFAULT_REF)
+  );
 }
 
 /**

@@ -1,4 +1,4 @@
-import { Tabs, TabsList, TabsTrigger } from '@/layers/shared/ui';
+import { PageHeading, Tabs, TabsList, TabsTrigger } from '@/layers/shared/ui';
 import { MarketplaceToolbar } from './MarketplaceToolbar';
 import { FeaturedRail } from './FeaturedRail';
 import { PackageGrid } from './PackageGrid';
@@ -35,7 +35,7 @@ export function Marketplace() {
               "Marketplace". Kept for the outline — the bar's title is a `nav`
               landmark, not a heading, and a page with no `h1` leaves its
               sections hanging under nothing. */}
-          <h1 className="sr-only">Marketplace</h1>
+          <PageHeading>Marketplace</PageHeading>
           <p className="text-muted-foreground text-sm">
             {view === 'installed'
               ? 'Manage every package installed across your global and per-agent scopes.'

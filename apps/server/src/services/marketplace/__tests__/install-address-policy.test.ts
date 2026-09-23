@@ -10,14 +10,15 @@
  *
  * - The whole pipeline, with the real resolver and the real fetcher, because
  *   the composition is what the ticket is about — each half looked fine alone.
- * - Each place an address actually becomes argv for `git`, because
- *   `PackageFetcher.fetchFromGit` is NOT the single choke point it reads like:
- *   `gitSubdirResolver` calls `resolveCommitSha` directly and spawns its own
- *   `git clone` through a three-step fallback ladder.
+ * - Each door an address passes on its way to `git`: `PackageFetcher`'s one
+ *   git path (`fetchGitTree`, which every git source form and the legacy
+ *   bare-`gitUrl` entry share since DOR-2248) and the update check's
+ *   `lookupCommitSha`.
  *
- * `node:child_process` is mocked at module scope, so no test here can run a
- * hostile git command even if a guard regresses — the spies are the evidence
- * that the address stopped short of the subprocess boundary.
+ * Git itself is a fake `GitTreeSource`, and `node:child_process` is mocked at
+ * module scope as well, so no test here can run a hostile git command even if
+ * a guard regresses or something grows a git call outside the seam — the spies
+ * are the evidence that the address stopped short of both.
  *
  * The LOCAL half of the same door lives here too (DOR-1825). An install address
  * has two local spellings — `./some/path` and `file:///some/path` — and the
@@ -35,10 +36,10 @@ import { pathToFileURL } from 'node:url';
 import { isSafeGitUrl, type ResolvedSourceDescriptor } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { PackageFetcher, type FetcherDeps } from '../package-fetcher.js';
-import { gitSubdirResolver } from '../source-resolvers/git-subdir.js';
+import { gitResolver } from '../source-resolvers/git.js';
+import type { GitTreeSource } from '../lib/git-tree.js';
 import { UNSUPPORTED_GIT_REMOTE_MESSAGE, UnsupportedSourceUrlError } from '../source-url-policy.js';
 import type { MarketplaceCache } from '../marketplace-cache.js';
-import type { TemplateDownloader } from '../../core/template-downloader.js';
 import { BoundaryError, initBoundary } from '../../../lib/boundary.js';
 import { buildInstallerForTests } from './installer-harness.js';
 
@@ -60,9 +61,9 @@ vi.mock('node:child_process', async () => {
       });
       return child as unknown as ReturnType<typeof import('node:child_process').spawn>;
     }),
-    // Callback-style so `promisify(execFile)` wraps it. Empty stdout sends
-    // `resolveCommitSha` down its placeholder-SHA path, which is the path an
-    // allowed address is supposed to take here.
+    // Callback-style so `promisify(execFile)` wraps it. Nothing here should
+    // reach it (git runs behind the fake `GitTreeSource`); it answers empty
+    // rather than throwing so the "not called" assertions are what fail.
     execFile: vi
       .fn()
       .mockImplementation(
@@ -128,19 +129,23 @@ function buildLogger(): Logger {
   } as unknown as Logger;
 }
 
-/** Cache double whose `materializePackage` runs the clone callback. */
+const SHA = 'a'.repeat(40);
+
+/** Cache double whose `materializePackage` runs the fetch and keys by its commit. */
 function buildCache(): MarketplaceCache {
   return {
     getPackage: vi.fn().mockResolvedValue(null),
-    putPackage: vi
-      .fn()
-      .mockImplementation(async (name: string, sha: string) => `/tmp/${name}/${sha}`),
     materializePackage: vi
       .fn()
       .mockImplementation(
-        async (name: string, sha: string, clone: (tempDir: string) => Promise<void>) => {
-          await clone(`/tmp/.tmp-${name}-${sha}`);
-          return `/tmp/${name}/${sha}`;
+        async (
+          name: string,
+          sha: string,
+          _subpath: string,
+          fetch: (tempDir: string) => Promise<string>
+        ) => {
+          const commitSha = await fetch(`/tmp/.tmp-${name}-${sha}`);
+          return { path: `/tmp/${name}@${commitSha}`, commitSha };
         }
       ),
     readMarketplace: vi.fn().mockResolvedValue(null),
@@ -148,11 +153,15 @@ function buildCache(): MarketplaceCache {
   } as unknown as MarketplaceCache;
 }
 
-/** Downloader double — the `git clone` seam. */
-function buildDownloader(): TemplateDownloader {
+/** Git double — the seam every git source crosses. */
+function buildGit(): GitTreeSource & {
+  lookup: ReturnType<typeof vi.fn>;
+  fetch: ReturnType<typeof vi.fn>;
+} {
   return {
-    cloneRepository: vi.fn().mockResolvedValue(undefined),
-  } as unknown as TemplateDownloader;
+    lookup: vi.fn().mockResolvedValue({ kind: 'found', commitSha: SHA, refName: 'HEAD' }),
+    fetch: vi.fn().mockResolvedValue(SHA),
+  };
 }
 
 describe('install addresses — the whole pipeline', () => {
@@ -185,7 +194,8 @@ describe('install addresses — the whole pipeline', () => {
 
     expect(vi.mocked(execFile)).not.toHaveBeenCalled();
     expect(vi.mocked(spawn)).not.toHaveBeenCalled();
-    expect(spies.templateClone).not.toHaveBeenCalled();
+    expect(spies.gitLookup).not.toHaveBeenCalled();
+    expect(spies.gitFetch).not.toHaveBeenCalled();
   });
 
   it('refuses it at PREVIEW too, which runs before anyone consents to anything', async () => {
@@ -198,24 +208,25 @@ describe('install addresses — the whole pipeline', () => {
 
     expect(vi.mocked(execFile)).not.toHaveBeenCalled();
     expect(vi.mocked(spawn)).not.toHaveBeenCalled();
-    expect(spies.templateClone).not.toHaveBeenCalled();
+    expect(spies.gitLookup).not.toHaveBeenCalled();
+    expect(spies.gitFetch).not.toHaveBeenCalled();
   });
 
-  it('still clones an https:// address typed the same way', async () => {
+  it('still fetches an https:// address typed the same way', async () => {
     const { installer, spies } = buildInstallerForTests(dorkHome);
-    spies.templateClone.mockResolvedValue(undefined);
+    spies.gitLookup.mockResolvedValue({ kind: 'found', commitSha: SHA, refName: 'HEAD' });
+    spies.gitFetch.mockResolvedValue(SHA);
 
-    // The install fails later — the "clone" wrote nothing, so validation finds
+    // The install fails later — the fetch wrote nothing, so validation finds
     // no manifest. What this pins is that it got PAST the address check and
-    // asked the downloader to clone the URL as typed.
+    // asked git for the URL as typed, at the default branch.
     await installer.install({ name: 'x', source: 'https://example.com/foo/bar.git' }).catch(() => {
       /* validation failure downstream is expected and not what is under test */
     });
 
-    expect(spies.templateClone).toHaveBeenCalledWith(
-      'https://example.com/foo/bar.git',
-      expect.any(String),
-      'main'
+    expect(spies.gitLookup).toHaveBeenCalledWith('https://example.com/foo/bar.git', 'HEAD');
+    expect(spies.gitFetch).toHaveBeenCalledWith(
+      expect.objectContaining({ cloneUrl: 'https://example.com/foo/bar.git', commitSha: SHA })
     );
   });
 
@@ -236,14 +247,14 @@ describe('install addresses — the whole pipeline', () => {
 
 describe('install addresses — the git seam in PackageFetcher', () => {
   let cache: MarketplaceCache;
-  let downloader: TemplateDownloader;
+  let git: ReturnType<typeof buildGit>;
   let fetcher: PackageFetcher;
 
   beforeEach(() => {
     vi.clearAllMocks();
     cache = buildCache();
-    downloader = buildDownloader();
-    fetcher = new PackageFetcher(cache, downloader, buildLogger());
+    git = buildGit();
+    fetcher = new PackageFetcher(cache, git, buildLogger());
   });
 
   it.each(REFUSED_ADDRESSES)('refuses %s without running git', async (address) => {
@@ -255,13 +266,15 @@ describe('install addresses — the git seam in PackageFetcher', () => {
 
     expect(vi.mocked(execFile)).not.toHaveBeenCalled();
     expect(vi.mocked(spawn)).not.toHaveBeenCalled();
-    expect(downloader.cloneRepository).not.toHaveBeenCalled();
+    expect(git.lookup).not.toHaveBeenCalled();
+    expect(git.fetch).not.toHaveBeenCalled();
   });
 
-  it.each(ALLOWED_ADDRESSES)('still clones %s', async (address) => {
+  it.each(ALLOWED_ADDRESSES)('still fetches %s', async (address) => {
     await fetcher.fetchPackage({ packageName: 'x', source: { source: 'url', url: address } });
 
-    expect(vi.mocked(downloader.cloneRepository).mock.calls[0]?.[0]).toBe(address);
+    expect(git.lookup).toHaveBeenCalledWith(address, 'HEAD');
+    expect(git.fetch.mock.calls[0]?.[0]).toMatchObject({ cloneUrl: address });
   });
 
   it('the fixture lists agree with `isSafeGitUrl`, except the one deliberate narrowing', () => {
@@ -317,7 +330,8 @@ describe('install addresses — the git seam in PackageFetcher', () => {
 
       expect(result.path).toBe(pkgDir);
       expect(result.commitSha).toBe('local');
-      expect(downloader.cloneRepository).not.toHaveBeenCalled();
+      expect(git.lookup).not.toHaveBeenCalled();
+      expect(git.fetch).not.toHaveBeenCalled();
     });
 
     it('refuses a file:// package outside the boundary', async () => {
@@ -325,7 +339,8 @@ describe('install addresses — the git seam in PackageFetcher', () => {
         fetcher.fetchFromGit({ packageName: 'x', gitUrl: pathToFileURL(outside).href })
       ).rejects.toBeInstanceOf(BoundaryError);
 
-      expect(downloader.cloneRepository).not.toHaveBeenCalled();
+      expect(git.lookup).not.toHaveBeenCalled();
+      expect(git.fetch).not.toHaveBeenCalled();
     });
 
     it('refuses a file:// path that climbs out of the boundary with `..`', async () => {
@@ -339,7 +354,8 @@ describe('install addresses — the git seam in PackageFetcher', () => {
         fetcher.fetchFromGit({ packageName: 'x', gitUrl: climbing })
       ).rejects.toBeInstanceOf(BoundaryError);
 
-      expect(downloader.cloneRepository).not.toHaveBeenCalled();
+      expect(git.lookup).not.toHaveBeenCalled();
+      expect(git.fetch).not.toHaveBeenCalled();
     });
 
     it('refuses a file:// path that climbs out with a percent-encoded `..`', async () => {
@@ -353,7 +369,8 @@ describe('install addresses — the git seam in PackageFetcher', () => {
         fetcher.fetchFromGit({ packageName: 'x', gitUrl: encoded })
       ).rejects.toBeInstanceOf(BoundaryError);
 
-      expect(downloader.cloneRepository).not.toHaveBeenCalled();
+      expect(git.lookup).not.toHaveBeenCalled();
+      expect(git.fetch).not.toHaveBeenCalled();
     });
 
     it('refuses a file://localhost/… address, which drops its host and keeps the path', async () => {
@@ -363,7 +380,8 @@ describe('install addresses — the git seam in PackageFetcher', () => {
         fetcher.fetchFromGit({ packageName: 'x', gitUrl: `file://localhost${outside}` })
       ).rejects.toBeInstanceOf(BoundaryError);
 
-      expect(downloader.cloneRepository).not.toHaveBeenCalled();
+      expect(git.lookup).not.toHaveBeenCalled();
+      expect(git.fetch).not.toHaveBeenCalled();
     });
 
     it('refuses a file:// path whose symlink leads out of the boundary', async () => {
@@ -374,7 +392,8 @@ describe('install addresses — the git seam in PackageFetcher', () => {
         fetcher.fetchFromGit({ packageName: 'x', gitUrl: pathToFileURL(link).href })
       ).rejects.toBeInstanceOf(BoundaryError);
 
-      expect(downloader.cloneRepository).not.toHaveBeenCalled();
+      expect(git.lookup).not.toHaveBeenCalled();
+      expect(git.fetch).not.toHaveBeenCalled();
     });
 
     it('does not treat an upper-case FILE:// address as a local path', async () => {
@@ -385,7 +404,8 @@ describe('install addresses — the git seam in PackageFetcher', () => {
         fetcher.fetchFromGit({ packageName: 'x', gitUrl: `FILE://${outside}` })
       ).rejects.toBeInstanceOf(UnsupportedSourceUrlError);
 
-      expect(downloader.cloneRepository).not.toHaveBeenCalled();
+      expect(git.lookup).not.toHaveBeenCalled();
+      expect(git.fetch).not.toHaveBeenCalled();
     });
   });
 
@@ -395,104 +415,78 @@ describe('install addresses — the git seam in PackageFetcher', () => {
     ).rejects.toThrow(UNSUPPORTED_GIT_REMOTE_MESSAGE);
   });
 
-  describe('the `resolveCommitSha` door on its own', () => {
+  describe('the `fetchGitTree` door on its own', () => {
     /**
      * The door a resolver reaches without passing through `fetchFromGit` —
-     * `FetcherDeps.resolveCommitSha`, which is what `gitSubdirResolver` calls.
-     * Exercised directly because every path that reaches it today is stopped
-     * earlier by another guard, so without this the line could be deleted with
-     * the whole suite still green.
+     * `FetcherDeps.fetchGitTree`, which is what `gitResolver` calls. Exercised
+     * directly because every path that reaches it today is stopped earlier by
+     * the source schema, so without this the line could be deleted with the
+     * whole suite still green.
      */
     function buildDeps(): FetcherDeps {
       return (fetcher as unknown as { buildFetcherDeps(): FetcherDeps }).buildFetcherDeps();
     }
 
-    it('refuses a hostile address instead of degrading to a placeholder SHA', async () => {
-      const { execFile } = await import('node:child_process');
+    it('refuses a hostile address before the lookup', async () => {
+      await expect(
+        buildDeps().fetchGitTree({
+          packageName: 'x',
+          cloneUrl: 'ext::sh -c id',
+          ref: 'HEAD',
+          subpath: '',
+        })
+      ).rejects.toBeInstanceOf(UnsupportedSourceUrlError);
 
-      await expect(buildDeps().resolveCommitSha('ext::sh -c id', 'HEAD')).rejects.toBeInstanceOf(
-        UnsupportedSourceUrlError
-      );
-
-      expect(vi.mocked(execFile)).not.toHaveBeenCalled();
+      expect(git.lookup).not.toHaveBeenCalled();
+      expect(git.fetch).not.toHaveBeenCalled();
     });
 
-    it('still resolves an allowed address through `git ls-remote`', async () => {
-      const { execFile } = await import('node:child_process');
-
-      // The mocked `ls-remote` returns empty stdout, so the method takes its
-      // placeholder-SHA path. This half is what distinguishes "the guard fired"
-      // from "the method is broken" — without it, a method that threw for
-      // everything would pass the case above.
+    it('still fetches an allowed address', async () => {
+      // This half is what distinguishes "the guard fired" from "the door is
+      // broken" — without it, a door that threw for everything would pass.
       await expect(
-        buildDeps().resolveCommitSha('https://example.com/foo/bar.git', 'HEAD')
-      ).resolves.toMatch(/^tmp-\d+$/);
+        buildDeps().fetchGitTree({
+          packageName: 'x',
+          cloneUrl: 'https://example.com/foo/bar.git',
+          ref: 'HEAD',
+          subpath: '',
+        })
+      ).resolves.toMatchObject({ commitSha: SHA });
+      expect(git.fetch).toHaveBeenCalledTimes(1);
+    });
 
-      expect(vi.mocked(execFile)).toHaveBeenCalledTimes(1);
+    it('refuses a hand-built git-subdir descriptor that never met the schema', async () => {
+      // The installer builds git-subdir sources in code; if a third caller
+      // hands `gitResolver` an unchecked URL, the shared door still holds.
+      const resolved = {
+        type: 'git-subdir',
+        cloneUrl: 'ext::sh -c id',
+        subpath: 'plugins/qa',
+      } as Extract<ResolvedSourceDescriptor, { type: 'git-subdir' }>;
+
+      await expect(
+        gitResolver(resolved, { packageName: 'qa' }, buildDeps())
+      ).rejects.toBeInstanceOf(UnsupportedSourceUrlError);
+      expect(git.lookup).not.toHaveBeenCalled();
     });
   });
 
   describe('the public lookupCommitSha door (update check)', () => {
-    it('asks ls-remote for exactly the ref it was given', async () => {
+    it('looks up exactly the ref it was given', async () => {
       // Purpose: the update check compares against a commit recorded at the
-      // key's ref ('main' by default). The private default is 'HEAD', so a
-      // lookup that dropped the ref would compare two different places.
-      const { execFile } = await import('node:child_process');
-      vi.mocked(execFile).mockClear();
-
+      // key's ref; a lookup that dropped the ref would compare two places.
       await fetcher.lookupCommitSha('https://example.com/foo/bar.git', 'release');
 
-      const argv = vi.mocked(execFile).mock.calls[0]?.[1] as string[];
-      expect(argv).toEqual([
-        'ls-remote',
-        '--end-of-options',
-        'https://example.com/foo/bar.git',
-        'release',
-      ]);
+      expect(git.lookup).toHaveBeenCalledWith('https://example.com/foo/bar.git', 'release');
     });
 
     it('propagates a refused address instead of returning a placeholder', async () => {
       // Purpose: DOR-1799 — a refusal must reach the caller as a refusal, so
       // the check reports it rather than "couldn't reach".
-      const { execFile } = await import('node:child_process');
-      vi.mocked(execFile).mockClear();
-
       await expect(fetcher.lookupCommitSha('ext::sh -c id', 'main')).rejects.toBeInstanceOf(
         UnsupportedSourceUrlError
       );
-      expect(vi.mocked(execFile)).not.toHaveBeenCalled();
+      expect(git.lookup).not.toHaveBeenCalled();
     });
-  });
-});
-
-describe('install addresses — the git-subdir ladder', () => {
-  /**
-   * `gitSubdirResolver` spawns its own `git clone` and never passes through
-   * `fetchFromGit`, so it is checked at its own entry rather than trusting the
-   * order its two internal steps happen to run in.
-   */
-  it('refuses a hostile clone URL before its own spawn or SHA resolution', async () => {
-    const { spawn } = await import('node:child_process');
-    vi.clearAllMocks();
-
-    const deps = {
-      cache: buildCache(),
-      logger: buildLogger(),
-      cloneRepository: vi.fn(),
-      resolveCommitSha: vi.fn().mockResolvedValue('deadbeef'),
-    } as unknown as FetcherDeps;
-
-    const resolved = {
-      type: 'git-subdir',
-      cloneUrl: 'ext::sh -c id',
-      subpath: 'plugins/qa',
-    } as Extract<ResolvedSourceDescriptor, { type: 'git-subdir' }>;
-
-    await expect(gitSubdirResolver(resolved, { packageName: 'qa' }, deps)).rejects.toBeInstanceOf(
-      UnsupportedSourceUrlError
-    );
-
-    expect(deps.resolveCommitSha).not.toHaveBeenCalled();
-    expect(vi.mocked(spawn)).not.toHaveBeenCalled();
   });
 });

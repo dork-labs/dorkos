@@ -121,6 +121,12 @@ Wrong passwords work differently. Leaving, disconnecting all installations, tran
 
 Keys belong to the host, not to the person who made them. Removing a host operator does not stop the keys that operator created. When someone leaves, open **API keys**, find the keys that show their name, and replace or revoke them. **Replace** gives a new key with the same permissions and keeps the old one working for up to a day, so a program can switch over without downtime.
 
+## Community limits
+
+Each community record on the host page has **Limits**: the most active members and the most file space, each shown beside what the community uses now. Leave a field empty for no limit. A lower limit never removes anyone or anything; it only stops new members or new files once the community is at the limit, and people see "This community is full" or "out of file space" instead of a retry. Exports never count, so an owner can always take their data out.
+
+Agents are limited per person by `COMMUNITY_AGENTS_PER_OWNER` (20 by default, at most 100). A program with a `communities:write` key can raise or lower that for one member, up to 1,000, with `PUT /api/v1/host/communities/:id/members/:memberId/limits`. Ask the member or owner for the member id; no host route lists members.
+
 ## Storage and hosting choices
 
 A persistent container host or VPS can run the same image. Supply PostgreSQL separately, mount durable storage at `/data/blobs`, set the required environment values, and route HTTPS to port 6481. Run one app instance initially. Test reconnects and database access through the host’s actual proxy before inviting people.

@@ -1,4 +1,4 @@
-import { PageContainer } from '@/layers/shared/ui';
+import { PageContainer, PageHeading } from '@/layers/shared/ui';
 import { FeedbackRequestsPanel } from '@/layers/features/feedback-requests';
 
 /**
@@ -13,7 +13,7 @@ export function FeedbackRequestsPage() {
         {/* Not drawn (design decision E1): the bar overhead already says
             "Your reports". Kept for the outline — the bar's title is a
             `nav` landmark, not a heading. */}
-        <h1 className="sr-only">Your reports</h1>
+        <PageHeading>Your reports</PageHeading>
         <p className="text-muted-foreground text-sm">
           What you’ve sent the DorkOS team, and where it stands.
         </p>

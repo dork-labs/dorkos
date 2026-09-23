@@ -25,12 +25,13 @@ const SCOPES: { scope: Scope; label: string; detail: string }[] = [
   {
     scope: 'communities:read',
     label: 'Read community records',
-    detail: 'List communities and read their status.',
+    detail: 'List communities and read their status and how much they use.',
   },
   {
     scope: 'communities:write',
     label: 'Create communities',
-    detail: 'Create unclaimed communities, send owner claims, and abandon unclaimed ones.',
+    detail:
+      'Create unclaimed communities, send owner claims, abandon unclaimed ones, and set limits.',
   },
   {
     scope: 'communities:lifecycle',
