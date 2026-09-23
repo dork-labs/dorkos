@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Hash, Menu, Plus, Settings2, X } from 'lucide-react';
-import { Admission } from './components/Admission.js';
+import { Admission, type AdmissionResume } from './components/Admission.js';
 import { ChannelView } from './components/Channel.js';
 import { Manage } from './components/Manage.js';
-import { rememberCommunity } from './components/CommunityChooser.js';
+import { rememberCommunity, returnToChooserWithNotice } from './components/CommunityChooser.js';
 import { describeError, hostRequest, RequestError, request } from './api.js';
 import { readInviteFragment } from './invite-fragment.js';
+import { readPendingAdmission } from './admission.js';
 import {
   parseCommunitySettingsPath,
   type CommunityWireMembershipSummary,
@@ -31,6 +32,8 @@ export function CommunityApp() {
   const [unadmitted, setUnadmitted] = useState(false);
   const [hostSignIn, setHostSignIn] = useState(false);
   const [admissionComplete, setAdmissionComplete] = useState(false);
+  const [admissionResume, setAdmissionResume] = useState<AdmissionResume | null>(null);
+  const joinedHeading = useRef<HTMLHeadingElement>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // A DorkOS app opens `/c/<id>/settings[/<section>]` for invite, leave and
@@ -46,7 +49,7 @@ export function CommunityApp() {
     [channels, selectedId]
   );
   const returnToChooser = useCallback(() => {
-    if (/^\/c\/[^/]+(?:\/|$)/u.test(window.location.pathname)) window.location.replace('/');
+    if (/^\/c\/[^/]+(?:\/|$)/u.test(window.location.pathname)) returnToChooserWithNotice();
   }, []);
   const eraseInviteToken = useCallback(() => {
     inviteTokenRef.current = null;
@@ -122,49 +125,53 @@ export function CommunityApp() {
         rememberCommunity(metadata.id);
         if (window.location.pathname === '/' || window.location.pathname === '/join')
           window.history.replaceState(null, '', `/c/${metadata.id}`);
-        if (inviteTokenRef.current && /\/join$/u.test(window.location.pathname)) {
+        const joinPath = /\/join$/u.test(window.location.pathname);
+        if (inviteTokenRef.current && joinPath) {
           setMe(null);
           setUnadmitted(false);
           return;
         }
-        try {
-          if (!inviteTokenRef.current && /\/join$/u.test(window.location.pathname)) {
-            try {
-              await request('/api/v1/invites/bind', 'POST', {});
-              await request('/api/v1/invites/redeem', 'POST', {});
-            } catch (cause) {
-              if (
-                !(cause instanceof RequestError) ||
-                (cause.status !== 401 && cause.status !== 403)
-              )
-                throw cause;
+        // A reload or sign-in return on the clean join URL resumes from the HttpOnly join
+        // attempt, never from anything the page kept. With none left, the person either
+        // already joined (and enters below) or must open the invitation again.
+        if (joinPath) {
+          try {
+            const pending = await readPendingAdmission();
+            if (!active) return;
+            if (pending) {
+              setAdmissionResume({ kind: 'pending', pending });
+              setMe(null);
+              return;
             }
+            setAdmissionResume({ kind: 'lost' });
+          } catch (cause) {
+            if (!active) return;
+            if (cause instanceof RequestError && cause.status === 409) {
+              setAdmissionResume({ kind: 'refused', cause });
+              setMe(null);
+              return;
+            }
+            throw cause;
           }
+        }
+        try {
           const current = await request<Me>('/api/v1/me');
           if (!active) return;
           const lifecycle = await refreshCommunityLifecycle(metadata.id);
           if (!active || !lifecycle) return;
           setMe(current);
           setUnadmitted(false);
+          // Joined: the join URL has nothing left to resume, so a later reload enters directly.
+          if (joinPath) window.history.replaceState(null, '', `/c/${metadata.id}`);
           await refreshChannels();
         } catch (cause) {
           if (!active) return;
           if (cause instanceof RequestError && (cause.status === 401 || cause.status === 403)) {
-            if (cause.status === 403 && /\/join$/u.test(window.location.pathname)) {
-              try {
-                await request('/api/v1/invites/bind', 'POST', {});
-                await request('/api/v1/invites/redeem', 'POST', {});
-                setInviteToken(null);
-                setMe(await request<Me>('/api/v1/me'));
-                await refreshChannels();
-              } catch {
-                setMe(null);
-              }
-            } else {
-              if (cause.status === 403 && !inviteTokenRef.current) returnToChooser();
-              setMe(null);
-              setUnadmitted(cause.status === 403);
-            }
+            // A signed-in non-member on the join URL stays to read why membership was not
+            // added; anywhere else the tenant is simply not theirs to enter.
+            if (cause.status === 403 && !inviteTokenRef.current && !joinPath) returnToChooser();
+            setMe(null);
+            setUnadmitted(cause.status === 403);
           } else if (isCommunityUnavailable(cause)) {
             returnToChooser();
             setMe(null);
@@ -173,6 +180,9 @@ export function CommunityApp() {
       } catch (cause) {
         if (!active) return;
         if (cause instanceof RequestError && cause.status === 404) {
+          // An unknown tenant ID gets the same answer as one this account cannot enter; only
+          // a host with no community at all offers first-host setup.
+          if (/^\/c\//u.test(window.location.pathname)) returnToChooser();
           setCommunity(null);
           setMe(null);
         } else if (cause instanceof RequestError && cause.code === 'COMMUNITY_SELECTION_REQUIRED') {
@@ -190,6 +200,11 @@ export function CommunityApp() {
       active = false;
     };
   }, [revision, refreshChannels, refreshCommunityLifecycle, returnToChooser]);
+  // The join form that held focus is gone; start keyboard and screen-reader users at the
+  // confirmation that replaced it.
+  useEffect(() => {
+    if (admissionComplete) joinedHeading.current?.focus();
+  }, [admissionComplete]);
   const onChanged = useCallback(() => {
     if (community)
       void refreshCommunityLifecycle(community.id).catch((cause: unknown) => {
@@ -226,7 +241,9 @@ export function CommunityApp() {
       <main className="grid min-h-dvh place-items-center p-5">
         <section className="panel max-w-md p-6" aria-labelledby="community-joined-title">
           <p className="eyebrow">Membership added</p>
-          <h1 id="community-joined-title">You’re in {community.name}.</h1>
+          <h1 id="community-joined-title" ref={joinedHeading} tabIndex={-1}>
+            You’re in {community.name}.
+          </h1>
           <p className="muted">
             Open the community now, or connect a DorkOS installation as a separate next step.
           </p>
@@ -255,6 +272,7 @@ export function CommunityApp() {
         community={community}
         hostSignIn={hostSignIn}
         inviteToken={inviteToken}
+        resume={admissionResume}
         unadmitted={unadmitted}
         onInviteExchanged={eraseInviteToken}
         onAdmitted={(joined) => {
@@ -263,6 +281,7 @@ export function CommunityApp() {
             return;
           }
           eraseInviteToken();
+          setAdmissionResume(null);
           if (joined) setAdmissionComplete(true);
           else setRevision((old) => old + 1);
         }}
