@@ -6,7 +6,6 @@ import {
   redirect,
 } from '@tanstack/react-router';
 import { QueryClient } from '@tanstack/react-query';
-import { CommunityInstallationDestinationSchema } from '@dorkos/shared/config-schema';
 import { z } from 'zod';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { AppShell } from './AppShell';
@@ -34,18 +33,10 @@ import {
   TitleBar,
   type RouteHeader,
 } from '@/layers/widgets/one-bar';
-import {
-  DEFAULT_TEAM_VIEW,
-  LEGACY_TABLE_VIEW,
-  TEAM_VIEWS,
-  getCommunityAuthority,
-  confirmCommunityAuthority,
-  isCommunityAuthorityCurrent,
-} from '@/layers/shared/lib';
-import { communityNavigationKeys } from '@/layers/entities/community';
+import { DEFAULT_TEAM_VIEW, LEGACY_TABLE_VIEW, TEAM_VIEWS } from '@/layers/shared/lib';
 import { resolveSessionForCwd, SESSION_LOOKUP_FAILED_MESSAGE } from '@/layers/entities/session';
 import type { Transport } from '@dorkos/shared/transport';
-import { commitCommunityRouteEpoch, getCommunityRouteEpoch } from '@/layers/shared/model';
+import { createCommunityRouteMemory } from './app/community-route-memory';
 
 // ── Router context ──────────────────────────────────────────
 interface RouterContext {
@@ -662,84 +653,8 @@ export function createAppRouter(queryClient: QueryClient, transport: Transport) 
     defaultErrorComponent: RouteErrorFallback,
     defaultNotFoundComponent: NotFoundFallback,
   });
-  router.subscribe('onLoad', ({ toLocation }) => {
-    if (toLocation.pathname !== '/channels') {
-      commitCommunityRouteEpoch('installation');
-      const authority = getCommunityAuthority();
-      const route = getCommunityRouteEpoch();
-      const destination = CommunityInstallationDestinationSchema.safeParse({
-        path: toLocation.pathname,
-        search: toLocation.search,
-      });
-      if (destination.success)
-        void (async () => {
-          const ownerKey: string =
-            authority.ownerKey ??
-            (await transport.getCommunityNavigation().then((state) => {
-              if (!route.isCurrent() || !confirmCommunityAuthority(authority.epoch, state.ownerKey))
-                throw new Error('Community authority changed');
-              return state.ownerKey;
-            }));
-          const captured = { epoch: authority.epoch, ownerKey };
-          if (!isCommunityAuthorityCurrent(captured) || !route.isCurrent()) return;
-          const state = await transport.rememberCommunityInstallationDestination(destination.data);
-          if (
-            state.ownerKey !== captured.ownerKey ||
-            !isCommunityAuthorityCurrent(captured) ||
-            !route.isCurrent()
-          )
-            return;
-          queryClient.setQueryData(communityNavigationKeys.authority(captured.epoch), state);
-        })().catch(() => undefined);
-      return;
-    }
-    const search = toLocation.search as {
-      community?: unknown;
-      id?: unknown;
-      thread?: unknown;
-    };
-    if (typeof search.community !== 'string') {
-      commitCommunityRouteEpoch('installation');
-      return;
-    }
-    commitCommunityRouteEpoch(
-      JSON.stringify([
-        'community',
-        search.community,
-        typeof search.id === 'string' ? search.id : null,
-        typeof search.thread === 'string' ? search.thread : null,
-      ])
-    );
-    if (typeof search.id === 'string') {
-      const ref = search.community;
-      const roomId = search.id;
-      const authority = getCommunityAuthority();
-      const route = getCommunityRouteEpoch();
-      void (async () => {
-        const navigationState = await transport.getCommunityNavigation();
-        const ownerKey = authority.ownerKey ?? navigationState.ownerKey;
-        if (!route.isCurrent()) return;
-        if (authority.ownerKey === null && !confirmCommunityAuthority(authority.epoch, ownerKey))
-          return;
-        const captured = { epoch: authority.epoch, ownerKey };
-        const state = await transport.rememberCommunityNavigation({
-          ref,
-          roomId,
-          threadId: typeof search.thread === 'string' ? search.thread : null,
-          scrollAnchorEntryId:
-            navigationState.destinations.find(
-              (destination) => destination.ref === ref && destination.roomId === roomId
-            )?.scrollAnchorEntryId ?? null,
-        });
-        if (
-          state.ownerKey === captured.ownerKey &&
-          isCommunityAuthorityCurrent(captured) &&
-          route.isCurrent()
-        )
-          queryClient.setQueryData(communityNavigationKeys.authority(captured.epoch), state);
-      })().catch(() => undefined);
-    }
-  });
+  const rememberRoute = createCommunityRouteMemory(queryClient, transport);
+  router.subscribe('onLoad', ({ toLocation }) => rememberRoute(toLocation));
   return router;
 }
 
