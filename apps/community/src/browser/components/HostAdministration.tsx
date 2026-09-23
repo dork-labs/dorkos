@@ -321,13 +321,12 @@ export function HostAdministration() {
                       )}
                     </div>
                     {pending && (
-                      <div className="mt-3">
-                        <label className="small" htmlFor={`revoke-${community.id}`}>
-                          Owner claim ID
-                        </label>
+                      <div className="field mt-3 mb-0">
+                        <label htmlFor={`revoke-${community.id}`}>Owner claim ID</label>
                         <div className="row">
                           <input
                             id={`revoke-${community.id}`}
+                            className="min-w-0 flex-1"
                             value={revokeGrantId[community.id] ?? ''}
                             onChange={(event) =>
                               setRevokeGrantId((old) => ({
