@@ -6,7 +6,10 @@ import { Manage } from './components/Manage.js';
 import { rememberCommunity } from './components/CommunityChooser.js';
 import { describeError, hostRequest, RequestError, request } from './api.js';
 import { readInviteFragment } from './invite-fragment.js';
-import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
+import {
+  parseCommunitySettingsPath,
+  type CommunityWireMembershipSummary,
+} from '@dorkos/shared/community-wire';
 import type { Channel, Community, CommunityLifecycle, Me } from './types.js';
 
 function isCommunityUnavailable(cause: unknown): cause is RequestError {
@@ -30,7 +33,10 @@ export function CommunityApp() {
   const [admissionComplete, setAdmissionComplete] = useState(false);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [settings, setSettings] = useState(false);
+  // A DorkOS app opens `/c/<id>/settings[/<section>]` for invite, leave and
+  // settings: those need this person's own sign-in, never the installation's.
+  const [settingsRoute] = useState(() => parseCommunitySettingsPath(window.location.pathname));
+  const [settings, setSettings] = useState(settingsRoute !== null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -262,10 +268,15 @@ export function CommunityApp() {
         }}
       />
     );
+  const leaveSettingsPath = () => {
+    if (community && parseCommunitySettingsPath(window.location.pathname))
+      window.history.replaceState(null, '', `/c/${community.id}`);
+  };
   const choose = (id: string) => {
     setSelectedId(id);
     setSettings(false);
     setMobileOpen(false);
+    leaveSettingsPath();
   };
   const readOnly = communityLifecycle === 'archived';
   return (
@@ -379,7 +390,13 @@ export function CommunityApp() {
             </div>
           )}
           {settings && (
-            <button className="button" onClick={() => setSettings(false)}>
+            <button
+              className="button"
+              onClick={() => {
+                setSettings(false);
+                leaveSettingsPath();
+              }}
+            >
               <X size={16} /> Close
             </button>
           )}
@@ -395,6 +412,7 @@ export function CommunityApp() {
             communityName={community!.name}
             me={me.member}
             channels={channels}
+            initialSection={settingsRoute?.section ?? null}
             selectedChannel={selected}
             onChanged={onChanged}
             onCurrentMemberChanged={refreshCurrentMember}

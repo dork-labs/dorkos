@@ -1,8 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import type { CommunityConnectionAccess } from '@dorkos/shared/community-wire';
 import { useQuery } from '@tanstack/react-query';
 import type { ConfirmedCommunityAuthority } from '@/layers/shared/lib';
-import { isCommunityAuthorityCurrent } from '@/layers/shared/lib';
+import {
+  getCommunityConnectionGeneration,
+  isCommunityAuthorityCurrent,
+  subscribeCommunityConnectionGenerations,
+} from '@/layers/shared/lib';
 import {
   useCommunityRouteEpoch,
   useTransport,
@@ -16,6 +20,12 @@ export interface CommunityContentAuthority extends ConfirmedCommunityAuthority {
   route: CommunityRouteEpoch;
   /** Access generation that prevents capability changes from reusing writable cache state. */
   accessFingerprint?: string;
+  /**
+   * The one connection this content belongs to, and its generation when
+   * captured. A tombstoned connection fails every guard below, so a removal or
+   * revocation fences only that Community and never another one.
+   */
+  connection?: { ref: string; generation: number };
 }
 
 /** Fail-closed client interpretation of one server-verified connection snapshot. */
@@ -78,7 +88,13 @@ export async function withinCommunityAuthority<T>(
 
 /** Return whether both the captured owner and route generations remain current. */
 export function isCommunityContentAuthorityCurrent(authority: CommunityContentAuthority): boolean {
-  return isCommunityAuthorityCurrent(authority) && authority.route.isCurrent();
+  return (
+    isCommunityAuthorityCurrent(authority) &&
+    authority.route.isCurrent() &&
+    (authority.connection === undefined ||
+      getCommunityConnectionGeneration(authority.connection.ref) ===
+        authority.connection.generation)
+  );
 }
 
 /** Complete a protected content read only inside its captured route and owner generation. */
@@ -91,16 +107,42 @@ export async function withinCommunityContentAuthority<T>(
   return value;
 }
 
-/** Capture the confirmed owner together with the current committed route generation. */
+/**
+ * Capture the confirmed owner together with the current committed route generation.
+ *
+ * @param enabled - Whether the owner bootstrap may run.
+ * @param accessFingerprint - The connection's verified access generation.
+ * @param ref - The Community this content belongs to. When given, the
+ *   connection's generation joins the fingerprint, so a tombstoned connection
+ *   gets fresh cache keys and fresh draft/receipt addresses as well as failing
+ *   its guards.
+ */
 export function useCommunityContentAuthority(
   enabled = true,
-  accessFingerprint = 'connection-unresolved'
+  accessFingerprint = 'connection-unresolved',
+  ref?: string
 ): CommunityContentAuthority | null {
   const owner = useConfirmedCommunityAuthority(enabled);
   const route = useCommunityRouteEpoch();
+  const generation = useSyncExternalStore(
+    subscribeCommunityConnectionGenerations,
+    () => (ref === undefined ? 0 : getCommunityConnectionGeneration(ref)),
+    () => (ref === undefined ? 0 : getCommunityConnectionGeneration(ref))
+  );
   return useMemo(
-    () => (owner ? { ...owner, route, accessFingerprint } : null),
-    [owner, route, accessFingerprint]
+    () =>
+      owner
+        ? {
+            ...owner,
+            route,
+            accessFingerprint:
+              ref === undefined || generation === 0
+                ? accessFingerprint
+                : `${accessFingerprint}#${generation}`,
+            ...(ref === undefined ? {} : { connection: { ref, generation } }),
+          }
+        : null,
+    [owner, route, accessFingerprint, ref, generation]
   );
 }
 

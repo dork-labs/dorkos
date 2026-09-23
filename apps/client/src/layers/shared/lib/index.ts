@@ -44,10 +44,13 @@ export {
 export {
   confirmCommunityAuthority,
   getCommunityAuthority,
+  getCommunityConnectionGeneration,
   invalidateCommunityAuthority,
   isCommunityAuthorityCurrent,
   registerCommunityAuthorityCleanup,
   subscribeCommunityAuthority,
+  subscribeCommunityConnectionGenerations,
+  tombstoneCommunityConnection,
   type CommunityAuthoritySnapshot,
   type ConfirmedCommunityAuthority,
 } from './community-authority-state';

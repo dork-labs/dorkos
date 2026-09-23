@@ -57,7 +57,7 @@ export function RemoteCommunitySurface({
   const connections = useCommunityConnections();
   const connection = connections.data?.find((item) => item.ref === community);
   const access = communityAccessState(connection?.access);
-  const authority = useCommunityContentAuthority(true, access.fingerprint);
+  const authority = useCommunityContentAuthority(true, access.fingerprint, community);
   const ownerAddress = authority ? JSON.stringify([authority.ownerKey, authority.epoch]) : '';
   const contextAddress = authority
     ? JSON.stringify([

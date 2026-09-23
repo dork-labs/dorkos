@@ -8,6 +8,7 @@ import { test, expect, type Route } from '@playwright/test';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
+import { communitySettingsPath } from '@dorkos/shared/community-wire';
 import { createCommunityApp } from '../src/app.js';
 import { parseConfig } from '../src/config.js';
 import { migrate } from '../src/migrate.js';
@@ -69,6 +70,8 @@ test.beforeAll(async () => {
     '/c/:communityId',
     '/c/:communityId/join',
     '/c/:communityId/deletion',
+    '/c/:communityId/settings',
+    '/c/:communityId/settings/:section',
   ])
     app.get(
       path,
@@ -677,8 +680,14 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3)',
       [ids.communityId, ids.channelId, seededAgent.rows[0].id]
     );
-    await memberPage.getByRole('button', { name: 'Manage' }).click();
-    await memberPage.getByRole('button', { name: 'Account' }).click();
+    // The DorkOS app's "Leave community" opens this exact path: settings, at
+    // the Account section, on the Community's own site.
+    await memberPage.goto(`${baseUrl}${communitySettingsPath(ids.communityId, 'account')}`);
+    await expect(
+      memberPage
+        .getByRole('navigation', { name: 'Settings sections' })
+        .getByRole('button', { name: 'Account' })
+    ).toHaveClass(/primary/);
     const exportDownload = memberPage.waitForEvent('download');
     await memberPage.getByRole('button', { name: 'Export my data' }).click();
     expect((await exportDownload).suggestedFilename()).toBe('my-community-data.zip');

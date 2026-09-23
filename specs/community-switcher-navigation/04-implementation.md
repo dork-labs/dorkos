@@ -76,6 +76,28 @@
 - Keep rows at the shared 44px phone target, add search at eight Communities, and expose explicit
   up/down order actions instead of touch drag.
 
+### Session 2 - 2026-09-23
+
+**Tasks 3.1 and 3.2:** Route lifecycle actions and clean up ended connections (DOR-2185).
+
+- The switcher's selected Community gets a "Manage <name>" submenu: Invite people, Community
+  settings and Leave community open `/c/<id>/settings[/<section>]` on the Community's pinned origin
+  (the person's own sign-in rechecks there); Disconnect confirms in the app and ends only the local
+  connection. Move up/down moved into the same submenu.
+- "Add community" is a submenu of three separate paths: Connect (Connections › Messaging, the
+  pairing flow), Join with an invitation (opens a validated invite link on its own site) and Run your
+  own community (the CLI guide). Create is not offered: see decisions below.
+- Added a per-connection generation beside the owner epoch. Removal or revocation tombstones that one
+  ref first, then cancels and erases its cache, then routes away only if it was on screen; content
+  guards, cache keys and draft/receipt addresses all carry the generation.
+- An app-level watcher treats only a `connected` → `reconnect-required`/missing transition as
+  authoritative; unverified (offline) access changes nothing.
+- The Community app honours the settings deep link and falls back to a role-allowed section.
+
+Decisions to confirm: Create community is hidden because the local descriptor carries no
+host-operator signal; Community sign-out stays on the Community's site; Invite visibility uses
+lifecycle + reachability because the descriptor carries no role, and the Community page rechecks.
+
 ## Files Modified/Created
 
 **Source files:**

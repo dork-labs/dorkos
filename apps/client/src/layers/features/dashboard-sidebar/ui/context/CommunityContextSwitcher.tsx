@@ -1,19 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { ArrowDown, ArrowUp, ChevronDown, HardDrive, Plus, UsersRound } from 'lucide-react';
+import { ChevronDown, HardDrive, UsersRound } from 'lucide-react';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
+import {
+  communitySettingsPath,
+  type CommunitySettingsSection,
+} from '@dorkos/shared/community-wire';
 import { CommunityInstallationDestinationSchema } from '@dorkos/shared/config-schema';
 import {
+  communityRefFromRouteDestination,
   getCommunityRouteEpoch,
   useIsMobile,
   useOpenConnections,
   useTransport,
 } from '@/layers/shared/model';
-import { cn, getCommunityAuthority, isCommunityAuthorityCurrent } from '@/layers/shared/lib';
+import {
+  cn,
+  getCommunityAuthority,
+  isCommunityAuthorityCurrent,
+  openExternalLink,
+} from '@/layers/shared/lib';
 import {
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuContent,
-  ResponsiveDropdownMenuItem,
   ResponsiveDropdownMenuLabel,
   ResponsiveDropdownMenuRadioGroup,
   ResponsiveDropdownMenuRadioItem,
@@ -31,6 +40,12 @@ import {
   useMoveCommunityNavigation,
 } from '@/layers/entities/community';
 import { useHeaderBlockMenu } from './use-header-block-menu';
+import {
+  buildCommunityContextNodes,
+  communityActionAvailability,
+  COMMUNITY_DEPLOY_GUIDE_URL,
+} from './community-context-actions';
+import { DisconnectCommunityDialog, JoinCommunityDialog } from './CommunityActionDialogs';
 
 /** Props for the route-owned Community context trigger. */
 export interface CommunityContextSwitcherProps {
@@ -112,10 +127,6 @@ export function CommunityContextSwitcher({
   triggerClassName,
   compact = false,
 }: CommunityContextSwitcherProps) {
-  const menu = useHeaderBlockMenu();
-  const guarded = useGuardedMenuNodes(menu.nodes);
-  const installationLabel = menu.teamName;
-  const installationLabelPending = menu.nameUnknown;
   const transport = useTransport();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -140,6 +151,50 @@ export function CommunityContextSwitcher({
   const [pendingRef, setPendingRef] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [open, setOpen] = useState(false);
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [disconnecting, setDisconnecting] = useState<CommunityConnectionDescriptor | null>(null);
+  const selectedIndex = selectedRef
+    ? destinations.findIndex((connection) => connection.ref === selectedRef)
+    : -1;
+
+  function openOnCommunity(
+    connection: CommunityConnectionDescriptor,
+    section?: CommunitySettingsSection
+  ) {
+    // The descriptor's pinned origin is the only host this connection ever
+    // talked to; the page there checks the person's own sign-in and role.
+    openExternalLink(
+      new URL(
+        communitySettingsPath(connection.remoteCommunityId, section),
+        connection.pinnedOrigin
+      ).toString()
+    );
+  }
+
+  const contextNodes = buildCommunityContextNodes({
+    selected: selected
+      ? {
+          connection: selected,
+          availability: communityActionAvailability(selected),
+          canMoveUp: selectedIndex > 0,
+          canMoveDown: selectedIndex >= 0 && selectedIndex < destinations.length - 1,
+        }
+      : null,
+    onMove: (direction) => {
+      if (selected) moveNavigation.mutate({ ref: selected.ref, direction });
+    },
+    onInvite: () => selected && openOnCommunity(selected, 'community'),
+    onOpenSettings: () => selected && openOnCommunity(selected),
+    onLeave: () => selected && openOnCommunity(selected, 'account'),
+    onDisconnect: () => setDisconnecting(selected),
+    onConnect: () => openConnections('messaging'),
+    onJoin: () => setJoinOpen(true),
+    onDeploy: () => openExternalLink(COMMUNITY_DEPLOY_GUIDE_URL),
+  });
+  const menu = useHeaderBlockMenu(contextNodes);
+  const guarded = useGuardedMenuNodes(menu.nodes);
+  const installationLabel = menu.teamName;
+  const installationLabelPending = menu.nameUnknown;
   const targetPending = selectedRef !== undefined && connections.data === undefined;
   const labelPending = selectedRef === undefined ? installationLabelPending : targetPending;
   const label = selectedRef === undefined ? installationLabel : (selected?.label ?? 'Community');
@@ -149,10 +204,6 @@ export function CommunityContextSwitcher({
           connection.label.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase())
         )
       : destinations;
-  const selectedIndex = selectedRef
-    ? destinations.findIndex((connection) => connection.ref === selectedRef)
-    : -1;
-
   useEffect(() => {
     const openSwitcher = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'k') {
@@ -173,7 +224,7 @@ export function CommunityContextSwitcher({
   async function selectCommunity(connection: CommunityConnectionDescriptor) {
     if (connection.ref === selectedRef || pendingSelection.current) return;
     if (connection.status !== 'connected') {
-      openConnections('accounts');
+      openConnections('messaging');
       return;
     }
     const owner = getCommunityAuthority();
@@ -283,155 +334,155 @@ export function CommunityContextSwitcher({
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
+  function routeAwayFrom(connection: CommunityConnectionDescriptor) {
+    // The connection's content is already erased; leave only if it was the
+    // one on screen. Another Community or this DorkOS stays where it was.
+    if (communityRefFromRouteDestination(getCommunityRouteEpoch().destination) === connection.ref)
+      void navigate({ to: '/', replace: true });
+  }
+
   return (
-    <ResponsiveDropdownMenu open={open} onOpenChange={handleOpenChange}>
-      <ResponsiveDropdownMenuTrigger asChild>
-        <button
-          type="button"
-          data-testid="sidebar-header-block"
-          aria-label={labelPending ? 'Context menu' : `${label} menu`}
-          aria-busy={pendingRef !== null || undefined}
-          className={triggerClassName}
-        >
-          {compact ? (
-            selectedRef === undefined ? (
-              <HardDrive className="size-4 shrink-0" aria-hidden />
+    <>
+      <ResponsiveDropdownMenu open={open} onOpenChange={handleOpenChange}>
+        <ResponsiveDropdownMenuTrigger asChild>
+          <button
+            type="button"
+            data-testid="sidebar-header-block"
+            aria-label={labelPending ? 'Context menu' : `${label} menu`}
+            aria-busy={pendingRef !== null || undefined}
+            className={triggerClassName}
+          >
+            {compact ? (
+              selectedRef === undefined ? (
+                <HardDrive className="size-4 shrink-0" aria-hidden />
+              ) : (
+                <UsersRound className="size-4 shrink-0" aria-hidden />
+              )
+            ) : labelPending ? (
+              <Skeleton
+                className="my-[3px] h-3.5 w-24 rounded-sm"
+                data-testid="sidebar-team-name-skeleton"
+              />
             ) : (
-              <UsersRound className="size-4 shrink-0" aria-hidden />
-            )
-          ) : labelPending ? (
-            <Skeleton
-              className="my-[3px] h-3.5 w-24 rounded-sm"
-              data-testid="sidebar-team-name-skeleton"
+              <span className="truncate">{label}</span>
+            )}
+            <ChevronDown
+              className={compact ? 'size-3 shrink-0 opacity-50' : 'size-3.5 shrink-0 opacity-50'}
+              aria-hidden
             />
-          ) : (
-            <span className="truncate">{label}</span>
-          )}
-          <ChevronDown
-            className={compact ? 'size-3 shrink-0 opacity-50' : 'size-3.5 shrink-0 opacity-50'}
-            aria-hidden
-          />
-          <span className="sr-only">Choose context</span>
-        </button>
-      </ResponsiveDropdownMenuTrigger>
-      <ResponsiveDropdownMenuContent
-        align="start"
-        className="w-64"
-        onCloseAutoFocus={guarded.onCloseAutoFocus}
-      >
-        <ResponsiveDropdownMenuLabel>Switch context</ResponsiveDropdownMenuLabel>
-        {isMobile && destinations.length >= 8 && (
-          <div className="px-4 pb-2">
-            <Input
-              type="search"
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-              placeholder="Find a community"
-              aria-label="Find a community"
-            />
-          </div>
-        )}
-        <ResponsiveDropdownMenuRadioGroup
-          value={selectedRef ? `community:${selectedRef}` : 'installation'}
-          onValueChange={selectDestination}
+            <span className="sr-only">Choose context</span>
+          </button>
+        </ResponsiveDropdownMenuTrigger>
+        <ResponsiveDropdownMenuContent
+          align="start"
+          className="w-64"
+          onCloseAutoFocus={guarded.onCloseAutoFocus}
         >
-          <ResponsiveDropdownMenuRadioItem
-            value="installation"
-            icon={HardDrive}
-            disabled={pendingRef !== null}
-            itemRef={selectedRef === undefined ? selectedItem : undefined}
-            className={pendingRef !== null ? 'opacity-50' : undefined}
+          <ResponsiveDropdownMenuLabel>Switch context</ResponsiveDropdownMenuLabel>
+          {isMobile && destinations.length >= 8 && (
+            <div className="px-4 pb-2">
+              <Input
+                type="search"
+                value={filter}
+                onChange={(event) => setFilter(event.target.value)}
+                placeholder="Find a community"
+                aria-label="Find a community"
+              />
+            </div>
+          )}
+          <ResponsiveDropdownMenuRadioGroup
+            value={selectedRef ? `community:${selectedRef}` : 'installation'}
+            onValueChange={selectDestination}
           >
-            <span className="min-w-0 flex-1 truncate">{installationLabel}</span>
-          </ResponsiveDropdownMenuRadioItem>
-          {visibleDestinations.map((connection) => {
-            const descriptor = navigationDescriptor(connection);
-            const state =
-              descriptor.membershipState !== 'active'
-                ? descriptor.membershipState.replace('-', ' ')
-                : descriptor.availability !== 'online'
-                  ? descriptor.availability
-                  : undefined;
-            const mentions = descriptor.mentionCount ?? 0;
-            const otherUnread = Math.max(0, (descriptor.unreadCount ?? 0) - mentions);
-            const attention = [
-              mentions > 0 ? `${mentions} ${mentions === 1 ? 'mention' : 'mentions'}` : null,
-              otherUnread > 0 ? `${otherUnread} other unread` : null,
-              descriptor.attentionStale && descriptor.unreadCount !== null ? 'last checked' : null,
-            ]
-              .filter(Boolean)
-              .join(', ');
-            return (
-              <ResponsiveDropdownMenuRadioItem
-                key={connection.ref}
-                value={`community:${connection.ref}`}
-                icon={UsersRound}
-                disabled={pendingRef !== null}
-                itemRef={connection.ref === selectedRef ? selectedItem : undefined}
-                description={
-                  [
-                    connection.status === 'reconnect-required' ? 'Reconnect required' : state,
-                    attention,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ') || undefined
-                }
-                className={pendingRef !== null ? 'opacity-50' : undefined}
-              >
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <span className="min-w-0 truncate">{connection.label}</span>
-                  {mentions > 0 && (
-                    <span
-                      className="bg-primary text-primary-foreground shrink-0 rounded-full px-1.5 text-xs"
-                      aria-label={`${mentions} ${mentions === 1 ? 'mention' : 'mentions'}`}
-                    >
-                      @{mentions}
-                    </span>
-                  )}
-                  {otherUnread > 0 && (
-                    <span
-                      className="bg-muted text-muted-foreground shrink-0 rounded-full px-1.5 text-xs"
-                      aria-label={`${otherUnread} other unread`}
-                    >
-                      {otherUnread}
-                    </span>
-                  )}
-                </span>
-              </ResponsiveDropdownMenuRadioItem>
-            );
-          })}
-        </ResponsiveDropdownMenuRadioGroup>
-        {selected && selectedIndex > 0 && (
-          <ResponsiveDropdownMenuItem
-            icon={ArrowUp}
-            onSelect={() => moveNavigation.mutate({ ref: selected.ref, direction: 'up' })}
-          >
-            Move {selected.label} up
-          </ResponsiveDropdownMenuItem>
-        )}
-        {selected && selectedIndex >= 0 && selectedIndex < destinations.length - 1 && (
-          <ResponsiveDropdownMenuItem
-            icon={ArrowDown}
-            onSelect={() => moveNavigation.mutate({ ref: selected.ref, direction: 'down' })}
-          >
-            Move {selected.label} down
-          </ResponsiveDropdownMenuItem>
-        )}
-        <ResponsiveDropdownMenuItem icon={Plus} onSelect={() => openConnections('accounts')}>
-          Add community…
-        </ResponsiveDropdownMenuItem>
-        {guarded.nodes.length > 0 && (
-          <>
-            <ResponsiveDropdownMenuSeparator />
-            <SidebarMenuNodes
-              variant={isMobile ? 'sheet' : 'dropdown'}
-              nodes={guarded.nodes}
-              onSheetClose={() => handleOpenChange(false)}
-            />
-          </>
-        )}
-      </ResponsiveDropdownMenuContent>
-    </ResponsiveDropdownMenu>
+            <ResponsiveDropdownMenuRadioItem
+              value="installation"
+              icon={HardDrive}
+              disabled={pendingRef !== null}
+              itemRef={selectedRef === undefined ? selectedItem : undefined}
+              className={pendingRef !== null ? 'opacity-50' : undefined}
+            >
+              <span className="min-w-0 flex-1 truncate">{installationLabel}</span>
+            </ResponsiveDropdownMenuRadioItem>
+            {visibleDestinations.map((connection) => {
+              const descriptor = navigationDescriptor(connection);
+              const state =
+                descriptor.membershipState !== 'active'
+                  ? descriptor.membershipState.replace('-', ' ')
+                  : descriptor.availability !== 'online'
+                    ? descriptor.availability
+                    : undefined;
+              const mentions = descriptor.mentionCount ?? 0;
+              const otherUnread = Math.max(0, (descriptor.unreadCount ?? 0) - mentions);
+              const attention = [
+                mentions > 0 ? `${mentions} ${mentions === 1 ? 'mention' : 'mentions'}` : null,
+                otherUnread > 0 ? `${otherUnread} other unread` : null,
+                descriptor.attentionStale && descriptor.unreadCount !== null
+                  ? 'last checked'
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(', ');
+              return (
+                <ResponsiveDropdownMenuRadioItem
+                  key={connection.ref}
+                  value={`community:${connection.ref}`}
+                  icon={UsersRound}
+                  disabled={pendingRef !== null}
+                  itemRef={connection.ref === selectedRef ? selectedItem : undefined}
+                  description={
+                    [
+                      connection.status === 'reconnect-required' ? 'Reconnect required' : state,
+                      attention,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ') || undefined
+                  }
+                  className={pendingRef !== null ? 'opacity-50' : undefined}
+                >
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="min-w-0 truncate">{connection.label}</span>
+                    {mentions > 0 && (
+                      <span
+                        className="bg-primary text-primary-foreground shrink-0 rounded-full px-1.5 text-xs"
+                        aria-label={`${mentions} ${mentions === 1 ? 'mention' : 'mentions'}`}
+                      >
+                        @{mentions}
+                      </span>
+                    )}
+                    {otherUnread > 0 && (
+                      <span
+                        className="bg-muted text-muted-foreground shrink-0 rounded-full px-1.5 text-xs"
+                        aria-label={`${otherUnread} other unread`}
+                      >
+                        {otherUnread}
+                      </span>
+                    )}
+                  </span>
+                </ResponsiveDropdownMenuRadioItem>
+              );
+            })}
+          </ResponsiveDropdownMenuRadioGroup>
+          {guarded.nodes.length > 0 && (
+            <>
+              <ResponsiveDropdownMenuSeparator />
+              <SidebarMenuNodes
+                variant={isMobile ? 'sheet' : 'dropdown'}
+                nodes={guarded.nodes}
+                onSheetClose={() => handleOpenChange(false)}
+              />
+            </>
+          )}
+        </ResponsiveDropdownMenuContent>
+      </ResponsiveDropdownMenu>
+      <JoinCommunityDialog open={joinOpen} onOpenChange={setJoinOpen} />
+      <DisconnectCommunityDialog
+        connection={disconnecting}
+        onOpenChange={(next) => {
+          if (!next) setDisconnecting(null);
+        }}
+        onDisconnected={routeAwayFrom}
+      />
+    </>
   );
 }
 
