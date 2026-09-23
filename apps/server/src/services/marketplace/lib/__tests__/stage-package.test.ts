@@ -153,4 +153,47 @@ describe('stagePackageContents', () => {
 
     expect(await exists(path.join(dest, 'templates', '.npmrc'))).toBe(true);
   });
+
+  // Purpose (DOR-2245): paths DorkOS keeps for the person or the installer never
+  // reach the staged tree, so no package can ship over a person's data or the
+  // installer's records, whatever validation said.
+  it('strips every reserved path, logs each once, and keeps near-misses', async () => {
+    const src = await mkdtemp(path.join(tmpdir(), 'stage-src-'));
+    const dest = await mkdtemp(path.join(tmpdir(), 'stage-dest-'));
+    cleanupDirs.push(src, dest);
+    await rm(dest, { recursive: true, force: true });
+
+    const reserved = [
+      '.dork/data/seed.json',
+      '.dork/secrets.json',
+      '.dork/install-metadata.json',
+      '.dork/installed-files.json',
+      '.dork/uninstalled-agent.json',
+      'skills/x/SKILL.md.dork-old',
+      'config/a.json.dork-new.2',
+    ];
+    const kept = [
+      '.dork/database.json',
+      'x.dork-older',
+      'skills/x/SKILL.md',
+      '.dork/manifest.json',
+    ];
+    for (const rel of [...reserved, ...kept]) {
+      await mkdir(path.dirname(path.join(src, rel)), { recursive: true });
+      await writeFile(path.join(src, rel), rel, 'utf-8');
+    }
+    const logger = buildLogger();
+
+    await stagePackageContents(src, dest, logger);
+
+    for (const rel of reserved) expect(await exists(path.join(dest, rel))).toBe(false);
+    expect(await exists(path.join(dest, '.dork', 'data'))).toBe(false);
+    for (const rel of kept) expect(await readFile(path.join(dest, rel), 'utf-8')).toBe(rel);
+    const warned = vi
+      .mocked(logger.warn)
+      .mock.calls.map((c) => String(c[0]))
+      .filter((m) => m.includes('reserved'));
+    // `.dork/data` is dropped as one subtree, so six files plus one directory.
+    expect(warned).toHaveLength(reserved.length);
+  });
 });
