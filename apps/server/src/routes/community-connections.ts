@@ -48,6 +48,7 @@ import {
   getRemotePairingService,
 } from '../services/communities/remote/state.js';
 import { CommunityNavigationPreferenceService } from '../services/communities/community-navigation-preferences.js';
+import { CommunityAttentionCache } from '../services/communities/remote/community-attention-cache.js';
 
 /** Resolve the only local human allowed to use a stored community connection. */
 export function resolveCommunityOwner(req: Request, res: Response): string | null {
@@ -116,31 +117,38 @@ function failure(res: Response, error: unknown): void {
   }
 }
 
+/** Whether this connection may show counts at all: connected, verified, and readable. */
+function readsAttention(connection: CommunityConnectionDescriptor): boolean {
+  return (
+    connection.status === 'connected' &&
+    connection.access?.state === 'verified' &&
+    connection.access.effective.read
+  );
+}
+
 /**
- * Add current attention only after the local owner and remote read grant are verified.
+ * Add attention only after the local owner and remote read grant are verified.
  *
- * Remote counts are untrusted. Any failure — transport, or counts that break a
- * descriptor rule — leaves this one connection on the store's `unavailable`
- * fallback, so a single broken Community can never fail the whole list and
- * hide the Remove control the owner needs to drop it.
+ * Remote counts are untrusted. Any failure — transport, a slow answer, or
+ * counts that break a descriptor rule — leaves this one connection on the last
+ * counts its Community confirmed (`stale`) or on `unavailable`, so a single
+ * broken or slow Community can never fail or stall the whole list and hide the
+ * Remove control the owner needs to drop it.
  */
 async function withAttention(
   connection: CommunityConnectionDescriptor,
-  owner: string
+  owner: string,
+  attentionCache: CommunityAttentionCache
 ): Promise<CommunityConnectionDescriptor> {
-  if (connection.status !== 'connected' || connection.access?.state !== 'verified')
-    return connection;
-  if (!connection.access.effective.read) return connection;
-  try {
-    const attention = await getRemoteCommunityAdapter(connection.ref, owner).attention();
-    const enriched = CommunityConnectionDescriptorSchema.safeParse({
-      ...connection,
-      attention: { ...attention, state: 'verified', verifiedAt: new Date().toISOString() },
-    });
-    return enriched.success ? enriched.data : connection;
-  } catch {
+  if (!readsAttention(connection)) {
+    attentionCache.forget(owner, connection.ref);
     return connection;
   }
+  const attention = await attentionCache.read(owner, connection.ref, () =>
+    getRemoteCommunityAdapter(connection.ref, owner).attention()
+  );
+  const enriched = CommunityConnectionDescriptorSchema.safeParse({ ...connection, attention });
+  return enriched.success ? enriched.data : connection;
 }
 
 /** Build the production route or inject an isolated service in HTTP tests. */
@@ -159,17 +167,23 @@ export function createCommunityConnectionsRouter(
         throw error;
       }
     }
-  )
+  ),
+  attentionCache: CommunityAttentionCache = new CommunityAttentionCache()
 ): Router {
   const router = Router();
   router.get('/', async (req, res) => {
     const owner = resolveCommunityOwner(req, res);
     if (!owner) return;
     try {
+      const connections = await connectionService.list(owner);
+      attentionCache.retainOnly(
+        owner,
+        connections.filter(readsAttention).map((connection) => connection.ref)
+      );
       res.json(
         CommunityConnectionListResponseSchema.parse({
           connections: await Promise.all(
-            (await connectionService.list(owner)).map((item) => withAttention(item, owner))
+            connections.map((item) => withAttention(item, owner, attentionCache))
           ),
         })
       );
@@ -285,10 +299,15 @@ export function createCommunityConnectionsRouter(
       res.status(404).json({ error: 'Community connection not found.' });
       return;
     }
+    attentionCache.retainOwner(owner);
     try {
       res.json(
         CommunityConnectionStatusResponseSchema.parse({
-          connection: await withAttention(await connectionService.status(ref.data, owner), owner),
+          connection: await withAttention(
+            await connectionService.status(ref.data, owner),
+            owner,
+            attentionCache
+          ),
         })
       );
     } catch (error) {
@@ -340,6 +359,10 @@ export function createCommunityConnectionsRouter(
       );
     } catch (error) {
       failure(res, error);
+    } finally {
+      // Even a failed disconnect may have removed the local copy; counts for a
+      // Community the owner asked to leave must not outlive the request.
+      attentionCache.forget(owner, ref.data);
     }
   });
   return router;

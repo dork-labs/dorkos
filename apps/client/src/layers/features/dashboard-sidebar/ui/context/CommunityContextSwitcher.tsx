@@ -17,6 +17,7 @@ import {
 } from '@/layers/shared/model';
 import {
   cn,
+  formatRelativeTime,
   getCommunityAuthority,
   isCommunityAuthorityCurrent,
   openExternalLink,
@@ -112,6 +113,10 @@ function orderedConnections(
   });
 }
 
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
 function navigationDescriptor(connection: CommunityConnectionDescriptor) {
   const lifecycle = connection.access?.lastKnown?.lifecycle;
   return {
@@ -135,7 +140,6 @@ function navigationDescriptor(connection: CommunityConnectionDescriptor) {
           : 'unknown',
     unreadCount: connection.attention?.unreadCount ?? null,
     mentionCount: connection.attention?.mentionCount ?? null,
-    attentionStale: connection.attention?.state === 'stale',
   };
 }
 
@@ -541,8 +545,10 @@ export function CommunityContextSwitcher({
               const attention = [
                 mentions > 0 ? `${mentions} ${mentions === 1 ? 'mention' : 'mentions'}` : null,
                 otherUnread > 0 ? `${otherUnread} other unread` : null,
-                descriptor.attentionStale && descriptor.unreadCount !== null
-                  ? 'last checked'
+                // The Community did not answer in time, so these are the last
+                // counts it confirmed; say when, rather than pass them off as now.
+                connection.attention?.state === 'stale'
+                  ? `last checked ${lowerFirst(formatRelativeTime(connection.attention.verifiedAt))}`
                   : null,
               ]
                 .filter(Boolean)
