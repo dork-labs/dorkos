@@ -7,7 +7,7 @@ actor: agent
 gates:
   - wf.browser-test.browser-shard
   - wf.browser-test.browser-test
-prs: []
+prs: [2006]
 hypothesis:
   metric: 'gate.wf.browser-test.browser-shard.duration_p90@merge_group'
   slo: 'headroom'
