@@ -1,0 +1,35 @@
+{
+  "items": [
+    {
+      "moveId": "move_0001",
+      "communityId": "5d6e7f80-9102-4a3b-8c4d-5e6f70819203",
+      "communityUrl": "https://community.example.invalid/c/5d6e7f80-9102-4a3b-8c4d-5e6f70819203",
+      "name": "Old garden",
+      "state": "importing",
+      "failureCode": null,
+      "report": {
+        "channels": 12,
+        "entries": 3400,
+        "attachments": 210,
+        "historicalMembers": 18,
+        "historicalAgents": 5,
+        "attachmentBytes": 70254592,
+        "countedBytes": 70254592
+      },
+      "pollAfterMs": 5000,
+      "updatedAt": "2026-09-23T11:34:00.000Z"
+    },
+    {
+      "moveId": "move_0000",
+      "communityId": "3c4d5e6f-7081-4923-8a4b-5c6d7e8f9012",
+      "communityUrl": "https://community.example.invalid/c/3c4d5e6f-7081-4923-8a4b-5c6d7e8f9012",
+      "name": "Book club",
+      "state": "failed",
+      "failureCode": "checksum_mismatch",
+      "report": null,
+      "pollAfterMs": null,
+      "updatedAt": "2026-09-20T08:00:00.000Z"
+    }
+  ],
+  "nextCursor": null
+}

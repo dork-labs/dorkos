@@ -1,0 +1,6 @@
+{
+  "code": "import_too_large",
+  "status": 413,
+  "title": "That export is too large to move.",
+  "detail": "Remove some files from the old community, export it again, and try once more."
+}

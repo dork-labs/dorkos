@@ -51,6 +51,9 @@ export const V1_ROUTES = {
   remoteCommands: '/v1/remote/commands',
   remoteCommandsAck: '/v1/remote/commands/ack',
   remoteEvents: '/v1/remote/events',
+  communities: '/v1/communities',
+  communitiesNameCheck: '/v1/communities/name-check',
+  communitiesMoves: '/v1/communities/moves',
 } as const;
 
 /** One of the fixed `/v1` paths. */
@@ -275,7 +278,74 @@ export const v1Path = {
    * @param addressId - The address's opaque identifier.
    */
   address: (addressId: string) => `/v1/addresses/${enc(addressId)}`,
+  /**
+   * The route that issues a fresh owner-claim link for one hosted community,
+   * answered with `CommunityClaimLinkSchema`. Only while the community is
+   * `pending_owner`, and refused with `conflict` otherwise; the previous link
+   * stops working.
+   *
+   * @param communityId - The community's permanent identifier.
+   */
+  communityClaimLink: (communityId: string) =>
+    `/v1/communities/${communityEnc(communityId)}/claim-link`,
+  /**
+   * The route that keeps one hosted community open. Takes
+   * `CommunityKeepRequestSchema` and answers with `CommunityKeepResponseSchema`;
+   * a stale `expectedHeldCommunityIds` is refused with `conflict`.
+   *
+   * @param communityId - The community's permanent identifier.
+   */
+  communityKeep: (communityId: string) => `/v1/communities/${communityEnc(communityId)}/keep`,
+  /**
+   * The route that reopens one held community, answered with
+   * `HostedCommunitySchema`. It never puts another community on hold: a
+   * community that does not fit is refused with `entitlement_required`, and a
+   * hold the host placed with `forbidden`.
+   *
+   * @param communityId - The community's permanent identifier.
+   */
+  communityRestore: (communityId: string) => `/v1/communities/${communityEnc(communityId)}/restore`,
+  /**
+   * The route for one move, answered with `CommunityMoveSchema`.
+   *
+   * @param moveId - The move's opaque identifier.
+   */
+  communityMove: (moveId: string) => `/v1/communities/moves/${enc(moveId)}`,
+  /**
+   * The route that cancels one move, answered with `CommunityMoveSchema`.
+   * Allowed until the move is `ready`, and refused with `conflict` after that.
+   * Cancelling removes the new community and everything uploaded for it.
+   *
+   * @param moveId - The move's opaque identifier.
+   */
+  communityMoveCancel: (moveId: string) => `/v1/communities/moves/${enc(moveId)}/cancel`,
 } as const;
+
+/**
+ * The fixed segments that sit where a community identifier would.
+ *
+ * `/v1/communities/moves` and `/v1/communities/name-check` share a prefix with
+ * `/v1/communities/{communityId}/…`, so a community identifier equal to one of
+ * them would build a path a router could read as the other route. The service
+ * issues opaque identifiers that are never these words, so one arriving here is
+ * a caller bug, refused like a dot segment.
+ */
+const COMMUNITY_FIXED_SEGMENTS: ReadonlySet<string> = new Set(['moves', 'name-check']);
+
+/**
+ * Encodes a community identifier, refusing one that names a fixed route.
+ *
+ * @param communityId - The community's permanent identifier.
+ * @throws TypeError - When the identifier is a fixed segment, empty, or a dot segment.
+ */
+function communityEnc(communityId: string): string {
+  if (COMMUNITY_FIXED_SEGMENTS.has(communityId)) {
+    throw new TypeError(
+      `A community identifier must not be ${JSON.stringify(communityId)}; it names another route.`
+    );
+  }
+  return enc(communityId);
+}
 
 /**
  * Encodes one opaque identifier for use as a single path segment.
