@@ -14,6 +14,7 @@ import type {
   CommunityNavigationDestination,
   CommunityInstallationDestination,
   CommunityNavigationPrefs,
+  UserConfig,
 } from '@dorkos/shared/config-schema';
 import type { ConfigManager } from '../core/config-manager.js';
 import type { RemoteCommunityPairingService } from './remote/pairing-service.js';
@@ -152,7 +153,10 @@ export class CommunityNavigationPreferenceService {
     // Only this path, never the whole `ui` section: the settings broadcast
     // recognizes a write that stored nothing else as movement, not a settings
     // change, and stays quiet for it (DOR-2227).
-    this.config.setDot('ui.communityNavigation', next);
+    this.config.setDot(
+      'ui.communityNavigation',
+      next satisfies UserConfig['ui']['communityNavigation']
+    );
   }
 
   private serialized<T>(operation: () => Promise<T>): Promise<T> {
