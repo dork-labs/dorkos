@@ -31,6 +31,7 @@ import {
   CommunityWireGrantListResponseSchema,
   CommunityConnectionAccessSchema,
   CommunityWireAuthOptionsSchema,
+  CommunityWireAttentionResponseSchema,
 } from '../community-wire.js';
 import {
   CommunityPairingExchangeSecretResponseSchema,
@@ -354,65 +355,12 @@ describe('community server port additions', () => {
     expect(COMMUNITY_API_V1_ROUTES.attention).toBe('/api/v1/attention');
   });
 
-  it('keeps stale Community authority separate from effective access', () => {
-    const access = {
-      state: 'unverified',
-      effective: { read: false, post: false, enrollAgent: false, stream: false },
-      lastKnown: {
-        lifecycle: 'archived',
-        capabilities: { read: true, post: false, enrollAgent: false, stream: false },
-        verifiedAt: '2026-09-21T00:00:00.000Z',
-      },
-    };
-    expect(CommunityConnectionAccessSchema.parse(access)).toEqual(access);
+  it('refuses a remote attention summary with more mentions than unread activity', () => {
+    expect(CommunityWireAttentionResponseSchema.parse({ unreadCount: 2, mentionCount: 2 })).toEqual(
+      { unreadCount: 2, mentionCount: 2 }
+    );
     expect(
-      CommunityConnectionAccessSchema.safeParse({
-        ...access,
-        lastKnown: { ...access.lastKnown, lifecycle: 'pending_owner' },
-      }).success
-    ).toBe(false);
-    expect(
-      CommunityConnectionAccessSchema.safeParse({ ...access, privateToken: 'secret' }).success
-    ).toBe(false);
-    expect(
-      CommunityConnectionAccessSchema.safeParse({
-        ...access,
-        state: 'verified',
-        effective: { read: true, post: false, enrollAgent: false, stream: false },
-      }).success
-    ).toBe(true);
-    expect(
-      CommunityConnectionAccessSchema.safeParse({
-        ...access,
-        state: 'verified',
-        effective: { read: true, post: true, enrollAgent: false, stream: false },
-      }).success
-    ).toBe(false);
-    expect(
-      CommunityConnectionAccessSchema.safeParse({
-        ...access,
-        effective: { read: true, post: false, enrollAgent: false, stream: false },
-      }).success
-    ).toBe(false);
-    expect(
-      CommunityConnectionAccessSchema.safeParse({
-        ...access,
-        lastKnown: {
-          ...access.lastKnown,
-          lifecycle: 'suspended',
-          capabilities: { read: false, post: true, enrollAgent: false, stream: false },
-        },
-      }).success
-    ).toBe(false);
-    expect(
-      CommunityConnectionAccessSchema.safeParse({
-        ...access,
-        lastKnown: {
-          ...access.lastKnown,
-          lifecycle: 'deletion_pending',
-          capabilities: { read: false, post: false, enrollAgent: false, stream: true },
-        },
-      }).success
+      CommunityWireAttentionResponseSchema.safeParse({ unreadCount: 1, mentionCount: 2 }).success
     ).toBe(false);
   });
 

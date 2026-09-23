@@ -213,9 +213,13 @@ describe('owner-scoped attention projection', () => {
       attention: unavailable,
     };
   }
-  async function probe(connection: CommunityConnectionDescriptor, path: string) {
+  async function probe(
+    connection: CommunityConnectionDescriptor,
+    path: string,
+    listed: CommunityConnectionDescriptor[] = [connection]
+  ) {
     const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
-    vi.spyOn(service, 'list').mockResolvedValue([connection]);
+    vi.spyOn(service, 'list').mockResolvedValue(listed);
     vi.spyOn(service, 'status').mockResolvedValue(connection);
     const testApp = express();
     testApp.use('/api/community-connections', createCommunityConnectionsRouter(service));
@@ -252,6 +256,35 @@ describe('owner-scoped attention projection', () => {
     expect(response.status).toBe(200);
     expect(response.body.connections[0].attention).toEqual(unavailable);
     expect(JSON.stringify(response.body)).not.toContain('private upstream detail');
+  });
+  it('keeps every connection listed when one remote reports more mentions than unread', async () => {
+    const liarRef = CommunityRefSchema.parse('remote_owner_liar');
+    const liar = { ...connected(), ref: liarRef, label: 'Broken group' };
+    attentionMock.adapter.mockReset().mockImplementation((target: string) => ({
+      attention: async () =>
+        target === liarRef
+          ? { unreadCount: 1, mentionCount: 2 }
+          : { unreadCount: 7, mentionCount: 2 },
+    }));
+    const response = await probe(connected(), '/api/community-connections', [connected(), liar]);
+    expect(response.status).toBe(200);
+    const byRef = new Map(
+      (response.body.connections as CommunityConnectionDescriptor[]).map((item) => [item.ref, item])
+    );
+    expect(byRef.get(ref)?.attention).toEqual({
+      state: 'verified',
+      unreadCount: 7,
+      mentionCount: 2,
+      verifiedAt: expect.any(String),
+    });
+    expect(byRef.get(liarRef)).toMatchObject({ status: 'connected', attention: unavailable });
+  });
+  it('keeps a single connection readable when its remote reports more mentions than unread', async () => {
+    attentionMock.adapter.mockReset().mockReturnValue({ attention: attentionMock.read });
+    attentionMock.read.mockReset().mockResolvedValue({ unreadCount: 1, mentionCount: 2 });
+    const response = await probe(connected(), `/api/community-connections/${ref}`);
+    expect(response.status).toBe(200);
+    expect(response.body.connection).toMatchObject({ ref, attention: unavailable });
   });
   it.each(['pending', 'unverified', 'no-read'])(
     'does not fetch counts for %s access',
