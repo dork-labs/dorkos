@@ -4,6 +4,7 @@ covers:
   - 'fix(marketplace): restore an interrupted install instead of deleting its backup (DOR-2273)'
   - 'fix(marketplace): close the review gaps in install crash recovery (DOR-2273)'
   - 'fix(marketplace): watcher skip, later-made targets, and uninstall candidate order (DOR-2273)'
+  - "fix(marketplace): read lstat lazily in install recovery's test seam (DOR-2273)"
 ---
 
 ### Fixed
