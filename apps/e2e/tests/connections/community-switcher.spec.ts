@@ -87,9 +87,15 @@ async function mockCommunitySwitcher(page: Page) {
       return;
     }
     if (path === '/api/community-connections/navigation') {
+      // The owner key comes from the real route: it is the precondition every
+      // later write is fenced on, so a made-up one would earn a 409 on each
+      // PUT, and a missing route would fail here instead of being papered over.
+      const real = await route.fetch();
+      expect(real.status()).toBe(200);
+      const { ownerKey } = (await real.json()) as { ownerKey: string };
       await route.fulfill({
         json: {
-          ownerKey: 'browser-owner',
+          ownerKey,
           installationDestination: { path: '/', search: {} },
           order: ['alpha'],
           destinations: [destination],
@@ -163,6 +169,12 @@ test('Community switcher supports keyboard selection and a narrow accessible men
   const alpha = page.getByRole('radio', { name: /Alpha/ });
   await expect(alpha).toBeVisible();
   await expect(alpha).toHaveAccessibleName(/Alpha.*1 mention.*1 other unread/);
+  // The phone sheet is this menu's only home on a phone, so it keeps the
+  // settings row and the version line below the destinations (BC-44).
+  await expect(page.getByRole('menuitem', { name: /Workspace settings/ })).toBeVisible();
+  await expect(
+    page.getByRole('menuitem', { name: /beta/ }).or(page.getByText('Development build'))
+  ).toBeVisible();
   const session = await page.context().newCDPSession(page);
   await session.send('Emulation.setPageScaleFactor', { pageScaleFactor: 2 });
   await expect
