@@ -574,7 +574,9 @@ async function validatedSummary(
 ): Promise<Omit<InstalledPackage, 'installedFrom' | 'installedAt'> | null> {
   let validated;
   try {
-    validated = await validatePackage(packagePath);
+    // An installed root holds the installer's records and the person's data by
+    // design, so the reserved-path check (and its whole-tree walk) is skipped.
+    validated = await validatePackage(packagePath, { tree: 'installed' });
   } catch (err) {
     logger.debug(`[InstalledScanner] Could not validate ${packagePath}`, err);
     return null;

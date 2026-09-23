@@ -15,7 +15,7 @@
  * @module @dorkos/marketplace/package-validator
  */
 
-import { promises as fs } from 'node:fs';
+import { promises as fs, type Dirent } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { scanSkillDirectory } from '@dorkos/skills/scanner';
@@ -32,6 +32,7 @@ import {
 import { requiresClaudePlugin } from './package-types.js';
 import { parseMarketplaceJson, parseDorkosSidecar } from './marketplace-json-parser.js';
 import { validateAgainstCcSchema } from './cc-validator.js';
+import { isReservedPackagePath } from './user-editable.js';
 
 /**
  * A single validation finding produced by {@link validatePackage}. Errors
@@ -52,6 +53,20 @@ export interface ValidationIssue {
    * Omitted for issues that are not tied to a specific file.
    */
   path?: string;
+}
+
+/**
+ * Options for {@link validatePackage}.
+ */
+export interface ValidatePackageOptions {
+  /**
+   * What kind of tree is being validated. `'package'` (the default) is a
+   * package as its author ships it: publishing, `dorkos marketplace validate`,
+   * and the install pipeline's staged tree. `'installed'` is an install root on
+   * disk, which legitimately holds the installer's own records and the
+   * person's data, so the reserved-path check is skipped there.
+   */
+  tree?: 'package' | 'installed';
 }
 
 /**
@@ -191,9 +206,13 @@ async function readVersionField(filePath: string): Promise<string | undefined> {
  * 6. Directory-name vs `manifest.name` check. Mismatches are warnings.
  *
  * @param packagePath - Absolute path to the package root directory.
+ * @param options - What kind of tree this is; see {@link ValidatePackageOptions}.
  * @returns A {@link ValidatePackageResult} describing all issues found.
  */
-export async function validatePackage(packagePath: string): Promise<ValidatePackageResult> {
+export async function validatePackage(
+  packagePath: string,
+  options: ValidatePackageOptions = {}
+): Promise<ValidatePackageResult> {
   const issues: ValidationIssue[] = [];
   // Read before any gate, so every result — failed ones included — says what
   // version the tree states. The update check relies on that for trees that
@@ -325,8 +344,59 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
   // 8. Declared schedules that point at nothing.
   await checkScheduleSkillRefs(packagePath, manifest, issues);
 
+  // 9. Paths that belong to the person or the installer (DOR-2245). Skipped on
+  //    an installed tree, which holds exactly those files by design.
+  if ((options.tree ?? 'package') === 'package') {
+    await checkReservedPaths(packagePath, issues);
+  }
+
   const hasErrors = issues.some((i) => i.level === 'error');
   return { ok: !hasErrors, issues, manifest, declaredVersion };
+}
+
+/** Directories the reserved-path walk never enters: vendored code and git's own store. */
+const RESERVED_WALK_SKIP_DIRS = new Set(['node_modules', '.git']);
+
+/**
+ * Fail for every shipped file under a path DorkOS keeps for the person or the
+ * installer (`isReservedPackagePath`): the package's data directory, its
+ * secrets file, the installer's records, and `.dork-old` / `.dork-new` copies.
+ * A package that shipped one would, on the next update, own a file that is
+ * really a person's (ADR 260923-163513). The install copy step strips these
+ * too; this check is the one an author sees.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param issues - Mutable issue list to append findings to.
+ * @internal
+ */
+async function checkReservedPaths(packagePath: string, issues: ValidationIssue[]): Promise<void> {
+  const walk = async (relDir: string): Promise<void> => {
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(path.join(packagePath, relDir), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const rel = relDir === '' ? entry.name : `${relDir}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (RESERVED_WALK_SKIP_DIRS.has(entry.name)) continue;
+        await walk(rel);
+      } else if (isReservedPackagePath(rel)) {
+        issues.push({
+          level: 'error',
+          code: 'RESERVED_PATH_SHIPPED',
+          message:
+            `${rel} is a path DorkOS keeps for the person or the installer ` +
+            '(.dork/data/, .dork/secrets.json, .dork/install-metadata.json, ' +
+            '.dork/installed-files.json, .dork/uninstalled-agent.json, *.dork-old, ' +
+            '*.dork-new). Remove it from the package.',
+          path: rel,
+        });
+      }
+    }
+  };
+  await walk('');
 }
 
 /**
