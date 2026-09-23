@@ -298,7 +298,7 @@ export function createCommunityApp({
   registerMembershipRoutes(hostApi, { pool, auth });
   registerHostLimitRoutes(hostApi, { pool, config, authority, now });
   registerHostKeyRoutes(hostApi, { pool, auth, authority, now, confirmPassword });
-  registerAccountErasureRoutes(hostApi, { pool, auth });
+  registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   app.route('/api/v1', hostApi);
 
   const communityApi = new Hono();

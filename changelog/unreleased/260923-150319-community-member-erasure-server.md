@@ -2,6 +2,7 @@
 covers:
   - "feat(community): erase a member's account and messages on the Community server (DOR-2265)"
   - 'fix(community): address review of member erasure (DOR-2265)'
+  - 'refactor(community): erasure password checks share the per-account budget (DOR-2265)'
 ---
 
 ### Added

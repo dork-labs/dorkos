@@ -30,7 +30,7 @@ const bindInvite = (base: string, ownerCookie: string, cookie: string) =>
 const requestErasure = (cookie: string, communityId: string) => requestFor(h, cookie, communityId);
 
 beforeAll(async () => {
-  h = await startTenancyHarness('erasurelife');
+  h = await startTenancyHarness('erasurelife', { reauthAttemptsPerMinute: 5 });
   host = await bootstrapHost(h, 'Hana Host', 'hana@host.test');
 }, 60_000);
 
@@ -263,8 +263,9 @@ describe('authority (AC-6)', () => {
     expect(mine.erasures).toEqual([]);
   });
 
-  // Purpose: a stolen session cannot guess the password erasure asks for; after five wrong
-  // passwords even the right one waits, and another account is unaffected.
+  // Purpose: erasure spends from the same per-account password budget as every other
+  // confirmation (five a minute here), so a stolen session cannot guess the password; once it
+  // is spent even the right one waits, and another account is unaffected.
   it('limits wrong passwords per account', async () => {
     const s = await scene('guess');
     const attempt = (cookie: string, password: string) =>
@@ -272,8 +273,11 @@ describe('authority (AC-6)', () => {
         cookie,
         body: { kind: 'membership', communityId: s.communityId, password },
       });
-    for (let tries = 0; tries < 5; tries++)
-      expect((await attempt(s.p.cookie, `wrong-${tries}`)).status).toBe(403);
+    for (let tries = 0; tries < 5; tries++) {
+      const wrong = await attempt(s.p.cookie, `wrong-${tries}`);
+      expect(wrong.status).toBe(403);
+      expect((await wrong.json()).code).toBe('REAUTH_FAILED');
+    }
     expect((await attempt(s.p.cookie, 'wrong-again')).status).toBe(429);
     expect((await attempt(s.p.cookie, PASSWORD)).status).toBe(429);
     expect((await attempt(s.q.cookie, PASSWORD)).status).toBe(201);
