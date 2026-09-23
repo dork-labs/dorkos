@@ -9,6 +9,7 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
 import { communitySettingsPath } from '@dorkos/shared/community-wire';
+import { interceptNext } from '@dorkos/test-utils/playwright-routes';
 import { createCommunityApp } from '../src/app.js';
 import { parseConfig } from '../src/config.js';
 import { migrate } from '../src/migrate.js';
@@ -116,18 +117,15 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await expect(ownerPage.getByRole('heading', { name: '# general' })).toBeVisible({
       timeout: 15000,
     });
-    await ownerPage.route(
-      '**/api/v1/host/communities',
-      (route) =>
-        route.fulfill({
-          status: 503,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            code: 'UNAVAILABLE',
-            message: 'Host list is temporarily unavailable.',
-          }),
+    await interceptNext(ownerPage, '**/api/v1/host/communities', (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'UNAVAILABLE',
+          message: 'Host list is temporarily unavailable.',
         }),
-      { times: 1 }
+      })
     );
     await ownerPage.goto(`${baseUrl}/host`);
     await expect(ownerPage.getByRole('alert')).toContainText('temporarily unavailable');
@@ -153,25 +151,21 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       timeout: 15000,
     });
     await ownerPage.screenshot({ path: '/tmp/community-owner-desktop.png', fullPage: true });
-    await ownerPage.route(
+    await interceptNext(
+      ownerPage,
       '**/settings',
-      async (route) => {
-        if (route.request().method() === 'GET') {
-          await route.fulfill({
-            status: 503,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              code: 'UNAVAILABLE',
-              message: 'Settings are temporarily unavailable.',
-            }),
-          });
-          return;
-        }
-        await route.continue();
-      },
+      (route) =>
+        route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'UNAVAILABLE',
+            message: 'Settings are temporarily unavailable.',
+          }),
+        }),
       // Opening Manage reads settings once for the invite panel's closed state, and the
-      // Settings section reads them again; both reads fail here.
-      { times: 2 }
+      // Settings section reads them again; both reads fail here, and the retry goes through.
+      { count: 2, filter: (route) => route.request().method() === 'GET' }
     );
     await ownerPage.getByRole('button', { name: 'Manage' }).click();
     await ownerPage
@@ -234,28 +228,25 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     });
     await ownerPage.getByLabel('Name', { exact: true }).fill('My unsaved name');
     await ownerPage.getByLabel('Description').fill('My unsaved description');
-    await ownerPage.route(
-      '**/settings',
-      (route) =>
-        route.fulfill({
-          status: 409,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            code: 'STATE_CONFLICT',
-            message: 'Community settings changed.',
-            current: {
-              communityId: settingsCommunityId,
-              name: 'Gathering Place',
-              description: 'Saved elsewhere',
-              admissionPolicy: 'invite_only',
-              hasIcon: false,
-              settingsVersion: 1,
-              lifecycle: 'active',
-              lifecycleVersion: 1,
-            },
-          }),
+    await interceptNext(ownerPage, '**/settings', (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'STATE_CONFLICT',
+          message: 'Community settings changed.',
+          current: {
+            communityId: settingsCommunityId,
+            name: 'Gathering Place',
+            description: 'Saved elsewhere',
+            admissionPolicy: 'invite_only',
+            hasIcon: false,
+            settingsVersion: 1,
+            lifecycle: 'active',
+            lifecycleVersion: 1,
+          },
         }),
-      { times: 1 }
+      })
     );
     await ownerPage.getByRole('button', { name: 'Save presentation' }).click();
     await expect(ownerPage.getByRole('alert')).toContainText('Your edits are still here');
@@ -872,18 +863,15 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await pool.query('UPDATE communities SET lifecycle_version=lifecycle_version+1 WHERE id=$1', [
       ids.communityId,
     ]);
-    await observerPage.route(
-      '**/owner/lifecycle',
-      (route) =>
-        route.fulfill({
-          status: 409,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            code: 'STATE_CONFLICT',
-            message: 'Review the latest state and try again.',
-          }),
+    await interceptNext(observerPage, '**/owner/lifecycle', (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'STATE_CONFLICT',
+          message: 'Review the latest state and try again.',
         }),
-      { times: 1 }
+      })
     );
     await finalArchive.getByRole('button', { name: 'Archive community' }).click();
     await expect(finalArchive.getByRole('alert')).toContainText(
@@ -927,18 +915,15 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await pool.query('UPDATE communities SET lifecycle_version=lifecycle_version+1 WHERE id=$1', [
       ids.communityId,
     ]);
-    await observerPage.route(
-      '**/owner/deletion',
-      (route) =>
-        route.fulfill({
-          status: 409,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            code: 'STATE_CONFLICT',
-            message: 'Review the latest state and try again.',
-          }),
+    await interceptNext(observerPage, '**/owner/deletion', (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'STATE_CONFLICT',
+          message: 'Review the latest state and try again.',
         }),
-      { times: 1 }
+      })
     );
     await finalDeletion.getByRole('button', { name: 'Schedule permanent deletion' }).click();
     await expect(finalDeletion.getByRole('alert')).toContainText(
@@ -959,18 +944,15 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await pool.query('UPDATE communities SET lifecycle_version=lifecycle_version+1 WHERE id=$1', [
       ids.communityId,
     ]);
-    await observerPage.route(
-      '**/owner/deletion/cancel',
-      (route) =>
-        route.fulfill({
-          status: 409,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            code: 'STATE_CONFLICT',
-            message: 'Review the latest state and try again.',
-          }),
+    await interceptNext(observerPage, '**/owner/deletion/cancel', (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'STATE_CONFLICT',
+          message: 'Review the latest state and try again.',
         }),
-      { times: 1 }
+      })
     );
     await cancelDeletion.getByRole('button', { name: 'Cancel deletion' }).click();
     await expect(cancelDeletion.getByRole('alert')).toContainText(

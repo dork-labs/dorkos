@@ -68,6 +68,23 @@ at the end of this file. Two of the "failures" above were that instead.
 - Creating a new session via the UI changes the `?session=` URL param; tests that check session count must re-query after URL stabilizes
 - Settings dialog is a modal overlay — it does not change the URL, so `toHaveURL` won't help; use `waitFor({ state: 'visible' })` on the dialog locator
 
+## Never use `page.route(..., { times: n })`
+
+When a `times` route runs out, Playwright unregisters it asynchronously. A
+matching request the page sends in that window can be caught with no handler
+left to answer it: it never reaches the server and the test hangs until its
+timeout. The shape that hits it is the common one, a failure route followed by a
+retry against the same URL (PR #1999, then the DOR-2228 audit, which found it at
+every `times:` site in this suite and the community browser suite).
+
+Use `interceptNext` from `@dorkos/test-utils/playwright-routes` instead. It
+answers the next `count` matching requests, then passes later ones on with
+`route.fallback()` while staying registered, so there is no window. A `filter`
+option narrows which requests count (for example, only `GET`s).
+`scripts/__tests__/one-shot-routes.test.ts` fails on any new `times:` in
+`apps/e2e` or `apps/community/browser-tests` unless the line, or the one above
+it, carries `// one-shot-route-allow: <why no later request can match>`.
+
 ## Sending a message
 
 - **`ChatPage.sendMessage` can silently send nothing.** It fills the composer and
