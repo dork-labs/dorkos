@@ -1,14 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import type { Context, Hono } from 'hono';
-import { setCookie } from 'hono/cookie';
+import { deleteCookie, setCookie } from 'hono/cookie';
 import type { Pool, PoolClient } from 'pg';
 import {
   CommunityWireInviteCreateRequestSchema,
   CommunityWireInviteCreateResponseSchema,
+  CommunityWireInviteBindResponseSchema,
   CommunityWireInviteListResponseSchema,
   CommunityWireInvitePreflightResponseSchema,
   CommunityWireInvitePreviewResponseSchema,
   CommunityWireInviteRedeemResponseSchema,
+  CommunityWireInviteRedeemRequestSchema,
   CommunityWireInviteSchema,
   CommunityWireInviteTokenRequestSchema,
 } from '@dorkos/shared/community-wire';
@@ -51,6 +53,37 @@ function projection(row: InviteRow) {
     uses: row.use_count,
     revoked: Boolean(row.revoked_at),
   });
+}
+
+function invalidInvitation(): ApiError {
+  return new ApiError(403, 'FORBIDDEN', 'This invitation cannot be used. Ask for a new link.');
+}
+
+function admissionCookie(c: Context, config: CommunityConfig): string {
+  const value = verifyValue(
+    readCookie(c.req.header('cookie') ?? null, 'community_admission'),
+    config.authSecret
+  );
+  if (!value) throw new ApiError(403, 'FORBIDDEN', 'Start with an invitation before joining.');
+  return value;
+}
+
+/** Delete one bounded batch of expired admission transactions and their cascading receipts. */
+export async function sweepExpiredAdmissions(pool: Pool, batchSize = 100): Promise<number> {
+  const result = await pool.query(
+    `WITH expired AS (
+       SELECT id FROM pending_admissions
+       WHERE expires_at<=now()
+       ORDER BY expires_at,id
+       LIMIT $1
+       FOR UPDATE SKIP LOCKED
+     )
+     DELETE FROM pending_admissions p USING expired
+     WHERE p.id=expired.id
+     RETURNING p.id`,
+    [batchSize]
+  );
+  return result.rowCount ?? 0;
 }
 
 async function validInvite(
@@ -108,12 +141,14 @@ export function registerInviteRoutes(
     pool,
     auth,
     config,
-    limitPreview,
+    limitPreviewPeer,
+    limitPreviewIdentity,
   }: {
     pool: Pool;
     auth: CommunityAuth;
     config: CommunityConfig;
-    limitPreview: (c: Context) => void;
+    limitPreviewPeer: (c: Context) => void;
+    limitPreviewIdentity: (token: string) => void;
   }
 ) {
   app.post('/invites', async (c) => {
@@ -178,30 +213,48 @@ export function registerInviteRoutes(
   });
 
   app.post('/invites/preview', async (c) => {
-    limitPreview(c);
+    limitPreviewPeer(c);
     const { token } = await readJson(c, CommunityWireInviteTokenRequestSchema);
-    const { invite, communityName } = await validInvite(c, pool, token, config);
-    if (invite.use_count >= invite.seat_limit)
-      throw new ApiError(409, 'STATE_CONFLICT', 'This invitation has no seats left.');
-    return json(c, CommunityWireInvitePreviewResponseSchema, {
-      communityName,
-      inviterName: invite.issuer_name,
-      channelName: invite.channel_name,
-    });
+    limitPreviewIdentity(token);
+    try {
+      const { invite, communityName } = await validInvite(c, pool, token, config);
+      if (invite.use_count >= invite.seat_limit) throw invalidInvitation();
+      return json(c, CommunityWireInvitePreviewResponseSchema, {
+        communityName,
+        inviterName: invite.issuer_name,
+        channelName: invite.channel_name,
+      });
+    } catch (error) {
+      if (error instanceof ApiError) throw invalidInvitation();
+      throw error;
+    }
   });
 
   app.post('/invites/preflight', async (c) => {
+    limitPreviewPeer(c);
     const { token } = await readJson(c, CommunityWireInviteTokenRequestSchema);
+    limitPreviewIdentity(token);
     const pending = randomToken();
-    await transaction(pool, async (client) => {
-      const { invite } = await validInvite(c, client, token, config, true);
-      if (invite.use_count >= invite.seat_limit)
-        throw new ApiError(409, 'STATE_CONFLICT', 'This invitation has no seats left.');
-      await client.query(
-        'INSERT INTO pending_admissions(community_id,invite_id,token_hash,expires_at) VALUES($1,$2,$3,$4)',
-        [invite.community_id, invite.id, hashSecret(pending), new Date(Date.now() + 600_000)]
-      );
-    });
+    const expiresAt = new Date(Date.now() + 600_000);
+    let preview: { communityName: string; inviterName: string; channelName: string | null };
+    try {
+      preview = await transaction(pool, async (client) => {
+        const { invite, communityName } = await validInvite(c, client, token, config, true);
+        if (invite.use_count >= invite.seat_limit) throw invalidInvitation();
+        await client.query(
+          'INSERT INTO pending_admissions(community_id,invite_id,token_hash,expires_at) VALUES($1,$2,$3,$4)',
+          [invite.community_id, invite.id, hashSecret(pending), expiresAt]
+        );
+        return {
+          communityName,
+          inviterName: invite.issuer_name,
+          channelName: invite.channel_name,
+        };
+      });
+    } catch (error) {
+      if (error instanceof ApiError) throw invalidInvitation();
+      throw error;
+    }
     setCookie(c, 'community_admission', signValue(pending, config.authSecret), {
       httpOnly: true,
       sameSite: 'Lax',
@@ -209,35 +262,91 @@ export function registerInviteRoutes(
       path: '/',
       maxAge: 600,
     });
-    return json(c, CommunityWireInvitePreflightResponseSchema, { granted: true });
+    return json(c, CommunityWireInvitePreflightResponseSchema, {
+      granted: true,
+      expiresAt: expiresAt.toISOString(),
+      ...preview,
+    });
+  });
+
+  app.post('/invites/bind', async (c) => {
+    const user = await requireSessionUser(c, auth);
+    const pending = admissionCookie(c, config);
+    await transaction(pool, async (client) => {
+      const tenant = await resolveCommunityContext(c, client);
+      await lockActiveCommunity(client, tenant.communityId);
+      const result = await client.query<{ account_id: string | null }>(
+        `SELECT p.account_id FROM pending_admissions p
+         JOIN invites i ON i.id=p.invite_id AND i.community_id=p.community_id
+         JOIN members issuer ON issuer.id=i.issuer_member_id AND issuer.community_id=i.community_id
+         WHERE p.community_id=$1 AND p.token_hash=$2 AND p.expires_at>now()
+           AND i.expires_at>now() AND i.revoked_at IS NULL
+           AND issuer.active AND issuer.role IN ('owner','admin')
+         FOR UPDATE OF p`,
+        [tenant.communityId, hashSecret(pending)]
+      );
+      const row = result.rows[0];
+      if (!row) throw new ApiError(403, 'FORBIDDEN', 'This join attempt has expired.');
+      if (row.account_id && row.account_id !== user.id)
+        throw new ApiError(403, 'FORBIDDEN', 'This join attempt belongs to another account.');
+      if (!row.account_id)
+        await client.query(
+          'UPDATE pending_admissions SET account_id=$1,bound_at=now() WHERE token_hash=$2',
+          [user.id, hashSecret(pending)]
+        );
+    });
+    return json(c, CommunityWireInviteBindResponseSchema, { bound: true });
   });
 
   app.post('/invites/redeem', async (c) => {
-    const { token } = await readJson(c, CommunityWireInviteTokenRequestSchema);
+    await readJson(c, CommunityWireInviteRedeemRequestSchema);
     const user = await requireSessionUser(c, auth);
-    const pending = verifyValue(
-      readCookie(c.req.header('cookie') ?? null, 'community_admission'),
-      config.authSecret
-    );
-    if (!pending) throw new ApiError(403, 'FORBIDDEN', 'Start with an invitation before joining.');
+    const pending = admissionCookie(c, config);
     const memberId = await transaction(pool, async (client) => {
-      const { invite } = await validInvite(c, client, token, config, true);
+      const tenant = await resolveCommunityContext(c, client);
+      await lockActiveCommunity(client, tenant.communityId);
+      const admission = await client.query<{
+        id: string;
+        community_id: string;
+        invite_id: string;
+        account_id: string | null;
+        consumed_at: Date | null;
+        member_id: string | null;
+        member_active: boolean | null;
+      }>(
+        `SELECT p.id,p.community_id,p.invite_id,p.account_id,p.consumed_at,r.member_id,
+                receipt_member.active AS member_active
+         FROM pending_admissions p
+         LEFT JOIN admission_receipts r ON r.admission_id=p.id AND r.community_id=p.community_id
+         LEFT JOIN members receipt_member
+           ON receipt_member.id=r.member_id AND receipt_member.community_id=r.community_id
+         WHERE p.community_id=$1 AND p.token_hash=$2 AND p.expires_at>now()
+         FOR UPDATE OF p`,
+        [tenant.communityId, hashSecret(pending)]
+      );
+      const grant = admission.rows[0];
+      if (!grant) throw new ApiError(403, 'FORBIDDEN', 'This join attempt has expired.');
+      if (!grant.account_id || grant.account_id !== user.id)
+        throw new ApiError(403, 'FORBIDDEN', 'This join attempt is not bound to this account.');
+      if (grant.consumed_at) {
+        if (!grant.member_id || !grant.member_active)
+          throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
+        return grant.member_id;
+      }
+      const inviteResult = await client.query<InviteRow>(
+        `SELECT i.* FROM invites i
+         JOIN members issuer ON issuer.id=i.issuer_member_id AND issuer.community_id=i.community_id
+         WHERE i.id=$1 AND i.community_id=$2 AND i.expires_at>now() AND i.revoked_at IS NULL
+           AND issuer.active AND issuer.role IN ('owner','admin')
+         FOR UPDATE OF i,issuer`,
+        [grant.invite_id, grant.community_id]
+      );
+      const invite = inviteResult.rows[0];
+      if (!invite) throw invalidInvitation();
       const previous = await client.query(
         'SELECT 1 FROM invite_uses WHERE invite_id=$1 AND user_id=$2',
         [invite.id, user.id]
       );
-      if (previous.rowCount) {
-        const admitted = await client.query<{ id: string }>(
-          'SELECT id FROM members WHERE user_id=$1 AND community_id=$2 AND active',
-          [user.id, invite.community_id]
-        );
-        if (admitted.rows[0]) return admitted.rows[0].id;
-      }
-      const grant = await client.query<{ id: string }>(
-        'SELECT id FROM pending_admissions WHERE invite_id=$1 AND token_hash=$2 AND expires_at>now() FOR UPDATE',
-        [invite.id, hashSecret(pending)]
-      );
-      if (!grant.rows[0]) throw new ApiError(403, 'FORBIDDEN', 'This join attempt has expired.');
       if (!previous.rowCount && invite.use_count >= invite.seat_limit)
         throw new ApiError(
           409,
@@ -259,6 +368,38 @@ export function registerInviteRoutes(
           [invite.community_id, handle, member.rows[0].id]
         );
       } else if (!member.rows[0].active) {
+        await client.query('DELETE FROM channel_members WHERE member_id=$1 AND community_id=$2', [
+          member.rows[0].id,
+          invite.community_id,
+        ]);
+        await client.query('DELETE FROM read_cursors WHERE member_id=$1 AND community_id=$2', [
+          member.rows[0].id,
+          invite.community_id,
+        ]);
+        await client.query(
+          'UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now()) WHERE member_id=$1 AND community_id=$2',
+          [member.rows[0].id, invite.community_id]
+        );
+        await client.query(
+          'UPDATE connection_pairings SET cancelled_at=COALESCE(cancelled_at,now()) WHERE member_id=$1 AND community_id=$2 AND consumed_at IS NULL',
+          [member.rows[0].id, invite.community_id]
+        );
+        await client.query(
+          `DELETE FROM agent_channel_members
+           WHERE community_id=$2 AND agent_id IN
+             (SELECT id FROM agents WHERE owner_member_id=$1 AND community_id=$2)`,
+          [member.rows[0].id, invite.community_id]
+        );
+        await client.query(
+          'UPDATE agents SET active=false,revoked_at=COALESCE(revoked_at,now()) WHERE owner_member_id=$1 AND community_id=$2',
+          [member.rows[0].id, invite.community_id]
+        );
+        await client.query(
+          `UPDATE agent_credentials SET revoked_at=COALESCE(revoked_at,now())
+           WHERE community_id=$2 AND agent_id IN
+             (SELECT id FROM agents WHERE owner_member_id=$1 AND community_id=$2)`,
+          [member.rows[0].id, invite.community_id]
+        );
         await client.query(
           "UPDATE members SET active=true,removed_at=NULL,role='member' WHERE id=$1",
           [member.rows[0].id]
@@ -276,13 +417,26 @@ export function registerInviteRoutes(
         );
         await client.query('UPDATE invites SET use_count=use_count+1 WHERE id=$1', [invite.id]);
       }
-      await client.query('DELETE FROM pending_admissions WHERE id=$1', [grant.rows[0].id]);
+      await client.query(
+        `INSERT INTO admission_receipts(admission_id,community_id,invite_id,account_id,member_id,expires_at)
+         VALUES($1,$2,$3,$4,$5,$6)`,
+        [
+          grant.id,
+          invite.community_id,
+          invite.id,
+          user.id,
+          member.rows[0].id,
+          new Date(Date.now() + 600_000),
+        ]
+      );
+      await client.query('UPDATE pending_admissions SET consumed_at=now() WHERE id=$1', [grant.id]);
       await client.query(
         'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
         [invite.community_id, member.rows[0].id, 'member.admit', invite.id]
       );
       return member.rows[0].id;
     });
+    deleteCookie(c, 'community_admission', { path: '/' });
     return json(c, CommunityWireInviteRedeemResponseSchema, { memberId });
   });
 }

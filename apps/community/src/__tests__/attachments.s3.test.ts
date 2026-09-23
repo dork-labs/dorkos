@@ -14,6 +14,7 @@ import { migrate } from '../migrate.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { createBlobStore } from '../storage/index.js';
+import { bootstrapFirstHost } from './bootstrap-test-helper.js';
 
 const pgUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 const endpoint = process.env.COMMUNITY_TEST_S3_ENDPOINT;
@@ -51,12 +52,6 @@ const config = parseConfig({
 let pool: Pool;
 let server: ReturnType<typeof serve>;
 let baseUrl: string;
-function cookieOf(response: Response) {
-  return response.headers
-    .getSetCookie()
-    .map((value) => value.split(';')[0])
-    .join('; ');
-}
 function request(path: string, options: RequestInit = {}) {
   return fetch(`${baseUrl}${path}`, options);
 }
@@ -95,29 +90,14 @@ afterAll(async () => {
 });
 
 it('uploads, binds, downloads and exports through real MinIO HTTP storage', async () => {
-  const preflight = await post(
-    '/api/v1/bootstrap/preflight',
-    { secret: config.bootstrapSecret },
-    ''
-  );
-  expect(preflight.status).toBe(200);
-  const grant = cookieOf(preflight);
-  const signup = await post(
-    '/api/auth/sign-up/email',
-    { name: 'Owner', email: 'minio-owner@example.test', password: 'password1234' },
-    grant
-  );
-  expect(signup.status).toBe(200);
-  const cookie = `${grant}; ${cookieOf(signup)}`;
-  expect(
-    (
-      await post(
-        '/api/v1/bootstrap/claim',
-        { secret: config.bootstrapSecret, name: 'MinIO' },
-        cookie
-      )
-    ).status
-  ).toBe(200);
+  const setup = await bootstrapFirstHost(post, {
+    secret: config.bootstrapSecret,
+    accountName: 'Owner',
+    email: 'minio-owner@example.test',
+    password: 'password1234',
+    communityName: 'MinIO',
+  });
+  const cookie = setup.cookie;
   const channel = await post('/api/v1/channels', { name: 'Files' }, cookie);
   expect(channel.status).toBe(201);
   const channelId = (await channel.json()).channel.id;

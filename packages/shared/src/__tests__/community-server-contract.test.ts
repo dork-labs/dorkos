@@ -284,7 +284,15 @@ describe('community server port additions', () => {
       CommunityWireInviteListResponseSchema.safeParse({ invites: [{ ...invite, token: 'secret' }] })
         .success
     ).toBe(false);
-    expect(CommunityWireInvitePreflightResponseSchema.parse({ granted: true }).granted).toBe(true);
+    expect(
+      CommunityWireInvitePreflightResponseSchema.parse({
+        granted: true,
+        expiresAt: '2026-09-17T00:00:00.000Z',
+        communityName: 'Builders',
+        inviterName: 'Owner',
+        channelName: null,
+      }).granted
+    ).toBe(true);
     expect(
       CommunityWirePairingPollRequestSchema.parse({ pairingId: 'pair-1', verifier: 'verifier-1' })
     ).toEqual({ pairingId: 'pair-1', verifier: 'verifier-1' });

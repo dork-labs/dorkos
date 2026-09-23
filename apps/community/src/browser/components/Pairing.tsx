@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { Check, Laptop2, ShieldCheck } from 'lucide-react';
-import { describeError, request } from '../api.js';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Check, KeyRound, Laptop2, ShieldCheck } from 'lucide-react';
+import { describeError, RequestError, request } from '../api.js';
 
 type PairingStatus = {
   pairingId: string;
@@ -19,26 +19,65 @@ export function Pairing({ search = location.search }: { search?: string }) {
   const pairingId = new URLSearchParams(search).get('pairingId');
   const [status, setStatus] = useState<PairingStatus | null>(null);
   const [error, setError] = useState(pairingId ? '' : 'This approval link is incomplete.');
+  const [needsSignIn, setNeedsSignIn] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const emailInput = useRef<HTMLInputElement>(null);
+
+  const loadPairing = useCallback(
+    async (isCurrent: () => boolean = () => true) => {
+      if (!pairingId) return;
+      try {
+        const body = await request<PairingStatus>(
+          `/api/v1/pairings/${encodeURIComponent(pairingId)}`
+        );
+        if (!isCurrent()) return;
+        setStatus(body);
+        setNeedsSignIn(false);
+        setError('');
+      } catch (cause) {
+        if (!isCurrent()) return;
+        setStatus(null);
+        if (cause instanceof RequestError && cause.status === 401) {
+          setNeedsSignIn(true);
+          setError('');
+        } else {
+          setNeedsSignIn(false);
+          setError(describeError(cause));
+        }
+      }
+    },
+    [pairingId]
+  );
+
   useEffect(() => {
     if (!pairingId) return;
     let active = true;
-    void request<PairingStatus>(`/api/v1/pairings/${encodeURIComponent(pairingId)}`)
-      .then((body) => {
-        if (active) setStatus(body);
-      })
-      .catch((cause: unknown) => {
-        if (active)
-          setError(
-            cause instanceof Error && 'status' in cause && cause.status === 401
-              ? 'Sign in to approve this connection.'
-              : describeError(cause)
-          );
-      });
+    void Promise.resolve().then(() => loadPairing(() => active));
     return () => {
       active = false;
     };
-  }, [pairingId]);
+  }, [loadPairing, pairingId]);
+
+  useEffect(() => {
+    if (needsSignIn) emailInput.current?.focus();
+  }, [needsSignIn]);
+
+  async function signIn(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      await request('/api/auth/sign-in/email', 'POST', { email, password });
+      await loadPairing();
+    } catch (cause) {
+      setError(describeError(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function decide(action: 'approve' | 'decline') {
     if (!pairingId) return;
     setBusy(true);
@@ -77,7 +116,45 @@ export function Pairing({ search = location.search }: { search?: string }) {
             {error}
           </div>
         )}
-        {!error && !status && <p role="status">Loading the request…</p>}
+        {needsSignIn && (
+          <form className="panel" onSubmit={(event) => void signIn(event)}>
+            <div className="notice mb-5">
+              Sign in to review this connection. The request will stay on this page.
+            </div>
+            <div className="field">
+              <label htmlFor="pairing-email">Email</label>
+              <input
+                id="pairing-email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                ref={emailInput}
+                required
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="pairing-password">Password</label>
+              <input
+                id="pairing-password"
+                type="password"
+                autoComplete="current-password"
+                minLength={8}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+              <span className="hint">
+                Forgot your password? Ask the person running this community for help.
+              </span>
+            </div>
+            <button className="button primary w-full" disabled={busy}>
+              {busy ? 'Signing in…' : 'Sign in and review'}
+              <KeyRound size={16} />
+            </button>
+          </form>
+        )}
+        {!error && !status && !needsSignIn && <p role="status">Loading the request…</p>}
         {status && (
           <div className="panel p-6">
             <div className="row mb-5">

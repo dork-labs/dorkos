@@ -1,10 +1,12 @@
 import { Hono } from 'hono';
+import { randomUUID } from 'node:crypto';
+import { hashPassword } from 'better-auth/crypto';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { setCookie } from 'hono/cookie';
 import type { Pool } from 'pg';
 import {
-  CommunityWireBootstrapClaimRequestSchema,
-  CommunityWireBootstrapClaimResponseSchema,
+  CommunityWireBootstrapCompleteRequestSchema,
+  CommunityWireBootstrapCompleteResponseSchema,
   CommunityWireBootstrapPreflightRequestSchema,
   CommunityWireBootstrapPreflightResponseSchema,
   CommunityWireCommunitySchema,
@@ -12,7 +14,7 @@ import {
 } from '@dorkos/shared/community-wire';
 import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
-import { bootstrapGrant, requireSessionUser, transaction } from './data.js';
+import { bootstrapGrant, transaction } from './data.js';
 import { ApiError, handleError, json, readJson } from './http.js';
 import { equalSecret, hashSecret, randomToken, signValue } from './security.js';
 import { mintHandle } from './handles.js';
@@ -44,6 +46,8 @@ export function createCommunityApp({
   hooks?: {
     afterSnapshotWatermark?: () => Promise<void>;
     afterEntryAttachmentLookup?: () => Promise<void>;
+    invitePreviewPeer?: (c: Parameters<typeof getConnInfo>[0]) => string;
+    beforeBootstrapChannelCreate?: () => Promise<void>;
   };
   blobStore?: BlobStore;
 }) {
@@ -137,7 +141,14 @@ export function createCommunityApp({
       const communities = await client.query('SELECT 1 FROM communities LIMIT 1');
       const operators = await client.query('SELECT 1 FROM host_operators LIMIT 1');
       const members = await client.query('SELECT 1 FROM members LIMIT 1');
-      if (owner.rowCount || communities.rowCount || operators.rowCount || members.rowCount) {
+      const users = await client.query('SELECT 1 FROM "user" LIMIT 1');
+      if (
+        owner.rowCount ||
+        communities.rowCount ||
+        operators.rowCount ||
+        members.rowCount ||
+        users.rowCount
+      ) {
         throw new ApiError(
           409,
           'STATE_CONFLICT',
@@ -163,28 +174,43 @@ export function createCommunityApp({
     });
   });
 
-  app.post('/api/v1/bootstrap/claim', async (c) => {
-    const body = await readJson(c, CommunityWireBootstrapClaimRequestSchema);
+  app.post('/api/v1/bootstrap/complete', async (c) => {
+    limitAttempts(`bootstrap:${peer(c)}`, config.limits.bootstrapAttemptsPerMinute);
+    const body = await readJson(c, CommunityWireBootstrapCompleteRequestSchema);
     if (!equalSecret(body.secret, config.bootstrapSecret)) {
       throw new ApiError(403, 'FORBIDDEN', 'The owner secret is incorrect.');
     }
-    const user = await requireSessionUser(c, auth);
+    const passwordHash = await hashPassword(body.password);
+    const email = body.email.toLowerCase();
     const result = await transaction(pool, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(77281503)');
       const grantId = await bootstrapGrant(c, client, config);
-      const existing = await client.query(
-        "SELECT 1 FROM members WHERE role='owner' AND active LIMIT 1"
+      const occupied = await client.query(
+        `SELECT
+           EXISTS(SELECT 1 FROM "user") OR
+           EXISTS(SELECT 1 FROM communities) OR
+           EXISTS(SELECT 1 FROM host_operators) OR
+           EXISTS(SELECT 1 FROM members) AS occupied`
       );
-      const communities = await client.query('SELECT 1 FROM communities LIMIT 1');
-      const operators = await client.query('SELECT 1 FROM host_operators LIMIT 1');
-      const members = await client.query('SELECT 1 FROM members LIMIT 1');
-      if (existing.rowCount || communities.rowCount || operators.rowCount || members.rowCount) {
+      if (occupied.rows[0].occupied) {
         throw new ApiError(
           409,
           'STATE_CONFLICT',
           'First installation is unavailable on a host that already contains community state.'
         );
       }
+
+      const userId = randomUUID();
+      await client.query(
+        `INSERT INTO "user"(id,name,email,"emailVerified") VALUES($1,$2,$3,false)`,
+        [userId, body.accountName, email]
+      );
+      await client.query(
+        `INSERT INTO account(id,"accountId","providerId","userId",password)
+         VALUES($1,$2,'credential',$2,$3)`,
+        [randomUUID(), userId, passwordHash]
+      );
+      await client.query('INSERT INTO host_operators(user_id) VALUES($1)', [userId]);
       const community = await client.query<{
         id: string;
         name: string;
@@ -192,36 +218,49 @@ export function createCommunityApp({
         created_at: Date;
       }>(
         "INSERT INTO communities(name,lifecycle) VALUES($1,'pending_owner') RETURNING id,name,description,created_at",
-        [body.name]
+        [body.communityName]
       );
-      const handle = await mintHandle(client, community.rows[0].id, user.name);
+      const communityId = community.rows[0].id;
+      const handle = await mintHandle(client, communityId, body.accountName);
       const member = await client.query<{ id: string }>(
-        `INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$3,$4,'owner') RETURNING id`,
-        [community.rows[0].id, user.id, user.name, handle]
+        `INSERT INTO members(community_id,user_id,display_name,handle,role)
+         VALUES($1,$2,$3,$4,'owner') RETURNING id`,
+        [communityId, userId, body.accountName, handle]
       );
       await client.query(
         'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',
-        [community.rows[0].id, handle, member.rows[0].id]
+        [communityId, handle, member.rows[0].id]
+      );
+      await hooks?.beforeBootstrapChannelCreate?.();
+      const channel = await client.query<{ id: string }>(
+        `INSERT INTO channels(community_id,name,visibility)
+         VALUES($1,$2,'public') RETURNING id`,
+        [communityId, body.channelName]
       );
       await client.query(
-        'INSERT INTO host_operators(user_id) VALUES($1) ON CONFLICT (user_id) DO UPDATE SET revoked_at=NULL',
-        [user.id]
+        `INSERT INTO channel_members(community_id,channel_id,member_id)
+         VALUES($1,$2,$3)`,
+        [communityId, channel.rows[0].id, member.rows[0].id]
       );
-      await client.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [
-        community.rows[0].id,
-      ]);
+      await client.query(
+        `UPDATE communities SET lifecycle='active',activated_at=now(),
+           lifecycle_version=lifecycle_version+1 WHERE id=$1`,
+        [communityId]
+      );
       await client.query('UPDATE bootstrap_grants SET consumed_at=now() WHERE id=$1', [grantId]);
       return {
         community: {
-          id: community.rows[0].id,
+          id: communityId,
           name: community.rows[0].name,
           description: community.rows[0].description,
           createdAt: community.rows[0].created_at.toISOString(),
         },
         memberId: member.rows[0].id,
+        channelId: channel.rows[0].id,
       };
     });
-    return json(c, CommunityWireBootstrapClaimResponseSchema, result);
+    c.header('Cache-Control', 'no-store');
+    return json(c, CommunityWireBootstrapCompleteResponseSchema, result, 201);
   });
 
   const hostApi = new Hono();
@@ -272,8 +311,18 @@ export function createCommunityApp({
     pool,
     auth,
     config,
-    limitPreview: (c) =>
-      limitAttempts(`invite-preview:${peer(c)}`, config.limits.invitePreviewAttemptsPerMinute),
+    limitPreviewPeer: (c) => {
+      limitAttempts(
+        `invite-preview-peer:${hooks?.invitePreviewPeer?.(c) ?? peer(c)}`,
+        config.limits.invitePreviewAttemptsPerMinute
+      );
+    },
+    limitPreviewIdentity: (token) => {
+      limitAttempts(
+        `invite-preview-identity:${hashSecret(token)}`,
+        config.limits.invitePreviewAttemptsPerMinute
+      );
+    },
   });
   registerMemberRoutes(communityApi, { pool, auth });
   registerPairingRoutes(communityApi, {

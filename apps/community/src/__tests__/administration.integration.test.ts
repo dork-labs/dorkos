@@ -8,8 +8,9 @@ import { Pool } from 'pg';
 import { strFromU8, unzipSync } from 'fflate';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
-import { sweepCommunityDeletions } from '../deletion-worker.js';
+import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from '../deletion-worker.js';
 import { migrate } from '../migrate.js';
+import { bootstrapFirstHost } from './bootstrap-test-helper.js';
 import { FileSystemBlobStore, type BlobStore } from '../storage/index.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
@@ -95,29 +96,19 @@ beforeAll(async () => {
   if (!address || typeof address === 'string') throw new Error('Missing HTTP address');
   baseUrl = `http://localhost:${address.port}`;
 
-  const preflight = await jsonRequest(
-    '/api/v1/bootstrap/preflight',
-    'POST',
-    { secret: config.bootstrapSecret },
-    ''
+  const setup = await bootstrapFirstHost(
+    (path, body, cookie) => jsonRequest(path, 'POST', body, cookie),
+    {
+      secret: config.bootstrapSecret,
+      accountName: 'Owner',
+      email: 'admin-owner@example.test',
+      password,
+      communityName: 'First Community',
+    }
   );
-  const bootstrapCookie = cookieOf(preflight);
-  const signup = await jsonRequest(
-    '/api/auth/sign-up/email',
-    'POST',
-    { name: 'Owner', email: 'admin-owner@example.test', password },
-    bootstrapCookie
-  );
-  ownerCookie = `${bootstrapCookie}; ${cookieOf(signup)}`;
-  const claim = await jsonRequest(
-    '/api/v1/bootstrap/claim',
-    'POST',
-    { secret: config.bootstrapSecret, name: 'First Community' },
-    ownerCookie
-  );
-  const claimed = await claim.json();
-  communityId = claimed.community.id;
-  ownerMemberId = claimed.memberId;
+  ownerCookie = setup.cookie;
+  communityId = setup.communityId;
+  ownerMemberId = setup.memberId;
   const invitation = await jsonRequest(`/api/v1/communities/${communityId}/invites`, 'POST', {
     seats: 1,
   });
@@ -144,11 +135,15 @@ beforeAll(async () => {
   expect(memberSignup.status).toBe(200);
   memberCookie = `${grant}; ${cookieOf(memberSignup)}`;
   expect(
+    (await jsonRequest(`/api/v1/communities/${communityId}/invites/bind`, 'POST', {}, memberCookie))
+      .status
+  ).toBe(200);
+  expect(
     (
       await jsonRequest(
         `/api/v1/communities/${communityId}/invites/redeem`,
         'POST',
-        { token },
+        {},
         memberCookie
       )
     ).status
@@ -547,6 +542,160 @@ it.each(['active', 'archived'] as const)(
   }
 );
 
+it('rejects foreign private objects even when the signed-in person owns both communities', async () => {
+  const otherId = (
+    await pool.query<{ id: string }>(
+      "SELECT id FROM communities WHERE id<>$1 AND lifecycle='active' ORDER BY id LIMIT 1",
+      [communityId]
+    )
+  ).rows[0].id;
+  const own = `/api/v1/communities/${communityId}`;
+  const other = `/api/v1/communities/${otherId}`;
+  const created = await jsonRequest(`${other}/channels`, 'POST', {
+    name: 'Tenant isolation private',
+    visibility: 'private',
+  });
+  expect(created.status).toBe(201);
+  const channel = (await created.json()).channel.id;
+  const posted = await jsonRequest(`${other}/channels/${channel}/entries`, 'POST', {
+    text: 'Only in the other tenant',
+    idempotencyKey: 'isolation-positive-entry',
+  });
+  expect(posted.status).toBe(201);
+  const otherMember = (
+    await pool.query<{ id: string }>(
+      "SELECT id FROM members WHERE community_id=$1 AND role='owner'",
+      [otherId]
+    )
+  ).rows[0].id;
+  // A non-owner target: owners can never be demoted, so a role change aimed at
+  // the owner would return 404 even without a tenant check.
+  await pool.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
+    'isolation-other-member',
+    'Other Member',
+    'other-member@isolation.test',
+  ]);
+  const otherPlainMember = (
+    await pool.query<{ id: string }>(
+      `INSERT INTO members(community_id,user_id,display_name,handle,role)
+       VALUES($1,'isolation-other-member','Other Member','other-member','member') RETURNING id`,
+      [otherId]
+    )
+  ).rows[0].id;
+  const archive = (
+    await pool.query<{ id: string }>(
+      'SELECT id FROM export_archives WHERE community_id=$1 LIMIT 1',
+      [otherId]
+    )
+  ).rows[0].id;
+  const upload = await request(`${other}/channels/${channel}/attachments`, {
+    method: 'POST',
+    headers: {
+      cookie: ownerCookie,
+      origin: 'http://localhost:6481',
+      'content-type': 'text/plain',
+      'x-file-name': 'isolation.txt',
+      'x-file-size': '5',
+      'idempotency-key': 'isolation-file',
+    },
+    body: 'proof',
+  });
+  expect(upload.status).toBe(201);
+  const attachment = (await upload.json()).attachment.id;
+  expect(
+    (
+      await jsonRequest(`${other}/channels/${channel}/entries`, 'POST', {
+        text: 'Committed private file',
+        idempotencyKey: 'isolation-file-entry',
+        attachmentIds: [attachment],
+      })
+    ).status
+  ).toBe(201);
+  const invitation = await jsonRequest(`${other}/invites`, 'POST', {
+    channelId: channel,
+    seats: 1,
+  });
+  expect(invitation.status).toBe(201);
+  const inviteId = (await invitation.json()).invite.id;
+  const pairing = await jsonRequest(`${other}/pairings/start`, 'POST', {
+    challenge: createHash('sha256').update('tenant-isolation-verifier').digest('base64url'),
+    installName: 'Isolation fixture',
+    scopes: ['read'],
+  });
+  expect(pairing.status).toBe(201);
+  const pairingId = (await pairing.json()).pairingId;
+  const readPaths = [
+    `/attachments/${attachment}`,
+    `/pairings/${pairingId}`,
+    `/channels/${channel}`,
+    `/channels/${channel}/entries`,
+    `/channels/${channel}/members`,
+    `/channels/${channel}/events`,
+    `/exports/${archive}`,
+  ];
+  // Positive controls ensure each object really exists and is accessible in its tenant.
+  for (const path of readPaths.filter((value) => !value.endsWith('/events'))) {
+    const response = await request(`${other}${path}`, { headers: { cookie: ownerCookie } });
+    expect(response.status, `positive control ${path}`).toBe(200);
+    await response.arrayBuffer();
+  }
+  const tables = (
+    await pool.query<{ table_name: string }>(
+      "SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='community_id' ORDER BY table_name"
+    )
+  ).rows;
+  async function snapshot() {
+    const result: Record<string, unknown> = {};
+    for (const { table_name } of tables) {
+      const quoted = '"' + table_name.replaceAll('"', '""') + '"';
+      result[table_name] = (
+        await pool.query(
+          `SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]') AS rows FROM ${quoted} t WHERE community_id=ANY($1::uuid[])`,
+          [[communityId, otherId]]
+        )
+      ).rows[0].rows;
+    }
+    return result;
+  }
+  const before = await snapshot();
+  for (const path of readPaths) {
+    const response = await request(`${own}${path}`, {
+      headers: { cookie: ownerCookie },
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(response.status, `foreign read ${path}`).toBe(404);
+    await response.arrayBuffer();
+  }
+  const mutations: Array<{ method: 'POST' | 'PATCH' | 'DELETE'; path: string; body: unknown }> = [
+    { method: 'DELETE', path: `/invites/${inviteId}`, body: {} },
+    { method: 'PATCH', path: `/channels/${channel}`, body: { name: 'Must not change' } },
+    {
+      method: 'POST',
+      path: `/channels/${channel}/entries`,
+      body: { text: 'Must not post', idempotencyKey: 'isolation-foreign-entry' },
+    },
+    { method: 'POST', path: `/channels/${channel}/join`, body: {} },
+    { method: 'POST', path: `/channels/${channel}/leave`, body: {} },
+    { method: 'POST', path: `/channels/${channel}/members`, body: { memberId: ownerMemberId } },
+    { method: 'DELETE', path: `/channels/${channel}/members/${otherMember}`, body: {} },
+    { method: 'PATCH', path: `/members/${otherPlainMember}/role`, body: { role: 'admin' } },
+    { method: 'DELETE', path: `/members/${otherMember}`, body: {} },
+  ];
+  for (const operation of mutations) {
+    const response = await jsonRequest(`${own}${operation.path}`, operation.method, operation.body);
+    expect(response.status, `foreign ${operation.method} ${operation.path}`).toBe(404);
+    await response.arrayBuffer();
+  }
+  const foreignPairing = await jsonRequest(`${own}/pairings/approve`, 'POST', { pairingId });
+  const missingPairing = await jsonRequest(`${own}/pairings/approve`, 'POST', {
+    pairingId: randomUUID(),
+  });
+  expect(foreignPairing.status).toBe(409);
+  expect(missingPairing.status).toBe(409);
+  expect(await foreignPairing.json()).toEqual(await missingPairing.json());
+  expect(await snapshot()).toEqual(before);
+});
+
 it('archives with immediate credential revocation and restores without revival', async () => {
   const channel = await jsonRequest(`/api/v1/communities/${communityId}/channels`, 'POST', {
     name: 'Archive history',
@@ -796,162 +945,304 @@ it('requests deletion idempotently and cancels back to archived without reviving
 });
 
 it('deletes only the due tenant after every owned blob is confirmed absent', async () => {
-  const other = await pool.query<{ id: string }>(
-    "SELECT id FROM communities WHERE id<>$1 AND lifecycle='pending_owner' LIMIT 1",
-    [communityId]
-  );
-  const accountCount = Number(
-    (await pool.query('SELECT count(*) AS count FROM "user"')).rows[0].count
-  );
-  let signalExportStarted!: () => void;
-  let releaseExport!: () => void;
-  const exportStarted = new Promise<void>((resolve) => {
-    signalExportStarted = resolve;
-  });
-  const exportReleased = new Promise<void>((resolve) => {
-    releaseExport = resolve;
-  });
-  beforeExportStored = async () => {
-    signalExportStarted();
-    await exportReleased;
-  };
-  const heldExport = jsonRequest(`/api/v1/communities/${communityId}/owner/export`, 'POST', {
-    password,
-  });
-  await exportStarted;
-  const heldBlob = (
-    await pool.query<{ blob_key: string }>(
-      `SELECT blob_key FROM managed_blobs
-       WHERE community_id=$1 AND purpose='export' AND state='reserved'
-       ORDER BY created_at DESC LIMIT 1`,
+  // Keep a populated, active tenant and an already-open stream alive while the
+  // other tenant is deleted, including provider failure and worker restart.
+  const survivorId = (
+    await pool.query<{ id: string }>(
+      "SELECT id FROM communities WHERE id<>$1 AND lifecycle='active' ORDER BY id LIMIT 1",
       [communityId]
     )
-  ).rows[0];
-  expect(heldBlob).toEqual({ blob_key: expect.any(String) });
-  const requested = await jsonRequest(`/api/v1/communities/${communityId}/owner/deletion`, 'POST', {
-    lifecycleVersion,
-    password,
-    confirmName: 'Renamed Community',
-    confirmIdSuffix: communityId.slice(-8),
+  ).rows[0].id;
+  const survivorPath = `/api/v1/communities/${survivorId}`;
+  const channelResponse = await jsonRequest(`${survivorPath}/channels`, 'POST', {
+    name: 'Surviving private history',
+    visibility: 'private',
   });
-  expect(requested.status).toBe(200);
-  await pool.query(
-    `UPDATE communities SET delete_requested_at=now()-interval '8 days',
-       delete_after=now()-interval '1 day' WHERE id=$1`,
-    [communityId]
-  );
-  await pool.query(
-    `UPDATE community_deletion_jobs SET delete_after=now()-interval '1 day',next_attempt_at=now()
-     WHERE community_id=$1`,
-    [communityId]
-  );
+  expect(channelResponse.status).toBe(201);
+  const survivorChannel = (await channelResponse.json()).channel.id;
+  const bytes = 'Private surviving tenant file';
+  const uploaded = await request(`${survivorPath}/channels/${survivorChannel}/attachments`, {
+    method: 'POST',
+    headers: {
+      cookie: ownerCookie,
+      origin: 'http://localhost:6481',
+      'content-type': 'text/plain',
+      'x-file-name': 'survivor.txt',
+      'x-file-size': String(Buffer.byteLength(bytes)),
+      'idempotency-key': 'survivor-upload',
+    },
+    body: bytes,
+  });
+  expect(uploaded.status).toBe(201);
+  const survivorAttachment = (await uploaded.json()).attachment.id;
+  expect(
+    (
+      await jsonRequest(`${survivorPath}/channels/${survivorChannel}/entries`, 'POST', {
+        text: 'Keep this private history',
+        idempotencyKey: 'survivor-entry',
+        attachmentIds: [survivorAttachment],
+      })
+    ).status
+  ).toBe(201);
+  const tenantTables = (
+    await pool.query<{ table_name: string }>(
+      "SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='community_id' ORDER BY table_name"
+    )
+  ).rows.map((row) => row.table_name);
+  async function survivorManifest() {
+    const result: Record<string, unknown> = {};
+    for (const table of tenantTables) {
+      // Table identifiers come exclusively from the local database catalogue.
+      const quoted = '"' + table.replaceAll('"', '""') + '"';
+      result[table] = (
+        await pool.query(
+          `SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]') AS rows FROM ${quoted} t WHERE community_id=$1`,
+          [survivorId]
+        )
+      ).rows[0].rows;
+    }
+    result.community = (
+      await pool.query('SELECT * FROM communities WHERE id=$1', [survivorId])
+    ).rows;
+    return result;
+  }
+  const survivorBefore = await survivorManifest();
+  const streamAbort = new AbortController();
+  const stream = await request(`${survivorPath}/channels/${survivorChannel}/events`, {
+    headers: { cookie: ownerCookie },
+    signal: streamAbort.signal,
+  });
+  expect(stream.status).toBe(200);
+  const streamReader = stream.body!.getReader();
+  let streamBuffer = '';
+  async function nextFrame() {
+    while (true) {
+      const boundary = streamBuffer.indexOf('\n\n');
+      if (boundary >= 0) {
+        const frame = streamBuffer.slice(0, boundary);
+        streamBuffer = streamBuffer.slice(boundary + 2);
+        if (frame.includes('event:')) return frame;
+        continue;
+      }
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const part = await Promise.race([
+        streamReader.read(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Surviving tenant stream did not deliver')),
+            5000
+          );
+        }),
+      ]).finally(() => {
+        if (timer) clearTimeout(timer);
+      });
+      if (part.done) throw new Error('Deleting another tenant closed the surviving stream');
+      streamBuffer += new TextDecoder().decode(part.value);
+    }
+  }
+  try {
+    expect(await nextFrame()).toContain('event: snapshot');
+    expect(await nextFrame()).toContain('event: replay_complete');
 
-  const blobStore = new FileSystemBlobStore(storagePath);
-  const heldResult = await sweepCommunityDeletions(pool, blobStore, 100);
-  const heldProgress = (
+    const other = await pool.query<{ id: string }>(
+      "SELECT id FROM communities WHERE id<>$1 AND lifecycle='pending_owner' LIMIT 1",
+      [communityId]
+    );
+    const accountCount = Number(
+      (await pool.query('SELECT count(*) AS count FROM "user"')).rows[0].count
+    );
+    let signalExportStarted!: () => void;
+    let releaseExport!: () => void;
+    const exportStarted = new Promise<void>((resolve) => {
+      signalExportStarted = resolve;
+    });
+    const exportReleased = new Promise<void>((resolve) => {
+      releaseExport = resolve;
+    });
+    beforeExportStored = async () => {
+      signalExportStarted();
+      await exportReleased;
+    };
+    const heldExport = jsonRequest(`/api/v1/communities/${communityId}/owner/export`, 'POST', {
+      password,
+    });
+    await exportStarted;
+    const heldBlob = (
+      await pool.query<{ blob_key: string }>(
+        `SELECT blob_key FROM managed_blobs
+       WHERE community_id=$1 AND purpose='export' AND state='reserved'
+       ORDER BY created_at DESC LIMIT 1`,
+        [communityId]
+      )
+    ).rows[0];
+    expect(heldBlob).toEqual({ blob_key: expect.any(String) });
+    const requested = await jsonRequest(
+      `/api/v1/communities/${communityId}/owner/deletion`,
+      'POST',
+      {
+        lifecycleVersion,
+        password,
+        confirmName: 'Renamed Community',
+        confirmIdSuffix: communityId.slice(-8),
+      }
+    );
+    expect(requested.status).toBe(200);
     await pool.query(
-      `SELECT p.state,m.state AS managed_state
+      `UPDATE communities SET delete_requested_at=now()-interval '8 days',
+       delete_after=now()-interval '1 day' WHERE id=$1`,
+      [communityId]
+    );
+    await pool.query(
+      `UPDATE community_deletion_jobs SET delete_after=now()-interval '1 day',next_attempt_at=now()
+     WHERE community_id=$1`,
+      [communityId]
+    );
+
+    const blobStore = new FileSystemBlobStore(storagePath);
+    const heldResult = await sweepCommunityDeletions(pool, blobStore, 100);
+    const heldProgress = (
+      await pool.query(
+        `SELECT p.state,m.state AS managed_state
        FROM community_deletion_blob_progress p
        JOIN managed_blobs m USING(blob_key)
        WHERE p.community_id=$1 AND p.blob_key=$2`,
-      [communityId, heldBlob.blob_key]
-    )
-  ).rows[0];
-  const communityRetained = (
-    await pool.query('SELECT 1 FROM communities WHERE id=$1', [communityId])
-  ).rowCount;
-  await pool.query(
-    `UPDATE community_deletion_blob_progress SET state='deleted',deleted_at=now()
+        [communityId, heldBlob.blob_key]
+      )
+    ).rows[0];
+    const communityRetained = (
+      await pool.query('SELECT 1 FROM communities WHERE id=$1', [communityId])
+    ).rowCount;
+    await pool.query(
+      `UPDATE community_deletion_blob_progress SET state='deleted',deleted_at=now()
      WHERE community_id=$1 AND blob_key=$2`,
-    [communityId, heldBlob.blob_key]
-  );
-  await pool.query(
-    'UPDATE community_deletion_jobs SET next_attempt_at=now() WHERE community_id=$1',
-    [communityId]
-  );
-  const legacyProgressResult = await sweepCommunityDeletions(pool, blobStore, 100);
-  const legacyCommunityRetained = (
-    await pool.query('SELECT 1 FROM communities WHERE id=$1', [communityId])
-  ).rowCount;
-
-  beforeExportStored = undefined;
-  releaseExport();
-  expect((await heldExport).status).toBe(409);
-  expect((await blobStore.listNamespace()).keys).not.toContain(heldBlob.blob_key);
-  expect(heldResult).toMatchObject({ claimed: 1, completed: 0, failed: 0 });
-  expect(legacyProgressResult).toMatchObject({ claimed: 1, completed: 0, failed: 0 });
-  expect(heldProgress).toEqual({ state: 'retrying', managed_state: 'reserved' });
-  expect(communityRetained).toBe(1);
-  expect(legacyCommunityRetained).toBe(1);
-
-  await pool.query(
-    'UPDATE community_deletion_jobs SET next_attempt_at=now() WHERE community_id=$1',
-    [communityId]
-  );
-  await pool.query(
-    `UPDATE community_deletion_blob_progress
-     SET state='retrying',deleted_at=NULL,next_attempt_at=now() WHERE community_id=$1`,
-    [communityId]
-  );
-  let failNextDelete = true;
-  const failingBlobStore: BlobStore = {
-    put: (input) => blobStore.put(input),
-    get: (key, options) => blobStore.get(key, options),
-    listNamespace: (options) => blobStore.listNamespace(options),
-    delete: async (key, options) => {
-      if (failNextDelete) {
-        failNextDelete = false;
-        throw new Error('injected provider failure');
-      }
-      await blobStore.delete(key, options);
-    },
-  };
-  const failed = await sweepCommunityDeletions(pool, failingBlobStore, 1);
-  expect(failed).toMatchObject({ claimed: 1, completed: 0, failed: 1 });
-  expect(
-    (
-      await pool.query('SELECT state FROM community_deletion_jobs WHERE community_id=$1', [
-        communityId,
-      ])
-    ).rows[0]
-  ).toEqual({ state: 'retrying' });
-  await pool.query(
-    'UPDATE community_deletion_jobs SET next_attempt_at=now() WHERE community_id=$1',
-    [communityId]
-  );
-  await pool.query(
-    'UPDATE community_deletion_blob_progress SET next_attempt_at=now() WHERE community_id=$1',
-    [communityId]
-  );
-  let result = await sweepCommunityDeletions(pool, blobStore, 1);
-  for (let index = 0; index < 10 && !result.completed; index++) {
+      [communityId, heldBlob.blob_key]
+    );
     await pool.query(
       'UPDATE community_deletion_jobs SET next_attempt_at=now() WHERE community_id=$1',
       [communityId]
     );
-    result = await sweepCommunityDeletions(pool, blobStore, 1);
+    const legacyProgressResult = await sweepCommunityDeletions(pool, blobStore, 100);
+    const legacyCommunityRetained = (
+      await pool.query('SELECT 1 FROM communities WHERE id=$1', [communityId])
+    ).rowCount;
+
+    beforeExportStored = undefined;
+    releaseExport();
+    expect((await heldExport).status).toBe(409);
+    expect((await blobStore.listNamespace()).keys).not.toContain(heldBlob.blob_key);
+    expect(heldResult).toMatchObject({ claimed: 1, completed: 0, failed: 0 });
+    expect(legacyProgressResult).toMatchObject({ claimed: 1, completed: 0, failed: 0 });
+    expect(heldProgress).toEqual({ state: 'retrying', managed_state: 'reserved' });
+    expect(communityRetained).toBe(1);
+    expect(legacyCommunityRetained).toBe(1);
+
+    await pool.query(
+      'UPDATE community_deletion_jobs SET next_attempt_at=now() WHERE community_id=$1',
+      [communityId]
+    );
+    await pool.query(
+      `UPDATE community_deletion_blob_progress
+     SET state='retrying',deleted_at=NULL,next_attempt_at=now() WHERE community_id=$1`,
+      [communityId]
+    );
+    let failNextDelete = true;
+    const failingBlobStore: BlobStore = {
+      put: (input) => blobStore.put(input),
+      get: (key, options) => blobStore.get(key, options),
+      listNamespace: (options) => blobStore.listNamespace(options),
+      delete: async (key, options) => {
+        if (failNextDelete) {
+          failNextDelete = false;
+          throw new Error('injected provider failure');
+        }
+        await blobStore.delete(key, options);
+      },
+    };
+    const failed = await sweepCommunityDeletions(pool, failingBlobStore, 1);
+    expect(failed).toMatchObject({ claimed: 1, completed: 0, failed: 1 });
+    expect(
+      (
+        await pool.query('SELECT state FROM community_deletion_jobs WHERE community_id=$1', [
+          communityId,
+        ])
+      ).rows[0]
+    ).toEqual({ state: 'retrying' });
+    await pool.query(
+      'UPDATE community_deletion_jobs SET next_attempt_at=now() WHERE community_id=$1',
+      [communityId]
+    );
+    await pool.query(
+      'UPDATE community_deletion_blob_progress SET next_attempt_at=now() WHERE community_id=$1',
+      [communityId]
+    );
+    let result = await sweepCommunityDeletions(pool, blobStore, 1);
+    for (let index = 0; index < 10 && !result.completed; index++) {
+      await pool.query(
+        'UPDATE community_deletion_jobs SET next_attempt_at=now() WHERE community_id=$1',
+        [communityId]
+      );
+      result = await sweepCommunityDeletions(pool, blobStore, 1);
+    }
+    expect(result.completed).toBe(1);
+    expect(
+      (await pool.query('SELECT 1 FROM communities WHERE id=$1', [communityId])).rowCount
+    ).toBe(0);
+    expect(
+      (await pool.query('SELECT 1 FROM communities WHERE id=$1', [other.rows[0].id])).rowCount
+    ).toBe(1);
+    expect(Number((await pool.query('SELECT count(*) AS count FROM "user"')).rows[0].count)).toBe(
+      accountCount
+    );
+    const tombstone = (
+      await pool.query('SELECT * FROM community_deletion_tombstones WHERE community_id=$1', [
+        communityId,
+      ])
+    ).rows[0];
+    expect(Object.keys(tombstone).sort()).toEqual([
+      'community_id',
+      'completed_at',
+      'expires_at',
+      'outcome',
+      'requested_at',
+      'retry_count',
+    ]);
+    expect(await sweepCommunityDeletionTombstones(pool)).toBe(0);
+    await pool.query(
+      "UPDATE community_deletion_tombstones SET requested_at=now()-interval '32 days', completed_at=now()-interval '31 days', expires_at=now()-interval '1 day' WHERE community_id=$1",
+      [communityId]
+    );
+    expect(await sweepCommunityDeletionTombstones(pool)).toBe(1);
+    expect(
+      (
+        await pool.query('SELECT 1 FROM community_deletion_tombstones WHERE community_id=$1', [
+          communityId,
+        ])
+      ).rowCount
+    ).toBe(0);
+    expect(await survivorManifest()).toEqual(survivorBefore);
+    expect((await request(`${survivorPath}/me`, { headers: { cookie: ownerCookie } })).status).toBe(
+      200
+    );
+    const download = await request(`${survivorPath}/attachments/${survivorAttachment}`, {
+      headers: { cookie: ownerCookie },
+    });
+    expect(download.status).toBe(200);
+    expect(await download.text()).toBe(bytes);
+    const afterDeletion = await jsonRequest(
+      `${survivorPath}/channels/${survivorChannel}/entries`,
+      'POST',
+      {
+        text: 'Still connected after another tenant was deleted',
+        idempotencyKey: 'survivor-after-deletion',
+      }
+    );
+    expect(afterDeletion.status).toBe(201);
+    const confirmedId = (await afterDeletion.json()).entry.id;
+    const delivered = await nextFrame();
+    expect(delivered).toContain('event: entry');
+    expect(delivered).toContain(confirmedId);
+  } finally {
+    streamAbort.abort();
+    await streamReader.cancel().catch(() => undefined);
   }
-  expect(result.completed).toBe(1);
-  expect((await pool.query('SELECT 1 FROM communities WHERE id=$1', [communityId])).rowCount).toBe(
-    0
-  );
-  expect(
-    (await pool.query('SELECT 1 FROM communities WHERE id=$1', [other.rows[0].id])).rowCount
-  ).toBe(1);
-  expect(Number((await pool.query('SELECT count(*) AS count FROM "user"')).rows[0].count)).toBe(
-    accountCount
-  );
-  const tombstone = (
-    await pool.query('SELECT * FROM community_deletion_tombstones WHERE community_id=$1', [
-      communityId,
-    ])
-  ).rows[0];
-  expect(Object.keys(tombstone).sort()).toEqual([
-    'community_id',
-    'completed_at',
-    'expires_at',
-    'outcome',
-    'requested_at',
-    'retry_count',
-  ]);
 });
