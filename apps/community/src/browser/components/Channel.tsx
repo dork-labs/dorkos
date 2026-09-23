@@ -12,6 +12,8 @@ type Props = {
   channel: ChannelType;
   onChanged: () => void;
   readOnly?: boolean;
+  /** Read-only because the host holds the community, not because its owner archived it. */
+  held?: boolean;
 };
 function mergeEntries(previous: Entry[], incoming: Entry[]) {
   const byId = new Map(previous.map((entry) => [entry.id, entry]));
@@ -68,7 +70,13 @@ function EntryCard({
 }
 
 /** Render channel history, live events, threads and composition. */
-export function ChannelView({ communityId, channel, onChanged, readOnly = false }: Props) {
+export function ChannelView({
+  communityId,
+  channel,
+  onChanged,
+  readOnly = false,
+  held = false,
+}: Props) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [thread, setThread] = useState<Entry | null>(null);
   const [replies, setReplies] = useState<Entry[]>([]);
@@ -309,7 +317,8 @@ export function ChannelView({ communityId, channel, onChanged, readOnly = false 
           </p>
           {readOnly ? (
             <p className="notice mb-0">
-              Archived history is available only for channels you joined.
+              {held ? 'While this community is on hold, history' : 'Archived history'} is available
+              only for channels you joined.
             </p>
           ) : (
             <button className="button primary" onClick={() => void join()}>
@@ -394,7 +403,9 @@ export function ChannelView({ communityId, channel, onChanged, readOnly = false 
       {readOnly ? (
         <div className="composer" role="status">
           <p className="mb-0">
-            Archived history is read-only. Restore the community to post again.
+            {held
+              ? 'This community is on hold by its host, so no one can post.'
+              : 'Archived history is read-only. Restore the community to post again.'}
           </p>
         </div>
       ) : (
@@ -510,7 +521,11 @@ export function ChannelView({ communityId, channel, onChanged, readOnly = false 
             </div>
             {readOnly ? (
               <div className="composer" role="status">
-                <p className="mb-0">Archived threads are read-only.</p>
+                <p className="mb-0">
+                  {held
+                    ? 'Threads are read-only while on hold.'
+                    : 'Archived threads are read-only.'}
+                </p>
               </div>
             ) : (
               <form

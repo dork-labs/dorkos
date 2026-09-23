@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Hash, Menu, Plus, Settings2, X } from 'lucide-react';
 import { Admission, type AdmissionResume } from './components/Admission.js';
 import { ChannelView } from './components/Channel.js';
+import { HoldBanner } from './components/HoldBanner.js';
 import { Manage } from './components/Manage.js';
 import { SignedOutPanel } from './components/SignOut.js';
 import { returnToChooserWithNotice } from './components/CommunityChooser.js';
@@ -31,6 +32,7 @@ export function CommunityApp() {
   const inviteTokenRef = useRef(inviteToken);
   const [community, setCommunity] = useState<Community | null>(null);
   const [communityLifecycle, setCommunityLifecycle] = useState<CommunityLifecycle | null>(null);
+  const [deletionNoticeAt, setDeletionNoticeAt] = useState<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [unadmitted, setUnadmitted] = useState(false);
   const [hostSignIn, setHostSignIn] = useState(false);
@@ -95,11 +97,12 @@ export function CommunityApp() {
         returnToChooser();
         return null;
       }
-      if (membership.lifecycle !== 'active' && membership.lifecycle !== 'archived') {
+      if (!['active', 'archived', 'held'].includes(membership.lifecycle)) {
         returnToChooser();
         return null;
       }
       setCommunityLifecycle(membership.lifecycle);
+      setDeletionNoticeAt(membership.deletionNoticeAt);
       return membership.lifecycle;
     },
     [returnToChooser]
@@ -302,7 +305,8 @@ export function CommunityApp() {
     setMobileOpen(false);
     leaveSettingsPath();
   };
-  const readOnly = communityLifecycle === 'archived';
+  const held = communityLifecycle === 'held';
+  const readOnly = communityLifecycle === 'archived' || held;
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobileOpen ? 'open' : ''}`} aria-label="Community channels">
@@ -391,13 +395,15 @@ export function CommunityApp() {
             </button>
             <div>
               <p className="eyebrow mb-0">
-                {readOnly
-                  ? 'Archived community'
-                  : settings
-                    ? 'Settings'
-                    : selected?.visibility === 'private'
-                      ? 'Private channel'
-                      : 'Channel'}
+                {held
+                  ? 'On hold'
+                  : readOnly
+                    ? 'Archived community'
+                    : settings
+                      ? 'Settings'
+                      : selected?.visibility === 'private'
+                        ? 'Private channel'
+                        : 'Channel'}
               </p>
               <h2>{settings ? 'Your space' : selected ? `# ${selected.name}` : 'Welcome'}</h2>
             </div>
@@ -431,6 +437,7 @@ export function CommunityApp() {
           </div>
         )}
         <ErasureBanner communityId={community!.id} />
+        {held && <HoldBanner deletionNoticeAt={deletionNoticeAt} />}
         {settings ? (
           <Manage
             communityId={community!.id}
@@ -458,6 +465,7 @@ export function CommunityApp() {
             channel={selected}
             onChanged={onChanged}
             readOnly={readOnly}
+            held={held}
           />
         ) : (
           <div className="settings">

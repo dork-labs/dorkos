@@ -16,12 +16,15 @@ export function registerMembershipRoutes(
       community_id: string;
       name: string;
       description: string | null;
-      lifecycle: 'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
+      lifecycle:
+        'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
+      deletion_notice_at: Date | null;
       member_id: string;
       display_name: string;
       role: 'owner' | 'admin' | 'member';
     }>(
       `SELECT c.id AS community_id,c.name,c.description,c.lifecycle,
+              CASE WHEN c.lifecycle='held' THEN c.deletion_notice_at END AS deletion_notice_at,
               m.id AS member_id,m.display_name,m.role
        FROM members m JOIN communities c ON c.id=m.community_id
        WHERE m.user_id=$1 AND m.active
@@ -34,6 +37,7 @@ export function registerMembershipRoutes(
         name: row.name,
         description: row.description,
         lifecycle: row.lifecycle,
+        deletionNoticeAt: row.deletion_notice_at?.toISOString() ?? null,
         memberId: row.member_id,
         displayName: row.display_name,
         role: row.role,

@@ -97,6 +97,8 @@ const schema = z.object({
     100
   ),
   COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE: integer('COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE', 5, 20),
+  // A notice shorter than a week would not give an owner a fair chance to export.
+  COMMUNITY_HOST_DELETION_NOTICE_DAYS: z.coerce.number().int().min(7).max(365).default(14),
   COMMUNITY_ERASURE_JOURNAL: z.preprocess(
     (value) => (value === '' ? undefined : value),
     z.string().min(1).optional()
@@ -247,6 +249,7 @@ export function parseConfig(env: Record<string, unknown>) {
       pairingAttemptsPerMinute: value.COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE,
       hostKeyAttemptsPerMinute: value.COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE,
       reauthAttemptsPerMinute: value.COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE,
+      hostDeletionNoticeDays: value.COMMUNITY_HOST_DELETION_NOTICE_DAYS,
     },
   };
 }

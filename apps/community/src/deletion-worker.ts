@@ -250,7 +250,9 @@ export async function sweepCommunityDeletions(
     await client.query(
       `UPDATE communities SET lifecycle='pending_owner',icon_blob_key=NULL,icon_content_type=NULL,
          suspended_from_state=NULL,suspended_at=NULL,archived_at=NULL,
+         held_from_state=NULL,held_at=NULL,deletion_notice_at=NULL,
          delete_requested_at=NULL,delete_after=NULL,delete_requested_by=NULL,
+         delete_requested_by_host_actor=NULL,
          lifecycle_version=lifecycle_version+1 WHERE id=$1`,
       [job.community_id]
     );

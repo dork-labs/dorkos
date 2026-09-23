@@ -275,3 +275,101 @@ test('an invitation to a full community says so before sign-up, and that the lin
     await guest.close();
   }
 });
+
+test('a host holds a community with a notice members can see, then deletes it after the notice', async ({
+  browser,
+}) => {
+  const communityId = (
+    await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='First Place'")
+  ).rows[0].id;
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    await page.goto(`${baseUrl}/host`);
+    const record = page.getByRole('article', { name: 'First Place community' });
+    await record.getByRole('button', { name: 'Hold', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Hold First Place?' });
+    const notice = new Date(Date.now() + 20 * 24 * 60 * 60_000).toISOString().slice(0, 10);
+    await dialog.getByLabel('Delete after (optional)').fill(notice);
+    await dialog.getByRole('button', { name: 'Hold community' }).click();
+    await expect(record).toContainText('On hold. Deletion notice:');
+
+    // Members see the hold and the date on every channel, and cannot post.
+    await page.goto(`${baseUrl}/c/${communityId}`);
+    const banner = page.getByRole('status').filter({ hasText: 'You can read it but not post.' });
+    await expect(banner).toContainText(
+      'This community is on hold by its host. You can read it but not post.'
+    );
+    await expect(banner).toContainText('The host plans to delete it after');
+    await expect(banner).toContainText('The owner can export it until then.');
+    await expect(
+      page.getByText('This community is on hold by its host, so no one can post.')
+    ).toBeVisible();
+    await shot(page, 'held-community-banner');
+
+    // Once the notice date has passed, the host can delete it, confirming the id's end.
+    await pool.query(
+      "UPDATE communities SET deletion_notice_at=now()-interval '1 minute' WHERE id=$1",
+      [communityId]
+    );
+    await page.goto(`${baseUrl}/host`);
+    await record.getByRole('button', { name: 'Delete', exact: true }).click();
+    const confirm = page.getByRole('dialog', { name: 'Delete First Place?' });
+    await expect(confirm.getByRole('button', { name: 'Delete community' })).toBeDisabled();
+    await confirm.getByLabel(/Type the last eight characters/u).fill(communityId.slice(-8));
+    await confirm.getByRole('button', { name: 'Delete community' }).click();
+    await expect(record).toContainText('Deletion requested by the host.');
+    await record.getByRole('button', { name: 'Cancel deletion' }).click();
+    await expect(record).toContainText('On hold.');
+    await record.getByRole('button', { name: 'Release hold' }).click();
+    await expect(record.getByRole('button', { name: 'Hold', exact: true })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+test('saving limits leaves a file-space limit set through the API exactly as it was', async ({
+  browser,
+}) => {
+  // Purpose: the form shows MiB rounded to two places; saving it after changing only the member
+  // limit must not rewrite 10,000,000 bytes as the rounded 9.54 MiB.
+  const communityId = (
+    await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='First Place'")
+  ).rows[0].id;
+  await pool.query(
+    `INSERT INTO community_limits(community_id,max_active_members,max_storage_bytes)
+     VALUES($1,NULL,10000000)
+     ON CONFLICT(community_id) DO UPDATE SET max_active_members=NULL,max_storage_bytes=10000000`,
+    [communityId]
+  );
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    await page.goto(`${baseUrl}/host`);
+    const record = page.getByRole('article', { name: 'First Place community' });
+    await record.getByText('Limits', { exact: true }).click();
+    const form = record.getByRole('form', { name: 'First Place limits' });
+    await expect(form.getByLabel('Most file space (MiB)')).toHaveValue('9.54');
+    await form.getByLabel('Most members').fill('50');
+    await form.getByRole('button', { name: 'Save limits' }).click();
+    await expect(form).toContainText('Limits saved.');
+    const stored = await pool.query(
+      'SELECT max_active_members,max_storage_bytes::bigint::text AS bytes FROM community_limits WHERE community_id=$1',
+      [communityId]
+    );
+    expect(stored.rows).toEqual([{ max_active_members: 50, bytes: '10000000' }]);
+  } finally {
+    await pool.query('DELETE FROM community_limits');
+    await context.close();
+  }
+});

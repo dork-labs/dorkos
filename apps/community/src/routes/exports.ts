@@ -67,13 +67,17 @@ async function lockExportAuthority(
   scope: 'personal' | 'owner'
 ): Promise<ExportCommunity> {
   if (scope === 'personal') await lockActiveCommunity(client, member.community_id);
-  const community = await client.query<ExportCommunity>(
-    `SELECT id,lifecycle,lifecycle_version AS "lifecycleVersion",settings_version AS "settingsVersion"
+  // An owner keeps export through a host's hold; the archive records it as archived, the one
+  // read-only word the version 1 manifest has.
+  const community = await client.query<ExportCommunity & { raw_lifecycle: string }>(
+    `SELECT id,CASE WHEN lifecycle='held' THEN 'archived' ELSE lifecycle END AS lifecycle,
+            lifecycle AS raw_lifecycle,
+            lifecycle_version AS "lifecycleVersion",settings_version AS "settingsVersion"
      FROM communities WHERE id=$1 FOR SHARE`,
     [member.community_id]
   );
   const current = community.rows[0];
-  if (!current || !['active', 'archived'].includes(current.lifecycle))
+  if (!current || !['active', 'archived', 'held'].includes(current.raw_lifecycle))
     throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community cannot be exported now.');
   const live = await client.query<{ role: Member['role'] }>(
     'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
@@ -81,7 +85,12 @@ async function lockExportAuthority(
   );
   if (!live.rows[0] || (scope === 'owner' && live.rows[0].role !== 'owner'))
     throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
-  return current;
+  return {
+    id: current.id,
+    lifecycle: current.lifecycle,
+    lifecycleVersion: current.lifecycleVersion,
+    settingsVersion: current.settingsVersion,
+  };
 }
 
 async function snapshot(pool: PoolClient, member: Member, scope: 'personal' | 'owner') {

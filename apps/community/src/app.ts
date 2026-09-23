@@ -30,6 +30,7 @@ import { registerExportRoutes } from './routes/exports.js';
 import { registerHostRoutes } from './routes/host.js';
 import { registerMembershipRoutes } from './routes/memberships.js';
 import { registerHostLimitRoutes } from './routes/host-limits.js';
+import { registerHostLifecycleRoutes } from './routes/host-lifecycle.js';
 import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
 import { registerHostLinkRoutes } from './routes/host-links.js';
@@ -299,6 +300,7 @@ export function createCommunityApp({
   registerOwnerClaimRoutes(hostApi, { pool, auth, config, authority, now });
   registerMembershipRoutes(hostApi, { pool, auth });
   registerHostLimitRoutes(hostApi, { pool, config, authority, now });
+  registerHostLifecycleRoutes(hostApi, { pool, config, blobStore, authority, now });
   registerHostKeyRoutes(hostApi, { pool, auth, authority, now, confirmPassword });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   app.route('/api/v1', hostApi);

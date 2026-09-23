@@ -4,8 +4,10 @@ import { ownerClaimLink } from '../owner-claim.js';
 import { FocusDialog } from './CommunityAdministration.js';
 import { HostApiKeys } from './HostApiKeys.js';
 import { HostCommunityLimits } from './HostCommunityLimits.js';
+import { HostHoldControls } from './HostHoldControls.js';
 
-type Lifecycle = 'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
+type Lifecycle =
+  'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
 type Community = {
   id: string;
   name: string;
@@ -15,6 +17,8 @@ type Community = {
   settingsVersion: number;
   ownerPresent: boolean;
   deletionState: 'waiting' | 'deleting' | 'retrying' | null;
+  deletionNoticeAt: string | null;
+  deletionRequestedBy: 'owner' | 'host' | null;
   createdAt: string;
 };
 type Claim = { grantId: string; ownerClaimToken: string; expiresAt: string };
@@ -254,7 +258,9 @@ export function HostAdministration() {
               {communities.map((community) => {
                 const pending = community.lifecycle === 'pending_owner';
                 const suspendable =
-                  community.lifecycle === 'active' || community.lifecycle === 'archived';
+                  community.lifecycle === 'active' ||
+                  community.lifecycle === 'archived' ||
+                  community.lifecycle === 'held';
                 return (
                   <article
                     className="panel-alt p-4"
@@ -320,6 +326,9 @@ export function HostAdministration() {
                           Resume
                         </button>
                       )}
+                    </div>
+                    <div className="mt-3">
+                      <HostHoldControls community={community} busy={busy} perform={perform} />
                     </div>
                     {community.lifecycle !== 'deletion_pending' && (
                       <HostCommunityLimits communityId={community.id} name={community.name} />

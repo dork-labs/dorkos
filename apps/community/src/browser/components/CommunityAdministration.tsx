@@ -11,12 +11,12 @@ type Settings = {
   admissionPolicy: 'invite_only' | 'closed';
   hasIcon: boolean;
   settingsVersion: number;
-  lifecycle: 'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
+  lifecycle: 'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
   lifecycleVersion: number;
 };
 type DeletionStatus = {
   communityId: string;
-  lifecycle: 'active' | 'archived' | 'deletion_pending';
+  lifecycle: 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
   lifecycleVersion: number;
   deleteAfter: string | null;
   state: 'waiting' | 'deleting' | 'retrying' | null;
@@ -481,6 +481,17 @@ export function CommunityAdministration({
           {message}
         </div>
       )}
+      {current.lifecycle === 'held' && (
+        <section className="panel admin-full-width">
+          <h3>On hold</h3>
+          <p className="muted">
+            The host has put this community on hold. Members can read it, but no one can post, join,
+            or change settings. {owner && 'You can still export it or schedule its deletion. '}
+            Archive, restore, and ownership transfer are unavailable until the host releases the
+            hold.
+          </p>
+        </section>
+      )}
       {current.lifecycle === 'archived' && (
         <section className="panel admin-full-width">
           <h3>Archived</h3>
@@ -629,12 +640,14 @@ export function CommunityAdministration({
             Archive preserves history. Deletion permanently removes this community after seven days.
           </p>
           <div className="row flex-wrap gap-2">
-            <button
-              className="button danger"
-              onClick={() => setDialog(current.lifecycle === 'archived' ? 'restore' : 'archive')}
-            >
-              {current.lifecycle === 'archived' ? 'Restore community' : 'Archive community'}
-            </button>
+            {current.lifecycle !== 'held' && (
+              <button
+                className="button danger"
+                onClick={() => setDialog(current.lifecycle === 'archived' ? 'restore' : 'archive')}
+              >
+                {current.lifecycle === 'archived' ? 'Restore community' : 'Archive community'}
+              </button>
+            )}
             <button className="button danger" onClick={() => setDialog('delete')}>
               Schedule deletion
             </button>

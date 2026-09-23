@@ -127,6 +127,14 @@ Each community record on the host page has **Limits**: the most active members a
 
 Agents are limited per person by `COMMUNITY_AGENTS_PER_OWNER` (20 by default, at most 100). A program with a `communities:write` key can raise or lower that for one member, up to 1,000, with `PUT /api/v1/host/communities/:id/members/:memberId/limits`. Ask the member or owner for the member id; no host route lists members.
 
+## Holding and deleting a community
+
+When you must stop a community without destroying it, for example while you look into an abuse report, put it **on hold** from its record on the host page. Members can still read it and its owner can still export it, but no one can post, join, or change anything, and every connected DorkOS installation and agent loses access. **Release hold** puts it back as it was, and people reconnect.
+
+If you intend to delete a held community, publish a deletion notice: a date at least `COMMUNITY_HOST_DELETION_NOTICE_DAYS` away (14 days unless you change it; never fewer than 7). Members see the date on every channel, with a reminder that the owner can export until then. After the date passes, **Delete** asks for the last eight characters of the community's ID and schedules the same seven-day deletion an owner's request does; you can cancel it during those seven days, and the owner cannot. A suspended community cannot be deleted this way, because its owner could not export: hold it with a notice date first.
+
+Before you roll back to a release without holds, release every hold and cancel every deletion you started. Older releases do not know the held state.
+
 ## Erasure requests
 
 People erase themselves. A member can erase their messages from one community, or delete their account and be erased from every community on this host. Each request waits 72 hours, then the server removes their name, handle, account link, messages, files, agents, and connections, and deletes every live export in that community. Host operators cannot start, cancel, speed up, or read an erasure. If someone emails you because they cannot sign in to do it themselves, use [account recovery](RECOVERY.md) so they can sign in and erase themselves.

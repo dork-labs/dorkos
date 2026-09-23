@@ -10,7 +10,11 @@ import {
   verifyValue,
 } from './security.js';
 import type { CommunityConfig } from './config.js';
-import { resolveCommunityContext, type CommunityContext } from './tenant-context.js';
+import {
+  isReadOnlyLifecycle,
+  resolveCommunityContext,
+  type CommunityContext,
+} from './tenant-context.js';
 
 /** Live human identity derived from a session and member row. */
 export interface Member {
@@ -36,6 +40,7 @@ export interface Principal {
 function lifecycleError(lifecycle: string): ApiError {
   if (lifecycle === 'archived')
     return new ApiError(423, 'COMMUNITY_ARCHIVED', 'This community is archived.');
+  if (lifecycle === 'held') return communityHeld();
   if (lifecycle === 'suspended')
     return new ApiError(503, 'COMMUNITY_SUSPENDED', 'This community is suspended.');
   if (lifecycle === 'deletion_pending')
@@ -48,7 +53,23 @@ function archivedReadAllowed(
   scope: 'read' | 'post' | 'enroll-agent',
   scopes?: readonly string[]
 ): boolean {
-  return lifecycle === 'archived' && scope === 'read' && (!scopes || scopes.join(',') === 'read');
+  return (
+    isReadOnlyLifecycle(lifecycle) && scope === 'read' && (!scopes || scopes.join(',') === 'read')
+  );
+}
+
+/** A held community refuses anything that would grow it. */
+export function communityHeld(): ApiError {
+  return new ApiError(
+    423,
+    'COMMUNITY_HELD',
+    'This community is on hold by its host. You can read it but not post.'
+  );
+}
+
+/** The grant check's read-only word: history-only grants are required while read-only. */
+function readOnlyWord(lifecycle: string | undefined): string | undefined {
+  return isReadOnlyLifecycle(lifecycle) ? 'archived' : lifecycle;
 }
 
 function bearer(c: Context): string | null {
@@ -68,13 +89,7 @@ export async function lockActiveCommunity(client: PoolClient, communityId: strin
   );
   const lifecycle = result.rows[0]?.lifecycle;
   if (lifecycle === 'active') return;
-  if (lifecycle === 'archived')
-    throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'This community is archived.');
-  if (lifecycle === 'suspended')
-    throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This community is suspended.');
-  if (lifecycle === 'deletion_pending')
-    throw new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This community is being deleted.');
-  throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is unavailable.');
+  throw lifecycleError(lifecycle ?? 'unavailable');
 }
 
 /** Require a live scoped personal connection token; cookies cannot issue agent secrets. */
@@ -107,7 +122,8 @@ export async function requireConnectionGrant(
   return {
     member,
     tokenHash,
-    lifecycle: tenant.lifecycle === 'archived' ? ('archived' as const) : ('active' as const),
+    // A hold reads exactly like an archive, and installations know only the archived word.
+    lifecycle: isReadOnlyLifecycle(tenant.lifecycle) ? ('archived' as const) : ('active' as const),
   };
 }
 
@@ -170,7 +186,7 @@ export async function assertConnectionGrantCurrent(
     [communityId]
   );
   const lifecycle = lifecycleResult.rows[0]?.lifecycle;
-  if (lifecycle !== 'active' && !(lifecycle === 'archived' && scope === 'read'))
+  if (lifecycle !== 'active' && !(isReadOnlyLifecycle(lifecycle) && scope === 'read'))
     throw lifecycleError(lifecycle ?? 'unavailable');
   const owner = await client.query(
     'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
@@ -181,7 +197,7 @@ export async function assertConnectionGrantCurrent(
     `SELECT 1 FROM connection_grants WHERE member_id=$1 AND community_id=$2
      AND token_hash=$3 AND revoked_at IS NULL AND scopes @> ARRAY[$4]::text[]
      AND ($5::text <> 'archived' OR history_only) FOR SHARE`,
-    [memberId, communityId, tokenHash, scope, lifecycle]
+    [memberId, communityId, tokenHash, scope, readOnlyWord(lifecycle)]
   );
   if (!grant.rowCount)
     throw new ApiError(401, 'UNAUTHENTICATED', 'This connection is unavailable.');
@@ -304,7 +320,7 @@ export async function assertPrincipalCurrentInTransaction(
     [principal.community_id]
   );
   const lifecycle = lifecycleResult.rows[0]?.lifecycle;
-  if (lifecycle !== 'active' && !(lifecycle === 'archived' && scope === 'read'))
+  if (lifecycle !== 'active' && !(isReadOnlyLifecycle(lifecycle) && scope === 'read'))
     throw lifecycleError(lifecycle ?? 'unavailable');
   if (principal.kind === 'agent') {
     const current = await client.query(
@@ -323,7 +339,13 @@ export async function assertPrincipalCurrentInTransaction(
          AND g.community_id=$3 AND m.community_id=$3
          AND g.scopes @> ARRAY[$4]::text[] AND m.active
          AND ($5::text <> 'archived' OR g.history_only)`,
-      [principal.id, principal.credentialHash, principal.community_id, scope, lifecycle]
+      [
+        principal.id,
+        principal.credentialHash,
+        principal.community_id,
+        scope,
+        readOnlyWord(lifecycle),
+      ]
     );
     if (current.rowCount) return;
   } else if (sessionId) {
@@ -355,7 +377,7 @@ export async function lockPrincipalAuthority(
     [principal.community_id]
   );
   const lifecycle = lifecycleResult.rows[0]?.lifecycle;
-  if (lifecycle !== 'active' && !(lifecycle === 'archived' && scope === 'read'))
+  if (lifecycle !== 'active' && !(isReadOnlyLifecycle(lifecycle) && scope === 'read'))
     throw lifecycleError(lifecycle ?? 'unavailable');
   const owner = await client.query(
     'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
@@ -379,7 +401,13 @@ export async function lockPrincipalAuthority(
       `SELECT 1 FROM connection_grants WHERE member_id=$1 AND community_id=$2
        AND token_hash=$3 AND revoked_at IS NULL AND scopes @> ARRAY[$4]::text[]
        AND ($5::text <> 'archived' OR history_only) FOR SHARE`,
-      [principal.id, principal.community_id, principal.credentialHash, scope, lifecycle]
+      [
+        principal.id,
+        principal.community_id,
+        principal.credentialHash,
+        scope,
+        readOnlyWord(lifecycle),
+      ]
     );
     if (!grant.rowCount)
       throw new ApiError(401, 'UNAUTHENTICATED', 'This connection is unavailable.');
@@ -457,7 +485,7 @@ export async function lockChannel(
       'SELECT lifecycle FROM communities WHERE id=$1 FOR SHARE',
       [member.community_id]
     );
-    if (!['active', 'archived'].includes(lifecycle.rows[0]?.lifecycle ?? ''))
+    if (!['active', 'archived', 'held'].includes(lifecycle.rows[0]?.lifecycle ?? ''))
       throw lifecycleError(lifecycle.rows[0]?.lifecycle ?? 'unavailable');
   }
   const result = await client.query<{

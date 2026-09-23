@@ -39,6 +39,10 @@ export const communities = pgTable(
     deleteRequestedBy: uuid('delete_requested_by'),
     deletionFromState: text('deletion_from_state'),
     deletionFromPriorState: text('deletion_from_prior_state'),
+    heldFromState: text('held_from_state'),
+    heldAt: timestamp('held_at', { withTimezone: true }),
+    deletionNoticeAt: timestamp('deletion_notice_at', { withTimezone: true }),
+    deleteRequestedByHostActor: text('delete_requested_by_host_actor'),
     redactionEpoch: bigint('redaction_epoch', { mode: 'bigint' })
       .notNull()
       .default(sql`(('x' || substr(md5(gen_random_uuid()::text), 1, 16))::bit(64)::bigint)`),
@@ -47,7 +51,7 @@ export const communities = pgTable(
   (table) => [
     check(
       'communities_lifecycle',
-      sql`${table.lifecycle} IN ('pending_owner','active','archived','suspended','deletion_pending')`
+      sql`${table.lifecycle} IN ('pending_owner','active','archived','suspended','held','deletion_pending')`
     ),
     check('communities_lifecycle_version', sql`${table.lifecycleVersion} > 0`),
     check('communities_settings_version', sql`${table.settingsVersion} > 0`),
@@ -69,15 +73,23 @@ export const communities = pgTable(
     ),
     check(
       'communities_suspension_state',
-      sql`(${table.lifecycle} = 'suspended' AND ${table.suspendedFromState} IS NOT NULL AND ${table.suspendedFromState} IN ('active','archived') AND ${table.suspendedAt} IS NOT NULL) OR (${table.lifecycle} <> 'suspended' AND ${table.suspendedFromState} IS NULL AND ${table.suspendedAt} IS NULL)`
+      sql`(${table.lifecycle} = 'suspended' AND ${table.suspendedFromState} IS NOT NULL AND ${table.suspendedFromState} IN ('active','archived','held') AND ${table.suspendedAt} IS NOT NULL) OR (${table.lifecycle} <> 'suspended' AND ${table.suspendedFromState} IS NULL AND ${table.suspendedAt} IS NULL)`
     ),
     check(
       'communities_deletion_state',
-      sql`(${table.lifecycle} = 'deletion_pending' AND ${table.deleteRequestedAt} IS NOT NULL AND ${table.deleteAfter} IS NOT NULL AND ${table.deleteRequestedBy} IS NOT NULL AND ${table.deleteAfter} = ${table.deleteRequestedAt} + interval '7 days') OR (${table.lifecycle} <> 'deletion_pending' AND ${table.deleteRequestedAt} IS NULL AND ${table.deleteAfter} IS NULL AND ${table.deleteRequestedBy} IS NULL)`
+      sql`(${table.lifecycle} = 'deletion_pending' AND ${table.deleteRequestedAt} IS NOT NULL AND ${table.deleteAfter} IS NOT NULL AND num_nonnulls(${table.deleteRequestedBy}, ${table.deleteRequestedByHostActor}) = 1 AND ${table.deleteAfter} = ${table.deleteRequestedAt} + interval '7 days') OR (${table.lifecycle} <> 'deletion_pending' AND ${table.deleteRequestedAt} IS NULL AND ${table.deleteAfter} IS NULL AND ${table.deleteRequestedBy} IS NULL AND ${table.deleteRequestedByHostActor} IS NULL)`
     ),
     check(
       'communities_deletion_from_state',
       sql`(${table.deletionFromState} IS NULL OR ${table.deletionFromState} IN ('active','archived','suspended','held')) AND (${table.deletionFromPriorState} IS NULL OR ${table.deletionFromPriorState} IN ('active','archived','held')) AND ((${table.lifecycle} <> 'deletion_pending' AND ${table.deletionFromState} IS NULL AND ${table.deletionFromPriorState} IS NULL) OR (${table.lifecycle} = 'deletion_pending' AND (${table.deletionFromState} IS NOT NULL AND ${table.deletionFromState} IN ('suspended','held')) = (${table.deletionFromPriorState} IS NOT NULL)))`
+    ),
+    check(
+      'communities_hold_state',
+      sql`(${table.heldFromState} IS NULL) = (${table.heldAt} IS NULL) AND (${table.heldFromState} IS NULL OR ${table.heldFromState} IN ('active','archived')) AND (${table.deletionNoticeAt} IS NULL OR ${table.heldFromState} IS NOT NULL) AND (${table.heldFromState} IS NOT NULL) = (${table.lifecycle} = 'held' OR (${table.lifecycle} = 'suspended' AND ${table.suspendedFromState} = 'held') OR (${table.lifecycle} = 'deletion_pending' AND (${table.deletionFromState} = 'held' OR ${table.deletionFromPriorState} = 'held')))`
+    ),
+    check(
+      'communities_host_requester',
+      sql`${table.deleteRequestedByHostActor} IS NULL OR ${table.deleteRequestedByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$'`
     ),
   ]
 );
@@ -1042,7 +1054,8 @@ export const communityDeletionJobs = pgTable(
     communityId: uuid('community_id')
       .primaryKey()
       .references(() => communities.id, { onDelete: 'cascade' }),
-    requestedByMemberId: uuid('requested_by_member_id').notNull(),
+    requestedByMemberId: uuid('requested_by_member_id'),
+    requestedByHostActor: text('requested_by_host_actor'),
     lifecycleVersion: integer('lifecycle_version').notNull(),
     state: text('state').notNull().default('waiting'),
     deleteAfter: timestamp('delete_after', { withTimezone: true }).notNull(),
@@ -1059,6 +1072,10 @@ export const communityDeletionJobs = pgTable(
       foreignColumns: [members.communityId, members.id],
     }),
     index('community_deletion_jobs_due_idx').on(table.nextAttemptAt, table.communityId),
+    check(
+      'community_deletion_jobs_requester',
+      sql`num_nonnulls(${table.requestedByMemberId}, ${table.requestedByHostActor}) = 1 AND (${table.requestedByHostActor} IS NULL OR ${table.requestedByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$')`
+    ),
     check('community_deletion_jobs_lifecycle_version', sql`${table.lifecycleVersion} > 0`),
     check('community_deletion_jobs_attempts_check', sql`${table.attempts} >= 0`),
     check(
