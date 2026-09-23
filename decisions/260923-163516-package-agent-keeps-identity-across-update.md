@@ -27,12 +27,14 @@ An agent package's `.dork/agent.json`, `.dork/SOUL.md`, `.dork/NOPE.md` and `.do
 - **adopts** a readable `agent.json`: same id, contents untouched, new `agentDefaults` reported rather than applied;
 - throws on an unreadable one;
 - writes SOUL.md, NOPE.md and MEMORY.md only if absent (a new `writeConventionFileIfAbsent`; today MEMORY.md is always overwritten);
-- announces an adoption with the existing `origin: 'registered'`, not `'created'`;
+- announces an adoption, with the existing `origin: 'registered'` (not `'created'`), only when the id is not already registered at that path: a reinstall, not an update;
+- adopts nothing when the incoming package's source differs from the recorded one: the old identity files are saved as `.dork-old` and a fresh id is minted, so a different package that shares the name never inherits an agent;
+- deletes the parked `uninstalled-agent.json` on every adoption;
 - clears a mesh denial on the directory, since installing is an explicit act, as registering is.
 
 This extends ADR 260903-023414 (registration adopts; the id on disk wins) to the creator path that still minted a new id over an existing manifest.
 
-**Uninstall.** Uninstalling an agent package, not as part of an update, parks `agent.json` as `.dork/uninstalled-agent.json` and then unregisters the agent through mesh as the last side effect: Relay endpoint, schedules and room seats go, as for any removed agent. A reinstall restores the parked id. Schedules come back paused.
+**Uninstall.** Uninstalling an agent package, not as part of an update, parks `agent.json` as `.dork/uninstalled-agent.json` and then unregisters the agent through mesh as the last side effect. The whole cascade runs, and a reinstall restores none of it: the Relay endpoint, every room membership, its schedules (paused) and task roots, its MCP sign-ins, its identity tokens, its remote community enrollments, and its connection access. The uninstall result, the MCP confirmation, the CLI and the docs list all of this before the person confirms. A reinstall of the same package reuses the parked identity files only.
 
 ## Consequences
 
@@ -45,7 +47,7 @@ This extends ADR 260903-023414 (registration adopts; the id on disk wins) to the
 ### Negative
 
 - Improved `agentDefaults` in a new version do not reach existing installs automatically.
-- A reinstalled agent's schedules come back paused, because the unregister cascade disabled them.
+- Uninstall-then-reinstall is not a round trip. Schedules come back paused, and sign-ins, tokens, enrollments, access and rooms must be set up again.
 
 ## Alternatives Considered
 

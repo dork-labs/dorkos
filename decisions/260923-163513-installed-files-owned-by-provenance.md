@@ -26,10 +26,12 @@ Every marketplace install writes `<installRoot>/.dork/installed-files.json` into
 **A person's file is never moved out of its own directory:**
 
 - Installing over an existing root stages in a same-filesystem sibling of the target. Before the target is backed up, it clones the person's files from the live root into the staged tree under a fixed rule table. A late-write pass before the backup is deleted catches anything written during the update.
-- Uninstall runs in place. Only record-proven package files move, to a same-filesystem sibling, and they move back if a side effect fails. For an agent package the last side effect unregisters the agent through mesh, after parking its manifest so a reinstall can restore the same id.
+- Uninstall runs in place. Only record-proven package files move, to a same-filesystem sibling, under a write-ahead journal: identity files move last and come back first, and a `committed` marker after the side effects decides whether crash recovery rolls back or finishes. For an agent package the last side effect unregisters the agent through mesh, after parking its manifest so a reinstall can restore the same id.
 - Uninstall prunes the record to the kept entries, so a root it leaves has no manifest and counts as not installed.
 
-A legacy install without a record gets one rebuilt from its recorded commit's tree (requires DOR-2248's pinned fetch). If no tree can be obtained, a file counts as the package's only when some obtainable tree has the same bytes at the same path.
+The three install siblings (`.dorkos-bak-`, `.dorkos-stage-`, `.dorkos-uninstall-`) are recognised by one shared predicate in every reader of an install root. They are recovered by one janitor (DOR-2273's) with a policy per kind: a backup is restored or deleted, with the record as the proof of "whole"; a stage is deleted; an uninstall is rolled back or finished by its journal. The janitor covers registered project scopes at startup, and a target's own siblings under its lock.
+
+A legacy install without a record gets one rebuilt from its recorded commit's tree (requires DOR-2248's pinned fetch), and discarded if more than 10% of the recorded files present in the live root differ from it. If no trustworthy tree can be obtained, a file counts as the package's only when some obtainable tree has the same bytes at the same path.
 
 ## Consequences
 
