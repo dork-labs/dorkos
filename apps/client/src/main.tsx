@@ -37,6 +37,7 @@ import {
 import { openTabAt } from '@/layers/features/app-tabs';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
 import { switchAgentCwd } from '@/layers/entities/session';
+import { eraseCommunityOwnerState } from '@/layers/entities/community';
 import { applyShapeAction } from '@/layers/entities/shapes';
 import { useAutoOpenDiff } from '@/layers/features/diff-review';
 import { ExtensionProvider, createExtensionEventBridge } from '@/layers/features/extensions';
@@ -50,10 +51,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 import { AppCrashFallback } from '@/layers/shared/ui/app-crash-fallback';
 import './index.css';
 
-registerCommunityAuthorityCleanup(() => {
-  void queryClient.cancelQueries({ queryKey: ['communities'] });
-  queryClient.removeQueries({ queryKey: ['communities'] });
-});
+registerCommunityAuthorityCleanup(() => eraseCommunityOwnerState(queryClient));
 
 // Dev playground — lazy-loaded, tree-shaken from production builds
 const DevPlayground = import.meta.env.DEV ? React.lazy(() => import('./dev/DevPlayground')) : null;

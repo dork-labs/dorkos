@@ -17,7 +17,18 @@ export {
   useRememberCommunityNavigation,
 } from './model/use-community-navigation';
 export {
+  communityDraftKey,
+  EMPTY_COMMUNITY_DRAFT,
+  useCommunityDraft,
+  useCommunityDraftStore,
+  type CommunityDraft,
+  type CommunityDraftActions,
+  type CommunityDraftAddress,
+  type CommunityDraftFile,
+} from './model/community-drafts';
+export {
   endCommunityConnection,
+  eraseCommunityOwnerState,
   useEndCommunityConnection,
   type CommunityConnectionEnd,
 } from './model/community-lifecycle';

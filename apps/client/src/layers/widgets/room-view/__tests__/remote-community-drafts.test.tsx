@@ -8,9 +8,39 @@ import {
   type RemoteCommunityEntry,
 } from '@dorkos/shared/community-views';
 import { TransportProvider } from '@/layers/shared/model';
-import { useRemoteCommunityDrafts } from '../model/use-remote-community-drafts';
+import { useCommunityDraftStore, type CommunityDraftAddress } from '@/layers/entities/community';
+import {
+  useRemoteCommunityDrafts,
+  type RemoteCommunityDraftOptions,
+} from '../model/use-remote-community-drafts';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useCommunityDraftStore.getState().discardAll();
+});
+
+/** The composer address for owner `owner-a`, Community `a`, room `same`. */
+function at(over: Partial<CommunityDraftAddress> = {}): CommunityDraftAddress {
+  return { ownerKey: 'owner-a', epoch: 1, ref: 'a', generation: 0, roomId: 'same', ...over };
+}
+
+/** Hook options with sensible defaults; the draft address follows the owner. */
+function options(
+  receipt: (entry: RemoteCommunityEntry) => void,
+  over: Partial<RemoteCommunityDraftOptions> & { owner?: string; threadId?: string } = {}
+): RemoteCommunityDraftOptions {
+  const { owner = 'owner-a', threadId, ...rest } = over;
+  return {
+    ref: 'a',
+    roomId: 'same',
+    canSend: true,
+    entries: [],
+    onReceipt: receipt,
+    draft: at({ ownerKey: owner, threadId }),
+    ownerKey: owner,
+    ...rest,
+  };
+}
 const entry = RemoteCommunityEntrySchema.parse({
   community: 'a',
   roomId: 'same',
@@ -51,10 +81,7 @@ describe('remote community delivery drafts', () => {
     vi.mocked(transport.postRemoteCommunityEntry)
       .mockRejectedValueOnce(new Error('Lost response'))
       .mockResolvedValue(entry);
-    const { result } = renderHook(
-      () => useRemoteCommunityDrafts('a', 'same', true, [], receipt, 'owner-a'),
-      { wrapper }
-    );
+    const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
     act(() => {
       result.current.setText('hello');
       result.current.attachments.add([new File(['data'], 'notes.txt')]);
@@ -86,7 +113,7 @@ describe('remote community delivery drafts', () => {
       })
     );
     const { result, rerender } = renderHook(
-      ({ entries }) => useRemoteCommunityDrafts('a', 'same', true, entries, receipt, 'owner-a'),
+      ({ entries }) => useRemoteCommunityDrafts(options(receipt, { entries })),
       {
         wrapper,
         initialProps: { entries: [] as RemoteCommunityEntry[] },
@@ -111,7 +138,7 @@ describe('remote community delivery drafts', () => {
       })
     );
     const { result, rerender } = renderHook(
-      ({ allowed }) => useRemoteCommunityDrafts('a', 'same', allowed, [], receipt, 'owner-a'),
+      ({ allowed }) => useRemoteCommunityDrafts(options(receipt, { canSend: allowed })),
       {
         wrapper,
         initialProps: { allowed: true },
@@ -130,7 +157,10 @@ describe('remote community delivery drafts', () => {
     const { transport, receipt, wrapper } = harness();
     vi.mocked(transport.postRemoteCommunityEntry).mockReturnValue(new Promise(() => {}));
     const { result, rerender } = renderHook(
-      ({ key }) => useRemoteCommunityDrafts('a', 'same', true, [], receipt, 'owner-a', key),
+      ({ key }) =>
+        useRemoteCommunityDrafts(
+          options(receipt, { threadId: key === 'channel' ? undefined : key })
+        ),
       {
         wrapper,
         initialProps: { key: 'channel' },
@@ -151,10 +181,7 @@ describe('remote community delivery drafts', () => {
     vi.mocked(transport.postRemoteCommunityEntry)
       .mockRejectedValueOnce(new Error('retry'))
       .mockReturnValue(new Promise(() => {}));
-    const { result } = renderHook(
-      () => useRemoteCommunityDrafts('a', 'same', true, [], receipt, 'owner-a'),
-      { wrapper }
-    );
+    const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
     act(() =>
       result.current.attachments.add(Array.from({ length: 9 }, () => new File(['x'], 'x.txt')))
     );
@@ -180,7 +207,7 @@ describe('remote community delivery drafts', () => {
       })
     );
     const { result, rerender } = renderHook(
-      ({ owner }) => useRemoteCommunityDrafts('a', 'same', true, [], receipt, owner),
+      ({ owner }) => useRemoteCommunityDrafts(options(receipt, { owner })),
       { wrapper, initialProps: { owner: 'owner-a' } }
     );
     act(() => result.current.setText('owner a private draft'));
@@ -206,8 +233,7 @@ describe('remote community delivery drafts', () => {
       })
     );
     const { result, rerender } = renderHook(
-      ({ context }) =>
-        useRemoteCommunityDrafts('a', 'same', true, [], receipt, 'owner-a', 'channel', context),
+      ({ context }) => useRemoteCommunityDrafts(options(receipt, { contextKey: context })),
       { wrapper, initialProps: { context: 'epoch-1' } }
     );
     act(() => result.current.setText('first epoch'));
@@ -222,5 +248,58 @@ describe('remote community delivery drafts', () => {
     expect(receipt).not.toHaveBeenCalled();
     expect(result.current.text).toBe('final epoch');
     expect(result.current.deliveries).toEqual([]);
+  });
+
+  it('brings an unsent draft back when the composer returns after A→B→A', () => {
+    const { receipt, wrapper } = harness();
+    const file = new File(['data'], 'notes.txt');
+    const alpha = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
+    act(() => {
+      alpha.result.current.setText('half a thought for Alpha');
+      alpha.result.current.attachments.add([file]);
+    });
+    alpha.unmount();
+
+    // Beta shares the room id; it must not see Alpha's words.
+    const beta = renderHook(
+      () => useRemoteCommunityDrafts(options(receipt, { ref: 'b', draft: at({ ref: 'b' }) })),
+      { wrapper }
+    );
+    expect(beta.result.current.text).toBe('');
+    expect(beta.result.current.attachments.staged).toEqual([]);
+    beta.unmount();
+
+    const back = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
+    expect(back.result.current.text).toBe('half a thought for Alpha');
+    expect(back.result.current.attachments.staged.map((item) => item.file)).toEqual([file]);
+  });
+
+  it('clears the held draft on send, and a second quick send posts nothing', () => {
+    const { transport, receipt, wrapper } = harness();
+    vi.mocked(transport.postRemoteCommunityEntry).mockReturnValue(new Promise(() => {}));
+    const { result, unmount } = renderHook(() => useRemoteCommunityDrafts(options(receipt)), {
+      wrapper,
+    });
+    act(() => result.current.setText('once'));
+    act(() => {
+      result.current.send();
+      result.current.send();
+    });
+    expect(transport.postRemoteCommunityEntry).toHaveBeenCalledTimes(1);
+    expect(result.current.text).toBe('');
+    unmount();
+    const back = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
+    expect(back.result.current.text).toBe('');
+  });
+
+  it('holds nothing while the owner is unconfirmed', () => {
+    const { receipt, wrapper } = harness();
+    const { result } = renderHook(
+      () => useRemoteCommunityDrafts(options(receipt, { draft: null })),
+      { wrapper }
+    );
+    act(() => result.current.setText('typed before the owner resolved'));
+    expect(result.current.text).toBe('');
+    expect(useCommunityDraftStore.getState().drafts).toEqual({});
   });
 });

@@ -1,6 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RemoteCommunityEntry } from '@dorkos/shared/community-views';
 import { useTransport } from '@/layers/shared/model';
+import {
+  communityDraftKey,
+  useCommunityDraft,
+  useCommunityDraftStore,
+  type CommunityDraftAddress,
+  type CommunityDraftFile,
+} from '@/layers/entities/community';
 import type { ConversationAttachmentPort } from '@/layers/features/conversation';
 import type { PendingFile } from '@/layers/features/composer';
 
@@ -18,52 +25,80 @@ interface Delivery {
   error?: string;
 }
 
-/** Keep retries attached to the original immutable draft and upload keys until receipt or echo. */
-export function useRemoteCommunityDrafts(
-  ref: string,
-  roomId: string,
-  canSend: boolean,
-  entries: RemoteCommunityEntry[],
-  onReceipt: (entry: RemoteCommunityEntry) => void,
-  ownerKey: string,
-  draftKey = 'channel',
-  contextKey = ownerKey
-) {
+/** Everything one Community composer's drafts and deliveries are bound to. */
+export interface RemoteCommunityDraftOptions {
+  /** Community connection ref. */
+  ref: string;
+  /** Room inside that Community. */
+  roomId: string;
+  /** Whether the room accepts a post right now. */
+  canSend: boolean;
+  /** Entries on screen, so an owner-origin echo can confirm a pending delivery. */
+  entries: RemoteCommunityEntry[];
+  /** Called with a confirmed entry when its send settles inside the same context. */
+  onReceipt: (entry: RemoteCommunityEntry) => void;
+  /**
+   * Where the unsent draft lives (owner, epoch, connection generation, room,
+   * thread), or `null` while the owner is unconfirmed — nothing is held then.
+   */
+  draft: CommunityDraftAddress | null;
+  /** Owner-and-epoch address that deliveries and errors are fenced to. */
+  ownerKey: string;
+  /** Route and access context that deliveries and errors are fenced to. */
+  contextKey?: string;
+}
+
+/** Staged files as the composer's attachment tray expects them. */
+function toPending(files: readonly CommunityDraftFile[]): PendingFile[] {
+  return files.map(({ id, file }) => ({ id, file, status: 'pending', progress: 0 }));
+}
+
+/**
+ * Hold a Community composer's unsent draft in the qualified draft store, so it
+ * survives switching away and back, and keep retries attached to the original
+ * immutable draft and upload keys until receipt or echo.
+ */
+export function useRemoteCommunityDrafts({
+  ref,
+  roomId,
+  canSend,
+  entries,
+  onReceipt,
+  draft: draftAddress,
+  ownerKey,
+  contextKey = ownerKey,
+}: RemoteCommunityDraftOptions) {
   const transport = useTransport();
   const address = JSON.stringify([ownerKey, ref, roomId, contextKey]);
-  const [draftState, setDraftState] = useState<{
-    address: string;
-    drafts: Record<string, { text: string; files: PendingFile[] }>;
-  }>(() => ({ address, drafts: {} }));
-  const drafts = draftState.address === address ? draftState.drafts : {};
-  const text = drafts[draftKey]?.text ?? '';
-  const staged = drafts[draftKey]?.files ?? [];
-  function setText(next: string) {
-    setDraftState((current) => {
-      const values = current.address === address ? current.drafts : {};
-      return {
-        address,
-        drafts: {
-          ...values,
-          [draftKey]: { text: next, files: values[draftKey]?.files ?? [] },
-        },
-      };
+  const draft = useCommunityDraft(draftAddress);
+  const text = draft.text;
+  const staged = useMemo(() => toPending(draft.files), [draft.files]);
+  const where = useRef(draftAddress);
+  useLayoutEffect(() => {
+    where.current = draftAddress;
+  }, [draftAddress]);
+  /** Read-modify-write against the store, so two updates in one tick both land. */
+  function update(
+    change: (current: { text: string; files: PendingFile[] }) => {
+      text: string;
+      files: PendingFile[];
+    }
+  ) {
+    const target = where.current;
+    if (!target) return;
+    const store = useCommunityDraftStore.getState();
+    const held = store.drafts[communityDraftKey(target)];
+    const next = change({ text: held?.text ?? '', files: toPending(held?.files ?? []) });
+    store.write(target, {
+      text: next.text,
+      files: next.files.map(({ id, file }) => ({ id, file })),
     });
   }
-  function setStaged(next: PendingFile[] | ((current: PendingFile[]) => PendingFile[])) {
-    setDraftState((current) => {
-      const values = current.address === address ? current.drafts : {};
-      return {
-        address,
-        drafts: {
-          ...values,
-          [draftKey]: {
-            text: values[draftKey]?.text ?? '',
-            files: typeof next === 'function' ? next(values[draftKey]?.files ?? []) : next,
-          },
-        },
-      };
-    });
+  function setText(next: string) {
+    update((current) => ({ ...current, text: next }));
+  }
+  function setStaged(next: (current: PendingFile[]) => PendingFile[]) {
+    update((current) => ({ ...current, files: next(current.files) }));
   }
   const [errorState, setErrorState] = useState<{
     address: string;
@@ -163,26 +198,32 @@ export function useRemoteCommunityDrafts(
   }
 
   function send(parentEntryId?: string) {
-    if (!allowed.current || (!text.trim() && staged.length === 0)) return;
+    const target = where.current;
+    if (!target || !allowed.current) return;
+    const store = useCommunityDraftStore.getState();
+    const waiting = store.drafts[communityDraftKey(target)];
+    if (!waiting || (!waiting.text.trim() && waiting.files.length === 0)) return;
     if (jobs.current.size >= 30) {
       setError('Wait for pending messages or retry failed messages before sending more.');
       return;
     }
+    // Taken from the store, not the render: the second of two quick Enters
+    // finds nothing left and sends nothing.
+    const held = store.take(target);
+    const files = toPending(held.files);
     const job: Delivery = {
       address,
       context: contextKey,
       ref,
       roomId,
       key: crypto.randomUUID(),
-      text: text.trim() ? text : staged.map((item) => item.file.name).join(', '),
+      text: held.text.trim() ? held.text : files.map((item) => item.file.name).join(', '),
       parentEntryId,
-      files: staged,
+      files,
       attachmentIds: [],
       status: 'sending',
     };
     jobs.current.set(job.key, job);
-    setText('');
-    setStaged([]);
     setError(null);
     void deliver(job);
   }
@@ -217,7 +258,7 @@ export function useRemoteCommunityDrafts(
       /* Upload retries belong to the immutable delivery row after Send. */
     },
     cancel() {
-      setStaged([]);
+      setStaged(() => []);
     },
     hasFailed: false,
     isUploading: false,

@@ -215,6 +215,29 @@ test('Community switcher supports keyboard selection and a narrow accessible men
   });
 });
 
+test('An unsent Community draft comes back after switching away and back', async ({ page }) => {
+  await mockCommunitySwitcher(page);
+  await page.goto('/channels?community=alpha&id=general');
+  await new BasePage(page).waitForAppReady();
+  await expect(page.getByText('Message 2', { exact: true })).toBeVisible();
+  const composer = page.getByRole('combobox', { name: /message/i }).last();
+  await composer.fill('Half a thought for Alpha');
+
+  // Away to this DorkOS, by the switcher, without reloading the page.
+  await page.getByTestId('sidebar-header-block').click();
+  await page.getByRole('menuitemradio', { name: /Your team|’s team/ }).click();
+  await expect(page).not.toHaveURL(/community=alpha/);
+  await expect(page.getByText('Half a thought for Alpha')).toHaveCount(0);
+
+  // And back: the words are where they were left.
+  await page.getByTestId('sidebar-header-block').click();
+  await page.getByRole('menuitemradio', { name: /Alpha/ }).click();
+  await expect(page).toHaveURL(/community=alpha/);
+  await expect(page.getByRole('combobox', { name: /message/i }).last()).toHaveValue(
+    'Half a thought for Alpha'
+  );
+});
+
 /**
  * Answer the Community's own site so an action that opens it has somewhere to
  * land. The page stands in for the real host; what matters is WHICH address

@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 4 / 11 (1.1, 1.2, 2.2 and 3.2; audited against main 5cd6dd794 on 2026-09-23)
+**Tasks Completed:** 5 / 11 (1.1, 1.2, 1.4, 2.2 and 3.2; 1.4 closed by DOR-2241 on 2026-09-23)
 
 ## Tasks Completed
 
@@ -137,6 +137,36 @@ lifecycle + reachability because the descriptor carries no role, and the Communi
   shortcut was pressed (the message box, verified in the browser); the phone sheet's action menu
   now supports Up/Down/Home/End.
 
+### Session 5 - 2026-09-23 (DOR-2241, branch `feat/community-draft-restore`)
+
+**Task 1.4:** Bring back an unsent draft after switching A→B→A.
+
+- Drafts moved out of the keyed room surface into an in-memory Zustand store,
+  `apps/client/src/layers/entities/community/model/community-drafts.ts`, the Community twin of
+  `entities/room`'s `room-drafts`. A draft is keyed by local owner, owner epoch, connection ref,
+  connection generation, room and thread, so it can only be read back at the address it was
+  written under; the route epoch and access fingerprint are deliberately not in the key, which is
+  what lets it survive the switch.
+- Staged files come back with the text (the spec keeps "draft text and staged attachments" in the
+  qualified draft store). They stay as in-memory `File` objects and are not uploaded until Send.
+  Nothing is persisted to disk or config.
+- Lifetime: `endCommunityConnection` erases that owner's drafts for that ref right after the
+  tombstone (disconnect, removal, revocation); the app's authority cleanup, now
+  `eraseCommunityOwnerState` (registered in `main.tsx`), erases every draft with the owner's cached
+  queries on sign-out or owner change. The epoch and generation in the key fence old drafts before
+  either erasure runs. Send takes the draft from the store atomically, so a double Enter posts once.
+- While the owner is unconfirmed the composer holds no draft at all rather than one under an
+  unresolved owner.
+- Tests: `community-drafts.test.ts` (keying on every address part, same room id across
+  Communities, thread vs channel, staged files, atomic take, `discardCommunity` scope, revocation
+  and owner-change erasure); four new cases in `remote-community-drafts.test.tsx` (hook-level
+  A→B→A with a staged file, send clears, unconfirmed owner holds nothing); a draft journey in
+  `community-rapid-switch.test.tsx` (A and B both typed, back and forth through this DorkOS, owner
+  change drops both); and one browser step in `community-switcher.spec.ts`. The rapid-switch case
+  and the browser step both fail against the previous surface. Mutation-checked: dropping the ref
+  or the owner from the key, the erase on connection end, or the erase on owner change each turns a
+  test red.
+
 ## Files Modified/Created
 
 **Source files:**
@@ -159,6 +189,9 @@ lifecycle + reachability because the descriptor carries no role, and the Communi
 - `apps/client/src/layers/features/dashboard-sidebar/ui/SidebarZones.tsx`
 - `apps/client/src/layers/widgets/room-view/ui/ChannelsPage.tsx`
 - `apps/client/src/layers/widgets/room-view/model/use-remote-community-drafts.ts`
+- `apps/client/src/layers/entities/community/model/community-drafts.ts`
+- `apps/client/src/layers/entities/community/model/community-lifecycle.ts`
+- `apps/client/src/main.tsx`
 - `apps/client/src/layers/widgets/room-view/ui/RemoteCommunityAgents.tsx`
 - `apps/client/src/layers/widgets/room-view/ui/RemoteCommunitySurface.tsx`
 - `apps/client/src/layers/features/auth/model/use-auth-session.ts`
@@ -178,7 +211,6 @@ lifecycle + reachability because the descriptor carries no role, and the Communi
 ## Remaining Work
 
 - **DOR-2240 (Task 2.3):** after a selection on the phone, focus should move to the target page's heading. `focusPageHeading` in `CommunityContextSwitcher.tsx` finds nothing because no route renders a heading inside `main`, so this needs a page-heading decision first.
-- **DOR-2241 (Task 1.4):** a draft should be restored after A→B→A. Drafts live in the keyed room surface and are scoped to the route epoch, so leaving a room drops them. They never cross owners or Communities. Restoring them needs a draft-store design.
 - **DOR-2242 (Task 3.1):** Create community should be in the switcher for a host operator. The local connection descriptor carries no host-operator signal, so this needs a small contract addition first.
 - **PR #2015 (Tasks 1.3, 2.1, 2.3, 4.1, 4.2):** merging it lands the Phase 4 proof and its four fixes: failed-switch announcement, ⌘⇧K in text fields, the phone sheet's `menu` role, and popover and sheet scrolling.
 
