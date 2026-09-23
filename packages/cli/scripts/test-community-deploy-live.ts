@@ -6,7 +6,6 @@
  * start a process, contact npm, or contact a provider.
  */
 import { randomBytes } from 'node:crypto';
-import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,6 +24,10 @@ import {
   whileLauncherRuns,
   writePrivateClipboardShim,
 } from './community-deploy-live-capture.js';
+import {
+  parsePublishedVersion,
+  runCommunityLiveGateCommand as command,
+} from './community-deploy-live-process.js';
 import {
   createLauncherPromptResponder,
   requireTigrisTermsAccepted,
@@ -46,29 +49,6 @@ const TIMEOUT_MS = 12 * 60_000;
  * launcher copied it before prompting, so it is already sent or lost; this only covers delivery.
  */
 const DELIVERED_CAPTURE_MS = 30_000;
-
-async function command(
-  executable: string,
-  args: readonly string[],
-  environment: NodeJS.ProcessEnv,
-  step: string
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, { env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
-    let output = '';
-    let size = 0;
-    const collect = (chunk: Buffer) => {
-      size += chunk.length;
-      if (size <= 64 * 1024) output += chunk.toString('utf8');
-    };
-    child.stdout.on('data', collect);
-    child.stderr.on('data', collect);
-    child.once('error', () => reject(new CommunityLiveGateError(step)));
-    child.once('close', (code) =>
-      code === 0 ? resolve(output) : reject(new CommunityLiveGateError(step))
-    );
-  });
-}
 
 /** A launcher running in a PTY: its exit, and a way to stop it from the gate's finally. */
 interface LauncherRun {
@@ -177,14 +157,14 @@ async function main(): Promise<void> {
     communityLiveGateRecoveryCommand(config.version, launchArgs.slice(2), runId, durableHome);
   try {
     // Every profile and network operation occurs after all arms have been checked above.
-    const published = JSON.parse(
+    const published = parsePublishedVersion(
       await command(
         'npm',
         ['view', `dorkos@${config.version}`, 'version', '--json'],
         process.env,
         'published-version'
       )
-    ) as unknown;
+    );
     if (published !== config.version) throw new CommunityLiveGateError('exact-published-version');
     const install = join(runDirectory, 'install');
     await command(
