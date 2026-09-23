@@ -61,8 +61,13 @@ export { mergeMarketplace } from './merge-marketplace.js';
 export type { MergedMarketplaceEntry, MergeMarketplaceResult } from './merge-marketplace.js';
 
 // Source resolver
-export { resolvePluginSource, ResolvePluginSourceError } from './source-resolver.js';
-export type { ResolvedSourceDescriptor, ResolveContext } from './source-resolver.js';
+export { resolvePluginSource, ResolvePluginSourceError, sourceKeyOf } from './source-resolver.js';
+export type {
+  ResolvedSourceDescriptor,
+  GitSourceDescriptor,
+  ResolveContext,
+  SourceKey,
+} from './source-resolver.js';
 
 // Package version resolution (Claude Code's chain)
 export {
