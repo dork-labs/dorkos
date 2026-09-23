@@ -66,4 +66,29 @@ describe('credentialed live gate entrypoint', () => {
     expect(source).toMatch(/let launcher: LauncherRun \| null/u);
     expect(finallyBlock).toMatch(/launcher\?\.kill\(\)/u);
   });
+
+  // The launcher asks for Tigris terms only after it has created the Fly app and the Neon project.
+  // The decisions themselves are unit-tested beside the responder; this pins where main makes
+  // them, since a real run is the only other way to see the order and it costs money.
+  it('checks Tigris terms and heals the PTY helper before the launcher can write', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    const firstLaunch = main.indexOf('runLauncherPty({');
+    expect(firstLaunch).toBeGreaterThan(0);
+    const termsCheck = main.indexOf('await requireTigrisTermsAccepted(');
+    expect(termsCheck).toBeGreaterThan(0);
+    expect(termsCheck).toBeLessThan(firstLaunch);
+    const heal = main.indexOf(
+      'ensureNodePtySpawnHelperExecutable({ resolveFrom: import.meta.url })'
+    );
+    expect(heal).toBeGreaterThan(0);
+    expect(heal).toBeLessThan(firstLaunch);
+    // A refusal from the responder must stop the launcher, not merely fail the gate's promise.
+    expect(source).toMatch(
+      /action\.type === 'refuse'\) \{[^}]*reject\(new CommunityLiveGateError\(action\.step\)\);\s*terminal\.kill\(\);/u
+    );
+  });
 });

@@ -12,6 +12,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
 import * as pty from 'node-pty';
+import { ensureNodePtySpawnHelperExecutable } from '@dorkos/shared/node-pty-spawn-helper';
 import {
   CommunityLiveGateNotArmedError,
   communityLiveGateRecoveryCommand,
@@ -24,6 +25,10 @@ import {
   whileLauncherRuns,
   writePrivateClipboardShim,
 } from './community-deploy-live-capture.js';
+import {
+  createLauncherPromptResponder,
+  requireTigrisTermsAccepted,
+} from './community-deploy-live-launcher.js';
 import {
   cleanupCommunityLiveGate,
   type CommunityLiveGateJournal,
@@ -92,36 +97,26 @@ function runLauncherPty(input: {
   let running = true;
   const exited = new Promise<void>((resolve, reject) => {
     let transcript = '';
-    let promptedForBootstrap = false;
-    let ownerPrompted = false;
     let interrupted = false;
+    const respond = createLauncherPromptResponder(input.appName);
     const timeout = setTimeout(() => {
       terminal.kill();
       reject(new CommunityLiveGateError('launcher-timeout'));
     }, TIMEOUT_MS);
     terminal.onData((chunk) => {
       transcript = (transcript + chunk).slice(-16_384);
-      if (transcript.includes(`Type ${input.appName} to create these resources:`))
-        terminal.write(`${input.appName}\r`);
-      if (transcript.includes('Type COPY TEST to replace your current clipboard'))
-        terminal.write('COPY TEST\r');
-      if (!promptedForBootstrap && transcript.includes('Type copy:')) {
-        promptedForBootstrap = true;
-        terminal.write('copy\r');
-      }
-      if (
-        !ownerPrompted &&
-        transcript.includes('Finish owner setup at') &&
-        transcript.includes('then press Enter to verify it.')
-      ) {
-        ownerPrompted = true;
-        if (input.interruptAtOwnerPending) {
+      for (const action of respond(transcript)) {
+        if (action.type === 'write') terminal.write(action.text);
+        else if (action.type === 'refuse') {
+          // Reject first: the exit that the kill causes must not be read as a clean one.
+          reject(new CommunityLiveGateError(action.step));
+          terminal.kill();
+        } else if (input.interruptAtOwnerPending) {
           interrupted = true;
           terminal.kill();
         } else
           void input.ownerClaimed.then(() => terminal.write('\r')).catch(() => terminal.kill());
       }
-      if (transcript.includes('Type complete when both work:')) terminal.write('complete\r');
     });
     terminal.onExit(({ exitCode }) => {
       running = false;
@@ -141,6 +136,9 @@ function runLauncherPty(input: {
 /** Execute only when every arm is explicit. No ordinary test task imports this entrypoint. */
 async function main(): Promise<void> {
   const config = parseCommunityLiveGateConfig(process.env);
+  // node-pty 1.1.0 ships its spawn-helper non-executable, so on a fresh install every PTY spawn
+  // fails. Heal it before the first one; a helper it cannot fix still fails at spawn, pre-write.
+  ensureNodePtySpawnHelperExecutable({ resolveFrom: import.meta.url });
   const runDirectory = await mkdtemp(join(tmpdir(), 'dorkos-community-live-'));
   const appName = `dorkos-gate-${randomBytes(6).toString('hex')}`;
   const durableHome = join(process.env.DORK_HOME ?? join(homedir(), '.dork'), 'live-gate', appName);
@@ -229,6 +227,18 @@ async function main(): Promise<void> {
     };
     const fly = { executable: 'fly', env: environment, timeoutMs: 30_000 };
     const neon = { executable: 'neonctl', env: environment, timeoutMs: 30_000 };
+    // The launcher asks for Tigris terms only after it has created the Fly app and the Neon
+    // project, and the gate cannot answer. Refuse here, before any provider write.
+    const termsCredential = await readFlySessionCredential(fly);
+    try {
+      await requireTigrisTermsAccepted(() =>
+        termsCredential.use((token) =>
+          new FlyTigrisGraphqlClient({ accessToken: token }).hasAcceptedTerms()
+        )
+      );
+    } finally {
+      termsCredential.dispose();
+    }
     // Read exact designated-organization inventories before the installed launcher can write.
     const before = {
       flyAppIds: (await readFlyApps(fly, config.flyOrganization)).map((item) => item.id),
