@@ -31,6 +31,7 @@ import type { McpTargetProbeResult } from '../agent-mcp-target-probe.js';
 // real source of cross-file flake. The import is resolved at transform time.
 import observedStatus from './fixtures/mcp-server-status-401.observed.json' with { type: 'json' };
 import observedStatus268 from './fixtures/mcp-server-status-401-0.3.268.observed.json' with { type: 'json' };
+import observed280 from './fixtures/mcp-server-status-401-0.3.280.observed.json' with { type: 'json' };
 
 const AGENT_ID = '01HV7KJZZZ0000000000000000';
 const SERVER = 'granola';
@@ -583,6 +584,38 @@ describe('reading a turn’s status snapshot', () => {
     // now with live evidence at 0.3.268 rather than a binary read alone.
     for (const row of observed) expect(row).not.toHaveProperty('errorCode');
     expect(mcpAuthEvidenceFrom(observed)).toEqual(['probe-bearer', 'probe-tokenless', 'linear']);
+  });
+
+  it('catches all three on the 0.3.280 re-run, first frame included', async () => {
+    // Provenance: `fixtures/mcp-server-status-401-0.3.280.observed.json` is the
+    // same harness re-run on 2026-09-22 against 0.3.280, with a THIRD always-401
+    // server declared in the cwd's `.mcp.json`. 0.3.274 stopped the first turn
+    // waiting for settings-file and plugin servers whose tools tool search
+    // defers, so such a server could read `pending` in the first frame again.
+    // This one did not: it came up `failed` in `system/init`, beside the two
+    // `options.mcpServers` ones. Rows now carry the additive `source`.
+    const { mcpAuthEvidenceFrom } = await import('../mcp-revocation.js');
+    const { firstInit, status } = observed280 as {
+      firstInit: Array<{ name: string; status?: string; source?: string }>;
+      status: Array<{ name: string; status?: string; error?: string; source?: string }>;
+    };
+
+    expect(firstInit.map((s) => s.status)).toEqual(['failed', 'failed', 'failed']);
+    expect(status.find((s) => s.name === 'probe-bearer')?.error).toMatch(
+      /rejected the configured Authorization header/
+    );
+    expect(status.find((s) => s.name === 'probe-project')?.source).toBe('project');
+    for (const row of status) expect(row).not.toHaveProperty('errorCode');
+    expect(mcpAuthEvidenceFrom(firstInit)).toEqual([
+      'probe-project',
+      'probe-bearer',
+      'probe-tokenless',
+    ]);
+    expect(mcpAuthEvidenceFrom(status)).toEqual([
+      'probe-project',
+      'probe-bearer',
+      'probe-tokenless',
+    ]);
   });
 
   it('looks at every server that did not come up — `failed` above all', async () => {

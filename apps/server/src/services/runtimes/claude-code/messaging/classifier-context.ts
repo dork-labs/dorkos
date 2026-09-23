@@ -88,7 +88,7 @@ import type { CapabilityTier } from '@dorkos/shared/capabilities';
 
 import { recordClassifierAssertion } from '../../../observability/auto-mode-stops.js';
 import { MCP_TOOL_TIERS, type McpToolTier } from '../../../core/mcp-tool-tiers.js';
-import { IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
+import { IN_SESSION_TOOL_PREFIX, isHostServedOrUnattributed } from '../mcp-tools/tool-exposure.js';
 
 /**
  * Every sentence DorkOS is able to say to the classifier, written out once.
@@ -273,6 +273,10 @@ export function createClassifierContextHook(options: ClassifierContextHookOption
   const { sessionId, enabled } = options;
   return (hookInput) => {
     if (!enabled || hookInput.hook_event_name !== 'PostToolUse') return Promise.resolve(SILENT);
+    // A configured server that named itself `dorkos` wears the same prefix, and
+    // a note claiming DorkOS gated its call would be false (SDK 0.3.274
+    // provenance; see `isHostServedOrUnattributed`).
+    if (!isHostServedOrUnattributed(hookInput.mcp_server)) return Promise.resolve(SILENT);
     const note = classifierContextFor(hookInput.tool_name);
     if (!note) return Promise.resolve(SILENT);
     recordClassifierAssertion({ sessionId, tool: note.tool, tier: note.tier });

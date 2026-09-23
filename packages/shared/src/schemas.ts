@@ -1751,6 +1751,18 @@ export const SessionStatusEventSchema = z
      * silence.
      */
     turnThinkingTokens: z.number().int().optional(),
+    /**
+     * This turn's own cost in USD, emitted ONLY on the terminal result status —
+     * the share of `costUsd` (the session's running cost) that this one turn
+     * added. Sibling of {@link SessionStatusEventSchema}'s `turnInputTokens`;
+     * feeds `gen_ai.usage.cost` + the `$ai_generation` cost, which describe one
+     * turn and so must never read the running figure. Absent when the runtime
+     * could not tell this turn's share apart. The observability seam then falls
+     * back to `costUsd` ONLY for a runtime whose `costUsd` is already per-turn;
+     * for a runtime whose `costUsd` is the running total (claude-code, see
+     * `RUNNING_COST_RUNTIMES` in `ai-metadata.ts`) it reports no cost at all.
+     */
+    turnCostUsd: z.number().min(0).optional(),
     /** Tokens read from prompt cache (90% cost savings). */
     cacheReadTokens: z.number().int().optional(),
     /** Tokens written to prompt cache (slight write premium). */

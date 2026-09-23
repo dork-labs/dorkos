@@ -32,6 +32,7 @@ async function* craftedTurn(): AsyncGenerator<StreamEvent> {
       sessionId: 'sess-1',
       model: 'claude-opus-4-6',
       costUsd: 0.42,
+      turnCostUsd: 0.42,
       turnInputTokens: 1500,
       turnOutputTokens: 300,
       // Content-shaped fields that must NEVER be harvested:
@@ -146,6 +147,41 @@ describe('ai-metadata — the opt-in bridge (Plane 1 Tier 2)', () => {
     for (const secret of ['/Users/dorian', 'secret.txt', 'summarize', 'SECRET']) {
       expect(serialized).not.toContain(secret);
     }
+  });
+
+  it("reports the turn's own cost, not the session's running cost, when the runtime splits them", async () => {
+    const seen: AiTurnMetadata[] = [];
+    setAiMetadataBridge((m) => seen.push(m));
+
+    async function* splitTurn(): AsyncGenerator<StreamEvent> {
+      yield {
+        type: 'session_status',
+        data: { sessionId: 's', costUsd: 0.008059, turnCostUsd: 0.003597, turnInputTokens: 3432 },
+      } as unknown as StreamEvent;
+      yield { type: 'done', data: { sessionId: 's' } } as unknown as StreamEvent;
+    }
+    await drain(observeRuntimeTurn('claude-code', 's', splitTurn()));
+
+    expect(seen[0].costUsd).toBe(0.003597);
+  });
+
+  it("reports no cost, rather than the session's running cost, when a running-cost runtime could not split the turn", async () => {
+    const seen: AiTurnMetadata[] = [];
+    setAiMetadataBridge((m) => seen.push(m));
+
+    async function* unsplit(): AsyncGenerator<StreamEvent> {
+      yield {
+        type: 'session_status',
+        data: { sessionId: 's', costUsd: 3.21 },
+      } as unknown as StreamEvent;
+      yield { type: 'done', data: { sessionId: 's' } } as unknown as StreamEvent;
+    }
+    await drain(observeRuntimeTurn('claude-code', 's', unsplit()));
+    await drain(observeRuntimeTurn('opencode', 's', unsplit()));
+
+    expect(seen[0]).not.toHaveProperty('costUsd');
+    // A runtime whose status cost is not a running total keeps it.
+    expect(seen[1].costUsd).toBe(3.21);
   });
 
   it('omits unknown fields when the runtime reports no model/tokens/cost', async () => {

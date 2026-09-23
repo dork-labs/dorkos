@@ -56,6 +56,30 @@ async function collect(
   return out;
 }
 
+describe('mapSystemEvent — init seeds the usage ledger', () => {
+  const init = sys({ type: 'system', subtype: 'init', session_id: 'sdk-9', model: 'x' });
+
+  it('starts a brand-new transcript at known-zero totals', async () => {
+    const session = { ...makeSession(), hasStarted: false };
+    await collect(init, session);
+    expect(session.usageLedger).toEqual({});
+    expect(session.hasStarted).toBe(true);
+  });
+
+  it('leaves a resumed session with no ledger unknown, and keeps one it holds', async () => {
+    const unknown = makeSession();
+    await collect(init, unknown);
+    expect(unknown.usageLedger).toBeUndefined();
+
+    const held = {
+      ...makeSession(),
+      usageLedger: { m: { inputTokens: 5, outputTokens: 1, costUsd: 0.1 } },
+    };
+    await collect(init, held);
+    expect(held.usageLedger).toEqual({ m: { inputTokens: 5, outputTokens: 1, costUsd: 0.1 } });
+  });
+});
+
 describe('mapSystemEvent — DOR-108 subtypes', () => {
   beforeEach(() => {
     vi.clearAllMocks();

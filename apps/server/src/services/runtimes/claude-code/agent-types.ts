@@ -10,6 +10,7 @@ import type {
 import type { PendingInteraction } from './messaging/interaction-wait.js';
 import { createToolResultImageState, type ToolResultImageState } from './tool-result-images.js';
 import type { ClaudeConnectorTurnContext } from './connector-turn-context.js';
+import type { UsageLedger } from './sdk/turn-usage.js';
 
 /** Input-side token usage of a single model request (one API round-trip). */
 export interface RequestUsage {
@@ -179,6 +180,16 @@ export interface AgentSession {
    * the first rate-limit signal (e.g. an API-key session never sets it).
    */
   lastSubscriptionUsage?: UsageStatus;
+  /**
+   * The SDK's running usage totals as of this session's last `result`, keyed by
+   * model: the baseline a turn's own usage is the difference from, because
+   * `result.modelUsage` is a running total, not one turn's figure (see
+   * `sdk/turn-usage.ts`). Seeded EMPTY when a query starts a brand-new
+   * transcript (`system-event-mapper.ts`, on `init`); left undefined for a
+   * resumed session until its first result, which then reports no per-turn
+   * figure rather than the whole history as one turn.
+   */
+  usageLedger?: UsageLedger;
   /**
    * Authoritative context-usage breakdown from the SDK's `getContextUsage()`,
    * fetched at turn end while the subprocess is held alive (see message-sender).

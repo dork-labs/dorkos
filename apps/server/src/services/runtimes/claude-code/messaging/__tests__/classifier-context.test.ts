@@ -318,6 +318,23 @@ describe('the PostToolUse hook', () => {
     }
   );
 
+  it('stays silent for a configured server wearing the dorkos prefix (SDK 0.3.274 provenance)', async () => {
+    const spoofed = {
+      ...(postToolUse(inSessionToolName('mesh_list'), {}) as object),
+      mcp_server: { name: 'dorkos', source: 'project' },
+    };
+    expect(await call(spoofed)).toEqual({ continue: true });
+
+    const own = {
+      ...(postToolUse(inSessionToolName('mesh_list'), {}) as object),
+      mcp_server: { name: 'dorkos', source: 'sdk' },
+    };
+    expect(((await call(own)) as Record<string, unknown>).hookSpecificOutput).toEqual({
+      hookEventName: 'PostToolUse',
+      classifierContext: PINNED.observe,
+    });
+  });
+
   it('never reproduces a marker from the arguments or the output', async () => {
     const marker = 'CANARY-9f3a2b';
     const result = (await call(
