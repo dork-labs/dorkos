@@ -68,6 +68,12 @@ export interface CommunityContextSwitcherProps {
  * A phone switch to a remote Community can take seconds. Focus moving in that
  * time is not enough to say the person moved it — a composer takes focus on
  * mount by itself — so what counts is their own hand on a key or the screen.
+ *
+ * **Any key counts, on purpose** — Shift, Tab and arrows included, not only
+ * keys that type. A person pressing Tab is steering focus themselves, and one
+ * holding Shift is mid-way to doing something; either way the switcher yanking
+ * focus to the heading would fight them. Missing a heading announcement is the
+ * cheaper mistake.
  */
 function watchPersonInput(): { acted: () => boolean; stop: () => void } {
   let acted = false;
@@ -258,7 +264,10 @@ export function CommunityContextSwitcher({
     if (!landed) holdCloseFocus.current = false;
     if (personActed) return;
     if (landed) {
-      focusPageHeading();
+      // The heading may still be waiting for its full name; the person can act
+      // during that wait too, and wins if they do.
+      const late = watchPersonInput();
+      void focusPageHeading({ cancelled: late.acted }).finally(late.stop);
       return;
     }
     const active = document.activeElement;

@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { PageHeading, focusPageHeading } from '../page-heading';
+import { PAGE_HEADING_PENDING_WAIT_MS, PageHeading, focusPageHeading } from '../page-heading';
 
 afterEach(() => cleanup());
 
@@ -94,5 +94,54 @@ describe('focusPageHeading', () => {
     focusPageHeading();
     await new Promise((resolve) => requestAnimationFrame(resolve));
     expect(button).toHaveFocus();
+  });
+
+  it('waits for a pending heading’s full name, so focus lands on all of it', async () => {
+    const { rerender } = render(
+      <main>
+        <PageHeading pending>Alpha</PageHeading>
+      </main>
+    );
+    const heading = screen.getByRole('heading', { level: 1 });
+    // What the heading said at the moment it took focus: what gets read aloud.
+    const spoken: string[] = [];
+    heading.addEventListener('focus', () => spoken.push(heading.textContent ?? ''));
+    const focused = focusPageHeading();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(heading).not.toHaveFocus();
+    rerender(
+      <main>
+        <PageHeading>Alpha · General</PageHeading>
+      </main>
+    );
+    await expect(focused).resolves.toBe(true);
+    expect(heading).toHaveFocus();
+    expect(spoken).toEqual(['Alpha · General']);
+  });
+
+  it('stops waiting after a short cap, so a name that never comes cannot hold focus back', async () => {
+    render(
+      <main>
+        <PageHeading pending>Alpha</PageHeading>
+      </main>
+    );
+    const started = performance.now();
+    await expect(focusPageHeading()).resolves.toBe(true);
+    expect(performance.now() - started).toBeGreaterThanOrEqual(PAGE_HEADING_PENDING_WAIT_MS - 50);
+    expect(screen.getByRole('heading', { name: 'Alpha' })).toHaveFocus();
+  });
+
+  it('gives up if the person acts while it waits', async () => {
+    render(
+      <main>
+        <PageHeading pending>Alpha</PageHeading>
+      </main>
+    );
+    let acted = false;
+    const focused = focusPageHeading({ cancelled: () => acted });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    acted = true;
+    await expect(focused).resolves.toBe(false);
+    expect(screen.getByRole('heading', { name: 'Alpha' })).not.toHaveFocus();
   });
 });

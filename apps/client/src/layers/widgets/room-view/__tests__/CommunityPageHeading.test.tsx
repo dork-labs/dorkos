@@ -13,6 +13,7 @@ const { state, roomQuery } = vi.hoisted(() => ({
     connections: [{ ref: 'alpha', label: 'Alpha', access: null }] as
       Array<{ ref: string; label: string; access: null }> | undefined,
     roomTitle: 'General' as string | undefined,
+    roomFetch: 'idle' as 'idle' | 'fetching',
   },
   roomQuery: vi.fn(),
 }));
@@ -21,10 +22,13 @@ vi.mock('@/layers/entities/community', () => ({
     capabilities: { read: true },
     fingerprint: 'fp',
   }),
-  useCommunityConnections: () => ({ data: state.connections }),
+  useCommunityConnections: () => ({ data: state.connections, fetchStatus: 'idle' }),
   useRemoteCommunityRoom: (...args: unknown[]) => {
     roomQuery(...args);
-    return { data: state.roomTitle ? { title: state.roomTitle } : undefined };
+    return {
+      data: state.roomTitle ? { title: state.roomTitle } : undefined,
+      fetchStatus: state.roomFetch,
+    };
   },
 }));
 
@@ -33,6 +37,7 @@ afterEach(() => {
   vi.clearAllMocks();
   state.connections = [{ ref: 'alpha', label: 'Alpha', access: null }];
   state.roomTitle = 'General';
+  state.roomFetch = 'idle';
 });
 
 describe('CommunityPageHeading', () => {
@@ -42,10 +47,23 @@ describe('CommunityPageHeading', () => {
     expect(roomQuery).toHaveBeenCalledWith('alpha', 'room-1', true, 'fp');
   });
 
-  it('says the Community alone until the channel’s name arrives', () => {
+  it('says the Community alone until the channel’s name arrives, and marks itself unfinished', () => {
+    state.roomTitle = undefined;
+    state.roomFetch = 'fetching';
+    render(<CommunityPageHeading community="alpha" roomId="room-1" />);
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading).toHaveTextContent(/^Alpha$/);
+    expect(heading).toHaveAttribute('data-pending');
+  });
+
+  it('is finished once the name is in, or when no name is coming', () => {
+    render(<CommunityPageHeading community="alpha" roomId="room-1" />);
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveAttribute('data-pending');
+    cleanup();
+    // The channel cannot be read, so its name is not being fetched at all.
     state.roomTitle = undefined;
     render(<CommunityPageHeading community="alpha" roomId="room-1" />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Alpha$/);
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveAttribute('data-pending');
   });
 
   it('asks for no channel when the route names none', () => {

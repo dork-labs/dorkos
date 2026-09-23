@@ -11,6 +11,26 @@ export interface PageHeadingProps extends Omit<React.ComponentPropsWithoutRef<'h
    * bar's room name — never to add a second title under a bar that has one.
    */
   visible?: boolean;
+  /**
+   * The words are not all here yet ("Alpha" while "General" is on its way).
+   * {@link focusPageHeading} waits a moment for them, so a screen reader reads
+   * the whole name once rather than the first half of it.
+   */
+  pending?: boolean;
+}
+
+/**
+ * How long {@link focusPageHeading} waits for a pending heading's full name.
+ *
+ * Short on purpose: past this, the partial name now beats silence. A name
+ * that never arrives (the channel cannot be read) must not hold focus hostage.
+ */
+export const PAGE_HEADING_PENDING_WAIT_MS = 1_500;
+
+/** Options for {@link focusPageHeading}. */
+export interface FocusPageHeadingOptions {
+  /** Checked every frame; `true` abandons the move (the person acted meanwhile). */
+  cancelled?: () => boolean;
 }
 
 /**
@@ -28,11 +48,18 @@ export interface PageHeadingProps extends Omit<React.ComponentPropsWithoutRef<'h
  * arrived instead of nothing, and the next Tab starts at the top of the page.
  * Ordinary navigation never moves focus to it; see {@link focusPageHeading}.
  */
-export function PageHeading({ className, children, visible = false, ...props }: PageHeadingProps) {
+export function PageHeading({
+  className,
+  children,
+  visible = false,
+  pending = false,
+  ...props
+}: PageHeadingProps) {
   return (
     <h1
       {...props}
       data-page-heading=""
+      data-pending={pending ? '' : undefined}
       tabIndex={-1}
       // A drawn heading takes focus without a ring: it is where you arrived,
       // not a control, and its text already says so.
@@ -53,17 +80,36 @@ export function PageHeading({ className, children, visible = false, ...props }: 
  * in a dialog is never the target. Does nothing when the page has none.
  *
  * The frame lets the router's commit paint first: called the moment a
- * navigation resolves, the old page's heading can still be in the tree.
+ * navigation resolves, the old page's heading can still be in the tree. A
+ * heading marked `pending` is waited for, frame by frame, until its full name
+ * is in or {@link PAGE_HEADING_PENDING_WAIT_MS} has passed — focus is what
+ * makes a screen reader speak, so it lands on the finished name.
+ *
+ * @param options - `cancelled`, to abandon the move if the person acts first.
+ * @returns Whether a heading was focused.
  */
-export function focusPageHeading(): void {
-  requestAnimationFrame(() => {
-    const heading =
-      firstOutsideDialogs('main [data-page-heading]') ??
-      firstOutsideDialogs('[data-page-heading]') ??
-      firstOutsideDialogs('main h1');
-    if (!heading) return;
-    if (!heading.hasAttribute('tabindex')) heading.tabIndex = -1;
-    heading.focus({ preventScroll: true });
+export function focusPageHeading({ cancelled }: FocusPageHeadingOptions = {}): Promise<boolean> {
+  const started = performance.now();
+  return new Promise((resolve) => {
+    const attempt = () => {
+      if (cancelled?.()) return resolve(false);
+      const heading =
+        firstOutsideDialogs('main [data-page-heading]') ??
+        firstOutsideDialogs('[data-page-heading]') ??
+        firstOutsideDialogs('main h1');
+      if (!heading) return resolve(false);
+      if (
+        heading.hasAttribute('data-pending') &&
+        performance.now() - started < PAGE_HEADING_PENDING_WAIT_MS
+      ) {
+        requestAnimationFrame(attempt);
+        return;
+      }
+      if (!heading.hasAttribute('tabindex')) heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
+      resolve(true);
+    };
+    requestAnimationFrame(attempt);
   });
 }
 

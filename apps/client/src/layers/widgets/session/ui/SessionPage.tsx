@@ -2,7 +2,12 @@ import { useCallback } from 'react';
 import { ChatPanel } from './ChatPanel';
 import { useSessionCanvas } from '@/layers/features/canvas';
 import { useRightPanelLayoutPersistence } from '@/layers/features/right-panel';
-import { useSessionId, useSessionRekeyTarget, useSessionSearch } from '@/layers/entities/session';
+import {
+  useSessionDetail,
+  useSessionId,
+  useSessionRekeyTarget,
+  useSessionSearch,
+} from '@/layers/entities/session';
 import { useInPlaceNavigate } from '@/layers/shared/model';
 import { PageHeading } from '@/layers/shared/ui';
 import { useMessageLanding } from '../model/use-message-landing';
@@ -41,6 +46,13 @@ export function SessionPage() {
   const { runtime, prompt, send, seed, message } = useSessionSearch();
   const inPlaceNavigate = useInPlaceNavigate();
   const landOnRow = useMessageLanding(activeSessionId, message);
+  // The heading says which session this is, from the one session cache the
+  // bar and the list read. `enabled: false`, as in the shell: this page reports
+  // the session's name, it never fetches the row itself (see `AppShell`).
+  const { data: sessionTitle } = useSessionDetail(activeSessionId, {
+    enabled: false,
+    select: (session) => session.title,
+  });
   // **Whether the id in the URL is the session's canonical one.** A brand-new
   // session streams under the request UUID this client minted and is renamed
   // mid-first-turn; while that rename is known and the URL has not moved yet,
@@ -71,7 +83,7 @@ export function SessionPage() {
 
   return (
     <>
-      <PageHeading>Session</PageHeading>
+      <PageHeading>{sessionTitle?.trim() ? sessionTitle : 'Session'}</PageHeading>
       <ChatPanel
         sessionId={activeSessionId}
         launchRuntime={runtime}

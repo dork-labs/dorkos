@@ -61,7 +61,12 @@ const mockUseSessionSearch = vi.fn<
   () => { runtime?: string; prompt?: string; send?: '1'; message?: string }
 >(() => ({}));
 const mockRekeyTarget = vi.fn<() => string | null>(() => null);
+const mockSessionTitle = vi.fn<() => string | undefined>(() => undefined);
+const mockUseSessionDetail = vi.fn((_id: unknown, _options: unknown) => ({
+  data: mockSessionTitle(),
+}));
 vi.mock('@/layers/entities/session', () => ({
+  useSessionDetail: (id: unknown, options: unknown) => mockUseSessionDetail(id, options),
   useSessionId: () => ['session-abc', vi.fn()],
   useSessionSearch: () => mockUseSessionSearch(),
   useSessionRekeyTarget: () => mockRekeyTarget(),
@@ -90,6 +95,23 @@ describe('SessionPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRekeyTarget.mockReturnValue(null);
+    mockSessionTitle.mockReturnValue(undefined);
+  });
+
+  it('heads the page with the session’s own title, read from the cache without a fetch', () => {
+    mockSessionTitle.mockReturnValue('Fix the login bug');
+    render(<SessionPage />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Fix the login bug');
+    expect(mockUseSessionDetail).toHaveBeenCalledWith(
+      'session-abc',
+      expect.objectContaining({ enabled: false })
+    );
+  });
+
+  it('says "Session" while the session has no title yet', () => {
+    mockSessionTitle.mockReturnValue('   ');
+    render(<SessionPage />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Session$/);
   });
 
   /**

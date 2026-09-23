@@ -20,7 +20,9 @@ export interface CommunityPageHeadingProps {
  * they are — two Communities can each have a General. It reads the same two
  * queries the channel bar reads (`RemoteChannelsBar`), so it costs no request
  * and can never name a different room than the bar does. Until the channel's
- * name arrives, and when the route names no channel, it is the Community alone.
+ * name arrives, and when the route names no channel, it is the Community alone
+ * — marked `pending` while a name is still being fetched, so focus waits for
+ * the whole of it (`focusPageHeading`).
  */
 export function CommunityPageHeading({ community, roomId }: CommunityPageHeadingProps) {
   const connections = useCommunityConnections();
@@ -34,5 +36,9 @@ export function CommunityPageHeading({ community, roomId }: CommunityPageHeading
   );
   const label = connection?.label ?? 'Community';
   const title = roomId ? room.data?.title : undefined;
-  return <PageHeading>{title ? `${label} · ${title}` : label}</PageHeading>;
+  // Still on its way: a half-name read aloud is the half a person remembers.
+  const pending =
+    (connection === undefined && connections.fetchStatus === 'fetching') ||
+    (roomId !== undefined && title === undefined && room.fetchStatus === 'fetching');
+  return <PageHeading pending={pending}>{title ? `${label} · ${title}` : label}</PageHeading>;
 }

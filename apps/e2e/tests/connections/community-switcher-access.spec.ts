@@ -240,6 +240,22 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
     await page.goto('/tasks');
     await new BasePage(page).waitForAppReady();
     const trigger = page.getByTestId('sidebar-header-block');
+    // What each page heading said at the moment it took focus: that is what a
+    // screen reader reads aloud, so it has to be the whole name, not "Beta".
+    await page.evaluate(() => {
+      const spoken: string[] = [];
+      (window as unknown as { __spokenHeadings: string[] }).__spokenHeadings = spoken;
+      document.addEventListener(
+        'focusin',
+        (event) => {
+          const target = event.target as Element;
+          if (target.matches('h1[data-page-heading]')) spoken.push(target.textContent ?? '');
+        },
+        true
+      );
+    });
+    const spokenHeadings = () =>
+      page.evaluate(() => (window as unknown as { __spokenHeadings: string[] }).__spokenHeadings);
 
     // Into a Community: the heading names the Community and then the channel,
     // and it is where focus is once the channel has opened (DOR-2240).
@@ -250,6 +266,7 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
     const heading = page.getByRole('main').getByRole('heading', { level: 1 });
     await expect(heading).toHaveAccessibleName('Beta · General');
     await expect(heading).toBeFocused();
+    expect(await spokenHeadings()).toEqual(['Beta · General']);
     // Not drawn: the bar above already names the channel.
     expect((await heading.boundingBox())?.width ?? 0).toBeLessThanOrEqual(1);
     const shot = testInfo.outputPath('switcher-heading-focus-390.png');

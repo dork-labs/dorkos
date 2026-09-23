@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): move focus to the new page heading after a phone context switch'
+  - 'fix(client): focus the page heading once its full name is in, and name sessions by title'
 ---
 
 ### Changed
