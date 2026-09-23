@@ -1,6 +1,6 @@
 # Administration isolation verification
 
-Status: in progress. Refs DOR-2178. This receipt covers two proofs, a strengthened deletion proof and a foreign-object matrix. The role matrix, every role on every administration action, has its own receipt in `04-role-matrix-verification.md`.
+Status: complete. Refs DOR-2178. This receipt covers two proofs, a strengthened deletion proof and a foreign-object matrix. The role matrix, every role on every administration action, has its own receipt in `04-role-matrix-verification.md`.
 
 The real HTTP/PostgreSQL deletion journey now keeps another active community populated with a private channel, a posted attachment, and an authenticated live stream while the target community is deleted. The existing journey includes an in-flight export, uncertain blob cleanup, an injected provider failure, and a later worker retry.
 
@@ -17,7 +17,14 @@ Verification:
 
 Independent review of the deletion proof as first written (commit `b0b9d87c6`, before it was cherry-picked onto `main` unchanged): zero Important findings and zero Nits.
 
-Remaining: composed acceptance with the final membership/navigation changes, the upgrade matrix (the permission matrix is now in `04-role-matrix-verification.md`), and a coordinated backup/restore rehearsal. No live deployment or production data was changed by this proof.
+Remaining: none for this receipt. The items once listed here have landed:
+
+- Composed acceptance with the final membership and navigation changes: a two-Desktop acceptance run on `main` 30df6cdc2, 20/20 steps, after community switching landed (#1992).
+- The upgrade matrix: a populated version-four host upgrades intact (#1994, `migrate.integration.test.ts`); the tenancy proof pack is in `specs/community-tenancy-contract/05-isolation-receipt.md` (#2000).
+- The permission matrix: `04-role-matrix-verification.md` (#2001).
+- The backup/restore rehearsal: `apps/community/scripts/rehearse-backup-restore.mjs` (#1988), run as described in `apps/community/OPERATIONS.md`.
+
+The one open item for the wider programme, administration with Cloud egress blocked, is tracked in `04-implementation.md`. No live deployment or production data was changed by this proof.
 
 ## Foreign-object matrix
 

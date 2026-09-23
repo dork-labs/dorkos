@@ -3079,7 +3079,7 @@
       "slug": "community-administration-contract",
       "title": "Community administration lifecycle contract",
       "created": "2026-09-20",
-      "status": "implemented",
+      "status": "specified",
       "project": "Community Administration",
       "linearIssue": "DOR-2175"
     },
