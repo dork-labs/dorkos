@@ -1,0 +1,99 @@
+{
+  "spec": "specs/marketplace-fetch-integrity/02-specification.md",
+  "slug": "marketplace-fetch-integrity",
+  "generatedAt": "2026-09-23T16:40:00Z",
+  "mode": "full",
+  "lastDecomposeDate": "2026-09-23",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Verified fetch and cache",
+      "subject": "[marketplace-fetch-integrity] [P1] Share the GitHub token rewrite",
+      "description": "Extract `withGitHubToken(url, auth)` from `execGitClone` in `services/core/template-downloader.ts`; `execGitClone` calls it. Tests: the token reaches only an https GitHub host on the default port with no userinfo, exactly the old gate.",
+      "activeForm": "Extracting the token rewrite",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Verified fetch and cache",
+      "subject": "[marketplace-fetch-integrity] [P1] Build the git tree primitive",
+      "description": "New `services/marketplace/lib/git-tree.ts`: `isFullCommitSha`, `lookupRemoteRef` (exact refnames, branch before tag, tags peeled, full SHA as itself, found/missing/unreachable), `fetchTree` (init, sparse for a subpath, fetch by SHA at depth 1, refname fallback on an unadvertised-object refusal, branches+tags fallback for a pin, checkout, HEAD verified, .git removed), `gitTreeSource`, `GitRefNotFoundError`, `GitCommitNotFoundError`, `GitRemoteUnreachableError`. Real-git tests over file:// (hardenedGitEnv mocked to allow file) for every case in spec Testing Strategy, written first.",
+      "activeForm": "Building the git tree primitive",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 — Verified fetch and cache",
+      "subject": "[marketplace-fetch-integrity] [P1] Key cache entries by the verified commit",
+      "description": "`MarketplaceCache`: root `trees/`; `materializePackage(name, expectedSha, fetch)` returns `{ path, commitSha }` keyed by the commit the fetch returns and refuses a non-commit; `putPackage` removed; `removeLegacyPackages()`. Tests updated (incl. route test seeds).",
+      "activeForm": "Rewriting the cache write path",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "P1 — Verified fetch and cache",
+      "subject": "[marketplace-fetch-integrity] [P1] Route every git form through one fetch",
+      "description": "`PackageFetcher` takes a `GitTreeSource`; `fetchGitTree` (assert, lookup, hit, materialize); `lookupCommitSha` via `lookupRemoteRef`; `FetcherDeps = { fetchGitTree }`; `source-resolvers/git.ts` replaces github/url/git-subdir; index.ts wiring + startup legacy removal; `cloneRepository`/`TemplateDownloader` removed. All stubbing suites moved to a fake `GitTreeSource`.",
+      "activeForm": "Routing git sources through one fetch",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.2",
+        "1.3"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.5",
+      "phase": 1,
+      "phaseName": "P1 — Verified fetch and cache",
+      "subject": "[marketplace-fetch-integrity] [P1] Fetch a ref-less source at the default branch",
+      "description": "`DEFAULT_REF = 'HEAD'` in `packages/marketplace/src/source-resolver.ts`; tests; the `flows/update.ts` comment.",
+      "activeForm": "Changing the default ref",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "1.4"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.6",
+      "phase": 1,
+      "phaseName": "P1 — Verified fetch and cache",
+      "subject": "[marketplace-fetch-integrity] [P1] Document the verified fetch",
+      "description": "`contributing/marketplace-installs.md`, `contributing/marketplace-registry.md`, installer comments (the DOR-2248 limit is gone), changelog fragment, spec 04-implementation.",
+      "activeForm": "Documenting the change",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "1.4",
+        "1.5"
+      ],
+      "parallelWith": [],
+      "issue": null
+    }
+  ]
+}
