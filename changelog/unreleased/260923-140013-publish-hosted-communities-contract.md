@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(cloud-api): publish the hosted communities contract'
+  - 'fix(cloud-api): address review of the hosted communities contract'
 ---
 
 ### Added
