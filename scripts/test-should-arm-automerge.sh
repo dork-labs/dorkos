@@ -137,6 +137,7 @@ check "queue history absent"         "SKIP queue-history-unknown" 'del(.queueRem
 check "queue history null"           "SKIP queue-history-unknown" '.queueRemovals = null'
 check "head push time unknown"       "SKIP queue-history-unknown" ".queueRemovals = [$E1] | .headSince = null"
 check "unknown push, no ejections"   "ARM"                        '.headSince = null'
+check "junk removal entries ignored" "ARM"                        ".queueRemovals = [\"x\", 3, null, $E1]"
 check "hold outranks repeat"         "SKIP held-by-label"         ".queueRemovals = [$E1, $E2] | .labels = [\"hold\"]"
 check "red PR check outranks repeat" "SKIP failing-checks"        ".queueRemovals = [$E1, $E2] | .checks[0].bucket = \"fail\""
 

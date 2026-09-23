@@ -105,7 +105,8 @@ REPEATS_DEF='
   def history_known:
     ((.queueRemovals | type) == "array")
     and ( (.headSince // null) != null
-          or ([.queueRemovals[] | select(((.failedChecks // []) | length) > 0)] | length) == 0 );
+          or ([.queueRemovals[] | select(type == "object")
+               | select(((.failedChecks // []) | length) > 0)] | length) == 0 );
 '
 
 mode=verdict
