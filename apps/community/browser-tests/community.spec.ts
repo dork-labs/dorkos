@@ -64,6 +64,7 @@ test.beforeAll(async () => {
     '/',
     '/host',
     '/join',
+    '/claim',
     '/pairing',
     '/c/:communityId',
     '/c/:communityId/join',
@@ -969,7 +970,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await ownerPage.getByRole('button', { name: 'Create community' }).click();
     await expect(ownerPage.getByLabel('Retry Community community')).toHaveCount(1);
     await expect(ownerPage.getByRole('status')).toContainText('Use Reissue owner claim');
-    await expect(ownerPage.getByLabel('Claim token')).toHaveCount(0);
+    await expect(ownerPage.getByLabel('Owner claim link')).toHaveCount(0);
     await ownerPage.unroute('**/api/v1/host/communities');
   } finally {
     await owner.close();

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { describeError, request } from '../api.js';
+import { ownerClaimLink } from '../owner-claim.js';
 import { FocusDialog } from './CommunityAdministration.js';
 
 type Lifecycle = 'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
@@ -21,6 +22,62 @@ function shortId(id: string) {
   return id.slice(-8);
 }
 
+/**
+ * Show a freshly minted owner claim as a link the intended owner opens.
+ *
+ * The secret stays in the link fragment, so the owner's browser never sends it in a page request.
+ */
+function OwnerClaimHandoff({
+  claim,
+  copied,
+  onCopied,
+}: {
+  claim: Claim;
+  copied: boolean;
+  onCopied: () => void;
+}) {
+  const link = ownerClaimLink(window.location.origin, claim.ownerClaimToken);
+  const input = useRef<HTMLInputElement>(null);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link);
+      onCopied();
+    } catch {
+      // Clipboard access can be refused; select the link so the person can copy it by hand.
+      input.current?.select();
+    }
+  }
+  return (
+    <div className="notice mt-4">
+      <strong>Send this to the new owner</strong>
+      <p className="small">
+        Send this link only to the person who will own the community. It works once, expires{' '}
+        {new Date(claim.expiresAt).toLocaleString()}, and will not be shown again. You can open it
+        yourself to become the owner.
+      </p>
+      <div className="field mb-2">
+        <label htmlFor="owner-claim-link">Owner claim link</label>
+        <div className="row">
+          <input
+            id="owner-claim-link"
+            ref={input}
+            className="min-w-0 flex-1"
+            readOnly
+            value={link}
+            onFocus={(event) => event.currentTarget.select()}
+          />
+          <button className="button shrink-0" type="button" onClick={() => void copy()}>
+            {copied ? 'Copied' : 'Copy link'}
+          </button>
+        </div>
+      </div>
+      <p className="small muted mb-0" aria-live="polite">
+        {copied ? 'Link copied. ' : ''}Claim ID: {claim.grantId}
+      </p>
+    </div>
+  );
+}
+
 /** Manage Community tenants without requesting any tenant content. */
 export function HostAdministration() {
   const [communities, setCommunities] = useState<Community[] | null>(null);
@@ -28,6 +85,7 @@ export function HostAdministration() {
   const [description, setDescription] = useState('');
   const [admissionPolicy, setAdmissionPolicy] = useState<'invite_only' | 'closed'>('invite_only');
   const [claim, setClaim] = useState<Claim | null>(null);
+  const [copied, setCopied] = useState(false);
   const [revokeGrantId, setRevokeGrantId] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -83,6 +141,7 @@ export function HostAdministration() {
           description: description || null,
           admissionPolicy,
         });
+        setCopied(false);
         if (body.ownerClaimToken)
           setClaim({
             grantId: body.ownerClaimGrantId,
@@ -96,8 +155,8 @@ export function HostAdministration() {
       },
       () =>
         replayedWithoutClaim
-          ? 'The community was already created, but its claim secret cannot be shown again. Use Reissue owner claim on the pending record.'
-          : 'Community created. Share the owner claim only with its owner.'
+          ? 'The community was already created, but its owner claim link cannot be shown again. Use Reissue owner claim on the pending record.'
+          : 'Community created. Send the owner claim link only to its owner.'
     );
   }
 
@@ -185,20 +244,7 @@ export function HostAdministration() {
             </button>
           </form>
           {claim && (
-            <div className="notice mt-4" role="status">
-              <strong>Owner claim</strong>
-              <p className="small">
-                Share this once. It expires {new Date(claim.expiresAt).toLocaleString()}.
-              </p>
-              <label htmlFor="owner-claim-token">Claim token</label>
-              <input
-                id="owner-claim-token"
-                readOnly
-                value={claim.ownerClaimToken}
-                onFocus={(event) => event.currentTarget.select()}
-              />
-              <p className="small muted mb-0">Claim ID: {claim.grantId}</p>
-            </div>
+            <OwnerClaimHandoff claim={claim} copied={copied} onCopied={() => setCopied(true)} />
           )}
         </section>
         <section className="panel">
@@ -241,8 +287,9 @@ export function HostAdministration() {
                                 'POST',
                                 {}
                               );
+                              setCopied(false);
                               setClaim(body);
-                            }, 'A new owner claim is ready to share.')
+                            }, 'A new owner claim link is ready to send.')
                           }
                         >
                           Reissue owner claim

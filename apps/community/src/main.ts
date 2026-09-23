@@ -29,6 +29,10 @@ app.get(
   serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
 );
 app.get(
+  '/claim',
+  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
+);
+app.get(
   '/pairing',
   serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
 );
