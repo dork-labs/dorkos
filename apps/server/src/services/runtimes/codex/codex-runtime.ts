@@ -704,7 +704,9 @@ export class CodexRuntime implements AgentRuntime {
 
       const accessContext =
         connectorTools && this.connectorRuntimeTools && meshAgent
-          ? await this.accountsAccess.select(this.connectorRuntimeTools, meshAgent.id, sessionId)
+          ? await this.accountsAccess.select(this.connectorRuntimeTools, meshAgent.id, sessionId, {
+              serviceCatalog: Boolean(dorkosTools),
+            })
           : undefined;
       const turnOpts = accessContext
         ? { ...opts, additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry] }

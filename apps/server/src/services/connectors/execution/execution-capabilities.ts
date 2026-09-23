@@ -25,6 +25,7 @@ import {
 import type { ConnectorExecutionAuthorizationService } from './authorization-service.js';
 import type { ConnectorExecutionBroker } from './execution-broker.js';
 import type { ConnectorRuntimeExecutionCapabilityId } from '../runtime-capability-scope.js';
+import { SERVICE_CATALOG_TOOL_NAME } from '../connector-capabilities.js';
 import {
   ConnectorAgentRequestError,
   type ConnectorAgentRequestService,
@@ -229,8 +230,10 @@ const requestConnection = defineCapability({
   title: 'Request service access',
   description:
     'Ask the owner for access to one service when the granted connections do not cover the work. ' +
-    'Name only the service actions and events needed and explain why. The owner chooses the account ' +
-    'and exact access; this call never lists accounts or grants access by itself.',
+    `serviceSlug is an exact service id; find it with ${SERVICE_CATALOG_TOOL_NAME} instead of ` +
+    'guessing. Name only the service actions and events needed and explain why. The owner chooses ' +
+    'the account and exact access; this call never lists accounts or grants access by itself. A ' +
+    'command-line login in a shell does not grant access; only the owner connects services.',
   tier: 'observe',
   input: ConnectorAgentConnectionRequestInputSchema,
   output: ConnectorAgentRequestStatusSchema,

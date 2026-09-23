@@ -193,6 +193,15 @@ export class ComposioConnectorProvider implements ConnectorProvider {
   readonly type = COMPOSIO_PROVIDER_TYPE;
 
   private readonly _client: ComposioHttpClient;
+  /**
+   * One upstream listing per catalog read. Composio has no server-side paging
+   * that matches ours, so each page is a slice of the whole list. A caller
+   * pages one read under one signal; keying on it fetches the list once for
+   * that read (instead of once per page, which cost ~81 calls for ~850
+   * services) and lets the entry go with the signal. It is never a cache
+   * across reads.
+   */
+  private readonly _toolkitsByRead = new WeakMap<AbortSignal, Promise<ConnectorToolkit[]>>();
   private readonly _operationClient: ComposioOperationClient | null;
   readonly #executionConfigDigest: string | undefined;
 
@@ -256,7 +265,7 @@ export class ComposioConnectorProvider implements ConnectorProvider {
 
   async listToolkitPage(request: ConnectorCatalogPageRequest) {
     request.signal.throwIfAborted();
-    const all = (await this.listToolkits()).filter((toolkit) =>
+    const all = (await this._toolkitsForRead(request.signal)).filter((toolkit) =>
       request.query ? toolkit.displayName.toLowerCase().includes(request.query.toLowerCase()) : true
     );
     const offset = request.cursor ? Number(request.cursor) : 0;
@@ -354,11 +363,23 @@ export class ComposioConnectorProvider implements ConnectorProvider {
     });
   }
 
-  async listToolkits(): Promise<ConnectorToolkit[]> {
+  private _toolkitsForRead(signal: AbortSignal): Promise<ConnectorToolkit[]> {
+    const existing = this._toolkitsByRead.get(signal);
+    if (existing) return existing;
+    const read = this.listToolkits(signal);
+    this._toolkitsByRead.set(signal, read);
+    // A failed listing is not remembered; the caller already sees the rejection.
+    read.catch(() => {
+      if (this._toolkitsByRead.get(signal) === read) this._toolkitsByRead.delete(signal);
+    });
+    return read;
+  }
+
+  async listToolkits(signal?: AbortSignal): Promise<ConnectorToolkit[]> {
     // A failure propagates on purpose: the registry aggregation converts it to
     // a per-provider warning the client renders. Degrading to [] here made a
     // real 401 look like "no services" with no explanation (DOR-703).
-    const toolkits = await this._client.listToolkits();
+    const toolkits = await this._client.listToolkits(signal);
     return toolkits.map((tk) => ({
       slug: tk.slug,
       displayName: tk.name,
