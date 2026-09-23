@@ -3,6 +3,7 @@ covers:
   - 'refactor(server): share the GitHub token rewrite as withGitHubToken (DOR-2248)'
   - "feat(server): fetch exactly one verified commit's tree from a git remote (DOR-2248)"
   - 'fix(server): cache a package under the commit its checkout holds (DOR-2248)'
+  - 'refactor(server): keep git-tree internals unexported (DOR-2248)'
 ---
 
 ### Fixed
