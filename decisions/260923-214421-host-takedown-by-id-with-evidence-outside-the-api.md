@@ -20,7 +20,7 @@ A host that learns it stores illegal content must usually remove it at once and 
 
 ## Decision
 
-A new scope, `communities:takedown` (a person also re-enters their password), lets host authority take down one entry, one file, or a whole community by id. Content is hidden from every reader in the same transaction (the shared tombstone for entries; access revoked and `deletion_pending` for a community), and ready exports are deleted. No takedown response or route ever carries content. When the host configures an evidence store (a filesystem path or bucket separate from primary storage), the server holds the bytes unreachable, writes the content, the files, and who posted them to that store with put-only access, and only then deletes the primary bytes; `record.json` is written last so a complete copy is recognisable. Without a store, takedowns still work and purge at once. The owner and author get a category and reference unless the host withholds them. A community takedown can be reversed by the host, to `suspended`, until deletion begins. There is no two-person rule.
+A new scope, `communities:takedown` (a person also re-enters their password), lets host authority take down one entry, one file, or a whole community by id. Content is hidden from every reader in the same transaction (the shared tombstone for entries; access revoked and `deletion_pending` for a community), and ready exports are deleted. No takedown response or route ever carries content. When the host configures an evidence store (a filesystem path or bucket separate from primary storage), the server holds the bytes unreachable, writes the content, the files, and who posted them to that store with put-only access, and only then deletes the primary bytes; `record.json` is written last so a complete copy is recognisable. Without a store, takedowns still work; bytes are purged at once, except for child sexual abuse material and legal orders, which stay unreachable on primary storage until a host operator releases them. The owner and author get a category and reference unless the host withholds them. A community takedown can be reversed by the host, to `suspended`, for at least 24 hours, and community takedowns are rate limited per actor with a warning log line each. Notices default to off for child-safety takedowns. There is no two-person rule.
 
 ## Consequences
 
@@ -29,6 +29,7 @@ A new scope, `communities:takedown` (a person also re-enters their password), le
 - Illegal content leaves members' view immediately, without an export window for the uploader.
 - Evidence is preserved outside the API; a leaked takedown key can remove content but cannot read it.
 - Takedowns reuse the removal module, the deletion worker, and the export job.
+- The redaction feed (member erasure task 2.1) becomes a launch blocker, so taken-down text leaves members' DorkOS copies too.
 
 ### Negative
 

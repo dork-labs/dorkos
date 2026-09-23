@@ -17,7 +17,7 @@ project: Cloud-Hosted Communities
 
 A person on a Community host can erase themselves from one community, or delete their account and be erased from every community on the host. After a 72-hour window in which they can cancel, the server removes their name, handle, account link, messages, files, agents, and connections, and rewrites mentions of them in other people's messages. Their messages stay in place in threads as `This message was erased.` so conversations keep their shape. Every live export in the community is deleted.
 
-That is phase 1, the hosted-community launch blocker. Two more tasks follow: the community owner erasing a former member, including an imported historical member (task 1.2, after import exists), and a content-free redaction feed that lets DorkOS installations replace their cached copies (task 2.1).
+Phase 1 task 1.1 and phase 2 task 2.1 are both hosted-community launch blockers (task 2.1 since 2026-09-23: a host takedown, `specs/community-host-takedown/`, must also leave members' DorkOS copies). Two more tasks follow: the community owner erasing a former member, including an imported historical member (task 1.2, after import exists), and a content-free redaction feed that lets DorkOS installations replace their cached copies (task 2.1).
 
 Erasure belongs to the person and to the community owner. Host authority (a host operator's session or a host API key) cannot request, cancel, speed up, or observe one. This keeps the rule from the host-operator API spec (its Open Question 7) and ADR `260920-201101`: host authority never reads or writes community content.
 
@@ -372,7 +372,7 @@ None for PostgreSQL or the BlobStore (real ones, as the tenancy suites do). The 
 
 - **Phase 1, task 1.1 — Self-erasure on the Community server (host launch blocker).** Migration; procedures, worker, account routes, guards, pairing cleanup, export changes, owner deletion from `suspended` and `held`, journal and reapply CLI, browser flows, docs. AC-1 to AC-12 except the parts marked (1.2) or (2.1).
 - **Phase 1, task 1.2 — The owner erases a former member.** After the import task (host-operator API task 4.2). Owner routes, re-admission handling, the target's view and export, the `deletion_pending` owner case, owner UI. The (1.2) parts of AC-6 to AC-10.
-- **Phase 2, task 2.1 — The redaction feed and DorkOS installations.** Not a host launch blocker: it reaches copies on members' own machines. Phase 1 writes `entry_redactions` from its first erasure, so this catches up on every earlier erasure. AC-12 (2.1 part), AC-13, AC-14.
+- **Phase 2, task 2.1 — The redaction feed and DorkOS installations (hosted launch blocker, DOR-2266).** It reaches copies on members' own machines. It became a launch blocker on 2026-09-23 (coordinator decision): without it, the text of a message a host took down for being illegal (`specs/community-host-takedown/`) stays in every member's DorkOS mirror and message search. Build order: `specs/community-single-item-delete/` task 1.1 lands first, because it moves the removal helpers into `content-removal.ts`, fixes their order (the content version is bumped, taking its row lock, **before** any `entry_redactions` row is inserted, so redaction ids become visible in the order they commit), and refactors erasure onto them; the feed's cursor relies on that order. Phase 1 writes `entry_redactions` from its first erasure, so this catches up on every earlier erasure. AC-12 (2.1 part), AC-13, AC-14.
 
 ### Backout
 
@@ -398,6 +398,10 @@ None open. Resolved while specifying:
 - ~~How do OAuth-only accounts reauthenticate?~~ (RESOLVED) **Answer:** a session less than 5 minutes old. **Rationale:** they must be able to erase themselves at launch; the general OIDC reauthentication follow-up (host-operator spec Open Question 5) can replace it.
 - ~~How does a host redo erasures after restoring a backup?~~ (RESOLVED) **Answer (operator):** both a retention requirement for the log or journal outside the backup set, and a redaction epoch in feed cursors that `erasure:reapply` bumps.
 - ~~Should the live stream announce erasures?~~ (RESOLVED) **Answer:** no; a separate pull-only feed (task 2.1). **Rationale:** a new event type breaks strict parsers in every older installation, and an epoch bump closes everyone's streams for no gain.
+
+## Changelog
+
+- **2026-09-23** — Task 2.1 (the redaction feed and DorkOS mirror replacement, DOR-2266) is now a hosted-launch blocker, because host takedowns rely on it. It is built after `specs/community-single-item-delete/` task 1.1, which refactors erasure's removal helpers into `content-removal.ts` and bumps the content version before inserting redaction rows.
 
 ## Related ADRs
 
