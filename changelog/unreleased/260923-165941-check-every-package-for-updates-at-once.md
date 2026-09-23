@@ -7,6 +7,7 @@ covers:
   - 'feat(cli): a name-less dorkos update is one request (DOR-2194)'
   - 'fix(marketplace): update exactly what was checked, in the scope it touches (DOR-2194)'
   - 'fix(marketplace): replace exactly the installation checked, and never fail on one bad check (DOR-2194)'
+  - 'fix(marketplace): answer git failures honestly and stop waiting on a silent marketplace (DOR-2194)'
 ---
 
 ### Added
@@ -16,3 +17,4 @@ covers:
 ### Fixed
 
 - Updating a package with `--project` no longer moves a package that is installed for everything into that one project. Each package is now updated where it is installed (DOR-2194)
+- A marketplace whose server stops answering no longer stalls an update check for minutes. After 15 seconds the check falls back to the last copy DorkOS saved, or says it couldn't reach the server (DOR-2194)
