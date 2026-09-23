@@ -8,10 +8,11 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { DiscoveryStrategy } from '../types.js';
 import { readManifest, probeManifest } from '../manifest.js';
 import type { ScanEvent, ScanProgress, UnifiedScanOptions } from './types.js';
-import { UNIFIED_EXCLUDE_PATTERNS, BACKUP_DIR_MARKER } from './types.js';
+import { UNIFIED_EXCLUDE_PATTERNS } from './types.js';
 
 /** Minimal interface for checking if a path is already registered. */
 export interface RegistryLike {
@@ -108,11 +109,11 @@ export async function* unifiedScan(
       // Skip excluded directories
       if (UNIFIED_EXCLUDE_PATTERNS.has(dirName) || extraExcludes.has(dirName)) continue;
 
-      // Skip crash-left marketplace install backups
+      // Skip the marketplace install engine's own siblings
       // (`<target>.dorkos-bak-<ts>-<uuid>`) — never agents or packages, and
       // their names vary per install so they can't join the exact-match
       // UNIFIED_EXCLUDE_PATTERNS set above (DOR-175).
-      if (dirName.includes(BACKUP_DIR_MARKER)) continue;
+      if (isInstallSiblingName(dirName)) continue;
 
       // Skip dot-directories unless they are relevant to agent detection
       if (dirName.startsWith('.') && !ALLOWED_DOT_DIRS.has(dirName)) continue;

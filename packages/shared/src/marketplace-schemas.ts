@@ -660,21 +660,45 @@ export interface AddSourceInput {
 // ---------------------------------------------------------------------------
 
 /**
- * Basename fragment marking a crash-left marketplace install backup
- * directory — `<target>.dorkos-bak-<timestamp>-<uuid>`. Written by
- * `apps/server/src/services/marketplace/transaction.ts` when it moves an
- * existing install target aside before activation (see ADR-0304); a hard
- * crash between the move-aside and the transaction's own cleanup/rollback
- * leaves one of these on disk. Consumed by
- * `apps/server/src/services/marketplace/backup-janitor.ts` (sweeps stale
- * ones at server startup) and by `packages/mesh/src/discovery/unified-scanner.ts`
- * (excludes them from discovery unconditionally, regardless of location).
+ * Basename fragment of the records a marketplace install transaction keeps
+ * beside its target — `<target>.dorkos-bak-<timestamp>-<uuid>`, optionally
+ * with a `.absent` or `.committed` state suffix. Written by
+ * `apps/server/src/services/marketplace/transaction.ts` (the grammar and what
+ * each state means live in `.../marketplace/install-recovery.ts`); a crash
+ * mid-install leaves one on disk until recovery settles it.
  *
  * Shared here — rather than the mesh package importing server code, which
- * the hexagonal layering forbids — because both `apps/server` and
- * `packages/mesh` already depend on `@dorkos/shared`.
+ * the hexagonal layering forbids — because `apps/server`, `packages/mesh` and
+ * `packages/harness` all depend on `@dorkos/shared`.
  */
 export const MARKETPLACE_BACKUP_DIR_MARKER = '.dorkos-bak-';
+
+/**
+ * Every basename marker the install engine writes beside an install target.
+ * Anything carrying one of these is the engine's own bookkeeping — never an
+ * installed package, agent, plugin or skill — whatever it contains (a backup
+ * holds the previous install's valid manifest). A new kind of sibling is added
+ * here and in the recovery policy table in
+ * `apps/server/src/services/marketplace/install-recovery.ts`.
+ */
+export const MARKETPLACE_INSTALL_SIBLING_MARKERS: readonly string[] = [
+  MARKETPLACE_BACKUP_DIR_MARKER,
+];
+
+/**
+ * Whether a directory entry is one of the install engine's own siblings (see
+ * {@link MARKETPLACE_INSTALL_SIBLING_MARKERS}) and must be skipped by anything
+ * that lists installed packages, agents, plugins or skills.
+ *
+ * Deliberately looser than the recovery grammar: a name that carries a marker
+ * but not the full `<timestamp>-<uuid>` stamp is still hidden from readers,
+ * while recovery leaves it alone. Hiding costs nothing; touching would not.
+ *
+ * @param name - A basename (not a path).
+ */
+export function isInstallSiblingName(name: string): boolean {
+  return MARKETPLACE_INSTALL_SIBLING_MARKERS.some((marker) => name.includes(marker));
+}
 
 // ---------------------------------------------------------------------------
 // Shapes (DOR-355) — the fifth package type's list/apply API response shapes.

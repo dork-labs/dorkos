@@ -21,7 +21,7 @@ import type { PackageType } from '@dorkos/marketplace';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
 import { readDeclaredVersion, validatePackage } from '@dorkos/marketplace/package-validator';
 import type { PackageProvides } from '@dorkos/shared/marketplace-schemas';
-import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { InstallRootDir } from './lib/install-roots.js';
 import { installKey, installRootsUnder, projectScopeRoot } from './lib/install-roots.js';
 import { readInstallMetadata } from './installed-metadata.js';
@@ -518,5 +518,5 @@ async function safeReaddir(dir: string): Promise<string[]> {
  * {@link safeReaddir}.
  */
 async function listPackageDirEntries(dir: string): Promise<string[]> {
-  return (await safeReaddir(dir)).filter((name) => !name.includes(MARKETPLACE_BACKUP_DIR_MARKER));
+  return (await safeReaddir(dir)).filter((name) => !isInstallSiblingName(name));
 }

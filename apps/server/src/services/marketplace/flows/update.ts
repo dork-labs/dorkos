@@ -35,7 +35,7 @@ import {
   type VersionSource,
 } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
-import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import {
   installKey,
   installRootsUnder,
@@ -320,11 +320,11 @@ export class UpdateFlow {
       const entries = await readDirSafe(root.dir);
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
-        // Skip crash-left install backups (`<name>.dorkos-bak-<ts>-<uuid>`,
+        // Skip the install engine's own siblings (`<name>.dorkos-bak-<ts>-<uuid>`,
         // DOR-175) — a backup carries the previous installation's valid
         // manifest under the same name, so without this guard update-all
         // would target the backup path as a phantom duplicate package.
-        if (entry.name.includes(MARKETPLACE_BACKUP_DIR_MARKER)) continue;
+        if (isInstallSiblingName(entry.name)) continue;
         const installPath = path.join(root.dir, entry.name);
         const identity = await readInstalledIdentity(installPath);
         if (!identity) continue;
