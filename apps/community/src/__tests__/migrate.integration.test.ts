@@ -455,15 +455,23 @@ const intentionallyDroppedColumns = new Map<string, string>([
   ],
 ]);
 
-type TableShape = { columns: string[]; key: string[] };
+type TableShape = { columns: string[]; timestamps: Set<string>; key: string[] };
 
 /** Read every public table of a database with its columns and primary key, from the catalog. */
 async function readTableShapes(db: Pool): Promise<Map<string, TableShape>> {
-  const result = await db.query<{ table_name: string; columns: string[]; key: string[] }>(
+  const result = await db.query<{
+    table_name: string;
+    columns: string[];
+    timestamps: string[];
+    key: string[];
+  }>(
     `SELECT t.table_name,
        ARRAY(SELECT c.column_name::text FROM information_schema.columns c
              WHERE c.table_schema='public' AND c.table_name=t.table_name
              ORDER BY c.ordinal_position) AS columns,
+       ARRAY(SELECT c.column_name::text FROM information_schema.columns c
+             WHERE c.table_schema='public' AND c.table_name=t.table_name
+               AND c.data_type LIKE 'timestamp%') AS timestamps,
        ARRAY(SELECT k.column_name::text FROM information_schema.table_constraints tc
              JOIN information_schema.key_column_usage k
                ON k.constraint_schema=tc.constraint_schema AND k.constraint_name=tc.constraint_name
@@ -481,6 +489,7 @@ async function readTableShapes(db: Pool): Promise<Map<string, TableShape>> {
         columns: row.columns.filter(
           (column) => !intentionallyDroppedColumns.has(`${row.table_name}.${column}`)
         ),
+        timestamps: new Set(row.timestamps),
         key: row.key,
       },
     ])
@@ -492,14 +501,21 @@ const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 /**
  * Every row of every given table, restricted to the given columns and ordered by primary
  * key, so a lost, reordered, rewritten or dropped value shows up as a diff. A column a
- * migration drops makes the query itself fail.
+ * migration drops makes the query itself fail. Timestamps are compared as Postgres prints
+ * them, because a JavaScript Date keeps only milliseconds and would hide lost microseconds.
  */
 async function snapshotRows(db: Pool, shapes: Map<string, TableShape>) {
   const snapshot: Record<string, unknown[]> = {};
   for (const [table, shape] of shapes) {
     snapshot[table] = (
       await db.query(
-        `SELECT ${shape.columns.map(quote).join(',')} FROM ${quote(table)}
+        `SELECT ${shape.columns
+          .map((column) =>
+            shape.timestamps.has(column)
+              ? `${quote(column)}::text AS ${quote(column)}`
+              : quote(column)
+          )
+          .join(',')} FROM ${quote(table)}
          ORDER BY ${shape.key.map(quote).join(',')}`
       )
     ).rows;
@@ -529,8 +545,13 @@ it('serves a populated version-four community through the current HTTP contract 
     await applyVersionFourSchema(db);
     // Every value is explicit and none is a column default, so a migration that resets a
     // column to its default, or nulls it, changes the snapshot.
-    const past = (minute: number) => new Date(Date.UTC(2025, 0, 2, 3, minute, 5));
-    const future = (minute: number) => new Date(Date.UTC(2099, 0, 2, 3, minute, 5));
+    // Timestamps carry microseconds, so losing sub-second precision changes the snapshot.
+    const stamp = (year: number, minute: number) => {
+      const mm = String(minute).padStart(2, '0');
+      return `${year}-01-02T03:${mm}:05.1234${mm}Z`;
+    };
+    const past = (minute: number) => stamp(2025, minute);
+    const future = (minute: number) => stamp(2099, minute);
     const one = async (sql: string, params: unknown[] = []): Promise<string> =>
       (await db.query(sql, params)).rows[0].id;
 
@@ -567,7 +588,7 @@ it('serves a populated version-four community through the current HTTP contract 
        VALUES('v4-bootstrap-hash',$1,$2,$3)`,
       [future(4), past(10), past(11)]
     );
-    const member = (userId: string, role: string, active: boolean, removedAt: Date | null) =>
+    const member = (userId: string, role: string, active: boolean, removedAt: string | null) =>
       one(
         `INSERT INTO members(community_id,user_id,display_name,handle,role,active,created_at,removed_at)
          VALUES($1,$2,$3,$2,$4,$5,$6,$7) RETURNING id`,
@@ -744,6 +765,37 @@ it('serves a populated version-four community through the current HTTP contract 
     // The fixture must exercise every version-four table and column, or the snapshot below
     // could not notice that column being lost.
     const versionFourShapes = await readTableShapes(db);
+    // Pin the table set, so a catalog read that finds nothing cannot pass by checking nothing.
+    expect([...versionFourShapes.keys()].sort()).toEqual(
+      [
+        'account',
+        'agent_channel_members',
+        'agent_credentials',
+        'agents',
+        'attachments',
+        'audit_events',
+        'bootstrap_grants',
+        'channel_members',
+        'channels',
+        'communities',
+        'community_handles',
+        'community_migrations',
+        'connection_grants',
+        'connection_pairings',
+        'entries',
+        'export_archives',
+        'invite_uses',
+        'invites',
+        'members',
+        'owner_quota_windows',
+        'pending_admissions',
+        'pending_blob_deletions',
+        'read_cursors',
+        'session',
+        'user',
+        'verification',
+      ].sort()
+    );
     // The migration ledger is the one table that grows on purpose; the earlier tests check it.
     versionFourShapes.delete('community_migrations');
     for (const [table, shape] of versionFourShapes) {
