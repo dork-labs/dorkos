@@ -1057,7 +1057,6 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     'GET /attention': "the caller's own unread counts",
     'GET /invites': 'lists the URL community',
     'GET /agents': "lists the caller's own agents",
-    'POST /agents': 'creates a new agent; its local id and handle are new names',
     'POST /pairings/start': 'creates a new pairing; references nothing',
   };
 
@@ -1070,9 +1069,15 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     ),
   ].sort();
   expect(registered.length).toBeGreaterThan(50);
+  // Routes whose foreign-id call legitimately succeeds, so they cannot share
+  // the refusal comparison; each has its own check after the matrix.
+  const separately = ['POST /agents'];
   const probed = new Set(probes.map((probe) => probe.route));
-  expect([...probed].filter((route) => route in exempt)).toEqual([]);
-  expect([...new Set([...probed, ...Object.keys(exempt)])].sort()).toEqual(registered);
+  expect([...probed].filter((route) => route in exempt || separately.includes(route))).toEqual([]);
+  expect(separately.filter((route) => route in exempt)).toEqual([]);
+  expect([...new Set([...probed, ...Object.keys(exempt), ...separately])].sort()).toEqual(
+    registered
+  );
 
   async function send(probe: Probe, ids: Ids, attempt: string) {
     const [method] = probe.route.split(' ');
@@ -1108,13 +1113,44 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     const refused = await send(probe, foreign, `foreign-${index}`);
     const unknown = await send(probe, missing, `missing-${index}`);
     expect(refused.status, `${label} must be refused`).toBeGreaterThanOrEqual(400);
-    // A malformed probe would be refused by validation before any lookup.
+    // A malformed, unauthenticated or cross-site probe would be refused before
+    // any lookup, and would then match the nonexistent id for the wrong reason.
+    expect(refused.status, `${label} must be authenticated`).not.toBe(401);
     expect(refused.body, `${label} must reach the lookup`).not.toContain('The request is invalid.');
+    expect(refused.body, `${label} must pass the origin check`).not.toContain(
+      'This request came from an untrusted site.'
+    );
     expect(refused, `${label} must match a nonexistent id`).toEqual(unknown);
     executed++;
   }
   expect(executed).toBe(probes.length);
   expect(await isolationSnapshot([communityId, otherId])).toEqual(before);
+
+  // POST /agents looks up the caller's existing agent by its local id, then
+  // reactivates it and replaces its credentials. A local id that exists only
+  // in B must create a fresh agent in A and leave B's agent untouched.
+  const checked = new Set<string>();
+  const otherBefore = await isolationSnapshot([otherId]);
+  const sameLocalId = await request(`${own}/agents`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${ownGrantToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      localAgentId: foreign.localAgentId,
+      displayName: 'Own agent, same local id',
+    }),
+  });
+  expect(sameLocalId.status, 'POST /agents with a local id used in B').toBe(201);
+  const ownAgent = (await sameLocalId.json()).agent.memberId;
+  expect(ownAgent).not.toBe(agent);
+  expect(
+    (await pool.query('SELECT community_id FROM agents WHERE id=$1', [ownAgent])).rows[0]
+  ).toEqual({ community_id: communityId });
+  expect(await isolationSnapshot([otherId])).toEqual(otherBefore);
+  checked.add('POST /agents');
+  expect([...checked]).toEqual(separately);
 });
 
 it('archives with immediate credential revocation and restores without revival', async () => {

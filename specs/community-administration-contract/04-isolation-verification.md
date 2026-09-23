@@ -26,11 +26,12 @@ Refs DOR-2174 and DOR-2178. One signed-in person owns two active communities, A 
 **The probe list is checked against the app itself.** The test reads the routes the app actually registers under `/api/v1/communities/:communityId`, 62 today. Every route must be either:
 
 - probed: 36 routes, 42 probes, each passing a B id through A's URL, in the path or in the body. Where a route takes two ids, one probe pairs a foreign channel with anything, and another pairs A's own channel with the foreign id. That covers replies to a foreign entry, attaching a foreign file, adding a foreign member or agent, and the owner-transfer successor. Binding and redeeming an invitation take no id at all; they read the join attempt from a cookie, so they are probed with the cookie of a join attempt started in B.
-- or exempt: 26 routes, each with a written reason. All of them take no object id. They act on the caller, on the community named in the URL, or on something they create.
+- or checked separately: 1 route. Enrolling an agent looks up the caller's existing agent by its local id, and would reactivate it and replace its credentials. Sent from A with a local id that exists only in B, it must create a fresh agent in A and leave B's agent and credentials unchanged.
+- or exempt: 25 routes, each with a written reason. All of them take no object id. They act on the caller, on the community named in the URL, or on something they create.
 
-A route that is in neither list, or in both, fails the test. So does a probe that never ran. A new route therefore has to be classified before the suite passes.
+A route that is in no list, or in more than one, fails the test. So does a probe that never ran. A new route therefore has to be classified before the suite passes.
 
-**What each probe must show.** The same request is sent twice, once with the B id and once with an id that exists nowhere. The two responses must match exactly, status and body, and must be a refusal. So a foreign id reveals nothing that a made-up id would not. A probe that validation rejects before any lookup fails too, so a malformed probe cannot pass by accident.
+**What each probe must show.** The same request is sent twice, once with the B id and once with an id that exists nowhere. The two responses must match exactly, status and body, and must be a refusal. So a foreign id reveals nothing that a made-up id would not. A probe refused before any lookup fails too: one rejected by validation, by a missing sign-in (`401`), or by the cross-site check. So a malformed probe cannot pass by accident.
 
 **Nothing changed.** A snapshot is compared before and after all probes. It covers every tenant table for both communities, both community rows, every account and every session. The list of 29 tenant tables is pinned: if the catalogue query returned nothing, the test would fail rather than compare two empty snapshots. One field is left out: a grant's last-used time, which the app updates by design whenever the grant signs a request.
 
@@ -47,6 +48,8 @@ Both Codex commits were cherry-picked onto `main` without conflicts. Ignoring wh
 
 | Temporary break                                                            | Result                                                                                                         |
 | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Enrolling an agent finds an existing agent by local id in any community    | fails: `409` instead of a new agent in A                                                                       |
+| The agent-rotation probe is sent without credentials                       | fails: the probe is refused with `401` before any lookup                                                       |
 | Binding a join attempt ignores the community                               | fails: `POST /invites/bind` returned `200`                                                                     |
 | Revoking a grant ignores its owner and community                           | fails: `DELETE /me/grants/:id` returned `204`                                                                  |
 | Owner transfer looks up the successor in any community                     | fails: `503` instead of the `404` a made-up id gets                                                            |
