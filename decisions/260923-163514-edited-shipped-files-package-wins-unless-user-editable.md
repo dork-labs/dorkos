@@ -19,7 +19,11 @@ Under ADR 260923-163513 a file the package shipped and the person then changed n
 
 ## Decision
 
-By default the package wins. The new version's copy is installed and the person's edited copy is saved beside it as `<file>.dork-old`. A package can list shipped paths in `userEditable` (manifest; exact paths or `dir/**` only). For those the person wins, and when the package's default changed, the new default is saved as `<file>.dork-new`. An agent package's `.dork/agent.json`, `.dork/SOUL.md`, `.dork/NOPE.md` and `.dork/MEMORY.md` are user-editable without being declared. Saved names never overwrite an existing file (`.dork-old.2`, …). Each outcome is returned as a `PackageFileNotice` and as one plain sentence on the result's warnings. A package may not ship `*.dork-old` / `*.dork-new` files.
+By default the package wins. The new version's copy is installed, and the person's edited copy is saved beside it as `<file>.dork-old`, unless the bytes are already identical. A package can list shipped paths in `userEditable` (manifest; exact paths or `dir/**` only; never a reserved path or the package's own `.dork/manifest.json` / `.claude-plugin/plugin.json`). For those the person wins, and when the package's default changed, the new default is saved as `<file>.dork-new`. That `.dork-new` stays while it still differs from the person's file and the file is still shipped and editable. It is refreshed when the default changes again and removed once it no longer means anything. A `userEditable` file the person deleted stays deleted. A non-editable one is restored.
+
+An agent package's `.dork/agent.json`, `SOUL.md`, `NOPE.md` and `MEMORY.md` sit outside this rule: they are never recorded, and a package's copy only seeds a fresh install (ADR 260923-163516).
+
+Saved names are chosen by `lstat` in the staged tree (`.dork-old`, `.dork-old.2`, …). A file↔directory or case-only collision also saves the person's entry under a free `.dork-old` name. Each outcome is returned as a `PackageFileNotice` and as one plain sentence on the result's warnings. A package may not ship `*.dork-old` / `*.dork-new` files.
 
 ## Consequences
 

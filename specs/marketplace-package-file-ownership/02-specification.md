@@ -13,7 +13,8 @@ project: Marketplace Package Management
 **Author:** Claude Code (prog-DOR-2245)
 **Date:** 2026-09-23
 **Input:** [`01-ideation.md`](./01-ideation.md) (decisions 1–11 carried forward and made concrete below)
-**Baseline:** `origin/main` `3b36e3876`. Implementation starts after DOR-2248 and the DOR-2244 dorkos PR land, and rebases onto both.
+**Baseline:** `origin/main` `3b36e3876`. Implementation starts after DOR-2248 (including its fetch of a named past commit) and the DOR-2244 dorkos PR land, and rebases onto both.
+**Revision:** 2 (after the independent design review; see the Review log).
 
 ## Overview
 
@@ -34,7 +35,8 @@ Root cause: the installer has no record of which files it installed, so it treat
 
 - A file a person or agent creates inside any install root survives update, reinstall, and uninstall without `--purge`, for all five package types.
 - A shipped file the person edited is never silently lost: it is replaced with the person's copy saved beside it, or kept if the package declared it editable. Either way the result says which files and where.
-- An agent package keeps its id, persona and memory across an update.
+- An agent package keeps its id, persona and memory across an update and a reinstall. Uninstalling one removes it from the team, as removing any agent does, and a reinstall brings back the same identity.
+- No step ever moves a person's file out of its own directory, so a crash at any point loses nothing of theirs.
 - `${CLAUDE_PLUGIN_DATA}` works in projected commands and hooks, per install scope.
 - The four real flow installs update cleanly with their settings intact, with no action from the person and no change to flow.
 - The two hard-coded preserve constants, the update's scratch-dir dance and `findInstallRootFromPreservedPath` are deleted, not extended.
@@ -52,22 +54,23 @@ Root cause: the installer has no record of which files it installed, so it treat
 ## Technical Dependencies
 
 - Node `node:crypto` (`createHash('sha256')`, streamed) and `node:fs/promises`. No new npm dependency; the `userEditable` pattern subset (below) needs no glob library.
-- DOR-2248: the staged tree must be exactly the commit its cache key names, both for the hashes recorded here and for rebuilding a legacy record from a recorded commit.
+- DOR-2248 (hard dependency): the staged tree must be exactly the commit its cache key names, and the fetcher must be able to fetch a named past commit exactly. Both are needed for the hashes recorded here and for rebuilding a legacy record (§9).
+- `fs.copyFile` with `fs.constants.COPYFILE_FICLONE` (copy-on-write clone where the filesystem supports it, plain copy otherwise).
 - Claude Code plugins reference (`https://code.claude.com/docs/en/plugins-reference`, read 2026-09-23): `${CLAUDE_PLUGIN_DATA}` lives at `~/.claude/plugins/data/{id}/`, survives updates, is deleted on uninstall unless `--keep-data`, and is substituted inline in skill/agent content, hook/monitor commands, and MCP/LSP config.
 
 ## Detailed Design
 
 ### 1. The rule
 
-For every regular file under an install root, exactly one of these holds:
+For every entry under an install root, exactly one of these holds:
 
-| Owner             | How DorkOS knows                                                                                                                              | Update / reinstall                                                                 | Uninstall                                        | `--purge` |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------ | --------- |
-| **The package**   | Listed in the root's installed-files record, and its bytes still hash to the recorded value; or under a recorded owned tree (`node_modules/`) | Replaced by the new version's copy, or removed if the new version does not ship it | Removed                                          | Removed   |
-| **The person**    | Anything else, including a recorded file whose bytes changed                                                                                  | Kept (§4 says exactly how an edited shipped file is kept)                          | Kept, in place                                   | Removed   |
-| **The installer** | The reserved paths `.dork/installed-files.json` and `.dork/install-metadata.json`                                                             | Rewritten                                                                          | The record is kept (§5); the metadata is removed | Removed   |
+| Owner             | How DorkOS knows                                                                                                                                                                                                                                                                                      | Update / reinstall                                                                 | Uninstall                                                | `--purge` |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------- | --------- |
+| **The package**   | Listed in the root's installed-files record, reached through real directories only (no symlink anywhere on its path, checked with `lstat` on every component), and its bytes still hash to the recorded value; or under a recorded owned path (`node_modules/`, a root `package-lock.json` npm wrote) | Replaced by the new version's copy, or removed if the new version does not ship it | Removed                                                  | Removed   |
+| **The person**    | Anything else: an unrecorded file, a recorded file whose bytes changed, a recorded path reached through a symlink, a symlink, and an agent package's four identity files (never recorded, §2)                                                                                                         | Kept (§4 says exactly how)                                                         | Kept, in place, never moved                              | Removed   |
+| **The installer** | `.dork/installed-files.json`, `.dork/install-metadata.json`, `.dork/uninstalled-agent.json`                                                                                                                                                                                                           | Rewritten                                                                          | The record is kept, pruned (§5); the metadata is removed | Removed   |
 
-Directories are not owned; they exist while something under them does. Symlinks are never shipped (`stage-package.ts` strips them), so any symlink in a root is the person's. It is carried as a link and never followed.
+Directories are not owned and never count as kept entries on their own. An empty directory left after package files are removed is pruned bottom-up, so an untouched package leaves nothing behind, `.dork/data/` included when it is empty. Symlinks are never shipped (`stage-package.ts` strips them), so any symlink in a root is the person's. It is carried as a link (`verbatimSymlinks`) and never followed. Sockets, FIFOs and device files (for example `.git/fsmonitor--daemon.ipc`) are never copied: they are skipped and named in the result (`skipped-special`). They are not deleted either.
 
 ### 2. The installed-files record
 
@@ -81,24 +84,29 @@ Directories are not owned; they exist while something under them does. Symlinks 
   "package": {
     "name": "flow",
     "type": "plugin",
-    "source": "https://github.com/dork-labs/marketplace#plugins/flow",
+    "source": "https://github.com/dork-labs/marketplace#plugins/flow@main",
   },
-  // Installer-generated trees; every file under them is the package's, with no
-  // per-file hashes (a vendored dependency tree can hold tens of thousands).
-  "ownedTrees": ["node_modules"],
+  // Installer-generated paths; everything at or under them is the package's,
+  // with no per-file hashes. `node_modules` and `package-lock.json` only when
+  // the npm step ran (npm rewrites the lockfile; a vendored tree can hold
+  // tens of thousands of files).
+  "ownedPaths": ["node_modules", "package-lock.json"],
   // POSIX-separated paths relative to the install root → "sha256:<hex>".
   "files": { ".claude-plugin/plugin.json": "sha256:…", "skills/flow/SKILL.md": "sha256:…" },
-  // Resolved at install time from the manifest + type defaults (§3), so a
-  // later reinstall can apply the rules without re-reading an older manifest.
+  // `.dork-new` copies the installer wrote (§4): each maps to the file it
+  // shadows. They are the package's copies, refreshed or removed by later installs.
+  "pendingDefaults": { "config/defaults.json.dork-new": "config/defaults.json" },
+  // Resolved at install time from the manifest (§3), so a later reinstall can
+  // apply the rules without re-reading an older manifest.
   "userEditable": ["config/defaults.json"],
+  // Present only on the record an uninstall leaves behind (§5).
+  "uninstalledAt": "2026-09-23T17:00:00.000Z",
 }
 ```
 
-- **Computed by `runTransaction`, not by each flow.** `TransactionOptions` gains `ownership?: { identity: RecordIdentity; userEditable: string[] }`. When present, after `stage` resolves and before the backup is taken, the engine walks the staged tree and writes the record into it. The record therefore activates in the same `atomicMove` as the package and can never be missing from a successful install. This is also the lesson of §5.1 npm dependencies: "a new flow gets none of this for free". All five marketplace flows pass `ownership`; `services/shapes/fork.ts` does not, because a fork is the person's own copy.
-- **The walk** records every regular file except: anything under `ownedTrees` (today only a root-level `node_modules`, present when `installStagedNpmDependencies` ran); the two installer paths; symlinks. `source` is `sourceKeyOf(staged.sourceKey)` rendered as `<cloneUrl>#<subpath>@<ref>` when the fetch recorded one, else the canonical local path for a local install.
-- **Reading is defensive.** A record that fails the schema, or lists a path that is absolute, contains `..`, or resolves outside the root, is treated as **absent** (the legacy path, §9) and logged. A record only ever decides what DorkOS _keeps_ (§4, §5), so a tampered record can make DorkOS keep less of a person's file set, never delete outside the root.
-
-**Reserved paths a package may not ship** (enforced by `validatePackage`, §11): `.dork/data/**`, `.dork/secrets.json`, `.dork/install-metadata.json`, `.dork/installed-files.json`, and any path ending `.dork-old` or `.dork-new` (with or without a numeric suffix). These always belong to the person or the installer, so ownership is never ambiguous.
+- **Computed by `runTransaction`, not by each flow.** `TransactionOptions` gains `ownership?: { identity; userEditable; kind: PackageType }`. When present, after `stage` resolves, the engine walks the staged tree and writes the record into it. The record therefore activates in the same rename as the package and can never be missing from a successful install. This is the lesson of §5.1 npm dependencies ("a new flow gets none of this for free"). All five marketplace flows pass `ownership`; `services/shapes/fork.ts` does not, because a fork is the person's own copy.
+- **The walk** records every regular file except: anything at or under `ownedPaths`; the installer paths; reserved paths (§11, already stripped by the copy step but excluded again here); symlinks; and, **for an agent package, `.dork/agent.json`, `.dork/SOUL.md`, `.dork/NOPE.md`, `.dork/MEMORY.md`**. DorkOS itself writes those four after activation (the scaffold, §8), so recording them would mark DorkOS's own write as a person's edit. They are the person's by definition: a shipped copy only seeds a fresh install (§8). `source` is `sourceKeyOf(staged.sourceKey)` rendered `<cloneUrl>#<subpath>@<ref>`, else the canonical local path for a local-directory install.
+- **Reading is defensive.** A record that fails the schema, or lists a path that is absolute, contains `..` or a backslash, or resolves outside the root, is treated as **absent** (the legacy path, §9) and logged. A record only ever decides what DorkOS may _remove_, and only a file whose bytes still match, reached through real directories. So a tampered record can make DorkOS remove, inside the root, at most a file whose exact bytes it already names. It can never touch anything outside the root.
 
 ### 3. `userEditable`: how a package says a shipped file is meant to be edited
 
@@ -107,100 +115,140 @@ Directories are not owned; they exist while something under them does. Symlinks 
 ```ts
 /**
  * Shipped files a person is expected to edit. On update, an edited copy is kept
- * and the new default is written beside it as `<file>.dork-new`. Every other
+ * and a changed default is written beside it as `<file>.dork-new`. Every other
  * shipped file is replaced, and an edited copy is saved as `<file>.dork-old`.
  * Exact root-relative paths, or a directory prefix ending in `/**`.
  */
 userEditable: z.array(UserEditablePathSchema).max(100).default([]),
 ```
 
-- **Pattern subset:** a POSIX relative path (`config/defaults.json`) or a prefix `dir/**` (`prompts/**`). Refused: absolute paths, `..`, backslashes, any other `*` or `?`, and any pattern that covers a reserved path (§2). Matching is `p === pattern` or `p.startsWith(prefix + '/')`. A new pure helper `matchesUserEditable(path, patterns)` lives in `@dorkos/marketplace` (browser-safe), with tests.
-- **Type defaults** (`resolveUserEditable(manifest)` in `@dorkos/marketplace`): an **agent** package always adds `.dork/agent.json`, `.dork/SOUL.md`, `.dork/NOPE.md`, `.dork/MEMORY.md`. They are the agent's identity, persona and memory, and are the agent's whether or not the package shipped a starting copy. No other type has defaults.
-- The schema strips unknown keys, so an older DorkOS ignores the field (it just keeps today's behaviour for those files). A package that relies on it should set `minDorkosVersion` to the first release that ships this.
-- A Claude-Code-format package with no `.dork/manifest.json` gets the empty list. Claude Code's own contract tells those authors not to edit shipped files at all.
+- **Pattern subset:** a POSIX relative path (`config/defaults.json`) or a prefix `dir/**` (`prompts/**`). Refused: absolute paths, `..`, backslashes, a leading `./`, any other `*` or `?`, any pattern that covers a reserved path (§11), and any pattern that covers a package identity file, `.dork/manifest.json` or `.claude-plugin/plugin.json`. A package's identity and version are never the person's to keep. Matching is `p === pattern` or `p.startsWith(prefix + '/')`, in a pure, browser-safe helper `matchesUserEditable(path, patterns)` in `@dorkos/marketplace`.
+- **Agent identity files are not `userEditable`; they are never recorded** (§2, §8). That is a stronger rule: the package's copy is used only when the file is absent.
+- The schema strips unknown keys, so an older DorkOS ignores the field. A package that relies on it sets `minDorkosVersion` to the first release that ships this. A Claude-Code-format package with no `.dork/manifest.json` gets the empty list.
 
-### 4. Carry-over: installing over an existing root
+### 4. Installing over an existing root
 
-When `ownership` is set and the target already exists, `runTransaction` gains one step between the backup (step 3) and `activate` (step 4):
+When `ownership` is set and the target exists, `runTransaction` runs these steps. The per-target lock is already held (DOR-711), so nothing else installs or uninstalls here meanwhile.
 
-**3b. Carry the person's files into the staged tree.** Read the _backup's_ record (the old one, "R_old") and the _staged_ record ("R_new", just written). The backup is either a full previous install (reinstall) or the root that an uninstall left behind (update, §6). Then apply the table below to every path in `R_old.files ∪ files present in the backup ∪ R_new.files`, skipping `R_old.ownedTrees` and the installer paths. "Edited" means that the file is present in the backup and its hash differs from `R_old`. "Default changed" means that the `R_new` hash differs from the `R_old` hash. `U` = `R_new.userEditable` (the new version's declaration wins; for a path the new version does not ship, `R_old.userEditable`).
+1. **Stage in a sibling of the target**, `<target>.dorkos-stage-<ts>-<uuid>`, not in `os.tmpdir()`. It is then on the same filesystem as the target: activation is a true rename, the person's files are never copied through a RAM-backed `/tmp`, and nothing depends on the `EXDEV` copy fallback. (That fallback also gains `verbatimSymlinks: true` in `lib/atomic-move.ts`, so a relative symlink moved across devices is not rewritten to an absolute path inside a deleted staging dir. This fixes every other caller too.) The backup janitor and the mesh unified scanner exclude the new `.dorkos-stage-` and `.dorkos-uninstall-` markers exactly as they exclude `.dorkos-bak-` (`MARKETPLACE_BACKUP_DIR_MARKER`, `unified-scanner.ts:112`).
+2. **Write the record** into the staged tree (§2).
+3. **Rebuild a legacy record, if needed** (§9), from the **live** root, before anything moves: a network fetch never runs while the target is moved aside.
+4. **Carry the person's files from the live root into the staged tree**, applying the table below. Files are _cloned_ (`copyFile` with `COPYFILE_FICLONE`, which is a copy-on-write clone on APFS/btrfs/ReFS and a plain copy elsewhere), directories are created, symlinks are recreated verbatim, and special files are skipped. The live root is only read. A directory in the live root with no recorded or newly shipped file anywhere beneath it is carried as one unit. Each carried entry's `(size, mtimeMs, ino)` is noted.
+5. **Back up the target** (rename to `<target>.dorkos-bak-…`, as today), then **activate** (rename staging → target, then the flow's side effects).
+6. **Late-write pass** (before the backup is deleted). Compare the backup's person-owned entries against the notes from step 4. Any entry that changed or appeared after step 4 is written by someone, most likely an agent working in its own directory during its own update. It is cloned into the new target over the carried copy (the newest write wins). Where it collides with a package file it is saved as `.dork-old`, with a `late-write` notice. Only then is the backup deleted. Writes by absolute path in the milliseconds between the two renames fail with `ENOENT` in the writer (documented residual).
+7. **Failure** at any step restores exactly as today: remove the partial target, rename the untouched backup back, remove staging. The person's files were only ever read from the live root, so nothing of theirs is lost.
 
-| #   | In R_old? | State in backup | New version ships it? | In U? | Result in the new install                                                                                                                | Notice                                        |
-| --- | --------- | --------------- | --------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| 1   | yes       | unchanged       | yes                   | –     | new copy                                                                                                                                 | –                                             |
-| 2   | yes       | unchanged       | no                    | –     | gone                                                                                                                                     | –                                             |
-| 3   | yes       | missing         | yes                   | –     | new copy                                                                                                                                 | –                                             |
-| 4   | yes       | missing         | no                    | –     | gone                                                                                                                                     | –                                             |
-| 5   | yes       | edited          | yes                   | no    | new copy; the person's copy saved as `P.dork-old`                                                                                        | `replaced-edit`                               |
-| 6   | yes       | edited          | yes                   | yes   | the person's copy; if the default changed, the new copy saved as `P.dork-new`                                                            | `kept-edit` (only if `.dork-new` was written) |
-| 7   | yes       | edited          | no                    | no    | the person's copy saved as `P.dork-old` (not left at `P`, so an edited skill the package dropped stops being projected as the package's) | `replaced-edit`                               |
-| 8   | yes       | edited          | no                    | yes   | the person's copy, in place                                                                                                              | `kept-no-longer-shipped`                      |
-| 9   | no        | present         | no                    | –     | the person's copy, in place                                                                                                              | –                                             |
-| 10  | no        | present         | yes                   | no    | new copy; the person's copy saved as `P.dork-old`                                                                                        | `replaced-edit`                               |
-| 11  | no        | present         | yes                   | yes   | the person's copy; the new copy saved as `P.dork-new` if its bytes differ                                                                | `kept-edit` (if written)                      |
+**Why the late-write pass rather than refusing:** refusing an update while an agent session is live would block every unattended update (flow's own autonomy loop, the MCP tools), and there is no bounded "wait". A process whose cwd is the root keeps writing into the renamed backup (its cwd follows the inode), so the pass catches exactly those writes.
 
-- **Backup names never overwrite.** `P.dork-old` / `P.dork-new`, else `P.dork-old.2`, `.3`, … whichever is first free _in the final tree_. A `.dork-new` the carry-over writes is added to the new record (it is the package's copy, so the next update replaces or removes it). A `.dork-old` is not added: it is the person's.
-- **Copy, never move.** Carried entries are copied from the backup into staging (`fs.cp`, `recursive`, `verbatimSymlinks: true`, `preserveTimestamps: true`). The backup stays complete until step 5 deletes it, so a crash or a failed `activate` loses nothing: rollback (step 6) restores the untouched backup exactly as today. To keep the walk and the copy proportional, a directory in the backup with **no** `R_old` file and no `R_new` file anywhere beneath it is carried as one unit, not per file. That covers an agent's working tree or a `.git`.
-- **Notices.** Step 3b produces `PackageFileNotice[]` (§12). The engine hands them to `activate` as a second field on its argument (`activate({ path, fileNotices })`), which is the one place every flow already assembles its `InstallResult`; each flow copies them onto the result (and their sentences onto `warnings`), and each flow's test asserts it. The engine does not know the result's shape, so it does not merge anything itself.
-- **A root with no `R_old` and no package identity** (the root a legacy uninstall left, holding only `.dork/data` and `.dork/secrets.json`) has every file treated as rows 9–11.
-- **A root with a package identity but no `R_old`** is a legacy install: §9 rebuilds `R_old` first.
+**The table.** R_old = the live root's record (a full install, or the pruned record an uninstall left, §5). R_new = the staged record. U = R_new.userEditable for paths the new version ships, else R_old.userEditable. "Edited" = present with a hash ≠ R_old's, or reached through a symlinked directory. "Default changed" = R_new hash ≠ R_old hash. "Same bytes" = the live copy's hash equals R_new's. The table iterates over `R_old.files ∪ live files ∪ R_new.files`, skipping owned paths, installer paths, agent identity files (always carried as-is, §8) and `pendingDefaults` (handled after the table).
 
-### 5. Uninstall
+| #   | In R_old? | Live state | New version ships it? | In U? | Result                                                                                                                                   | Notice                     |
+| --- | --------- | ---------- | --------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| 0   | no        | absent     | yes                   | –     | new copy                                                                                                                                 | –                          |
+| 1   | yes       | unchanged  | yes                   | –     | new copy                                                                                                                                 | –                          |
+| 2   | yes       | unchanged  | no                    | –     | gone                                                                                                                                     | –                          |
+| 3a  | yes       | missing    | yes                   | yes   | stays deleted (the person removed an editable default)                                                                                   | –                          |
+| 3b  | yes       | missing    | yes                   | no    | new copy                                                                                                                                 | –                          |
+| 4   | yes       | missing    | no                    | –     | gone                                                                                                                                     | –                          |
+| 5   | yes       | edited     | yes                   | no    | new copy; the person's copy saved as `P.dork-old` unless same bytes                                                                      | `replaced-edit` (if saved) |
+| 6   | yes       | edited     | yes                   | yes   | the person's copy; if the default changed and the bytes differ, the new copy saved as `P.dork-new`                                       | `kept-edit` (if written)   |
+| 7   | yes       | edited     | no                    | no    | the person's copy saved as `P.dork-old` (not left at `P`, so an edited skill the package dropped stops being projected as the package's) | `replaced-edit`            |
+| 8   | yes       | edited     | no                    | yes   | the person's copy, in place                                                                                                              | `kept-no-longer-shipped`   |
+| 9   | no        | present    | no                    | –     | the person's copy, in place                                                                                                              | –                          |
+| 10  | no        | present    | yes                   | no    | new copy; the person's copy saved as `P.dork-old` unless same bytes                                                                      | `replaced-edit` (if saved) |
+| 11  | no        | present    | yes                   | yes   | the person's copy; the new copy saved as `P.dork-new` if the bytes differ                                                                | `kept-edit` (if written)   |
 
-`flows/uninstall.ts`:
+Row 3a depends on §5: an uninstall prunes from the record every entry it removed, so "in R_old but missing" can only mean the person deleted it.
 
-- `DATA_SUBPATH`, `SECRETS_SUBPATH` and `restorePreservedData` are deleted. They are replaced by `restorePersonFiles(stagingPath, installRoot)`, which, after the side effects succeed and when `purge` is false, copies back into the (now empty) install root every entry the record does not prove is the package's (§1), plus `.dork/installed-files.json` itself. The record stays so a later reinstall knows which kept files were edited shipped files (rows 5–8) rather than the person's own (rows 9–11). `.dork/install-metadata.json` is not copied back.
-- If nothing but the record would be copied back, nothing is: no empty shell is left behind for an untouched package.
-- `UninstallResult.preservedData` keeps its name and type (`string[]` of absolute paths). Its meaning becomes "every kept entry, collapsed to the highest directory whose whole contents were kept", so an agent's working tree reports as one path, not thousands. The record itself is not listed.
-- `purge: true` keeps today's behaviour: nothing is copied back.
-- The rollback path is unchanged.
+- **`pendingDefaults`.** A `.dork-new` written earlier stays while the file it shadows is still shipped, still editable and still differs from the default. It is refreshed if the default changed again. It is removed (it is the package's copy) when the person's file now matches the default, or the package stops shipping or marking the file. So an unmerged `.dork-new` never silently disappears while it still means something.
+- **Collisions are detected on the filesystem, not by string compare.** Before writing any carried entry or saved copy, the destination is `lstat`-ed in the staged tree. A file where the new version has a directory (or the reverse), or a name that differs only in case on a case-insensitive volume (probed once per root by `lstat` of a case-flipped path), is a collision. The person's entry is saved under a free `.dork-old` name. Free names (`P.dork-old`, else `P.dork-old.2`, `.3` …) are chosen by `lstat` in the staged tree, never assumed.
+- **Notices** (`PackageFileNotice[]`, §12) are handed to `activate({ path, fileNotices, warnings })`. That is where every flow already assembles its `InstallResult`, and each flow copies them onto the result.
+- **A root with no R_old and no package identity** (one a pre-change uninstall left, holding only `.dork/data` and `.dork/secrets.json`) has every entry treated as rows 9–11.
+
+### 5. Uninstall, in place
+
+`flows/uninstall.ts` no longer moves the install root. It moves **only the files the record proves are the package's**:
+
+1. Locate (§7), take the lock, read the record (rebuilding a legacy one first, §9).
+2. Create `<root>.dorkos-uninstall-<ts>-<uuid>` (a sibling, same filesystem). Rename into it, preserving relative paths, every package-owned entry: record-proven unchanged files (lstat on every path component; nothing reached through a symlink), owned paths, `.dork/install-metadata.json`, and the package identity files. A directory whose entire contents are package-owned moves as one unit. Person files never move.
+3. Run the side effects against that sibling, as they ran against the staged copy before: extension disable + forget run approvals (DOR-516), adapter removal, Shape teardown, generated-schedule removal (reads `install-metadata.json` from the sibling), **and, for an agent package, agent unregistration** (below).
+4. Success: prune the record to the entries still present (edited files), set `uninstalledAt`, write it back. Delete the sibling, and prune empty directories bottom-up. If the root then holds nothing but the pruned record, remove the record and the root too: an untouched package leaves no shell.
+5. Failure in step 3: rename every moved entry back (each move is recorded in order and undone in reverse) and rethrow. The janitor treats a crash-left `.dorkos-uninstall-*` older than 24 h as abandoned package files and deletes it. It holds only record-proven package files, never a person's.
+6. `purge: true`: after step 3 the whole root is removed, as today.
+
+`DATA_SUBPATH`, `SECRETS_SUBPATH`, `restorePreservedData`, the whole-root move to `os.tmpdir()` and `rollbackFromStaging` are deleted. `UninstallResult.preservedData` keeps its name and type. It now lists the kept entries, collapsed to the highest directory whose whole contents were kept, excluding the record and empty directories.
+
+**Agent packages leave the registry.** Today uninstall never unregisters an agent. The agent directory moved away and mesh's reconciler eventually noticed. Under the new rule `.dork/agent.json` is the person's and stays, so without a change mesh would keep a running agent whose package is gone. So for `type === 'agent'`, as the **last** side effect (nothing after it can fail except the sibling delete):
+
+- copy `.dork/agent.json` to `.dork/uninstalled-agent.json` (an installer path, reserved, never scanned by mesh), then
+- `meshCore.unregister(id)`. That runs the full unregister cascade: Relay endpoint, schedules disabled by agent id, room membership, and `releaseManifest`, which deletes `.dork/agent.json`. If git tracks the file, `releaseManifest` keeps it and denies the directory instead (`mesh-agent-management.ts:421-437`).
+- `UninstallFlowDeps` gains `agentRegistry?: { unregisterAtPath(projectPath): Promise<{ manifestKept: boolean } | null> }`, wired from `meshCore` in `index.ts`. The uninstall result says the agent was removed from the team, and whether its directory was denied.
+- A reinstall (§8) restores `uninstalled-agent.json` to `agent.json` when no `agent.json` exists, so the agent comes back with **the same id**, persona and memory. What the unregister cascade undid (disabled schedules, room seats) is not replayed: the schedules come back paused and the agent re-takes its #team seat. The docs say so.
+- An update's uninstall half passes `replacing: true` (§6) and does **not** unregister: the agent is being replaced, not removed.
 
 ### 6. Update
 
-`MarketplaceInstaller.applyUpdate` keeps uninstall-then-install (the uninstall half is what runs the side-effect teardown: extensions off and their run approvals forgotten, DOR-516; the adapter entry removed; generated schedules removed). Steps 3 and 5 are deleted: the snapshot to a scratch dir, `rm -rf` of the data-only root, the copy-back, and the install-failure restore of the scratch dir. So are `findInstallRootFromPreservedPath` and the local `pathExists`. What remains:
+`MarketplaceInstaller.applyUpdate` keeps uninstall-then-install (the uninstall half runs the side-effect teardown). Steps 3 and 5 (the scratch-dir snapshot, `rm -rf`, copy-back, and the install-failure restore) are deleted, along with `findInstallRootFromPreservedPath` and the local `pathExists`. What remains:
 
-1. resolve; 2. `uninstall({ purge: false, deactivateShape: false })`, which leaves the person's files and the old record at the root; 3. `install({ …req, force: true })`, whose transaction backs that root up, carries (§4) and activates, restoring the root exactly on failure; 4. re-apply an active Shape (unchanged).
+1. resolve; 2. `uninstall({ purge: false, projectPath, replacing: true })`, which moves only package files and leaves the person's files plus the pruned record in place; 3. `install({ …req, force: true })`, running §4 against that root; 4. re-apply an active Shape (unchanged).
 
-The whole round trip stays inside the one `withInstallTargetLock` (DOR-1722). The re-entrant grant covers the transaction's own lock take.
+`UninstallRequest.deactivateShape` (internal, never in the HTTP schema) is replaced by `replacing?: boolean`. It is the one internal flag for "this removal is the first half of a replace": it keeps `ui.shapes.active` and skips agent unregistration. The round trip stays inside one `withInstallTargetLock` (DOR-1722).
+
+**Pre-existing, unchanged:** if the install half fails, the update leaves the package uninstalled (its person files and record in place, so a retry picks them up). That is what happens today too. Closing it is out of scope.
 
 ### 7. What counts as installed
 
-A root counts as an installed package only if it has `.dork/manifest.json` or `.claude-plugin/plugin.json`: the predicate Harness Sync (`sources/installed.ts`) and the installed scanner already use. A root left by an uninstall has neither.
+A root counts as an installed package only if it has `.dork/manifest.json` or `.claude-plugin/plugin.json`: the predicate Harness Sync (`sources/installed.ts`) and the installed scanner already use. A root an uninstall left behind has neither.
 
-- New `hasPackageIdentity(root)` in `lib/locate-install.ts` (exported, tested). `locateInstallRoot` and `UninstallFlow.locate` skip a candidate without an identity, so `dorkos uninstall flow` or `dorkos update flow` on an uninstalled-but-kept root answers `PackageNotInstalledError` instead of "removing" the kept files. Today `locate()` accepts any existing directory.
-- The update check's enumeration (`flows/update.ts`, via `readInstalledIdentity`) and `scanInstallationsAcrossScopes` already require an identity. A test pins that a kept root is invisible to all three.
-- `ConflictDetector`'s `package-name` rule keys on a directory existing under an install root. It must use the same predicate, so installing into a kept root is a plain install, not a "same name exists" warning.
+- New `hasPackageIdentity(root)` in `lib/locate-install.ts` (lstat, regular file). `locateInstallRoot` and `UninstallFlow.locate` skip a candidate without an identity. Today `locate()` accepts any existing directory.
+- **Scope, stated:** the probe order is unchanged (a project's roots first, then the global roots). A kept root in a project is therefore treated exactly as if that project had never installed the package. `dorkos uninstall flow --project X` then resolves to the global flow, **which is what it does today for a package only installed globally**. That pre-existing precedence is recorded in the guide rather than changed here.
+- The update enumeration (`readInstalledIdentity`) and `scanInstalledPackages` / `scanInstallationsAcrossScopes` already require an identity. The conflict detector's `package-name` rule must use the same predicate. Tests pin all five.
 
-### 8. Agent packages adopt their existing workspace
+### 8. Agent packages: the identity files are the agent's
 
-`flows/install-agent.ts` `activate`, after the atomic move: when `<targetDir>/.dork/agent.json` exists and parses (carried by §4, row 6 or 9), call `createAgentWorkspace` in **adopt** mode:
+Two defects, both verified: `createAgentWorkspace` always writes `.dork/MEMORY.md` (`agent-creator.ts` ~L446, via `writeConventionFile`, which always overwrites: `convention-files-io.ts:67-74`), and SOUL.md / NOPE.md the same way. And when a person unregisters the agent from mesh, `releaseManifest` has already deleted `agent.json`, so a later reinstall ran as a fresh create over the carried SOUL/NOPE/MEMORY.
 
-- `createAgentWorkspace` gains a second, server-internal parameter, `createAgentWorkspace(opts, { adoptExisting: true })`. It is deliberately **not** a field on `CreateAgentOptionsSchema` (`@dorkos/shared/mesh-schemas.ts:950`): that schema is the public `createAgent` transport contract, and "reuse whatever `agent.json` sits in this directory" must not be reachable from an HTTP body. It is accepted only together with `skipTemplateDownload: true`, and the marketplace agent flow is the only caller.
-- In adopt mode the creator reads the existing manifest and **reuses its `id`**. It writes `.dork/agent.json` only if absent, and `.dork/SOUL.md` / `.dork/NOPE.md` only if absent. It runs the rest of its pipeline (mesh sync, harness, etc.) as for a fresh scaffold.
-- The package's new `agentDefaults` (traits, icon) apply to a fresh install only. On adoption the person's `agent.json` is theirs (it is user-editable by the type default). The install result says so in a warning only when the new version's `agentDefaults` differ from the adopted values, e.g. "Kept this agent's own settings. The new version suggests different traits; change them in the agent's settings if you want them."
-- Result: same id, same path. Mesh's `upsertAutoImported` sees an unchanged agent, no branch swap, rows and schedules keyed to the id keep resolving. This is DOR-1791's T1, delivered here because an agent package's `agent.json` is that package's settings.
+The change: `createAgentWorkspace(input, meshCore?, internal?: { marketplace?: true })`, a **third** parameter (the second is already `meshCore`), server-internal and never on the public `CreateAgentOptionsSchema`. It requires `skipTemplateDownload: true`. For **every** marketplace agent install, fresh or not:
+
+- If `.dork/agent.json` is absent and `.dork/uninstalled-agent.json` exists, rename the latter to the former first (§5).
+- If `.dork/agent.json` exists and parses: **adopt**. Reuse its `id` and its contents, do not write it, and do not apply the new version's `agentDefaults`. If they differ from the adopted values, one warning says so. If it exists and does not parse: throw, naming the file. It is the only copy of that agent's identity (the discipline of ADR 260903-023414).
+- Otherwise mint a new id and write `agent.json` as today.
+- `SOUL.md`, `NOPE.md`, `MEMORY.md`: written **only if absent**, via a new `writeConventionFileIfAbsent` in `packages/shared/src/convention-files-io.ts`, under the same file lock (open with `wx`). A package-shipped copy that arrived with the files is therefore kept, and the scaffold never overwrites.
+- The rest of the pipeline (instructions scaffold, which is already write-if-absent; operating skills; `syncFromDisk`) runs as before.
+- **Arrival origin:** an adoption notifies with `origin: 'registered'`, the existing `AgentArrival` value (`moment-detectors.ts:254`) meaning "DorkOS registering a directory already on disk". It takes the #team seat and re-binds Shape schedules, and is not announced as news. A fresh mint keeps `'created'`. A new `'adopted'` value would have to be taught to every reaction and would mean the same thing.
+- **Denied directory:** a marketplace install is an explicit act by the person, like `mesh_register`. When the agent's directory is on mesh's denied list (for example after a git-tracked manifest was kept on unregister), the install clears the denial, as registration does (`mesh-discovery.ts:318, 557`), and the result says so.
+
+Result: the same id at the same path, so mesh sees no branch swap. Rows keyed to the id keep resolving. This is DOR-1791's T1.
 
 ### 9. Legacy installs (no record)
 
-A root with a package identity and no valid record gets one rebuilt immediately before it is needed: at step 3b of a reinstall, and at the start of every uninstall, an update's uninstall half included, so §5 keeps the right files. New `rebuildInstalledFiles(installRoot, deps)` in `lib/installed-files.ts`:
+A root with a package identity and no valid record gets one rebuilt immediately before it is needed: step 3 of §4, and step 1 of §5. New `rebuildInstalledFiles(installRoot, deps)`:
 
-1. Read `.dork/install-metadata.json`. Need `name`, `commitSha` and `sourceKey`; a local-path install has neither.
-2. Get the tree the install came from, **without trusting the live root**: the package cache entry `<name>@<commitSha>` if present, else `PackageFetcher` at `sourceKey` pinned to `commitSha` (DOR-2248 makes this exact).
-3. Run the same copy the flows use (`stagePackageContents`, which strips symlinks and the root `.npmrc`) into a temp dir, compute the record from it with `ownedTrees: ["node_modules"]` and `userEditable` from that tree's manifest plus the type defaults, and write it to `<installRoot>/.dork/installed-files.json`. Log at `info`.
-4. **If the tree cannot be obtained** (a local install, a commit gone from the remote, offline), fall back to a no-loss record: **every file currently in the root is treated as the person's edit of a shipped file** (rows 5, 7, 10). The new version's copy wins where it ships one. The live copy is saved as `.dork-old` only when its bytes differ. Everything the new version does not ship stays in place (rows 8/9 behaviour), with one grouped warning listing those paths so a stale leftover can be deleted. Nothing is deleted on a guess. In an uninstall the same fallback keeps every file except the identity files (`.dork/manifest.json`, `.claude-plugin/plugin.json`), `.dork/install-metadata.json` and `node_modules/`, and says so in the result. This happens at most once per install, because the next install writes a real record.
+1. Read `.dork/install-metadata.json`. Need `name`, `commitSha`, `sourceKey`.
+2. Obtain the original tree, never from the live root: the package cache entry `<name>@<commitSha>`, else `PackageFetcher` **pinned to that commit**. Fetching an arbitrary older commit does not exist today (`package-fetcher.ts:215`; `git-subdir.ts:195, 216, 233` clone the default branch shallowly). **This is a hard dependency on DOR-2248**, whose acceptance now includes "fetch a named past commit exactly". There is no cache entry for `flow@ee1c8eb…` on this machine, so the fetch path is the one the real installs take.
+3. Stage it with `stagePackageContents` (strips symlinks, the root `.npmrc`, and reserved paths, §11) into a temp dir, then compute the record exactly as an install would (agent identity files excluded). Write it to the root and log at `info`.
+4. **Fallback when no original tree is obtainable** (a local-path install, a commit gone upstream, offline): a live file is the package's if its bytes equal the file at the same path in **any tree DorkOS can obtain**: the new version's staged tree, any cached `<name>@*`, or the recorded local source path if it still exists. The fallback record lists exactly those files, marked `inferred: true`. Everything else is treated as the person's (rows 9–11), and one grouped warning names the kept files the new version does not ship, so a real leftover can be deleted. This removes an old version's unchanged skills (so Harness Sync stops projecting them) without ever deleting a byte that no known tree vouches for.
 
-For the four flow installs on this machine, step 2 succeeds (`commitSha` `ee1c8eb`, `sourceKey` recorded, commit on GitHub). flow does not ship `config/config.json`, `config/config.local.json` or `skills/<tracker>-adapter/` (except `linear-adapter`, which it does ship), so they are rows 9 and survive untouched.
+For the four flow installs on this machine, step 2 takes the fetch path. flow ships neither `config/config.json` nor `config/config.local.json`, so they are row 9. Task 4.2 proves this against a copy of a real root.
 
 ### 10. `${CLAUDE_PLUGIN_DATA}`
 
-- **Resolution:** `<installRoot>/.dork/data`, one per install. So a project install has its own, which Claude Code's per-user directory cannot offer.
-- **Created** empty by every flow's `activate` after the move (`mkdir -p`; `.dork/data` is reserved, so it can never collide with a shipped file). It is the person's by §1, so it survives update and uninstall and is removed only by `--purge`. This matches DorkOS's keep-by-default contract rather than Claude Code's delete-by-default one; the uninstall copy already says `--purge` removes data.
-- **Harness Sync** (`@dorkos/harness`): add `CLAUDE_PLUGIN_DATA_TOKEN = '${CLAUDE_PLUGIN_DATA}'` beside `CLAUDE_PLUGIN_ROOT_TOKEN` (`scan/scanner.ts`). Every place `installed-projector.ts` rewrites the root token (command wrappers ~L235/L280, hook commands ~L304-335, and the Codex/OpenCode hook paths in `generate/hooks.ts`) also rewrites the data token to `join(installDir, '.dork', 'data')`, using the same separator handling the root rewrite already has. `CLAUDE_ONLY_HOOK_TOKENS` and `PLUGIN_ROOT_SKILL_WARNING_REASON`'s sibling cover the data token for projected **skills**, which cannot be rewritten because they are symlinks: the same warning shape, naming `${CLAUDE_PLUGIN_DATA}`. The adopt-refusals copy (`adopt/refusals.ts`) names both tokens.
-- **Global plugins delivered through the SDK** (`buildClaudeAgentSdkPluginsArray`): Claude Code sets its own `${CLAUDE_PLUGIN_DATA}` for these. Recorded as a known limit in `contributing/marketplace-installs.md` §16 with DOR-174 as the owner, including that DOR-174 must move that data when global scope switches to projection.
+- **Resolution:** `<installRoot>/.dork/data`, **one per install, deliberately**. Claude Code has one per plugin id per user, shared by every scope. DorkOS keeps settings per install because the same plugin in two projects carries two projects' settings (flow: two Linear teams). ADR 260923-163515 records the difference.
+- **Created** by every flow's `activate` (`mkdir -p`). It is reserved, so it can never collide with a shipped file. It is the person's by §1: it survives update and uninstall, only `--purge` removes it, and an empty one is pruned on uninstall (§5), so it leaves no shell.
+- **Inline rewrite:** Harness Sync adds `CLAUDE_PLUGIN_DATA_TOKEN` beside `CLAUDE_PLUGIN_ROOT_TOKEN` (`scan/scanner.ts:75`). One helper rewrites both tokens wherever `installed-projector.ts` and `generate/hooks.ts` rewrite the root token today (command wrappers, Claude Code hooks, Codex/OpenCode hook paths). A projected skill (a symlink, not rewritable) gets the same warning shape the root token gets.
+- **Environment variables:** Claude Code also exports both variables to hook, MCP and LSP processes, and plugin scripts read `process.env.CLAUDE_PLUGIN_DATA`. For projected **hook commands**, the rewrite also prefixes `export CLAUDE_PLUGIN_ROOT='<root>' CLAUDE_PLUGIN_DATA='<data>'; ` (single-quoted, with `'` escaped), so a script reading the environment gets the same paths. Claude Code and Codex run hook commands through a POSIX shell (Git Bash on Windows). Harness does not project plugin MCP or LSP servers today, so there is nothing to export there. That is recorded as a known limit in `contributing/harness-sync.md` for whoever adds that projection.
+- **`node_modules` in the data dir** (a pattern the Claude Code docs suggest): the data dir is carried as one unit on every update (§4). On APFS/btrfs/ReFS the clone costs next to nothing; on ext4 it is a full copy per update. Task 4.2 measures it, and the docs tell authors DorkOS already installs declared dependencies into the package's own `node_modules` (§5.1), so they do not need to.
+- **Global plugins delivered through the SDK** get Claude Code's own directory until DOR-174. That is recorded as a known limit, and DOR-174 must move that data when it switches.
 
-### 11. Validation
+### 11. Reserved paths and validation
 
-`packages/marketplace/src/package-validator.ts`: new error `RESERVED_PATH_SHIPPED`, "`<path>` is a path DorkOS keeps for the person or the installer (`.dork/data/`, `.dork/secrets.json`, `.dork/install-metadata.json`, `.dork/installed-files.json`, `*.dork-old`, `*.dork-new`). Remove it from the package." It is raised for any shipped file under a reserved path. `userEditable` schema errors come through `MANIFEST_SCHEMA_INVALID` with a message per bad pattern. No package in dork-labs/marketplace ships a reserved path today (checked `git ls-files` at `ee1c8eb`).
+Reserved: `.dork/data/**`, `.dork/secrets.json`, `.dork/install-metadata.json`, `.dork/installed-files.json`, `.dork/uninstalled-agent.json`, and any path whose basename ends `.dork-old` / `.dork-new` (optionally `.<n>`). Three layers:
+
+- `stagePackageContents` (the single copy step every flow **and** the legacy rebuild use) strips them with a `warn`, the same doctrine it applies to symlinks and the root `.npmrc`.
+- The record walk excludes them again.
+- `validatePackage` raises `RESERVED_PATH_SHIPPED` for publishing and `dorkos marketplace validate`, gated so validating an **installed** root (the scanner's CC-only fallback) never reports its own installer files.
+
+`userEditable` pattern errors come through `MANIFEST_SCHEMA_INVALID`. No dork-labs/marketplace package ships a reserved path today (`git ls-files` at `ee1c8eb`).
 
 ### 12. Results and surfaces
 
@@ -209,116 +257,139 @@ For the four flow installs on this machine, step 2 succeeds (`commitSha` `ee1c8e
 ```ts
 /** What an install did with a file the person may have changed. */
 export interface PackageFileNotice {
-  /** Root-relative path of the file. */
+  /** Root-relative POSIX path of the file. */
   path: string;
   /** `replaced-edit`: the package's copy is in place; yours is at `savedAs`.
    *  `kept-edit`: your copy is in place; the package's new default is at `savedAs`.
-   *  `kept-no-longer-shipped`: your copy is in place; the package no longer ships this file. */
-  outcome: 'replaced-edit' | 'kept-edit' | 'kept-no-longer-shipped';
-  /** Root-relative path of the saved copy, when one was written. */
+   *  `kept-no-longer-shipped`: your copy is in place; the package no longer ships this file.
+   *  `late-write`: this changed while the update ran; the newest copy is in place (yours at `savedAs` if it collided).
+   *  `skipped-special`: a socket, pipe or device file was not copied. */
+  outcome: 'replaced-edit' | 'kept-edit' | 'kept-no-longer-shipped' | 'late-write' | 'skipped-special';
+  /** Root-relative POSIX path of the saved copy, when one was written. */
   savedAs?: string;
 }
 // InstallResult gains:
 fileNotices?: PackageFileNotice[];
 ```
 
-- Each notice also becomes one plain sentence on `InstallResult.warnings`, so the CLI (`install.ts` prints warnings), the app's install and update toasts, and MCP callers show it with no new UI. Wording follows `writing-for-humans`. For example: "You had changed skills/x/SKILL.md. The new version replaced it; your copy is at skills/x/SKILL.md.dork-old." Five or more notices collapse into one sentence with a count and the list on `fileNotices`.
-- **Source changed:** when `R_old.package.source` exists and differs from the incoming source, add a warning: "Files kept from the earlier <name> (from <old source>) are now available to this one (from <new source>)." No refusal (see Security).
-- **Uninstall copy.** Every sentence that names the preserved set changes from "`.dork/data/` and `.dork/secrets.json`" to "the files you and your agents added or changed". That covers `tool-uninstall.ts:43`, `marketplace-capabilities.ts:237`, `confirmation-provider.ts:225`, `shared/marketplace-schemas.ts:489`, `cli/commands/uninstall.ts:5-6` (help text; its "Preserved:" listing already prints `preservedData`), `operating-skills/…/using-the-marketplace.ts:88`, `flows/update.ts:9,82`, `ensure-core-extensions.ts:107`. The operating skill is version-stamped, so its pack version must bump per the seeder's rule.
+- Each notice is also one plain sentence on `InstallResult.warnings` (CLI, app toasts and MCP callers already show warnings), written with `writing-for-humans`. Five or more collapse into one sentence with a count.
+- **Source changed:** when `R_old.package.source` exists and differs from the incoming source, a warning names both. There is no refusal (see Security).
+- **Uninstall:** the result says what was kept. For an agent package, it says the agent was removed from the team and whether its folder was denied.
+- **Copy:** every sentence naming the old preserved set changes to "the files you and your agents added or changed". Sites: `tool-uninstall.ts:43`, `marketplace-capabilities.ts:237`, `confirmation-provider.ts:225`, `shared/marketplace-schemas.ts:489`, `cli/commands/uninstall.ts:5-6`, `operating-skills/…/using-the-marketplace.ts:88` (bump the pack version), `flows/update.ts:9,82`, `ensure-core-extensions.ts:107`.
 
 ### 13. dork-labs/marketplace and flow
 
-No change is required, and none is part of this spec. flow's settings are rows 9 under the new rule. Contract-first is satisfied because `@dorkos/marketplace` ships `userEditable` before any package uses it, and no package needs to. The follow-up (not in scope) is for flow to document where its settings live and to consider the project as their home, for bare-Claude-Code installs.
+No change is required and none is part of this spec. flow's settings are row 9. `@dorkos/marketplace` ships `userEditable` before any package uses it, and no package needs it. The flow follow-up (document where its settings live; consider the project as their home for bare-Claude-Code installs) is separate.
 
 ## User Experience
 
-- **Updating a package you configured** (`dorkos update flow --apply`, or **Update** in the app): the new version installs and your settings are exactly where they were. Nothing extra is shown unless you had edited a file the package itself ships.
-- **You edited a file the package ships:** the result says, in one sentence per file, which file, what happened, and where the other copy is (`.dork-old` for yours, `.dork-new` for the package's new default). Nothing is lost in either direction.
-- **Reinstalling** (installing a package that is already installed) behaves like an update. Today it silently wipes `.dork/data/` too.
-- **Uninstalling** keeps the files you and your agents added or changed, and lists them. `--purge` removes them. Installing the package again later picks them up. An uninstalled package with kept files does not show as installed anywhere, and `dorkos update <name>` says it is not installed.
-- **An agent from the marketplace** keeps its name in rooms, its memory, its persona edits and its schedules across an update.
+- **Updating a package you configured:** the new version installs and your settings are exactly where they were. Nothing extra is shown unless you had edited a file the package itself ships.
+- **You edited a file the package ships:** the result says which file, what happened, and where the other copy is (`.dork-old` for yours, `.dork-new` for the package's new default). Nothing is lost either way. A `.dork-new` stays until it no longer means anything.
+- **Reinstalling** behaves like an update. Today it silently wipes `.dork/data/` too.
+- **Uninstalling** keeps the files you and your agents added or changed, and lists them. `--purge` removes them. An uninstalled package with kept files does not show as installed anywhere.
+- **Uninstalling a marketplace agent** removes it from your team, as removing any agent does. Its memory and persona stay on disk, and reinstalling brings it back with the same identity; its schedules come back paused.
+- **An agent that is working while it is updated** keeps what it wrote during the update.
 - **Package authors** keep state in `${CLAUDE_PLUGIN_DATA}` as they would for Claude Code, and mark shipped defaults meant for editing with `userEditable`.
 
 ## Testing Strategy
 
-Every test carries a purpose comment and must be able to fail. Red-before for each behaviour change: the test is written and seen failing on the baseline first.
+Every test carries a purpose comment and must be able to fail. Each behaviour change is red first, on the baseline. Filesystem tests use real temp dirs, because the bugs live in real paths.
 
-- **`lib/installed-files.ts` unit** (`__tests__/installed-files.test.ts`, real temp dirs): record excludes `node_modules/**`, installer paths, symlinks; paths are POSIX; a hash changes when one byte changes; a record with `../x`, an absolute path, or a bad schema reads as absent. **The classification table:** one test per row 1–11, each building a backup + staged tree and asserting the final tree, the saved-as name and the notice. Name collision: `P.dork-old` already present yields `P.dork-old.2`. A directory with no recorded file beneath it is carried as a unit (spy on the copy calls).
-- **`transaction.test.ts`:** with `ownership`, the record is inside the activated target. A person file in the old target survives. An `activate` failure after carry-over restores the old target byte-for-byte, person files included, and leaves no staging behind. Without `ownership` (the Shape fork), behaviour is unchanged.
-- **Flows** (`flows/__tests__/install-*.test.ts`, `uninstall.test.ts`, `update.test.ts`, `marketplace-installer.test.ts`): for each of plugin, agent, skill-pack, adapter, shape: install, add `config/mine.json` and `.dork/data/state.json`, reinstall, and both are intact. Update: both survive and a recorded edited shipped file follows row 5. Uninstall without purge keeps them plus the record, drops the metadata, and returns the collapsed `preservedData`. Purge removes all. An untouched package's uninstall leaves no directory. `applyUpdate` no longer calls `mkdtemp` (the scratch-dir test is deleted with the code).
-- **Agent adoption** (`install-agent.test.ts` + `agent-creator.test.ts`): update keeps `.dork/agent.json`'s `id` and an edited `.dork/SOUL.md`. A fresh install still mints an id. `adoptExisting` without `skipTemplateDownload` throws, and `CreateAgentOptionsSchema` still rejects/strips any adopt-like key from a transport body. **Mesh integration:** after update, `meshCore.getProjectPath(oldId)` still resolves (the DOR-1791 U1 evidence bar).
-- **Installed predicate:** a kept root is invisible to `locateInstallRoot`, `UninstallFlow`, the update enumeration, `scanInstallationsAcrossScopes` and the conflict detector's `package-name` rule.
-- **Legacy rebuild:** a root with a manifest and no record, whose recorded commit is in the fake cache, gets the exact record; a person file survives the next update. With the cache and the fetch both failing, the fallback keeps every unshipped file, writes `.dork-old` only for differing shipped paths, and warns once.
-- **Validator** (`packages/marketplace/src/__tests__/package-validator.test.ts`): each reserved path yields `RESERVED_PATH_SHIPPED`. `userEditable` accepts `a/b.json` and `dir/**` and rejects `../x`, `/x`, `*.json`, `a\\b`, `.dork/data/**`. `matchesUserEditable` and `resolveUserEditable` (agent defaults) have unit tests.
-- **Harness** (`packages/harness/src/**/__tests__`): a command wrapper and a hook using `${CLAUDE_PLUGIN_DATA}` are rewritten to `<installDir>/.dork/data` (POSIX and win32 separators). A skill using it produces the warning. The Codex hook path rewrites it too.
-- **Real-install proof (VERIFY):** copy one real flow install root (e.g. `blintz/.dork/plugins/flow`) into a temp project, run the server's `update()` against a fixture of the next flow commit, and diff `config/` before and after (identical), plus the notices.
-- **Mocking:** filesystem tests use real temp dirs (no `fs` mocks: the bugs live in real paths). The fetcher and cache are fakes at their existing injection seams.
+- **`installed-files.ts`:** record excludes owned paths, installer paths, reserved paths, symlinks, and the four agent identity files for agents; POSIX paths; a one-byte change changes the hash. The reader returns null for a missing record, bad JSON, schema errors, `../x`, absolute keys and backslash keys. **Classifier: one test per row 0, 1, 2, 3a, 3b, 4–11**, plus: same-bytes rows 5/10 write no `.dork-old`; the `pendingDefaults` lifecycle (kept while meaningful, refreshed, removed once matched); a file↔directory collision; a case-only collision on a case-insensitive temp volume (skip with a reason where the test FS is case-sensitive, and cover the probe logic with an injected `lstat`); a free-name search that sees an existing `P.dork-old` via `lstat`; a recorded path under a symlinked directory counts as edited and is never read through the link; a socket in the live root yields `skipped-special` (create one with `net.createServer().listen(path)`); a unit-carried directory.
+- **Transaction:** staging is a sibling of the target; the record activates with the package; a person file survives a reinstall; a legacy rebuild runs before the target moves (fake fetcher records call order); an `activate` failure leaves the target byte-for-byte equal to the original, with no stage, backup or uninstall siblings left; the late-write pass picks up a file written into the backup after step 4. `atomicMove`'s EXDEV fallback keeps a relative symlink relative (inject an EXDEV rename).
+- **Uninstall:** person files never move (their inode numbers are unchanged after uninstall). Only record-proven files go to the sibling. A side-effect failure moves every entry back (same inodes). The pruned record keeps only edited entries and `uninstalledAt`. An untouched package leaves no directory; `.dork/data` left empty leaves no shell. A symlinked directory inside the root is never traversed. Purge removes everything. **Agent:** uninstall unregisters through mesh, the agent is gone from the registry, `uninstalled-agent.json` holds the id, and reinstall restores the same id. A git-tracked manifest takes the deny branch and the reinstall clears the denial. Update (`replacing`) does not unregister.
+- **Agent scaffold:** a fresh marketplace install with a shipped `.dork/SOUL.md` keeps it byte-for-byte. `MEMORY.md` is never overwritten (adopt or fresh). Adoption reuses the id, notifies with `origin: 'registered'`, and does not apply `agentDefaults`. An unreadable `agent.json` throws. The public `CreateAgentOptionsSchema` strips an injected `marketplace` key. After an update, `meshCore.getProjectPath(oldId)` still resolves.
+- **Installed predicate:** a kept root is invisible to `locateInstallRoot`, uninstall, the update enumeration, both scanners, and the conflict detector.
+- **Legacy:** rebuild from a fake cache, then from a fake pinned fetch, gives the exact record. The fallback keeps only files no obtainable tree vouches for, and removes an old version's unchanged skill that the new version dropped. A local-path install uses the fallback.
+- **Validator / stage:** each reserved path is stripped by `stagePackageContents` (with a warn) and raises `RESERVED_PATH_SHIPPED` in `validatePackage`. The installed-root caller reports nothing. `userEditable` refuses `.dork/manifest.json`, `.claude-plugin/plugin.json`, `.dork/data/**`, `../x`, `/x`, `*.json`.
+- **Harness:** both tokens are rewritten in command wrappers and in Claude Code and Codex hooks (POSIX and win32 path fixtures). Hook commands carry the quoted `export` prefix, including a path containing `'`. A skill using the data token gets the warning.
+- **Real-install proof (4.2):** against a copy of `blintz/.dork/plugins/flow`, the legacy record is rebuilt through the DOR-2248 pinned fetch of `ee1c8eb`, `config/` is byte-identical after `update()`, and no `.dork-old` is written for flow's own files.
 
 ## Performance Considerations
 
-- Hashing the staged tree is one streamed SHA-256 per shipped file, excluding `node_modules`. flow is a few hundred files, so the cost is milliseconds, on a path that already runs `npm install` (bounded at 120 s).
-- Carry-over copies person files once per update and reinstall. Typical packages (flow: two config files) cost nothing. An agent package whose working tree is large pays one recursive copy of that tree per update; whole-directory units keep it to one `fs.cp` per top-level directory. Copy, not move, is deliberate: the backup must stay complete until the install commits (crash safety, rollback). Measure on a 1 GB agent tree during EXECUTE and record the number in `04-implementation.md`. If it is unacceptable, the follow-up is a same-filesystem sibling staging dir with renames and rename-back rollback, not weaker guarantees.
-- Uninstall's classification hashes the root's recorded files once.
+- Hashing: one streamed SHA-256 per shipped file, excluding owned paths. flow is a few hundred files, so milliseconds, on a path that already runs `npm install`.
+- Carry-over is a clone, not a copy, on APFS/btrfs/ReFS, so it is near-free for a large agent tree on macOS. On ext4 it is a real copy per update. Staging beside the target keeps that copy on one disk and out of RAM-backed `/tmp`. Uninstall is now renames of package files only, so it costs nothing proportional to the person's data. Task 4.2 measures an update over a ~1 GB agent tree on this machine and records the number. If an ext4 copy proves unacceptable, the named follow-up is hard links plus a rename-back rollback, never weaker guarantees.
 
 ## Security Considerations
 
-- **Packages are not sandboxed.** A plugin's hooks and scripts run as the person and can read any file they can. So kept files being "available" to a later same-named package from another source is not a new exposure. The warning in §12 makes the hand-over visible, which is the honest level of protection.
-- **Records are untrusted input** (a person or agent can edit them). Every path is validated relative and contained (§2). A record only decides what is _kept_, and every write lands inside the install root, so a tampered record cannot delete or write outside it.
-- **Carry-over never follows symlinks** (`verbatimSymlinks`), and never dereferences a person's symlink into staging.
-- **Reserved paths** stop a package from shipping over `.dork/secrets.json` or `.dork/data/` and thereby "owning" a person's secret on the next update.
-- **Nothing here widens what an agent can do.** An agent that can write into an install root today still can, and its writes now survive. `plugins/` and `shapes/` stay `INSTALL_ROOT_HOLDS_PACKAGES_ONLY` for task-ownership purposes until DOR-1791's follow-up re-reads that rule against the record.
-- `.dork/plugins/` is in `EPHEMERAL_GITIGNORE_PATTERNS`, so kept `config.local.json` secrets stay out of commits as before.
+- **Packages are not sandboxed.** A plugin's hooks and scripts run as the person, so kept files being available to a later same-named package from another source is not a new exposure. The warning in §12 makes the hand-over visible.
+- **Records are untrusted input.** Paths are validated relative and contained. Removal requires matching bytes reached through real directories (`lstat` on every component), and every write lands inside the root.
+- **Symlinks are never followed**, whether carried, hashed or moved, and a recorded path under a symlinked directory is treated as the person's.
+- **Reserved paths** are stripped at copy time, excluded from the record and refused at validation, so no package can ship over `.dork/secrets.json` or a person's data.
+- **Agent adoption** is reachable only from the marketplace agent flow (third parameter, not on the transport schema), and only for a directory the install itself activated.
+- `.dork/plugins/` stays in `EPHEMERAL_GITIGNORE_PATTERNS`, so kept `config.local.json` secrets stay out of commits.
 
 ## Documentation
 
-- `contributing/marketplace-installs.md`: §1 key invariants (the ownership rule); §4 uninstall "Data preservation" and update steps rewritten; §5 transaction lifecycle gains step 3b and the record; §5.1 note that `node_modules` is an owned tree; §7's DOR-1791 sentence (`:353`) corrected to point at the new follow-up; §16 known limit for SDK-delivered global plugins.
-- `docs/marketplace/index.mdx`: what update, reinstall and uninstall keep, in plain words, plus the `.dork-old`/`.dork-new` explanation.
-- `docs/marketplace/publishing.mdx`: "Where your package keeps its settings": use `${CLAUDE_PLUGIN_DATA}`, declare `userEditable` for defaults meant to be edited, the reserved paths, and `minDorkosVersion`.
-- `.claude/skills/marketplace-dev/SKILL.md`: the same authoring rules, for agents building packages.
-- ADR-0233 and ADR-0304 get an "Amended by" line pointing at the new ADRs; ADR-0233's five-step update prose is corrected.
-- Changelog fragment (one, `changelog/unreleased/`): "Updating or reinstalling a marketplace package now keeps the settings and files you added to it."
+- `contributing/marketplace-installs.md`: §1 invariants (the ownership rule); §4 uninstall (in place, agent unregistration) and update; §5 lifecycle (sibling staging, record, legacy rebuild, carry, late-write pass); §5.1 owned paths; §7's DOR-1791 sentence (`:353`) corrected; §16 known limits (SDK-delivered global plugins; the project-then-global probe order).
+- `contributing/harness-sync.md`: the data token, the hook `export` prefix, and the MCP/LSP env-var limit.
+- `docs/marketplace/index.mdx`: what update, reinstall and uninstall keep; `.dork-old` / `.dork-new`; uninstalling an agent; `--purge`.
+- `docs/marketplace/publishing.mdx`: "Where your package keeps its settings" (`${CLAUDE_PLUGIN_DATA}`, per install; `userEditable`; reserved paths; `minDorkosVersion`; dependencies already go in the package's own `node_modules`). No claim that Claude-Code-superset compatibility is verified.
+- `.claude/skills/marketplace-dev/SKILL.md` (and its `.agents/skills` mirror, if any).
+- ADR-0233 and ADR-0304 get "Amended by" lines. One changelog fragment.
 
 ## Implementation Phases
 
-- **Phase 1 — The contract (`@dorkos/marketplace`, `@dorkos/shared`).** `userEditable` schema + helpers, reserved-path validation, `PackageFileNotice` / `fileNotices` types.
-- **Phase 2 — Ownership in the installer (server).** `lib/installed-files.ts`; the transaction's record + carry-over step; all five flows pass `ownership`; uninstall keeps person files; `applyUpdate` simplified; the installed predicate; agent adoption; legacy rebuild; notices and copy.
-- **Phase 3 — `${CLAUDE_PLUGIN_DATA}` (`@dorkos/harness` + server).** Token rewrite, `.dork/data` creation, skill warning.
-- **Phase 4 — Documentation and proof.** Guides, user docs, authoring docs, ADR amendments, changelog, the real-install proof.
+- **Phase 1 — The contract** (`@dorkos/marketplace`, `@dorkos/shared`): `userEditable`, reserved paths, `PackageFileNotice`, `writeConventionFileIfAbsent`, new sibling markers.
+- **Phase 2 — Ownership in the installer** (server): the record module and classifier; `atomicMove` symlinks; stage copy strips reserved paths; transaction with sibling staging, carry, late-write pass; flows wired; installed predicate; in-place uninstall with agent unregistration; simpler update; agent identity files; legacy rebuild; janitor/scanner markers; copy.
+- **Phase 3 — `${CLAUDE_PLUGIN_DATA}`** (`@dorkos/harness`).
+- **Phase 4 — Docs and proof.**
 
-All four phases ship as **one dorkos PR** (spec docs included). No dork-labs/marketplace PR is part of this item.
+All ship as **one dorkos PR** after DOR-2248 (including its pinned-past-commit fetch) and the DOR-2244 dorkos PR land.
 
 ## Open Questions
 
-1. ~~Should edited shipped files default to the person's copy winning?~~ (RESOLVED)
-   **Answer:** No. The package wins and the person's copy is saved as `.dork-old`, unless the path is `userEditable`.
-   **Rationale:** a package whose code, prompts and hooks silently stop updating is half one version and half another; dpkg and rpm both overwrite non-config files. Nothing is lost, and the declaration exists for the files meant to be edited.
-2. ~~Move instead of copy during carry-over?~~ (RESOLVED)
-   **Answer:** Copy.
-   **Rationale:** the backup must stay whole until the install commits; a crash mid-move would split the person's files between a tmp dir and a backup the janitor sweeps after 24 h. Performance is measured, with a named fallback design.
-3. ~~Keep the record in a root after uninstall?~~ (RESOLVED)
-   **Answer:** Yes.
-   **Rationale:** without it, a later reinstall cannot tell an edited shipped file (rows 5–8) from the person's own file (rows 9–11). It costs one small JSON file, and only when other files were kept.
-4. ~~Refuse a reinstall from a different source over kept files?~~ (RESOLVED)
-   **Answer:** Warn, do not refuse.
-   **Rationale:** packages are not sandboxed, so a refusal would imply an isolation that does not exist; the warning names both sources.
-5. ~~Rebuild legacy records eagerly at boot?~~ (RESOLVED)
-   **Answer:** Lazily, at the moment one is needed.
-   **Rationale:** no boot-time network, no config migration, and an install that is never updated never pays.
-6. ~~Should DorkOS delete `${CLAUDE_PLUGIN_DATA}` on uninstall like Claude Code?~~ (RESOLVED)
-   **Answer:** No; `--purge` does.
-   **Rationale:** DorkOS's existing, documented contract is keep-by-default (ADR-0233, `dorkos uninstall --purge`); changing it would be a silent data-loss change for current users.
+1. ~~Should edited shipped files default to the person's copy winning?~~ (RESOLVED) **Answer:** No: the package wins, and the person's copy is saved as `.dork-old`, unless the path is `userEditable`. **Rationale:** dpkg and rpm both overwrite non-config files, and a package whose code silently stops updating is half one version and half another.
+2. ~~Move or copy during carry-over?~~ (RESOLVED, revised after review) **Answer:** Clone from the live root into a sibling staging dir before the backup is taken; nothing of the person's is ever moved. Uninstall moves only package files. **Rationale:** the person's files never sit anywhere but their own directory, so no crash or tmp cleaner can take them.
+3. ~~Keep the record after uninstall?~~ (RESOLVED) **Answer:** Yes, pruned to the kept entries. **Rationale:** it distinguishes an edited shipped file from the person's own, and lets row 3a tell a person's deletion apart.
+4. ~~Refuse a reinstall from a different source over kept files?~~ (RESOLVED) **Answer:** Warn. **Rationale:** packages are not sandboxed, so a refusal would imply isolation that does not exist.
+5. ~~Rebuild legacy records eagerly?~~ (RESOLVED) **Answer:** Lazily, when one is needed.
+6. ~~Delete `${CLAUDE_PLUGIN_DATA}` on uninstall like Claude Code?~~ (RESOLVED) **Answer:** No; `--purge` does. **Rationale:** DorkOS's documented keep-by-default contract.
+7. ~~What does uninstalling an agent package do to the agent?~~ (RESOLVED, review blocker 1) **Answer:** It unregisters it through mesh (the full cascade) after parking `agent.json` as `.dork/uninstalled-agent.json`; a reinstall restores the id. **Rationale:** a package that is gone must not leave a running agent; parking keeps "reinstall brings it back" true.
+8. ~~Refuse, wait, or re-check when an agent writes during its own update?~~ (RESOLVED, review 14) **Answer:** Re-check (the late-write pass). **Rationale:** refusing blocks unattended updates, and waiting has no bound; a writer's cwd follows the renamed backup, so the pass sees exactly its writes.
+9. ~~New arrival origin for adoption?~~ (RESOLVED, review 16) **Answer:** Reuse `'registered'`. **Rationale:** it already means "DorkOS registering a directory that was on disk", which every reaction understands.
+
+## Review log
+
+Independent design review, 2026-09-23. Verdict: BLOCKED (the model is right; three holes lose data). Every finding was checked against the code at `3b36e3876` and adopted.
+
+| #   | Finding                                                                                                                                                                                               | Verified                                                                                                                                                       | Resolution                                                                                                                                                           |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1  | Uninstalling an agent package leaves a registered, running agent: uninstall never calls mesh, and `agent.json` now survives                                                                           | `flows/uninstall.ts` side effects: no mesh call                                                                                                                | §5: park `agent.json` as `.dork/uninstalled-agent.json`, then `meshCore.unregister` as the last side effect; reinstall restores the id; `replacing` skips it; tested |
+| B2  | Adopt still wipes memory, and a person's unregister deletes `agent.json`, so a reinstall runs fresh over carried files                                                                                | `agent-creator.ts` ~L446 `writeConventionFile(… MEMORY …)`; `convention-files-io.ts:67-74` always writes; `mesh-agent-management.ts:421-437` `releaseManifest` | §8: for every marketplace install the four identity files are written only if absent (`writeConventionFileIfAbsent`); they are never recorded (§2)                   |
+| B3  | The uninstall half of update moves the whole root to `os.tmpdir()`, and person files return only after side effects: a crash strands them where the OS clears them, and tmpfs copies 1 GB through RAM | `uninstall.ts` `removeLocated` `mkdtemp(tmpdir())` + `atomicMove(root, staging)`                                                                               | §5: uninstall in place; only record-proven package files move, to a same-filesystem sibling; rollback moves them back; `restorePersonFiles` dropped                  |
+| 4   | The EXDEV fallback copies without `verbatimSymlinks`                                                                                                                                                  | `lib/atomic-move.ts:45` `cp(… recursive, errorOnExist, force:false)`                                                                                           | §4.1: `verbatimSymlinks: true`, and ownership transactions stage in a sibling so EXDEV does not arise                                                                |
+| 5   | `fs.cp` throws on sockets/FIFOs                                                                                                                                                                       | Node `cp` behaviour                                                                                                                                            | §1, §4: special files skipped and reported (`skipped-special`)                                                                                                       |
+| 6   | Carry and legacy rebuild (network) ran after `moveTargetAside`                                                                                                                                        | `transaction.ts:322`                                                                                                                                           | §4: both run from the live root before the backup                                                                                                                    |
+| 7   | Fetch-by-SHA of an old commit does not exist; no cache for `flow@ee1c8eb…`                                                                                                                            | `package-fetcher.ts:215`; `git-subdir.ts:195/216/233`; cache listing                                                                                           | §9: explicit hard dependency on DOR-2248; proven in 4.2                                                                                                              |
+| 8   | Legacy fallback kept old package files forever                                                                                                                                                        | design                                                                                                                                                         | §9.4: a file is the package's if any obtainable tree has the same bytes at the same path                                                                             |
+| 9   | DorkOS's own writes poison the record (scaffold SOUL/NOPE; npm lockfile)                                                                                                                              | `agent-creator.ts` scaffold; npm step                                                                                                                          | §2: agent identity files never recorded; `package-lock.json` owned with `node_modules` when npm ran                                                                  |
+| 10  | Row 3 resurrected a deleted `userEditable` file                                                                                                                                                       | design                                                                                                                                                         | rows 3a/3b; §5 prunes removed entries so "missing" means the person deleted it                                                                                       |
+| 11  | File↔dir and case-only collisions                                                                                                                                                                     | design                                                                                                                                                         | §4: detected with `lstat` in the staged tree; free names by `lstat`                                                                                                  |
+| 12  | Symlinks mid-path                                                                                                                                                                                     | design                                                                                                                                                         | §1, §5: `lstat` on every component; a path under a symlinked dir is the person's                                                                                     |
+| 13  | Reserved paths only refused at validation; identity files allowed in `userEditable`                                                                                                                   | `stage-package.ts`                                                                                                                                             | §11: stripped in `stagePackageContents`, excluded from the walk, refused at validation; §3 refuses identity files                                                    |
+| 14  | An agent writing during its own update loses writes                                                                                                                                                   | design                                                                                                                                                         | §4.6 late-write pass (justified in Open Question 8)                                                                                                                  |
+| 15  | `${CLAUDE_PLUGIN_DATA}` is also an env var; Claude Code shares it across scopes; `node_modules` in it                                                                                                 | Claude Code plugins reference                                                                                                                                  | §10: `export` prefix on projected hook commands; MCP/LSP env as a known limit; one dir per install stated in ADR -163515; `node_modules` cost addressed              |
+| 16  | Adoption replays `origin: 'created'`; the denied list                                                                                                                                                 | `agent-creator.ts` ~L514; `moment-detectors.ts:254`                                                                                                            | §8: `origin: 'registered'`; the install clears a denial, as registration does                                                                                        |
+| 17  | `createAgentWorkspace`'s second parameter is `meshCore`                                                                                                                                               | `agent-creator.ts:257-260`                                                                                                                                     | §8: third parameter                                                                                                                                                  |
+| 18  | Rows 5/10 wrote `.dork-old` for identical bytes                                                                                                                                                       | design                                                                                                                                                         | "unless same bytes"                                                                                                                                                  |
+| 19  | Row 2 dropped an unmerged `.dork-new`                                                                                                                                                                 | design                                                                                                                                                         | `pendingDefaults` lifecycle (§2, §4)                                                                                                                                 |
+| 20  | Empty dirs (`.dork/data`) counted as kept                                                                                                                                                             | design                                                                                                                                                         | §1, §5: directories are never kept entries; empty ones pruned                                                                                                        |
+| 21  | Skipping a kept project root falls through to global                                                                                                                                                  | `installRootCandidates` order                                                                                                                                  | §7: stated as the existing precedence, unchanged                                                                                                                     |
+| 22  | Missing trivial row                                                                                                                                                                                   | design                                                                                                                                                         | row 0                                                                                                                                                                |
+| 23  | A failed install during update leaves the package uninstalled                                                                                                                                         | `applyUpdate`                                                                                                                                                  | §6: stated as pre-existing, unchanged                                                                                                                                |
 
 ## Related ADRs
 
 - Draft `260923-163513` Installed files are owned by provenance (amends 0233, 0304)
 - Draft `260923-163514` A shipped file a person edited: the package wins unless it is declared `userEditable`
-- Draft `260923-163515` `${CLAUDE_PLUGIN_DATA}` resolves to the install root's `.dork/data/`
-- Draft `260923-163516` A package agent keeps its identity across an update
-- ADR-0233 (update is advisory; the five-step reinstall, amended), ADR-0304 (file-scoped transaction, amended), ADR-0201 (extension data outside the code dir; consistent), ADR `260706-192819` (harness-native plugin delivery), ADR-0043 (agent file-first storage)
+- Draft `260923-163515` `${CLAUDE_PLUGIN_DATA}` resolves to the install root's `.dork/data/`, one per install
+- Draft `260923-163516` A marketplace agent's identity files are its own, across update, reinstall and uninstall
+- ADR-0233, ADR-0304 (amended), ADR-0201, ADR `260706-192819`, ADR-0043, ADR `260903-023414` (registration adopts)
 
 ## References
 
-- DOR-2245 (this item); DOR-2244 (split from); DOR-2246 (flow validator); DOR-2248 (exact staging, prerequisite); DOR-1789, DOR-1791 (`specs/marketplace-agent-schedules/01-ideation.md`); DOR-516 (update forgets run approvals); DOR-1722 (update lock); DOR-174 (global projection)
-- Claude Code plugins reference, "Persistent data directory", "Environment variables", "userConfig", "Plugin caching": https://code.claude.com/docs/en/plugins-reference
-- dpkg conffiles: Debian Policy §10.7.3; rpm `%config(noreplace)`; VS Code `ExtensionContext.globalStorageUri`
+- DOR-2245; DOR-2244; DOR-2246; DOR-2248 (prerequisite, incl. pinned past-commit fetch); DOR-1789, DOR-1791 (`specs/marketplace-agent-schedules/01-ideation.md`); DOR-516; DOR-711; DOR-1722; DOR-174; DOR-175 (scanner excludes install siblings)
+- Claude Code plugins reference: https://code.claude.com/docs/en/plugins-reference
+- dpkg conffiles (Debian Policy §10.7.3); rpm `%config(noreplace)`; VS Code `ExtensionContext.globalStorageUri`
 - `research/20260329_claude_code_plugin_marketplace_extensibility.md`

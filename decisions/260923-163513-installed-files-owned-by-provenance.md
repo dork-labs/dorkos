@@ -19,7 +19,17 @@ Updating a marketplace package was uninstall then install, and only `<installRoo
 
 ## Decision
 
-Every marketplace install writes `<installRoot>/.dork/installed-files.json` into the staged tree before activation: each shipped file's root-relative path and SHA-256, the installer-generated trees it owns wholesale (`node_modules`), the package's source, and its resolved `userEditable` list. `runTransaction` computes it whenever a flow passes `ownership`, so no flow can forget it. **DorkOS removes or replaces only files it can prove the install put there, unchanged.** Everything else in an install root is the person's. Update, reinstall and a plain uninstall keep it; only `--purge` removes it. Installing over an existing root copies the person's files from the backup into the staged tree (step 3b) under a fixed rule table, leaving the backup whole until the install commits. Uninstall without purge leaves the person's files and the record in place. Such a root has no manifest and counts as not installed. A legacy install without a record gets one rebuilt from its recorded commit's tree; if that tree cannot be had, a no-loss fallback deletes nothing it cannot prove.
+Every marketplace install writes `<installRoot>/.dork/installed-files.json` into the staged tree before activation. It holds each shipped file's root-relative path and SHA-256, the installer-generated paths it owns wholesale (`node_modules`, and a `package-lock.json` npm wrote), the package's source, and its resolved `userEditable` list. An agent package's four identity files are never recorded: DorkOS writes them itself, and they are the agent's. `runTransaction` computes the record whenever a flow passes `ownership`, so no flow can forget it.
+
+**DorkOS removes or replaces only files it can prove the install put there and nobody has changed since.** Proof means bytes that match, reached through real directories with no symlink on the path. Everything else in an install root is the person's. Update, reinstall and a plain uninstall keep it; only `--purge` removes it.
+
+**A person's file is never moved out of its own directory:**
+
+- Installing over an existing root stages in a same-filesystem sibling of the target. Before the target is backed up, it clones the person's files from the live root into the staged tree under a fixed rule table. A late-write pass before the backup is deleted catches anything written during the update.
+- Uninstall runs in place. Only record-proven package files move, to a same-filesystem sibling, and they move back if a side effect fails. For an agent package the last side effect unregisters the agent through mesh, after parking its manifest so a reinstall can restore the same id.
+- Uninstall prunes the record to the kept entries, so a root it leaves has no manifest and counts as not installed.
+
+A legacy install without a record gets one rebuilt from its recorded commit's tree (requires DOR-2248's pinned fetch). If no tree can be obtained, a file counts as the package's only when some obtainable tree has the same bytes at the same path.
 
 ## Consequences
 
@@ -32,11 +42,14 @@ Every marketplace install writes `<installRoot>/.dork/installed-files.json` into
 
 ### Negative
 
-- Every install hashes its staged tree, and every update or reinstall copies the person's files once. Large agent working trees pay a real copy, chosen over moves for crash safety.
-- An uninstalled package can leave a directory behind (its kept files plus the record). It is invisible to every "installed" view, but it is on disk.
+- Every install hashes its staged tree, and every update or reinstall clones the person's files once. A clone is near-free on APFS/btrfs/ReFS; on ext4 it is a real copy, chosen over moving the person's files for crash safety.
+- An uninstalled package can leave a directory behind (its kept files plus the pruned record). It is invisible to every "installed" view, but it is on disk. An untouched package leaves nothing.
+- Uninstalling an agent package now unregisters the agent (the full mesh cascade), where before the reconciler found it gone eventually.
 - Legacy installs need a one-time rebuild that may fetch the recorded commit.
 
 ## Alternatives Considered
+
+- **Move the whole root aside to `os.tmpdir()` and copy the person's files back after the side effects** (the first draft of this ADR, and today's uninstall). Rejected in design review: a crash strands the person's files where the OS cleans up, and on tmpfs a large agent tree goes through RAM.
 
 - **A package-declared preserve list** (`preserve: [...]`). Rejected: protects only what an author anticipated, not an agent's writes, `/flow:init`'s generated adapter or a person's schedule. A Claude-Code-format package has no DorkOS manifest to declare it in.
 - **Move all user state out of the install root** (Claude Code's `${CLAUDE_PLUGIN_DATA}` model, VS Code's `globalStorageUri`), replacing the root wholesale. Rejected as the whole answer: it fixes no existing package until its author changes it. It cannot work for agent packages, whose install root is the agent's working directory. A per-plugin, per-user directory is also wrong for per-project settings. Its useful half, a conventional data directory, is kept as ADR 260923-163515.

@@ -14,6 +14,8 @@ project: Marketplace Package Management
 **Date:** 2026-09-23
 **Baseline:** `origin/main` at `3b36e3876`, pinned once for the whole investigation.
 
+> **Superseded in part (2026-09-23).** An independent design review changed three things decided below; the spec (revision 2, Review log) is authoritative. (1) An agent's four identity files are not `userEditable`; they are never recorded, and a package's copy only seeds an install where the file is absent (decision 4). (2) Uninstall runs in place and never moves a person's file, and uninstalling an agent package unregisters it (decision 7). (3) Carry-over clones from the live root into a staging dir beside the target, before the backup (decision 8).
+
 ---
 
 ## 1) Intent & Assumptions

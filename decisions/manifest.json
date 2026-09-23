@@ -6333,7 +6333,7 @@
     {
       "id": "260923-163515",
       "slug": "claude-plugin-data-resolves-in-install-root",
-      "title": "${CLAUDE_PLUGIN_DATA} resolves to the install root's .dork/data/, per install scope",
+      "title": "${CLAUDE_PLUGIN_DATA} resolves to the install root's .dork/data/, one directory per install",
       "status": "draft",
       "created": "2026-09-23",
       "extractedFrom": "marketplace-package-file-ownership",
@@ -6348,7 +6348,7 @@
     {
       "id": "260923-163516",
       "slug": "package-agent-keeps-identity-across-update",
-      "title": "A marketplace agent keeps its identity across an update by adopting its existing workspace",
+      "title": "A marketplace agent's identity files are its own, across update, reinstall and uninstall",
       "status": "draft",
       "created": "2026-09-23",
       "extractedFrom": "marketplace-package-file-ownership",
@@ -6356,7 +6356,9 @@
       "supersedes": null,
       "affects": [
         "apps/server/src/services/marketplace/flows/install-agent.ts",
-        "apps/server/src/services/core/agent-creator.ts"
+        "apps/server/src/services/marketplace/flows/uninstall.ts",
+        "apps/server/src/services/core/agent-creator.ts",
+        "packages/shared/src/convention-files-io.ts"
       ]
     }
   ]
