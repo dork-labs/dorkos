@@ -17897,7 +17897,7 @@
         "summary": "Marketplace cache status",
         "responses": {
           "200": {
-            "description": "Cache counts and total size",
+            "description": "Cache counts, total size, and whether automatic cleanup is paused",
             "content": {
               "application/json": {
                 "schema": {
@@ -17914,12 +17914,39 @@
                     "totalSizeBytes": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "cleanup": {
+                      "type": "object",
+                      "properties": {
+                        "paused": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "paused",
+                        "reason",
+                        "since"
+                      ],
+                      "description": "Automatic cleanup of cached packages. Paused while the server cannot read every install, in which case nothing is removed; `reason` says what it could not read."
                     }
                   },
                   "required": [
                     "marketplaces",
                     "packages",
-                    "totalSizeBytes"
+                    "totalSizeBytes",
+                    "cleanup"
                   ]
                 }
               }

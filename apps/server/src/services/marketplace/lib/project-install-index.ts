@@ -12,14 +12,23 @@
  * A record carries the commit and subfolder too, so an install on a drive that
  * is not plugged in right now stays protected. A record is dropped only when
  * its install is verifiably gone: its project folder exists and its install
- * folder does not. Any other doubt keeps it.
+ * folder does not, checked again at the moment of the drop. Any other doubt
+ * keeps it, so the record of a deleted project stays and keeps its commit's
+ * tree (it cannot be told apart from an unplugged drive).
  *
- * Writes are serialised in this process and land by atomic rename. One
- * server holds a data directory at a time (`lib/instance-lock.ts`).
+ * Writes are serialised in this process and land by an fsynced, atomic
+ * rename. One server holds a data directory at a time (`lib/instance-lock.ts`).
+ *
+ * An index that does not parse (a torn write, a hand edit) is refused by every
+ * reader, so the sweep stops rather than read it as empty. The next install
+ * that records moves it aside to `project-installs.json.corrupt-<time>` and
+ * starts a fresh one: installs keep being recorded, at the price of forgetting
+ * the records the bad file held (those installs then rely on the agent
+ * registry, like installs made before this record existed).
  *
  * @module services/marketplace/lib/project-install-index
  */
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 /** Where the index lives under dorkHome. */
@@ -45,6 +54,19 @@ interface IndexFile {
   installs: ProjectInstallRecord[];
 }
 
+/** A readable index file that is not the shape this module writes. */
+class CorruptIndexError extends Error {
+  /**
+   * Build the error for one index file.
+   *
+   * @param file - The index file.
+   */
+  constructor(readonly file: string) {
+    super(`Can't make sense of ${file}`);
+    this.name = 'CorruptIndexError';
+  }
+}
+
 /** Tail of the in-process write chain, per index file. */
 const writeChains = new Map<string, Promise<void>>();
 
@@ -66,13 +88,14 @@ export async function readProjectInstalls(dorkHome: string): Promise<ProjectInst
     throw new Error(`Can't read ${file}: ${(err as Error).message}`, { cause: err });
   }
   const installs = parseIndex(raw);
-  if (installs === null) throw new Error(`Can't make sense of ${file}`);
+  if (installs === null) throw new CorruptIndexError(file);
   return installs;
 }
 
 /**
  * Record a project install, replacing any earlier record for the same
- * install root (a reinstall or an applied update).
+ * install root (a reinstall or an applied update). An index that does not
+ * parse is moved aside first, so recording always recovers.
  *
  * @param dorkHome - Resolved DorkOS data directory.
  * @param record - What the install recorded.
@@ -81,41 +104,97 @@ export function recordProjectInstall(
   dorkHome: string,
   record: ProjectInstallRecord
 ): Promise<void> {
-  return mutate(dorkHome, (installs) => [
-    ...installs.filter((existing) => existing.installRoot !== record.installRoot),
-    record,
-  ]);
+  return mutate(
+    dorkHome,
+    async (installs) => [
+      ...installs.filter((existing) => existing.installRoot !== record.installRoot),
+      record,
+    ],
+    { replaceCorrupt: true }
+  );
 }
 
 /**
- * Drop the records of install roots that are verifiably gone.
+ * Drop records a sweep found gone, as a compare-and-delete inside the write
+ * chain: a record goes only if it still matches what the sweep read (same
+ * install root and commit) and its install folder is still missing while its
+ * project folder exists. A reinstall that recorded in between, or that put
+ * the folder back, keeps its record.
  *
  * @param dorkHome - Resolved DorkOS data directory.
- * @param installRoots - The install roots to forget.
+ * @param gone - The records the sweep found gone, as it read them.
  */
-export function forgetProjectInstalls(dorkHome: string, installRoots: string[]): Promise<void> {
-  if (installRoots.length === 0) return Promise.resolve();
-  const gone = new Set(installRoots);
-  return mutate(dorkHome, (installs) => installs.filter((r) => !gone.has(r.installRoot)));
+export function forgetProjectInstalls(
+  dorkHome: string,
+  gone: readonly ProjectInstallRecord[]
+): Promise<void> {
+  if (gone.length === 0) return Promise.resolve();
+  return mutate(dorkHome, async (installs) => {
+    const kept: ProjectInstallRecord[] = [];
+    for (const record of installs) {
+      const readBySweep = gone.some(
+        (g) => g.installRoot === record.installRoot && g.commitSha === record.commitSha
+      );
+      const stillGone =
+        readBySweep &&
+        (await existence(record.installRoot)) === 'missing' &&
+        (await existence(record.projectPath)) === 'present';
+      if (!stillGone) kept.push(record);
+    }
+    return kept;
+  });
 }
 
 /**
- * Read, change and atomically rewrite the index, one change at a time.
+ * Whether `target` exists: `'missing'` only on ENOENT, `'unknown'` on any
+ * other failure (which proves nothing either way).
  *
+ * @param target - Absolute path to check.
+ */
+export async function existence(target: string): Promise<'present' | 'missing' | 'unknown'> {
+  try {
+    await stat(target);
+    return 'present';
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'unknown';
+  }
+}
+
+/**
+ * Read, change and durably rewrite the index, one change at a time.
+ *
+ * @param opts.replaceCorrupt - Move an unparseable index aside and start
+ *   fresh instead of refusing. Only the install path sets it.
  * @internal
  */
 function mutate(
   dorkHome: string,
-  change: (installs: ProjectInstallRecord[]) => ProjectInstallRecord[]
+  change: (installs: ProjectInstallRecord[]) => Promise<ProjectInstallRecord[]>,
+  opts: { replaceCorrupt?: boolean } = {}
 ): Promise<void> {
   const file = path.join(dorkHome, INDEX_PATH);
   const previous = writeChains.get(file) ?? Promise.resolve();
   const next = previous.then(async () => {
-    const installs = change(await readProjectInstalls(dorkHome));
-    const body: IndexFile = { version: 1, installs };
+    let current: ProjectInstallRecord[];
+    try {
+      current = await readProjectInstalls(dorkHome);
+    } catch (err) {
+      if (!(opts.replaceCorrupt && err instanceof CorruptIndexError)) throw err;
+      await rename(file, `${file}.corrupt-${Date.now()}`);
+      current = [];
+    }
+    const body: IndexFile = { version: 1, installs: await change(current) };
     await mkdir(path.dirname(file), { recursive: true });
     const temp = `${file}.${process.pid}.tmp`;
-    await writeFile(temp, `${JSON.stringify(body, null, 2)}\n`, 'utf-8');
+    const handle = await open(temp, 'w');
+    try {
+      await handle.writeFile(`${JSON.stringify(body, null, 2)}\n`, 'utf-8');
+      // Durable before it replaces the old file, so a crash cannot leave a
+      // renamed but empty index.
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
     await rename(temp, file);
   });
   writeChains.set(

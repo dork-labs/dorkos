@@ -46,6 +46,7 @@ import { readInstallMetadataStrict } from './installed-metadata.js';
 import type { AgentScopeRef } from './installed-scanner.js';
 import { installRootsUnder, projectScopeRoot } from './lib/install-roots.js';
 import {
+  existence,
   forgetProjectInstalls,
   readProjectInstalls,
   type ProjectInstallRecord,
@@ -76,6 +77,9 @@ export interface RecordedTree {
  * nothing. `where` names the folder or file, for the server log.
  */
 export class UnreadableInstallsError extends Error {
+  /** A plain sentence fragment for people: what could not be read, and why when it is simple. */
+  readonly reason: string;
+
   /**
    * Build the error for one unreadable place.
    *
@@ -90,6 +94,7 @@ export class UnreadableInstallsError extends Error {
       `Couldn't read ${where}${cause === undefined ? '' : `: ${cause instanceof Error ? cause.message : String(cause)}`}`
     );
     this.name = 'UnreadableInstallsError';
+    this.reason = `couldn't read ${where}${typeof cause === 'string' ? ` (${cause})` : ''}`;
     if (cause !== undefined) this.cause = cause;
   }
 }
@@ -99,7 +104,7 @@ export interface RecordedInstalls {
   /** The tree every readable or recorded installation records. */
   trees: RecordedTree[];
   /** Project-install records whose install is verifiably gone (uninstalled). */
-  goneProjectInstalls: string[];
+  goneProjectInstalls: ProjectInstallRecord[];
 }
 
 /**
@@ -130,7 +135,7 @@ export async function listRecordedTrees(
 ): Promise<RecordedInstalls> {
   if (agents === undefined) throw new UnreadableInstallsError('the agent registry');
   const trees: RecordedTree[] = [];
-  const goneProjectInstalls: string[] = [];
+  const goneProjectInstalls: ProjectInstallRecord[] = [];
 
   await scanScopeStrict(dorkHome, trees);
 
@@ -145,7 +150,7 @@ export async function listRecordedTrees(
   try {
     records = await readProjectInstalls(dorkHome);
   } catch (err) {
-    throw new UnreadableInstallsError('the project install record', err);
+    throw new UnreadableInstallsError(join(dorkHome, 'marketplace', 'project-installs.json'), err);
   }
   for (const record of records) {
     const recordedTree: RecordedTree | null = isRealCommitSha(record.commitSha)
@@ -165,7 +170,7 @@ export async function listRecordedTrees(
       installPresent === 'missing' &&
       (await existence(record.projectPath)) === 'present'
     ) {
-      goneProjectInstalls.push(record.installRoot);
+      goneProjectInstalls.push(record);
     } else if (recordedTree) {
       // Unreachable (a drive not plugged in, a folder we may not read): keep
       // protecting what it recorded.
@@ -221,21 +226,6 @@ async function readTreeStrict(installRoot: string): Promise<RecordedTree | null 
     commitSha: metadata.commitSha,
     ...(metadata.sourceKey !== undefined && { subpath: metadata.sourceKey.subpath }),
   };
-}
-
-/**
- * Whether `target` exists: `'missing'` only on ENOENT, `'unknown'` on any
- * other failure (which proves nothing either way).
- *
- * @internal
- */
-async function existence(target: string): Promise<'present' | 'missing' | 'unknown'> {
-  try {
-    await stat(target);
-    return 'present';
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'unknown';
-  }
 }
 
 /**
@@ -309,6 +299,16 @@ export interface PackageCacheRetentionDeps {
   logger: Logger;
 }
 
+/** Whether automatic cleanup is running, as `GET /api/marketplace/cache` reports it. */
+export interface CleanupStatus {
+  /** True while sweeps keep stopping without removing anything. */
+  paused: boolean;
+  /** Why, in plain words (for example "couldn't read /path"); `null` when not paused. */
+  reason: string | null;
+  /** ISO time the current reason first stopped a sweep; `null` when not paused. */
+  since: string | null;
+}
+
 /** What one sweep removed. */
 export type SweepResult = Pick<RemovedEntries, 'removed' | 'freedBytes'>;
 
@@ -326,6 +326,9 @@ export class PackageCacheRetention {
   /** The sweep queued behind {@link running}, shared by every request since. */
   private queued: Promise<SweepResult> | null = null;
 
+  /** The last sweep's outcome. */
+  private cleanup: CleanupStatus = { paused: false, reason: null, since: null };
+
   /**
    * Create the owner. Nothing runs until {@link start} or {@link sweep}.
    *
@@ -335,12 +338,21 @@ export class PackageCacheRetention {
 
   /**
    * Sweep after every entry the cache lands from now on, and once now. Both
-   * run in the background: their removals are logged at info and their
-   * failures at warn, and they never throw.
+   * run in the background: their removals are logged at info, a pause at
+   * warn once per reason ({@link status}), and they never throw.
    */
   start(): void {
     this.deps.cache.onEntryWritten(() => this.sweepInBackground());
     this.sweepInBackground();
+  }
+
+  /**
+   * Whether automatic cleanup is running, from the last sweep's outcome.
+   *
+   * @returns A copy of the current status.
+   */
+  status(): CleanupStatus {
+    return { ...this.cleanup };
   }
 
   /**
@@ -383,6 +395,49 @@ export class PackageCacheRetention {
    * @internal
    */
   private async runSweep(): Promise<SweepResult> {
+    try {
+      const result = await this.sweepOnce();
+      this.recordOutcome(null);
+      return result;
+    } catch (err) {
+      this.recordOutcome(err);
+      throw err;
+    }
+  }
+
+  /**
+   * Keep the last outcome, and log a pause once per change of reason rather
+   * than on every sweep (a paused cache is swept after every download).
+   *
+   * @param err - Why the sweep stopped, or `null` when it completed.
+   * @internal
+   */
+  private recordOutcome(err: unknown): void {
+    if (err === null) {
+      if (this.cleanup.paused) {
+        this.deps.logger.info('[Marketplace] Automatic package cache cleanup has resumed');
+      }
+      this.cleanup = { paused: false, reason: null, since: null };
+      return;
+    }
+    const reason =
+      err instanceof UnreadableInstallsError
+        ? err.reason
+        : 'something went wrong (the server log has the details)';
+    if (this.cleanup.paused && this.cleanup.reason === reason) return;
+    this.cleanup = { paused: true, reason, since: new Date().toISOString() };
+    this.deps.logger.warn('[Marketplace] Automatic package cache cleanup is paused', {
+      reason,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  /**
+   * One sweep's work.
+   *
+   * @internal
+   */
+  private async sweepOnce(): Promise<SweepResult> {
     const { trees, goneProjectInstalls } = await listRecordedTrees(
       this.deps.dorkHome,
       this.deps.listAgentScopes()
@@ -415,11 +470,8 @@ export class PackageCacheRetention {
           { freedBytes }
         );
       },
-      (err: unknown) => {
-        this.deps.logger.warn('[Marketplace] could not tidy the package cache', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+      // Already recorded and logged (once per reason) by runSweep.
+      () => undefined
     );
   }
 }

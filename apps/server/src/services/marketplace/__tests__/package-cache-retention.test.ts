@@ -301,18 +301,18 @@ describe('with a real data directory', () => {
 
     it('reports a recorded install whose project exists but whose install is gone', async () => {
       // Purpose: that is an uninstall; its record may go, and it protects nothing.
-      const installRoot = join(projectPath, '.dork', 'plugins', 'lint');
-      await recordProjectInstall(dorkHome, {
+      const record = {
         projectPath,
-        installRoot,
+        installRoot: join(projectPath, '.dork', 'plugins', 'lint'),
         name: 'lint',
         commitSha: sha('b'),
-      });
+      };
+      await recordProjectInstall(dorkHome, record);
 
       const result = await listRecordedTrees(dorkHome, []);
 
       expect(result.trees).toEqual([]);
-      expect(result.goneProjectInstalls).toEqual([installRoot]);
+      expect(result.goneProjectInstalls).toEqual([record]);
     });
   });
 
@@ -358,6 +358,47 @@ describe('with a real data directory', () => {
         await chmod(plugins, 0o755);
       }
       await expect(access(recorded)).resolves.toBeUndefined();
+    });
+
+    it('removes nothing while the project install record does not parse', async () => {
+      // Purpose: a truncated record must stop the sweep, never read as "no
+      // project installs" and delete what they recorded.
+      const recorded = await cached('flow', sha('a'), '');
+      await mkdir(join(dorkHome, 'marketplace'), { recursive: true });
+      await writeFile(join(dorkHome, 'marketplace', 'project-installs.json'), '{"version":1,');
+
+      await expect(retention().sweep()).rejects.toThrow(UnreadableInstallsError);
+      await expect(access(recorded)).resolves.toBeUndefined();
+    });
+
+    it('reports a pause with its reason, logs it once, and clears it when a sweep completes', async () => {
+      // Purpose: a paused cleanup is invisible otherwise; and a cache swept
+      // after every download must not repeat the same warning each time.
+      const logger = spyLogger();
+      const missing = join(projectPath, 'unplugged');
+      const agents = [{ projectPath: missing }];
+      const owner = new PackageCacheRetention({
+        cache,
+        dorkHome,
+        listAgentScopes: () => agents,
+        logger,
+      });
+      expect(owner.status()).toEqual({ paused: false, reason: null, since: null });
+
+      await expect(owner.sweep()).rejects.toThrow();
+      const first = owner.status();
+      expect(first.paused).toBe(true);
+      expect(first.reason).toBe(`couldn't read ${missing} (the folder is missing)`);
+      expect(Number.isNaN(Date.parse(first.since!))).toBe(false);
+
+      await expect(owner.sweep()).rejects.toThrow();
+      expect(owner.status()).toEqual(first);
+      expect(logger.warn.mock.calls.filter(([m]) => String(m).includes('paused'))).toHaveLength(1);
+
+      agents.length = 0;
+      await owner.sweep();
+      expect(owner.status()).toEqual({ paused: false, reason: null, since: null });
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('resumed'));
     });
 
     it('drops the record of an uninstalled project install', async () => {
@@ -434,7 +475,7 @@ describe('with a real data directory', () => {
 
       await vi.waitFor(() =>
         expect(logger.warn).toHaveBeenCalledWith(
-          expect.stringContaining('could not tidy the package cache'),
+          expect.stringContaining('cleanup is paused'),
           expect.objectContaining({ error: 'mesh is not ready' })
         )
       );

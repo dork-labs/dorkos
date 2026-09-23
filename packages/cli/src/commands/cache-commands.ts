@@ -34,6 +34,8 @@ interface CacheStatusResponse {
   marketplaces: number;
   packages: number;
   totalSizeBytes: number;
+  /** Automatic cleanup's state; absent from servers older than DOR-2249. */
+  cleanup?: { paused: boolean; reason: string | null; since: string | null };
 }
 
 /** Response shape for `POST /api/marketplace/cache/prune`. */
@@ -147,7 +149,8 @@ export function parseCacheClearArgs(rawArgs: string[]): CacheClearArgs {
 }
 
 /**
- * Render a cache status summary as a three-line right-aligned block.
+ * Render a cache status summary as a three-line right-aligned block, plus one
+ * line when automatic cleanup is paused (it then removes nothing).
  * Extracted as a pure helper so tests can assert on the exact layout
  * without mocking I/O.
  *
@@ -164,13 +167,17 @@ export function renderCacheStatus(status: CacheStatusResponse): string {
   const labelWidth = Math.max(...rows.map((r) => r[0].length));
   const valueWidth = Math.max(...rows.map((r) => r[1].length));
 
-  return rows
-    .map(([label, value]) => {
-      const paddedLabel = label + ' '.repeat(labelWidth - label.length);
-      const paddedValue = ' '.repeat(valueWidth - value.length) + value;
-      return `${paddedLabel}  ${paddedValue}`;
-    })
-    .join('\n');
+  const lines = rows.map(([label, value]) => {
+    const paddedLabel = label + ' '.repeat(labelWidth - label.length);
+    const paddedValue = ' '.repeat(valueWidth - value.length) + value;
+    return `${paddedLabel}  ${paddedValue}`;
+  });
+  if (status.cleanup?.paused) {
+    lines.push(
+      `Automatic cleanup is paused: ${status.cleanup.reason ?? 'the server log says why'}`
+    );
+  }
+  return lines.join('\n');
 }
 
 /**

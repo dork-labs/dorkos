@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -53,15 +53,61 @@ describe('project install index', () => {
     expect(await readProjectInstalls(dorkHome)).toHaveLength(12);
   });
 
-  it('forgets only the install roots it is given', async () => {
-    await recordProjectInstall(dorkHome, record('/work/app/.dork/plugins/flow'));
-    await recordProjectInstall(dorkHome, record('/work/app/.dork/plugins/lint'));
+  describe('forgetting', () => {
+    let project: string;
 
-    await forgetProjectInstalls(dorkHome, ['/work/app/.dork/plugins/flow']);
+    beforeEach(async () => {
+      project = await mkdtemp(join(tmpdir(), 'project-install-index-project-'));
+    });
 
-    expect((await readProjectInstalls(dorkHome)).map((r) => r.installRoot)).toEqual([
-      '/work/app/.dork/plugins/lint',
-    ]);
+    afterEach(async () => {
+      await rm(project, { recursive: true, force: true });
+    });
+
+    /** A record for `name` inside the real temp project. */
+    const inProject = (name: string, commitSha = 'a'.repeat(40)) => ({
+      projectPath: project,
+      installRoot: join(project, '.dork', 'plugins', name),
+      name,
+      commitSha,
+    });
+
+    it('forgets a record whose install folder is still gone', async () => {
+      const flow = inProject('flow');
+      const lint = inProject('lint');
+      await recordProjectInstall(dorkHome, flow);
+      await recordProjectInstall(dorkHome, lint);
+
+      await forgetProjectInstalls(dorkHome, [flow]);
+
+      expect(await readProjectInstalls(dorkHome)).toEqual([lint]);
+    });
+
+    it('keeps a record a reinstall wrote after the sweep read the old one', async () => {
+      // Purpose: the review's repro. The sweep saw commit b gone; before it
+      // dropped the record, a reinstall recorded commit c. Dropping by folder
+      // alone lost c's record, and the next sweep deleted c's tree.
+      const stale = inProject('flow', 'b'.repeat(40));
+      await recordProjectInstall(dorkHome, stale);
+      const fresh = inProject('flow', 'c'.repeat(40));
+      await recordProjectInstall(dorkHome, fresh);
+
+      await forgetProjectInstalls(dorkHome, [stale]);
+
+      expect(await readProjectInstalls(dorkHome)).toEqual([fresh]);
+    });
+
+    it('keeps a record whose install folder came back', async () => {
+      // Purpose: a reinstall of the same commit recreates the folder; the
+      // record is live again even though it matches what the sweep read.
+      const flow = inProject('flow');
+      await recordProjectInstall(dorkHome, flow);
+      await mkdir(flow.installRoot, { recursive: true });
+
+      await forgetProjectInstalls(dorkHome, [flow]);
+
+      expect(await readProjectInstalls(dorkHome)).toEqual([flow]);
+    });
   });
 
   it('refuses an index it cannot make sense of, rather than reading it as empty', async () => {
@@ -70,12 +116,34 @@ describe('project install index', () => {
     await writeFile(join(dorkHome, 'marketplace', 'project-installs.json'), '{"version":1,');
 
     await expect(readProjectInstalls(dorkHome)).rejects.toThrow(/Can't make sense of/);
-    await expect(
-      recordProjectInstall(dorkHome, record('/work/app/.dork/plugins/flow'))
-    ).rejects.toThrow();
-    // The unreadable file is left for a person to look at, not overwritten.
-    expect(await readFile(join(dorkHome, 'marketplace', 'project-installs.json'), 'utf-8')).toBe(
-      '{"version":1,'
+  });
+
+  it('moves an unparseable index aside at the next record, so recording recovers', async () => {
+    // Purpose: a truncated file must not stop every later install from being
+    // recorded. The bad copy is kept beside it for a person to look at.
+    const dir = join(dorkHome, 'marketplace');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'project-installs.json'), '{"version":1,');
+
+    await recordProjectInstall(dorkHome, record('/work/app/.dork/plugins/flow'));
+
+    expect(await readProjectInstalls(dorkHome)).toEqual([record('/work/app/.dork/plugins/flow')]);
+    const aside = (await readdir(dir)).filter((f) =>
+      f.startsWith('project-installs.json.corrupt-')
     );
+    expect(aside).toHaveLength(1);
+    expect(await readFile(join(dir, aside[0]!), 'utf-8')).toBe('{"version":1,');
+  });
+
+  it('does not move a corrupt index aside when only forgetting', async () => {
+    // Purpose: recovery belongs to the install path; a sweep must keep refusing.
+    const dir = join(dorkHome, 'marketplace');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'project-installs.json'), 'nope');
+
+    await expect(
+      forgetProjectInstalls(dorkHome, [record('/work/app/.dork/plugins/flow')])
+    ).rejects.toThrow();
+    expect(await readdir(dir)).toEqual(['project-installs.json']);
   });
 });

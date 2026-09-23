@@ -2254,6 +2254,15 @@ const MarketplaceCacheStatusSchema = z.object({
   marketplaces: z.number().int().nonnegative(),
   packages: z.number().int().nonnegative(),
   totalSizeBytes: z.number().int().nonnegative(),
+  cleanup: z
+    .object({
+      paused: z.boolean(),
+      reason: z.string().nullable(),
+      since: z.string().nullable(),
+    })
+    .describe(
+      'Automatic cleanup of cached packages. Paused while the server cannot read every install, in which case nothing is removed; `reason` says what it could not read.'
+    ),
 });
 
 const PruneMarketplaceCacheBodySchema = z.object({}).strict();
@@ -2443,7 +2452,7 @@ registry.registerPath({
   summary: 'Marketplace cache status',
   responses: {
     200: {
-      description: 'Cache counts and total size',
+      description: 'Cache counts, total size, and whether automatic cleanup is paused',
       content: { 'application/json': { schema: MarketplaceCacheStatusSchema } },
     },
   },

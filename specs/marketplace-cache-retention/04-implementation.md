@@ -26,6 +26,14 @@
 5. New `lib/project-install-index.ts` (`<dorkHome>/marketplace/project-installs.json`): `MarketplaceInstaller.install` calls `recordProjectInstall` after the sidecar for any install inside a project; the sweep drops a record only when its project exists and its install root does not.
 6. `cli.ts` comment; cross-process reasoning replaced by the instance lock in the ADR, spec, guide and code.
 
+## Review round 2 (all adopted)
+
+- A: `forgetProjectInstalls` takes the records the sweep read and is a compare-and-delete inside the write chain (install folder still missing, project present, same install root and commit). The review's repro (record b, sweep marks it gone, a reinstall records c, then the drop) is a test.
+- B: index writes are fsynced before the rename; an unparseable index is moved aside to `.corrupt-<time>` by the next `recordProjectInstall` (never by a sweep); sweep-level test for a corrupt index.
+- E: `PackageCacheRetention.status()`; `GET /cache` returns `cleanup: { paused, reason, since }`; `dorkos cache list` prints the pause; the pause is logged once per reason.
+- ADR: deleted-project records leak one tree each; the 24-hour mesh removal ends a missing-agent pause.
+- Not unit-testable: the fsync (a mutation removing it survives; crash durability needs a power-cut test).
+
 ## Coordination
 
 - Touched in shared files: `marketplace-installer.ts` (one import, the `recordProjectInstall` block after the sidecar's try/catch in `install()`, and the `isInsideDir` helper at the end of the file), `installed-metadata.ts` (reader split into `parseInstallMetadata` + new `readInstallMetadataStrict`), `routes/marketplace.ts` (the `cacheRetention` dep and the prune handler), `index.ts` (construction beside `listAgentScopes`). `flows/update.ts` and `flows/uninstall.ts` are untouched (DOR-2194 / DOR-2273).

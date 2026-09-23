@@ -611,11 +611,12 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
   });
 
-  // GET /cache -- cache status (marketplace count, package count, total bytes)
+  // GET /cache -- cache status (marketplace count, package count, total bytes,
+  // and whether automatic cleanup is paused)
   router.get('/cache', async (_req, res) => {
     try {
       const status = await computeCacheStatus(cache);
-      res.json(status);
+      res.json({ ...status, cleanup: cacheRetention.status() });
     } catch (err) {
       logger.error('[Marketplace] Failed to read cache status', err);
       res.status(500).json({ error: 'Failed to read cache status' });

@@ -74,6 +74,32 @@ describe('formatBytes', () => {
 });
 
 describe('renderCacheStatus', () => {
+  it('adds one line when automatic cleanup is paused', () => {
+    // Purpose: a paused cleanup removes nothing; this is where a person sees it.
+    const rendered = renderCacheStatus({
+      ...CACHE_STATUS_FIXTURE,
+      cleanup: {
+        paused: true,
+        reason: "couldn't read /Volumes/Work/app (the folder is missing)",
+        since: '2026-09-23T10:00:00.000Z',
+      },
+    });
+    const lines = rendered.split('\n');
+    expect(lines).toHaveLength(4);
+    expect(lines[3]).toBe(
+      "Automatic cleanup is paused: couldn't read /Volumes/Work/app (the folder is missing)"
+    );
+  });
+
+  it('adds nothing when cleanup is running, or the server does not say', () => {
+    const running = renderCacheStatus({
+      ...CACHE_STATUS_FIXTURE,
+      cleanup: { paused: false, reason: null, since: null },
+    });
+    expect(running.split('\n')).toHaveLength(3);
+    expect(renderCacheStatus(CACHE_STATUS_FIXTURE).split('\n')).toHaveLength(3);
+  });
+
   it('renders three right-aligned rows', () => {
     const rendered = renderCacheStatus(CACHE_STATUS_FIXTURE);
     const lines = rendered.split('\n');

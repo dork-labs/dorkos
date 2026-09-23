@@ -560,6 +560,24 @@ describe('Marketplace Routes', () => {
   }
 
   describe('GET /cache', () => {
+    it('reports whether automatic cleanup is paused, and why', async () => {
+      // Purpose: a paused cleanup removes nothing and says so nowhere else a
+      // person looks; `dorkos cache list` reads it from here.
+      const before = await request(fixtureServer).get('/api/marketplace/cache');
+      expect(before.body.cleanup).toEqual({ paused: false, reason: null, since: null });
+
+      const missing = join(dorkHome, 'unplugged-drive', 'app');
+      agentScopes = [{ projectPath: missing }];
+      await request(fixtureServer).post('/api/marketplace/cache/prune').send({});
+
+      const after = await request(fixtureServer).get('/api/marketplace/cache');
+      expect(after.body.cleanup).toMatchObject({
+        paused: true,
+        reason: `couldn't read ${missing} (the folder is missing)`,
+      });
+      expect(typeof after.body.cleanup.since).toBe('string');
+    });
+
     it('returns cache size info', async () => {
       const res = await request(fixtureServer).get('/api/marketplace/cache');
       expect(res.status).toBe(200);

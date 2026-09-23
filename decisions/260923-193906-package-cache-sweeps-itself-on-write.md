@@ -33,7 +33,9 @@ An entry is kept when it was used in the last 15 minutes (every cache call that 
 ### Negative
 
 - Uninstalling frees disk only at the next sweep.
-- A registered agent whose project folder is missing stops every sweep until the folder returns or the registry drops the agent; a corrupt sidecar or project-install record stops them until it is fixed. Both are logged.
+- A registered agent whose project folder is missing stops every sweep until the folder returns or the registry drops the agent. The mesh reconciler removes an unreachable agent after 24 hours, so this pause normally ends within a day. A corrupt sidecar stops sweeps until it is fixed. Every pause is logged once per reason and shown by `dorkos cache list` (`GET /api/marketplace/cache` → `cleanup`).
+- A project-install record that does not parse stops sweeps until the next project install, which moves it aside (`project-installs.json.corrupt-<time>`) and starts a fresh record. That keeps installs recordable, at the price of forgetting what the bad file held; those installs fall back to the agent registry. Writes are fsynced before their atomic rename, so a crash should not produce one.
+- The record of a project whose folder was deleted stays, because it cannot be told apart from a drive that is not plugged in, and it keeps its commit's tree: a small leak, bounded by one tree per such install.
 - Project installs made before the project-install record existed, in folders that are not registered agents, are not protected.
 - After an update is applied, the superseded tree may stay until the next update is staged.
 - `POST /api/marketplace/cache/prune` no longer accepts `keepLastN`, answers 503 when it cannot read every install, and its response field `cachedAt` is now `lastUsedAt`.
