@@ -36,18 +36,18 @@ body is neither.
 
 ## What is in the contract
 
-| Group                     | Covers                                                                                                                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`                                                                                                          |
-| Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                               |
-| Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                            |
-| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage                              |
-| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `POST /v1/checkout`, `/v1/topup`, `/v1/refunds`, `/v1/portal`, `GET /v1/statement`    |
-| Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                |
-| Seats, orgs and addresses | organizations, membership, invitations, agents and claims, seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                          |
-| Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation, instance credentials, the command stream and its acknowledgement, event batches |
-| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep, restore, and moves (start, poll, cancel) from an owner export                        |
-| Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                    |
+| Group                     | Covers                                                                                                                                                                                        |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`                                                                                                                               |
+| Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                                                    |
+| Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                                                 |
+| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage                                                   |
+| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `POST /v1/checkout`, `/v1/topup`, `/v1/refunds`, `/v1/portal`, `GET /v1/statement`                         |
+| Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                                     |
+| Seats, orgs and addresses | organizations, membership, invitations, agents and claims, seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                                               |
+| Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation, instance credentials, the command stream and its acknowledgement, event batches                      |
+| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, and moves: start, list, poll, a fresh upload target, cancel |
+| Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                                         |
 
 ### What is deliberately not in it
 
@@ -137,12 +137,30 @@ so it can say "this community is full" without naming a plan.
 ### Hosted communities
 
 The service starts a community on a Community server and hands ownership to a person through
-that server's single-use owner claim; it never owns one itself. The claim link and a move's
-upload token are the only credentials this family returns. Each is returned once, never
-appears in a list or a poll, and is replaced by asking again: a fresh claim link from
-`v1Path.communityClaimLink`, or a cancelled and restarted move. A move uploads
-the owner export straight to the Community server's upload route, so the file never passes
-through the service. Every link to a community is a runtime value.
+that server's single-use owner claim; it never owns one itself.
+
+- **Two credentials, each returned once.** The claim link and a move's upload token appear only
+  in the answer that created them (a start, a move start, `claim-link`, or a move's `upload`
+  route), never in a list or a poll. Both carry the `ONE_TIME_CREDENTIAL_META` marker, which
+  reaches the JSON Schema too, and `src/__tests__/communities.test.ts` pins exactly where they
+  may appear. A caller that lost one asks for a fresh one, which revokes the last.
+- **Relay the parsed value, never the raw body.** Objects here are not strict, so a field the
+  schema does not define is dropped by `parse`. A server that relays these answers to a browser
+  (the DorkOS server does) must serialize what it parsed, so a credential a service leaks into
+  the wrong shape stops there.
+- **Links are checked by scheme.** A link a person is sent to (`claimUrl`, `actionUrl`) is
+  `https:` only (`HttpsUrlSchema`). A link to a server (`communityUrl`, an upload `url`) is
+  `https:`, or `http:` to a loopback address for local use (`ServerUrlSchema`). Both rules are
+  also a `pattern` in the JSON Schema. A malformed `actionUrl` or `actionLabel` is dropped
+  rather than failing the whole refusal.
+- **Retries are safe.** A start or a move takes an idempotency key, scoped to the caller. A
+  repeat answers `replayed: true` and without the credential.
+- **The upload goes straight to the Community server**, so the file never passes through the
+  service. A broken upload leaves the move waiting and the token usable; an expired or lost token
+  is replaced through `POST /v1/communities/moves/{moveId}/upload`, so a person never has to give
+  up the community and its short name to try again.
+
+Every link to a community is a runtime value.
 
 ### Money is never a number
 

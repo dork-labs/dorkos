@@ -8,6 +8,8 @@
       "communityUrl": "https://community.example.invalid/c/4f1c2b7e-8a3d-4e5f-9b6a-1c2d3e4f5a6b",
       "state": "active",
       "hold": null,
+      "deletionAt": null,
+      "notice": null,
       "kept": true,
       "moveId": null,
       "limits": {
@@ -21,7 +23,10 @@
       },
       "actions": {
         "claimLink": false,
-        "keep": false,
+        "keep": {
+          "allowed": false,
+          "wouldHold": []
+        },
         "restore": false
       },
       "createdAt": "2026-09-01T09:00:00.000Z"
@@ -34,6 +39,8 @@
       "communityUrl": "https://community.example.invalid/c/9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
       "state": "pending_owner",
       "hold": null,
+      "deletionAt": null,
+      "notice": null,
       "kept": false,
       "moveId": null,
       "limits": {
@@ -43,7 +50,10 @@
       "usage": null,
       "actions": {
         "claimLink": true,
-        "keep": false,
+        "keep": {
+          "allowed": false,
+          "wouldHold": []
+        },
         "restore": false
       },
       "createdAt": "2026-09-23T11:00:00.000Z"
@@ -60,6 +70,8 @@
         "since": "2026-08-01T00:00:00.000Z",
         "deletionNoticeAt": null
       },
+      "deletionAt": null,
+      "notice": null,
       "kept": false,
       "moveId": null,
       "limits": {
@@ -73,10 +85,49 @@
       },
       "actions": {
         "claimLink": false,
-        "keep": true,
+        "keep": {
+          "allowed": true,
+          "wouldHold": ["4f1c2b7e-8a3d-4e5f-9b6a-1c2d3e4f5a6b"]
+        },
         "restore": true
       },
       "createdAt": "2025-06-01T09:00:00.000Z"
+    },
+    {
+      "communityId": "7e8f9a0b-1c2d-4e3f-8a4b-5c6d7e8f9a0b",
+      "orgId": "org_0001",
+      "name": "Old project",
+      "shortName": null,
+      "communityUrl": "https://community.example.invalid/c/7e8f9a0b-1c2d-4e3f-8a4b-5c6d7e8f9a0b",
+      "state": "deletion_pending",
+      "hold": null,
+      "deletionAt": "2026-09-30T00:00:00.000Z",
+      "notice": {
+        "title": "This community will be deleted.",
+        "detail": "Its owner asked for it to be deleted. The owner can cancel from the community's settings until the date shown.",
+        "actionUrl": "https://community.example.invalid/c/7e8f9a0b-1c2d-4e3f-8a4b-5c6d7e8f9a0b/settings",
+        "actionLabel": "Open settings"
+      },
+      "kept": false,
+      "moveId": null,
+      "limits": {
+        "maxActiveMembers": 200,
+        "maxStorageBytes": 2000000000
+      },
+      "usage": {
+        "activeMembers": 12,
+        "storageBytes": 48213504,
+        "measuredAt": "2026-09-23T12:00:00.000Z"
+      },
+      "actions": {
+        "claimLink": false,
+        "keep": {
+          "allowed": false,
+          "wouldHold": []
+        },
+        "restore": false
+      },
+      "createdAt": "2025-01-10T09:00:00.000Z"
     },
     {
       "communityId": "5d6e7f80-9102-4a3b-8c4d-5e6f70819203",
@@ -86,6 +137,8 @@
       "communityUrl": "https://community.example.invalid/c/5d6e7f80-9102-4a3b-8c4d-5e6f70819203",
       "state": "pending_owner",
       "hold": null,
+      "deletionAt": null,
+      "notice": null,
       "kept": false,
       "moveId": "move_0001",
       "limits": {
@@ -95,7 +148,10 @@
       "usage": null,
       "actions": {
         "claimLink": false,
-        "keep": false,
+        "keep": {
+          "allowed": false,
+          "wouldHold": []
+        },
         "restore": false
       },
       "createdAt": "2026-09-23T11:30:00.000Z"

@@ -78,6 +78,13 @@
     "communities/move-start.json": "CommunityMoveStartResponseSchema",
     "communities/move-importing.json": "CommunityMoveSchema",
     "communities/move-ready.json": "CommunityMoveSchema",
-    "communities/move-failed.json": "CommunityMoveSchema"
+    "communities/move-failed.json": "CommunityMoveSchema",
+    "communities/keep-request.json": "CommunityKeepRequestSchema",
+    "communities/restore.json": "HostedCommunitySchema",
+    "communities/move-upload.json": "CommunityMoveUploadSchema",
+    "communities/move-cancelled.json": "CommunityMoveSchema",
+    "communities/move-claimed.json": "CommunityMoveSchema",
+    "communities/moves.json": "CommunityMoveListResponseSchema",
+    "problem/community-name-reserved.json": "ProblemSchema"
   }
 }

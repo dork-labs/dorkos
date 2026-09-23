@@ -2,6 +2,7 @@
   "moveId": "move_0001",
   "communityId": "5d6e7f80-9102-4a3b-8c4d-5e6f70819203",
   "communityUrl": "https://community.example.invalid/c/5d6e7f80-9102-4a3b-8c4d-5e6f70819203",
+  "name": "Old garden",
   "state": "ready",
   "failureCode": null,
   "report": {

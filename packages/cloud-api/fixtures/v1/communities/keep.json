@@ -7,6 +7,8 @@
     "communityUrl": "https://community.example.invalid/c/2b3c4d5e-6f70-4812-9a3b-4c5d6e7f8091",
     "state": "active",
     "hold": null,
+    "deletionAt": null,
+    "notice": null,
     "kept": true,
     "moveId": null,
     "limits": {
@@ -20,7 +22,10 @@
     },
     "actions": {
       "claimLink": false,
-      "keep": false,
+      "keep": {
+        "allowed": false,
+        "wouldHold": []
+      },
       "restore": false
     },
     "createdAt": "2025-06-01T09:00:00.000Z"

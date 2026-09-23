@@ -143,3 +143,44 @@ export function pageOf<T extends z.ZodTypeAny>(item: T, description: string) {
     })
     .describe(description);
 }
+
+/**
+ * A link a person may be sent to: `https:` and nothing else.
+ *
+ * A plain `url()` accepts any scheme, including `javascript:`, `file:` and
+ * `data:`, and a link this contract hands to a browser must never be one of
+ * those. The scheme is checked twice on purpose: once by the URL parser, and
+ * once as a `pattern` that reaches the generated JSON Schema, so a consumer
+ * validating from the JSON Schema alone refuses the same values.
+ */
+export const HttpsUrlSchema = z
+  .url({ protocol: /^https$/ })
+  .regex(/^https:\/\//, 'must be an https: link')
+  .describe('An absolute https: link. Any other scheme is refused.');
+
+/**
+ * A link to a server the DorkOS app talks to: `https:`, or plain `http:` to
+ * this machine's loopback address only.
+ *
+ * Loopback `http:` is allowed so a service and a server running side by side on
+ * one machine (development, a self-hosted test) can describe each other. Any
+ * other `http:` host, and every other scheme, is refused.
+ */
+export const ServerUrlSchema = z
+  .url({ protocol: /^https?$/ })
+  .regex(
+    /^(https:\/\/|http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?([/?#]|$))/,
+    'must be an https: link, or http: to a loopback address'
+  )
+  .describe('An absolute https: link, or an http: link to a loopback address only.');
+
+/**
+ * The metadata key that marks a field as a one-time credential.
+ *
+ * Set on a schema with `.meta()`, so it reaches the generated JSON Schema as
+ * well as the runtime registry (`z.globalRegistry.get(schema)`). A consumer
+ * that relays a response (the DorkOS server relaying to its browser, for
+ * instance) can refuse to pass any marked field on, and this package's tests
+ * prove marked fields appear only where the contract says they may.
+ */
+export const ONE_TIME_CREDENTIAL_META = 'x-dorkos-one-time-credential' as const;

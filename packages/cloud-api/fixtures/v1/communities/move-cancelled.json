@@ -3,9 +3,9 @@
   "communityId": "5d6e7f80-9102-4a3b-8c4d-5e6f70819203",
   "communityUrl": "https://community.example.invalid/c/5d6e7f80-9102-4a3b-8c4d-5e6f70819203",
   "name": "Old garden",
-  "state": "failed",
-  "failureCode": "not_owner_export",
+  "state": "cancelled",
+  "failureCode": null,
   "report": null,
   "pollAfterMs": null,
-  "updatedAt": "2026-09-23T11:33:00.000Z"
+  "updatedAt": "2026-09-23T11:35:00.000Z"
 }

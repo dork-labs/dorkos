@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { IdSchema, TimestampSchema } from './primitives.js';
+import { HttpsUrlSchema, IdSchema, TimestampSchema } from './primitives.js';
 
 /**
  * Every machine-readable failure code this contract can return.
@@ -72,7 +72,9 @@ export type ProblemCode = z.infer<typeof ProblemCodeSchema>;
  * `actionUrl` is the other half of a refusal a person can do something about:
  * the page, supplied by the service, where they can do it (raise an allowance,
  * add credit, contact the host). The client opens it as given, beside `title`
- * and `detail`, and never builds one itself.
+ * and `detail`, and never builds one itself. It is `https:` only, and both it and
+ * `actionLabel` are dropped rather than failing the parse when malformed: a bad
+ * link must never cost a person the refusal's own words.
  */
 export const ProblemSchema = z
   .object({
@@ -107,17 +109,20 @@ export const ProblemSchema = z
     freesAt: TimestampSchema.optional().describe(
       'When the blocking condition clears, where the server can say so.'
     ),
-    actionUrl: z
-      .string()
-      .url()
-      .optional()
+    actionUrl: HttpsUrlSchema.optional()
+      .catch(undefined)
       .describe(
-        'A page, supplied by the service, where a person can act on this refusal. Open it as given; a runtime value.'
+        'A page, supplied by the service, where a person can act on this refusal. An https: link; open it as given. A malformed value is dropped rather than failing the whole envelope.'
       ),
     actionLabel: z
       .string()
+      .min(1)
+      .max(60)
       .optional()
-      .describe('The server-supplied text for a link or button that opens `actionUrl`.'),
+      .catch(undefined)
+      .describe(
+        'The server-supplied text for a link or button that opens `actionUrl`. A malformed value is dropped.'
+      ),
   })
   .describe(
     'The error envelope every endpoint in this contract returns in place of its success body.'
