@@ -2,6 +2,7 @@
 covers:
   - "refactor(marketplace): one shared predicate for the install engine's sibling directories (DOR-2273)"
   - 'fix(marketplace): restore an interrupted install instead of deleting its backup (DOR-2273)'
+  - 'fix(marketplace): close the review gaps in install crash recovery (DOR-2273)'
 ---
 
 ### Fixed
