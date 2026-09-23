@@ -192,7 +192,7 @@ Errors go through `mapErrorToStatus`. `PackageNotInstalledForUpdateError` is alr
 ### 6. What the three consumers do with it
 
 - **DOR-2195 (MCP).** `marketplace_update { name?, apply? }` scans once, calls `selectInstallations(records, name ? [name] : undefined)`, then `checkInstallations`. It goes through the confirmation provider before an apply, and fires `onPluginsChanged` per `applied`, exactly as the POST route does. `marketplace_list_installed { checkUpdates: true }` scans records once, lists `records.map((r) => r.package)`, and joins `checkInstallations({ installations: records }).checks` by `installPath` to add `latestVersion` / `hasUpdate`. Without `checkUpdates` it never calls the flow, so it makes no network call.
-- **DOR-2196 (Installed view).** It reads `GET /updates` once on mount, for the same view `GET /installed` returns (the same `projectPath` or none), and keys each check by `installPath`: the row key the view already uses. The count on the tab is `checks.filter((c) => c.hasUpdate).length`. "Update all" confirms `checks.filter(hasUpdate)` by name and place, then sends `POST /updates { apply: true, installPaths, projectPath }` with exactly the installations it showed. The response's `applied` / `applyError` per row is what it reports.
+- **DOR-2196 (Installed view).** It reads `GET /updates` once on mount, for the same view `GET /installed` returns (the same `projectPath` or none), and keys each check by `installPath`: the row key the view already uses. The count on the tab is `checks.filter((c) => c.hasUpdate).length`. "Update all" confirms `checks.filter(hasUpdate)` by name and place, then sends `POST /updates { apply: true, installPaths, projectPath }` with exactly the installations it showed. **UX note:** checks share one server-wide cap of 4, so a single per-row check (or a second window's check) can wait behind a whole-install check that is already running. The view should show the check as pending rather than as a failure, and never fire a check per row on mount (the tab-count read is the one `GET /updates`). The response's `applied` / `applyError` per row is what it reports.
 - **DOR-2193 (`marketplace outdated`).** It reads `GET /updates[?projectPath]`, prints `checks.filter((c) => c.status === 'update-available')` as `name  installed -> latest  (marketplace)`, labelled by place as above, and exits non-zero when that list is not empty.
 
 ## User Experience
@@ -314,6 +314,13 @@ All three ship in one PR, with this spec.
 - Symlinked installs are checked but never reinstalled.
 - The 404 body carries `packageNames` and `installPaths` as fields.
 - OpenAPI `names`/`installPaths` require a non-empty array of non-empty strings; a repeated `?projectPath` is a 400; the orchestration moved into `flows/update-installed.ts`.
+
+**Round 2 (independent, 2026-09-23):** all nine round-1 findings resolved. Adopted:
+
+- A check that throws becomes that installation's `unknown` ("couldn't check this package: <reason>") and releases its slot, so one failure never fails the request (an unreadable marketplaces file included) or stalls the checks queued behind it.
+- An apply hands the installer the exact install root the check resolved (`InstallRequest.installRoot`, narrowed through `locate-install` and the uninstall flow's probe), so a plugin and an agent sharing a name can never have the wrong one replaced — for instance a linked `plugins/foo` beside a real `agents/foo`.
+- The UX note on queued checks for DOR-2196 (§6).
+- Deferred to the rebase onto DOR-2248, which owns `package-fetcher.ts`: an `AbortSignal.timeout(...)` on `fetchAndParseMarketplaceJson`'s bare `fetch`, so a slow marketplace server cannot hold a check slot for minutes; and mapping DOR-2248's typed git errors to HTTP statuses.
 
 ## Related ADRs
 

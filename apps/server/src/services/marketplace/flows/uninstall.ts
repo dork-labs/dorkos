@@ -71,6 +71,13 @@ export interface UninstallRequest {
    * external callers always get the honest clear-on-remove behavior.
    */
   deactivateShape?: boolean;
+  /**
+   * Internal (installer-only): the exact install root to remove, when the
+   * caller already resolved which installation it means — the installer's
+   * `update()` replacing the installation an update check found. See
+   * `LocateInstallInput.installRoot`; not exposed by the HTTP body schema.
+   */
+  installRoot?: string;
 }
 
 /** The outcome of a successful uninstall. */
@@ -373,6 +380,7 @@ export class UninstallFlow {
       dorkHome: this.deps.dorkHome,
       name: req.name,
       projectPath: req.projectPath,
+      installRoot: req.installRoot,
     });
   }
 

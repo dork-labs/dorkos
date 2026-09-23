@@ -505,6 +505,7 @@ export class MarketplaceInstaller implements InstallerLike {
       dorkHome: this.deps.dorkHome,
       name: resolved.packageName,
       projectPath: req.projectPath,
+      installRoot: req.installRoot,
     });
     // Nothing of that name is installed: there is no target to serialise on,
     // and the uninstall half below raises the canonical
@@ -550,6 +551,7 @@ export class MarketplaceInstaller implements InstallerLike {
       purge: false,
       projectPath: req.projectPath,
       deactivateShape: false,
+      ...(req.installRoot !== undefined && { installRoot: req.installRoot }),
     });
 
     // 3. Capture preserved data into a temp scratch directory and remove

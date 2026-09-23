@@ -49,6 +49,9 @@
 
 ## Known Issues
 
+- Deferred to the DOR-2248 rebase: an `AbortSignal.timeout(...)` on `fetchAndParseMarketplaceJson`'s bare `fetch` (`package-fetcher.ts`, DOR-2248's file).
+- `marketplace-installer.ts` now sits at 501 lines, one over the lint `max-lines` warning; DOR-2248 removes lines from the same file, so the rebase clears it.
+
 - **DOR-2248's typed git errors** (`GitRefNotFoundError`, `GitCommitNotFoundError`, `GitRemoteUnreachableError`, `GitFetchError`, in `lib/git-tree.ts` on that branch) are not mapped by `mapErrorToStatus` yet, because they do not exist on this base. A check already carries them as a per-installation `unknown` with DOR-2248's plain message, since `resolveLatest` turns every throw into `unresolved`. A failed reinstall in the all-packages door already carries them as that installation's `applyError`. What remains is the status for an error that escapes a route: the per-package apply, and anything the doors throw outside a check. Proposed: 404 for ref or commit not found, 502 for unreachable or fetch failed, each with the error's own message. This lands once DOR-2248 has merged.
 
 ## Implementation Notes

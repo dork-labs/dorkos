@@ -17,7 +17,17 @@
  * @vitest-environment node
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -698,6 +708,77 @@ describe('marketplace install pipeline — integration', () => {
       } finally {
         await rm(sourceRoot, { recursive: true, force: true }).catch(() => undefined);
         await rm(projectPath, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  });
+
+  describe('an agent and a linked plugin of the same name (DOR-2194)', () => {
+    it('updates the agent and leaves the linked plugin, and the working copy behind it, alone', async () => {
+      // Purpose: the installer used to find its target by name, plugins/ first,
+      // so updating the agent would have replaced the linked plugin instead.
+      const marketplaceRoot = await mkdtemp(path.join(tmpdir(), 'dorkos-two-roots-marketplace-'));
+      const workingCopy = await mkdtemp(path.join(tmpdir(), 'dorkos-two-roots-working-copy-'));
+      try {
+        const agentSource = path.join(marketplaceRoot, 'agents', 'valid-agent');
+        await cp(fixturePath('valid-agent'), agentSource, { recursive: true });
+        await mkdir(path.join(marketplaceRoot, '.claude-plugin'), { recursive: true });
+        await writeFile(
+          path.join(marketplaceRoot, '.claude-plugin', 'marketplace.json'),
+          JSON.stringify({
+            name: 'two-roots',
+            owner: { name: 'DorkOS tests' },
+            plugins: [
+              { name: 'valid-agent', source: './agents/valid-agent', description: 'An agent' },
+            ],
+          })
+        );
+        await initBoundary(tmpdir());
+        const { installer, fetcher } = buildInstallerForTests(dorkHome);
+        const sourceManager = new MarketplaceSourceManager(dorkHome);
+        await fetcher.fetchMarketplaceJson(
+          await sourceManager.add({
+            name: 'two-roots',
+            source: pathToFileURL(marketplaceRoot).href,
+          })
+        );
+        await installer.install({ name: 'valid-agent', marketplace: 'two-roots' });
+
+        // A developer's plugin of the same name, linked in from a working copy.
+        await cp(fixturePath('valid-plugin'), workingCopy, { recursive: true });
+        for (const file of ['.dork/manifest.json', '.claude-plugin/plugin.json']) {
+          const target = path.join(workingCopy, file);
+          const json = JSON.parse(await readFile(target, 'utf-8')) as Record<string, unknown>;
+          await writeFile(target, JSON.stringify({ ...json, name: 'valid-agent' }));
+        }
+        const linkPath = path.join(dorkHome, 'plugins', 'valid-agent');
+        await symlink(workingCopy, linkPath);
+
+        const manifest = path.join(agentSource, '.dork', 'manifest.json');
+        const json = JSON.parse(await readFile(manifest, 'utf-8')) as Record<string, unknown>;
+        await writeFile(manifest, JSON.stringify({ ...json, version: '1.1.0' }));
+
+        const flow = new UpdateFlow({
+          dorkHome,
+          installer,
+          sourceManager,
+          fetcher,
+          logger: noopLogger,
+        });
+        const { checks } = await flow.checkInstallations({
+          installations: await scanInstallationRecords(dorkHome, { agents: [] }),
+          apply: true,
+        });
+
+        const agentRoot = path.join(dorkHome, 'agents', 'valid-agent');
+        expect(checks.find((c) => c.installPath === linkPath)).toMatchObject({ status: 'unknown' });
+        expect(checks.find((c) => c.installPath === agentRoot)?.applied?.version).toBe('1.1.0');
+        expect((await lstat(linkPath)).isSymbolicLink()).toBe(true);
+        expect(await pathExists(path.join(workingCopy, '.claude-plugin', 'plugin.json'))).toBe(
+          true
+        );
+      } finally {
+        await rm(marketplaceRoot, { recursive: true, force: true });
+        await rm(workingCopy, { recursive: true, force: true });
       }
     });
   });

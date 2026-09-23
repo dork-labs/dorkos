@@ -417,7 +417,7 @@ export class UpdateFlow {
     const match = req.installation;
     if (!match) return { checks: [notInScope(req.name)], applied: [] };
 
-    const { check, request } = await this.checkSlots.run(() => this.checkRecord(match));
+    const { check, request } = await this.checkSafely(match);
     const applied: InstallResult[] = [];
     if (req.apply) {
       try {
@@ -452,9 +452,7 @@ export class UpdateFlow {
    * @returns One check per installation.
    */
   async checkInstallations(req: InstallationUpdatesRequest): Promise<InstallationUpdatesResult> {
-    const planned = await Promise.all(
-      req.installations.map((record) => this.checkSlots.run(() => this.checkRecord(record)))
-    );
+    const planned = await Promise.all(req.installations.map((record) => this.checkSafely(record)));
     const checks = planned.map(({ check }, i) =>
       withIdentity(check, req.installations[i]!.package)
     );
@@ -495,13 +493,46 @@ export class UpdateFlow {
   }
 
   /**
-   * Reinstall one installation in the scope it was found in: its project for a
-   * project or agent install, none for a global one.
+   * Reinstall exactly one installation, in the scope it was found in: its
+   * project for a project or agent install, none for a global one. The install
+   * root is passed through, because the installer otherwise finds its target by
+   * name, and a plugin and an agent sharing a name would resolve to the plugin.
    *
    * @internal
    */
   private reinstall(record: InstallationRecord, request: InstallRequest): Promise<InstallResult> {
-    return this.deps.installer.update({ ...request, projectPath: record.package.agentPath });
+    return this.deps.installer.update({
+      ...request,
+      projectPath: record.package.agentPath,
+      installRoot: record.package.installPath,
+    });
+  }
+
+  /**
+   * {@link UpdateFlow.checkRecord} inside a server-wide slot, total: a check
+   * that throws (an unreadable marketplaces file, a bug) becomes that
+   * installation's `unknown` with the reason, and releases its slot, so one
+   * failure never fails the request or stalls the checks queued behind it.
+   *
+   * @internal
+   */
+  private async checkSafely(record: InstallationRecord): Promise<PlannedCheck> {
+    try {
+      return await this.checkSlots.run(() => this.checkRecord(record));
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.deps.logger.warn('update-flow: check failed', {
+        installPath: record.package.installPath,
+        error: reason,
+      });
+      return {
+        check: unknownCheck(
+          installationUpdateName(record),
+          installedVersionOf(record),
+          `couldn't check this package: ${reason}`
+        ),
+      };
+    }
   }
 
   /**
@@ -514,12 +545,8 @@ export class UpdateFlow {
   private async checkRecord(record: InstallationRecord): Promise<PlannedCheck> {
     const name = installationUpdateName(record);
     const recorded = record.metadata;
-    const installedCommit = isRealCommitSha(recorded?.commitSha) ? recorded.commitSha : undefined;
-    const installed = resolvePackageVersion({
-      declaredVersion: record.declaredVersion,
-      entryVersion: recorded?.entryVersion,
-      commitSha: installedCommit,
-    });
+    const installedCommit = realCommitOf(record);
+    const installed = installedVersionOf(record);
     // A reinstall would replace the link, and the working copy behind it, with a
     // fresh fetch. No request is returned, so no apply can ever reach it.
     if (record.linked) return { check: unknownCheck(name, installed, LINKED_INSTALL_NOTE) };
@@ -735,6 +762,21 @@ function compareVersions(
 
   const status = latestVersion.version !== installed.version ? 'update-available' : 'current';
   return knownCheck(packageName, marketplace, installed, latestVersion, status);
+}
+
+/** The install's recorded commit, when it is a real one. @internal */
+function realCommitOf(record: InstallationRecord): string | undefined {
+  const sha = record.metadata?.commitSha;
+  return isRealCommitSha(sha) ? sha : undefined;
+}
+
+/** The installed side of Claude Code's version chain, from one scanned record. @internal */
+function installedVersionOf(record: InstallationRecord): ResolvedPackageVersion | undefined {
+  return resolvePackageVersion({
+    declaredVersion: record.declaredVersion,
+    entryVersion: record.metadata?.entryVersion,
+    commitSha: realCommitOf(record),
+  });
 }
 
 /** A check whose both sides are known. @internal */

@@ -754,7 +754,7 @@ describe('UpdateFlow', () => {
         marketplaceJson: buildMarketplaceJson([]),
         latest: { tool: '2.0.0' },
       });
-      await stageInstalledPlugin({
+      const installRoot = await stageInstalledPlugin({
         dorkHome: ctx.dorkHome,
         manifest: buildPluginManifest({ name: 'tool', version: '1.0.0' }),
         metadata: { sourceRepo: sourceKey.cloneUrl, sourceKey, commitSha: SHA_A },
@@ -772,6 +772,7 @@ describe('UpdateFlow', () => {
         name: 'tool',
         source: sourceKey.cloneUrl,
         projectPath: undefined,
+        installRoot,
       });
       expect(ctx.sourceManager.list).not.toHaveBeenCalled();
     });
@@ -807,7 +808,7 @@ describe('UpdateFlow', () => {
         marketplaceJson: buildMarketplaceJson([{ name: 'up' }, { name: 'same' }]),
         latest: { up: '2.0.0', same: '1.0.0' },
       });
-      await stageInstalledPlugin({
+      const upRoot = await stageInstalledPlugin({
         dorkHome: ctx.dorkHome,
         manifest: buildPluginManifest({ name: 'up', version: '1.0.0' }),
       });
@@ -827,6 +828,7 @@ describe('UpdateFlow', () => {
         name: 'up',
         marketplace: 'fixture-marketplace',
         projectPath: undefined,
+        installRoot: upRoot,
       });
       expect(result.applied.map((a) => a.packageName)).toEqual(['up']);
     });
@@ -1057,6 +1059,94 @@ describe('UpdateFlow', () => {
 
       expect(checks.map((c) => c.status)).toEqual(['unknown', 'unknown']);
       expect(ctx.fetcher.lookupCommitSha).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('a check that throws', () => {
+    it("becomes that installation's unknown, and frees its slot for the checks queued behind it", async () => {
+      // Purpose: one throwing check must neither fail the whole request nor
+      // keep its slot — with every slot held by a failure, the rest would wait
+      // forever.
+      const names = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'];
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson(names.map((name) => ({ name }))),
+        resolveLatest: async (req) => {
+          if (['p1', 'p2', 'p3', 'p4'].includes(req.name)) throw new Error('boom');
+          return { kind: 'resolved', declaredVersion: '9.0.0' };
+        },
+      });
+      for (const name of names) {
+        await stageInstalledPlugin({
+          dorkHome: ctx.dorkHome,
+          manifest: buildPluginManifest({ name, version: '1.0.0' }),
+        });
+      }
+
+      const { checks } = await checkAll(new UpdateFlow(ctx.deps), ctx.dorkHome);
+
+      const byName = Object.fromEntries(checks.map((c) => [c.packageName, c]));
+      for (const name of ['p1', 'p2', 'p3', 'p4']) {
+        expect(byName[name]).toMatchObject({
+          status: 'unknown',
+          hasUpdate: false,
+          note: "couldn't check this package: boom",
+        });
+      }
+      expect(byName.p5?.status).toBe('update-available');
+      expect(byName.p6?.status).toBe('update-available');
+    });
+
+    it('answers unknown with the reason when the marketplace list itself cannot be read', async () => {
+      // Purpose: an unreadable marketplaces file used to reject the whole
+      // request as a 500; each installation now says why it went unchecked.
+      const ctx = await setup({ marketplaceJson: buildMarketplaceJson([{ name: 'pkg' }]) });
+      ctx.sourceManager.list.mockRejectedValue(new Error('marketplaces.json is not valid JSON'));
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'pkg', version: '1.0.0' }),
+      });
+      const flow = new UpdateFlow(ctx.deps);
+
+      const all = await checkAll(flow, ctx.dorkHome);
+      const one = await runNamed(flow, ctx.dorkHome, { name: 'pkg', apply: true });
+
+      for (const check of [all.checks[0], one.checks[0]]) {
+        expect(check).toMatchObject({
+          status: 'unknown',
+          installedVersion: '1.0.0',
+          note: "couldn't check this package: marketplaces.json is not valid JSON",
+        });
+      }
+      expect(ctx.installer.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the exact installation an apply replaces', () => {
+    it('hands the installer the install root the check resolved, when one name lives in two roots', async () => {
+      // Purpose: the installer finds a target by name, first root wins — so a
+      // plugin and an agent both called "twin" could have the wrong one
+      // replaced. The apply names the exact root.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'twin' }]),
+        latest: { twin: '9.0.0' },
+      });
+      const pluginRoot = await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'twin', version: '1.0.0' }),
+      });
+      const agentRoot = await stageInstalledAgent({
+        scopeRoot: ctx.dorkHome,
+        name: 'twin',
+        version: '1.0.0',
+      });
+      const flow = new UpdateFlow(ctx.deps);
+
+      await checkAll(flow, ctx.dorkHome, { apply: true });
+      await runNamed(flow, ctx.dorkHome, { name: 'twin', apply: true });
+
+      expect(ctx.installer.update.mock.calls.map(([req]) => req.installRoot).sort()).toEqual(
+        [pluginRoot, agentRoot, pluginRoot].sort()
+      );
     });
   });
 
