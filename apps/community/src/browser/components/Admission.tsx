@@ -153,7 +153,9 @@ export function Admission({
             ? 'Set up your community'
             : hostSignIn
               ? 'Your communities'
-              : `Join ${community?.name}`}
+              : community?.name
+                ? `Join ${community.name}`
+                : 'Join community'}
         </p>
         <h1>{isOwner ? 'Make it yours.' : 'Come on in.'}</h1>
         <p className="muted mb-7">

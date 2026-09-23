@@ -189,7 +189,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await memberPage.screenshot({ path: '/tmp/community-join-mobile.png', fullPage: true });
     await expect.poll(() => memberPage.evaluate(() => location.hash)).toBe('');
     await memberPage.getByRole('button', { name: 'Continue' }).click();
-    await expect(memberPage.getByText('Gathering Place')).toBeVisible();
+    await expect(memberPage.getByText('Gathering Place', { exact: true })).toBeVisible();
     await memberPage.getByLabel('Your name').fill('Maya');
     await memberPage.getByLabel('Email').fill('maya@ui.test');
     await memberPage.getByLabel('Password').fill('password1234');

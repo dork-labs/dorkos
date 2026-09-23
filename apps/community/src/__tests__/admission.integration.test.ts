@@ -1590,7 +1590,14 @@ describe('signed admission over real HTTP and Postgres', () => {
     const clearsClaimCookie = (response: Response) =>
       response.headers
         .getSetCookie()
-        .some((header) => /^community_bootstrap=;/u.test(header) && /Max-Age=0/u.test(header));
+        .some(
+          (header) =>
+            /^community_bootstrap=;/u.test(header) &&
+            /Max-Age=0/u.test(header) &&
+            /Path=\//u.test(header) &&
+            /HttpOnly/u.test(header) &&
+            /SameSite=Lax/u.test(header)
+        );
     // A landed claim drops its single-purpose cookie, and a replay of it is refused and dropped too.
     expect(clearsClaimCookie(claimed)).toBe(true);
     const replayed = await call('/api/v1/owner-claims/claim', 'POST', {}, claimantCookie);

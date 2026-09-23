@@ -1,6 +1,8 @@
 ---
 covers:
   - 'feat(community): let the intended owner claim a new community from a link'
+  - 'fix(community): address owner claim review'
+  - 'fix(community): match claim cookie options and steady the join heading'
 ---
 
 ### Added
