@@ -566,6 +566,29 @@ describe('SidebarHeaderBlock', () => {
     await waitFor(() => expect(selected).toHaveFocus());
   });
 
+  it('focuses the route-selected Community when the shortcut opens the menu', async () => {
+    // Spec: "Opening focuses the selected row." Opening by shortcut skipped
+    // the focus step that a click takes, so Radix left focus on the first row.
+    mockSearch = { community: 'a' };
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    renderBlock();
+    await act(async () => undefined);
+    fireEvent.keyDown(document.body, { key: 'K', metaKey: true, shiftKey: true });
+    const selected = await screen.findByRole('menuitemradio', { name: /Alpha/ });
+    expect(selected).toHaveAttribute('aria-checked', 'true');
+    await waitFor(() => expect(selected).toHaveFocus());
+  });
+
   it('returns to the prior route when the target destination read fails', async () => {
     mockConnections = [
       {

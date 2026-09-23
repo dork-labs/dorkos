@@ -181,6 +181,14 @@ test('Community switcher supports keyboard selection and a narrow accessible men
   );
   await expect(page.getByText('Message 2', { exact: true })).toBeVisible();
 
+  // With a community selected, the shortcut opens on THAT row, not on the
+  // first one ("Opening focuses the selected row.").
+  await trigger.focus();
+  await page.keyboard.press('Meta+Shift+K');
+  await expect(page.getByRole('menuitemradio', { name: /Alpha/ })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByText('Switch context', { exact: true })).toBeHidden();
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   await new BasePage(page).waitForAppReady();

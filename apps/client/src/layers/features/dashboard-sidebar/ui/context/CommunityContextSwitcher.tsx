@@ -269,9 +269,19 @@ export function CommunityContextSwitcher({
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
-    if (next) requestAnimationFrame(() => selectedItem.current?.focus());
-    else setFilter('');
+    if (!next) setFilter('');
   }
+
+  // "Opening focuses the selected row" (spec, Shell surfaces → Desktop),
+  // however it opened. Keyed on `open` rather than done in the change handler,
+  // because the ⌘⇧K shortcut opens the menu without going through it, and
+  // Radix then leaves focus on the first row. The frame lets Radix finish its
+  // own open-focus first.
+  useEffect(() => {
+    if (!open) return;
+    const frame = requestAnimationFrame(() => selectedItem.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
 
   return (
     <ResponsiveDropdownMenu open={open} onOpenChange={handleOpenChange}>

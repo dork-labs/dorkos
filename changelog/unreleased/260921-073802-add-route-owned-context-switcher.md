@@ -11,6 +11,8 @@ covers:
   - 'fix(client): keep the JSON default off FormData and binary request bodies'
   - "fix(client): give phones the header menu's account rows again"
   - 'fix(client): fit the phone context switcher in the top bar'
+  - 'fix(client): focus the selected context when the shortcut opens the switcher'
+  - 'fix(client): name a community channel tab from its community'
   - 'feat(community): add administration lifecycle API'
   - 'feat(community): enforce tenant authority boundaries'
   - 'feat(community): enforce tenant relational contract'
