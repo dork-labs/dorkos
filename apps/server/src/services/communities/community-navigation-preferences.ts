@@ -32,7 +32,7 @@ export class CommunityNavigationPreferenceService {
   private writeTail: Promise<void> = Promise.resolve();
 
   constructor(
-    private readonly config: ConfigManager,
+    private readonly config: Pick<ConfigManager, 'get' | 'setDot'>,
     private readonly connections: Pick<RemoteCommunityPairingService, 'list'>,
     private readonly canReadRoom: CommunityNavigationRoomAuthorizer
   ) {}

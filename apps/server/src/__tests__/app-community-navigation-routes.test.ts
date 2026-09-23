@@ -23,6 +23,19 @@ const config = vi.hoisted(() => {
     set: (key: string, value: unknown) => {
       values[key] = value;
     },
+    // The preference service writes only `ui.communityNavigation`, so the
+    // settings broadcast can tell movement from a settings change (DOR-2227).
+    // A double without this made every navigation write a 502.
+    setDot: (key: string, value: unknown) => {
+      const [section, ...rest] = key.split('.');
+      let node = (values[section!] ??= {}) as Record<string, unknown>;
+      for (const segment of rest.slice(0, -1)) {
+        node = (node[segment] ??= {}) as Record<string, unknown>;
+      }
+      if (rest.length === 0) values[section!] = value;
+      else node[rest.at(-1)!] = value;
+      return {};
+    },
   };
 });
 
@@ -49,7 +62,7 @@ vi.mock('../services/core/tunnel-manager.js', () => ({
   },
 }));
 vi.mock('../services/core/config-manager.js', () => ({
-  configManager: { get: config.get, set: config.set },
+  configManager: { get: config.get, set: config.set, setDot: config.setDot },
 }));
 vi.mock('../routes/room-caller.js', () => ({
   resolveCaller: () => ({ id: 'author-a' }),
@@ -92,6 +105,12 @@ describe('Community navigation routes in the booted app', () => {
     expect(installation.body.installationDestination).toEqual({
       path: '/tasks',
       search: { view: 'board' },
+    });
+    // Written through to the store, not just echoed back.
+    expect(config.values.ui).toMatchObject({
+      communityNavigation: {
+        owners: [{ ownerKey: 'author-a', installationDestination: { path: '/tasks' } }],
+      },
     });
 
     const destination = await request(app)

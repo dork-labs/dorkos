@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(server): stop community navigation saves from reloading settings in every window'
+  - 'refactor(server): type-check the community navigation dot-path write'
+  - 'fix(server): give the booted-app navigation test double the dot-path write'
 ---
 
 ### Fixed
