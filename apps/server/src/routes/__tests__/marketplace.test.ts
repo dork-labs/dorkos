@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
@@ -34,6 +35,7 @@ import {
 } from '../../services/marketplace/lib/package-paths.js';
 import { MarketplaceSourceManager } from '../../services/marketplace/marketplace-source-manager.js';
 import { MarketplaceCache } from '../../services/marketplace/marketplace-cache.js';
+import { PackageCacheRetention } from '../../services/marketplace/package-cache-retention.js';
 import type { PackageFetcher } from '../../services/marketplace/package-fetcher.js';
 import {
   ConflictError,
@@ -233,6 +235,12 @@ describe('Marketplace Routes', () => {
       createMarketplaceRouter({
         sourceManager,
         cache,
+        cacheRetention: new PackageCacheRetention({
+          cache,
+          dorkHome,
+          listAgentScopes: () => agentScopes,
+          logger: noopLogger,
+        }),
         fetcher: fetcher as unknown as PackageFetcher,
         installer,
         uninstallFlow: uninstallFlow as unknown as UninstallFlow,
@@ -589,47 +597,64 @@ describe('Marketplace Routes', () => {
   });
 
   describe('POST /cache/prune', () => {
-    it('prunes older package SHAs and reports freed bytes', async () => {
-      // Seed two cached SHAs for the same package, each with a small file so
-      // the freed-bytes calculation has something to measure.
-      await seedTree('test-pkg', 'a'.repeat(40), 'payload.txt', 'first');
-      // Bump mtimes so the two entries have a stable ordering regardless
-      // of filesystem timestamp granularity.
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      await seedTree('test-pkg', 'b'.repeat(40), 'payload.txt', 'second');
+    /** Mark every cached tree as last used an hour ago, past the in-use grace. */
+    async function ageAllTrees(): Promise<void> {
+      const then = new Date(Date.now() - 60 * 60 * 1000);
+      for (const entry of await cache.listPackages()) await utimes(entry.path, then, then);
+    }
 
-      const res = await request(fixtureServer)
-        .post('/api/marketplace/cache/prune')
-        .send({ keepLastN: 1 });
+    it('removes what no install needs, keeps what one records, and reports freed bytes', async () => {
+      // Purpose: the manual prune runs the same rule as the automatic sweep,
+      // so it never deletes the commit an install records.
+      await seedTree('test-pkg', 'a'.repeat(40), 'payload.txt', 'first');
+      await seedTree('test-pkg', 'b'.repeat(40), 'payload.txt', 'second');
+      const installRoot = join(dorkHome, 'plugins', 'kept-pkg');
+      writePackageManifest(installRoot, {
+        schemaVersion: 1,
+        type: 'plugin',
+        name: 'kept-pkg',
+        version: '1.0.0',
+      });
+      writeFileSync(
+        join(installRoot, '.dork', 'install-metadata.json'),
+        JSON.stringify({
+          name: 'kept-pkg',
+          version: '1.0.0',
+          type: 'plugin',
+          installedAt: '2026-09-01T00:00:00.000Z',
+          commitSha: 'c'.repeat(40),
+        })
+      );
+      await seedTree('kept-pkg', 'c'.repeat(40));
+      await ageAllTrees();
+
+      const res = await request(fixtureServer).post('/api/marketplace/cache/prune').send({});
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body.removed)).toBe(true);
-      expect(res.body.removed).toHaveLength(1);
-      expect(res.body.removed[0].packageName).toBe('test-pkg');
-      expect(res.body.removed[0].commitSha).toBe('a'.repeat(40));
-      expect(typeof res.body.freedBytes).toBe('number');
-      expect(res.body.freedBytes).toBeGreaterThan(0);
+      expect(res.body.removed.map((e: { commitSha: string }) => e.commitSha).sort()).toEqual([
+        'a'.repeat(40),
+        'b'.repeat(40),
+      ]);
+      expect(typeof res.body.removed[0].lastUsedAt).toBe('string');
+      expect(res.body.freedBytes).toBe('first'.length + 'second'.length);
 
-      // The surviving SHA should still be discoverable via GET /cache.
       const statusRes = await request(fixtureServer).get('/api/marketplace/cache');
       expect(statusRes.body.packages).toBe(1);
     });
 
-    it('defaults keepLastN to 1 when the body is empty', async () => {
-      await seedTree('pkg', 'a'.repeat(40));
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      await seedTree('pkg', 'b'.repeat(40));
-
-      const res = await request(fixtureServer).post('/api/marketplace/cache/prune').send({});
+    it('accepts no body at all', async () => {
+      // Purpose: Express 5 leaves req.body undefined on an empty POST.
+      const res = await request(fixtureServer).post('/api/marketplace/cache/prune');
       expect(res.status).toBe(200);
-      expect(res.body.removed).toHaveLength(1);
-      expect(res.body.removed[0].commitSha).toBe('a'.repeat(40));
+      expect(res.body).toEqual({ removed: [], freedBytes: 0 });
     });
 
-    it('rejects invalid keepLastN payloads', async () => {
+    it('rejects the retired keepLastN option', async () => {
+      // Purpose: a per-name "keep N" deletes the commits installs record; a
+      // caller still sending it must hear that it no longer applies.
       const res = await request(fixtureServer)
         .post('/api/marketplace/cache/prune')
-        .send({ keepLastN: -1 });
+        .send({ keepLastN: 1 });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
     });

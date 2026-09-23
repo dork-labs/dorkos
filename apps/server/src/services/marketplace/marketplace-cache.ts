@@ -27,17 +27,33 @@
  * TTL strategy:
  * - `marketplace.json`: 1h default. Past TTL the entry is still served but
  *   `stale: true` so callers can refresh in the background.
- * - Package trees: never expire. Garbage-collected only via {@link MarketplaceCache.prune}
- *   or {@link MarketplaceCache.clear}.
+ * - Package trees: an entry's mtime is its last use. Every call that hands out
+ *   an entry's path stamps it, and {@link MarketplaceCache.removeUnused} never
+ *   removes an entry used in the last {@link IN_USE_GRACE_MS}, whatever its
+ *   caller's rule says. Which unused entries to keep is decided by
+ *   `package-cache-retention.ts`, which sweeps after every new entry
+ *   ({@link MarketplaceCache.onEntryWritten}), at startup, and on
+ *   `dorkos cache prune` (DOR-2249). {@link MarketplaceCache.clear} empties it.
  *
  * @module services/marketplace/marketplace-cache
  */
-import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rename, writeFile, readdir, rm, stat } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  writeFile,
+  readdir,
+  rm,
+  stat,
+  utimes,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseMarketplaceJsonLenient, type MarketplaceJson } from '@dorkos/marketplace';
 import { assertContainedIn } from './lib/package-paths.js';
 import { isFullCommitSha } from './lib/git-tree.js';
+import { directorySize } from './lib/directory-size.js';
 
 /** Default TTL for cached `marketplace.json` documents (1 hour). */
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
@@ -59,6 +75,25 @@ const LEGACY_PACKAGES_DIRNAME = 'packages';
 
 /** Name prefix of the temp directory a fetch runs in, beside its entry. */
 const TEMP_FETCH_PREFIX = '.tmp-fetch-';
+
+/**
+ * Name prefix of an entry a sweep has renamed aside and is deleting. Never
+ * read; a crash can leave one, and {@link MarketplaceCache.removeLeftovers}
+ * deletes it.
+ */
+const TEMP_PRUNE_PREFIX = '.tmp-prune-';
+
+/**
+ * How long after its last use an entry is off-limits to a sweep: 15 minutes.
+ *
+ * A reader (an install, a preview, the update check) holds an entry's path
+ * only for the seconds it takes to validate the tree or copy it into staging,
+ * and nothing keeps a path into the cache after its request. Stamping on use
+ * and sparing anything stamped recently is git gc's grace period in miniature;
+ * because the stamp is on disk, it also protects a read by a second DorkOS
+ * process sharing this data directory.
+ */
+export const IN_USE_GRACE_MS = 15 * 60 * 1000;
 
 /** Separates an entry's commit from its subfolder digest: `${name}@${sha}~${digest}`. */
 const SUBPATH_SEPARATOR = '~';
@@ -84,10 +119,25 @@ export interface CachedPackage {
   packageName: string;
   /** The commit whose tree the entry holds. */
   commitSha: string;
+  /**
+   * {@link subpathDigest} of the subfolder a sparse entry holds; `''` for an
+   * entry holding the whole repository.
+   */
+  subpathDigest: string;
   /** Absolute path to the cached package directory. */
   path: string;
-  /** Mtime of the cached package directory. */
-  cachedAt: Date;
+  /** When the entry was last handed out (its directory's mtime). */
+  lastUsedAt: Date;
+}
+
+/** What one {@link MarketplaceCache.removeUnused} call removed. */
+export interface RemovedEntries {
+  /** The entries that left disk, as they were listed before removal. */
+  removed: CachedPackage[];
+  /** Bytes the removed entries occupied. */
+  freedBytes: number;
+  /** Entries that could not be removed, with why; the rest still were. */
+  failed: { entry: CachedPackage; error: string }[];
 }
 
 /** Where a materialized tree landed, and the commit it verifiably is. */
@@ -117,6 +167,16 @@ export class MarketplaceCache {
    * racing two git processes into the same directory.
    */
   private readonly inFlight = new Map<string, Promise<MaterializedPackage>>();
+
+  /**
+   * Tail of the in-process lock ({@link MarketplaceCache.exclusive}). It
+   * serialises only short critical sections: a reader's "exists? stamp it",
+   * a fetch's landing, and a sweep's "still unused? rename it aside".
+   */
+  private lockTail: Promise<void> = Promise.resolve();
+
+  /** Listeners told when a fetch lands a new entry ({@link onEntryWritten}). */
+  private readonly entryWrittenListeners = new Set<() => void>();
 
   /**
    * Construct a cache rooted at `${dorkHome}/cache/marketplace`.
@@ -207,7 +267,8 @@ export class MarketplaceCache {
   }
 
   /**
-   * Get a cached package tree by name, commit and subfolder.
+   * Get a cached package tree by name, commit and subfolder, and stamp it as
+   * used so a sweep leaves it alone while the caller reads it.
    *
    * @param packageName - Logical package name.
    * @param commitSha - The commit whose tree is wanted.
@@ -221,20 +282,15 @@ export class MarketplaceCache {
     subpath: string
   ): Promise<CachedPackage | null> {
     const path = this.packageDir(packageName, commitSha, subpath);
-    // The same test the write path's fast path applies: an empty directory is
-    // a crashed or colliding fetch, never an entry to serve.
-    if (!(await isNonEmptyDir(path))) return null;
-    try {
-      const info = await stat(path);
-      return {
-        packageName,
-        commitSha,
-        path,
-        cachedAt: info.mtime,
-      };
-    } catch {
-      return null;
-    }
+    const usedAt = await this.stampIfPresent(path);
+    if (usedAt === null) return null;
+    return {
+      packageName,
+      commitSha,
+      subpathDigest: subpathDigest(subpath),
+      path,
+      lastUsedAt: usedAt,
+    };
   }
 
   /**
@@ -248,6 +304,9 @@ export class MarketplaceCache {
    * de-duplicates concurrent fetches of it. The two differ when a ref moved
    * between the caller's lookup and the fetch, and the entry then holds the
    * commit that actually arrived.
+   *
+   * Every entry it hands out is stamped as used, and a fetch that lands a new
+   * entry tells the {@link onEntryWritten} listeners.
    *
    * Concurrency: two fetches of one entry key in this process
    * share one fetch (a UI preview and an install fire together, and two git
@@ -276,8 +335,9 @@ export class MarketplaceCache {
   ): Promise<MaterializedPackage> {
     const expectedPath = this.packageDir(packageName, expectedSha, subpath);
 
-    // Fast path: an already-materialized valid package needs no fetch.
-    if (await isNonEmptyDir(expectedPath)) {
+    // Fast path: an already-materialized valid package needs no fetch. It is
+    // stamped as used, like a `getPackage` hit.
+    if ((await this.stampIfPresent(expectedPath)) !== null) {
       return { path: expectedPath, commitSha: expectedSha };
     }
 
@@ -301,7 +361,8 @@ export class MarketplaceCache {
    * - the `packages/` root entries lived in before their keys were verified
    *   (DOR-2248): a tree there may not be the commit its name says;
    * - temp fetch directories a crash left in `trees/`, whose `.git` may still
-   *   hold a half-fetched repository.
+   *   hold a half-fetched repository;
+   * - entries a sweep renamed aside and a crash stopped it deleting.
    *
    * Idempotent. Not safe while a fetch is running in this cache.
    */
@@ -316,7 +377,9 @@ export class MarketplaceCache {
     }
     await Promise.all(
       entries
-        .filter((entry) => entry.startsWith(TEMP_FETCH_PREFIX))
+        .filter(
+          (entry) => entry.startsWith(TEMP_FETCH_PREFIX) || entry.startsWith(TEMP_PRUNE_PREFIX)
+        )
         .map((entry) => rm(join(treesRoot, entry), { recursive: true, force: true }))
     );
   }
@@ -354,25 +417,134 @@ export class MarketplaceCache {
       throw err;
     }
 
-    // Another process (not this Node process) may have landed a valid tree
-    // since the fast-path check. Prefer it and discard ours: same commit,
-    // same tree.
-    if (await isNonEmptyDir(finalPath)) {
-      await rm(tempDir, { recursive: true, force: true });
-      return { path: finalPath, commitSha };
-    }
+    // Landing runs under the lock, so a sweep cannot remove the entry between
+    // the check and the stamp.
+    const landedOurs = await this.exclusive(async () => {
+      // Another process (not this Node process) may have landed a valid tree
+      // since the fast-path check. Prefer it and discard ours: same commit,
+      // same tree.
+      if (await isNonEmptyDir(finalPath)) {
+        await stampUsed(finalPath);
+        return false;
+      }
+      // Remove any partial/empty directory left by a prior crashed fetch so the
+      // rename lands cleanly (rename onto a non-empty dir throws ENOTEMPTY).
+      await rm(finalPath, { recursive: true, force: true });
+      await rename(tempDir, finalPath);
+      await stampUsed(finalPath);
+      return true;
+    });
 
-    // Remove any partial/empty directory left by a prior crashed fetch so the
-    // rename lands cleanly (rename onto a non-empty dir throws ENOTEMPTY).
-    await rm(finalPath, { recursive: true, force: true });
-    await rename(tempDir, finalPath);
+    if (landedOurs) {
+      for (const listener of this.entryWrittenListeners) listener();
+    } else {
+      await rm(tempDir, { recursive: true, force: true });
+    }
     return { path: finalPath, commitSha };
   }
 
   /**
+   * Be told each time a fetch lands a new entry: the one way the cache grows,
+   * so the one signal its retention owner needs. Not called for a cache hit,
+   * a failed fetch, or a tree another process had already landed.
+   *
+   * @param listener - Called synchronously after the entry is in place. It
+   *   must not throw; start any work it triggers in the background.
+   * @returns A function that stops the notifications.
+   */
+  onEntryWritten(listener: () => void): () => void {
+    this.entryWrittenListeners.add(listener);
+    return () => {
+      this.entryWrittenListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Remove every entry the caller's rule does not keep and that nobody has
+   * used in the last {@link IN_USE_GRACE_MS}. The grace is not the caller's to
+   * waive: it is this cache's promise to everyone it handed a path.
+   *
+   * Each removal re-checks the stamp and renames the entry aside to
+   * `.tmp-prune-*` under the lock, then measures and deletes the renamed copy
+   * outside it. A reader that stamps first keeps its entry; one that comes
+   * after the rename sees a miss and fetches. In-progress fetches
+   * (`.tmp-fetch-*`) are never entries, so never candidates.
+   *
+   * @param keep - Given every entry, returns the paths to keep. Called once,
+   *   with the listing this call works from.
+   * @returns What was removed, the bytes freed, and any entry that could not be
+   *   removed (the others still are).
+   */
+  async removeUnused(
+    keep: (entries: readonly CachedPackage[]) => ReadonlySet<string>
+  ): Promise<RemovedEntries> {
+    const treesRoot = join(this.cacheRoot, TREES_DIRNAME);
+    const entries = await this.listPackages();
+    const kept = keep(entries);
+    const result: RemovedEntries = { removed: [], freedBytes: 0, failed: [] };
+
+    for (const entry of entries) {
+      if (kept.has(entry.path)) continue;
+      try {
+        const aside = await this.exclusive(async () => {
+          let lastUsedMs: number;
+          try {
+            lastUsedMs = (await stat(entry.path)).mtimeMs;
+          } catch {
+            return null; // Already gone.
+          }
+          if (Date.now() - lastUsedMs < IN_USE_GRACE_MS) return null;
+          const target = join(treesRoot, `${TEMP_PRUNE_PREFIX}${randomUUID()}`);
+          await rename(entry.path, target);
+          return target;
+        });
+        if (aside === null) continue;
+        const bytes = await directorySize(aside);
+        await rm(aside, { recursive: true, force: true });
+        result.removed.push(entry);
+        result.freedBytes += bytes;
+      } catch (err) {
+        result.failed.push({ entry, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Stamp `path` as used now if it holds a valid entry, as one step under the
+   * lock.
+   *
+   * @returns When it was stamped, or `null` when there is no valid entry.
+   * @internal
+   */
+  private stampIfPresent(path: string): Promise<Date | null> {
+    return this.exclusive(async () => {
+      // An empty directory is a crashed or colliding fetch, never an entry.
+      if (!(await isNonEmptyDir(path))) return null;
+      return stampUsed(path);
+    });
+  }
+
+  /**
+   * Run `fn` with no other critical section of this cache running. Sections
+   * are a few system calls each, so a promise chain is all the lock needs.
+   *
+   * @internal
+   */
+  private exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.lockTail.then(fn);
+    this.lockTail = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  /**
    * Enumerate every cached package across all names and SHAs. Entries whose
-   * directory name does not match the `${name}@${sha}` convention are
-   * silently skipped.
+   * directory name does not match the `${name}@${sha}` convention (including
+   * in-progress fetches and entries being removed) are silently skipped.
+   * Listing is not use: it stamps nothing.
    */
   async listPackages(): Promise<CachedPackage[]> {
     const root = join(this.cacheRoot, TREES_DIRNAME);
@@ -385,6 +557,7 @@ export class MarketplaceCache {
 
     const results: CachedPackage[] = [];
     for (const entry of entries) {
+      if (entry.startsWith(TEMP_FETCH_PREFIX) || entry.startsWith(TEMP_PRUNE_PREFIX)) continue;
       const parsed = parsePackageDirName(entry);
       if (!parsed) {
         continue;
@@ -398,40 +571,15 @@ export class MarketplaceCache {
         results.push({
           packageName: parsed.packageName,
           commitSha: parsed.commitSha,
+          subpathDigest: parsed.subpathDigest,
           path,
-          cachedAt: info.mtime,
+          lastUsedAt: info.mtime,
         });
       } catch {
-        // Stat failed (race with prune?) — skip silently.
+        // Stat failed (removed by a concurrent sweep or clear) — skip silently.
       }
     }
     return results;
-  }
-
-  /**
-   * Garbage-collect cached packages. Groups every cached package by name,
-   * sorts each group by `cachedAt` descending, and removes everything past
-   * the `keepLastN`-th entry.
-   *
-   * @param opts - Pruning options. `keepLastN` defaults to `1` (keep only
-   *   the most recently cached SHA per package name).
-   * @returns The list of removed package descriptors.
-   */
-  async prune(opts?: { keepLastN?: number }): Promise<{ removed: CachedPackage[] }> {
-    const keepLastN = opts?.keepLastN ?? 1;
-    const grouped = groupByPackageName(await this.listPackages());
-    const removed: CachedPackage[] = [];
-
-    for (const group of grouped.values()) {
-      group.sort((a, b) => b.cachedAt.getTime() - a.cachedAt.getTime());
-      const toRemove = group.slice(keepLastN);
-      for (const pkg of toRemove) {
-        await rm(pkg.path, { recursive: true, force: true });
-        removed.push(pkg);
-      }
-    }
-
-    return { removed };
   }
 
   /** Wipe the entire cache directory. No-op when the directory does not exist. */
@@ -469,30 +617,50 @@ export class MarketplaceCache {
    */
   private packageDir(packageName: string, commitSha: string, subpath: string): string {
     const root = join(this.cacheRoot, TREES_DIRNAME);
-    const tree = subpath === '' ? '' : `${SUBPATH_SEPARATOR}${subpathDigest(subpath)}`;
+    const digest = subpathDigest(subpath);
+    const tree = digest === '' ? '' : `${SUBPATH_SEPARATOR}${digest}`;
     return assertContainedIn(root, join(root, `${packageName}@${commitSha}${tree}`));
   }
 }
 
-/** The first 12 hex digits of `subpath`'s SHA-256: the sparse-entry suffix. */
-function subpathDigest(subpath: string): string {
+/**
+ * The sparse-entry suffix for `subpath`: the first 12 hex digits of its
+ * SHA-256, or `''` for the whole repository (which has no suffix).
+ *
+ * @param subpath - The subfolder an entry holds; `''` for the whole repository.
+ */
+export function subpathDigest(subpath: string): string {
+  if (subpath === '') return '';
   return createHash('sha256').update(subpath).digest('hex').slice(0, 12);
 }
 
 /**
+ * Stamp an entry as used now (its directory's mtime).
+ *
+ * @returns The stamp.
+ */
+async function stampUsed(path: string): Promise<Date> {
+  const now = new Date();
+  await utimes(path, now, now);
+  return now;
+}
+
+/**
  * Parse a `${name}@${sha}` or `${name}@${sha}~${digest}` directory name back
- * into its package and commit. Uses `lastIndexOf('@')` so scoped names like
+ * into its package, commit and subfolder digest. Uses `lastIndexOf('@')` so scoped names like
  * `@scope/pkg@deadbeef` resolve correctly. Returns `null` when the entry has
  * no `@` separator or when either side is empty.
  */
-function parsePackageDirName(entry: string): { packageName: string; commitSha: string } | null {
+function parsePackageDirName(
+  entry: string
+): { packageName: string; commitSha: string; subpathDigest: string } | null {
   const at = entry.lastIndexOf('@');
   if (at <= 0 || at === entry.length - 1) {
     return null;
   }
-  const commitSha = entry.slice(at + 1).split(SUBPATH_SEPARATOR)[0]!;
+  const [commitSha = '', digest = ''] = entry.slice(at + 1).split(SUBPATH_SEPARATOR);
   if (commitSha === '') return null;
-  return { packageName: entry.slice(0, at), commitSha };
+  return { packageName: entry.slice(0, at), commitSha, subpathDigest: digest };
 }
 
 /**
@@ -512,15 +680,4 @@ async function isNonEmptyDir(dir: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/** Group cached packages by their logical name. */
-function groupByPackageName(packages: CachedPackage[]): Map<string, CachedPackage[]> {
-  const grouped = new Map<string, CachedPackage[]>();
-  for (const pkg of packages) {
-    const list = grouped.get(pkg.packageName) ?? [];
-    list.push(pkg);
-    grouped.set(pkg.packageName, list);
-  }
-  return grouped;
 }

@@ -24,7 +24,7 @@ import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 const LIST_USAGE = 'Usage: dorkos cache list';
 
 /** One-line usage string surfaced in error messages for `cache prune`. */
-const PRUNE_USAGE = 'Usage: dorkos cache prune [--keep-last-n <N>]';
+const PRUNE_USAGE = 'Usage: dorkos cache prune';
 
 /** One-line usage string surfaced in error messages for `cache clear`. */
 const CLEAR_USAGE = 'Usage: dorkos cache clear [-y|--yes]';
@@ -42,15 +42,9 @@ interface PruneResponse {
     packageName: string;
     commitSha: string;
     path: string;
-    cachedAt: string;
+    lastUsedAt: string;
   }>;
   freedBytes: number;
-}
-
-/** Parsed CLI arguments for `cache prune`. */
-export interface CachePruneArgs {
-  /** Optional `--keep-last-n <N>` cutoff. Defaults to the server's default (1). */
-  keepLastN?: number;
 }
 
 /** Parsed CLI arguments for `cache clear`. */
@@ -108,39 +102,23 @@ export function parseCacheListArgs(rawArgs: string[]): void {
 }
 
 /**
- * Parse the raw argv slice that follows `dorkos cache prune`. Supports
- * an optional `--keep-last-n <N>` flag; omitting it defers to the
- * server-side default (keep one entry per package name).
+ * Parse the raw argv slice that follows `dorkos cache prune`. The subcommand
+ * takes no options: the server decides what to keep (every tree an install
+ * needs), so there is nothing to tune.
  *
  * @param rawArgs - The argv slice after `cache prune`.
- * @returns A typed {@link CachePruneArgs} object.
  */
-export function parseCachePruneArgs(rawArgs: string[]): CachePruneArgs {
-  let parsed: ReturnType<typeof parseArgs>;
+export function parseCachePruneArgs(rawArgs: string[]): void {
   try {
-    parsed = parseArgs({
+    parseArgs({
       args: rawArgs,
-      options: {
-        'keep-last-n': { type: 'string' },
-      },
+      options: {},
       allowPositionals: false,
       strict: true,
     });
   } catch (err) {
     rethrowUnknownOption(err, 'cache prune', PRUNE_USAGE);
   }
-
-  const raw = parsed.values['keep-last-n'];
-  if (raw === undefined) {
-    return {};
-  }
-  const parsedNumber = Number(raw);
-  if (!Number.isInteger(parsedNumber) || parsedNumber < 0) {
-    throw new Error(
-      `Invalid value for --keep-last-n: '${String(raw)}' (expected a non-negative integer).\n${PRUNE_USAGE}`
-    );
-  }
-  return { keepLastN: parsedNumber };
 }
 
 /**
@@ -216,24 +194,26 @@ export async function runCacheList(): Promise<number> {
 }
 
 /**
- * Implements `dorkos cache prune [--keep-last-n <N>]`.
+ * Implements `dorkos cache prune`: removes cached packages no install needs.
+ * The server does the same on its own after every download, so this is only
+ * for reclaiming space right now.
  *
- * @param args - Parsed cache-prune arguments.
  * @returns The intended process exit code (`0` success, `1` error).
  */
-export async function runCachePrune(args: CachePruneArgs): Promise<number> {
+export async function runCachePrune(): Promise<number> {
   try {
-    const body = args.keepLastN !== undefined ? { keepLastN: args.keepLastN } : {};
-    const result = await apiCall<PruneResponse>('POST', '/api/marketplace/cache/prune', body);
+    const result = await apiCall<PruneResponse>('POST', '/api/marketplace/cache/prune', {});
 
     const count = result.removed.length;
     if (count === 0) {
-      console.log('Nothing to prune — cache is already minimal.');
+      console.log(
+        'Nothing to remove. Everything cached belongs to an installed package or was used in the last 15 minutes.'
+      );
       return 0;
     }
 
     const noun = count === 1 ? 'package' : 'packages';
-    console.log(`Pruned ${count} cached ${noun}, freed ${formatBytes(result.freedBytes)}.`);
+    console.log(`Removed ${count} cached ${noun}, freed ${formatBytes(result.freedBytes)}.`);
     return 0;
   } catch (err) {
     if (err instanceof ApiError) {

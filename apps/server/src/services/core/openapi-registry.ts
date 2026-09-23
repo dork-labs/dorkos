@@ -2256,15 +2256,13 @@ const MarketplaceCacheStatusSchema = z.object({
   totalSizeBytes: z.number().int().nonnegative(),
 });
 
-const PruneMarketplaceCacheBodySchema = z.object({
-  keepLastN: z.number().int().nonnegative().optional(),
-});
+const PruneMarketplaceCacheBodySchema = z.object({}).strict();
 
 const PrunedCachedPackageSchema = z.object({
   packageName: z.string(),
   commitSha: z.string(),
   path: z.string(),
-  cachedAt: z.string(),
+  lastUsedAt: z.string(),
 });
 
 const PruneMarketplaceCacheResponseSchema = z.object({
@@ -2465,7 +2463,9 @@ registry.registerPath({
   method: 'post',
   path: '/api/marketplace/cache/prune',
   tags: ['Marketplace'],
-  summary: 'Garbage-collect cached packages, keeping the N most recent per name',
+  summary: 'Remove cached packages no install needs',
+  description:
+    'Runs the same sweep the server runs after every fetch and at startup. Keeps every tree an installation records, the most recently used tree of each installed package, and anything used in the last 15 minutes. Takes no options.',
   request: {
     body: {
       content: { 'application/json': { schema: PruneMarketplaceCacheBodySchema } },

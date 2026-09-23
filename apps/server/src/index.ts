@@ -225,6 +225,7 @@ import { createAgentWorkspace } from './services/core/agent-creator.js';
 import { gitTreeSource } from './services/marketplace/lib/git-tree.js';
 import { MarketplaceSourceManager } from './services/marketplace/marketplace-source-manager.js';
 import { MarketplaceCache } from './services/marketplace/marketplace-cache.js';
+import { PackageCacheRetention } from './services/marketplace/package-cache-retention.js';
 import { PackageResolver } from './services/marketplace/package-resolver.js';
 import { PackageFetcher } from './services/marketplace/package-fetcher.js';
 import { ConflictDetector } from './services/marketplace/conflict-detector.js';
@@ -4120,6 +4121,16 @@ async function start() {
         name: a.displayName ?? a.name,
       }));
 
+    // The package cache's retention owner (DOR-2249): sweeps after every new
+    // entry and once now, in the background, keeping what installs need.
+    const marketplaceCacheRetention = new PackageCacheRetention({
+      cache: marketplaceCache,
+      dorkHome,
+      listAgentScopes,
+      logger,
+    });
+    marketplaceCacheRetention.start();
+
     // The one post-change notifier, handed to BOTH surfaces that mutate installed
     // packages: the HTTP router below and the marketplace MCP tools
     // (`marketplaceMcpDeps`). It is required on both deps types, so a surface
@@ -4156,6 +4167,7 @@ async function start() {
         capabilityRegistry: () => capabilityRegistry,
         sourceManager: marketplaceSourceManager,
         cache: marketplaceCache,
+        cacheRetention: marketplaceCacheRetention,
         fetcher: marketplaceFetcher,
         installer: marketplaceInstaller,
         uninstallFlow: marketplaceUninstallFlow,

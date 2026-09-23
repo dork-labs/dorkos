@@ -11,7 +11,7 @@
  * @module routes/marketplace
  */
 import { Router, type Request, type Response } from 'express';
-import { lstat, open, readdir, stat } from 'node:fs/promises';
+import { lstat, open, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import {
@@ -22,7 +22,9 @@ import {
 } from '@dorkos/marketplace';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { logger } from '../lib/logger.js';
-import type { MarketplaceCache, CachedPackage } from '../services/marketplace/marketplace-cache.js';
+import type { MarketplaceCache } from '../services/marketplace/marketplace-cache.js';
+import type { PackageCacheRetention } from '../services/marketplace/package-cache-retention.js';
+import { directorySize } from '../services/marketplace/lib/directory-size.js';
 import type { MarketplaceSourceManager } from '../services/marketplace/marketplace-source-manager.js';
 import type { PackageFetcher } from '../services/marketplace/package-fetcher.js';
 import type { InstallerLike } from '../services/marketplace/marketplace-installer.js';
@@ -93,6 +95,8 @@ export interface MarketplaceRouteDeps {
   sourceManager: MarketplaceSourceManager;
   /** Cache abstraction for marketplace.json documents and cloned packages. */
   cache: MarketplaceCache;
+  /** The package cache's retention owner; `POST /cache/prune` runs its sweep. */
+  cacheRetention: PackageCacheRetention;
   /** Fetcher that resolves marketplace.json documents and package clones. */
   fetcher: PackageFetcher;
   /** Installer orchestrator for preview and install dispatch. */
@@ -168,10 +172,11 @@ const UpdateRequestBodySchema = z.object({
   projectPath: z.string().optional(),
 });
 
-/** Body schema for `POST /api/marketplace/cache/prune`. */
-const PruneCacheBodySchema = z.object({
-  keepLastN: z.number().int().nonnegative().optional(),
-});
+/**
+ * Body schema for `POST /api/marketplace/cache/prune`: no options. Strict, so
+ * the retired `keepLastN` is refused rather than silently ignored.
+ */
+const PruneCacheBodySchema = z.object({}).strict();
 
 /** Query schema for `GET /api/marketplace/packages/:name`. */
 const GetPackageQuerySchema = z.object({
@@ -267,6 +272,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   const {
     sourceManager,
     cache,
+    cacheRetention,
     fetcher,
     installer,
     uninstallFlow,
@@ -624,7 +630,8 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
   });
 
-  // POST /cache/prune -- garbage-collect cached packages by keepLastN
+  // POST /cache/prune -- remove cached packages no install needs (the same
+  // sweep that runs after every fetch; see package-cache-retention.ts)
   router.post('/cache/prune', async (req, res) => {
     const parsed = PruneCacheBodySchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -634,29 +641,13 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
 
     try {
-      // Snapshot package sizes before pruning so we can report freed bytes —
-      // the descriptors returned from `prune()` point at deleted directories
-      // that can no longer be stat'd.
-      const sizesBeforePrune = new Map<string, number>();
-      const cachedBefore = await cache.listPackages();
-      await Promise.all(
-        cachedBefore.map(async (pkg) => {
-          sizesBeforePrune.set(pkg.path, await sumDirectorySize(pkg.path));
-        })
-      );
-
-      const { removed } = await cache.prune(parsed.data);
-      const freedBytes = removed.reduce(
-        (sum, pkg) => sum + (sizesBeforePrune.get(pkg.path) ?? 0),
-        0
-      );
-
+      const { removed, freedBytes } = await cacheRetention.sweep();
       return res.json({
         removed: removed.map((pkg) => ({
           packageName: pkg.packageName,
           commitSha: pkg.commitSha,
           path: pkg.path,
-          cachedAt: pkg.cachedAt.toISOString(),
+          lastUsedAt: pkg.lastUsedAt.toISOString(),
         })),
         freedBytes,
       });
@@ -1057,7 +1048,7 @@ async function computeCacheStatus(cache: MarketplaceCache): Promise<{
   const packages = await cache.listPackages();
 
   const [marketplacesBytes, packagesBytes] = await Promise.all([
-    sumDirectorySize(marketplacesRoot),
+    directorySize(marketplacesRoot),
     sumPackageSizes(packages),
   ]);
 
@@ -1068,39 +1059,11 @@ async function computeCacheStatus(cache: MarketplaceCache): Promise<{
   };
 }
 
-/** Sum the recursive size of every file under `root`. Returns 0 if absent. */
-async function sumDirectorySize(root: string): Promise<number> {
-  let total = 0;
-  const walk = async (dir: string): Promise<void> => {
-    let entries: string[];
-    try {
-      entries = await readdir(dir);
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const entryPath = join(dir, entry);
-      try {
-        const info = await stat(entryPath);
-        if (info.isDirectory()) {
-          await walk(entryPath);
-        } else if (info.isFile()) {
-          total += info.size;
-        }
-      } catch {
-        // Race with prune/clear — skip silently.
-      }
-    }
-  };
-  await walk(root);
-  return total;
-}
-
 /** Sum the recursive size of every cached package directory. */
-async function sumPackageSizes(packages: CachedPackage[]): Promise<number> {
+async function sumPackageSizes(packages: { path: string }[]): Promise<number> {
   let total = 0;
   for (const pkg of packages) {
-    total += await sumDirectorySize(pkg.path);
+    total += await directorySize(pkg.path);
   }
   return total;
 }

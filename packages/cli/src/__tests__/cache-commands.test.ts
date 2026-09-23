@@ -107,27 +107,15 @@ describe('parseCacheListArgs', () => {
 });
 
 describe('parseCachePruneArgs', () => {
-  it('returns an empty object with no flags', () => {
-    expect(parseCachePruneArgs([])).toEqual({});
+  it('accepts no arguments', () => {
+    expect(() => parseCachePruneArgs([])).not.toThrow();
   });
 
-  it('parses --keep-last-n', () => {
-    expect(parseCachePruneArgs(['--keep-last-n', '3'])).toEqual({ keepLastN: 3 });
-  });
-
-  it('parses --keep-last-n=5 form', () => {
-    expect(parseCachePruneArgs(['--keep-last-n=5'])).toEqual({ keepLastN: 5 });
-  });
-
-  it('rejects negative keep-last-n', () => {
-    expect(() => parseCachePruneArgs(['--keep-last-n=-1'])).toThrow(
-      /Invalid value for --keep-last-n/
-    );
-  });
-
-  it('rejects non-integer keep-last-n', () => {
-    expect(() => parseCachePruneArgs(['--keep-last-n', 'abc'])).toThrow(
-      /Invalid value for --keep-last-n/
+  it('refuses the retired --keep-last-n', () => {
+    // Purpose: a per-name "keep N" deleted the commits installs record; a
+    // script still passing it must fail loudly, not prune differently.
+    expect(() => parseCachePruneArgs(['--keep-last-n', '3'])).toThrow(
+      /Unknown option for 'cache prune': --keep-last-n/
     );
   });
 
@@ -226,14 +214,14 @@ describe('runCachePrune', () => {
           packageName: 'pkg',
           commitSha: 'sha',
           path: '/p',
-          cachedAt: '2026-04-06T00:00:00.000Z',
+          lastUsedAt: '2026-04-06T00:00:00.000Z',
         }),
         freedBytes: 23 * 1024 * 1024,
       })
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    const code = await runCachePrune({});
+    const code = await runCachePrune();
 
     expect(code).toBe(0);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -243,40 +231,25 @@ describe('runCachePrune', () => {
     expect(JSON.parse(init.body)).toEqual({});
 
     const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allLogs).toContain('Pruned 7 cached packages');
+    expect(allLogs).toContain('Removed 7 cached packages');
     expect(allLogs).toContain('23 MB');
-  });
-
-  it('forwards --keep-last-n in the request body', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(
-      mockResponse(200, {
-        removed: [],
-        freedBytes: 0,
-      })
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await runCachePrune({ keepLastN: 3 });
-
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body).toEqual({ keepLastN: 3 });
   });
 
   it('uses singular noun when exactly one package was removed', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       mockResponse(200, {
         removed: [
-          { packageName: 'pkg', commitSha: 'sha', path: '/p', cachedAt: '2026-04-06T00:00:00Z' },
+          { packageName: 'pkg', commitSha: 'sha', path: '/p', lastUsedAt: '2026-04-06T00:00:00Z' },
         ],
         freedBytes: 2048,
       })
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await runCachePrune({});
+    await runCachePrune();
 
     const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allLogs).toContain('Pruned 1 cached package,');
+    expect(allLogs).toContain('Removed 1 cached package,');
     expect(allLogs).toContain('2 KB');
   });
 
@@ -286,11 +259,11 @@ describe('runCachePrune', () => {
       .mockResolvedValueOnce(mockResponse(200, { removed: [], freedBytes: 0 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const code = await runCachePrune({});
+    const code = await runCachePrune();
 
     expect(code).toBe(0);
     const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allLogs).toContain('Nothing to prune');
+    expect(allLogs).toContain('Nothing to remove.');
   });
 
   it('exits non-zero on server error', async () => {
@@ -299,7 +272,7 @@ describe('runCachePrune', () => {
       .mockResolvedValueOnce(mockResponse(500, { error: 'Failed to prune marketplace cache' }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const code = await runCachePrune({});
+    const code = await runCachePrune();
 
     expect(code).toBe(1);
     const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
