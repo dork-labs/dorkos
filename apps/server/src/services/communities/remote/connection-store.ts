@@ -22,6 +22,7 @@ import {
   EncryptedFileCredentialStore,
   type CredentialStore,
 } from '../../core/credential-provider.js';
+import { logger } from '../../../lib/logger.js';
 
 const RecordSchema = z.strictObject({
   ref: CommunityRefSchema,
@@ -57,6 +58,30 @@ export class RemoteConnectionAuthorizationError extends Error {
   }
 }
 
+/**
+ * One committed change to an owner's connection list, told in-process only.
+ *
+ * `status` is where the row ended up; `removed` means the row is gone. Only
+ * the list's shape counts — a row appearing, changing status or disappearing.
+ * An access re-verification ({@link RemoteConnectionStore.updateAccess}) is
+ * deliberately not a change: listing verifies every row, so announcing it
+ * would make every list read ask every window to list again.
+ */
+export interface RemoteConnectionChange {
+  /** The local owner whose list changed. */
+  ownerKey: string;
+  /** The connection that changed. */
+  ref: CommunityRef;
+  /** Where the connection is now. */
+  status: ConnectionRecord['status'] | 'removed';
+}
+
+/**
+ * Subscriber to {@link RemoteConnectionStore.onChange}: called once per
+ * committed write, with every change that write made (never empty).
+ */
+export type RemoteConnectionChangeListener = (changes: readonly RemoteConnectionChange[]) => void;
+
 const noEffectiveAccess = { read: false, post: false, enrollAgent: false, stream: false } as const;
 
 function projectedAccess(record: ConnectionRecord): CommunityConnectionAccess | null {
@@ -84,6 +109,48 @@ export class RemoteConnectionStore {
   private readonly directory: string;
   private readonly credentials: CredentialStore;
   private writing: Promise<void> = Promise.resolve();
+  private readonly listeners = new Set<RemoteConnectionChangeListener>();
+
+  /**
+   * Hear about every committed change to any owner's connection list: a row
+   * added, connected, told to reconnect, or removed.
+   *
+   * Every path that changes a connection's state ends in this store — pairing,
+   * cancel, expiry, disconnect, and a Community refusing the grant from any
+   * route, stream or verification — so subscribing here covers them all by
+   * construction. Listeners run after the write is on disk, so a reader that
+   * lists in response sees the new state.
+   *
+   * One call per committed WRITE, not per row: a sweep that removes three
+   * expired rows is one call carrying three changes, so a subscriber that
+   * turns calls into broadcasts sends one frame, not three.
+   *
+   * @param listener - Called synchronously, once per write that changed the list.
+   * @returns An unsubscribe function.
+   */
+  onChange(listener: RemoteConnectionChangeListener): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  /**
+   * Tell every listener once about one committed write; one that throws never
+   * fails the write it reports. A write that changed nothing is not announced.
+   */
+  private announce(changes: readonly RemoteConnectionChange[]): void {
+    if (!changes.length) return;
+    for (const listener of this.listeners) {
+      try {
+        listener(changes);
+      } catch (error) {
+        logger.warn('[RemoteConnectionStore] A connection change listener failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
 
   private exclusive<T>(action: () => Promise<T>): Promise<T> {
     const result = this.writing.then(action, action);
@@ -151,6 +218,9 @@ export class RemoteConnectionStore {
         await this.credentials.delete(`community:${record.ref}:pairing`);
       const refs = new Set(expired.map((record) => record.ref));
       await this.write(records.filter((record) => !refs.has(record.ref)));
+      this.announce(
+        expired.map((record) => ({ ownerKey, ref: record.ref, status: 'removed' as const }))
+      );
     });
   }
 
@@ -213,6 +283,7 @@ export class RemoteConnectionStore {
         await this.credentials.delete(name);
         throw error;
       }
+      this.announce([{ ownerKey: record.ownerKey, ref: record.ref, status: 'pending' }]);
       return this.project(record);
     });
   }
@@ -261,6 +332,7 @@ export class RemoteConnectionStore {
         throw error;
       }
       await this.credentials.delete(`community:${ref}:pairing`);
+      this.announce([{ ownerKey, ref, status: 'connected' }]);
       return this.project(updated);
     });
   }
@@ -324,6 +396,10 @@ export class RemoteConnectionStore {
           },
         });
         await this.write(records);
+        // Announced once, on the transition. The credentials below are still
+        // being deleted, but every read already fails closed on the status
+        // just written, so a window that re-lists now sees the truth.
+        this.announce([{ ownerKey, ref, status: 'reconnect-required' }]);
       }
       await this.credentials.delete(`community:${ref}:personal`);
       for (const agentId of record.agentIds)
@@ -399,6 +475,7 @@ export class RemoteConnectionStore {
       await this.credentials.delete(`community:${ref}:personal`);
       const records = (await this.read()).filter((item) => item.ref !== ref);
       await this.write(records);
+      this.announce([{ ownerKey, ref, status: 'removed' }]);
       await rm(path.join(this.directory, 'cache', ref), { recursive: true, force: true });
     });
   }

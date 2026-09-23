@@ -9,6 +9,7 @@ export {
   withinCommunityContentAuthority,
   type CommunityContentAuthority,
 } from './model/use-community-connections';
+export { useCommunityConnectionsSync } from './model/use-community-connections-sync';
 export {
   communityNavigationKeys,
   useCommunityNavigation,

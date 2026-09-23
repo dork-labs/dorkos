@@ -82,7 +82,12 @@ beforeEach(async () => {
   // The REAL wiring, the same call `index.ts` makes. No mesh: this file is
   // about settings, and `wireLiveChangeBroadcasts` takes `undefined` there for
   // the server-without-mesh case it already has to support.
-  wireLiveChangeBroadcasts({ meshCore: undefined, configManager: manager, eventFanOut });
+  wireLiveChangeBroadcasts({
+    meshCore: undefined,
+    configManager: manager,
+    communityConnections: { onChange: () => () => {} },
+    eventFanOut,
+  });
 });
 
 afterEach(async () => {

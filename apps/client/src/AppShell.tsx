@@ -43,6 +43,7 @@ import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
 import { useTasksSync } from '@/layers/entities/tasks';
+import { useCommunityConnectionsSync } from '@/layers/entities/community';
 import { useTunnelSync, useRemoteAccessAnnouncer } from '@/layers/entities/tunnel';
 import { motion, AnimatePresence, MotionConfig, useReducedMotion } from 'motion/react';
 import { shouldFadeRoute } from './app/route-fade';
@@ -270,8 +271,11 @@ export function AppShell() {
   // rooms waiting on you whichever route you are on (spec `rooms` §13.1/§13.3).
   const { room: openRoom, roomTitle, unreadRoomCount } = useRoomDocumentTitle();
   // One watcher for the whole app: a Community that stops being connected is
-  // erased and routed away from, whichever surface is showing it.
+  // erased and routed away from, whichever surface is showing it. The sync
+  // hook re-reads the list the moment the server says a connection changed,
+  // so the watcher runs within seconds instead of on the next poll.
   useCommunityRevocationCleanup();
+  useCommunityConnectionsSync();
   useFavicon({
     cwd: selectedCwd,
     isStreaming,
