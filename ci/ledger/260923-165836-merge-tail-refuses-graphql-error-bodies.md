@@ -31,7 +31,9 @@ and refuses, with one `SKIP <reason>` line carrying GitHub's own message, any an
 really one: not JSON, any reported GraphQL error (a partial answer nulls the failed field, and
 `mergeQueueEntry` and a removal's check suites fail toward permission when nulled), no pull request
 object, no `mergeQueueEntry` field, no review-thread list, or a check list that is not a list.
-The PR waits one tick and the tick carries on, with a counted warning. A tick in which EVERY
+A failed GraphQL or checks read is retried once after 5 seconds before it counts (only failed
+reads wait, so a healthy tick costs nothing extra). If it fails again, the PR waits one tick and the
+tick carries on, with a counted warning. A tick in which EVERY
 examined pull request was unreadable fails (`::error::`, exit 1), like a refused arm: a lost
 permission or a broken query refuses them all, and a warning alone would stay green for as long as
 it lasted. The gate itself now refuses a payload with no
@@ -44,7 +46,8 @@ Why this metric: the fix removes a latent failure with no measured occurrences, 
 is the one it must not make worse. One unreadable answer no longer fails a tick, and a tick fails
 only when it could read nothing at all, which is the inert state this metric should catch. So
 `failure_rate@schedule` stays at 0 while the reads work and rises as soon as they stop. Known cost:
-with a single open pull request, one transient error is also "nothing readable" and reds that tick.
+a tick goes red when every open pull request fails two consecutive reads of the same kind, 5 seconds
+apart, in one tick; with a single open pull request that can still be a longer transient outage.
 Partial skips are counted on each run's `unreadable-from-github=` line; check them by hand at the
 verdict date by grepping merge-tail logs for `graphql-error` and `could-not-read-`.
 
