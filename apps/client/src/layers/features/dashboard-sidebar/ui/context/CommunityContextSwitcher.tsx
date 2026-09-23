@@ -47,6 +47,7 @@ import {
   COMMUNITY_DEPLOY_GUIDE_URL,
 } from './community-context-actions';
 import { DisconnectCommunityDialog, JoinCommunityDialog } from './CommunityActionDialogs';
+import { SheetActionsMenu } from './SheetActionsMenu';
 
 /** Props for the route-owned Community context trigger. */
 export interface CommunityContextSwitcherProps {
@@ -149,6 +150,7 @@ export function CommunityContextSwitcher({
   const selected = destinations.find((connection) => connection.ref === selectedRef) ?? null;
   const selectedItem = useRef<HTMLDivElement>(null);
   const pendingSelection = useRef(false);
+  const returnFocus = useRef<HTMLElement | null>(null);
   const [pendingRef, setPendingRef] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [open, setOpen] = useState(false);
@@ -209,11 +211,19 @@ export function CommunityContextSwitcher({
   // Shell surfaces → Desktop). Landing in a channel puts the cursor in its
   // composer, so a shortcut that stood down for text fields was dead exactly
   // where people switch from. Nothing else binds ⌘⇧K, so it takes nothing
-  // from the field.
+  // from the field. A key pressed while an input method is still composing
+  // belongs to that composition, not to us.
+  //
+  // Where focus was is remembered, so closing without choosing puts it back
+  // there ("predictable restore") instead of on a trigger nobody pressed.
   useEffect(() => {
     const openSwitcher = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'k') {
         event.preventDefault();
+        const active = document.activeElement;
+        returnFocus.current =
+          active instanceof HTMLElement && active !== document.body ? active : null;
         setOpen(true);
       }
     };
@@ -266,18 +276,22 @@ export function CommunityContextSwitcher({
         capturedRoute?.isCurrent() === true &&
         isCommunityAuthorityCurrent(capturedOwner);
       if (restore) {
-        await navigate({
+        const restored = await navigate({
           to: previousLocation.pathname,
           search: previousLocation.search,
           replace: true,
-        } as never).catch(() => {});
+        } as never).then(
+          () => true,
+          () => false
+        );
         // Say so (spec: "announce the failure"): the label snapping back is
-        // easy to miss, and a screen reader hears nothing at all. Silent when
-        // the person has already chosen somewhere else, or when navigation
-        // itself was interrupted before the target committed.
-        toast.error(`Couldn’t open ${connection.label}.`, {
-          description: 'You’re still where you were. Try again in a moment.',
-        });
+        // easy to miss, and a screen reader hears nothing at all. Only once
+        // the way back has actually landed, because the message promises it;
+        // silent when the person has already chosen somewhere else.
+        if (restored)
+          toast.error(`Couldn’t open ${connection.label}.`, {
+            description: 'You’re still where you were. Try again in a moment.',
+          });
       }
     } finally {
       pendingSelection.current = false;
@@ -318,6 +332,8 @@ export function CommunityContextSwitcher({
 
   function selectDestination(value: string) {
     if (pendingSelection.current) return;
+    // A choice moves you somewhere new; the old focus has nothing to return to.
+    returnFocus.current = null;
     if (value === 'installation') {
       void selectInstallation();
       return;
@@ -329,6 +345,15 @@ export function CommunityContextSwitcher({
   function handleOpenChange(next: boolean) {
     setOpen(next);
     if (!next) setFilter('');
+  }
+
+  function handleCloseAutoFocus(event: Event) {
+    guarded.onCloseAutoFocus(event);
+    const previous = returnFocus.current;
+    returnFocus.current = null;
+    if (event.defaultPrevented || !previous?.isConnected) return;
+    event.preventDefault();
+    previous.focus();
   }
 
   // "Opening focuses the selected row" (spec, Shell surfaces → Desktop),
@@ -387,7 +412,7 @@ export function CommunityContextSwitcher({
           // the space Radix says is left below the trigger and scrolls, so the
           // last rows stay reachable by pointer and keyboard alike.
           className="max-h-(--radix-dropdown-menu-content-available-height) w-64 overflow-y-auto"
-          onCloseAutoFocus={guarded.onCloseAutoFocus}
+          onCloseAutoFocus={handleCloseAutoFocus}
         >
           <ResponsiveDropdownMenuLabel>Switch context</ResponsiveDropdownMenuLabel>
           {isMobile && destinations.length >= 8 && (
@@ -477,17 +502,15 @@ export function CommunityContextSwitcher({
             <>
               <ResponsiveDropdownMenuSeparator />
               {/* The sheet's action rows are menu items, and a menu item needs a
-                  menu around it to be one; the dropdown gets that from Radix. */}
-              <div
-                role={isMobile ? 'menu' : undefined}
-                aria-label={isMobile ? 'Actions' : undefined}
-              >
+                  menu around it to be one; the dropdown gets both the role and
+                  its arrow keys from Radix, so the sheet supplies its own. */}
+              <SheetActionsMenu sheet={isMobile}>
                 <SidebarMenuNodes
                   variant={isMobile ? 'sheet' : 'dropdown'}
                   nodes={guarded.nodes}
                   onSheetClose={() => handleOpenChange(false)}
                 />
-              </div>
+              </SheetActionsMenu>
             </>
           )}
         </ResponsiveDropdownMenuContent>

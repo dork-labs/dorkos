@@ -740,7 +740,24 @@ describe('SidebarHeaderBlock', () => {
     fireEvent(composer, event);
     expect(event.defaultPrevented).toBe(true);
     expect(await screen.findByText('Switch context')).toBeVisible();
+    // Closing without choosing puts focus back in the message box.
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByText('Switch context')).not.toBeInTheDocument());
+    await waitFor(() => expect(composer).toHaveFocus());
     composer.remove();
+  });
+
+  it('leaves a key that is still composing text to the input method', async () => {
+    renderBlock();
+    await act(async () => undefined);
+    fireEvent.keyDown(document.body, {
+      key: 'K',
+      metaKey: true,
+      shiftKey: true,
+      isComposing: true,
+    });
+    await act(async () => undefined);
+    expect(screen.queryByText('Switch context')).not.toBeInTheDocument();
   });
 
   it('announces mentions separately from other unread activity', async () => {
@@ -843,6 +860,67 @@ describe('SidebarHeaderBlock', () => {
       expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
     );
     expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('lets a newer choice win: a failed read for the older one neither navigates back nor speaks', async () => {
+    let rejectRemembered!: (error: Error) => void;
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectRemembered = reject;
+        })
+    );
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+
+    // The person goes somewhere else (Back, a link) while Alpha's read waits.
+    commitCommunityRouteEpoch('test:newer-choice');
+    rejectRemembered(new Error('offline'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
+    );
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('says "still where you were" only once the way back has landed', async () => {
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockRejectedValue(new Error('offline'));
+    mockNavigate
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('navigation interrupted'));
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
+    );
     expect(toast.error).not.toHaveBeenCalled();
   });
 

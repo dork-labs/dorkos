@@ -126,6 +126,11 @@ lifecycle + reachability because the descriptor carries no role, and the Communi
   action rows had no menu parent; the phone sheet and the desktop popover could not scroll, so a
   long list or 200% zoom left rows unreachable.
 - Closed tenancy receipt row M11's local-app half with named proofs and a guard check.
+- Review follow-ups: a newer choice wins over a failed older read (no navigation back, no message);
+  the failure message appears only once the way back has landed; ⌘⇧K ignores a key an input method
+  is still composing, is listed in the shortcut reference, and Escape returns focus to where the
+  shortcut was pressed (the message box, verified in the browser); the phone sheet's action menu
+  now supports Up/Down/Home/End.
 
 ## Files Modified/Created
 

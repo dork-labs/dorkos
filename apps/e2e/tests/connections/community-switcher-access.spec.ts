@@ -92,13 +92,26 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
     await expect(page).toHaveURL(new RegExp(`community=beta&id=${ROOM}`));
     await expect(page.getByText(secret('Beta'), { exact: true })).toBeVisible();
 
-    // Escape closes and puts focus back on the trigger.
+    // From the message box: the shortcut opens the switcher there too, and
+    // Escape closes it and puts focus back where it was, in the message box.
+    const composer = page
+      .getByRole('combobox', { name: /Message/ })
+      .or(page.getByPlaceholder(/Message General/));
+    await composer.first().click();
+    await expect(composer.first()).toBeFocused();
     await page.keyboard.press('ControlOrMeta+Shift+K');
     await expect(menu.getByRole('menuitemradio', { name: /^Beta/ })).toBeFocused();
     await expect(menu.getByRole('menuitemradio', { name: /^Beta/ })).toHaveAttribute(
       'aria-checked',
       'true'
     );
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(composer.first()).toBeFocused();
+    // Opened from its own button, Escape returns focus to that button.
+    await page.getByTestId('sidebar-header-block').focus();
+    await page.keyboard.press('Enter');
+    await expect(menu).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(menu).toBeHidden();
     await expect(page.getByTestId('sidebar-header-block')).toBeFocused();
@@ -199,6 +212,19 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
 
     const axe = await runAxe(page, '[role="dialog"]');
     expect(axe.violations.map(describeViolation)).toEqual([]);
+
+    // The sheet's action rows are a menu, and the arrow keys walk it.
+    const actions = sheet.getByRole('menu', { name: 'Actions' });
+    const items = actions.getByRole('menuitem');
+    await items.first().focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(items.nth(1)).toBeFocused();
+    await page.keyboard.press('End');
+    await expect(items.last()).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(items.first()).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await expect(items.last()).toBeFocused();
 
     await sheet.getByRole('radio', { name: /^Beta/ }).click();
     await expect(sheet).toBeHidden();
