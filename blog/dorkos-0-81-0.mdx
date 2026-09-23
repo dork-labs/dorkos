@@ -1,0 +1,60 @@
+---
+title: DorkOS 0.81.0
+description: Opus 5.5, Anthropic's newest model, is now in DorkOS, and self-hosted communities can hold more than one community per server.
+date: 2026-09-22
+author: DorkOS Team
+category: release
+tags: [release, models, claude-code, communities]
+---
+
+DorkOS 0.81.0 brings Opus 5.5, Anthropic's newest model, to every Claude Code agent you run. Pick "Opus" in the model menu and you are on it. Self-hosted communities, still early, also get a big step forward: one server can now hold several communities, and owners can run theirs from the Community website.
+
+## Highlights
+
+### Opus 5.5 is here
+
+Choose "Opus" in the model menu to use Anthropic's newest model. On some accounts the row reads "Opus (1M context)".
+
+Sessions and agents already set to Opus move to Opus 5.5 on their next message, and so do ones set to Default on an account whose default is Opus. Opus 5.5 is priced differently from the model it replaces, so what a turn costs can change. To stay on the older model, set its full model name on the agent.
+
+### Cost figures you can trust
+
+A session's cost total no longer starts over from zero when the session restarts in the background. And in your own traces, each turn's token and cost numbers now cover that turn alone, instead of the whole session so far.
+
+### More than one community on one server
+
+A self-hosted Community server can now hold several communities, each with its own members, channels and files. Having an account on the server does not get anyone into a community they have not joined. Links to a community you already run keep working after you upgrade.
+
+### Run your community from the website
+
+Owners can change settings, manage members and exports, hand over ownership, and archive or restore a community from the Community website. Deleting a community gives you seven days to change your mind.
+
+### Set up a community server with one command
+
+`dorkos community deploy` sets up a community server on Fly for you. It shows the whole plan, including which accounts may be charged, and creates nothing until you type the app name. If setup stops, it keeps what it made and tells you how to carry on.
+
+## All Changes
+
+> DorkOS 0.81.0 brings Opus 5.5, Anthropic's newest model: pick "Opus" in the model menu to use it. Self-hosted communities also take a step forward. One server can now hold several communities, owners can manage theirs from the Community website, and a new command sets up a community server on Fly for you. Communities are still early.
+
+### Added
+
+- **Use Opus 5.5, Anthropic's newest model.** Choose "Opus" in the model menu to use it. On some accounts the row reads "Opus (1M context)". Read the upgrade note below: sessions already on Opus move to it on their next message (#1993)
+- **Early:** Run more than one community on one self-hosted server. Each community keeps its own members, channels, files, agents, exports and live updates, and having an account on the server does not let anyone into a community they are not a member of. Links to an existing single community, and approvals for new DorkOS connections, keep working after you upgrade (#1975)
+- **Early:** Connect DorkOS to one specific community on a shared server. On the Community website, you go straight to your community if you belong to one, or choose between them if you belong to several (#1978)
+- **Early:** Manage a community from the Community website: its settings and icon, members, exports, ownership, and archiving or restoring it. Owners can schedule a community for deletion, watch its progress, and cancel any time in the seven days before it happens. Whoever runs the server can create communities and hand them to an owner without being able to read any private conversations (#1984, #1985)
+- **Early:** Join a community from an invitation link that carries you through signing in, without the invitation's secret ever being saved in your browser. Once you have joined, you choose when to open the community, and you can see that each of your DorkOS installations connects to it separately (#1987)
+- **Early:** Open an archived community to read its history and export your data. Posting and other changes stay off until an owner restores it (#1987)
+- **Early:** Set up your own community server on Fly with `dorkos community deploy`. It uses a Neon database and a private Tigris bucket for files, shows the whole plan first (including which accounts may be charged), and creates nothing until you type the app name. If setup stops partway, it keeps what it made, never deletes anything that costs money on its own, and tells you how to pick up where it left off (#1965)
+- **Early:** Check whether a community server can safely go back to an older, single-community release. The recovery guide has you keep a copy of your current backup first (#1975)
+
+### Fixed
+
+- A session's cost total now carries on after the session restarts in the background, instead of starting again from zero. For a conversation started before this update, that begins after its first new message (#1993)
+- Each turn's token and cost figures in your own traces now cover that turn alone. Before, from the second turn on, they counted the whole session so far (#1993)
+- A tool from another server that borrows DorkOS's name no longer skips the approval prompt. DorkOS now checks which server actually runs the tool, not just its name (#1993)
+- When DorkOS can no longer confirm you still have access to a community, it stops that community's live activity on your machine instead of carrying on. You can still remove your own agents from a community while it is unreachable (#1984)
+
+### Note for people upgrading
+
+- **Sessions and agents already set to Opus move to Opus 5.5 on their next message.** So do ones set to Default, on an account whose default is Opus. Opus 5.5 is priced differently from the Opus it replaces, so what a turn costs can change. To stay on the older model, set its full model name on the agent (#1993)
