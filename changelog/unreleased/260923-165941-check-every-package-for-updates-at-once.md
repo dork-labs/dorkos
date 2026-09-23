@@ -6,6 +6,7 @@ covers:
   - 'feat(marketplace): check and apply updates across every installed package in one request (DOR-2194)'
   - 'feat(cli): a name-less dorkos update is one request (DOR-2194)'
   - 'fix(marketplace): update exactly what was checked, in the scope it touches (DOR-2194)'
+  - 'fix(marketplace): replace exactly the installation checked, and never fail on one bad check (DOR-2194)'
 ---
 
 ### Added
