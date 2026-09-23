@@ -615,6 +615,32 @@ export interface InstallResult {
    * view keeps reporting an incomplete package after the toast is gone.
    */
   dependencyWarnings?: string[];
+  /**
+   * What the install did with files the person may have changed (DOR-2245).
+   * Each notice is also one plain sentence on {@link InstallResult.warnings}.
+   */
+  fileNotices?: PackageFileNotice[];
+}
+
+/**
+ * What an install did with a file the person may have changed (DOR-2245).
+ * Paths are POSIX, relative to the install root.
+ */
+export interface PackageFileNotice {
+  /** The file the notice is about. */
+  path: string;
+  /**
+   * - `replaced-edit`: the package's copy is in place; the person's is at `savedAs`.
+   * - `kept-edit`: the person's copy is in place; the package's new default is at `savedAs`.
+   * - `kept-no-longer-shipped`: the person's copy is in place; the package no longer ships this file.
+   * - `late-write`: it changed while the update ran; the newest copy is in place
+   *   (the person's at `savedAs` when it collided with a package file).
+   * - `skipped-special`: a socket, pipe or device file, which was not copied.
+   */
+  outcome:
+    'replaced-edit' | 'kept-edit' | 'kept-no-longer-shipped' | 'late-write' | 'skipped-special';
+  /** Where the other copy was saved, when one was written. */
+  savedAs?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -625,7 +651,7 @@ export interface InstallResult {
  * Options for `POST /api/marketplace/packages/:name/uninstall`.
  */
 export interface UninstallOptions {
-  /** Remove `.dork/data/` and `.dork/secrets.json` in addition to package files. */
+  /** Also remove the files you and your agents added or changed. */
   purge?: boolean;
   /** Project path for project-local uninstalls. */
   projectPath?: string;
@@ -641,8 +667,40 @@ export interface UninstallResult {
   packageName: string;
   /** Number of top-level entries removed from the install root. */
   removedFiles: number;
-  /** Absolute paths preserved on disk because `purge` was false. */
+  /**
+   * Absolute paths kept on disk because `purge` was false: the files you and
+   * your agents added or changed, collapsed to the highest directory whose
+   * whole contents were kept.
+   */
   preservedData: string[];
+  /**
+   * Set when uninstalling an agent package removed the agent from the team
+   * (DOR-2245). A reinstall restores none of {@link AgentRemovedSummary.removed}.
+   */
+  agentRemoved?: AgentRemovedSummary;
+  /** Non-fatal notes, such as a cleanup the recovery sweep will finish later. */
+  warnings?: string[];
+}
+
+/** Something removing an agent from the team takes away with it. */
+export type AgentRemovalEffect =
+  | 'relay-endpoint'
+  | 'rooms'
+  | 'schedules-paused'
+  | 'task-roots'
+  | 'mcp-sign-ins'
+  | 'identity-tokens'
+  | 'community-enrollments'
+  | 'connection-access';
+
+/** What uninstalling an agent package did to the agent itself. */
+export interface AgentRemovedSummary {
+  /** The removed agent's id. */
+  id: string;
+  /** True when git tracks its `agent.json`, so the file stayed and the folder was denied instead. */
+  directoryDenied: boolean;
+  /** Everything removal took away. */
+  removed: AgentRemovalEffect[];
 }
 
 // ---------------------------------------------------------------------------
@@ -880,6 +938,23 @@ export interface AddSourceInput {
 export const MARKETPLACE_BACKUP_DIR_MARKER = '.dorkos-bak-';
 
 /**
+ * Basename fragment of the directory an install stages its new tree in, beside
+ * its target — `<target>.dorkos-stage-<createdAt>-<owner>-<uuid>` — so the
+ * activation is a same-filesystem rename and the person's carried files never
+ * pass through `os.tmpdir()` (DOR-2245). Recovery discards a crash-left one:
+ * it only ever holds copies and new package files.
+ */
+export const MARKETPLACE_STAGE_DIR_MARKER = '.dorkos-stage-';
+
+/**
+ * Basename fragment of the directory an in-place uninstall moves a package's
+ * own files into, beside its root — `<root>.dorkos-uninstall-<createdAt>-<owner>-<uuid>`
+ * (DOR-2245). It carries a journal, and recovery rolls the uninstall back or
+ * finishes it by that journal.
+ */
+export const MARKETPLACE_UNINSTALL_DIR_MARKER = '.dorkos-uninstall-';
+
+/**
  * Every basename marker the install engine writes beside an install target.
  * Anything carrying one of these is the engine's own bookkeeping — never an
  * installed package, agent, plugin or skill — whatever it contains (a backup
@@ -889,6 +964,8 @@ export const MARKETPLACE_BACKUP_DIR_MARKER = '.dorkos-bak-';
  */
 export const MARKETPLACE_INSTALL_SIBLING_MARKERS: readonly string[] = [
   MARKETPLACE_BACKUP_DIR_MARKER,
+  MARKETPLACE_STAGE_DIR_MARKER,
+  MARKETPLACE_UNINSTALL_DIR_MARKER,
 ];
 
 /**

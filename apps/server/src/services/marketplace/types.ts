@@ -13,6 +13,7 @@ import type {
 } from '@dorkos/marketplace';
 import type { NpmDependency } from './lib/npm-dependencies.js';
 import type { DisclosedEffects } from './disclosed-effects.js';
+import type { PackageFileNotice } from '@dorkos/shared/marketplace-schemas';
 
 /**
  * Describes a package install, uninstall or applied update that just succeeded,
@@ -327,7 +328,11 @@ export interface InstallResult {
    * showing them until a reinstall clears them. A toast the person dismissed
    * is not a record of a package that is still missing its libraries.
    */
-  dependencyWarnings?: string[];
+  dependencyWarnings?: string[]; /**
+   * What the install did with files the person may have changed (DOR-2245).
+   * Each notice is also one plain sentence on {@link InstallResult.warnings}.
+   */
+  fileNotices?: PackageFileNotice[];
 }
 
 /**
