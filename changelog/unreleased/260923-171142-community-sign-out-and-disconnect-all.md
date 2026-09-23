@@ -3,6 +3,7 @@ covers:
   - 'feat(community): sign out, and disconnect one or every installation, from the Community site'
   - 'fix(community): limit password guesses on leave and disconnect-all, and name a wrong password'
   - 'fix(community): route every password confirmation through the guess limit'
+  - 'fix(community): count password attempts per account, before the check'
 ---
 
 ### Added
