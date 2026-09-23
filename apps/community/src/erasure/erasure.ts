@@ -1,9 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { appendFile } from 'node:fs/promises';
 import type { Pool, PoolClient } from 'pg';
-import { transaction } from './data.js';
-import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from './mentions.js';
-import { remove } from './routes/members.js';
+import { transaction } from '../data.js';
+import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../mentions.js';
+import { remove } from '../routes/members.js';
 
 /** Hours between a request and the erasure it schedules. A constant, not configuration. */
 export const ERASURE_WINDOW_HOURS = 72;

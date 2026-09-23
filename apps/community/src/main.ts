@@ -12,7 +12,7 @@ import { sweepExpiredExports } from './routes/exports.js';
 import { sweepExpiredAdmissions } from './routes/invites.js';
 import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './deletion-worker.js';
-import { ERASURE_POLL_MS, pruneErasureRequests, sweepErasures } from './erasure-worker.js';
+import { ERASURE_POLL_MS, pruneErasureRequests, sweepErasures } from './erasure/worker.js';
 import { sweepExpiredPairings } from './routes/pairings.js';
 
 const config = parseConfig(process.env);

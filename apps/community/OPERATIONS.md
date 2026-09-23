@@ -137,7 +137,7 @@ Each finished erasure writes one line to the app log, with IDs only, such as `{"
 
 ```bash
 docker compose -f apps/community/compose.yml stop community
-docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure-reapply.js < erasure-journal.log
+docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js < erasure-journal.log
 docker compose -f apps/community/compose.yml up -d community
 ```
 

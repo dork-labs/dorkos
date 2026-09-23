@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createCommunityAuth } from '../auth.js';
-import { type ErasureHooks } from '../erasure.js';
+import { type ErasureHooks } from '../erasure/erasure.js';
 import {
   admit,
   bootstrapHost,

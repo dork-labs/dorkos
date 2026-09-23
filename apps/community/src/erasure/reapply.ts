@@ -97,7 +97,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const databaseUrl = process.env.COMMUNITY_DATABASE_URL;
   if (!databaseUrl || process.argv.length !== 2 || process.stdin.isTTY) {
     process.stderr.write(
-      'Stop the community service, then pipe the erasure journal or log lines to erasure-reapply. COMMUNITY_DATABASE_URL is required.\n'
+      'Stop the community service, then pipe the erasure journal or log lines to erasure/reapply.js. COMMUNITY_DATABASE_URL is required.\n'
     );
     process.exitCode = 1;
   } else {

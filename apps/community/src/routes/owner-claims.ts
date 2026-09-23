@@ -16,7 +16,7 @@ import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
 import { requireSessionUser, transaction } from '../data.js';
 import { mintHandle } from '../handles.js';
-import { accountErasureOpen } from '../erasure-guards.js';
+import { accountErasureOpen } from '../erasure/guards.js';
 import {
   hostProjectionSql,
   parseHostCommunityId,

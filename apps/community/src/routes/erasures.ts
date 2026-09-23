@@ -11,7 +11,7 @@ import {
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
 import { requireMember, transaction } from '../data.js';
-import { ERASURE_WINDOW_HOURS } from '../erasure.js';
+import { ERASURE_WINDOW_HOURS } from '../erasure/erasure.js';
 import { ApiError, json, readJson } from '../http.js';
 import type { ConfirmPassword } from '../password-confirmation.js';
 

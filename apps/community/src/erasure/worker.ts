@@ -1,7 +1,7 @@
 import type { Pool } from 'pg';
-import { transaction } from './data.js';
+import { transaction } from '../data.js';
 import { eraseAccount, eraseMembership, ErasureError, type ErasureOptions } from './erasure.js';
-import { cleanupBackoffSql } from './storage/pending-deletions.js';
+import { cleanupBackoffSql } from '../storage/pending-deletions.js';
 
 /** How often the server looks for due erasures. */
 export const ERASURE_POLL_MS = 30_000;

@@ -3,8 +3,8 @@ import { cp, mkdtemp, readdir, rm, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eraseMembership } from '../erasure.js';
-import { parseErasureJournal, reapplyErasures } from '../erasure-reapply.js';
+import { eraseMembership } from '../erasure/erasure.js';
+import { parseErasureJournal, reapplyErasures } from '../erasure/reapply.js';
 import { sweepExpiredPairings } from '../routes/pairings.js';
 import {
   bootstrapHost,

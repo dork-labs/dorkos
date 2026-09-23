@@ -6,8 +6,8 @@ import {
   randomHuskHandle,
   rewriteHandleTokens,
   tombstonePayloadHash,
-} from '../erasure.js';
-import { parseErasureJournal } from '../erasure-reapply.js';
+} from '../erasure/erasure.js';
+import { parseErasureJournal } from '../erasure/reapply.js';
 import { resolveCommunityMentions } from '../mentions.js';
 import { reauthenticationDecision, REAUTH_WINDOW_MS } from '../routes/erasures.js';
 

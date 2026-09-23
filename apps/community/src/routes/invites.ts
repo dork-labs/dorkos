@@ -30,7 +30,7 @@ import { assertMemberRoom } from '../host/limits.js';
 import { inspectInvite, issueInvite } from '../invites.js';
 import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../security.js';
 import { mintHandle } from '../handles.js';
-import { readmissionBlocked } from '../erasure-guards.js';
+import { readmissionBlocked } from '../erasure/guards.js';
 import { resolveCommunityContext } from '../tenant-context.js';
 
 interface InviteRow {

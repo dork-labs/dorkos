@@ -2,7 +2,7 @@ import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import type { Pool } from 'pg';
 import type { CommunityConfig } from './config.js';
-import { accountErasureRunning } from './erasure-guards.js';
+import { accountErasureRunning } from './erasure/guards.js';
 import { hashSecret, readCookie, verifyValue } from './security.js';
 
 /** Create one independent Better Auth instance for a community deployment. */

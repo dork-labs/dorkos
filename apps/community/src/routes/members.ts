@@ -18,7 +18,7 @@ import {
 } from '../data.js';
 import type { ConfirmPassword } from '../password-confirmation.js';
 import { ApiError, json, readJson } from '../http.js';
-import { memberIsLeaving } from '../erasure-guards.js';
+import { memberIsLeaving } from '../erasure/guards.js';
 
 async function live(client: PoolClient, id: string, communityId: string) {
   await lockActiveCommunity(client, communityId);

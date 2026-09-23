@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Pool } from 'pg';
-import { sweepErasures } from '../erasure-worker.js';
-import type { ErasureOptions } from '../erasure.js';
+import { sweepErasures } from '../erasure/worker.js';
+import type { ErasureOptions } from '../erasure/erasure.js';
 import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
 import { sweepExpiredPairings } from '../routes/pairings.js';
 import {
