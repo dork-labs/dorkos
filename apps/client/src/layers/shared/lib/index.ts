@@ -161,7 +161,7 @@ export { captureClientEnvironment, type ClientEnvironment } from './client-envir
 //                                             contract, the room-stream errors
 //   `@/layers/shared/lib/direct-transport`  — DirectTransport (Obsidian)
 export { reportClientError, installClientErrorHandlers } from './client-error-reporter';
-export { getBreadcrumbs, installBreadcrumbHandlers } from './breadcrumbs';
+export { getBreadcrumbs, installBreadcrumbHandlers, redactBreadcrumb } from './breadcrumbs';
 export {
   stashPendingFeedback,
   takePendingFeedback,

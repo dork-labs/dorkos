@@ -102,6 +102,8 @@ function renderDialog(
   props?: {
     currentUser?: { email: string; name?: string } | null;
     initialScreenshotDataUrl?: string;
+    /** A crash stack trace, as the crash screen hands one in. */
+    crashStack?: string;
     /**
      * Mount closed, so the caller can drive the closed -> open transition the
      * real host always drives. The prefill props are read on that transition.
@@ -119,6 +121,7 @@ function renderDialog(
           onOpenChange={onOpenChange}
           currentUser={props?.currentUser ?? null}
           initialScreenshotDataUrl={props?.initialScreenshotDataUrl}
+          crashStack={props?.crashStack}
         />
       </TransportProvider>
     </QueryClientProvider>
@@ -228,6 +231,31 @@ describe('FeedbackDialog', () => {
       const wire = JSON.stringify(submission);
       expect(wire).not.toContain('/Users/dorian');
       expect(wire).not.toContain('billing');
+    });
+
+    it('scrubs a crash stack like every other breadcrumb before it is sent (DOR-2230)', async () => {
+      // A stack trace names files by their full path, home directory and all,
+      // and it rides in the diagnostics beside the collected breadcrumbs — but
+      // it is added here, not through `addBreadcrumb`, so it needs the scrub
+      // explicitly.
+      const transport = createMockTransport();
+      const { setOpen } = renderDialog(transport, {
+        startClosed: true,
+        crashStack:
+          'TypeError: boom\n    at render (/Users/someone/app/src/view.tsx:3:9) token=abc123secret',
+      });
+      setOpen(true);
+      fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+        target: { value: 'it crashed' },
+      });
+
+      const crumbs = (await sendAndCapture(transport)).diagnostics?.breadcrumbs ?? [];
+      const stack = crumbs[crumbs.length - 1]?.message ?? '';
+
+      expect(stack).toContain('TypeError: boom');
+      expect(stack).toContain('~/app/src/view.tsx');
+      expect(stack).not.toContain('/Users/someone');
+      expect(stack).not.toContain('abc123secret');
     });
 
     it('attaches the window, browser, shell, theme, locale and timezone with diagnostics on', async () => {
