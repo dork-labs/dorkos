@@ -428,6 +428,13 @@ const LocalInstallationUpdateCheckSchema = LocalUpdateCheckResultSchema.extend({
   applyError: z.string().optional(),
 });
 
+/** The 404 body when an update names packages or installations not in view. */
+const NotInstalledForUpdateSchema = z.object({
+  error: z.string(),
+  packageNames: z.array(z.string()),
+  installPaths: z.array(z.string()),
+});
+
 /** Simplified documentation mirror of the update flow's `InstallationUpdatesResult`. */
 const LocalInstallationUpdatesResultSchema = z.object({
   checks: z.array(LocalInstallationUpdateCheckSchema),
@@ -2424,7 +2431,8 @@ registry.registerPath({
   description:
     'Without projectPath: one entry per installation across all scopes (global roots plus ' +
     "every registered agent's local installs), each tagged with scope and agent identity. " +
-    'With projectPath: the merged view for that single project — one entry per package name.',
+    'With projectPath: the merged view for that single project — one entry per install root ' +
+    'and name — scanned at the canonical path, so its install paths match `GET /updates`.',
   request: {
     query: z.object({ projectPath: z.string().optional() }),
   },
@@ -2436,6 +2444,14 @@ registry.registerPath({
           schema: z.object({ packages: z.array(InstalledPackageSchema) }),
         },
       },
+    },
+    400: {
+      description: 'projectPath given more than once',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'projectPath outside the directory boundary',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
@@ -2718,7 +2734,8 @@ registry.registerPath({
   tags: ['Marketplace'],
   summary: 'Check every installed package for updates',
   description:
-    'Advisory: one check per installation in view, and nothing installed changes. Without ' +
+    'Advisory: one check per installation in view. No installed package changes, though a ' +
+    'check may stage a newer version into the package cache. Without ' +
     '`projectPath`, every installation in every scope (global, then each registered ' +
     "agent's project); with it, that project's merged view. Each check carries the " +
     "installation's identity; `installPath` matches the installed list's.",
@@ -2729,6 +2746,10 @@ registry.registerPath({
     200: {
       description: 'One check per installation, in scan order',
       content: { 'application/json': { schema: LocalInstallationUpdatesResultSchema } },
+    },
+    400: {
+      description: 'projectPath given more than once',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     403: {
       description: 'projectPath outside the directory boundary',
@@ -2748,14 +2769,17 @@ registry.registerPath({
     'installation as `applyError` and the rest carry on. Each reinstall is authorized as ' +
     '`marketplace.install` before anything runs. A batch that would need a person to ' +
     'approve each install is refused (`batch_update_needs_approval`); use the one-package ' +
-    'route instead.',
+    'route instead. `names` selects every installation of those packages; `installPaths` ' +
+    'selects exactly the installations a check reported. The response is the record of ' +
+    'what changed.',
   request: {
     body: {
       content: {
         'application/json': {
           schema: z.object({
             apply: z.literal(true),
-            names: z.array(z.string()).optional(),
+            names: z.array(z.string().min(1)).min(1).optional(),
+            installPaths: z.array(z.string().min(1)).min(1).optional(),
             projectPath: z.string().optional(),
           }),
         },
@@ -2776,8 +2800,8 @@ registry.registerPath({
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     404: {
-      description: 'A named package is not installed in view',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
+      description: 'A named package or install path is not installed in view',
+      content: { 'application/json': { schema: NotInstalledForUpdateSchema } },
     },
   },
 });

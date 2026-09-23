@@ -33,7 +33,7 @@ import {
 } from '../installed-scanner.js';
 import { buildInstallerForTests } from './installer-harness.js';
 import { MarketplaceSourceManager } from '../marketplace-source-manager.js';
-import { UpdateFlow } from '../flows/update.js';
+import { UpdateFlow, pickInstallation, type UpdateResult } from '../flows/update.js';
 import { noopLogger } from '@dorkos/shared/logger';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -47,6 +47,26 @@ function fixturePath(
   name: 'valid-plugin' | 'valid-agent' | 'valid-skill-pack' | 'valid-adapter' | 'valid-shape'
 ) {
   return path.join(FIXTURES_DIR, name);
+}
+
+/**
+ * Check one package by name the way the per-package route does: scan the
+ * request's scope, resolve the installation the name means, and run it.
+ */
+async function runNamed(
+  flow: UpdateFlow,
+  dorkHome: string,
+  req: { name: string; apply?: boolean; projectPath?: string }
+): Promise<UpdateResult> {
+  const inScope = await scanInstallationRecords(
+    dorkHome,
+    req.projectPath ? { projectPath: req.projectPath } : { agents: [] }
+  );
+  return flow.run({
+    name: req.name,
+    installation: pickInstallation(inScope, req.name),
+    apply: req.apply,
+  });
 }
 
 /** Returns true if `target` exists on disk. */
@@ -753,7 +773,7 @@ describe('marketplace install pipeline — integration', () => {
       const flow = await installAndBuildFlow();
       await setMarketplaceVersion('1.1.0', '1.1.0');
 
-      const advisory = await flow.run({ name: 'valid-plugin' });
+      const advisory = await runNamed(flow, dorkHome, { name: 'valid-plugin' });
       expect(advisory.checks).toEqual([
         expect.objectContaining({
           installedVersion: '1.0.0',
@@ -765,10 +785,10 @@ describe('marketplace install pipeline — integration', () => {
         }),
       ]);
 
-      const applied = await flow.run({ name: 'valid-plugin', apply: true });
+      const applied = await runNamed(flow, dorkHome, { name: 'valid-plugin', apply: true });
       expect(applied.applied.map((a) => a.version)).toEqual(['1.1.0']);
 
-      const rerun = await flow.run({ name: 'valid-plugin' });
+      const rerun = await runNamed(flow, dorkHome, { name: 'valid-plugin' });
       expect(rerun.checks[0]).toMatchObject({
         installedVersion: '1.1.0',
         latestVersion: '1.1.0',
@@ -785,7 +805,11 @@ describe('marketplace install pipeline — integration', () => {
       const projectPath = await mkdtemp(path.join(tmpdir(), 'dorkos-update-project-'));
 
       try {
-        const result = await flow.run({ name: 'valid-plugin', apply: true, projectPath });
+        const result = await runNamed(flow, dorkHome, {
+          name: 'valid-plugin',
+          apply: true,
+          projectPath,
+        });
 
         const globalRoot = path.join(dorkHome, 'plugins', 'valid-plugin');
         expect(result.applied.map((a) => a.installPath)).toEqual([globalRoot]);
@@ -854,7 +878,8 @@ describe('marketplace install pipeline — integration', () => {
       const flow = await installAndBuildFlow();
       await setMarketplaceVersion('1.1.0', '1.2.0');
 
-      const [check] = (await flow.run({ name: 'valid-plugin', apply: true })).checks;
+      const [check] = (await runNamed(flow, dorkHome, { name: 'valid-plugin', apply: true }))
+        .checks;
 
       expect(check?.status).toBe('unknown');
       expect(check?.note).toContain("the new version can't be installed: ");

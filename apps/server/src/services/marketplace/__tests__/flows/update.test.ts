@@ -14,7 +14,7 @@
  * old suite set one everywhere, and passed against a shape nobody ships).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
@@ -24,7 +24,9 @@ import {
   UPDATE_CHECK_CONCURRENCY,
   UPDATE_MEMO_TTL_MS,
   UpdateFlow,
+  pickInstallation,
   selectInstallations,
+  type UpdateResult,
   type InstallationUpdateCheck,
   type InstallerLike,
   type UpdateCheckResult,
@@ -277,6 +279,26 @@ function lookingUp(ref = 'main', answer: LatestResolution = { kind: 'unchanged' 
 }
 
 /**
+ * Check one package by name the way the per-package route does: scan the
+ * request's scope, resolve the installation the name means, and run it.
+ */
+async function runNamed(
+  flow: UpdateFlow,
+  dorkHome: string,
+  req: { name: string; apply?: boolean; projectPath?: string }
+): Promise<UpdateResult> {
+  const inScope = await scanInstallationRecords(
+    dorkHome,
+    req.projectPath ? { projectPath: req.projectPath } : { agents: [] }
+  );
+  return flow.run({
+    name: req.name,
+    installation: pickInstallation(inScope, req.name),
+    apply: req.apply,
+  });
+}
+
+/**
  * Check every installation in view through the all-packages door, the way the
  * route does: one scan, handed to `checkInstallations`. Returns the applied
  * reinstalls alongside, so assertions read like the per-package result.
@@ -332,7 +354,7 @@ describe('UpdateFlow', () => {
         manifest: buildPluginManifest({ name: 'flow', version: '0.7.2' }),
       });
 
-      const result = await new UpdateFlow(ctx.deps).run({ name: 'flow' });
+      const result = await runNamed(new UpdateFlow(ctx.deps), ctx.dorkHome, { name: 'flow' });
 
       expect(result.checks).toEqual([
         {
@@ -449,7 +471,9 @@ describe('UpdateFlow', () => {
         manifest: buildPluginManifest({ name: 'stable-plugin', version: '1.0.0' }),
       });
 
-      const [check] = (await new UpdateFlow(ctx.deps).run({ name: 'stable-plugin' })).checks;
+      const [check] = (
+        await runNamed(new UpdateFlow(ctx.deps), ctx.dorkHome, { name: 'stable-plugin' })
+      ).checks;
 
       expect(check).toMatchObject({ status: 'current', latestVersion: '1.0.0' });
       expect(check?.note).toBeUndefined();
@@ -600,7 +624,9 @@ describe('UpdateFlow', () => {
       // Purpose: the route decides 404 vs this; the flow never throws for it.
       const ctx = await setup({ marketplaceJson: buildMarketplaceJson([{ name: 'anything' }]) });
 
-      const result = await new UpdateFlow(ctx.deps).run({ name: 'ghost-plugin' });
+      const result = await runNamed(new UpdateFlow(ctx.deps), ctx.dorkHome, {
+        name: 'ghost-plugin',
+      });
 
       expect(result.checks).toEqual([
         {
@@ -661,7 +687,9 @@ describe('UpdateFlow', () => {
         installedFrom: 'scoped-marketplace',
       });
 
-      const [check] = (await new UpdateFlow(ctx.deps).run({ name: 'scoped-plugin' })).checks;
+      const [check] = (
+        await runNamed(new UpdateFlow(ctx.deps), ctx.dorkHome, { name: 'scoped-plugin' })
+      ).checks;
 
       expect(check?.marketplace).toBe('scoped-marketplace');
       expect(ctx.fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(1);
@@ -685,7 +713,9 @@ describe('UpdateFlow', () => {
         manifest: buildPluginManifest({ name: 'lost-plugin', version: '4.0.0' }),
       });
 
-      const [check] = (await new UpdateFlow(ctx.deps).run({ name: 'lost-plugin' })).checks;
+      const [check] = (
+        await runNamed(new UpdateFlow(ctx.deps), ctx.dorkHome, { name: 'lost-plugin' })
+      ).checks;
 
       expect(check).toMatchObject({ marketplace: 'marketplace-b', status: 'update-available' });
       expect(ctx.fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(2);
@@ -1030,6 +1060,74 @@ describe('UpdateFlow', () => {
     });
   });
 
+  describe('linked installs', () => {
+    it('checks a symlinked install as unknown, and never reinstalls it', async () => {
+      // Purpose: a linked working copy would be replaced by a fresh fetch if
+      // it were reinstalled; the check says what to do instead.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'dev' }]),
+        latest: { dev: '9.0.0' },
+      });
+      const source = await mkdtemp(path.join(tmpdir(), 'update-flow-working-copy-'));
+      cleanupDirs.push(source);
+      await stagePluginUnder(source, {
+        manifest: buildPluginManifest({ name: 'dev', version: '1.0.0' }),
+      });
+      await mkdir(path.join(ctx.dorkHome, 'plugins'), { recursive: true });
+      await symlink(path.join(source, 'dev'), path.join(ctx.dorkHome, 'plugins', 'dev'));
+      const flow = new UpdateFlow(ctx.deps);
+
+      const { checks } = await checkAll(flow, ctx.dorkHome, { apply: true });
+      const named = await runNamed(flow, ctx.dorkHome, { name: 'dev', apply: true });
+
+      for (const check of [checks[0], named.checks[0]]) {
+        expect(check).toMatchObject({
+          status: 'unknown',
+          installedVersion: '1.0.0',
+          note: 'linked install — update its source instead',
+        });
+      }
+      expect(ctx.installer.resolveLatest).not.toHaveBeenCalled();
+      expect(ctx.installer.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the server-wide check cap', () => {
+    it(`holds ${UPDATE_CHECK_CONCURRENCY} checks at most across concurrent requests`, async () => {
+      // Purpose: the cap lives on the one flow instance, so two whole-install
+      // checks arriving together cannot open twice the git processes.
+      let inFlight = 0;
+      let peak = 0;
+      const names = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'];
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson(names.map((name) => ({ name }))),
+        resolveLatest: async () => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((r) => setTimeout(r, 5));
+          inFlight -= 1;
+          return { kind: 'resolved', declaredVersion: '9.0.0' };
+        },
+      });
+      for (const name of names) {
+        await stageInstalledPlugin({
+          dorkHome: ctx.dorkHome,
+          manifest: buildPluginManifest({ name, version: '1.0.0' }),
+        });
+      }
+      const flow = new UpdateFlow(ctx.deps);
+
+      await Promise.all([
+        checkAll(flow, ctx.dorkHome),
+        checkAll(flow, ctx.dorkHome),
+        runNamed(flow, ctx.dorkHome, { name: 'p1' }),
+      ]);
+
+      expect(ctx.installer.resolveLatest).toHaveBeenCalledTimes(13);
+      expect(peak).toBe(UPDATE_CHECK_CONCURRENCY);
+    });
+  });
+
   describe('selectInstallations', () => {
     /** Two global packages and one agent install of the first. */
     async function stageThree(): Promise<Awaited<ReturnType<typeof scanInstallationRecords>>> {
@@ -1054,14 +1152,14 @@ describe('UpdateFlow', () => {
       // not silently mean "nothing".
       const records = await stageThree();
       expect(selectInstallations(records)).toHaveLength(3);
-      expect(selectInstallations(records, [])).toHaveLength(3);
+      expect(selectInstallations(records, { names: [], installPaths: [] })).toHaveLength(3);
     });
 
     it('keeps every installation of a named package, in every scope', async () => {
       // Purpose: a name is a package, and the same package in two places is
       // two installations to update.
       const records = await stageThree();
-      const selected = selectInstallations(records, ['alpha']);
+      const selected = selectInstallations(records, { names: ['alpha'] });
       expect(selected.map((r) => [r.package.name, r.package.scope])).toEqual([
         ['alpha', 'global'],
         ['alpha', 'override'],
@@ -1074,13 +1172,38 @@ describe('UpdateFlow', () => {
       const records = await stageThree();
       let caught: unknown;
       try {
-        selectInstallations(records, ['alpha', 'flwo', 'gone']);
+        selectInstallations(records, {
+          names: ['alpha', 'flwo', 'gone'],
+          installPaths: [records[0]!.package.installPath, '/nowhere/flow'],
+        });
       } catch (err) {
         caught = err;
       }
       expect(caught).toBeInstanceOf(PackageNotInstalledForUpdateError);
       expect((caught as PackageNotInstalledForUpdateError).packageNames).toEqual(['flwo', 'gone']);
-      expect((caught as Error).message).toBe('Packages not installed: flwo, gone');
+      expect((caught as PackageNotInstalledForUpdateError).installPaths).toEqual(['/nowhere/flow']);
+      expect((caught as Error).message).toBe(
+        'Packages not installed: flwo, gone. No installation at: /nowhere/flow'
+      );
+    });
+
+    it('keeps exactly the installations a confirm step showed, by install path', async () => {
+      // Purpose: "Update all" must apply what it listed and nothing else — not
+      // every installation that happens to share a name.
+      const records = await stageThree();
+      const agentAlpha = records.find((r) => r.package.scope === 'override')!;
+
+      const selected = selectInstallations(records, {
+        installPaths: [agentAlpha.package.installPath],
+      });
+
+      expect(selected).toEqual([agentAlpha]);
+      expect(
+        selectInstallations(records, {
+          names: ['alpha'],
+          installPaths: [agentAlpha.package.installPath],
+        })
+      ).toEqual([agentAlpha]);
     });
   });
 
@@ -1241,7 +1364,10 @@ describe('UpdateFlow', () => {
         manifest: buildPluginManifest({ name: 'local-plugin', version: '1.0.0' }),
       });
 
-      const result = await new UpdateFlow(ctx.deps).run({ name: 'local-plugin', projectPath });
+      const result = await runNamed(new UpdateFlow(ctx.deps), ctx.dorkHome, {
+        name: 'local-plugin',
+        projectPath,
+      });
 
       expect(result.checks[0]).toMatchObject({
         packageName: 'local-plugin',
@@ -1256,7 +1382,10 @@ describe('UpdateFlow', () => {
       const ctx = await setup({ marketplaceJson: buildMarketplaceJson([{ name: 'anything' }]) });
       const projectPath = await makeProjectDir();
 
-      const result = await new UpdateFlow(ctx.deps).run({ name: 'ghost-plugin', projectPath });
+      const result = await runNamed(new UpdateFlow(ctx.deps), ctx.dorkHome, {
+        name: 'ghost-plugin',
+        projectPath,
+      });
 
       expect(result.checks).toHaveLength(1);
       expect(result.checks[0]).toMatchObject({
@@ -1276,7 +1405,10 @@ describe('UpdateFlow', () => {
         manifest: buildPluginManifest({ name: 'global-plugin', version: '1.0.0' }),
       });
 
-      const result = await new UpdateFlow(ctx.deps).run({ name: 'global-plugin', projectPath });
+      const result = await runNamed(new UpdateFlow(ctx.deps), ctx.dorkHome, {
+        name: 'global-plugin',
+        projectPath,
+      });
 
       expect(result.checks[0]?.installedVersion).toBe('1.0.0');
     });
@@ -1296,7 +1428,10 @@ describe('UpdateFlow', () => {
         manifest: buildPluginManifest({ name: 'both-plugin', version: '2.0.0' }),
       });
 
-      const result = await new UpdateFlow(ctx.deps).run({ name: 'both-plugin', projectPath });
+      const result = await runNamed(new UpdateFlow(ctx.deps), ctx.dorkHome, {
+        name: 'both-plugin',
+        projectPath,
+      });
 
       // The project copy (2.0.0) shadows the global one (1.0.0) for this project.
       expect(result.checks).toHaveLength(1);
@@ -1318,7 +1453,9 @@ describe('UpdateFlow', () => {
         manifest: buildPluginManifest({ name: 'both-plugin', version: '2.0.0' }),
       });
 
-      const result = await new UpdateFlow(ctx.deps).run({ name: 'both-plugin' });
+      const result = await runNamed(new UpdateFlow(ctx.deps), ctx.dorkHome, {
+        name: 'both-plugin',
+      });
 
       expect(result.checks[0]?.installedVersion).toBe('1.0.0');
     });
@@ -1364,7 +1501,11 @@ describe('UpdateFlow', () => {
         manifest: buildPluginManifest({ name: 'global-plugin', version: '1.0.0' }),
       });
 
-      await new UpdateFlow(ctx.deps).run({ name: 'global-plugin', apply: true, projectPath });
+      await runNamed(new UpdateFlow(ctx.deps), ctx.dorkHome, {
+        name: 'global-plugin',
+        apply: true,
+        projectPath,
+      });
 
       expect(ctx.installer.update).toHaveBeenCalledTimes(1);
       expect(ctx.installer.update.mock.calls[0]?.[0]?.projectPath).toBeUndefined();
@@ -1433,7 +1574,10 @@ describe('UpdateFlow', () => {
         version: '1.5.0',
       });
 
-      const result = await new UpdateFlow(ctx.deps).run({ name: 'twin', projectPath });
+      const result = await runNamed(new UpdateFlow(ctx.deps), ctx.dorkHome, {
+        name: 'twin',
+        projectPath,
+      });
 
       expect(result.checks[0]?.installedVersion).toBe('1.5.0');
     });
@@ -1450,7 +1594,9 @@ describe('UpdateFlow', () => {
       const flow = new UpdateFlow(ctx.deps);
 
       expect((await checkAll(flow, ctx.dorkHome, { projectPath })).checks).toHaveLength(0);
-      expect((await flow.run({ name: 'broken-plugin', projectPath })).checks[0]).toMatchObject({
+      expect(
+        (await runNamed(flow, ctx.dorkHome, { name: 'broken-plugin', projectPath })).checks[0]
+      ).toMatchObject({
         status: 'unknown',
         note: 'not installed in this scope',
       });

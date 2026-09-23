@@ -107,6 +107,8 @@ describe('export-openapi', () => {
       }
     ).content['application/json'].schema;
     expect(body.required).toEqual(['apply']);
+    expect(JSON.stringify(updates?.post?.requestBody)).toContain('installPaths');
+    expect(JSON.stringify(updates?.post?.responses?.['404'])).toContain('packageNames');
     const result = JSON.stringify(updates?.get?.responses?.['200']);
     for (const field of ['installPath', 'scope', 'agentPath', 'applied', 'applyError']) {
       expect(result).toContain(field);

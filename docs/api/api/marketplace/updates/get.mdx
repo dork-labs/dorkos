@@ -10,8 +10,9 @@ _openapi:
   structuredData:
     headings: []
     contents:
-      - content: "Advisory: one check per installation in view, and nothing installed
-          changes. Without `projectPath`, every installation in every scope
+      - content: "Advisory: one check per installation in view. No installed package
+          changes, though a check may stage a newer version into the package
+          cache. Without `projectPath`, every installation in every scope
           (global, then each registered agent's project); with it, that
           project's merged view. Each check carries the installation's identity;
           `installPath` matches the installed list's."

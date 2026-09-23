@@ -11,11 +11,16 @@
  * Two doors lead here, and both check {@link InstallationRecord}s from the
  * installed scanner's one walk rather than walking install roots themselves:
  *
- * - {@link UpdateFlow.run} — one package by name, in one scope (the
- *   per-package route).
+ * - {@link UpdateFlow.run} — one package, the installation the caller resolved
+ *   with {@link pickInstallation} (the per-package route).
  * - {@link UpdateFlow.checkInstallations} — every installation it is handed,
  *   one result per installation, each carrying that installation's identity
- *   (the all-packages door). The caller scans once and passes the records in.
+ *   (the all-packages door, whose shared steps live in `update-installed.ts`).
+ *   The caller scans once and passes the records in.
+ *
+ * Checks from both doors share one server-wide cap
+ * ({@link UPDATE_CHECK_CONCURRENCY}). A symlinked install is checked but never
+ * reinstalled ({@link LINKED_INSTALL_NOTE}).
  *
  * Either way, an apply reinstalls an installation in the scope it was found in —
  * never the scope the request named — so updating a global package from a
@@ -46,7 +51,6 @@ import {
   type VersionSource,
 } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
-import { mapWithConcurrency } from '@dorkos/shared/map-with-concurrency';
 import { updateNameOf } from '../lib/install-roots.js';
 import type {
   InstallRequest,
@@ -55,11 +59,7 @@ import type {
   MarketplaceSource,
   ResolveLatestOptions,
 } from '../types.js';
-import {
-  scanInstallationRecords,
-  type InstallationRecord,
-  type PackageScope,
-} from '../installed-scanner.js';
+import type { InstallationRecord, PackageScope } from '../installed-scanner.js';
 
 /**
  * How long a commit lookup or a marketplace index fetch is shared between
@@ -72,19 +72,24 @@ import {
 export const UPDATE_MEMO_TTL_MS = 60_000;
 
 /**
- * How many installations {@link UpdateFlow.checkInstallations} checks at once.
+ * How many update checks run at once on this server, across every request.
  *
  * Each check may `git ls-remote` a repository or stage a package into the
- * cache, and those are bounded by the fetcher's own timeouts. Four at a time
- * keeps a whole-install check from opening one git process per installation,
- * while a slow or unreachable repository holds only its own slot. Concurrent
- * checks of one repository share a single in-flight lookup through the memo —
- * including a failing one, which is never kept once it settles.
+ * cache, and those are bounded by the fetcher's own timeouts. The cap is held
+ * by the one {@link UpdateFlow} instance, so two whole-install checks arriving
+ * together (the CLI and the app, or two agents) still open at most this many
+ * git processes between them, and a slow or unreachable repository holds only
+ * its own slot. Concurrent checks of one repository share a single in-flight
+ * lookup through the memo — including a failing one, which is never kept once
+ * it settles.
  */
 export const UPDATE_CHECK_CONCURRENCY = 4;
 
 /** A ref that is already a full commit SHA — `ls-remote` cannot look one up. */
 const FULL_SHA_RE = /^[0-9a-f]{40}$/i;
+
+/** The note on a check of a symlinked install, which is never reinstalled. */
+export const LINKED_INSTALL_NOTE = 'linked install — update its source instead';
 
 /** The note on a check whose installed side names no version at all. */
 const INSTALLED_UNKNOWN_NOTE = 'reinstall this package to enable update checks';
@@ -155,19 +160,19 @@ export interface UpdateCheckResult {
   note?: string;
 }
 
-/** A request to check one package by name (and optionally apply its update). */
+/** A request to check one package (and optionally apply its update). */
 export interface UpdateRequest {
   /** The package name, as the update check names it (`updateNameOf`). */
   name: string;
+  /**
+   * The installation of that name the caller resolved ({@link pickInstallation}),
+   * or `undefined` when the name is not installed in the caller's scope. The
+   * caller resolves it so it can authorize and notify against the installation
+   * that will actually change.
+   */
+  installation: InstallationRecord | undefined;
   /** Apply the update (default: advisory only). */
   apply?: boolean;
-  /**
-   * Project path for project-local installs. Adds that project's own install
-   * roots to the scan, where a project install takes precedence over a global
-   * package of the same name. An applied reinstall stays in the scope the
-   * package was found in: a global package is reinstalled globally.
-   */
-  projectPath?: string;
 }
 
 /** The composite result of a one-package update check. */
@@ -254,28 +259,36 @@ type UpdateTarget =
   | { kind: 'none'; note: string };
 
 /**
- * A named package is not installed anywhere the caller can see: in no scope at
- * all for the per-package route (which can see every scope, while
- * {@link UpdateFlow.run} sees only its own and answers "not installed in this
- * scope"), or not among the installations in view for
- * {@link selectInstallations}. Both routes answer it as a 404.
+ * A requested package or installation is not installed anywhere the caller can
+ * see: a name in no scope at all for the per-package route (which can see every
+ * scope, while {@link UpdateFlow.run} answers "not installed in this scope"), or
+ * a name or install path not among the installations in view for
+ * {@link selectInstallations}. Both routes answer it as a 404 carrying the
+ * unmatched names and paths as fields.
  */
 export class PackageNotInstalledForUpdateError extends Error {
-  /** Every name that could not be found, in the order the caller gave them. */
+  /** Every package name that could not be found, in the order the caller gave them. */
   public readonly packageNames: string[];
+  /** Every install path that could not be found, in the order the caller gave them. */
+  public readonly installPaths: string[];
 
   /**
-   * Build a `PackageNotInstalledForUpdateError` for one or more package names.
+   * Build a `PackageNotInstalledForUpdateError`.
    *
    * @param names - The package name, or names, that could not be located.
+   * @param installPaths - Install paths that matched no installation in view.
    */
-  constructor(names: string | string[]) {
+  constructor(names: string | string[], installPaths: string[] = []) {
     const packageNames = typeof names === 'string' ? [names] : names;
-    super(
-      `${packageNames.length === 1 ? 'Package' : 'Packages'} not installed: ${packageNames.join(', ')}`
-    );
+    const parts = [
+      packageNames.length > 0 &&
+        `${packageNames.length === 1 ? 'Package' : 'Packages'} not installed: ${packageNames.join(', ')}`,
+      installPaths.length > 0 && `No installation at: ${installPaths.join(', ')}`,
+    ].filter(Boolean);
+    super(parts.join('. '));
     this.name = 'PackageNotInstalledForUpdateError';
     this.packageNames = packageNames;
+    this.installPaths = installPaths;
   }
 }
 
@@ -290,29 +303,86 @@ export function installationUpdateName(record: InstallationRecord): string {
   return updateNameOf(record.package.name, record.package.installPath);
 }
 
+/** Which scanned installations to keep; an absent or empty list keeps them all. */
+export interface InstallationSelector {
+  /** Package names: every installation in view that goes by one of them. */
+  names?: readonly string[];
+  /**
+   * Exact installations, by the `installPath` a check reported — what a
+   * confirm step showed, so an apply touches exactly that.
+   */
+  installPaths?: readonly string[];
+}
+
 /**
- * Narrow scanned installations to the named packages. With no names, or an
- * empty list, every installation is kept. A name matches every installation in
- * view that goes by it ({@link installationUpdateName}), so the same package in
- * two scopes is two installations.
+ * Narrow scanned installations. A name matches every installation in view that
+ * goes by it ({@link installationUpdateName}), so the same package in two scopes
+ * is two installations; an install path matches exactly one. Given both, an
+ * installation must match both.
  *
  * @param records - The installations one scan found.
- * @param names - The package names to keep; omit for all of them.
+ * @param selector - The names and install paths to keep.
  * @returns The matching installations, in scan order.
- * @throws {PackageNotInstalledForUpdateError} Naming every name that matched
- *   nothing, before anything is checked.
+ * @throws {PackageNotInstalledForUpdateError} Naming every name and path that
+ *   matched nothing in view, before anything is checked.
  */
 export function selectInstallations(
   records: InstallationRecord[],
-  names?: readonly string[]
+  selector: InstallationSelector = {}
 ): InstallationRecord[] {
-  if (!names || names.length === 0) return records;
-  const wanted = new Set(names);
-  const selected = records.filter((record) => wanted.has(installationUpdateName(record)));
-  const found = new Set(selected.map(installationUpdateName));
-  const missing = [...wanted].filter((name) => !found.has(name));
-  if (missing.length > 0) throw new PackageNotInstalledForUpdateError(missing);
-  return selected;
+  const names = selector.names?.length ? new Set(selector.names) : undefined;
+  const paths = selector.installPaths?.length ? new Set(selector.installPaths) : undefined;
+  const missingNames = names
+    ? [...names].filter((n) => !records.some((r) => installationUpdateName(r) === n))
+    : [];
+  const missingPaths = paths
+    ? [...paths].filter((p) => !records.some((r) => r.package.installPath === p))
+    : [];
+  if (missingNames.length > 0 || missingPaths.length > 0) {
+    throw new PackageNotInstalledForUpdateError(missingNames, missingPaths);
+  }
+  return records.filter(
+    (r) =>
+      (!names || names.has(installationUpdateName(r))) &&
+      (!paths || paths.has(r.package.installPath))
+  );
+}
+
+/**
+ * The installation a name means within one scope's view: the project's own
+ * installation when there is one (it shadows the global package for that
+ * project, even in another install root), else the first in scan order.
+ *
+ * @param records - One scope's view (`scanInstallationRecords`).
+ * @param name - The package name, as the update check names it.
+ * @returns The installation, or `undefined` when the name is not in view.
+ */
+export function pickInstallation(
+  records: InstallationRecord[],
+  name: string
+): InstallationRecord | undefined {
+  const named = records.filter((record) => installationUpdateName(record) === name);
+  return named.find((record) => record.package.agentPath !== undefined) ?? named[0];
+}
+
+/** A first-in, first-out counting semaphore. @internal */
+class Slots {
+  private readonly waiting: (() => void)[] = [];
+
+  constructor(private free: number) {}
+
+  /** Run `task` once a slot is free, releasing the slot when it settles. */
+  async run<T>(task: () => Promise<T>): Promise<T> {
+    if (this.free > 0) this.free -= 1;
+    else await new Promise<void>((resolve) => this.waiting.push(resolve));
+    try {
+      return await task();
+    } finally {
+      const next = this.waiting.shift();
+      if (next) next();
+      else this.free += 1;
+    }
+  }
 }
 
 /**
@@ -327,33 +397,27 @@ export function selectInstallations(
 export class UpdateFlow {
   private readonly commitMemo = new Map<string, MemoEntry<string>>();
   private readonly indexMemo = new Map<string, MemoEntry<MarketplaceJson>>();
+  /** The server-wide cap on concurrent checks ({@link UPDATE_CHECK_CONCURRENCY}). */
+  private readonly checkSlots = new Slots(UPDATE_CHECK_CONCURRENCY);
 
   constructor(private readonly deps: UpdateFlowDeps) {}
 
   /**
-   * Check one package by name — the per-package route's door.
+   * Check one package — the per-package route's door. The caller resolves which
+   * installation the name means ({@link pickInstallation}); an apply reinstalls
+   * that installation in ITS scope, so a global package is reinstalled globally
+   * even when the request named a project. A failed reinstall throws, so the
+   * route can map the error to a status.
    *
-   * Scans the global scope plus, with a `projectPath`, that project's merged
-   * view. When the name is installed in both, the project's installation wins
-   * (it shadows the global one for that project). An apply reinstalls the
-   * matched installation in ITS scope: a global package is reinstalled
-   * globally even when the request named a project. A failed reinstall throws,
-   * so the route can map the error to a status.
-   *
-   * @param req - The package name, apply flag and project path.
+   * @param req - The package name, its resolved installation, and the apply flag.
    * @returns One check (or one `unknown` "not installed in this scope" check
-   *   for a name missing from the scope), and the reinstall when applied.
+   *   when there is no installation), and the reinstall when applied.
    */
   async run(req: UpdateRequest): Promise<UpdateResult> {
-    const records = await scanInstallationRecords(
-      this.deps.dorkHome,
-      req.projectPath ? { projectPath: req.projectPath } : { agents: [] }
-    );
-    const named = records.filter((record) => installationUpdateName(record) === req.name);
-    const match = named.find((record) => record.package.agentPath !== undefined) ?? named[0];
+    const match = req.installation;
     if (!match) return { checks: [notInScope(req.name)], applied: [] };
 
-    const { check, request } = await this.checkRecord(match);
+    const { check, request } = await this.checkSlots.run(() => this.checkRecord(match));
     const applied: InstallResult[] = [];
     if (req.apply) {
       try {
@@ -373,9 +437,11 @@ export class UpdateFlow {
    * scans once (`scanInstallationRecords`) and passes the records, so a list and
    * its check never walk twice.
    *
-   * Checks run {@link UPDATE_CHECK_CONCURRENCY} at a time and come back in the
-   * order given, each carrying its installation's identity. Nothing is dropped:
-   * an installation that cannot be checked is `unknown`, with the reason.
+   * Checks share the server-wide {@link UPDATE_CHECK_CONCURRENCY} cap and come
+   * back in the order given, each carrying its installation's identity. Nothing
+   * is dropped: an installation that cannot be checked is `unknown`, with the
+   * reason, and a symlinked install is `unknown` with {@link LINKED_INSTALL_NOTE}
+   * and is never reinstalled.
    *
    * With `apply`, every `update-available` installation is reinstalled one at a
    * time, in order, in its own scope. A failed reinstall is recorded on that
@@ -386,10 +452,8 @@ export class UpdateFlow {
    * @returns One check per installation.
    */
   async checkInstallations(req: InstallationUpdatesRequest): Promise<InstallationUpdatesResult> {
-    const planned = await mapWithConcurrency(
-      req.installations,
-      UPDATE_CHECK_CONCURRENCY,
-      (record) => this.checkRecord(record)
+    const planned = await Promise.all(
+      req.installations.map((record) => this.checkSlots.run(() => this.checkRecord(record)))
     );
     const checks = planned.map(({ check }, i) =>
       withIdentity(check, req.installations[i]!.package)
@@ -456,6 +520,9 @@ export class UpdateFlow {
       entryVersion: recorded?.entryVersion,
       commitSha: installedCommit,
     });
+    // A reinstall would replace the link, and the working copy behind it, with a
+    // fresh fetch. No request is returned, so no apply can ever reach it.
+    if (record.linked) return { check: unknownCheck(name, installed, LINKED_INSTALL_NOTE) };
 
     const target = await this.findTarget(name, recorded);
     if (target.kind === 'none') {

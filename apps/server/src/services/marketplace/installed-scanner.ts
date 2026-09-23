@@ -19,7 +19,7 @@
  *
  * @module services/marketplace/installed-scanner
  */
-import { readdir, readFile } from 'node:fs/promises';
+import { lstat, readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { PackageType } from '@dorkos/marketplace';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
@@ -135,6 +135,13 @@ export interface InstallationRecord {
   declaredVersion?: string;
   /** The `.dork/install-metadata.json` sidecar, or `null` when there is none. */
   metadata: InstallMetadata | null;
+  /**
+   * The install folder is a symbolic link — a developer's working copy linked
+   * into place, not a checkout DorkOS fetched. It is listed and checked like any
+   * other, but never reinstalled: a reinstall would replace the link, and the
+   * working copy behind it, with a fresh fetch.
+   */
+  linked: boolean;
 }
 
 /**
@@ -161,7 +168,11 @@ async function scanScopeRoot(scopeRoot: string): Promise<InstallationRecord[]> {
   const found: InstallationRecord[] = [];
   for (const { kind, dir } of installRootsUnder(scopeRoot)) {
     for (const entry of await listPackageDirEntries(dir)) {
-      const record = await readInstallationRecord(join(dir, entry), kind);
+      const record = await readInstallationRecord(
+        join(dir, entry),
+        kind,
+        await isSymlink(join(dir, entry))
+      );
       if (record) found.push(record);
     }
   }
@@ -412,7 +423,8 @@ async function hasEntries(dir: string): Promise<boolean> {
  */
 async function readInstallationRecord(
   packagePath: string,
-  kind: InstallRootDir
+  kind: InstallRootDir,
+  linked: boolean
 ): Promise<InstallationRecord | null> {
   const identity = await readInstalledIdentity(packagePath);
   if (!identity) return null;
@@ -423,6 +435,7 @@ async function readInstallationRecord(
     kind,
     declaredVersion,
     metadata,
+    linked,
     package: {
       ...base,
       ...(metadata?.installedFrom !== undefined && { installedFrom: metadata.installedFrom }),
@@ -573,6 +586,15 @@ async function validatedSummary(
     }),
     installPath: packagePath,
   };
+}
+
+/** Whether `target` is itself a symbolic link (false when it cannot be read). */
+async function isSymlink(target: string): Promise<boolean> {
+  try {
+    return (await lstat(target)).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 /** `fs.readdir` that swallows ENOENT so callers can walk optional trees. */

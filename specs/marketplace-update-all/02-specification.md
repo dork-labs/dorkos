@@ -33,7 +33,7 @@ Measured against `origin/main` at `3b36e3876`:
 ## Goals
 
 - One request returns an update check for every installation in view, across scopes, with the scopes scanned once.
-- The advisory form changes no installed state, and a test proves it.
+- The advisory form touches no installed package, and a test proves it. It may populate the package cache, as the per-package check always has; the cache's growth depends on DOR-2249 giving pruning an owner.
 - The apply form produces one outcome per installation it touched, reinstalls each in its own scope, isolates failures, and fires `onPluginsChanged` once per reinstall that landed.
 - Applying authorizes as `marketplace.install` (ADR-0233), before any network work.
 - A name-less `dorkos update` is one request.
@@ -135,12 +135,14 @@ export function selectInstallations(
 ```
 
 - **A check reads its record.** `checkRecord(record)` is today's `checkOne`, fed from the record. The name is `updateNameOf(record.package.name, record.package.installPath)`. The installed side comes from `record.declaredVersion` plus `record.metadata`. Target finding, `resolveLatest` and `compareVersions` are unchanged.
-- **`checkInstallations`, advisory.** Records are checked through `mapWithConcurrency(records, UPDATE_CHECK_CONCURRENCY, …)`, and results come back in input order. Each result is the check plus the record's identity (`installPath`, `type`, `scope ?? 'global'`, `agentPath`, `agentId`, `agentName`). Nothing is dropped: an installation that cannot be checked is `unknown` with its note, exactly as before.
+- **`checkInstallations`, advisory.** Every check (from either door) takes a slot from one FIFO semaphore on the flow instance, so at most `UPDATE_CHECK_CONCURRENCY` checks run at once across the whole server, not per request; results come back in input order. Each result is the check plus the record's identity (`installPath`, `type`, `scope ?? 'global'`, `agentPath`, `agentId`, `agentName`). Nothing is dropped: an installation that cannot be checked is `unknown` with its note, exactly as before.
 - **`checkInstallations`, apply.** After every check settles, each `update-available` installation that has a reinstall request is applied **one at a time, in order**, as `installer.update({ ...request, projectPath: record.package.agentPath })`. A global installation has no `agentPath`, so it is reinstalled globally. A failure is logged and recorded on that installation as `applyError: err.message`; the rest continue. The memos are cleared in a `finally`, as today.
 - **Apply scope in `run` (the fix).** `run` scans `{ projectPath }` (or `{ agents: [] }` without one). Among records with the requested name, it prefers a project-scoped one (the project shadows the global package for that project, as the old walk's project-first order did), else the first. It applies with `projectPath: match.package.agentPath`, never `req.projectPath`. A single-package apply still throws, so the route's error mapping (409, 400, …) is unchanged.
-- **`selectInstallations`.** With no `names`, or an empty list, it returns the records unchanged. Otherwise it keeps records whose update name is in `names`. If any name matches no record, it throws `PackageNotInstalledForUpdateError` for every unmatched name, and nothing runs.
+- **`selectInstallations(records, { names?, installPaths? })`.** An absent or empty list keeps everything. `names` keeps every installation of those packages; `installPaths` keeps exactly the installations a check reported (what a confirm step showed); both given, an installation must match both. Any unmatched name or path throws `PackageNotInstalledForUpdateError` carrying `packageNames` and `installPaths`, and nothing runs.
+- **`pickInstallation(records, name)`** resolves which installation a name means in one scope's view (the project's own first). `run({ name, installation, apply })` takes that resolved installation, so the per-package route can authorize and notify against the installation that will actually change.
+- **Linked installs.** The scanner records whether an install folder is a symlink (`linked`). A linked install is checked as `unknown` with the note "linked install — update its source instead" and is never reinstalled: a reinstall would replace the link, and the working copy behind it, with a fresh fetch.
 - **`PackageNotInstalledForUpdateError`** takes one name or several: `packageNames: string[]`, and the message is `Package not installed: a` or `Packages not installed: a, b`. The per-package route's use is unchanged.
-- **`mapWithConcurrency` moves** from `services/session/agent-session-fanout.ts` (private) to `@dorkos/shared/map-with-concurrency` (exported, TSDoc, its own test), and the fan-out imports it. One helper instead of two. (Decided during execution: `apps/server/src/lib` is at the 25-file directory limit the pre-commit `dir-size` gate enforces, and a pure, browser-safe pool belongs beside the other shared helpers anyway.)
+- **The shared door (`flows/update-installed.ts`).** `scanUpdateView`, `callerSpelling`, `checkInstalledUpdates` and `applyInstalledUpdates(deps, request, gate)` hold the whole orchestration — one scan, selection, a gate on every distinct reinstall before any network work, the apply, one `onPluginsChanged` per reinstall that landed — so the HTTP route and DOR-2195's MCP tool share it; only the permission step (`ReinstallGate`) is surface-specific. (The first draft moved `mapWithConcurrency` out of the session fan-out to share it; the server-wide semaphore replaced it, so that move was undone.)
 
 ### 3. The routes (`routes/marketplace.ts`)
 
@@ -160,7 +162,7 @@ POST /api/marketplace/updates                        → 200 { checks: Installat
 
 1. The body must parse. `apply` must be the literal `true`, so an empty or advisory POST is a 400 and never reinstalls anything.
 2. Confine `projectPath` as above.
-3. One scan, as above. `candidates = selectInstallations(records, names)`: an unmatched name is a 404 before any gate or network call.
+3. One scan, as above. `candidates = selectInstallations(records, { names, installPaths })`: an unmatched name or path is a 404 (with `packageNames` / `installPaths` fields) before any gate or network call.
 4. **Authorize before any network work.** For each distinct (update name, `agentPath`) among the candidates, call `authorize(req, res, 'marketplace.install', { name, ...(projectPath && { projectPath }) })`. That is the per-package route's input shape, with the caller's own spelling of the path (see 6). Stop at the first decision that is not `allowed`:
    - `denied` → the gate's 403, as every mutation route answers.
    - `approval_required` → a 403 `{ error, code: 'batch_update_needs_approval' }`. The error says that updating several packages at once cannot wait for a person's approval, and to update them one at a time with `POST /api/marketplace/packages/:name/update`. A batch cannot carry one approval token per package, and a 202 would send the caller round a loop. Unreachable while `marketplace.install` is `act` (which never asks). It is correct if the tier is ever raised.
@@ -190,7 +192,7 @@ Errors go through `mapErrorToStatus`. `PackageNotInstalledForUpdateError` is alr
 ### 6. What the three consumers do with it
 
 - **DOR-2195 (MCP).** `marketplace_update { name?, apply? }` scans once, calls `selectInstallations(records, name ? [name] : undefined)`, then `checkInstallations`. It goes through the confirmation provider before an apply, and fires `onPluginsChanged` per `applied`, exactly as the POST route does. `marketplace_list_installed { checkUpdates: true }` scans records once, lists `records.map((r) => r.package)`, and joins `checkInstallations({ installations: records }).checks` by `installPath` to add `latestVersion` / `hasUpdate`. Without `checkUpdates` it never calls the flow, so it makes no network call.
-- **DOR-2196 (Installed view).** It reads `GET /updates` once on mount, for the same view `GET /installed` returns (the same `projectPath` or none), and keys each check by `installPath`: the row key the view already uses. The count on the tab is `checks.filter((c) => c.hasUpdate).length`. "Update all" confirms `checks.filter(hasUpdate)` by name and place, then sends `POST /updates { apply: true, names, projectPath }`. The response's `applied` / `applyError` per row is what it reports.
+- **DOR-2196 (Installed view).** It reads `GET /updates` once on mount, for the same view `GET /installed` returns (the same `projectPath` or none), and keys each check by `installPath`: the row key the view already uses. The count on the tab is `checks.filter((c) => c.hasUpdate).length`. "Update all" confirms `checks.filter(hasUpdate)` by name and place, then sends `POST /updates { apply: true, installPaths, projectPath }` with exactly the installations it showed. The response's `applied` / `applyError` per row is what it reports.
 - **DOR-2193 (`marketplace outdated`).** It reads `GET /updates[?projectPath]`, prints `checks.filter((c) => c.status === 'update-available')` as `name  installed -> latest  (marketplace)`, labelled by place as above, and exits non-zero when that list is not empty.
 
 ## User Experience
@@ -225,7 +227,6 @@ Each test carries a purpose comment and can fail.
   - `{ agents }` yields one record per installation with agent identity;
   - `{ projectPath }` yields the merged view with `override` shadowing;
   - the three list helpers still return what their existing tests pin.
-- **`mapWithConcurrency`** (`packages/shared`): results in input order, never more than `width` in flight, and an empty input.
 - **`UpdateFlow`** (`flows/update.test.ts`). The name-less `run({})` tests move to `checkInstallations` fed by `scanInstallationRecords`, with the assertions unchanged. New tests:
   - every check carries its installation's identity, and the same name in two scopes is two checks;
   - an agent-scope installation (invisible to the old walk) is checked;
@@ -261,7 +262,7 @@ Each test carries a purpose comment and can fail.
 ## Performance Considerations
 
 - **Scan:** one local walk per request instead of 2N+1 for a name-less CLI run. It still runs `validatePackage` once per Claude-Code-only install, and only once.
-- **Checks:** 4 at a time. An unchanged package costs one `git ls-remote` per repository and ref; a changed one costs one sparse clone into the cache (version-truth spec §Performance). Because the memo stores in-flight promises, concurrent checks of packages from one repository share one index fetch and one `ls-remote`. They also share it when it fails, which a sequential run cannot do, since failures are not memoized.
+- **Checks:** 4 at a time across the whole server (one semaphore on the flow instance), so two whole-install requests arriving together still open at most 4 git processes between them. An unchanged package costs one `git ls-remote` per repository and ref; a changed one costs one sparse clone into the cache (version-truth spec §Performance). Because the memo stores in-flight promises, concurrent checks of packages from one repository share one index fetch and one `ls-remote`. They also share it when it fails, which a sequential run cannot do, since failures are not memoized.
 - **Bounding a slow scope:** the scan is local disk only, so an agent scope costs the time to read its `.dork/{plugins,agents,shapes}`. Its checks' remote work is bounded by the fetcher's own timeouts (`LS_REMOTE_TIMEOUT_MS` = 15s, the clone timeouts). A slow or unreachable repository therefore costs at most those timeouts, inside one of 4 slots, and ends as that installation's `unknown`. The worst case is about ⌈distinct slow repositories ÷ 4⌉ × the timeout, not one timeout per installation.
 - **Applies:** sequential. Each takes its install target's lock, and a batch should not multiply git and npm work on a loaded machine.
 - **Cache growth** is unchanged per check. This door must not be polled until DOR-2249 gives pruning an owner.
@@ -283,7 +284,7 @@ Each test carries a purpose comment and can fail.
 
 ## Implementation Phases
 
-- **Phase 1:** the scanner records, `mapWithConcurrency`, and `UpdateFlow` (`checkInstallations`, `selectInstallations`, and the scope fix in `run`), with tests.
+- **Phase 1:** the scanner records and `UpdateFlow` (`checkInstallations`, `selectInstallations`, and the scope fix in `run`), with tests.
 - **Phase 2:** the routes, the OpenAPI docs and the shared types, with tests.
 - **Phase 3:** the CLI on the new door, the docs, the changelog, and the ADR.
 
@@ -299,6 +300,20 @@ All three ship in one PR, with this spec.
    **Rationale:** The cost the review named was the N× loop, which the CLI no longer makes.
 3. ~~Should the Installed view's per-row Update move onto `POST /updates { names: [name], projectPath }`?~~ (RESOLVED)
    **Answer:** That is DOR-2196's call. Both doors now reinstall in the installation's own scope, so either is correct.
+
+### Review log
+
+**Round 1 (independent, 2026-09-23):** no blockers; the data-loss fix was proven (fails on base, passes on the branch). All findings adopted:
+
+- `GET /installed?projectPath` scans at the canonical path, as `/updates` does, so rows join to checks through a symlinked project.
+- The per-package route authorizes and notifies with the scope its reinstall actually touches (none for a global installation), via `pickInstallation` + `callerSpelling`.
+- A test pins "authorize each reinstall" with a gate that allows one and refuses a later one.
+- `POST /updates` gains `installPaths`, validated against the scan; the response is the record of what changed.
+- A batch that could need approval (install's tier above `act`, caller not trusted) is refused before any gate call, so no unredeemable approval request is raised.
+- The check cap is server-wide (a semaphore on the flow), and the advisory wording says it may populate the cache (DOR-2249).
+- Symlinked installs are checked but never reinstalled.
+- The 404 body carries `packageNames` and `installPaths` as fields.
+- OpenAPI `names`/`installPaths` require a non-empty array of non-empty strings; a repeated `?projectPath` is a 400; the orchestration moved into `flows/update-installed.ts`.
 
 ## Related ADRs
 

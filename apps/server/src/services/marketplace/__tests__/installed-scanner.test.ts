@@ -2,7 +2,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -728,6 +728,33 @@ describe('scanInstallationRecords', () => {
       agentPath: agentA,
       agentId: 'a',
       agentName: 'Alpha',
+    });
+  });
+
+  it('marks a symlinked install as linked, and a fetched one as not', async () => {
+    // Purpose: a developer's working copy linked into place must be told apart
+    // from a checkout, so an update can never replace it with a fresh fetch.
+    const source = join(agentA, 'working-copy');
+    await writeManifest(source, {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'dev',
+      version: '1.0.0',
+    });
+    await mkdir(join(dorkHome, 'plugins'), { recursive: true });
+    await symlink(source, join(dorkHome, 'plugins', 'dev'));
+    await writeManifest(join(dorkHome, 'plugins', 'fetched'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'fetched',
+      version: '1.0.0',
+    });
+
+    const records = await scanInstallationRecords(dorkHome, { agents: [] });
+
+    expect(Object.fromEntries(records.map((r) => [r.package.name, r.linked]))).toEqual({
+      dev: true,
+      fetched: false,
     });
   });
 

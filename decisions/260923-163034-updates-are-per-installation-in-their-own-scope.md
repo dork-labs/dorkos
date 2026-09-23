@@ -26,6 +26,7 @@ The unit of an update is an installation, not a package name.
 - A check is reported per installation. It carries that installation's identity: `installPath` (the key), `type`, `scope`, and `agentPath`/`agentId`/`agentName` for a non-global one. The same name in two scopes is two results.
 - An apply reinstalls each installation in the scope it was found in. A global installation is reinstalled with no `projectPath`, whatever scope the request named. This holds for the per-package door and the all-packages door alike.
 - The all-packages door checks the installations from one scan (`scanInstallationRecords`), a few at a time. It applies them one at a time and records a failed reinstall on that installation instead of abandoning the rest.
+- A symlinked install (a working copy linked into place) is checked but never reinstalled; its check says to update its source instead.
 - A batch apply is authorized per reinstall, as `marketplace.install`, before any network work. A batch that would need a person's approval is refused rather than half-run, because a batch cannot carry one approval token per package.
 
 ## Consequences

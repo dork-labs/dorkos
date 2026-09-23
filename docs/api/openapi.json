@@ -17674,7 +17674,7 @@
           "Marketplace"
         ],
         "summary": "List installed marketplace packages",
-        "description": "Without projectPath: one entry per installation across all scopes (global roots plus every registered agent's local installs), each tagged with scope and agent identity. With projectPath: the merged view for that single project — one entry per package name.",
+        "description": "Without projectPath: one entry per installation across all scopes (global roots plus every registered agent's local installs), each tagged with scope and agent identity. With projectPath: the merged view for that single project — one entry per install root and name — scanned at the canonical path, so its install paths match `GET /updates`.",
         "parameters": [
           {
             "schema": {
@@ -17753,6 +17753,26 @@
                   "required": [
                     "packages"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "projectPath given more than once",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "projectPath outside the directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -19336,7 +19356,7 @@
           "Marketplace"
         ],
         "summary": "Check every installed package for updates",
-        "description": "Advisory: one check per installation in view, and nothing installed changes. Without `projectPath`, every installation in every scope (global, then each registered agent's project); with it, that project's merged view. Each check carries the installation's identity; `installPath` matches the installed list's.",
+        "description": "Advisory: one check per installation in view. No installed package changes, though a check may stage a newer version into the package cache. Without `projectPath`, every installation in every scope (global, then each registered agent's project); with it, that project's merged view. Each check carries the installation's identity; `installPath` matches the installed list's.",
         "parameters": [
           {
             "schema": {
@@ -19539,6 +19559,16 @@
               }
             }
           },
+          "400": {
+            "description": "projectPath given more than once",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "projectPath outside the directory boundary",
             "content": {
@@ -19556,7 +19586,7 @@
           "Marketplace"
         ],
         "summary": "Update every stale installed package, or the named ones",
-        "description": "Reinstalls every installation in view whose check is `update-available`, each in the scope it was found in, one at a time. A failed reinstall is reported on its installation as `applyError` and the rest carry on. Each reinstall is authorized as `marketplace.install` before anything runs. A batch that would need a person to approve each install is refused (`batch_update_needs_approval`); use the one-package route instead.",
+        "description": "Reinstalls every installation in view whose check is `update-available`, each in the scope it was found in, one at a time. A failed reinstall is reported on its installation as `applyError` and the rest carry on. Each reinstall is authorized as `marketplace.install` before anything runs. A batch that would need a person to approve each install is refused (`batch_update_needs_approval`); use the one-package route instead. `names` selects every installation of those packages; `installPaths` selects exactly the installations a check reported. The response is the record of what changed.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -19572,8 +19602,18 @@
                   "names": {
                     "type": "array",
                     "items": {
-                      "type": "string"
-                    }
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1
+                  },
+                  "installPaths": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1
                   },
                   "projectPath": {
                     "type": "string"
@@ -19799,11 +19839,33 @@
             }
           },
           "404": {
-            "description": "A named package is not installed in view",
+            "description": "A named package or install path is not installed in view",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "packageNames": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "installPaths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "packageNames",
+                    "installPaths"
+                  ]
                 }
               }
             }
