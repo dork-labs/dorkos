@@ -45,7 +45,13 @@ interface Postgres {
 }
 
 const docker = (args: string[], input?: string) =>
-  execFileSync('docker', args, { encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  execFileSync('docker', args, {
+    encoding: 'utf8',
+    input,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    // A stuck Docker daemon must not hang the run, or its cleanup, forever.
+    timeout: 60_000,
+  }).trim();
 
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {

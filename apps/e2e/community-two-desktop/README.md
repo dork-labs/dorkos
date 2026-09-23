@@ -105,7 +105,7 @@ borrowed one it started), and deletes the temporary homes. `receipt.json` lists
 what it did under `cleanup`.
 
 Stopping a run with Ctrl-C or `kill` (SIGINT or SIGTERM) runs the same
-cleanup, then exits with code 130 and outcome `INTERRUPTED` in the receipt.
+cleanup, then exits with code 130 and outcome `INTERRUPTED` in the receipt. Press Ctrl-C again to abandon cleanup.
 
 Only a run that can't clean up (SIGKILL, a crash, a power cut) leaves things
 behind. The throwaway container and its volume are labelled, and

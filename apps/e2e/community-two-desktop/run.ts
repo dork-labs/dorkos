@@ -213,13 +213,21 @@ function cleanup(): Promise<void> {
 // Ctrl-C or a polite kill still cleans up: the same teardown, then exit 130.
 // (SIGKILL cannot be caught; the README says what a later run sweeps then.)
 function onSignal(signal: NodeJS.Signals) {
-  // A second Ctrl-C while cleaning must not cut cleanup short.
-  if (interrupted) return;
+  // A second Ctrl-C abandons cleanup: the person asked twice, so stop now.
+  if (interrupted) process.exit(130);
   log(`${signal}: interrupted, cleaning up`);
   interrupted = signal;
   receipt.interruptedBy = signal;
   void cleanup().finally(() => process.exit(130));
 }
+/*
+ * Why stripping foreign listeners is safe: the run starts under tsx, whose
+ * child process relays signals from its parent through a handler it hides
+ * (added with prependListener, and left out of a patched listeners() and
+ * listenerCount()). That handler never shows up here, so it is never removed,
+ * and the tsx parent never escalates to SIGKILL. If this runner moves off tsx,
+ * revisit this.
+ */
 /**
  * Make this runner's handler the only SIGINT/SIGTERM listener. Playwright adds
  * its own when it launches Electron; that one closes everything and exits at
