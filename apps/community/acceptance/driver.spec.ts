@@ -1535,9 +1535,14 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         (cursor) => cursor.unreadCount > 0,
         'the remote human post did not advance Community A unread state'
       );
-      // The room query is refetched on a fresh local page load; no polling delay
-      // is part of this causal barrier.
-      await localPage.reload();
+      // Switch the local app's context to Community A without choosing a room.
+      // The sidebar shows only the route-selected community's channels (spec
+      // community-switcher-navigation, "Route and selection model"), so A's
+      // unread badge is read in A's context, before its room is opened. This
+      // fresh page load refetches the room query; no polling delay is part of
+      // this causal barrier.
+      await localPage.goto(`${env.local}/channels?community=${encodeURIComponent(refA)}`);
+      await expect(localPage.getByText('No channel selected', { exact: true })).toBeVisible();
       const communityAChannels = localPage.getByRole('region', {
         name: 'Acceptance A',
       });
@@ -1553,7 +1558,17 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await expect(communityALink).toBeFocused();
       await localPage.keyboard.press('Enter');
       await expect(communityALink).toHaveAttribute('aria-current', 'page');
-      await expect(localPage.getByText(unreadMarker, { exact: true })).toBeVisible();
+      // The room reopens where the owner was last reading (spec
+      // community-switcher-navigation, "Route and selection model"), so the
+      // new post sits below that anchor. Scroll the timeline to the newest
+      // message the way a reader does; opening alone never marks it read.
+      const timeline = localPage.locator('[data-slot="conversation-timeline"]');
+      const unreadPost = localPage.getByText(unreadMarker, { exact: true });
+      await timeline.hover();
+      await expect(async () => {
+        await localPage.mouse.wheel(0, 4_000);
+        await expect(unreadPost).toBeVisible({ timeout: 500 });
+      }).toPass({ timeout: 15_000 });
       const markedRead = await markReadResponse;
       expect(markedRead.ok()).toBe(true);
       expect((await markedRead.json()) as { unreadCount: number }).toMatchObject({

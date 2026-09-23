@@ -77,30 +77,47 @@ const entries = ['entry-1', 'entry-2', 'entry-3'].map((id, index) => ({
   attachments: [],
 }));
 
-/** Route only the owner-qualified Community reads needed by the switcher proof. */
+/** The saved state the proof restores, under the real server's owner key. */
+function navigationState(ownerKey: string) {
+  return {
+    ownerKey,
+    installationDestination: { path: '/', search: {} },
+    order: ['alpha'],
+    destinations: [destination],
+  };
+}
+
+/**
+ * Route the owner-qualified Community reads and writes the switcher proof needs.
+ *
+ * Every navigation call still reaches the real server first, so a missing
+ * route or a failed owner check fails here instead of being papered over.
+ * The answer is then the mocked owner state, because the real server has no
+ * `alpha` connection and would prune the remembered destination this proof
+ * restores: a write's real reply, landing in the query cache, used to race
+ * the timeline and land it at the end instead of the remembered row.
+ */
 async function mockCommunitySwitcher(page: Page) {
   await page.route('**/api/community-connections**', async (route) => {
+    const method = route.request().method();
     const path = new URL(route.request().url()).pathname;
-    if (route.request().method() !== 'GET') return route.continue();
+    if (path.startsWith('/api/community-connections/navigation') && method !== 'GET') {
+      const real = await route.fetch();
+      expect(real.status(), `${method} ${path}`).toBe(200);
+      const { ownerKey } = (await real.json()) as { ownerKey: string };
+      await route.fulfill({ json: navigationState(ownerKey) });
+      return;
+    }
+    if (method !== 'GET') return route.continue();
     if (path === '/api/community-connections') {
       await route.fulfill({ json: { connections: [connection] } });
       return;
     }
     if (path === '/api/community-connections/navigation') {
-      // The owner key comes from the real route: it is the precondition every
-      // later write is fenced on, so a made-up one would earn a 409 on each
-      // PUT, and a missing route would fail here instead of being papered over.
       const real = await route.fetch();
       expect(real.status()).toBe(200);
       const { ownerKey } = (await real.json()) as { ownerKey: string };
-      await route.fulfill({
-        json: {
-          ownerKey,
-          installationDestination: { path: '/', search: {} },
-          order: ['alpha'],
-          destinations: [destination],
-        },
-      });
+      await route.fulfill({ json: navigationState(ownerKey) });
       return;
     }
     if (path === '/api/community-connections/navigation/alpha/destination') {
@@ -151,6 +168,9 @@ test('Community switcher supports keyboard selection and a narrow accessible men
   await trigger.focus();
   await page.keyboard.press('Meta+Shift+K');
   await expect(page.getByText('Switch context', { exact: true })).toBeVisible();
+  // The community list waits for the owner check, so it can land a beat after
+  // the menu opens. Arrow only once its row is there to move to.
+  await expect(page.getByRole('menuitemradio', { name: /Alpha/ })).toBeVisible();
   await page.keyboard.press('ArrowDown');
   await expect(page.getByRole('menuitemradio', { name: /Alpha/ })).toBeFocused();
   await page.keyboard.press('Enter');
