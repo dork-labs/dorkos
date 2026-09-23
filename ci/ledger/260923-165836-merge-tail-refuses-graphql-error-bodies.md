@@ -1,0 +1,47 @@
+---
+id: 260923-165836
+title: merge-tail refuses a GraphQL error body instead of reading it as a clean answer
+kind: incident-fix
+status: proposed
+actor: agent
+gates:
+  - wf.merge-tail.arm
+prs: []
+hypothesis:
+  metric: 'gate.wf.merge-tail.arm.failure_rate@schedule'
+  slo: 'lead-time'
+  baseline: 0
+  baseline_source: 'measured 2026-09-23 with `gh run list --workflow merge-tail.yml -L 200`: 200 of 200 scheduled runs (2026-08-26 to 09-23) concluded success; the logs of the latest 60 hold no could-not-read-* or queue-history-unknown skip, so the failure this fixes has not been observed in production yet'
+  target: 0
+  after_days: 14
+ratchet-release: []
+field-changes: []
+---
+
+DOR-2271. GitHub answers a failed GraphQL query with a body, `{"data": null, "errors": [...]}`, and
+`gh api graphql` prints it on stdout while exiting 1. merge-tail read that body two wrong ways. Under
+the `bash -e` GitHub runs the step with, the exit 1 ended the whole tick: every pull request after the
+failing one went unexamined, and the run went red with no summary. Without `-e`, the inline jq read
+the body as "not queued, no open threads"; only the later queue-history rule kept that from arming.
+A failed `gh pr checks` call had the same two shapes: it stopped the tick, or read as "no checks".
+Found while porting merge-tail to dork-labs/marketplace (DOR-1706).
+
+The change: `scripts/should-arm-automerge-input.sh` builds the gate's payload from the three answers
+and refuses, with one `SKIP <reason>` line carrying GitHub's own message, any answer that is not
+really one: not JSON, any reported GraphQL error (a partial answer nulls the failed field, and
+`mergeQueueEntry` and a removal's check suites fail toward permission when nulled), no pull request
+object, no `mergeQueueEntry` field, no review-thread list, or a check list that is not a list.
+The PR waits one tick and the tick carries on. The gate itself now refuses a payload with no
+`mergeQueueEntry` field or a non-numeric `unresolvedThreads` instead of defaulting them to the
+permissive answer. A failed label re-read before clearing `re-review` is now a counted failure, not
+"label already gone". `scripts/test-should-arm-automerge-input.sh` pins every refusal, including the
+exact NOT_FOUND body `gh` returns.
+
+Why this metric: the fix removes a latent failure with no measured occurrences, so the honest number
+is the one it must not make worse. A tick no longer fails because one pull request's answer was
+unreadable, so `failure_rate@schedule` stays at 0. The skips it now takes
+are counted on the run's `unreadable-from-github=` line and raised as a `::warning::`; check them by
+hand at the verdict date by grepping merge-tail logs for `graphql-error` and `could-not-read-`.
+
+Revert if merge-tail starts refusing most pull requests on most ticks (a routine partial-error answer
+this treats as no answer), visible as the warning on consecutive runs while PRs sit green and unarmed.

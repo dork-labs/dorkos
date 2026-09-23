@@ -39,6 +39,7 @@ green() {
   "isDraft": false,
   "mergeStateStatus": "BEHIND",
   "autoMergeRequest": null,
+  "mergeQueueEntry": null,
   "reviewDecision": "APPROVED",
   "labels": [],
   "unresolvedThreads": 0,
@@ -80,6 +81,14 @@ check "already armed"             "SKIP already-armed"        '.autoMergeRequest
 # it. Without its own branch the bot re-arms every queued PR on every tick.
 check "already queued"            "SKIP already-queued"       '.mergeQueueEntry = {"position": 1, "state": "AWAITING_CHECKS"}'
 check "queued and armed"          "SKIP already-armed"        '.mergeQueueEntry = {"position": 1} | .autoMergeRequest = {"enabledAt": "now"}'
+
+# The two facts only merge-tail's GraphQL read supplies must be PRESENT, not
+# defaulted: a payload built without them (a failed read, or a caller using
+# `gh pr view` alone) used to read as "not queued" and "no open threads".
+check "queue entry absent"        "SKIP queue-entry-unknown"  'del(.mergeQueueEntry)'
+check "thread count absent"       "SKIP review-threads-unknown" 'del(.unresolvedThreads)'
+check "thread count null"         "SKIP review-threads-unknown" '.unresolvedThreads = null'
+check "thread count not a number" "SKIP review-threads-unknown" '.unresolvedThreads = "0"'
 
 # A hold label outranks every green signal, including on an otherwise
 # perfect PR. Both payload shapes gh can produce are covered: objects and

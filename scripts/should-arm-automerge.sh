@@ -62,7 +62,11 @@
 # `autoMergeRequest: null`, so the first field alone cannot tell you the merge is
 # already handled. `mergeQueueEntry` is GraphQL-only — `gh pr view --json` does
 # not expose it, so a caller building this payload from `gh pr view` alone will
-# silently omit it and get a more permissive gate than it thinks.
+# silently omit it — and the gate refuses such a payload (`SKIP
+# queue-entry-unknown`) rather than reading the gap as "not queued". Likewise
+# `unresolvedThreads` must be a number. merge-tail builds this payload with
+# scripts/should-arm-automerge-input.sh, which refuses a GraphQL error body
+# before any of these fields are read from it.
 #
 # `headSince` and `queueRemovals` are the queue's memory, which the PR's own
 # checks do not have. The browser suite runs only in the merge queue, so a PR
@@ -153,7 +157,12 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" --argjson repeat "$REPEAT_EJECTION
   # every queued pull request on every tick. Verified on 2026-07-28: PRs 573,
   # 572 and 566 were at queue positions 1-3 in AWAITING_CHECKS with a null
   # autoMergeRequest.
-  elif (.mergeQueueEntry // null) != null           then "SKIP already-queued"
+  # Absent is not null. `mergeQueueEntry` comes only from the GraphQL read in merge-tail
+  # read, so a payload without it was built from a failed read or from
+  # `gh pr view` alone, and defaulting it to null would call a queued PR
+  # unqueued (DOR-2271).
+  elif (has("mergeQueueEntry") | not)               then "SKIP queue-entry-unknown"
+  elif .mergeQueueEntry != null                     then "SKIP already-queued"
   elif ((labels) as $l | any($hold[]; . as $h | $l | index($h)))
                                                     then "SKIP held-by-label"
 
@@ -170,7 +179,10 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" --argjson repeat "$REPEAT_EJECTION
   elif (.mergeStateStatus // "") == ""              then "SKIP mergeability-unknown"
 
   elif (.reviewDecision // "") == "CHANGES_REQUESTED" then "SKIP changes-requested"
-  elif ((.unresolvedThreads // 0) | tonumber) > 0   then "SKIP unresolved-threads"
+  # Zero means "counted, none open"; a missing or non-numeric count means the
+  # threads were never counted, which is not zero.
+  elif (.unresolvedThreads | type) != "number"      then "SKIP review-threads-unknown"
+  elif .unresolvedThreads > 0                       then "SKIP unresolved-threads"
 
   # No checks at all means the suite has not been created yet, or path filters
   # excluded everything. Either way there is nothing to stand on.

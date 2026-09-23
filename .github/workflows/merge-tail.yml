@@ -22,7 +22,11 @@ name: merge-tail
 # The arming decision lives in scripts/should-arm-automerge.sh, fixture-pinned by
 # scripts/test-should-arm-automerge.sh, because the failure mode of this workflow
 # is silent: a refusal that stops matching keeps returning ARM and the first
-# symptom is unreviewed code on main.
+# symptom is unreviewed code on main. Its input is built by
+# scripts/should-arm-automerge-input.sh (pinned by
+# scripts/test-should-arm-automerge-input.sh), which refuses any answer from
+# GitHub that is not really one — above all a GraphQL error body, which read
+# loosely says "not queued, no open threads" (DOR-2271).
 #
 # It also stops re-arming a PR the queue keeps rejecting: once the same check
 # has failed twice in the queue on the same head commit, the PR is not armed
@@ -180,6 +184,7 @@ jobs:
           armed=0; skipped=0; failed=0; perm_denied=0
           rereviewed=0; cleared=0; review_failed=0; review_unreadable=0
           repeat_declined=0; repeat_commented=0; comment_failed=0; history_unknown=0
+          unreadable=0
 
           gh pr list --repo "$REPO" --state open --limit 100 \
             --json number --jq '.[].number' > "$work/prs.txt" || {
@@ -206,11 +211,22 @@ jobs:
               skipped=$(( skipped + 1 )); continue
             fi
 
-            # `gh pr checks` exits non-zero when any check is failing or pending,
-            # which is information we want, not an error. Keep the output and let
-            # the gate judge it; only an unparseable body is a real failure.
-            gh pr checks "$pr" --repo "$REPO" --json name,bucket > "$work/checks.json" 2>/dev/null
-            jq -e . "$work/checks.json" >/dev/null 2>&1 || echo '[]' > "$work/checks.json"
+            # Judged by the body, never by the exit code. A list on stdout is the
+            # answer, whatever gh exited with. With no list, gh either said the
+            # PR has no checks yet ("no checks reported", exit 1), which is a
+            # fact the gate reads as `SKIP no-checks`, or the call failed, which
+            # is no answer: the file is left empty for the payload builder to
+            # refuse. It used to become `[]` either way, and before that a
+            # non-zero exit here stopped the whole tick under `bash -e`.
+            gh pr checks "$pr" --repo "$REPO" --json name,bucket \
+              > "$work/checks.json" 2>"$work/checks-err.txt" || :
+            if ! jq -e 'type == "array"' "$work/checks.json" >/dev/null 2>&1; then
+              if grep -q 'no checks reported' "$work/checks-err.txt"; then
+                echo '[]' > "$work/checks.json"
+              else
+                : > "$work/checks.json"
+              fi
+            fi
 
             # ── re-request a lost automated review ──────────────────────────
             #
@@ -382,10 +398,13 @@ jobs:
                     # first match and closes the pipe, `pipefail` then makes the
                     # SIGPIPE the status of the whole pipeline, and the read
                     # would report "no label" for a PR that has one.
-                    gh pr view "$pr" --repo "$REPO" --json labels \
-                      --jq '.labels[].name' > "$work/labels.txt" 2>/dev/null \
-                      || : > "$work/labels.txt"
-                    if ! grep -qx 're-review' "$work/labels.txt"; then
+                    # A failed read is not "no label": it is counted as a
+                    # failed clear, so it is seen, and retried next tick.
+                    if ! gh pr view "$pr" --repo "$REPO" --json labels \
+                         --jq '.labels[].name' > "$work/labels.txt" 2>/dev/null; then
+                      echo "PR #$pr -> review-retry $rverdict, could-not-read-labels"
+                      review_failed=$(( review_failed + 1 ))
+                    elif ! grep -qx 're-review' "$work/labels.txt"; then
                       echo "PR #$pr -> review-retry $rverdict, label already gone"
                     elif gh pr edit "$pr" --repo "$REPO" --remove-label re-review >/dev/null 2>&1; then
                       echo "PR #$pr -> review-retry $rverdict, label removed"
@@ -430,47 +449,28 @@ jobs:
                         beforeCommit{ checkSuites(first:20){ nodes{
                           checkRuns(first:50, filterBy:{conclusions:[FAILURE,TIMED_OUT,STARTUP_FAILURE]}){
                             nodes{ name } } } } } } } } } } }' \
-              > "$work/gql.json" 2>/dev/null
-            threads=$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]?
-                           | select(.isResolved == false)] | length' \
-                      "$work/gql.json" 2>/dev/null)
-            queued=$(jq -c '.data.repository.pullRequest.mergeQueueEntry // null' \
-                     "$work/gql.json" 2>/dev/null)
-            # An unreadable queue entry must not read as "not queued".
-            [[ -n "$queued" ]] || { echo "PR #$pr -> SKIP could-not-read-queue-entry"; skipped=$(( skipped + 1 )); continue; }
-            # An unreadable thread count must not read as zero. Zero means
-            # "checked, none open"; unknown means "do not arm".
-            if ! [[ "$threads" =~ ^[0-9]+$ ]]; then
-              echo "PR #$pr -> SKIP could-not-read-review-threads"
-              skipped=$(( skipped + 1 )); continue
+              > "$work/gql.json" 2>/dev/null || :
+            # gh exits non-zero on a GraphQL error AND prints the error body,
+            # `{"data": null, "errors": [...]}`, on stdout. Two wrong readings of
+            # that are possible and this workflow has had both: under `bash -e`
+            # the non-zero exit stopped the whole tick, leaving every PR after
+            # this one unexamined; and read loosely, the body says "not queued,
+            # no open threads" (DOR-2271). So the exit code is ignored and the
+            # body is judged whole: the builder turns the three answers into
+            # the gate's payload, or refuses with one `SKIP <reason>` line that
+            # carries GitHub's own error message, and this PR waits a tick.
+            if ! ./scripts/should-arm-automerge-input.sh \
+                 "$work/meta.json" "$work/checks.json" "$work/gql.json" \
+                 > "$work/payload.json" 2>/dev/null; then
+              reason=$(head -n 1 "$work/payload.json" 2>/dev/null) || reason=
+              echo "PR #$pr -> ${reason:-SKIP could-not-build-payload}"
+              unreadable=$(( unreadable + 1 )); skipped=$(( skipped + 1 )); continue
             fi
 
-            # The queue's memory, flattened into the two fields the gate reads.
-            # Anything unreadable becomes null, which the gate treats as
-            # unknown history and skips: a partial GraphQL answer must not read
-            # as "never ejected". `headSince` is null when the commit list and
-            # `headRefOid` disagree (a push landed between the two reads).
-            jq -s '
-                .[0] as $meta | .[1].data.repository.pullRequest as $p
-                | ($p.commits.nodes[0].commit // null) as $head
-                | $meta + {
-                    headSince: (if $head != null and $head.oid == $meta.headRefOid
-                                then ([$head.checkSuites.nodes[]?.createdAt] | min)
-                                else null end),
-                    queueRemovals: (if ($p.timelineItems.nodes | type) == "array"
-                                    then [$p.timelineItems.nodes[]
-                                          | {at: .createdAt, reason,
-                                             failedChecks: ([.beforeCommit.checkSuites.nodes[]?
-                                                             .checkRuns.nodes[]?.name] | unique)}]
-                                    else null end) }' \
-              "$work/meta.json" "$work/gql.json" > "$work/meta-queue.json" 2>/dev/null \
-              || jq '. + {queueRemovals: null}' "$work/meta.json" > "$work/meta-queue.json"
-
-            jq -s --argjson t "$threads" --argjson q "$queued" \
-              '.[0] + {checks: .[1], unresolvedThreads: $t, mergeQueueEntry: $q}' \
-              "$work/meta-queue.json" "$work/checks.json" > "$work/payload.json"
-
-            verdict=$(./scripts/should-arm-automerge.sh "$work/payload.json")
+            # The gate exits 2 on an unreadable payload by design; under
+            # `bash -e` that must stay this PR's SKIP, not end the tick.
+            verdict=$(./scripts/should-arm-automerge.sh "$work/payload.json") \
+              || verdict="SKIP unreadable-payload"
 
             if [[ "$verdict" == "SKIP queue-history-unknown" ]]; then
               history_unknown=$(( history_unknown + 1 ))
@@ -567,6 +567,7 @@ jobs:
           echo "armed=$armed skipped=$skipped failed=$failed perm_denied=$perm_denied"
           echo "reviews re-requested=$rereviewed stranded-labels-cleared=$cleared label-failed=$review_failed unreadable=$review_unreadable"
           echo "repeat-queue-failures declined=$repeat_declined authors-told=$repeat_commented comment-failed=$comment_failed queue-history-unknown=$history_unknown"
+          echo "unreadable-from-github=$unreadable"
 
           # The summary is written BEFORE the failure exit, not after. The
           # permission-denied bullet below only ever prints when perm_denied > 0,
@@ -595,6 +596,9 @@ jobs:
             fi
             if [[ "$history_unknown" -gt 0 ]]; then
               echo "- **could not read the queue history of $history_unknown PR(s); they were not armed**"
+            fi
+            if [[ "$unreadable" -gt 0 ]]; then
+              echo "- **GitHub did not answer for $unreadable PR(s) (an API error, or an answer missing a field); they were not armed. The reason is on each PR's log line.**"
             fi
             if [[ "$cleared" -gt 0 ]]; then
               echo "- stranded re-review labels cleared: $cleared"
@@ -635,6 +639,12 @@ jobs:
           # ever ejected skips as unknown and nothing says why.
           if [[ "$history_unknown" -gt 0 ]]; then
             echo "::warning::merge-tail could not read the merge-queue history of $history_unknown pull request(s), so it did not arm them. Check the GraphQL query in the arming step."
+          fi
+          # One transient API error costs a PR one tick and needs nobody. The
+          # same refusal on every PR, every tick, is this workflow gone inert
+          # (a schema change, a lost permission), so it is never only a log line.
+          if [[ "$unreadable" -gt 0 ]]; then
+            echo "::warning::merge-tail could not read GitHub's answer for $unreadable pull request(s), so it did not arm them. Each one's log line names the error; if every pull request is refused on every tick, the GraphQL query or the app's permissions have broken."
           fi
 
           if [[ "$perm_denied" -gt 0 ]]; then
