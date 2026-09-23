@@ -282,6 +282,14 @@ vi.mock('@/layers/entities/config', async (importOriginal) => ({
   useConfigSync: () => {},
 }));
 
+// Community connections ride the same stream: `useCommunityConnectionsSync`
+// re-reads the connection list on `community_connections_changed`. No-op'd for
+// the same reason.
+vi.mock('@/layers/entities/community', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/community')>()),
+  useCommunityConnectionsSync: () => {},
+}));
+
 vi.mock('react-resizable-panels', () => ({
   Panel: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   PanelGroup: ({ children }: React.PropsWithChildren) => <div>{children}</div>,

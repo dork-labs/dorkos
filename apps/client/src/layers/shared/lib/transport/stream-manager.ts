@@ -324,6 +324,14 @@ export const GENERIC_EVENTS = [
   // carries the SECTION NAMES only — never a value, because config holds
   // credentials.
   'config_changed',
+  // A Community connection was added, connected, told to reconnect, or
+  // removed — most urgently because the person left the Community or was
+  // removed from it. `useCommunityConnectionsSync` (entities/community)
+  // refetches the owner-scoped connection list, and the app-level revocation
+  // watcher erases and routes away from an ended Community, in seconds rather
+  // than on the next 30-second poll. ADDRESSED and CONTENT-FREE: a stamp only,
+  // because this stream cannot tell one local owner's windows from another's.
+  'community_connections_changed',
 ] as const;
 
 /** A member of {@link GENERIC_EVENTS}. */

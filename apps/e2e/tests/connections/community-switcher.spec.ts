@@ -323,6 +323,65 @@ test('Disconnecting asks first, then removes only that Community and leaves it',
   await expect(page.getByRole('menuitemradio', { name: /Alpha/ })).toHaveCount(0);
 });
 
+test('A Community that ends elsewhere is left within seconds, on the server’s push', async ({
+  page,
+}) => {
+  // Spec `community-switcher-navigation` §"Removed membership or revoked
+  // connection removes content immediately"; the acceptance bar is 10 s.
+  // The acceptance run's defect: the local server learned in ~26 ms that the
+  // person had left, but the window moved only on its next 30-second poll of
+  // the connection list. A real Community cannot be left from here, so the
+  // LIST is mocked and the PUSH is real: `/api/test/community-connection-change`
+  // commits a change in the real connection store, and the real server sends
+  // `community_connections_changed` over the real `/api/events` socket.
+  await mockCommunitySwitcher(page);
+  let ended = false;
+  const listReads: number[] = [];
+  await page.route('**/api/community-connections', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    listReads.push(Date.now());
+    if (!ended) return route.fallback();
+    await route.fulfill({
+      json: { connections: [{ ...connection, status: 'reconnect-required' }] },
+    });
+  });
+  // The global stream is a WebSocket; know when it is open, and see the push.
+  const frames: string[] = [];
+  const streamOpen = new Promise<void>((resolve) => {
+    page.on('websocket', (socket) => {
+      if (!new URL(socket.url()).pathname.endsWith('/api/events')) return;
+      socket.on('framereceived', (frame) => {
+        frames.push(String(frame.payload));
+        resolve();
+      });
+    });
+  });
+
+  await page.goto('/channels?community=alpha&id=general');
+  await new BasePage(page).waitForAppReady();
+  await expect(page.getByText('Message 2', { exact: true })).toBeVisible();
+  await streamOpen;
+
+  // Alpha ends. Nothing in the window re-reads the list until told to.
+  ended = true;
+  const endedAt = Date.now();
+  const lastReadBefore = listReads.at(-1)!;
+  const pushed = await page.request.post('/api/test/community-connection-change');
+  expect(pushed.ok()).toBe(true);
+
+  await expect(page).not.toHaveURL(/community=alpha/, { timeout: 10_000 });
+  const leftAfter = Date.now() - endedAt;
+  test.info().annotations.push({ type: 'left-after-ms', description: String(leftAfter) });
+  expect(leftAfter).toBeLessThan(10_000);
+  await expect(page.getByText('Message 2', { exact: true })).toBeHidden();
+  expect(frames.some((frame) => frame.includes('community_connections_changed'))).toBe(true);
+  // The re-read that carried the end came from the push, not the poll: it
+  // landed well inside the poll's 30-second interval.
+  const endingRead = listReads.find((at) => at >= endedAt)!;
+  expect(endingRead - lastReadBefore).toBeLessThan(30_000);
+  expect(endingRead - endedAt).toBeLessThan(10_000);
+});
+
 test('Joining with an invitation opens the link on the Community’s site, not a pairing', async ({
   page,
 }) => {
