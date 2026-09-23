@@ -7,8 +7,10 @@
  * with DorkOS Cloud egress blocked"; task 3.2). The Community server's own half
  * is `apps/community/src/__tests__/tenancy-egress.integration.test.ts`.
  *
- * Before any code opens a socket, this file wraps every TCP/TLS connect and
- * every DNS lookup in the process. Loopback stays reachable; anything else is
+ * Before any code opens a socket, this file wraps every TCP/TLS connect, every
+ * DNS lookup and direct DNS query (`dns.resolve*`, `Resolver`, both callback
+ * and promise forms), and every UDP send or connect in the process (the same
+ * guard as the Community's `tenancy-egress` proof). Loopback stays reachable; anything else is
  * recorded and refused, as a firewall that blocks all egress would. That is
  * strictly stronger than blocking DorkOS Cloud alone, and it is proven to
  * catch a real `fetch` to Cloud before the journey starts.
@@ -20,6 +22,7 @@
  * Community). The recorded list must be empty at the end. Only the owner check
  * is stubbed, exactly as the other route tests stub it.
  */
+import dgram from 'node:dgram';
 import dns from 'node:dns';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
@@ -95,6 +98,64 @@ dns.promises.lookup = async function guardedPromiseLookup(hostname: string, ...r
     ...rest
   );
 } as typeof dns.promises.lookup;
+
+// Direct DNS queries always go to a resolver off the host, so every one is refused.
+type Patchable = Record<string, unknown>;
+const restores: (() => void)[] = [];
+function blockResolvers(target: Patchable, style: 'callback' | 'promise') {
+  for (const name of Object.keys(target)) {
+    if (!/^(resolve|reverse)/.test(name) || typeof target[name] !== 'function') continue;
+    const original = target[name];
+    target[name] = function blockedResolve(hostname: string, ...rest: unknown[]) {
+      const error = blockedLookup(`${name} ${hostname}`);
+      if (style === 'promise') return Promise.reject(error);
+      const callback = rest.at(-1) as (error: Error) => void;
+      process.nextTick(() => callback(error));
+      return undefined;
+    };
+    restores.push(() => {
+      target[name] = original;
+    });
+  }
+}
+blockResolvers(dns as unknown as Patchable, 'callback');
+blockResolvers(dns.Resolver.prototype as unknown as Patchable, 'callback');
+blockResolvers(dns.promises as unknown as Patchable, 'promise');
+blockResolvers(dns.promises.Resolver.prototype as unknown as Patchable, 'promise');
+
+// UDP: refuse a send or connect to anything but a local address.
+function udpTarget(args: unknown[]): { port?: unknown; host?: string } {
+  const portIndex = args.findIndex((arg, index) => index > 0 && typeof arg === 'number');
+  const port = args[portIndex];
+  const host =
+    typeof args[portIndex + 1] === 'string' ? (args[portIndex + 1] as string) : undefined;
+  return { port, host };
+}
+for (const method of ['send', 'connect'] as const) {
+  const original = dgram.Socket.prototype[method] as (...args: unknown[]) => unknown;
+  (dgram.Socket.prototype as unknown as Patchable)[method] = function guardedUdp(
+    this: dgram.Socket,
+    ...args: unknown[]
+  ) {
+    const target =
+      method === 'connect'
+        ? { port: args[0], host: typeof args[1] === 'string' ? args[1] : undefined }
+        : udpTarget(args);
+    if (!isLocal(target.host)) {
+      refused.push(`udp ${target.host}:${String(target.port)}`);
+      const callback = args.at(-1);
+      const error = Object.assign(new Error('Egress is blocked in this test'), {
+        code: 'ECONNREFUSED',
+      });
+      if (typeof callback === 'function') process.nextTick(() => callback(error));
+      return undefined;
+    }
+    return original.apply(this, args);
+  };
+  restores.push(() => {
+    (dgram.Socket.prototype as unknown as Patchable)[method] = original;
+  });
+}
 
 // ---- the local owner, stubbed as every community route test stubs it ----
 
@@ -264,13 +325,49 @@ afterAll(async () => {
   net.Socket.prototype.connect = originalConnect;
   dns.lookup = originalLookup;
   dns.promises.lookup = originalPromiseLookup;
+  for (const restore of restores) restore();
   if (home.dir) await rm(home.dir, { recursive: true, force: true });
 });
 
 describe('Community membership in this DorkOS with Cloud unreachable', () => {
-  it('refuses a real request to DorkOS Cloud, so an empty record below means something', async () => {
+  it('refuses TCP, DNS lookups, direct DNS queries and UDP, so an empty record below means something', async () => {
     await expect(fetch('https://dorkos.ai/api/health')).rejects.toThrow();
-    expect(refused.some((attempt) => attempt.includes('dorkos.ai'))).toBe(true);
+    await expect(dns.promises.lookup('dorkos.ai')).rejects.toMatchObject({ code: 'ENOTFOUND' });
+    await expect(dns.promises.resolve4('dorkos.ai')).rejects.toMatchObject({ code: 'ENOTFOUND' });
+    await expect(new dns.promises.Resolver().resolveTxt('dorkos.ai')).rejects.toMatchObject({
+      code: 'ENOTFOUND',
+    });
+    await expect(
+      new Promise((resolve, reject) =>
+        dns.resolve6('dorkos.ai', (error, value) => (error ? reject(error) : resolve(value)))
+      )
+    ).rejects.toMatchObject({ code: 'ENOTFOUND' });
+    await expect(
+      new Promise((resolve, reject) =>
+        new dns.Resolver().resolveAny('dorkos.ai', (error, value) =>
+          error ? reject(error) : resolve(value)
+        )
+      )
+    ).rejects.toMatchObject({ code: 'ENOTFOUND' });
+    const udp = dgram.createSocket('udp4');
+    try {
+      await expect(
+        new Promise((resolve, reject) =>
+          udp.send('ping', 53, '192.0.2.53', (error) => (error ? reject(error) : resolve(null)))
+        )
+      ).rejects.toMatchObject({ code: 'ECONNREFUSED' });
+    } finally {
+      udp.close();
+    }
+    expect(refused).toEqual([
+      'connect dorkos.ai:443',
+      'dns dorkos.ai',
+      'dns resolve4 dorkos.ai',
+      'dns resolveTxt dorkos.ai',
+      'dns resolve6 dorkos.ai',
+      'dns resolveAny dorkos.ai',
+      'udp 192.0.2.53:53',
+    ]);
     refused.length = 0;
   });
 

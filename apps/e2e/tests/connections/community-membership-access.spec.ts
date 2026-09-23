@@ -27,11 +27,25 @@ const TOUCH_FLOOR = 44;
  * The shared `--destructive` token misses 4.5:1 app-wide, both as a fill under
  * white text (3.76:1 light) and as `text-destructive` error text (3.6:1 light,
  * 4.09:1 dark). It is a design-system token, not a membership-surface defect,
- * so those nodes are recorded in the attached report rather than failed here;
- * every other colour-contrast node still fails.
+ * and a separate change is fixing the token app-wide; once it lands this
+ * exclusion has nothing left to match and can be deleted.
+ *
+ * Only a colour-contrast node whose OWN element wears the token is set aside,
+ * decided from the element axe's target selector resolves to, never from its
+ * HTML snippet: a container whose markup merely holds a destructive child
+ * still fails, and so does every other node of the same violation.
  */
-function isDestructiveToken(html: string): boolean {
-  return html.includes('data-variant="destructive"') || /\btext-destructive\b/.test(html);
+async function wearsDestructiveToken(page: Page, target: unknown[]): Promise<boolean> {
+  const selector = target.at(-1);
+  if (typeof selector !== 'string') return false;
+  return page.evaluate((query) => {
+    const element = document.querySelector(query);
+    return (
+      element !== null &&
+      (element.getAttribute('data-variant') === 'destructive' ||
+        element.classList.contains('text-destructive'))
+    );
+  }, selector);
 }
 
 /**
@@ -57,18 +71,27 @@ async function axeBothSchemes(page: Page, scope: string, label: string, testInfo
       // three seconds is far past any theme change.
       .catch(() => undefined);
     const result = await runAxe(page, scope);
-    const tokenOnly = (violation: (typeof result.violations)[number]) =>
-      violation.id === 'color-contrast' &&
-      violation.nodes.every((node) => isDestructiveToken(node.html));
-    const violations = result.violations
-      .filter((violation) => !tokenOnly(violation))
-      .map(describeViolation);
+    const failing: typeof result.violations = [];
+    const designSystem: typeof result.violations = [];
+    for (const violation of result.violations) {
+      if (violation.id !== 'color-contrast') {
+        failing.push(violation);
+        continue;
+      }
+      const token: typeof violation.nodes = [];
+      const rest: typeof violation.nodes = [];
+      for (const node of violation.nodes)
+        ((await wearsDestructiveToken(page, node.target)) ? token : rest).push(node);
+      if (rest.length) failing.push({ ...violation, nodes: rest });
+      if (token.length) designSystem.push({ ...violation, nodes: token });
+    }
+    const violations = failing.map(describeViolation);
     await testInfo.attach(`${label}-${scheme}-axe.json`, {
       body: JSON.stringify(
         {
           scope,
           violations,
-          designSystemFindings: result.violations.filter(tokenOnly).map(describeViolation),
+          designSystemFindings: designSystem.map(describeViolation),
           passes: result.passes.length,
         },
         null,
