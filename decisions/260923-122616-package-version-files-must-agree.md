@@ -1,7 +1,7 @@
 ---
 id: 260923-122616
 title: A package's version files must agree, and a mismatch fails validation
-status: draft
+status: accepted
 created: 2026-09-23
 spec: marketplace-version-truth
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: marketplace-version-truth)
+Accepted.
 
 ## Context
 
