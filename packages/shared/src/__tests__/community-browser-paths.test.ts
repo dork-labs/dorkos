@@ -35,6 +35,7 @@ describe('isCommunityInvitationUrl', () => {
       true
     );
     expect(isCommunityInvitationUrl('  http://localhost:8787/join#token=abc  ')).toBe(true);
+    expect(isCommunityInvitationUrl('http://127.0.0.1:8787/join#invite=abc')).toBe(true);
   });
 
   it('refuses anything that is not an invitation', () => {
@@ -46,6 +47,11 @@ describe('isCommunityInvitationUrl', () => {
       `javascript:alert(1)//join#invite=abc`,
       `ftp://community.example.com/join#invite=abc`,
       `https://community.example.com/c/${ID}/join?invite=abc`,
+      // Plain http off this machine would send the invite unencrypted.
+      `http://community.example.com/c/${ID}/join#invite=abc`,
+      // A sign-in in the address is never part of a Community's link.
+      `https://user:pass@community.example.com/c/${ID}/join#invite=abc`,
+      `https://user@community.example.com/c/${ID}/join#invite=abc`,
     ])
       expect(isCommunityInvitationUrl(value)).toBe(false);
   });

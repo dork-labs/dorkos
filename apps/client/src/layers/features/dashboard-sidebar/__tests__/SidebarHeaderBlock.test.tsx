@@ -997,7 +997,13 @@ describe('the context switcher’s lifecycle actions', () => {
   it('opens invites, settings and leaving on the Community’s own site, at the right section', async () => {
     mockConnections = [alpha()];
     const manage = await openManageAlpha();
-    expect(manage).toHaveTextContent('Invites, settings and leaving open on a.example.com');
+    // Every row that leaves the app says where, in its accessible name.
+    for (const name of ['Invite people', 'Community settings', 'Leave community…'])
+      expect(
+        within(manage).getByRole('menuitem', { name: `${name}, opens on a.example.com` })
+      ).toBeInTheDocument();
+    // Disconnect stays in the app, so it carries no such cue.
+    expect(within(manage).getByRole('menuitem', { name: 'Disconnect…' })).toBeInTheDocument();
 
     fireEvent.click(within(manage).getByRole('menuitem', { name: /Community settings/ }));
     expect(mockOpenExternalLink).toHaveBeenLastCalledWith(
@@ -1157,6 +1163,15 @@ describe('the context switcher’s lifecycle actions', () => {
       })
     );
     const field = await screen.findByLabelText('Invitation link');
+    for (const refused of [
+      'http://a.example.com/c/remote-a/join#invite=secret',
+      'https://someone:pw@a.example.com/c/remote-a/join#invite=secret',
+    ]) {
+      fireEvent.change(field, { target: { value: refused } });
+      expect(screen.queryByText(/^Opens on/)).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Open invitation' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('That isn’t an invitation link.');
+    }
     fireEvent.change(field, { target: { value: 'https://a.example.com/c/remote-a' } });
     fireEvent.click(screen.getByRole('button', { name: 'Open invitation' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('That isn’t an invitation link.');
@@ -1164,6 +1179,9 @@ describe('the context switcher’s lifecycle actions', () => {
 
     const link = 'https://a.example.com/c/remote-a/join#invite=secret';
     fireEvent.change(field, { target: { value: link } });
+    // Where it will open is said before it opens.
+    expect(screen.getByText('Opens on a.example.com')).toBeInTheDocument();
+    expect(field).toHaveAccessibleDescription('Opens on a.example.com');
     fireEvent.click(screen.getByRole('button', { name: 'Open invitation' }));
     expect(mockOpenExternalLink).toHaveBeenCalledWith(link);
     await waitFor(() => expect(screen.queryByLabelText('Invitation link')).not.toBeInTheDocument());

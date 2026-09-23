@@ -1,3 +1,9 @@
+---
+covers:
+  - 'feat(client): route community switcher actions to the right authority'
+  - 'fix(client): make community switcher links say where they go'
+---
+
 ### Added
 
 - The context switcher now has a **Manage** menu for the community you have open. **Invite people**, **Community settings** and **Leave community** open that community's own site, at the right page, where it checks your sign-in. The DorkOS app's own settings stay under **Workspace settings**, so the two never mix. **Disconnect** asks first, then removes only that community from this app. You stay a member (DOR-2185).

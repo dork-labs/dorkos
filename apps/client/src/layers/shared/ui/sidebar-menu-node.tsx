@@ -19,6 +19,7 @@ import {
   useCallback,
   useContext,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -27,7 +28,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react';
-import { Check, MoreVertical, type LucideIcon } from 'lucide-react';
+import { Check, ExternalLink, MoreVertical, type LucideIcon } from 'lucide-react';
 import { cn } from '@/layers/shared/lib/utils';
 import {
   SIDEBAR_ACTIONS_ATTRIBUTE,
@@ -122,6 +123,12 @@ export interface SidebarMenuActionNode {
    * the same rule `shortcuts.ts` spells `desktopOnly`, on another surface.
    */
   hint?: string;
+  /**
+   * The action leaves the app for another site. The row gets a trailing
+   * external-link mark, and its accessible name says where it goes, so
+   * nobody chooses it expecting to stay put.
+   */
+  external?: { host: string };
   /** Perform it. */
   run: () => void;
 }
@@ -226,7 +233,9 @@ const SHEET_ROW_CLASS = cn(
 const SheetCloseContext = createContext<() => void>(() => {});
 
 /** The id a flattened submenu's heading carries, so its group can be named by it. */
-const SheetGroupLabelIdContext = createContext<string | undefined>(undefined);
+const SheetGroupLabelIdContext = createContext<
+  { id: string; report: (present: boolean) => void } | undefined
+>(undefined);
 
 /**
  * The value a `radio` node's options are being compared against, and where a
@@ -329,11 +338,14 @@ function SheetSeparator() {
  */
 function SheetGroup({ children }: { children?: ReactNode }) {
   // Named by its heading, so "Move up" under "Manage Alpha" is read with the
-  // name it acts on rather than as a bare verb.
+  // name it acts on rather than as a bare verb. The heading reports itself on
+  // mount, so a group without one never points at an id that is not there.
   const labelId = useId();
+  const [labelled, setLabelled] = useState(false);
+  const label = useMemo(() => ({ id: labelId, report: setLabelled }), [labelId]);
   return (
-    <SheetGroupLabelIdContext.Provider value={labelId}>
-      <div role="group" aria-labelledby={labelId}>
+    <SheetGroupLabelIdContext.Provider value={label}>
+      <div role="group" aria-labelledby={labelled ? labelId : undefined}>
         {children}
       </div>
     </SheetGroupLabelIdContext.Provider>
@@ -357,10 +369,15 @@ function SheetGroupLabel({
   children?: ReactNode;
   'data-menu-item-id'?: string;
 }) {
-  const labelId = useContext(SheetGroupLabelIdContext);
+  const label = useContext(SheetGroupLabelIdContext);
+  useLayoutEffect(() => {
+    if (!label) return;
+    label.report(true);
+    return () => label.report(false);
+  }, [label]);
   return (
     <div
-      id={labelId}
+      id={label?.id}
       data-menu-group-id={id}
       className="text-sidebar-foreground/60 text-2xs flex items-center gap-2 px-4 pt-3 pb-1 font-medium"
     >
@@ -523,7 +540,9 @@ function renderNodes(nodes: SidebarMenuNode[], slots: SidebarMenuSlots): ReactNo
               <Icon className="mr-2 size-4" />
               {node.label}
             </SubTrigger>
-            <SubContent className="w-48">{renderNodes(node.items, slots)}</SubContent>
+            {/* A floor, not a fixed width: a row with a trailing mark keeps its
+                label on one line instead of wrapping at 12rem. */}
+            <SubContent className="max-w-72 min-w-48">{renderNodes(node.items, slots)}</SubContent>
           </Sub>
         );
       }
@@ -542,6 +561,15 @@ function renderNodes(nodes: SidebarMenuNode[], slots: SidebarMenuSlots): ReactNo
           >
             <Icon className="mr-2 size-4" />
             {node.opensInput ? `${node.label}…` : node.label}
+            {node.external !== undefined && (
+              <>
+                <span className="sr-only">, opens on {node.external.host}</span>
+                <ExternalLink
+                  aria-hidden
+                  className="text-muted-foreground/70 ml-auto size-3.5 shrink-0"
+                />
+              </>
+            )}
             {node.hint !== undefined && (
               <span className="text-muted-foreground/60 text-2xs ml-auto pl-3 tabular-nums">
                 {node.hint}

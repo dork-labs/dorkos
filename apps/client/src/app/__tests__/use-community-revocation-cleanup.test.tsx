@@ -153,6 +153,33 @@ describe('useCommunityRevocationCleanup', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
+  it('does nothing for a Community that was already waiting to reconnect', async () => {
+    rows = [row('a', 'reconnect-required'), row('b', 'connected')];
+    commitCommunityRouteEpoch(JSON.stringify(['community', 'a', 'room', null]));
+    mount();
+    await waitFor(() =>
+      expect(client.getQueryData(communityKeys.connections(authority))).toBeDefined()
+    );
+    const before = getCommunityConnectionGeneration('a');
+
+    // A new list (B renamed) so the watcher really runs again, while A stays
+    // exactly where it was.
+    const renamed = { ...row('b', 'connected'), label: 'Beta renamed' };
+    await answer([row('a', 'reconnect-required'), renamed]);
+    await waitFor(() =>
+      expect(
+        client
+          .getQueryData<CommunityConnectionDescriptor[]>(communityKeys.connections(authority))
+          ?.find((item) => item.ref === 'b')?.label
+      ).toBe('Beta renamed')
+    );
+
+    expect(getCommunityConnectionGeneration('a')).toBe(before);
+    expect(privateRows('a')).toEqual([['A private']]);
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+  });
+
   it('only settles the route after a disconnect this tab already cleaned up', async () => {
     commitCommunityRouteEpoch(JSON.stringify(['community', 'a', 'room', null]));
     mount();

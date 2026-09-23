@@ -687,8 +687,9 @@ export function parseCommunitySettingsPath(
 }
 
 /**
- * Whether a pasted value is a Community invitation link: an http(s) address
- * whose path is a Community's join page and whose fragment carries the invite.
+ * Whether a pasted value is a Community invitation link: an https address (or
+ * plain http on this machine) with no sign-in in it, whose path is a
+ * Community's join page and whose fragment carries the invite.
  *
  * The fragment never reaches a server, which is why the link can be opened as
  * it is without the DorkOS app reading or keeping the invite itself.
@@ -702,7 +703,12 @@ export function isCommunityInvitationUrl(value: string): boolean {
   } catch {
     return false;
   }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+  // A link that carries a sign-in in its address is never one a Community issues.
+  if (url.username || url.password) return false;
+  // Plain http only for a Community on this machine; anywhere else the invite
+  // would cross the network unencrypted.
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) return false;
   if (!/^\/(?:c\/[^/]+\/)?join\/?$/u.test(url.pathname)) return false;
   const fragment = new URLSearchParams(url.hash.slice(1));
   return Boolean(fragment.get('invite') ?? fragment.get('token'));

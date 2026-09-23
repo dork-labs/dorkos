@@ -82,7 +82,7 @@ describe('buildCommunityContextNodes', () => {
     ]);
   });
 
-  it('puts the selected Community’s actions first, with the two ways out marked destructive', () => {
+  it('puts the selected Community’s actions first, with only the local disconnect drawn as destructive', () => {
     const connection = descriptor('connected', 'verified');
     const [manage] = buildCommunityContextNodes({
       ...handlers,
@@ -97,7 +97,6 @@ describe('buildCommunityContextNodes', () => {
     if (manage!.kind !== 'submenu') return;
     expect(manage.label).toBe('Manage Alpha');
     expect(manage.items.map((node) => node.id)).toEqual([
-      'community-host-note',
       'community-invite',
       'community-settings',
       'community-move-down',
@@ -106,6 +105,14 @@ describe('buildCommunityContextNodes', () => {
       'community-leave',
     ]);
     const destructive = manage.items.filter((node) => node.kind === 'action' && node.destructive);
-    expect(destructive.map((node) => node.id)).toEqual(['community-disconnect', 'community-leave']);
+    // Leaving opens the Community's own confirming page, so it is not drawn as
+    // an immediate destructive act here.
+    expect(destructive.map((node) => node.id)).toEqual(['community-disconnect']);
+    const external = manage.items.filter((node) => node.kind === 'action' && node.external);
+    expect(external.map((node) => node.id)).toEqual([
+      'community-invite',
+      'community-settings',
+      'community-leave',
+    ]);
   });
 });

@@ -50,6 +50,8 @@ export function JoinCommunityDialog({ open, onOpenChange }: JoinCommunityDialogP
     onOpenChange(next);
   }
 
+  const host = isCommunityInvitationUrl(link) ? new URL(link.trim()).host : null;
+
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!isCommunityInvitationUrl(link)) {
@@ -80,12 +82,17 @@ export function JoinCommunityDialog({ open, onOpenChange }: JoinCommunityDialogP
               placeholder="https://community.example.com/c/…/join#invite=…"
               value={link}
               aria-invalid={invalid || undefined}
-              aria-describedby={invalid ? `${id}-error` : undefined}
+              aria-describedby={invalid ? `${id}-error` : host !== null ? `${id}-host` : undefined}
               onChange={(event) => {
                 setLink(event.target.value);
                 setInvalid(false);
               }}
             />
+            {host !== null && (
+              <p id={`${id}-host`} className="text-muted-foreground text-sm">
+                Opens on {host}
+              </p>
+            )}
             {invalid && (
               <p id={`${id}-error`} role="alert" className="text-destructive text-sm">
                 That isn’t an invitation link. Copy the whole link from the invitation you were

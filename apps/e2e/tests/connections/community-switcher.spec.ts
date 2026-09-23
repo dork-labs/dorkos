@@ -235,6 +235,9 @@ async function stubCommunitySite(page: Page) {
 async function openManageAlpha(page: Page) {
   await page.goto('/channels?community=alpha&id=general');
   await new BasePage(page).waitForAppReady();
+  // The menu focuses the selected row once, when it opens; wait until the
+  // connection list has landed so that row exists to be focused.
+  await expect(page.getByTestId('sidebar-header-block')).toHaveAccessibleName('Alpha menu');
   await page.getByTestId('sidebar-header-block').focus();
   await page.keyboard.press('Meta+Shift+K');
   await expect(page.getByRole('menuitemradio', { name: /Alpha/ })).toBeFocused();
@@ -320,7 +323,9 @@ test('Joining with an invitation opens the link on the Community’s site, not a
 }) => {
   await mockCommunitySwitcher(page);
   await stubCommunitySite(page);
-  await page.goto('/');
+  // Home's composer takes focus a beat after load, which can pull it out of an
+  // open menu; start from a page without one.
+  await page.goto('/tasks');
   await new BasePage(page).waitForAppReady();
   await page.getByTestId('sidebar-header-block').focus();
   await page.keyboard.press('Meta+Shift+K');
@@ -361,8 +366,13 @@ test('Community actions fit the 390px phone sheet', async ({ page }, testInfo) =
   await page.getByTestId('sidebar-header-block').click();
   const manage = page.getByRole('group', { name: 'Manage Alpha' });
   await expect(manage).toBeVisible();
-  for (const name of ['Invite people', 'Community settings', 'Disconnect…', 'Leave community'])
-    await expect(manage.getByRole('menuitem', { name })).toBeVisible();
+  // Rows that leave the app say where, in their accessible names.
+  for (const name of ['Invite people', 'Community settings', 'Leave community…']) {
+    const row = manage.getByRole('menuitem', { name });
+    await expect(row).toBeVisible();
+    await expect(row).toHaveAccessibleName(/opens on alpha\.example\.test$/);
+  }
+  await expect(manage.getByRole('menuitem', { name: 'Disconnect…', exact: true })).toBeVisible();
   const add = page.getByRole('group', { name: 'Add community' });
   await add.scrollIntoViewIfNeeded();
   for (const name of ['Connect a community', 'Join with an invitation…', 'Run your own community'])

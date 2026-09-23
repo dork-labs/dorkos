@@ -22,7 +22,6 @@ import {
   ArrowDown,
   ArrowUp,
   BookOpen,
-  ExternalLink,
   Link2,
   LogOut,
   Plus,
@@ -123,19 +122,16 @@ export function buildCommunityContextNodes(model: CommunityContextActionsModel):
   if (selected) {
     const { connection, availability } = selected;
     const items: SidebarMenuNode[] = [];
-    if (availability.hostReachable)
-      items.push({
-        kind: 'note',
-        id: 'community-host-note',
-        icon: ExternalLink,
-        text: `Invites, settings and leaving open on ${hostName(connection.pinnedOrigin)}`,
-      });
+    // Each row that leaves the app says so on the row itself: a trailing
+    // external-link mark, and "opens on <host>" in its accessible name.
+    const external = { host: hostName(connection.pinnedOrigin) };
     if (availability.canInvite)
       items.push({
         kind: 'action',
         id: 'community-invite',
         label: 'Invite people',
         icon: UserPlus,
+        external,
         run: model.onInvite,
       });
     if (availability.canOpenSettings)
@@ -144,6 +140,7 @@ export function buildCommunityContextNodes(model: CommunityContextActionsModel):
         id: 'community-settings',
         label: 'Community settings',
         icon: Settings,
+        external,
         run: model.onOpenSettings,
       });
     if (selected.canMoveUp)
@@ -178,7 +175,11 @@ export function buildCommunityContextNodes(model: CommunityContextActionsModel):
         id: 'community-leave',
         label: 'Leave community',
         icon: LogOut,
-        destructive: true,
+        // Not drawn as destructive: choosing it only opens the Community's own
+        // page, which asks for the password and confirms before anything ends.
+        // The ellipsis says more is asked for; the mark says where.
+        opensInput: true,
+        external,
         run: model.onLeave,
       });
     nodes.push({
