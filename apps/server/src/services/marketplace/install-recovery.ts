@@ -667,5 +667,8 @@ async function removePath(target: string): Promise<void> {
 export const _internal = {
   removePath,
   move: atomicMove,
-  statTarget: lstat,
+  // A wrapper, not `lstat` itself: reading the import here would run at module
+  // load, and a test that mocks `node:fs/promises` without `lstat` would then
+  // fail just by importing anything that reaches the install engine.
+  statTarget: (target: string) => lstat(target),
 };
