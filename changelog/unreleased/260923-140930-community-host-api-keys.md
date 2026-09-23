@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): add host API keys for programs that manage communities'
+  - 'fix(community): refuse re-rotating a replaced host key and harden key parsing'
 ---
 
 ### Added

@@ -14,6 +14,9 @@ CREATE TABLE host_api_keys (
   last_used_at timestamptz,
   revoked_at timestamptz,
   revoked_by_user_id text REFERENCES "user"(id),
+  -- Set once, when the key is rotated. A rotated key only lives out its overlap and is never
+  -- rotated again, so a successor's lifetime always comes from the key as it was issued.
+  successor_id uuid REFERENCES host_api_keys(id),
   CONSTRAINT host_api_keys_label CHECK (label = btrim(label) AND char_length(label) BETWEEN 1 AND 80),
   CONSTRAINT host_api_keys_prefix CHECK (prefix ~ '^dkh_[A-Za-z0-9_-]{6}$'),
   CONSTRAINT host_api_keys_secret_hash CHECK (secret_hash ~ '^[a-f0-9]{64}$'),
@@ -25,7 +28,8 @@ CREATE TABLE host_api_keys (
     (issued_via = 'browser' AND issued_by_user_id IS NOT NULL)
     OR (issued_via = 'command' AND issued_by_user_id IS NULL)
   ),
-  CONSTRAINT host_api_keys_revoker CHECK (revoked_by_user_id IS NULL OR revoked_at IS NOT NULL)
+  CONSTRAINT host_api_keys_revoker CHECK (revoked_by_user_id IS NULL OR revoked_at IS NOT NULL),
+  CONSTRAINT host_api_keys_successor CHECK (successor_id IS NULL OR expires_at IS NOT NULL)
 );
 CREATE INDEX host_api_keys_created_idx ON host_api_keys(created_at DESC, id);
 

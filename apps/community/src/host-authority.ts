@@ -5,7 +5,7 @@ import type { CommunityAdminHostApiKeyScopeSchema } from '@dorkos/shared/communi
 import type { CommunityAuth } from './auth.js';
 import { requireSessionUser } from './data.js';
 import { ApiError } from './http.js';
-import { HOST_API_KEY_PATTERN, hashSecret } from './security.js';
+import { HOST_API_KEY_PATTERN, bearerCredential, hashSecret } from './security.js';
 
 /** One host API key scope. No scope reaches community content or manages keys. */
 export type HostApiKeyScope = z.infer<typeof CommunityAdminHostApiKeyScopeSchema>;
@@ -151,7 +151,7 @@ export function createHostAuthority(deps: {
     async require(c, scope) {
       const authorization = c.req.header('authorization');
       if (authorization === undefined) return requireHostPerson(c, auth, pool);
-      const secret = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+      const secret = bearerCredential(authorization) ?? '';
       const at = now();
       const key = HOST_API_KEY_PATTERN.test(secret)
         ? await pool.query<{ id: string; scopes: HostApiKeyScope[] }>(
@@ -165,10 +165,10 @@ export function createHostAuthority(deps: {
         limitKeyMiss(c);
         throw new ApiError(401, 'UNAUTHENTICATED', 'A valid host API key is required.');
       }
-      await touch(row.id, at);
       if (!row.scopes.includes(scope)) {
         throw new ApiError(403, 'FORBIDDEN', 'This key does not allow that action.');
       }
+      await touch(row.id, at);
       return { kind: 'api_key', keyId: row.id, scopes: row.scopes };
     },
     async requireSession(c) {

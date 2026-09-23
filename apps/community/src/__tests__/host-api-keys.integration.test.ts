@@ -350,11 +350,18 @@ it('rows 5 and 16: a key creates and abandons a pending community, audited as th
     'read C'
   );
   expect((await single.json()).lifecycle).toBe('pending_owner');
+  // Limits a host set on the unclaimed community leave with it.
+  await h.pool.query('INSERT INTO community_limits(community_id,max_active_members) VALUES($1,3)', [
+    c,
+  ]);
   await expectStatus(
     await call(`/api/v1/host/communities/${c}`, { method: 'DELETE', bearer: keys.all.secret }),
     204,
     'abandon C'
   );
+  expect(
+    (await h.pool.query('SELECT 1 FROM community_limits WHERE community_id=$1', [c])).rowCount
+  ).toBe(0);
 
   const asKey = {
     actor_kind: 'api_key',
@@ -544,6 +551,22 @@ it('rows 11, 13, and 14: revoked, expired, unknown, and member credentials are a
     (await list({ headers: { authorization: 'Basic abc' }, cookie: operatorCookie })).status
   ).toBe(401);
   expect((await list({ bearer: memberBearer })).status).toBe(401);
+  // The scheme name is case-insensitive: a lowercase bearer is still a key, and still refused
+  // on content routes before any lookup.
+  expect((await list({ headers: { authorization: `bearer ${keys.read.secret}` } })).status).toBe(
+    200
+  );
+  // /pairings/start needs no credential, so only the key guard can refuse it.
+  const pairings = await counts();
+  expect(
+    (
+      await call(`${tenant(a)}/pairings/start`, {
+        headers: { authorization: `BEARER  ${keys.all.secret}`, origin: '' },
+        body: { installName: 'Cased', challenge: 'x'.repeat(43), scopes: ['read'] },
+      })
+    ).status
+  ).toBe(401);
+  expect(await counts()).toEqual(pairings);
   // Without any header the same cookie is the operator's own authority again.
   expect((await list({ cookie: operatorCookie })).status).toBe(200);
 });
@@ -602,7 +625,19 @@ it('touches last use at most once a minute', async () => {
   expect(await lastUsed()).toBe(first);
   clockOffsetMs = 2 * 60_000;
   await call('/api/v1/host/communities', { bearer: keys.read.secret });
-  expect(await lastUsed()).toBeGreaterThan(first);
+  const second = await lastUsed();
+  expect(second).toBeGreaterThan(first);
+  // A request the key's scopes refuse is not a use.
+  clockOffsetMs = 5 * 60_000;
+  expect(
+    (
+      await call(`/api/v1/host/communities/${a}/owner-claims/reissue`, {
+        bearer: keys.read.secret,
+        body: {},
+      })
+    ).status
+  ).toBe(403);
+  expect(await lastUsed()).toBe(second);
   clockOffsetMs = 0;
 });
 
@@ -661,7 +696,35 @@ it('keeps a rotated key working for the overlap and refuses it one minute after'
   expect(
     (await auditRows('api_key.rotate')).map((row) => [row.actor_kind, row.subject_api_key_id])
   ).toEqual([['person', old.id]]);
-  // A rotated-out or revoked key cannot be rotated again.
+  // A key in its overlap was already replaced: rotating it again would mint a second successor
+  // whose lifetime came from the shortened overlap. Only its successor rotates.
+  expect(
+    (
+      await call(`/api/v1/host/api-keys/${old.id}/rotate`, {
+        cookie: operatorCookie,
+        body: { overlapMinutes: 5, password: TENANCY_PASSWORD },
+      })
+    ).status
+  ).toBe(409);
+  const next = await expectStatus(
+    await call(
+      `/api/v1/host/api-keys/${successor.key.id}/rotate`,
+      { cookie: operatorCookie, body: { overlapMinutes: 5, password: TENANCY_PASSWORD } },
+      true
+    ),
+    201,
+    'rotate successor'
+  );
+  const third = await next.json();
+  secrets.add(third.secret);
+  secrets.add(hashSecret(third.secret));
+  expect(Date.parse(third.key.expiresAt) - Date.parse(third.key.createdAt)).toBe(
+    90 * 24 * 60 * 60_000
+  );
+  expect(
+    (await h.pool.query('SELECT successor_id FROM host_api_keys WHERE id=$1', [old.id])).rows
+  ).toEqual([{ successor_id: successor.key.id }]);
+  // A revoked key cannot be rotated either.
   expect(
     (
       await call(`/api/v1/host/api-keys/${keys.revoked.id}/rotate`, {
@@ -720,17 +783,33 @@ it('row 15: no response or log line carries a key secret, a hash, or a claim tok
   }
 });
 
-it('counts failed key attempts against the caller', async () => {
-  // Purpose: fails if unknown keys can be tried without limit from one address.
-  const statuses: number[] = [];
-  for (let attempt = 0; attempt < 101; attempt++) {
-    statuses.push(
-      (await h.call('/api/v1/host/communities', { bearer: mintHostApiKeySecret() })).status
+it('refuses the 21st failed key attempt from one caller, and never a valid key', async () => {
+  // Purpose: fails if unknown keys can be tried without limit from one address, if the default
+  // moved, or if the limiter locks out a program that holds a valid key.
+  // A host of its own, so earlier misses in this file do not share the caller's bucket.
+  const limited = await startTenancyHarness('host_keys_limit', { hostKeyAttemptsPerMinute: 20 });
+  try {
+    const issued = await runHostKeyCommand(limited.pool, {
+      kind: 'issue',
+      label: 'Valid',
+      scopes: ['communities:read'],
+      expiresInDays: null,
+    });
+    if (issued.kind !== 'issue') throw new Error('expected an issued key');
+    const statuses: number[] = [];
+    for (let attempt = 1; attempt <= 21; attempt++) {
+      statuses.push(
+        (await limited.call('/api/v1/host/communities', { bearer: mintHostApiKeySecret() })).status
+      );
+    }
+    expect(statuses.slice(0, 20)).toEqual(Array(20).fill(401));
+    expect(statuses[20]).toBe(429);
+    expect((await limited.call('/api/v1/host/communities', { bearer: issued.secret })).status).toBe(
+      200
     );
-    if (statuses.at(-1) === 429) break;
+  } finally {
+    await limited.close();
   }
-  expect(statuses.at(-1)).toBe(429);
-  expect(new Set(statuses.slice(0, -1))).toEqual(new Set([401]));
 });
 
 it('deletes a community’s limit rows with the tenant', async () => {

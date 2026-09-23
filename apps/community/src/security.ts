@@ -17,7 +17,12 @@ export const HOST_API_KEY_PATTERN = /^dkh_[A-Za-z0-9_-]{43}$/;
 
 /** Whether a bearer credential claims to be a host API key, so content routes refuse it unread. */
 export function isHostApiKeyBearer(authorization: string | undefined): boolean {
-  return authorization?.startsWith('Bearer dkh_') ?? false;
+  return /^bearer\s+dkh_/i.test(authorization ?? '');
+}
+
+/** The credential in an `Authorization: Bearer` header; the scheme name is case-insensitive. */
+export function bearerCredential(authorization: string | undefined): string | null {
+  return /^bearer\s+(\S+)$/i.exec(authorization ?? '')?.[1] ?? null;
 }
 
 /** Mint a host API key secret. The `dkh_` prefix lets secret scanners and log filters find a leak. */

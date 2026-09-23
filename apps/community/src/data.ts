@@ -2,7 +2,13 @@ import type { Pool, PoolClient } from 'pg';
 import type { Context } from 'hono';
 import type { CommunityAuth } from './auth.js';
 import { ApiError } from './http.js';
-import { hashSecret, isHostApiKeyBearer, readCookie, verifyValue } from './security.js';
+import {
+  bearerCredential,
+  hashSecret,
+  isHostApiKeyBearer,
+  readCookie,
+  verifyValue,
+} from './security.js';
 import type { CommunityConfig } from './config.js';
 import { resolveCommunityContext, type CommunityContext } from './tenant-context.js';
 
@@ -51,7 +57,7 @@ function bearer(c: Context): string | null {
   if (isHostApiKeyBearer(header)) {
     throw new ApiError(401, 'UNAUTHENTICATED', 'Host API keys cannot reach community content.');
   }
-  return header?.startsWith('Bearer ') ? header.slice(7) : null;
+  return bearerCredential(header);
 }
 
 /** Lock the selected community and refuse member traffic outside its active lifecycle. */

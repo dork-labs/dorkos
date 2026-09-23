@@ -11,6 +11,7 @@ import {
   primaryKey,
   check,
   foreignKey,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -167,6 +168,7 @@ export const hostApiKeys = pgTable(
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokedByUserId: text('revoked_by_user_id').references(() => users.id),
+    successorId: uuid('successor_id').references((): AnyPgColumn => hostApiKeys.id),
   },
   (table) => [
     index('host_api_keys_created_idx').on(table.createdAt.desc(), table.id),
@@ -187,6 +189,10 @@ export const hostApiKeys = pgTable(
     check(
       'host_api_keys_revoker',
       sql`${table.revokedByUserId} IS NULL OR ${table.revokedAt} IS NOT NULL`
+    ),
+    check(
+      'host_api_keys_successor',
+      sql`${table.successorId} IS NULL OR ${table.expiresAt} IS NOT NULL`
     ),
   ]
 );

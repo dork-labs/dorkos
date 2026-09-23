@@ -87,14 +87,15 @@ async function createPendingCommunity(
   client: PoolClient,
   input: {
     actor: HostActor;
-    now: Date;
+    /** Read after the creation lock, so a key that expires while this waits is refused. */
+    now: () => Date;
     body: z.infer<typeof CommunityAdminCreateRequestSchema>;
     tokenHash: string;
     expiresAt: Date;
   }
 ): Promise<{ row: HostCommunityRow; grantId: string; expiresAt: Date; replayed: boolean }> {
   await client.query('SELECT pg_advisory_xact_lock(77281503)');
-  await assertHostActor(client, input.actor, input.now);
+  await assertHostActor(client, input.actor, input.now());
   const hash = payloadHash(input.body);
   const receipt = await client.query<{
     payload_hash: string;
@@ -283,7 +284,7 @@ export function registerHostRoutes(
     const create = (client: PoolClient) =>
       createPendingCommunity(client, {
         actor,
-        now: now(),
+        now,
         body,
         tokenHash: hashSecret(token),
         expiresAt,
@@ -423,6 +424,8 @@ export function registerHostRoutes(
         communityId,
       ]);
       await client.query('DELETE FROM bootstrap_grants WHERE community_id=$1', [communityId]);
+      // Host-set limits are metadata the host may give an unclaimed community; they go with it.
+      await client.query('DELETE FROM community_limits WHERE community_id=$1', [communityId]);
       await client.query('DELETE FROM communities WHERE id=$1', [communityId]);
       await recordHostAudit(client, actor, {
         action: 'community.abandon',

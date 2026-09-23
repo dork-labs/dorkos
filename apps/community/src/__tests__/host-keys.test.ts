@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { parseHostKeyCommand } from '../host-keys.js';
-import { HOST_API_KEY_PATTERN, isHostApiKeyBearer, mintHostApiKeySecret } from '../security.js';
+import {
+  HOST_API_KEY_PATTERN,
+  bearerCredential,
+  isHostApiKeyBearer,
+  mintHostApiKeySecret,
+} from '../security.js';
 
 describe('parseHostKeyCommand', () => {
   // Purpose: the offline command is the headless way in; a typo must never issue a wider key.
@@ -58,5 +63,10 @@ describe('host API key secrets', () => {
     expect(isHostApiKeyBearer(`Bearer ${secret}`)).toBe(true);
     expect(isHostApiKeyBearer('Bearer member-grant')).toBe(false);
     expect(isHostApiKeyBearer(undefined)).toBe(false);
+    // Auth scheme names are case-insensitive (RFC 9110), so casing cannot smuggle a key past.
+    expect(isHostApiKeyBearer(`bearer ${secret}`)).toBe(true);
+    expect(isHostApiKeyBearer(`BEARER   ${secret}`)).toBe(true);
+    expect(bearerCredential(`bearer ${secret}`)).toBe(secret);
+    expect(bearerCredential('Basic abc')).toBeNull();
   });
 });

@@ -123,14 +123,23 @@ export async function rotateHostApiKey(
     created_at: Date;
     expires_at: Date | null;
     revoked_at: Date | null;
+    successor_id: string | null;
   }>(
-    'SELECT label,scopes,created_at,expires_at,revoked_at FROM host_api_keys WHERE id=$1 FOR UPDATE',
+    `SELECT label,scopes,created_at,expires_at,revoked_at,successor_id
+     FROM host_api_keys WHERE id=$1 FOR UPDATE`,
     [input.keyId]
   );
   const old = current.rows[0];
   if (!old) throw new ApiError(404, 'NOT_FOUND', 'Host API key not found.');
   if (old.revoked_at || (old.expires_at && old.expires_at <= input.now)) {
     throw new ApiError(409, 'STATE_CONFLICT', 'Only a live key can be rotated.');
+  }
+  if (old.successor_id) {
+    throw new ApiError(
+      409,
+      'STATE_CONFLICT',
+      'This key was already replaced. Rotate its successor.'
+    );
   }
   const overlapEnd = new Date(input.now.getTime() + input.overlapMinutes * 60_000);
   const previousKeyExpiresAt =
@@ -152,6 +161,10 @@ export async function rotateHostApiKey(
     issuer: input.issuer,
     now: input.now,
   });
+  await client.query('UPDATE host_api_keys SET successor_id=$2 WHERE id=$1', [
+    input.keyId,
+    successor.key.id,
+  ]);
   return { ...successor, previousKeyExpiresAt };
 }
 
