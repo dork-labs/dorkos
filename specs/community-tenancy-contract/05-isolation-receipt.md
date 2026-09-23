@@ -110,6 +110,8 @@ The receipt is checked in two steps, and only the second one decides whether a p
 - `apps/community/src/__tests__/foundation.integration.test.ts` — rejects a channel create if admin authority is removed while the insert waits
 - `apps/community/src/__tests__/foundation.integration.test.ts` — refuses a read cursor when membership is revoked before its channel lock
 
+Scope: only pairing approval has a held-lock test that removes the member between the pre-check and the transaction (the first proof above). The other three parts rest on existing tests. Invite redemption relies on the admission test "admits exactly one contender for the final seat and leaves the other unadmitted". Ownership transfer relies on "does not deadlock owner transfer against a successor ejecting the owner’s agent" and the forced-overlap transfer test above. Cross-tenant relations rely on the foundation tests "rejects a channel create if admin authority is removed while the insert waits" and "refuses a read cursor when membership is revoked before its channel lock", plus the hostile requests in the concurrency burst.
+
 ### M11
 
 > community switching closes A SSE before B data enters cache; reconnect cursors cannot cross tenants.
