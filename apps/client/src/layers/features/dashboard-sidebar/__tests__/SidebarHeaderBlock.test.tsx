@@ -321,6 +321,10 @@ describe('SidebarHeaderBlock', () => {
     // the footer menu deliberately does not repeat these rows, so a phone that
     // lost them here would have no way to reach them at all.
     renderMobileSwitcher();
+    // The phone trigger is an icon to fit the top bar at 390px, so its name
+    // has to live in its accessible name rather than on screen.
+    expect(screen.getByTestId('sidebar-header-block')).toHaveAccessibleName(/Dorian’s team menu/);
+    expect(screen.getByTestId('sidebar-header-block')).not.toHaveTextContent('Dorian’s team');
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
     const sheet = await screen.findByRole('dialog');
     expect(await screen.findByRole('menuitem', { name: /v0\.58\.0 beta/ })).toBeInTheDocument();

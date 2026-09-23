@@ -35,6 +35,11 @@ import { useHeaderBlockMenu } from './use-header-block-menu';
 export interface CommunityContextSwitcherProps {
   /** Extra trigger classes supplied by its persistent chrome. */
   triggerClassName?: string;
+  /**
+   * Draw the trigger as the context's icon instead of its name. The name stays
+   * in the trigger's accessible name and in the menu it opens.
+   */
+  compact?: boolean;
 }
 
 function orderedConnections(
@@ -102,7 +107,10 @@ function focusPageHeading() {
  * close-focus guard (Workspace settings and Account both open a dialog that
  * Radix's focus restore would otherwise blur).
  */
-export function CommunityContextSwitcher({ triggerClassName }: CommunityContextSwitcherProps) {
+export function CommunityContextSwitcher({
+  triggerClassName,
+  compact = false,
+}: CommunityContextSwitcherProps) {
   const menu = useHeaderBlockMenu();
   const guarded = useGuardedMenuNodes(menu.nodes);
   const installationLabel = menu.teamName;
@@ -274,7 +282,13 @@ export function CommunityContextSwitcher({ triggerClassName }: CommunityContextS
           aria-busy={pendingRef !== null || undefined}
           className={triggerClassName}
         >
-          {labelPending ? (
+          {compact ? (
+            selectedRef === undefined ? (
+              <HardDrive className="size-4 shrink-0" aria-hidden />
+            ) : (
+              <UsersRound className="size-4 shrink-0" aria-hidden />
+            )
+          ) : labelPending ? (
             <Skeleton
               className="my-[3px] h-3.5 w-24 rounded-sm"
               data-testid="sidebar-team-name-skeleton"
@@ -282,7 +296,10 @@ export function CommunityContextSwitcher({ triggerClassName }: CommunityContextS
           ) : (
             <span className="truncate">{label}</span>
           )}
-          <ChevronDown className="size-3.5 shrink-0 opacity-50" aria-hidden />
+          <ChevronDown
+            className={compact ? 'size-3 shrink-0 opacity-50' : 'size-3.5 shrink-0 opacity-50'}
+            aria-hidden
+          />
           <span className="sr-only">Choose context</span>
         </button>
       </ResponsiveDropdownMenuTrigger>
@@ -405,9 +422,21 @@ export function CommunityContextSwitcher({ triggerClassName }: CommunityContextS
   );
 }
 
-/** Persistent phone trigger for the same route-owned context model. */
+/**
+ * Persistent phone trigger for the same route-owned context model.
+ *
+ * **An icon, not a name.** It shares a 390px top bar with the route's own
+ * bar, whose tabs and chips have no room to give: at its natural width ("Your
+ * team", ~122px) it pushed those chips past the bar's edge on Home, Tasks and
+ * Team, and truncated to fit Team it read "Y…", which names nothing. The icon
+ * says which kind of place you are in (this DorkOS or a community); the full
+ * name is the trigger's accessible name and is checked in the sheet it opens.
+ */
 export function MobileCommunityContextSwitcher() {
   return (
-    <CommunityContextSwitcher triggerClassName="hover:bg-accent focus-visible:ring-ring flex min-w-0 max-w-40 items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm font-semibold outline-hidden focus-visible:ring-2" />
+    <CommunityContextSwitcher
+      compact
+      triggerClassName="hover:bg-accent focus-visible:ring-ring text-foreground flex shrink-0 items-center rounded-md px-1 py-1.5 outline-hidden focus-visible:ring-2"
+    />
   );
 }

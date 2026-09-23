@@ -10,6 +10,7 @@ covers:
   - 'fix(community): restore the navigation routes and owner fence a merge dropped'
   - 'fix(client): keep the JSON default off FormData and binary request bodies'
   - "fix(client): give phones the header menu's account rows again"
+  - 'fix(client): fit the phone context switcher in the top bar'
 ---
 
 ### Added
