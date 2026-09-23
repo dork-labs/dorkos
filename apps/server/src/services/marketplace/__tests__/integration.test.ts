@@ -27,6 +27,7 @@ import { ADAPTER_PROJECT_PATH_IGNORED_WARNING } from '../flows/install-adapter.j
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../flows/install-shape.js';
 import {
   scanAgentLocalInstalls,
+  scanInstallationRecords,
   scanInstallationsAcrossScopes,
   scanInstalledPackages,
 } from '../installed-scanner.js';
@@ -727,8 +728,11 @@ describe('marketplace install pipeline — integration', () => {
       }
     }
 
-    /** Install valid-plugin 1.0.0 from the marketplace and build a real UpdateFlow. */
-    async function installAndBuildFlow(): Promise<UpdateFlow> {
+    /**
+     * Install valid-plugin 1.0.0 from the marketplace — globally, plus into
+     * each of `projectPaths` — and build a real UpdateFlow.
+     */
+    async function installAndBuildFlow(projectPaths: string[] = []): Promise<UpdateFlow> {
       const { installer, fetcher } = buildInstallerForTests(dorkHome);
       const sourceManager = new MarketplaceSourceManager(dorkHome);
       const source = await sourceManager.add({
@@ -737,6 +741,9 @@ describe('marketplace install pipeline — integration', () => {
       });
       await fetcher.fetchMarketplaceJson(source);
       await installer.install({ name: 'valid-plugin', marketplace: MARKETPLACE });
+      for (const projectPath of projectPaths) {
+        await installer.install({ name: 'valid-plugin', marketplace: MARKETPLACE, projectPath });
+      }
       return new UpdateFlow({ dorkHome, installer, sourceManager, fetcher, logger: noopLogger });
     }
 
@@ -767,6 +774,78 @@ describe('marketplace install pipeline — integration', () => {
         latestVersion: '1.1.0',
         status: 'current',
       });
+    });
+
+    it('updates a global install where it is, even when asked from a project', async () => {
+      // Purpose: the reproduced defect, with the real installer. An apply named
+      // with a project used to delete the global install and reinstall it into
+      // that project.
+      const flow = await installAndBuildFlow();
+      await setMarketplaceVersion('1.1.0', '1.1.0');
+      const projectPath = await mkdtemp(path.join(tmpdir(), 'dorkos-update-project-'));
+
+      try {
+        const result = await flow.run({ name: 'valid-plugin', apply: true, projectPath });
+
+        const globalRoot = path.join(dorkHome, 'plugins', 'valid-plugin');
+        expect(result.applied.map((a) => a.installPath)).toEqual([globalRoot]);
+        expect(await pathExists(globalRoot)).toBe(true);
+        expect(await pathExists(path.join(projectPath, '.dork', 'plugins', 'valid-plugin'))).toBe(
+          false
+        );
+      } finally {
+        await rm(projectPath, { recursive: true, force: true });
+      }
+    });
+
+    it('checks a global and an agent install of one package, and updates each where it is', async () => {
+      // Purpose: the all-packages door end to end. One scan across scopes, two
+      // results, both reinstalled in place, and a rerun that reads current.
+      const agentPath = await mkdtemp(path.join(tmpdir(), 'dorkos-update-agent-'));
+      try {
+        const flow = await installAndBuildFlow([agentPath]);
+        await setMarketplaceVersion('1.1.0', '1.1.0');
+        const scan = () =>
+          scanInstallationRecords(dorkHome, { agents: [{ projectPath: agentPath }] });
+
+        const advisory = await flow.checkInstallations({ installations: await scan() });
+        expect(advisory.checks.map((c) => [c.scope, c.status])).toEqual([
+          ['global', 'update-available'],
+          ['override', 'update-available'],
+        ]);
+
+        const { checks } = await flow.checkInstallations({
+          installations: await scan(),
+          apply: true,
+        });
+        expect(checks.map((c) => c.applied?.installPath)).toEqual([
+          path.join(dorkHome, 'plugins', 'valid-plugin'),
+          path.join(agentPath, '.dork', 'plugins', 'valid-plugin'),
+        ]);
+
+        const rerun = await flow.checkInstallations({ installations: await scan() });
+        expect(rerun.checks.map((c) => [c.installedVersion, c.status])).toEqual([
+          ['1.1.0', 'current'],
+          ['1.1.0', 'current'],
+        ]);
+      } finally {
+        await rm(agentPath, { recursive: true, force: true });
+      }
+    });
+
+    it('leaves every installed package exactly as it was when only checking', async () => {
+      // Purpose: the advisory door is a read. A newer version being available
+      // must not change what is installed.
+      const flow = await installAndBuildFlow();
+      await setMarketplaceVersion('1.1.0', '1.1.0');
+      const before = await scanInstallationsAcrossScopes(dorkHome, []);
+
+      const { checks } = await flow.checkInstallations({
+        installations: await scanInstallationRecords(dorkHome, { agents: [] }),
+      });
+
+      expect(checks[0]?.status).toBe('update-available');
+      expect(await scanInstallationsAcrossScopes(dorkHome, [])).toEqual(before);
     });
 
     it('reports a new version with mismatched files as unknown, and keeps the install listed', async () => {

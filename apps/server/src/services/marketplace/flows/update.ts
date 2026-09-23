@@ -1,12 +1,25 @@
 /**
  * Marketplace package update flow.
  *
- * Advisory by default: enumerates installed packages, works out what
- * installing each one right now would give, and returns the comparison
- * without touching disk. When `apply: true` is set, the flow delegates
- * reinstallation of every package with an update to an injected
- * {@link InstallerLike}, which runs the uninstall-without-purge → install
- * pattern that preserves `.dork/data/` and `.dork/secrets.json` (ADR-0233).
+ * Advisory by default: checks installed packages, works out what installing
+ * each one right now would give, and returns the comparison without touching
+ * any installed package. When `apply` is set, the flow delegates reinstallation
+ * of every installation with an update to an injected {@link InstallerLike},
+ * which runs the uninstall-without-purge → install pattern that preserves
+ * `.dork/data/` and `.dork/secrets.json` (ADR-0233).
+ *
+ * Two doors lead here, and both check {@link InstallationRecord}s from the
+ * installed scanner's one walk rather than walking install roots themselves:
+ *
+ * - {@link UpdateFlow.run} — one package by name, in one scope (the
+ *   per-package route).
+ * - {@link UpdateFlow.checkInstallations} — every installation it is handed,
+ *   one result per installation, each carrying that installation's identity
+ *   (the all-packages door). The caller scans once and passes the records in.
+ *
+ * Either way, an apply reinstalls an installation in the scope it was found in —
+ * never the scope the request named — so updating a global package from a
+ * project never moves it into that project (ADR 260923-163034).
  *
  * "What installing now would give" is answered by the installer's own
  * resolve → stage → validate pipeline (`MarketplaceInstaller.resolveLatest`),
@@ -22,26 +35,19 @@
  *
  * @module services/marketplace/flows/update
  */
-import { readdir } from 'node:fs/promises';
-import type { Dirent } from 'node:fs';
-import path from 'node:path';
 import { gt as semverGt, valid as semverValid } from 'semver';
 import {
   isRealCommitSha,
   resolvePackageVersion,
   type MarketplaceJson,
   type MarketplaceJsonEntry,
+  type PackageType,
   type ResolvedPackageVersion,
   type VersionSource,
 } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
-import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
-import {
-  installKey,
-  installRootsUnder,
-  projectScopeRoot,
-  updateNameOf,
-} from '../lib/install-roots.js';
+import { mapWithConcurrency } from '@dorkos/shared/map-with-concurrency';
+import { updateNameOf } from '../lib/install-roots.js';
 import type {
   InstallRequest,
   InstallResult,
@@ -49,17 +55,33 @@ import type {
   MarketplaceSource,
   ResolveLatestOptions,
 } from '../types.js';
-import { readInstallMetadata, type InstallMetadata } from '../installed-metadata.js';
-import { readInstalledIdentity } from '../installed-scanner.js';
+import {
+  scanInstallationRecords,
+  type InstallationRecord,
+  type PackageScope,
+} from '../installed-scanner.js';
 
 /**
  * How long a commit lookup or a marketplace index fetch is shared between
- * checks. The CLI sends one request per package, so a memo scoped to one
- * `run()` would never span packages; one scoped to the instance with this TTL
- * is "shared within one CLI run or UI burst". Without a refresh, a push made
- * within the last minute can still read as current.
+ * checks. A named `dorkos update <name>` and the app's per-row Update each send
+ * one request per package, so a memo scoped to one call would never span them;
+ * one scoped to the instance with this TTL is "shared within one CLI run or UI
+ * burst". Without a refresh, a push made within the last minute can still read
+ * as current.
  */
 export const UPDATE_MEMO_TTL_MS = 60_000;
+
+/**
+ * How many installations {@link UpdateFlow.checkInstallations} checks at once.
+ *
+ * Each check may `git ls-remote` a repository or stage a package into the
+ * cache, and those are bounded by the fetcher's own timeouts. Four at a time
+ * keeps a whole-install check from opening one git process per installation,
+ * while a slow or unreachable repository holds only its own slot. Concurrent
+ * checks of one repository share a single in-flight lookup through the memo —
+ * including a failing one, which is never kept once it settles.
+ */
+export const UPDATE_CHECK_CONCURRENCY = 4;
 
 /** A ref that is already a full commit SHA — `ls-remote` cannot look one up. */
 const FULL_SHA_RE = /^[0-9a-f]{40}$/i;
@@ -133,25 +155,64 @@ export interface UpdateCheckResult {
   note?: string;
 }
 
-/** A request to check for (and optionally apply) updates. */
+/** A request to check one package by name (and optionally apply its update). */
 export interface UpdateRequest {
-  /** Specific package name; if omitted, check every installed package. */
-  name?: string;
+  /** The package name, as the update check names it (`updateNameOf`). */
+  name: string;
   /** Apply the update (default: advisory only). */
   apply?: boolean;
   /**
    * Project path for project-local installs. Adds that project's own install
-   * roots to the scan (taking precedence over a global package of the same
-   * name) and scopes any applied reinstall to the project.
+   * roots to the scan, where a project install takes precedence over a global
+   * package of the same name. An applied reinstall stays in the scope the
+   * package was found in: a global package is reinstalled globally.
    */
   projectPath?: string;
 }
 
-/** The composite result of an update check. */
+/** The composite result of a one-package update check. */
 export interface UpdateResult {
   checks: UpdateCheckResult[];
   /** Populated only when `apply: true`; one entry per successful reinstall. */
   applied: InstallResult[];
+}
+
+/**
+ * One installation's check, with the installation's identity and, after an
+ * apply, what happened to it. The identity fields are the installed list's own
+ * (`GET /api/marketplace/installed`), so `installPath` joins the two.
+ */
+export interface InstallationUpdateCheck extends UpdateCheckResult {
+  /** Absolute path to the installation; unique per installation, unlike the name. */
+  installPath: string;
+  /** The installed package's type. */
+  type: PackageType;
+  /** `global`, or `agent-local` / `override` for a project or agent install. */
+  scope: PackageScope;
+  /** The project directory holding a non-global installation. */
+  agentPath?: string;
+  /** Registered agent id owning `agentPath`, when the scan knew it. */
+  agentId?: string;
+  /** Registered agent display name owning `agentPath`, when the scan knew it. */
+  agentName?: string;
+  /** Set when an apply reinstalled this installation: what is installed now. */
+  applied?: InstallResult;
+  /** Set when an apply tried to reinstall this installation and failed: why. */
+  applyError?: string;
+}
+
+/** A request to check (and optionally apply) a set of scanned installations. */
+export interface InstallationUpdatesRequest {
+  /** The installations to check, from one `scanInstallationRecords` call. */
+  installations: InstallationRecord[];
+  /** Reinstall every installation whose check is `update-available`. */
+  apply?: boolean;
+}
+
+/** The result of {@link UpdateFlow.checkInstallations}. */
+export interface InstallationUpdatesResult {
+  /** One per installation, in the order the installations were given. */
+  checks: InstallationUpdateCheck[];
 }
 
 /** Constructor dependencies for {@link UpdateFlow}. */
@@ -168,14 +229,6 @@ export interface UpdateFlowDeps {
   logger: Logger;
   /** Clock for the memo TTL; defaults to `Date.now`. */
   now?: () => number;
-}
-
-/** A discovered installed package on disk, with its install sidecar. */
-interface InstalledPackage {
-  name: string;
-  /** From `readDeclaredVersion`; undefined when the package states none. */
-  declaredVersion?: string;
-  metadata: InstallMetadata | null;
 }
 
 /** One check, plus the request that would apply it. */
@@ -201,30 +254,75 @@ type UpdateTarget =
   | { kind: 'none'; note: string };
 
 /**
- * Thrown by the route when a named package is installed in no scope at all.
- * The flow itself cannot tell "not in this scope" from "installed nowhere", so
- * it returns an `unknown` result for a name missing from its scope and leaves
- * the 404 to the route, which can see every scope.
+ * A named package is not installed anywhere the caller can see: in no scope at
+ * all for the per-package route (which can see every scope, while
+ * {@link UpdateFlow.run} sees only its own and answers "not installed in this
+ * scope"), or not among the installations in view for
+ * {@link selectInstallations}. Both routes answer it as a 404.
  */
 export class PackageNotInstalledForUpdateError extends Error {
+  /** Every name that could not be found, in the order the caller gave them. */
+  public readonly packageNames: string[];
+
   /**
-   * Build a `PackageNotInstalledForUpdateError` for the supplied package name.
+   * Build a `PackageNotInstalledForUpdateError` for one or more package names.
    *
-   * @param name - The package name that could not be located on disk.
+   * @param names - The package name, or names, that could not be located.
    */
-  constructor(public readonly packageName: string) {
-    super(`Package not installed: ${packageName}`);
+  constructor(names: string | string[]) {
+    const packageNames = typeof names === 'string' ? [names] : names;
+    super(
+      `${packageNames.length === 1 ? 'Package' : 'Packages'} not installed: ${packageNames.join(', ')}`
+    );
     this.name = 'PackageNotInstalledForUpdateError';
+    this.packageNames = packageNames;
   }
+}
+
+/**
+ * The name an installation is checked and applied under ({@link updateNameOf}):
+ * its manifest name when that is a valid package name, else its directory name.
+ *
+ * @param record - A scanned installation.
+ * @returns The installation's update name.
+ */
+export function installationUpdateName(record: InstallationRecord): string {
+  return updateNameOf(record.package.name, record.package.installPath);
+}
+
+/**
+ * Narrow scanned installations to the named packages. With no names, or an
+ * empty list, every installation is kept. A name matches every installation in
+ * view that goes by it ({@link installationUpdateName}), so the same package in
+ * two scopes is two installations.
+ *
+ * @param records - The installations one scan found.
+ * @param names - The package names to keep; omit for all of them.
+ * @returns The matching installations, in scan order.
+ * @throws {PackageNotInstalledForUpdateError} Naming every name that matched
+ *   nothing, before anything is checked.
+ */
+export function selectInstallations(
+  records: InstallationRecord[],
+  names?: readonly string[]
+): InstallationRecord[] {
+  if (!names || names.length === 0) return records;
+  const wanted = new Set(names);
+  const selected = records.filter((record) => wanted.has(installationUpdateName(record)));
+  const found = new Set(selected.map(installationUpdateName));
+  const missing = [...wanted].filter((name) => !found.has(name));
+  if (missing.length > 0) throw new PackageNotInstalledForUpdateError(missing);
+  return selected;
 }
 
 /**
  * Advisory-by-default update orchestrator for marketplace packages.
  *
- * Run with no `name` to get a comparison for every installed package; pass
- * `name` to narrow to one. Pass `apply: true` to reinstall every package whose
- * check is `update-available`. One instance serves the whole server, and it
- * holds the commit-lookup and index memos (see {@link UPDATE_MEMO_TTL_MS}).
+ * {@link UpdateFlow.run} checks one package by name; {@link
+ * UpdateFlow.checkInstallations} checks every installation it is handed. Both
+ * reinstall `update-available` installations when asked to apply, each in its
+ * own scope. One instance serves the whole server, and it holds the
+ * commit-lookup and index memos (see {@link UPDATE_MEMO_TTL_MS}).
  */
 export class UpdateFlow {
   private readonly commitMemo = new Map<string, MemoEntry<string>>();
@@ -233,41 +331,93 @@ export class UpdateFlow {
   constructor(private readonly deps: UpdateFlowDeps) {}
 
   /**
-   * Execute the update flow.
+   * Check one package by name — the per-package route's door.
    *
-   * @param req - Update request — name filter, apply flag, project path.
-   * @returns One check per installed package in scope (or one `unknown`
-   *   "not installed in this scope" check for a named package missing from
-   *   it), and any applied reinstall results.
+   * Scans the global scope plus, with a `projectPath`, that project's merged
+   * view. When the name is installed in both, the project's installation wins
+   * (it shadows the global one for that project). An apply reinstalls the
+   * matched installation in ITS scope: a global package is reinstalled
+   * globally even when the request named a project. A failed reinstall throws,
+   * so the route can map the error to a status.
+   *
+   * @param req - The package name, apply flag and project path.
+   * @returns One check (or one `unknown` "not installed in this scope" check
+   *   for a name missing from the scope), and the reinstall when applied.
    */
   async run(req: UpdateRequest): Promise<UpdateResult> {
-    const installed = await this.listInstalled(req.projectPath);
+    const records = await scanInstallationRecords(
+      this.deps.dorkHome,
+      req.projectPath ? { projectPath: req.projectPath } : { agents: [] }
+    );
+    const named = records.filter((record) => installationUpdateName(record) === req.name);
+    const match = named.find((record) => record.package.agentPath !== undefined) ?? named[0];
+    if (!match) return { checks: [notInScope(req.name)], applied: [] };
 
-    let planned: PlannedCheck[];
-    if (req.name) {
-      const match = installed.find((pkg) => pkg.name === req.name);
-      planned = match ? [await this.checkOne(match)] : [{ check: notInScope(req.name) }];
-    } else {
-      planned = [];
-      for (const pkg of installed) planned.push(await this.checkOne(pkg));
-    }
-
+    const { check, request } = await this.checkRecord(match);
     const applied: InstallResult[] = [];
     if (req.apply) {
       try {
-        for (const { check, request } of planned) {
-          if (check.status !== 'update-available' || !request) continue;
-          applied.push(
-            await this.deps.installer.update({ ...request, projectPath: req.projectPath })
-          );
+        if (check.status === 'update-available' && request) {
+          applied.push(await this.reinstall(match, request));
         }
       } finally {
         // What was just installed changes what the next check should see.
         this.clearMemos();
       }
     }
+    return { checks: [check], applied };
+  }
 
-    return { checks: planned.map((p) => p.check), applied };
+  /**
+   * Check every installation handed in — the all-packages door. The caller
+   * scans once (`scanInstallationRecords`) and passes the records, so a list and
+   * its check never walk twice.
+   *
+   * Checks run {@link UPDATE_CHECK_CONCURRENCY} at a time and come back in the
+   * order given, each carrying its installation's identity. Nothing is dropped:
+   * an installation that cannot be checked is `unknown`, with the reason.
+   *
+   * With `apply`, every `update-available` installation is reinstalled one at a
+   * time, in order, in its own scope. A failed reinstall is recorded on that
+   * installation as `applyError` and the rest carry on, so one broken package
+   * can never hide what already landed.
+   *
+   * @param req - The scanned installations, and whether to apply.
+   * @returns One check per installation.
+   */
+  async checkInstallations(req: InstallationUpdatesRequest): Promise<InstallationUpdatesResult> {
+    const planned = await mapWithConcurrency(
+      req.installations,
+      UPDATE_CHECK_CONCURRENCY,
+      (record) => this.checkRecord(record)
+    );
+    const checks = planned.map(({ check }, i) =>
+      withIdentity(check, req.installations[i]!.package)
+    );
+
+    if (req.apply) {
+      try {
+        for (const [i, { check, request }] of planned.entries()) {
+          if (check.status !== 'update-available' || !request) continue;
+          const record = req.installations[i]!;
+          try {
+            checks[i]!.applied = await this.reinstall(record, request);
+          } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            this.deps.logger.warn('update-flow: reinstall failed', {
+              packageName: check.packageName,
+              installPath: record.package.installPath,
+              error: reason,
+            });
+            checks[i]!.applyError = reason;
+          }
+        }
+      } finally {
+        this.clearMemos();
+      }
+    }
+
+    return { checks };
   }
 
   /**
@@ -281,95 +431,45 @@ export class UpdateFlow {
   }
 
   /**
-   * Walk every install root in scope ({@link installRootsUnder}:
-   * `plugins/`, `agents/`, `shapes/`), reading each install's identity through
-   * the installed scanner's {@link readInstalledIdentity} — the same reader the
-   * installed list uses, never gated on validity, so a Claude-Code-only
-   * install and one whose version files disagree are both checked — and its
-   * `.dork/install-metadata.json` sidecar. Unreadable installs are skipped so
-   * one malformed install never blocks the check.
+   * Reinstall one installation in the scope it was found in: its project for a
+   * project or agent install, none for a global one.
    *
-   * Those roots hang off one or two scope roots. `dorkHome` is always walked.
-   * When the caller supplied a `projectPath`, that project's own `.dork/` is
-   * walked FIRST — a project install is where `PluginInstallFlow` and
-   * `AgentInstallFlow` land a scoped install, and it shadows a global package
-   * of the same name for that project. That precedence matches the installed
-   * scanner's merged view and the uninstall flow's probe (DOR-994).
-   *
-   * Results are deduplicated by {@link installKey} (install-root kind plus
-   * package name), first root wins — so a project's `plugins/foo` shadows the
-   * global `plugins/foo`, while a global `agents/foo` survives as its own
-   * entry, and each resolves its own marketplace.
-   *
-   * @param projectPath - Project directory to also scan, when the request
-   *   carried one.
    * @internal
    */
-  private async listInstalled(projectPath?: string): Promise<InstalledPackage[]> {
-    const byRootAndName = new Map<string, InstalledPackage>();
-    // A scope root is the directory the install-root subdirectories hang off:
-    // `dorkHome` IS the global `.dork`, and a project's is `<projectPath>/.dork`
-    // (same derivation as `ConflictDetector.detect`). Shapes are global-only, so
-    // a project's `shapes/` simply never exists and its walk yields nothing.
-    const scopeRoots = projectPath
-      ? [projectScopeRoot(projectPath), this.deps.dorkHome]
-      : [this.deps.dorkHome];
-    const roots = scopeRoots.flatMap(installRootsUnder);
-
-    for (const root of roots) {
-      const entries = await readDirSafe(root.dir);
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        // Skip the install engine's own siblings (`<name>.dorkos-bak-<ts>-<uuid>`,
-        // DOR-175) — a backup carries the previous installation's valid
-        // manifest under the same name, so without this guard update-all
-        // would target the backup path as a phantom duplicate package.
-        if (isInstallSiblingName(entry.name)) continue;
-        const installPath = path.join(root.dir, entry.name);
-        const identity = await readInstalledIdentity(installPath);
-        if (!identity) continue;
-        const name = updateNameOf(identity.name, installPath);
-        const key = installKey(root.kind, name);
-        if (byRootAndName.has(key)) continue;
-        byRootAndName.set(key, {
-          name,
-          declaredVersion: identity.declaredVersion,
-          metadata: await readInstallMetadata(installPath),
-        });
-      }
-    }
-
-    return [...byRootAndName.values()];
+  private reinstall(record: InstallationRecord, request: InstallRequest): Promise<InstallResult> {
+    return this.deps.installer.update({ ...request, projectPath: record.package.agentPath });
   }
 
   /**
-   * Check one installed package: find where it would be reinstalled from, ask
-   * the installer what that would give, and compare by Claude Code's chain.
+   * Check one installation: find where it would be reinstalled from, ask the
+   * installer what that would give, and compare by Claude Code's chain. The
+   * installed side is the record's declared version and install sidecar.
    *
    * @internal
    */
-  private async checkOne(pkg: InstalledPackage): Promise<PlannedCheck> {
-    const recorded = pkg.metadata;
+  private async checkRecord(record: InstallationRecord): Promise<PlannedCheck> {
+    const name = installationUpdateName(record);
+    const recorded = record.metadata;
     const installedCommit = isRealCommitSha(recorded?.commitSha) ? recorded.commitSha : undefined;
     const installed = resolvePackageVersion({
-      declaredVersion: pkg.declaredVersion,
+      declaredVersion: record.declaredVersion,
       entryVersion: recorded?.entryVersion,
       commitSha: installedCommit,
     });
 
-    const target = await this.findTarget(pkg);
+    const target = await this.findTarget(name, recorded);
     if (target.kind === 'none') {
       this.deps.logger.warn('update-flow: no marketplace entry found for package', {
-        packageName: pkg.name,
+        packageName: name,
         note: target.note,
       });
-      return { check: unknownCheck(pkg.name, installed, target.note) };
+      return { check: unknownCheck(name, installed, target.note) };
     }
 
     const request: InstallRequest =
       target.kind === 'marketplace'
-        ? { name: pkg.name, marketplace: target.marketplaceName }
-        : { name: pkg.name, source: target.source };
+        ? { name, marketplace: target.marketplaceName }
+        : { name, source: target.source };
     const latest = await this.deps.installer.resolveLatest(request, {
       installed: {
         commitSha: installedCommit,
@@ -380,7 +480,7 @@ export class UpdateFlow {
     });
 
     const marketplace = target.kind === 'marketplace' ? target.marketplaceName : '';
-    const check = compareVersions(pkg.name, marketplace, installed, latest);
+    const check = compareVersions(name, marketplace, installed, latest);
     if (target.kind === 'direct' && target.note) {
       check.note = joinNotes(target.note, check.note);
     }
@@ -400,8 +500,10 @@ export class UpdateFlow {
    *
    * @internal
    */
-  private async findTarget(pkg: InstalledPackage): Promise<UpdateTarget> {
-    const recorded = pkg.metadata;
+  private async findTarget(
+    name: string,
+    recorded: InstallationRecord['metadata']
+  ): Promise<UpdateTarget> {
     if (!recorded?.installedFrom && recorded?.sourceRepo) {
       // No "apply reinstalls from the default branch" note: both direct forms
       // (`name@url`, `github:`) resolve to a ref-less url source, so a recorded
@@ -425,7 +527,7 @@ export class UpdateFlow {
     }
 
     for (const source of candidates) {
-      const entry = await this.findEntry(source, pkg.name, unreachable);
+      const entry = await this.findEntry(source, name, unreachable);
       if (entry) return { kind: 'marketplace', marketplaceName: source.name };
     }
     return {
@@ -617,17 +719,20 @@ function joinNotes(first: string, second: string | undefined): string {
 }
 
 /**
- * Read a directory without throwing on `ENOENT`. Returns an empty array
- * when the directory does not exist so the update flow works cleanly on
- * a fresh dorkHome with no installed packages.
+ * A check plus the installation it belongs to, in the installed list's own
+ * field names so `installPath` joins the two. @internal
  */
-async function readDirSafe(dir: string): Promise<Dirent[]> {
-  try {
-    return await readdir(dir, { withFileTypes: true });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return [];
-    }
-    throw err;
-  }
+function withIdentity(
+  check: UpdateCheckResult,
+  installed: InstallationRecord['package']
+): InstallationUpdateCheck {
+  return {
+    ...check,
+    installPath: installed.installPath,
+    type: installed.type,
+    scope: installed.scope ?? 'global',
+    ...(installed.agentPath !== undefined && { agentPath: installed.agentPath }),
+    ...(installed.agentId !== undefined && { agentId: installed.agentId }),
+    ...(installed.agentName !== undefined && { agentName: installed.agentName }),
+  };
 }
