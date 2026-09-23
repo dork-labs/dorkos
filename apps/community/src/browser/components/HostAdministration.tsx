@@ -96,13 +96,17 @@ export function HostAdministration() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<HostConfirmation | null>(null);
+  const [noticeDays, setNoticeDays] = useState(14);
   const creationAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
 
   const refresh = useCallback(async () => {
     setError('');
     try {
-      const body = await request<{ communities: Community[] }>('/api/v1/host/communities');
+      const body = await request<{ communities: Community[]; deletionNoticeDays: number }>(
+        '/api/v1/host/communities'
+      );
       setCommunities(body.communities);
+      setNoticeDays(body.deletionNoticeDays);
     } catch (cause) {
       setError(describeError(cause));
     }
@@ -328,7 +332,12 @@ export function HostAdministration() {
                       )}
                     </div>
                     <div className="mt-3">
-                      <HostHoldControls community={community} busy={busy} perform={perform} />
+                      <HostHoldControls
+                        community={community}
+                        busy={busy}
+                        noticeDays={noticeDays}
+                        perform={perform}
+                      />
                     </div>
                     {community.lifecycle !== 'deletion_pending' && (
                       <HostCommunityLimits communityId={community.id} name={community.name} />

@@ -1710,8 +1710,12 @@ it('deletes only the due tenant after every owned blob is confirmed absent', asy
       'expires_at',
       'outcome',
       'requested_at',
+      'requested_by',
+      'requested_by_host_actor',
       'retry_count',
     ]);
+    expect(tombstone.requested_by).toBe('owner');
+    expect(tombstone.requested_by_host_actor).toBeNull();
     expect(await sweepCommunityDeletionTombstones(pool)).toBe(0);
     await pool.query(
       "UPDATE community_deletion_tombstones SET requested_at=now()-interval '32 days', completed_at=now()-interval '31 days', expires_at=now()-interval '1 day' WHERE community_id=$1",

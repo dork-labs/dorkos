@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): let a host hold a community and delete it only after a published notice'
+  - 'fix(community): keep a host deletion notice honest through suspension, and name who deleted'
 ---
 
 ### Added

@@ -457,6 +457,7 @@ export function CommunityApp() {
               setSignedOut(true);
             }}
             readOnly={readOnly}
+            held={held}
           />
         ) : selected ? (
           <ChannelView

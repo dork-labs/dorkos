@@ -37,6 +37,8 @@ type Props = {
   /** This browser's session ended; memberships and installations are untouched. */
   onSignedOut: () => void;
   readOnly?: boolean;
+  /** Read-only because the host holds the community, not because its owner archived it. */
+  held?: boolean;
   /** The section a settings link asked for; ignored when this role or state cannot see it. */
   initialSection?: CommunitySettingsSection | null;
 };
@@ -52,6 +54,7 @@ export function Manage({
   onLeft,
   onSignedOut,
   readOnly = false,
+  held = false,
   initialSection = null,
 }: Props) {
   const moderator = me.role === 'owner' || me.role === 'admin';
@@ -290,11 +293,13 @@ export function Manage({
     <div className="content-scroll">
       <main className="settings">
         <p className="eyebrow">Community settings</p>
-        <h2>{readOnly ? 'Archived history' : 'Make room for your people.'}</h2>
+        <h2>{held ? 'On hold' : readOnly ? 'Archived history' : 'Make room for your people.'}</h2>
         <p className="muted">
-          {readOnly
-            ? 'History and exports remain available. Restore this community before changing content or access.'
-            : 'Manage channels and access without leaving the conversation.'}
+          {held
+            ? 'The host has put this community on hold. History stays readable and the owner can still export it. Nothing can change until the host releases the hold.'
+            : readOnly
+              ? 'History and exports remain available. Restore this community before changing content or access.'
+              : 'Manage channels and access without leaving the conversation.'}
         </p>
         <nav className="row mb-6" aria-label="Settings sections">
           {sections.map((item) => (

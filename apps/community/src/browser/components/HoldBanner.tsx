@@ -3,8 +3,9 @@
  * published one, the date after which it plans to delete the community.
  */
 export function HoldBanner({ deletionNoticeAt }: { deletionNoticeAt: string | null }) {
+  // Notices end at the close of a UTC day; say which day, the same for every member.
   const date = deletionNoticeAt
-    ? new Date(deletionNoticeAt).toLocaleDateString(undefined, { dateStyle: 'long' })
+    ? `${new Date(deletionNoticeAt).toLocaleDateString(undefined, { dateStyle: 'long', timeZone: 'UTC' })} (UTC)`
     : null;
   return (
     <div className="notice m-3" role="status">

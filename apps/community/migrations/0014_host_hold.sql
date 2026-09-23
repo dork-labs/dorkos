@@ -66,6 +66,19 @@ ALTER TABLE community_deletion_jobs
       OR requested_by_host_actor ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$')
   );
 
+-- A finished deletion still says who asked for it, for as long as its receipt lasts: the host
+-- audit rows go with the tenant, so this is where a host-started deletion stays accountable.
+-- Receipts written before this migration name no requester.
+ALTER TABLE community_deletion_tombstones
+  ADD COLUMN requested_by text,
+  ADD COLUMN requested_by_host_actor text,
+  ADD CONSTRAINT community_deletion_tombstones_requester CHECK (
+    (requested_by IS NULL AND requested_by_host_actor IS NULL)
+    OR (requested_by = 'owner' AND requested_by_host_actor IS NULL)
+    OR (requested_by = 'host'
+      AND requested_by_host_actor ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$')
+  );
+
 -- A held community still has exactly one active owner, who keeps export and their own deletion.
 CREATE OR REPLACE FUNCTION enforce_community_owner_lifecycle() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE

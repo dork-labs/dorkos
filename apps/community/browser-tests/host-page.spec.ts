@@ -41,9 +41,11 @@ async function freePort() {
 async function shot(page: Page, name: string) {
   if (!shots) return;
   const original = page.viewportSize();
+  // Phone first: most of these pages load at phone width, and resizing a loaded page up and
+  // back down can leave the channel drawer open, which no one loading it on a phone would see.
   for (const [label, size] of [
-    ['desktop', { width: 1440, height: 900 }],
     ['mobile', { width: 390, height: 844 }],
+    ['desktop', { width: 1440, height: 900 }],
   ] as const) {
     await page.setViewportSize(size);
     await page.screenshot({ path: join(shots, `${name}-${label}.png`), fullPage: true });
@@ -69,7 +71,7 @@ test.beforeAll(async () => {
   const app = createCommunityApp({ config, pool });
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
   app.use('/assets/*', serveStatic({ root: staticRoot }));
-  for (const path of ['/', '/host', '/c/:communityId', '/c/:communityId/join'])
+  for (const path of ['/', '/host', '/c/:communityId', '/c/:communityId/*'])
     app.get(
       path,
       serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
@@ -312,6 +314,16 @@ test('a host holds a community with a notice members can see, then deletes it af
     ).toBeVisible();
     await shot(page, 'held-community-banner');
 
+    // The owner's settings explain the hold and keep export within reach.
+    await page.goto(`${baseUrl}/c/${communityId}/settings`);
+    await expect(page.getByRole('heading', { name: 'On hold' }).first()).toBeVisible();
+    await expect(
+      page.getByText(/Archive, restore, and ownership transfer are unavailable/u)
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Export community' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Archive community' })).toHaveCount(0);
+    await shot(page, 'held-owner-settings');
+
     // Once the notice date has passed, the host can delete it, confirming the id's end.
     await pool.query(
       "UPDATE communities SET deletion_notice_at=now()-interval '1 minute' WHERE id=$1",
@@ -324,6 +336,12 @@ test('a host holds a community with a notice members can see, then deletes it af
     await confirm.getByLabel(/Type the last eight characters/u).fill(communityId.slice(-8));
     await confirm.getByRole('button', { name: 'Delete community' }).click();
     await expect(record).toContainText('Deletion requested by the host.');
+    // The owner sees who started it, cannot cancel it, and is told export has ended.
+    await page.goto(`${baseUrl}/c/${communityId}/deletion`);
+    await expect(page.getByText(/The host started this deletion/u)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cancel deletion' })).toHaveCount(0);
+    await shot(page, 'host-deletion-owner-view');
+    await page.goto(`${baseUrl}/host`);
     await record.getByRole('button', { name: 'Cancel deletion' }).click();
     await expect(record).toContainText('On hold.');
     await record.getByRole('button', { name: 'Release hold' }).click();

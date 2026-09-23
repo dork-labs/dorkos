@@ -7,6 +7,7 @@ import {
   CommunityAdminCreateResponseSchema,
   CommunityAdminHostProjectionSchema,
 } from '@dorkos/shared/community-admin-wire';
+import type { CommunityConfig } from '../config.js';
 import { transaction } from '../data.js';
 import {
   hostProjectionSql,
@@ -143,16 +144,26 @@ async function createPendingCommunity(
 /** Register the host plane's community records: list, read, create, abandon, and lifecycle. */
 export function registerHostRoutes(
   app: Hono,
-  deps: { pool: Pool; blobStore: BlobStore; authority: HostAuthority; now: () => Date }
+  deps: {
+    pool: Pool;
+    config: CommunityConfig;
+    blobStore: BlobStore;
+    authority: HostAuthority;
+    now: () => Date;
+  }
 ): void {
-  const { pool, blobStore, authority, now } = deps;
+  const { pool, config, blobStore, authority, now } = deps;
 
   app.get('/host/communities', async (c) => {
     await authority.require(c, 'communities:read');
     const communities = await pool.query<HostCommunityRow>(
       `${hostProjectionSql} ORDER BY c.created_at,c.id`
     );
-    return c.json({ communities: communities.rows.map(projectCommunity) });
+    return c.json({
+      communities: communities.rows.map(projectCommunity),
+      // The least notice this host allows before deleting a held community, for its own page.
+      deletionNoticeDays: config.limits.hostDeletionNoticeDays,
+    });
   });
 
   app.get('/host/communities/:id', async (c) => {

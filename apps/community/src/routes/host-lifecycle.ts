@@ -100,10 +100,15 @@ export function registerHostLifecycleRoutes(
           throw new ApiError(409, 'STATE_CONFLICT', 'This community cannot be suspended.');
         }
         next = 'suspended';
+        // A suspension blocks the owner's export, so it also withdraws any deletion notice: the
+        // notice's days only count while the owner can take their data out. After resuming, the
+        // host publishes a new notice, and members get the full notice again.
+        if (row.deletion_notice_at) changedFields.push('deletion_notice_at');
         await revokeTenantAccess(client, row.id);
         await client.query(
           `UPDATE communities SET lifecycle='suspended',suspended_from_state=$2,
-             suspended_at=now(),lifecycle_version=lifecycle_version+1 WHERE id=$1`,
+             suspended_at=now(),deletion_notice_at=NULL,lifecycle_version=lifecycle_version+1
+           WHERE id=$1`,
           [row.id, row.lifecycle]
         );
       } else if (body.action === 'resume') {
@@ -150,8 +155,8 @@ export function registerHostLifecycleRoutes(
         if (row.lifecycle !== 'held') {
           throw new ApiError(409, 'STATE_CONFLICT', 'Only a held community has a deletion notice.');
         }
-        // Moving the date later, or clearing it, is always fine; moving it sooner than the
-        // minimum notice from now is refused, so a notice can never be shortened after the fact.
+        // Every publication must itself give the minimum notice from now: a date can be moved
+        // later or cleared, and moved sooner only while it still stays that far away.
         const notice = assertNotice(body.deletionNoticeAt, at);
         next = 'held';
         changedFields.splice(0, 1, 'deletion_notice_at');

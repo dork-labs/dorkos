@@ -14,17 +14,22 @@ export type HoldableCommunity = {
 
 type Dialog = 'hold' | 'notice' | 'delete' | null;
 
-/**
- * The earliest date the picker offers: a week and a day away, the least any host may require.
- * A host that requires more notice refuses a sooner date and says how many days it needs.
- */
-function earliestNotice(now: number): string {
-  return new Date(now + 8 * 24 * 60 * 60_000).toISOString().slice(0, 10);
+/** The earliest day the picker offers: the host's minimum notice, counted in whole UTC days. */
+function earliestNotice(now: number, days: number): string {
+  return new Date(now + (days + 1) * 24 * 60 * 60_000).toISOString().slice(0, 10);
 }
 
-/** A notice date at the end of the chosen day, so it is never shorter than it reads. */
+/**
+ * A notice runs to the end of the chosen day in UTC, the same instant for every member and
+ * never shorter than it reads.
+ */
 function noticeAt(day: string): string | null {
-  return day ? new Date(`${day}T23:59:59`).toISOString() : null;
+  return day ? `${day}T23:59:59.999Z` : null;
+}
+
+/** A notice as people read it: its UTC day, said as such. */
+export function noticeDay(value: string): string {
+  return `${new Date(value).toLocaleDateString(undefined, { dateStyle: 'long', timeZone: 'UTC' })} (end of day, UTC)`;
 }
 
 /**
@@ -35,10 +40,13 @@ function noticeAt(day: string): string | null {
 export function HostHoldControls({
   community,
   busy,
+  noticeDays,
   perform,
 }: {
   community: HoldableCommunity;
   busy: boolean;
+  /** This host's least notice before a held community may be deleted. */
+  noticeDays: number;
   perform: (work: () => Promise<void>, success: string) => Promise<void>;
 }) {
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -61,7 +69,7 @@ export function HostHoldControls({
     setDay('');
     setSuffix('');
   };
-  const minimum = earliestNotice(now);
+  const minimum = earliestNotice(now, noticeDays);
 
   return (
     <>
@@ -69,7 +77,7 @@ export function HostHoldControls({
         <p className="small muted mb-2">
           On hold.{' '}
           {community.deletionNoticeAt
-            ? `Deletion notice: ${new Date(community.deletionNoticeAt).toLocaleDateString()}.`
+            ? `Deletion notice: ${noticeDay(community.deletionNoticeAt)}.`
             : 'No deletion notice published.'}
         </p>
       )}
@@ -129,7 +137,7 @@ export function HostHoldControls({
           <p>
             {dialog === 'hold'
               ? 'Members can still read and the owner can still export, but no one can post, join, or change settings. Every connected DorkOS installation and agent loses access now.'
-              : 'Members see this date on every channel. You can move it later or clear it, but never closer than the notice this host requires (14 days unless changed).'}
+              : `Members see this date on every channel. You can move it later or clear it, but never closer than ${noticeDays} days away.`}
           </p>
           <div className="field">
             <label htmlFor={`notice-${community.id}`}>Delete after (optional)</label>

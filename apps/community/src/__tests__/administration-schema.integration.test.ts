@@ -291,5 +291,9 @@ it('keeps completed deletion tombstones content-free by schema', async () => {
     'outcome',
     'retry_count',
     'expires_at',
+    // Who asked: 'owner' or 'host', and for a host the operator account or key id that acted.
+    // Host metadata, never community content; an owner's member id is not kept.
+    'requested_by',
+    'requested_by_host_actor',
   ]);
 });

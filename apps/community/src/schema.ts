@@ -1137,11 +1137,17 @@ export const communityDeletionTombstones = pgTable(
     outcome: text('outcome').notNull(),
     retryCount: integer('retry_count').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    requestedBy: text('requested_by'),
+    requestedByHostActor: text('requested_by_host_actor'),
   },
   (table) => [
     index('community_deletion_tombstones_expiry_idx').on(table.expiresAt, table.communityId),
     check('community_deletion_tombstones_outcome_check', sql`${table.outcome} = 'deleted'`),
     check('community_deletion_tombstones_retry_count_check', sql`${table.retryCount} >= 0`),
+    check(
+      'community_deletion_tombstones_requester',
+      sql`(${table.requestedBy} IS NULL AND ${table.requestedByHostActor} IS NULL) OR (${table.requestedBy} = 'owner' AND ${table.requestedByHostActor} IS NULL) OR (${table.requestedBy} = 'host' AND ${table.requestedByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$')`
+    ),
     check(
       'community_deletion_tombstones_times_check',
       sql`${table.completedAt} >= ${table.requestedAt} AND ${table.expiresAt} = ${table.completedAt} + interval '30 days'`

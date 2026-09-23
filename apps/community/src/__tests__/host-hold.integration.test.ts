@@ -7,6 +7,7 @@
  * tenant, must stay untouched by all of it.
  */
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { sweepCommunityDeletions } from '../deletion-worker.js';
 import {
   TENANCY_PASSWORD,
   admit,
@@ -19,6 +20,7 @@ import {
   type TenancyHarness,
   type TenancyMember,
 } from './tenancy-test-harness.js';
+import { responseCookies } from './bootstrap-test-helper.js';
 
 const DAY = 24 * 60 * 60_000;
 let h: TenancyHarness;
@@ -31,6 +33,7 @@ let a = '';
 let b = '';
 let channelA = '';
 let memberGrant = '';
+let agentId = '';
 
 const tenant = (communityId: string) => `/api/v1/communities/${communityId}`;
 
@@ -118,7 +121,7 @@ beforeAll(async () => {
     'post before hold'
   );
   memberGrant = await pairInstall(h, a, member.cookie);
-  await expectStatus(
+  const enrolled = await expectStatus(
     await h.call(`${tenant(a)}/agents`, {
       bearer: memberGrant,
       body: { localAgentId: 'agent-1', displayName: 'Agent One' },
@@ -126,6 +129,7 @@ beforeAll(async () => {
     201,
     'enroll agent'
   );
+  agentId = (await enrolled.json()).agent.memberId;
   const pending = await createPendingCommunity(h, operator.cookie, 'Tenant B');
   b = pending.communityId;
   await claimAsNewAccount(h, pending.token, 'B Owner', 'b-owner@hold.test');
@@ -148,6 +152,34 @@ it('refuses a notice shorter than the minimum, and a notice outside a hold', asy
 
 it('holds A: revokes live credentials, and refuses every growing action with 423 COMMUNITY_HELD', async () => {
   // Purpose: fails if a hold reuses suspension (everything refused) or lets anything grow.
+  // Someone half-way through joining when the hold lands: invited, signed up, and bound.
+  const issued = await expectStatus(
+    await h.call(`${tenant(a)}/invites`, { cookie: operator.cookie, body: { seats: 1 } }),
+    201,
+    'invite before hold'
+  );
+  const preflight = await expectStatus(
+    await h.call(`${tenant(a)}/invites/preflight`, {
+      body: { token: (await issued.json()).token },
+    }),
+    200,
+    'preflight before hold'
+  );
+  const admission = responseCookies(preflight);
+  const signedUp = await expectStatus(
+    await h.call('/api/auth/sign-up/email', {
+      cookie: admission,
+      body: { name: 'Joiner', email: 'joiner@hold.test', password: TENANCY_PASSWORD },
+    }),
+    200,
+    'sign up before hold'
+  );
+  const joiner = `${admission}; ${responseCookies(signedUp)}`;
+  await expectStatus(
+    await h.call(`${tenant(a)}/invites/bind`, { cookie: joiner, body: {} }),
+    200,
+    'bind before hold'
+  );
   await expectStatus(await host('hold', { deletionNoticeAt: null }), 200, 'hold');
   expect(await lifecycle()).toMatchObject({ lifecycle: 'held', held_from_state: 'active' });
   const live = await h.pool.query(
@@ -188,8 +220,42 @@ it('holds A: revokes live credentials, and refuses every growing action with 423
     'invitation'
   );
   await expectHeld(
-    await h.call(`${tenant(a)}/invites/redeem`, { cookie: member.cookie, body: {} }),
-    'join'
+    await h.call(`${tenant(a)}/invites/redeem`, { cookie: joiner, body: {} }),
+    'join with a live join attempt'
+  );
+  await expectHeld(
+    await h.call(`${tenant(a)}/channels/${channelA}`, {
+      method: 'PATCH',
+      cookie: operator.cookie,
+      body: { name: 'renamed' },
+    }),
+    'channel rename'
+  );
+  await expectHeld(
+    await h.call(`${tenant(a)}/members/${member.memberId}/role`, {
+      method: 'PATCH',
+      cookie: operator.cookie,
+      body: { role: 'admin' },
+    }),
+    'role change'
+  );
+  await expectHeld(
+    await h.call(`${tenant(a)}/channels/${channelA}/members`, {
+      cookie: operator.cookie,
+      body: { memberId: member.memberId },
+    }),
+    'channel member add'
+  );
+  await expectHeld(
+    await h.call(`${tenant(a)}/owner/transfer`, {
+      cookie: operator.cookie,
+      body: {
+        successorMemberId: member.memberId,
+        password: TENANCY_PASSWORD,
+        lifecycleVersion: (await lifecycle()).lifecycle_version,
+      },
+    }),
+    'owner transfer'
   );
   await expectHeld(
     await h.call(`${tenant(a)}/channels`, {
@@ -235,6 +301,17 @@ it('holds A: revokes live credentials, and refuses every growing action with 423
       body: { localAgentId: 'agent-2', displayName: 'Agent Two' },
     }),
     'agent enrollment'
+  );
+  await expectHeld(
+    await h.call(`${tenant(a)}/agents/${agentId}/rotate`, { bearer: memberGrant, body: {} }),
+    'agent rotate'
+  );
+  await expectHeld(
+    await h.call(`${tenant(a)}/agents/recover`, {
+      bearer: memberGrant,
+      body: { localAgentId: 'agent-1', displayName: 'Agent One' },
+    }),
+    'agent recover'
   );
   await h.pool.query(
     'UPDATE connection_grants SET revoked_at=now() WHERE community_id=$1 AND revoked_at IS NULL',
@@ -382,6 +459,12 @@ it('deletes A after the notice date with a host requester, which only the host c
   expect(row.rows[0].delete_requested_by).toBeNull();
   expect(row.rows[0].host).toMatch(/^person:/);
 
+  const status = await expectStatus(
+    await h.call(`${tenant(a)}/owner/deletion`, { cookie: operator.cookie }),
+    200,
+    'owner reads the host deletion'
+  );
+  expect(await status.json()).toMatchObject({ requestedBy: 'host', returnsTo: 'held' });
   const ownerCancel = await h.call(`${tenant(a)}/owner/deletion/cancel`, {
     cookie: operator.cookie,
     body: { lifecycleVersion: (await lifecycle()).lifecycle_version, password: TENANCY_PASSWORD },
@@ -433,7 +516,79 @@ it('lets the owner delete a held community, cancels that back to the hold, and k
   expect(await lifecycle()).toMatchObject({ lifecycle: 'held', held_from_state: 'archived' });
 });
 
+it('withdraws the notice when a held community is suspended, so days without export never count', async () => {
+  // Purpose: the owner cannot export while suspended. If the notice survived, a host could hold
+  // with a notice, suspend, wait out the date, resume, and delete with no export window at all.
+  await expectStatus(
+    await host('set_notice', { deletionNoticeAt: inDays(14.01) }),
+    200,
+    'publish notice'
+  );
+  await expectStatus(await host('suspend'), 200, 'suspend the held community');
+  const suspended = await h.pool.query('SELECT deletion_notice_at FROM communities WHERE id=$1', [
+    a,
+  ]);
+  expect(suspended.rows[0].deletion_notice_at).toBeNull();
+  expect(
+    (
+      await h.pool.query(
+        `SELECT changed_fields FROM host_audit_events
+         WHERE community_id=$1 AND action='community.suspend' ORDER BY created_at DESC LIMIT 1`,
+        [a]
+      )
+    ).rows[0].changed_fields
+  ).toEqual(['lifecycle', 'deletion_notice_at']);
+  clockOffsetMs += 15 * DAY;
+  await expectStatus(await host('resume'), 200, 'resume to the hold');
+  expect(await lifecycle()).toMatchObject({ lifecycle: 'held' });
+  expect((await hostDelete()).status).toBe(409);
+});
+
 it('leaves community B untouched by every hold, release, and deletion of A', async () => {
   // Purpose: fails if any host lifecycle change reaches another tenant.
   expect(await tenantRows(b)).toEqual(bBefore);
+});
+
+it('keeps who asked for a host deletion in the receipt after the community is gone', async () => {
+  // Purpose: host audit rows go with the tenant; without the receipt, nothing would say a host
+  // (and which operator or key) deleted the community.
+  const held = await h.pool.query<{ deletion_notice_at: Date | null }>(
+    'SELECT deletion_notice_at FROM communities WHERE id=$1',
+    [a]
+  );
+  expect(held.rows[0].deletion_notice_at).toBeNull();
+  await expectStatus(
+    await host('set_notice', { deletionNoticeAt: inDays(14.01) }),
+    200,
+    'notice again'
+  );
+  clockOffsetMs += 15 * DAY;
+  await expectStatus(await hostDelete(), 200, 'host deletion');
+  await h.pool.query(
+    `UPDATE communities SET delete_requested_at=now()-interval '8 days',
+       delete_after=now()-interval '1 day' WHERE id=$1`,
+    [a]
+  );
+  await h.pool.query(
+    `UPDATE community_deletion_jobs SET delete_after=now()-interval '1 day',next_attempt_at=now()
+     WHERE community_id=$1`,
+    [a]
+  );
+  for (let pass = 0; pass < 10; pass++) {
+    const result = await sweepCommunityDeletions(h.pool, h.blobStore, 100);
+    if (result.completed) break;
+    await h.pool.query('UPDATE community_deletion_jobs SET next_attempt_at=now()');
+  }
+  const receipt = await h.pool.query(
+    'SELECT requested_by,requested_by_host_actor FROM community_deletion_tombstones WHERE community_id=$1',
+    [a]
+  );
+  const operatorUser = (
+    await h.pool.query<{ id: string }>('SELECT id FROM "user" WHERE email=$1', [
+      'operator@hold.test',
+    ])
+  ).rows[0].id;
+  expect(receipt.rows).toEqual([
+    { requested_by: 'host', requested_by_host_actor: `person:${operatorUser}` },
+  ]);
 });

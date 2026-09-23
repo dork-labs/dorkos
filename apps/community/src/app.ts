@@ -296,7 +296,7 @@ export function createCommunityApp({
   });
   registerHostLinkRoutes(app, { config });
   const hostApi = new Hono();
-  registerHostRoutes(hostApi, { pool, blobStore, authority, now });
+  registerHostRoutes(hostApi, { pool, config, blobStore, authority, now });
   registerOwnerClaimRoutes(hostApi, { pool, auth, config, authority, now });
   registerMembershipRoutes(hostApi, { pool, auth });
   registerHostLimitRoutes(hostApi, { pool, config, authority, now });

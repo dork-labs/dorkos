@@ -188,6 +188,10 @@ export const CommunityAdminDeletionStatusSchema = z.strictObject({
   deleteAfter: timestamp.nullable(),
   state: z.enum(['waiting', 'deleting', 'retrying']).nullable(),
   attempts: z.int().nonnegative(),
+  /** Who asked for a pending deletion. Only the owner can cancel their own; only the host its. */
+  requestedBy: z.enum(['owner', 'host']).nullable(),
+  /** Where a cancel of a pending deletion returns the community. */
+  returnsTo: z.enum(['archived', 'suspended', 'held']).nullable(),
 });
 
 /** Host API key scopes. Host authority only; no scope reaches community content. */

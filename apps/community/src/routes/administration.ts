@@ -140,6 +140,8 @@ function deletionProjection(row: {
   delete_after: Date | null;
   state: 'waiting' | 'deleting' | 'retrying' | null;
   attempts: number | null;
+  requested_by: 'owner' | 'host' | null;
+  returns_to: 'archived' | 'suspended' | 'held' | null;
 }) {
   return {
     communityId: row.community_id,
@@ -148,8 +150,17 @@ function deletionProjection(row: {
     deleteAfter: row.delete_after?.toISOString() ?? null,
     state: row.state,
     attempts: row.attempts ?? 0,
+    requestedBy: row.requested_by,
+    returnsTo: row.returns_to,
   };
 }
+
+/** Who asked for a pending deletion, and where cancelling it would return the community. */
+const deletionOrigin = `CASE WHEN c.delete_requested_by_host_actor IS NOT NULL THEN 'host'
+    WHEN c.delete_requested_by IS NOT NULL THEN 'owner' END AS requested_by,
+  CASE WHEN c.lifecycle<>'deletion_pending' THEN NULL
+    WHEN c.deletion_from_state IN ('held','suspended') THEN c.deletion_from_state
+    ELSE 'archived' END AS returns_to`;
 
 /**
  * Lifecycles the owner may ask to delete from. Neither a suspension nor a host's hold may trap
@@ -283,6 +294,7 @@ export function registerAdministrationRoutes(
       const row = await transaction(pool, async (client) => {
         const current = await lockSettings(client, actor.community_id);
         const currentActor = await lockMember(client, actor, ['owner', 'admin']);
+        if (current.lifecycle === 'held') throw communityHeld();
         if (current.lifecycle !== 'active' || current.settings_version !== expectedVersion)
           throw new AdminSettingsConflict(projectSettings(current));
         await prepareManagedBlobCommit(client, reservation, stored);
@@ -323,6 +335,7 @@ export function registerAdministrationRoutes(
     const row = await transaction(pool, async (client) => {
       const current = await lockSettings(client, actor.community_id);
       const currentActor = await lockMember(client, actor, ['owner', 'admin']);
+      if (current.lifecycle === 'held') throw communityHeld();
       if (current.lifecycle !== 'active' || current.settings_version !== expectedVersion)
         throw new AdminSettingsConflict(projectSettings(current));
       const updated = await client.query<SettingsRow>(
@@ -454,7 +467,7 @@ export function registerAdministrationRoutes(
       const currentActor = await lockMember(client, actor, ['owner']);
       const status = await client.query(
         `SELECT c.id AS community_id,c.lifecycle,c.lifecycle_version,c.delete_after,
-                c.delete_requested_by,j.state,j.attempts
+                c.delete_requested_by,j.state,j.attempts,${deletionOrigin}
          FROM communities c LEFT JOIN community_deletion_jobs j ON j.community_id=c.id
          WHERE c.id=$1`,
         [current.id]
@@ -491,7 +504,7 @@ export function registerAdministrationRoutes(
       if (current.lifecycle === 'deletion_pending') {
         const pending = await client.query(
           `SELECT c.id AS community_id,c.lifecycle,c.lifecycle_version,c.delete_after,
-                  j.state,j.attempts
+                  j.state,j.attempts,${deletionOrigin}
            FROM communities c JOIN community_deletion_jobs j ON j.community_id=c.id
            WHERE c.id=$1`,
           [current.id]
@@ -525,7 +538,7 @@ export function registerAdministrationRoutes(
       if (current.lifecycle === 'deletion_pending') {
         const existing = await client.query(
           `SELECT c.id AS community_id,c.lifecycle,c.lifecycle_version,c.delete_after,
-                  j.state,j.attempts
+                  j.state,j.attempts,${deletionOrigin}
            FROM communities c JOIN community_deletion_jobs j ON j.community_id=c.id
            WHERE c.id=$1`,
           [current.id]
@@ -577,6 +590,11 @@ export function registerAdministrationRoutes(
         delete_after: deleteAfter,
         state: 'waiting',
         attempts: 0,
+        requested_by: 'owner',
+        returns_to:
+          current.lifecycle === 'held' || current.lifecycle === 'suspended'
+            ? current.lifecycle
+            : 'archived',
       };
     });
     return json(c, CommunityAdminDeletionStatusSchema, deletionProjection(result));
@@ -655,6 +673,8 @@ export function registerAdministrationRoutes(
         delete_after: null,
         state: null,
         attempts: 0,
+        requested_by: null,
+        returns_to: null,
       };
     });
     return json(c, CommunityAdminDeletionStatusSchema, deletionProjection(result));

@@ -21,6 +21,15 @@ type DeletionStatus = {
   deleteAfter: string | null;
   state: 'waiting' | 'deleting' | 'retrying' | null;
   attempts: number;
+  requestedBy: 'owner' | 'host' | null;
+  returnsTo: 'archived' | 'suspended' | 'held' | null;
+};
+
+/** What a cancelled deletion returns to, said plainly. */
+const RETURNS_TO: Record<'archived' | 'suspended' | 'held', string> = {
+  archived: 'The community will return as an archive. People can read history after reconnecting.',
+  suspended: 'The community will return to its suspension. The host decides when it resumes.',
+  held: 'The community will return to the host’s hold. People can read it, and you can export it.',
 };
 type Conflict = { code?: string; message?: string; current?: Settings };
 type DialogKind = 'archive' | 'restore' | 'delete' | 'cancel-delete';
@@ -381,7 +390,11 @@ export function CommunityAdministration({
         setDeletion(null);
         await refresh();
       },
-      'Deletion cancelled. The community remains archived.',
+      deletion?.returnsTo === 'held'
+        ? 'Deletion cancelled. The community is on hold again.'
+        : deletion?.returnsTo === 'suspended'
+          ? 'Deletion cancelled. The community is suspended again.'
+          : 'Deletion cancelled. The community remains archived.',
       false,
       false
     );
@@ -426,20 +439,29 @@ export function CommunityAdministration({
           <p role="timer" className="eyebrow">
             {formatRemaining(deletion.deleteAfter, clock)}
           </p>
-          <p className="small muted">
-            Cleanup is {deletion.state ?? 'waiting'}
-            {deletion.attempts ? ` after ${deletion.attempts} attempts` : ''}. Cancelling keeps the
-            community archived and does not restore old credentials.
-          </p>
-          <button className="button" onClick={() => setDialog('cancel-delete')}>
-            Cancel deletion
-          </button>
+          {deletion.requestedBy === 'host' ? (
+            <p className="small muted">
+              The host started this deletion after the notice date it published. Only the host can
+              cancel it. The community can no longer be exported.
+            </p>
+          ) : (
+            <>
+              <p className="small muted">
+                Cleanup is {deletion.state ?? 'waiting'}
+                {deletion.attempts ? ` after ${deletion.attempts} attempts` : ''}. The community
+                cannot be exported while its deletion is pending.{' '}
+                {deletion.returnsTo ? RETURNS_TO[deletion.returnsTo] : ''} Cancelling does not
+                restore old credentials.
+              </p>
+              <button className="button" onClick={() => setDialog('cancel-delete')}>
+                Cancel deletion
+              </button>
+            </>
+          )}
         </section>
         {dialog === 'cancel-delete' && (
           <FocusDialog title="Cancel community deletion?" onClose={resetDialog} error={error}>
-            <p>
-              The community will return as an archive. People can read history after reconnecting.
-            </p>
+            <p>{RETURNS_TO[deletion.returnsTo ?? 'archived']}</p>
             <label className="field" htmlFor="cancel-delete-password">
               Password
               <input

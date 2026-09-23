@@ -1838,7 +1838,7 @@ it('classifies every registered route, and puts every host and settings route in
   const authority = createHostAuthority({ auth, pool, now, limitKeyMiss: () => undefined });
   // Only the route table is read here; no request ever runs.
   const unused = async () => undefined;
-  registerHostRoutes(modules, { pool, blobStore, authority, now });
+  registerHostRoutes(modules, { pool, config, blobStore, authority, now });
   registerOwnerClaimRoutes(modules, { pool, auth, config, authority, now });
   registerMembershipRoutes(modules, { pool, auth });
   registerHostLimitRoutes(modules, { pool, config, authority, now });
