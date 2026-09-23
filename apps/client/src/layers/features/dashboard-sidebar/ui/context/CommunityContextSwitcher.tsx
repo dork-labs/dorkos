@@ -48,6 +48,7 @@ import {
 } from './community-context-actions';
 import { DisconnectCommunityDialog, JoinCommunityDialog } from './CommunityActionDialogs';
 import { SheetActionsMenu } from './SheetActionsMenu';
+import { useSwitchContextShortcut } from '../../model/use-switch-context-shortcut';
 
 /** Props for the route-owned Community context trigger. */
 export interface CommunityContextSwitcherProps {
@@ -207,29 +208,13 @@ export function CommunityContextSwitcher({
           connection.label.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase())
         )
       : destinations;
-  // ⌘⇧K opens the switcher from anywhere, a message box included (spec,
-  // Shell surfaces → Desktop). Landing in a channel puts the cursor in its
-  // composer, so a shortcut that stood down for text fields was dead exactly
-  // where people switch from. Nothing else binds ⌘⇧K, so it takes nothing
-  // from the field. A key pressed while an input method is still composing
-  // belongs to that composition, not to us.
-  //
-  // Where focus was is remembered, so closing without choosing puts it back
-  // there ("predictable restore") instead of on a trigger nobody pressed.
-  useEffect(() => {
-    const openSwitcher = (event: KeyboardEvent) => {
-      if (event.isComposing) return;
-      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        const active = document.activeElement;
-        returnFocus.current =
-          active instanceof HTMLElement && active !== document.body ? active : null;
-        setOpen(true);
-      }
-    };
-    window.addEventListener('keydown', openSwitcher);
-    return () => window.removeEventListener('keydown', openSwitcher);
-  }, []);
+  // ⌘⇧K from anywhere, a message box included. Where focus was is
+  // remembered, so closing without choosing puts it back there ("predictable
+  // restore") instead of on a trigger nobody pressed.
+  useSwitchContextShortcut((focused) => {
+    returnFocus.current = focused;
+    setOpen(true);
+  });
 
   async function selectCommunity(connection: CommunityConnectionDescriptor) {
     if (connection.ref === selectedRef || pendingSelection.current) return;
