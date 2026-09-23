@@ -809,6 +809,196 @@ describe('sendFeedback — durable payload shape', () => {
     });
   });
 
+  describe('the pointed-at element (DOR-2232)', () => {
+    const element = {
+      selector: '[data-testid="message-list"]',
+      slot: 'scroll-area',
+      testId: 'message-list',
+      label: 'Messages',
+    };
+    const withElement = { kind: 'bug' as const, message: 'messages vanish', element };
+
+    /** What an older site's strict schema says about a key it has never heard of. */
+    const ELEMENT_UNKNOWN = {
+      ok: false,
+      error: 'Invalid submission',
+      issues: [{ code: 'unrecognized_keys', keys: ['element'], path: [], message: 'x' }],
+    };
+    /** A refusal that has nothing to do with the element. */
+    const MESSAGE_TOO_LONG = {
+      ok: false,
+      error: 'Invalid submission',
+      issues: [{ code: 'too_big', path: ['message'], message: 'x' }],
+    };
+
+    /** Durable endpoint answers each scripted response in turn, then 200. */
+    function makeDurableScript(script: Array<{ status: number; body?: unknown }>): FetchMock {
+      let durableCalls = 0;
+      return vi.fn(async (url: string | URL | Request, _init?: RequestInit) => {
+        if (String(url) !== DURABLE_ENDPOINT) return new Response(null, { status: 200 });
+        const step = script[durableCalls];
+        durableCalls += 1;
+        if (!step) return new Response(null, { status: 200 });
+        return new Response(step.body ? JSON.stringify(step.body) : null, {
+          status: step.status,
+          headers: { 'content-type': 'application/json' },
+        });
+      }) as unknown as FetchMock;
+    }
+
+    /** Every durable-endpoint body, in call order. */
+    function durableBodies(fetchImpl: FetchMock): Array<Record<string, unknown>> {
+      const calls = fetchImpl.mock.calls as unknown as Array<[string | URL | Request, RequestInit]>;
+      return calls
+        .filter(([url]) => String(url) === DURABLE_ENDPOINT)
+        .map(([, init]) => JSON.parse(init.body as string) as Record<string, unknown>);
+    }
+
+    it('forwards the element as its own field, leaving the message as typed', async () => {
+      const fetchImpl = makeFetch('ok');
+      await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
+
+      const body = durableBody(fetchImpl);
+      expect(body.element).toEqual(element);
+      expect(body.message).toBe('messages vanish');
+    });
+
+    it('sends no element key when nothing was pointed at', async () => {
+      const fetchImpl = makeFetch('ok');
+      await sendFeedback(baseOptions({ fetchImpl }));
+      expect(durableBody(fetchImpl)).not.toHaveProperty('element');
+    });
+
+    it('retries once without the element when the site refuses the body', async () => {
+      // A site that predates the field refuses it (its schema is strict). The
+      // report is worth more than the element's name, so it goes again without.
+      const fetchImpl = makeDurableScript([{ status: 400, body: ELEMENT_UNKNOWN }]);
+      const result = await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
+
+      const bodies = durableBodies(fetchImpl);
+      expect(bodies).toHaveLength(2);
+      expect(bodies[0]).toHaveProperty('element');
+      expect(bodies[1]).not.toHaveProperty('element');
+      expect(bodies[1]).toMatchObject({ kind: 'bug', message: 'messages vanish' });
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('drops only the label when a site knows the element but not its label', async () => {
+      const fetchImpl = makeDurableScript([
+        {
+          status: 400,
+          body: {
+            issues: [
+              { code: 'unrecognized_keys', keys: ['label'], path: ['element'], message: 'x' },
+            ],
+          },
+        },
+      ]);
+      const result = await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
+
+      const bodies = durableBodies(fetchImpl);
+      expect(bodies).toHaveLength(2);
+      expect(bodies[1].element).toEqual({
+        selector: '[data-testid="message-list"]',
+        slot: 'scroll-area',
+        testId: 'message-list',
+      });
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('drops the whole element when an old site refuses the element and its label', async () => {
+      // Label first, then the element: a site that knows neither.
+      const fetchImpl = makeDurableScript([
+        {
+          status: 400,
+          body: {
+            issues: [
+              { code: 'unrecognized_keys', keys: ['label'], path: ['element'], message: 'x' },
+            ],
+          },
+        },
+        { status: 400, body: ELEMENT_UNKNOWN },
+      ]);
+      const result = await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
+
+      const bodies = durableBodies(fetchImpl);
+      expect(bodies).toHaveLength(3);
+      expect(bodies[2]).not.toHaveProperty('element');
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('does not retry a 400 that names something other than the element', async () => {
+      const fetchImpl = makeDurableScript([{ status: 400, body: MESSAGE_TOO_LONG }]);
+      const result = await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
+
+      // Dropping the element would not fix a refusal about something else, and
+      // the log would blame the wrong field.
+      expect(durableBodies(fetchImpl)).toHaveLength(1);
+      expect(result).toEqual({ ok: false });
+    });
+
+    it('does not retry a 400 whose body cannot be read', async () => {
+      const fetchImpl = makeDurableScript([{ status: 400 }]);
+      const result = await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
+
+      expect(durableBodies(fetchImpl)).toHaveLength(1);
+      expect(result).toEqual({ ok: false });
+    });
+
+    it('also retries when the refusal is about the element value itself', async () => {
+      const fetchImpl = makeDurableScript([
+        { status: 400, body: { issues: [{ code: 'too_big', path: ['element', 'selector'] }] } },
+      ]);
+      const result = await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
+
+      expect(durableBodies(fetchImpl)).toHaveLength(2);
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('lands the report on an older site that first says too large, then refuses the element', async () => {
+      // The site checks size before its schema, so a big report with both an
+      // element and a screenshot meets the two refusals in this order.
+      const fetchImpl = makeDurableScript([
+        { status: 413 },
+        { status: 400, body: ELEMENT_UNKNOWN },
+      ]);
+      const result = await sendFeedback(
+        baseOptions({
+          submission: {
+            ...withElement,
+            screenshot: { dataUrl: `data:image/webp;base64,${'QUJD'.repeat(40)}` },
+          },
+          fetchImpl,
+        })
+      );
+
+      const bodies = durableBodies(fetchImpl);
+      expect(bodies).toHaveLength(3);
+      expect(bodies[1]).not.toHaveProperty('screenshot');
+      expect(bodies[1]).toHaveProperty('element');
+      expect(bodies[2]).not.toHaveProperty('screenshot');
+      expect(bodies[2]).not.toHaveProperty('element');
+      expect(bodies[2]).toMatchObject({ message: 'messages vanish' });
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('does not retry a 400 when there was no element to drop', async () => {
+      const fetchImpl = makeDurableScript([{ status: 400, body: ELEMENT_UNKNOWN }]);
+      const result = await sendFeedback(baseOptions({ fetchImpl }));
+
+      expect(durableBodies(fetchImpl)).toHaveLength(1);
+      expect(result).toEqual({ ok: false });
+    });
+
+    it('does not drop the element over a failure that is not a refusal', async () => {
+      const fetchImpl = makeSplitFetch({ durable: 'not-ok', metrics: 'ok' });
+      const result = await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
+
+      expect(durableBodies(fetchImpl)).toHaveLength(1);
+      expect(result).toEqual({ ok: false });
+    });
+  });
+
   it('omits both screenshot and hasScreenshot when none was attached', async () => {
     const fetchImpl = makeFetch('ok');
     await sendFeedback(baseOptions({ fetchImpl }));

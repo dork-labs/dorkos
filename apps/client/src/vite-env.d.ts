@@ -52,7 +52,7 @@ declare global {
   type DesktopAdminResult = { ok: true } | { ok: false; message: string };
 
   /**
-   * What the desktop shell answers "Capture app view" with, mirrored from the
+   * What the desktop shell answers the feedback form's "Capture app" with, mirrored from the
    * main process's `CaptureAppViewResult` (`main/capture/index.ts`, where this
    * union is the source of truth). Kept in sync by hand, like
    * {@link DesktopAdminResult}.

@@ -55,8 +55,7 @@ test.describe('Dev Playground — pointing at one element', () => {
     await message.click();
     await message.fill('this control is dead');
 
-    await dialog.getByRole('button', { name: /attachments & details/i }).click();
-    const point = dialog.getByRole('button', { name: 'Point at element' });
+    const point = dialog.getByRole('button', { name: 'Point at it' });
     await expect(
       point,
       'the affordance must be live, not a labelled-soon placeholder'
@@ -140,7 +139,7 @@ test.describe('Dev Playground — pointing at one element', () => {
     // And the dialog comes back with the crop attached. snapdom really ran, the
     // canvas really drew, and what came out is a bounded `data:` URL — none of
     // which any unit test in this repo can claim.
-    const thumbnail = dialog.getByAltText('The screenshot you attached');
+    const thumbnail = dialog.getByAltText(/^The part you pointed at: /);
     await expect(thumbnail, 'pointing must attach a picture').toBeVisible({
       timeout: CAPTURE_SETTLE_MS,
     });
@@ -194,15 +193,20 @@ test.describe('Dev Playground — pointing at one element', () => {
     ).toBeLessThan(viewportSize.height / 2);
     expect(shot.width, 'and it must still be a real picture, not a 1px sliver').toBeGreaterThan(20);
 
-    // The report says which element, in the field the person can read and edit.
-    const composed = dialog.getByPlaceholder(/what happened, and what did you expect/i);
-    await expect(composed).toHaveValue(/this control is dead/);
-    await expect(composed, 'the report must name the element that was clicked').toHaveValue(
-      /Element: /
-    );
-    // The real slot off the real markup — the name the codebase uses for this
-    // part, which is what makes the line worth sending.
-    await expect(composed).toHaveValue(/Slot: sidebar-menu-button/);
+    // The words are exactly what the person typed: the element rides as its own
+    // attachment, never as lines in the message (DOR-2232).
+    const composed = dialog.getByLabel('Your message');
+    await expect(composed).toHaveValue('this control is dead');
+    // And the caret is back in the words, not on the first kind pill: the
+    // dialog reopening is a fresh open as far as Radix's focus scope knows.
+    await expect(composed, 'the dialog must come back focused on the message').toBeFocused();
+    // It shows as a captioned thumbnail with its own labelled remove button, and
+    // the toolbar offers to point again.
+    await expect(
+      dialog.getByRole('button', { name: /^Remove (?!screenshot)/ }),
+      'the pointed-at element must be attached, by name'
+    ).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Point again' })).toBeVisible();
 
     // Pointing at something broken is a bug report.
     await expect(dialog.getByRole('radio', { name: 'Bug' })).toHaveAttribute(
@@ -239,8 +243,7 @@ test.describe('Dev Playground — pointing at one element', () => {
     const message = dialog.getByPlaceholder(/what works, what does not/i);
     await message.click();
     await message.fill('changed my mind');
-    await dialog.getByRole('button', { name: /attachments & details/i }).click();
-    await dialog.getByRole('button', { name: 'Point at element' }).click();
+    await dialog.getByRole('button', { name: 'Point at it' }).click();
 
     const picker = page.getByRole('dialog', {
       name: 'Point at the part of the app that looks wrong',
@@ -255,6 +258,6 @@ test.describe('Dev Playground — pointing at one element', () => {
     await expect(picker).toBeHidden();
     await expect(message).toBeVisible();
     await expect(message).toHaveValue('changed my mind');
-    await expect(dialog.getByAltText('The screenshot you attached')).toHaveCount(0);
+    await expect(dialog.getByAltText(/^The part you pointed at: /)).toHaveCount(0);
   });
 });

@@ -29,7 +29,7 @@ const RESTART_SERVER_CHANNEL = 'admin:restart-server';
 /** IPC channel "Reset All Data" goes out on (mirrors `RESET_ALL_DATA_CHANNEL` in main/admin/index.ts). */
 const RESET_ALL_DATA_CHANNEL = 'admin:reset-all-data';
 
-/** IPC channel "Capture app view" goes out on (mirrors `CAPTURE_APP_VIEW_CHANNEL` in main/capture/index.ts). */
+/** IPC channel "Capture app" goes out on (mirrors `CAPTURE_APP_VIEW_CHANNEL` in main/capture/index.ts). */
 const CAPTURE_APP_VIEW_CHANNEL = 'capture:app-view';
 
 /** IPC channel a mounted renderer reports itself alive on (mirrors `ALIVE_CHANNEL` in renderer-health/index.ts). */
@@ -150,7 +150,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   resetAllData: (): Promise<AdminActionResult> => ipcRenderer.invoke(RESET_ALL_DATA_CHANNEL),
   /**
-   * Take a picture of this window, for the feedback dialog's "Capture app view"
+   * Take a picture of this window, for the feedback dialog's "Capture app"
    * (feedback-attachments PR 3).
    *
    * The desktop half of a screenshot the browser has to build out of the DOM.

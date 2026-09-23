@@ -9,6 +9,7 @@ import {
   Moon,
   Shapes,
   MessageSquarePlus,
+  Inbox,
 } from 'lucide-react';
 import type { SearchableItem } from '../model/use-palette-search';
 
@@ -49,6 +50,7 @@ export const ICON_MAP: Record<string, React.ElementType> = {
   Moon,
   Shapes,
   MessageSquarePlus,
+  Inbox,
 };
 
 /** Ease-out curve for entrances (design system standard). */

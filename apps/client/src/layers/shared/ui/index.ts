@@ -235,7 +235,11 @@ export {
   ResponsiveDialogFullscreenToggle,
   useResponsiveDialog,
 } from './responsive-dialog';
-export type { ResponsiveDialogProps } from './responsive-dialog';
+export type {
+  ResponsiveDialogProps,
+  ResponsiveDialogContentProps,
+  ResponsiveDialogBodyProps,
+} from './responsive-dialog';
 export {
   ResponsivePopover,
   ResponsivePopoverTrigger,

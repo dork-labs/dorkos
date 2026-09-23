@@ -1,5 +1,5 @@
 /**
- * "Capture app view" — a picture of this window, taken by the shell rather than
+ * "Capture app" — a picture of this window, taken by the shell rather than
  * drawn by the page (feedback-attachments decision 6).
  *
  * The feedback dialog can attach a screenshot, and in a browser it has to build
@@ -24,7 +24,7 @@ import { ipcMain } from 'electron';
 import log from 'electron-log';
 import { isCockpitSender } from '../window-manager';
 
-/** IPC channel "Capture app view" arrives on (mirrored in `preload/index.ts`). */
+/** IPC channel "Capture app" arrives on (mirrored in `preload/index.ts`). */
 const CAPTURE_APP_VIEW_CHANNEL = 'capture:app-view';
 
 /**

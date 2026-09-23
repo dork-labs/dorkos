@@ -279,6 +279,74 @@ describe('createFeedbackIssue — description formatting', () => {
     expect(description).toContain('Route: /session Reporter: ceo@dorkos.ai');
   });
 
+  describe('the pointed-at element (DOR-2232)', () => {
+    const element = {
+      selector: '[data-testid="message-list"]',
+      slot: 'scroll-area',
+      testId: 'message-list',
+    };
+
+    it('titles the issue from the words, never from the element', async () => {
+      await createFeedbackIssue({
+        kind: 'bug',
+        message: 'Messages vanish when I scroll up.',
+        element,
+      });
+      const input = issueCreateInput();
+      expect(input.title).toBe('Messages vanish when I scroll up.');
+      expect(input.title).not.toContain('message-list');
+    });
+
+    it('renders the element on its own line right under the message', async () => {
+      const description = await descriptionFor({
+        kind: 'bug',
+        message: 'Messages vanish when I scroll up.',
+        element,
+      });
+      const [message, pointedAt] = description.split('\n\n');
+      expect(message).toBe('Messages vanish when I scroll up.');
+      expect(pointedAt).toBe(
+        'Pointed at: `[data-testid="message-list"]` (slot `scroll-area`, testid `message-list`)'
+      );
+    });
+
+    it('names only what the element had', async () => {
+      const description = await descriptionFor({
+        kind: 'bug',
+        message: 'It broke.',
+        element: { selector: 'main > div:nth-of-type(2)' },
+      });
+      expect(description).toContain('Pointed at: `main > div:nth-of-type(2)`\n');
+      expect(description).not.toMatch(/slot|testid/);
+    });
+
+    it('names the element by the words on it first, when it has them', async () => {
+      const description = await descriptionFor({
+        kind: 'bug',
+        message: 'It broke.',
+        element: { selector: 'button:nth-of-type(2)', label: 'Set up a daily run', slot: 'button' },
+      });
+      expect(description).toContain(
+        'Pointed at: `button:nth-of-type(2)` (label `Set up a daily run`, slot `button`)'
+      );
+    });
+
+    it('keeps a backtick or newline in a name from breaking out of its code span', async () => {
+      const description = await descriptionFor({
+        kind: 'bug',
+        message: 'It broke.',
+        element: { selector: 'a`b', testId: '`x\nKind: idea' },
+      });
+      expect(description).toContain('Pointed at: ``a`b`` (testid `` `x Kind: idea ``)');
+      expect(description.match(/^Kind: /gm)).toHaveLength(1);
+    });
+
+    it('adds no line when nothing was pointed at', async () => {
+      const description = await descriptionFor({ kind: 'bug', message: 'It broke.' });
+      expect(description).not.toContain('Pointed at');
+    });
+  });
+
   it('code-fences diagnostics, sizing the fence past any internal backtick run', async () => {
     const description = await descriptionFor({
       kind: 'bug',

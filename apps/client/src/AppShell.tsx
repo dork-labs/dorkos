@@ -202,7 +202,7 @@ function useSidebarSlot(): SidebarSlot {
  * This used to be a `pathname` switch here in the shell, which meant a new route
  * silently inherited the `default` branch's header — the defect that had every
  * channel and every DM reading "Dashboard" (DOR-587) and then had Workspaces,
- * Connections and Product feedback do the same thing (DOR-919). Routes declare
+ * Connections and Your reports do the same thing (DOR-919). Routes declare
  * their own bar in `router.tsx` now, as required `staticData.header`, so a route
  * with no bar does not compile.
  */

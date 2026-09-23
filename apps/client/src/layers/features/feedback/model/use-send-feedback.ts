@@ -26,22 +26,27 @@
  *   - `screenshotDataUrl` → becomes the `screenshot` attachment, already
  *     downscaled and bounded by `compressImage` before it reaches this hook.
  *   - `anonymous` → tells the server to skip its identity lookup.
+ *   - `element` → the one element the person pointed at, as its own field. It
+ *     never adds a word to `message` (DOR-2232).
  *
  * The transport never throws (a network failure is a truthful `{ ok: false }`),
- * so this hook toasts honestly on the result: a thank-you on success, or a
- * nudge toward the GitHub option on failure. Pressing Send IS the consent —
- * nothing here checks a telemetry setting.
+ * so this hook toasts honestly on the result: a thank-you that says what happens
+ * next and links to the person's own reports on success, or a nudge toward the
+ * GitHub option on failure. The same report sent twice within a minute is caught
+ * here rather than filed twice. Pressing Send IS the consent — nothing here
+ * checks a telemetry setting.
  *
  * @module features/feedback/model/use-send-feedback
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useRouterState } from '@tanstack/react-router';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import {
   MAX_BREADCRUMBS,
   MAX_BREADCRUMB_MESSAGE_LEN,
   type FeedbackDiagnostics,
+  type FeedbackElement,
   type FeedbackSubmissionKind,
 } from '@dorkos/shared/telemetry-events';
 import type { ServerConfig } from '@dorkos/shared/schemas';
@@ -55,6 +60,37 @@ import {
 } from '@/layers/shared/lib';
 import { configKeys } from '@/layers/entities/config';
 import { buildFeedbackRoute } from '../lib/feedback-route';
+
+/** Where the person's own reports live — "Your reports" in the help menu. */
+const YOUR_REPORTS_PATH = '/feedback-requests';
+
+/**
+ * How long the same report counts as the same report. Long enough to catch a
+ * second press after a slow send (two of one person's reports were 33 seconds
+ * apart), short enough that sending it again on purpose later still works.
+ */
+const DUPLICATE_WINDOW_MS = 60_000;
+
+/** What happens next, per kind, in the thank-you toast. */
+const WHEN_WE_WRITE: Record<FeedbackSubmissionKind, string> = {
+  bug: 'when it’s fixed',
+  idea: 'when it ships',
+  feedback: 'when we act on it',
+};
+
+/**
+ * What makes two submissions the same report: the kind, the words, and what was
+ * attached. Diagnostics and the page are left out on purpose, because they drift
+ * between two presses of the same button.
+ */
+function fingerprint(draft: FeedbackDraft, message: string): string {
+  return JSON.stringify([
+    draft.kind,
+    message,
+    draft.screenshotDataUrl ?? null,
+    draft.element?.selector ?? null,
+  ]);
+}
 
 /** A single feedback submission from the dialog. */
 export interface FeedbackDraft {
@@ -79,6 +115,14 @@ export interface FeedbackDraft {
   anonymous?: boolean;
   /** A crash stack to fold into diagnostics as a breadcrumb (crash reports). */
   crashStack?: string;
+  /** The one element the person pointed at, sent as its own field. */
+  element?: FeedbackElement;
+  /**
+   * The address the team will write back to, when there is one, for the
+   * thank-you toast to name. Display only: it never goes on the wire, where the
+   * server resolves identity and `contact` carries a typed address.
+   */
+  notifyEmail?: string;
 }
 
 /** What {@link useSendFeedback} returns to the dialog. */
@@ -201,6 +245,11 @@ export function useSendFeedback(): UseSendFeedback {
     staleTime: 5 * 60 * 1000,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const navigate = useNavigate();
+  // The last report that went through, and when. A ref rather than module state:
+  // the dialog host is mounted for the life of the app, so this outlives every
+  // open and close, and nothing outside this one dialog can see or reset it.
+  const lastSent = useRef<{ fingerprint: string; at: number } | null>(null);
 
   const buildDiagnostics = useCallback(
     (opts?: { crashStack?: string }) =>
@@ -215,6 +264,19 @@ export function useSendFeedback(): UseSendFeedback {
       const message = draft.message.trim();
       if (!message) return false;
       const contact = draft.contact?.trim();
+
+      const print = fingerprint(draft, message);
+      const previous = lastSent.current;
+      if (
+        previous &&
+        previous.fingerprint === print &&
+        Date.now() - previous.at < DUPLICATE_WINDOW_MS
+      ) {
+        // Already with the team. Resolving `true` closes the dialog as if it had
+        // gone again, which is what the person wanted; filing it twice is not.
+        toast.info('You sent this a moment ago, so we didn’t send it again.');
+        return true;
+      }
 
       const diagnostics = draft.includeDiagnostics
         ? buildFeedbackDiagnostics(config, pathname, resolvedTheme, draft.crashStack)
@@ -245,18 +307,33 @@ export function useSendFeedback(): UseSendFeedback {
           ...(attachConversation ? { sessionId, includeTranscript: true } : {}),
           ...(draft.screenshotDataUrl ? { screenshot: { dataUrl: draft.screenshotDataUrl } } : {}),
           ...(draft.anonymous ? { anonymous: true } : {}),
+          ...(draft.element ? { element: draft.element } : {}),
         });
         if (ok) {
-          toast.success('Thanks, sent.');
+          lastSent.current = { fingerprint: print, at: Date.now() };
+          toast.success('Sent. Thank you!', {
+            ...(draft.notifyEmail
+              ? { description: `We’ll email ${draft.notifyEmail} ${WHEN_WE_WRITE[draft.kind]}.` }
+              : {}),
+            action: {
+              label: 'Your reports',
+              // The route is not in the typed router table, so navigate is
+              // loosened here on purpose, as the help menu does.
+              onClick: () =>
+                (navigate as (opts: { to: string }) => void)({ to: YOUR_REPORTS_PATH }),
+            },
+          });
         } else {
-          toast.error('Couldn’t send. Try the GitHub option.');
+          toast.error(
+            'Couldn’t send. Your words are still here, so try again or open a GitHub issue instead.'
+          );
         }
         return ok;
       } finally {
         setIsSubmitting(false);
       }
     },
-    [transport, pathname, route, sessionId, config, resolvedTheme]
+    [transport, pathname, route, sessionId, config, resolvedTheme, navigate]
   );
 
   return { isSubmitting, sessionId, route, buildDiagnostics, send };

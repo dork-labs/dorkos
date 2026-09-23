@@ -63,7 +63,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/agents': 'Team',
   '/channels': 'Channels',
   '/connections': 'Connections',
-  '/feedback-requests': 'Product feedback',
+  '/feedback-requests': 'Your reports',
   '/marketplace': 'Marketplace',
   '/marketplace/sources': 'Marketplace sources',
   '/tasks': 'Schedules',
@@ -89,7 +89,7 @@ export const ROUTE_ICONS: Record<string, LucideIcon> = {
   // Same icon the sidebar nav and the /connections page already use for this
   // route (DOR-919).
   '/connections': Cable,
-  // Same icon the help menu's "Product feedback" entry already uses
+  // Same icon the help menu's "Your reports" entry already uses
   // (DOR-919).
   '/feedback-requests': Inbox,
   '/marketplace': Store,

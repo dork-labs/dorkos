@@ -146,11 +146,21 @@ export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
     action: 'openFeedback',
     category: 'quick-action',
     priority: 10,
-    // The GitHub "Report an issue" entry was removed from the palette (it stays
-    // under "Help and feedback" in the sidebar footer's `⋯` menu, demoted).
-    // Searching these still lands on the in-app dialog, which is now the primary
-    // path.
+    // The GitHub "Report an issue" entry was removed from the palette; that path
+    // is one link in the feedback form's own footer now (DOR-2232). Searching
+    // these lands on the in-app dialog, which is the primary path.
     keywords: ['feedback', 'report', 'bug', 'issue', 'idea', 'feature request'],
+  },
+  {
+    id: 'your-reports',
+    label: 'Your reports',
+    icon: 'Inbox',
+    action: 'openYourReports',
+    category: 'quick-action',
+    priority: 11,
+    // What the help menu calls the person's own sent reports (DOR-2232). The
+    // phone has no help menu to find it in, so the palette is one of its doors.
+    keywords: ['feedback', 'reports', 'my reports', 'sent', 'status', 'requests'],
   },
 ];
 

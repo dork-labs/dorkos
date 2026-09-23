@@ -119,7 +119,7 @@ function FeedbackRowSkeleton() {
 }
 
 /**
- * The "Product feedback" tracking view (feedback-pipeline Part 4, design-
+ * The "Your reports" tracking view (feedback-pipeline Part 4, design-
  * decisions.md §7). Lists what this install has sent the DorkOS team and
  * where each report stands, keyed by the install's own pseudonymous
  * `instanceId` — no login required.

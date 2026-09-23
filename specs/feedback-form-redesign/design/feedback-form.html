@@ -1,0 +1,702 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Feedback redesign</title>
+    <style>
+      :root {
+        --bg: #0b0b0c;
+        --panel: #161618;
+        --muted: #232326;
+        --border: #2e2e32;
+        --fg: #ededed;
+        --dim: #9a9aa1;
+        --accent: #e2702b;
+        --ok: #4ade80;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          14px/1.45 -apple-system,
+          BlinkMacSystemFont,
+          Inter,
+          sans-serif;
+        padding: 32px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 40px 0 4px;
+      }
+      .sub {
+        color: var(--dim);
+        margin: 0 0 18px;
+        max-width: 780px;
+      }
+      .row {
+        display: flex;
+        gap: 28px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+      }
+      .col {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .tag {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--dim);
+      }
+      .pick {
+        cursor: pointer;
+        border: 2px solid transparent;
+        border-radius: 14px;
+        padding: 10px;
+        transition: 0.15s;
+      }
+      .pick:hover {
+        border-color: #444;
+      }
+      .pick.sel {
+        border-color: var(--accent);
+      }
+      /* menu */
+      .menu {
+        width: 230px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 6px;
+      }
+      .menu .lbl {
+        font-size: 12px;
+        color: var(--dim);
+        padding: 6px 8px;
+      }
+      .menu .it {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 7px 8px;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      .menu .it:hover {
+        background: var(--muted);
+      }
+      .menu .it.dim {
+        color: var(--dim);
+      }
+      .menu .kbd {
+        margin-left: auto;
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .strike {
+        opacity: 0.45;
+      }
+      /* dialog */
+      .dlg {
+        width: 420px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .dh {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+      }
+      .dh b {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .dh p {
+        margin: 2px 0 0;
+        color: var(--dim);
+        font-size: 12px;
+      }
+      .x {
+        color: var(--dim);
+      }
+      .seg {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        background: var(--muted);
+        border-radius: 8px;
+        padding: 3px;
+        gap: 3px;
+      }
+      .seg span {
+        text-align: center;
+        padding: 5px;
+        border-radius: 6px;
+        font-size: 12px;
+        color: var(--dim);
+      }
+      .seg .on {
+        background: #0e0e10;
+        color: var(--fg);
+      }
+      .pills {
+        display: flex;
+        gap: 6px;
+      }
+      .pills span {
+        font-size: 12px;
+        padding: 4px 10px;
+        border-radius: 99px;
+        border: 1px solid var(--border);
+        color: var(--dim);
+      }
+      .pills .on {
+        border-color: var(--fg);
+        color: var(--fg);
+      }
+      .ta {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #0f0f11;
+        display: flex;
+        flex-direction: column;
+      }
+      .ta.focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(226, 112, 43, 0.18);
+      }
+      .ta .txt {
+        padding: 10px 12px;
+        min-height: 92px;
+        color: var(--dim);
+        font-size: 13px;
+      }
+      .ta .txt.typed {
+        color: var(--fg);
+      }
+      .tools {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        padding: 6px;
+        border-top: 1px solid var(--border);
+      }
+      .tb {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        padding: 5px 8px;
+        border-radius: 6px;
+        color: var(--dim);
+      }
+      .tb:hover {
+        background: var(--muted);
+        color: var(--fg);
+      }
+      .tb.ic {
+        padding: 5px 7px;
+      }
+      .spacer {
+        flex: 1;
+      }
+      .count {
+        font-size: 11px;
+        color: var(--dim);
+      }
+      .att {
+        display: flex;
+        gap: 8px;
+        padding: 0 10px 10px;
+        flex-wrap: wrap;
+      }
+      .thumb {
+        position: relative;
+        width: 92px;
+        height: 62px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: linear-gradient(135deg, #26262b, #1b1b1f);
+        overflow: hidden;
+      }
+      .thumb .cap {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        font-size: 10px;
+        padding: 2px 5px;
+        background: rgba(0, 0, 0, 0.65);
+      }
+      .thumb .rm {
+        position: absolute;
+        top: 3px;
+        right: 4px;
+        font-size: 10px;
+        background: rgba(0, 0, 0, 0.7);
+        border-radius: 99px;
+        width: 16px;
+        height: 16px;
+        text-align: center;
+        line-height: 16px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        border: 1px solid var(--border);
+        border-radius: 99px;
+        padding: 4px 10px 4px 8px;
+        background: #1d1d21;
+      }
+      .chip .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 99px;
+        background: var(--accent);
+      }
+      .chip.off {
+        color: var(--dim);
+      }
+      .chip.off .dot {
+        background: #555;
+      }
+      .chip .eye {
+        color: var(--dim);
+        font-size: 11px;
+        margin-left: 2px;
+      }
+      .incl {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+      .incl .l {
+        font-size: 12px;
+        color: var(--dim);
+        margin-right: 2px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .field label {
+        font-size: 12px;
+        color: var(--fg);
+      }
+      .field .hint {
+        font-size: 11px;
+        color: var(--dim);
+      }
+      .inp {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 13px;
+        color: var(--dim);
+        background: #0f0f11;
+      }
+      .inp.filled {
+        color: var(--fg);
+      }
+      .who {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--dim);
+      }
+      .who u {
+        margin-left: auto;
+      }
+      .foot {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-top: 1px solid var(--border);
+        padding-top: 12px;
+      }
+      .foot .priv {
+        font-size: 11px;
+        color: var(--dim);
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .btn {
+        margin-left: auto;
+        background: var(--fg);
+        color: #111;
+        border-radius: 8px;
+        padding: 7px 14px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .btn.dis {
+        background: #3a3a3e;
+        color: #8a8a90;
+      }
+      .gh {
+        font-size: 11px;
+        color: var(--dim);
+        text-align: center;
+      }
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+      }
+      .tile {
+        border: 1px dashed #3a3a40;
+        border-radius: 9px;
+        padding: 10px 6px;
+        text-align: center;
+        font-size: 12px;
+        color: var(--dim);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        align-items: center;
+      }
+      .tile i {
+        font-style: normal;
+        font-size: 16px;
+        color: var(--fg);
+      }
+      .note {
+        font-size: 12px;
+        color: var(--dim);
+        max-width: 420px;
+        margin: 6px 0 0;
+      }
+      .note b {
+        color: var(--fg);
+        font-weight: 500;
+      }
+      .errline {
+        font-size: 11px;
+        color: #f0a36d;
+      }
+      .toast {
+        width: 420px;
+        background: #1b1b1e;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px 14px;
+        font-size: 13px;
+        display: flex;
+        gap: 10px;
+      }
+      .toast .ok {
+        color: var(--ok);
+      }
+      .toast small {
+        display: block;
+        color: var(--dim);
+        font-size: 12px;
+        margin-top: 2px;
+      }
+      hr {
+        border: 0;
+        border-top: 1px solid var(--border);
+        margin: 36px 0 0;
+      }
+      .ask {
+        background: #1a130d;
+        border: 1px solid #4a2e18;
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-size: 13px;
+        max-width: 900px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Feedback, simplified</h1>
+    <p class="sub">
+      Four things: a smaller menu, an email we can always reply to, words required, and a friendlier
+      form. Click the one you like in each section. Tell me in the terminal what to change.
+    </p>
+
+    <!-- 1. MENU -->
+    <h2>1 · The help menu</h2>
+    <p class="sub">
+      Five choices plus a sub-menu become three. "Send feedback" and "Report a bug" were the same
+      form, so they merge. GitHub moves <i>inside</i> the form as a small link, so nothing is lost.
+    </p>
+    <div class="row">
+      <div class="col">
+        <span class="tag">Today</span>
+        <div class="menu">
+          <div class="lbl">Help and feedback</div>
+          <div class="it">💬 Send feedback</div>
+          <div class="it">🐞 Report a bug</div>
+          <div class="it">📥 Product feedback</div>
+          <div class="it dim">↗ Report on GitHub… <span class="kbd">›</span></div>
+          <div class="it dim">📖 Documentation</div>
+        </div>
+      </div>
+      <div class="col pick" data-choice="menu-a" onclick="toggleSelect(this)">
+        <span class="tag">A · Three items</span>
+        <div class="menu">
+          <div class="lbl">Help and feedback</div>
+          <div class="it">💬 Send feedback…</div>
+          <div class="it">📥 Your reports</div>
+          <div class="it dim">📖 Documentation</div>
+        </div>
+        <p class="note">
+          "Product feedback" is renamed <b>Your reports</b>: that is what it is (the things you
+          sent, and what happened to them).
+        </p>
+      </div>
+      <div class="col pick" data-choice="menu-b" onclick="toggleSelect(this)">
+        <span class="tag">B · Two items + shortcut</span>
+        <div class="menu">
+          <div class="lbl">Help and feedback</div>
+          <div class="it">💬 Send feedback… <span class="kbd">⌘⇧/</span></div>
+          <div class="it dim">📖 Documentation</div>
+        </div>
+        <p class="note">
+          "Your reports" lives inside the form as a link in its header. Leanest, but your history is
+          one hop further away.
+        </p>
+      </div>
+    </div>
+
+    <!-- 2. FORM -->
+    <h2>2 · The form</h2>
+    <p class="sub">
+      Attachments are always visible, but small. They sit <b>inside</b> the message box, like a chat
+      composer, so the form reads as "one box, then Send". Diagnostics become two tiny switches. The
+      email box appears only when we can't already reply to you.
+    </p>
+    <div class="row">
+      <div class="col pick" data-choice="form-a" onclick="toggleSelect(this)">
+        <span class="tag">A · Composer (toolbar inside the box)</span>
+        <div class="dlg">
+          <div class="dh">
+            <div>
+              <b>Send feedback</b>
+              <p>Straight to the DorkOS team. Private.</p>
+            </div>
+            <span class="x">✕</span>
+          </div>
+          <div class="pills">
+            <span>💬 Feedback</span><span class="on">🐞 Bug</span><span>💡 Idea</span>
+          </div>
+          <div class="ta focus">
+            <div class="txt">What happened, and what did you expect instead?</div>
+            <div class="tools">
+              <span class="tb">📷 Capture app</span>
+              <span class="tb">⌖ Point at it</span>
+              <span class="tb ic" title="Add an image">📎</span>
+              <span class="spacer"></span>
+            </div>
+          </div>
+          <div class="incl">
+            <span class="l">Also send</span>
+            <span class="chip"
+              ><span class="dot"></span>Diagnostics <span class="eye">👁</span></span
+            >
+            <span class="chip"
+              ><span class="dot"></span>This conversation <span class="eye">👁</span></span
+            >
+          </div>
+          <div class="field">
+            <label>Your email</label>
+            <div class="inp">you@example.com</div>
+            <span class="hint"
+              >So we can tell you when it's fixed. We remember it for next time.</span
+            >
+          </div>
+          <div class="foot">
+            <span class="priv">🔒 Only the DorkOS team sees this</span
+            ><span class="btn dis">Send</span>
+          </div>
+          <div class="gh">Prefer a public GitHub issue? <u>Open one instead</u></div>
+        </div>
+      </div>
+
+      <div class="col pick" data-choice="form-b" onclick="toggleSelect(this)">
+        <span class="tag">B · Three tiles under the box</span>
+        <div class="dlg">
+          <div class="dh">
+            <div>
+              <b>Send feedback</b>
+              <p>Straight to the DorkOS team. Private.</p>
+            </div>
+            <span class="x">✕</span>
+          </div>
+          <div class="seg">
+            <span>💬 Feedback</span><span class="on">🐞 Bug</span><span>💡 Idea</span>
+          </div>
+          <div class="ta focus">
+            <div class="txt">What happened, and what did you expect instead?</div>
+          </div>
+          <div class="tiles">
+            <div class="tile"><i>📷</i>Capture app</div>
+            <div class="tile"><i>⌖</i>Point at it</div>
+            <div class="tile"><i>🖼</i>Add image</div>
+          </div>
+          <div class="incl">
+            <span class="l">Also send</span>
+            <span class="chip"
+              ><span class="dot"></span>Diagnostics <span class="eye">👁</span></span
+            >
+            <span class="chip"
+              ><span class="dot"></span>This conversation <span class="eye">👁</span></span
+            >
+          </div>
+          <div class="field">
+            <label>Your email</label>
+            <div class="inp">you@example.com</div>
+            <span class="hint"
+              >So we can tell you when it's fixed. We remember it for next time.</span
+            >
+          </div>
+          <div class="foot">
+            <span class="priv">🔒 Only the DorkOS team sees this</span
+            ><span class="btn dis">Send</span>
+          </div>
+          <div class="gh">Prefer a public GitHub issue? <u>Open one instead</u></div>
+        </div>
+      </div>
+    </div>
+    <p class="note" style="max-width: 900px">
+      Signed in? The email box is replaced by one quiet line:
+      <b>👤 Replying to dorian.collier@gmail.com · Send anonymously</b>. Signed out with an email
+      remembered? It shows filled in, one click to change.
+    </p>
+
+    <!-- 3. POINT -->
+    <h2>3 · After you point at something</h2>
+    <p class="sub">
+      The element's code name no longer goes into your message. It becomes an attachment chip, like
+      the screenshot. Your box stays empty and asks a question about <i>that</i> thing. Send stays
+      off until you write something.
+    </p>
+    <div class="row">
+      <div class="col">
+        <span class="tag">Before you type</span>
+        <div class="dlg">
+          <div class="dh">
+            <div>
+              <b>Send feedback</b>
+              <p>Straight to the DorkOS team. Private.</p>
+            </div>
+            <span class="x">✕</span>
+          </div>
+          <div class="pills">
+            <span>💬 Feedback</span><span class="on">🐞 Bug</span><span>💡 Idea</span>
+          </div>
+          <div class="ta focus">
+            <div class="txt">
+              What's wrong with the <b style="color: var(--fg)">message list</b>?
+            </div>
+            <div class="att">
+              <div class="thumb">
+                <span class="rm">✕</span><span class="cap">⌖ Message list</span>
+              </div>
+            </div>
+            <div class="tools">
+              <span class="tb">📷 Capture app</span><span class="tb">⌖ Point again</span
+              ><span class="tb ic">📎</span>
+              <span class="spacer"></span>
+            </div>
+          </div>
+          <div class="foot">
+            <span class="errline">Add a few words so we know what to look for.</span
+            ><span class="btn dis">Send</span>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <span class="tag">Ready to send</span>
+        <div class="dlg">
+          <div class="dh">
+            <div>
+              <b>Send feedback</b>
+              <p>Straight to the DorkOS team. Private.</p>
+            </div>
+            <span class="x">✕</span>
+          </div>
+          <div class="pills">
+            <span>💬 Feedback</span><span class="on">🐞 Bug</span><span>💡 Idea</span>
+          </div>
+          <div class="ta">
+            <div class="txt typed">Messages disappear when I scroll up.</div>
+            <div class="att">
+              <div class="thumb">
+                <span class="rm">✕</span><span class="cap">⌖ Message list</span>
+              </div>
+            </div>
+            <div class="tools">
+              <span class="tb">📷 Capture app</span><span class="tb">⌖ Point again</span
+              ><span class="tb ic">📎</span> <span class="spacer"></span
+              ><span class="count">⌘↵ to send</span>
+            </div>
+          </div>
+          <div class="foot">
+            <span class="priv">🔒 Only the DorkOS team sees this</span><span class="btn">Send</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. DELIGHT -->
+    <h2>4 · Small delights</h2>
+    <p class="sub">None of these add clutter. They just make it feel looked-after.</p>
+    <div class="row">
+      <div class="col">
+        <div class="toast">
+          <span class="ok">✓</span>
+          <div>
+            Sent. Thank you!<small
+              >We'll email you@example.com when it's fixed. <u>See your reports</u></small
+            >
+          </div>
+        </div>
+        <p class="note">The thank-you says <b>what happens next</b>, and links to your history.</p>
+      </div>
+      <div class="col" style="max-width: 420px">
+        <p class="note">
+          • <b>Draft kept</b> if you close by accident. Reopen and it's all there.<br />
+          • <b>⌘↵ sends.</b> Esc closes.<br />
+          • <b>Paste or drop</b> a picture anywhere on the form (works today, now said once in the
+          📎 tooltip, not three hint lines).<br />
+          • <b>Kind switches itself:</b> pointing at something turns it into a Bug (already
+          true).<br />
+          • <b>Double-send guard:</b> the same report twice in a minute is caught (Ikechi's FB-52
+          and FB-53 were 33 seconds apart).
+        </p>
+      </div>
+    </div>
+
+    <hr />
+    <h2>Behind the scenes (no UI, just better reports)</h2>
+    <div class="ask">
+      • The element is sent as its own field. The Linear title comes from <b>your words</b>, never
+      "Element: [data-testid=…]" (5 of Ikechi's 6 tickets had that as the title).<br />
+      • Repeated errors in diagnostics are grouped ("× 14") instead of flooding the list.<br />
+      • Errors that showed up as <code>{}</code> keep their real message.<br />
+      • The page label "cockpit" in reports is renamed.
+    </div>
+  </body>
+</html>

@@ -50,7 +50,7 @@ const ActivityHeaderStub = makeHeaderStub('activity-header', 'Activity');
 const TasksHeaderStub = makeHeaderStub('tasks-header', 'Tasks');
 const WorkspacesHeaderStub = makeHeaderStub('workspaces-header', 'Workspaces');
 const ConnectionsHeaderStub = makeHeaderStub('connections-header', 'Connections');
-const FeedbackRequestsHeaderStub = makeHeaderStub('feedback-requests-header', 'Product feedback');
+const FeedbackRequestsHeaderStub = makeHeaderStub('feedback-requests-header', 'Your reports');
 
 const ROUTE_HEADER_STUBS: Record<string, React.ComponentType> = {
   '/': DashboardHeaderStub,

@@ -502,6 +502,48 @@ describe('feedback route', () => {
     });
   });
 
+  describe('pointed-at element passthrough (DOR-2232)', () => {
+    it('forwards the element to the forwarder untouched', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      const element = { selector: '[data-testid="message-list"]', testId: 'message-list' };
+
+      const res = await request(fixtureTarget.mount(buildApp()))
+        .post('/api/feedback')
+        .send({ kind: 'bug', message: 'messages vanish', element });
+
+      expect(res.status).toBe(200);
+      expect(mockSend.mock.calls[0][0].submission.element).toEqual(element);
+      expect(mockSend.mock.calls[0][0].submission.message).toBe('messages vanish');
+    });
+
+    it('refuses a bad element on its own account, not the report as a whole', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      const app = fixtureTarget.mount(buildApp());
+      const body = (selector: string) => ({
+        kind: 'bug',
+        message: 'it broke',
+        element: { selector },
+      });
+
+      // Paired, so this cannot pass on a schema that refuses every `element`:
+      // the same report is accepted with a good selector and refused with an
+      // empty one.
+      expect((await request(app).post('/api/feedback').send(body('main'))).status).toBe(200);
+      expect((await request(app).post('/api/feedback').send(body(''))).status).toBe(400);
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts an element with only a selector', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      const res = await request(fixtureTarget.mount(buildApp()))
+        .post('/api/feedback')
+        .send({ kind: 'bug', message: 'it broke', element: { selector: 'main' } });
+
+      expect(res.status).toBe(200);
+      expect(mockSend.mock.calls[0][0].submission.element).toEqual({ selector: 'main' });
+    });
+  });
+
   /**
    * The body-size ceiling, which is a WIRING claim rather than a route claim:
    * `feedbackJsonParser` only raises the limit if `app.ts` mounts it BEFORE the

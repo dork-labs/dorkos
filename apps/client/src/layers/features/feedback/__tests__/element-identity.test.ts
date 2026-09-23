@@ -10,12 +10,13 @@
 // `CSS` global at all, and its job is only to keep a missing global from taking
 // the whole identity down — a case a test would have to fabricate to see.
 import { describe, it, expect, afterEach } from 'vitest';
-import { MAX_FEEDBACK_MESSAGE_LEN } from '@dorkos/shared/telemetry-events';
+import { MAX_FEEDBACK_ELEMENT_NAME_LEN } from '@dorkos/shared/telemetry-events';
 import {
-  appendElementIdentity,
   buildSelector,
   describeElement,
-  formatElementIdentity,
+  accessibleLabel,
+  humanizeName,
+  nameElement,
   MAX_SELECTOR_LEN,
 } from '../lib/element-identity';
 
@@ -160,6 +161,18 @@ describe('buildSelector — the shortest thing that still points at one element'
   });
 });
 
+describe('buildSelector — the wire cap', () => {
+  it('passes over a unique name that is too long to send', () => {
+    const longId = 'x'.repeat(MAX_SELECTOR_LEN + 10);
+    mount(`<section><button id="${longId}">go</button></section>`);
+
+    const selector = buildSelector(find('button'));
+
+    expect(selector.length).toBeLessThanOrEqual(MAX_SELECTOR_LEN);
+    expect(selector).not.toContain(longId);
+  });
+});
+
 describe('describeElement — the names a person can search for', () => {
   it('reads the nearest slot and test id, not only the element clicked', () => {
     // A click lands on the deepest thing under the pointer — the icon inside the
@@ -186,113 +199,126 @@ describe('describeElement — the names a person can search for', () => {
   });
 });
 
-describe('formatElementIdentity — the block that rides in the report', () => {
-  it('writes one labelled line per name that resolved', () => {
-    const block = formatElementIdentity({
-      selector: 'button[data-slot="sidebar-toggle"]',
-      slot: 'sidebar-toggle',
-      testId: 'nav-toggle',
-    });
+describe('describeElement — the wire cap on names', () => {
+  it('leaves out a name too long to be one anybody wrote, rather than cutting it', () => {
+    const longTestId = 'y'.repeat(MAX_FEEDBACK_ELEMENT_NAME_LEN + 1);
+    mount(`<div data-slot="card" data-testid="${longTestId}"><span>x</span></div>`);
 
-    expect(block).toBe(
-      'Element: button[data-slot="sidebar-toggle"]\nSlot: sidebar-toggle\nTestid: nav-toggle'
-    );
-  });
+    const identity = describeElement(find('span'));
 
-  it('leaves out the lines that resolved to nothing', () => {
-    // `Slot: undefined` is worse than no line: a reader has to work out whether
-    // the word is the answer or the absence of one.
-    const block = formatElementIdentity({ selector: 'span:nth-of-type(2)' });
-
-    expect(block).toBe('Element: span:nth-of-type(2)');
-    expect(block).not.toContain('Slot');
-    expect(block).not.toContain('undefined');
+    expect(identity.testId).toBeUndefined();
+    expect(identity.slot).toBe('card');
   });
 });
 
-describe('appendElementIdentity — folding it into what was already typed', () => {
-  it('keeps the report someone had already written, and separates the block from it', () => {
-    const next = appendElementIdentity('the toggle does nothing', { selector: '#toggle' });
-
-    expect(next).toEqual({
-      message: 'the toggle does nothing\n\nElement: #toggle',
-      identityDropped: false,
-    });
+describe('humanizeName — code names as words', () => {
+  it('splits dashes, underscores and camel case, with a capital', () => {
+    expect(humanizeName('message-list')).toBe('Message list');
+    expect(humanizeName('chatInput_box')).toBe('Chat input box');
   });
 
-  it('starts with the block when nothing has been typed yet', () => {
-    // No leading blank lines to delete before the person can start writing.
-    expect(appendElementIdentity('', { selector: '#toggle' }).message).toBe('Element: #toggle');
-    expect(appendElementIdentity('   \n\n ', { selector: '#toggle' }).message).toBe(
-      'Element: #toggle'
+  it('answers null when there are no words', () => {
+    expect(humanizeName('--')).toBeNull();
+  });
+});
+
+describe('accessibleLabel — the words on the thing', () => {
+  it('names the control around an icon or inner text by its own text', () => {
+    mount(
+      '<div data-slot="app-shell"><button><svg></svg><span>Set up a daily run</span></button></div>'
     );
+    expect(accessibleLabel(find('svg'))).toBe('Set up a daily run');
   });
 
-  it('replaces the block from the last pointing instead of stacking a second one', () => {
-    // There is ONE screenshot, and the second pointing already replaced it. Two
-    // "Element:" blocks beside one picture tell whoever reads the report that it
-    // shows two things, which is not true of any report this can produce.
-    const once = appendElementIdentity('two things look wrong', {
-      selector: '#a',
-      slot: 'first',
-      testId: 'first-id',
+  it('prefers aria-label to the visible text', () => {
+    mount('<button aria-label="Close panel"><span>×</span></button>');
+    expect(accessibleLabel(find('span'))).toBe('Close panel');
+  });
+
+  it('reads aria-labelledby', () => {
+    mount('<span id="t">Rename agent</span><div role="button" aria-labelledby="t"><i></i></div>');
+    expect(accessibleLabel(find('i'))).toBe('Rename agent');
+  });
+
+  it('cuts a long name at a word, near 40 characters', () => {
+    mount('<button>Set up a daily run that summarises every conversation from yesterday</button>');
+    const label = accessibleLabel(find('button'));
+    expect(label?.endsWith('…')).toBe(true);
+    expect(label?.length).toBeLessThanOrEqual(40);
+    expect(label?.startsWith('Set up a daily run')).toBe(true);
+  });
+
+  it('never sends what was typed into a field, only its label', () => {
+    mount('<label for="q">Search agents</label><input id="q" value="my private note" />');
+    expect(accessibleLabel(find('input'))).toBe('Search agents');
+    mount('<textarea>secret draft</textarea>');
+    expect(accessibleLabel(find('textarea'))).toBeUndefined();
+  });
+
+  it('does not call a whole panel by its content', () => {
+    mount('<section><p>First message</p><p>Second message</p></section>');
+    expect(accessibleLabel(find('section'))).toBeUndefined();
+  });
+
+  it('uses a heading’s text outside any control', () => {
+    mount('<div><h2><span>Schedules</span></h2></div>');
+    expect(accessibleLabel(find('span'))).toBe('Schedules');
+  });
+
+  it('never names a draft in the composer by what was typed', () => {
+    // How the Lexical composer draws a draft: the typed words are plain spans.
+    mount(
+      '<div contenteditable="true" aria-label="Message"><p><span data-lexical-text="true">my private draft</span></p></div>'
+    );
+    expect(accessibleLabel(find('[data-lexical-text]'))).toBe('Message');
+    mount('<div role="textbox"><p><span>still private</span></p></div>');
+    expect(accessibleLabel(find('span'))).toBeUndefined();
+  });
+
+  it('never names a line of a sent message by its words', () => {
+    mount('<article><div><p>Deploy is done</p></div></article>');
+    expect(accessibleLabel(find('p'))).toBeUndefined();
+  });
+
+  it('cuts between characters, never inside one', () => {
+    // An emoji (a surrogate pair) straddling the 39th UTF-16 unit, where a
+    // plain `slice` would keep only its first half.
+    mount(`<button>${'a'.repeat(38)}😀😀😀 more words after it</button>`);
+    const label = accessibleLabel(find('button')) ?? '';
+    expect(label.endsWith('…')).toBe(true);
+    expect(
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(label)
+    ).toBe(false);
+  });
+});
+
+describe('nameElement — closest name first', () => {
+  it('names a chip by its words, not by the shell around it (the "App shell" report)', () => {
+    mount(
+      '<div data-slot="app-shell"><button data-slot="button">Set up a daily run</button></div>'
+    );
+    expect(nameElement(find('button'))).toEqual({ text: 'Set up a daily run', onScreen: true });
+  });
+
+  it('falls back to its own test id, then its own slot', () => {
+    mount(
+      '<div data-slot="app-shell"><div data-testid="message-list" data-slot="scroll-area"></div></div>'
+    );
+    expect(nameElement(find('[data-testid="message-list"]'))).toEqual({
+      text: 'Message list',
+      onScreen: false,
     });
-    const twice = appendElementIdentity(once.message, { selector: '#b' });
-
-    expect(twice.message).toBe('two things look wrong\n\nElement: #b');
-    expect(twice.message).not.toContain('#a');
-    expect(twice.message).not.toContain('first');
+    mount('<div data-slot="app-shell"><div data-slot="scroll-area"></div></div>');
+    expect(nameElement(find('[data-slot="scroll-area"]'))?.text).toBe('Scroll area');
   });
 
-  it('leaves a block the person has typed past exactly where they left it', () => {
-    // Once there is text after it, it is their writing and not ours to edit —
-    // and it may well be what they are writing ABOUT.
-    const once = appendElementIdentity('look here', { selector: '#a' });
-    const edited = `${once.message}\n\nand this one too:`;
-
-    const twice = appendElementIdentity(edited, { selector: '#b' });
-
-    expect(twice.message).toContain('Element: #a');
-    expect(twice.message).toContain('Element: #b');
+  it('then the nearest ancestor that has a name', () => {
+    mount('<div data-testid="outer"><div data-slot="card"><div><i></i></div></div></div>');
+    expect(nameElement(find('i'))?.text).toBe('Card');
   });
 
-  it('never writes the message past the cap the wire enforces', () => {
-    // The textarea's own `maxLength` stops a PERSON at the cap; nothing stops
-    // code, and the schema refuses the submission at exactly this bound — so an
-    // overflow surfaces as a failed send and a toast about GitHub, which is not
-    // what went wrong.
-    const identity = { selector: '#toggle' };
-    const block = formatElementIdentity(identity);
-    const almostFull = 'x'.repeat(MAX_FEEDBACK_MESSAGE_LEN - block.length);
-
-    const result = appendElementIdentity(almostFull, identity);
-
-    expect(result.identityDropped).toBe(true);
-    expect(result.message.length).toBeLessThanOrEqual(MAX_FEEDBACK_MESSAGE_LEN);
-    expect(result.message).not.toContain('Element:');
-  });
-
-  it('fits the block when there is exactly room for it', () => {
-    // The boundary from the other side: one character less of message and the
-    // block, plus the blank line between them, land on the cap exactly.
-    const identity = { selector: '#toggle' };
-    const block = formatElementIdentity(identity);
-    const typed = 'x'.repeat(MAX_FEEDBACK_MESSAGE_LEN - block.length - 2);
-
-    const result = appendElementIdentity(typed, identity);
-
-    expect(result.identityDropped).toBe(false);
-    expect(result.message).toHaveLength(MAX_FEEDBACK_MESSAGE_LEN);
-    expect(result.message.endsWith(block)).toBe(true);
-  });
-
-  it('keeps every character the person typed when the block will not fit', () => {
-    // Their words are worth more than our labels: making room by trimming the
-    // report is the one thing this must not do.
-    const typed = 'y'.repeat(MAX_FEEDBACK_MESSAGE_LEN);
-
-    const result = appendElementIdentity(typed, { selector: '#toggle' });
-
-    expect(result.message).toBe(typed);
+  it('answers null when nothing names it', () => {
+    mount('<div><div><i></i></div></div>');
+    expect(nameElement(find('i'))).toBeNull();
   });
 });

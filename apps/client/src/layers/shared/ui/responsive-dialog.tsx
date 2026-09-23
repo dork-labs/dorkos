@@ -163,14 +163,31 @@ function ResponsiveDialogTrigger({
 }
 ResponsiveDialogTrigger.displayName = 'ResponsiveDialogTrigger';
 
+/** Props for {@link ResponsiveDialogContent}. */
+export interface ResponsiveDialogContentProps extends React.ComponentPropsWithoutRef<
+  typeof DialogContent
+> {
+  /**
+   * Props for the centered-dialog shape only — a width cap, an open-focus
+   * handler — merged over the rest (`className` joins rather than replaces).
+   *
+   * Decided by the dialog's OWN shape, which is fixed when it opens, never by a
+   * live viewport read: a caller that asked `useIsMobile()` instead would hand
+   * a drawer the desktop's props the moment the window was resized under it.
+   */
+  desktopProps?: Partial<React.ComponentPropsWithoutRef<typeof DialogContent>>;
+}
+
 /** Content panel that renders as a centered dialog or bottom drawer based on viewport. */
 function ResponsiveDialogContent({
   className,
   children,
+  desktopProps,
   ...props
-}: React.ComponentPropsWithoutRef<typeof DialogContent>) {
+}: ResponsiveDialogContentProps) {
   const { isDesktop, isFullscreen } = useResponsiveDialog();
   if (isDesktop) {
+    const { className: desktopClassName, ...desktopRest } = desktopProps ?? {};
     return (
       <DialogContent
         data-fullscreen={isFullscreen || undefined}
@@ -179,9 +196,11 @@ function ResponsiveDialogContent({
           'data-[fullscreen]:top-4 data-[fullscreen]:right-4 data-[fullscreen]:bottom-4 data-[fullscreen]:left-4',
           'data-[fullscreen]:translate-x-0 data-[fullscreen]:translate-y-0',
           'data-[fullscreen]:h-auto data-[fullscreen]:max-h-none data-[fullscreen]:w-auto data-[fullscreen]:max-w-none',
-          className
+          className,
+          desktopClassName
         )}
         {...props}
+        {...desktopRest}
       >
         {children}
       </DialogContent>
@@ -263,12 +282,30 @@ function ResponsiveDialogClose({
 }
 ResponsiveDialogClose.displayName = 'ResponsiveDialogClose';
 
+/** Props for {@link ResponsiveDialogBody}. */
+export interface ResponsiveDialogBodyProps extends React.HTMLAttributes<HTMLDivElement> {
+  /**
+   * Line the body's content up with the header on the centered dialog. The body
+   * keeps its `px-4` (the room a field's 3px focus ring needs inside a scroll
+   * region, DOR-2076) and hands the dialog's matching gutter back with `-mx-4`.
+   * The drawer pays no side padding of its own, so its body already lines up,
+   * and gets nothing. Read off the dialog's own shape, fixed at open.
+   */
+  alignWithHeader?: boolean;
+}
+
 /** Scrollable body area for responsive dialog content. */
-function ResponsiveDialogBody({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+function ResponsiveDialogBody({ className, alignWithHeader, ...props }: ResponsiveDialogBodyProps) {
+  // Optional: a body mounted outside a ResponsiveDialog simply never aligns.
+  const isDesktop = useResponsiveDialogOptional()?.isDesktop ?? false;
   return (
     <div
       data-slot="responsive-dialog-body"
-      className={cn('flex-1 overflow-y-auto px-4', className)}
+      className={cn(
+        'flex-1 overflow-y-auto px-4',
+        alignWithHeader && isDesktop && '-mx-4',
+        className
+      )}
       {...props}
     />
   );
