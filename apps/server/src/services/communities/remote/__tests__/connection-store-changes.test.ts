@@ -47,12 +47,18 @@ const ACCESS = {
 let directory: string;
 let store: RemoteConnectionStore;
 let changes: RemoteConnectionChange[];
+/** How many times the listener was called — one per committed write. */
+let writes: number;
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'community-connection-changes-'));
   store = new RemoteConnectionStore(directory, memoryCredentials());
   changes = [];
-  store.onChange((change) => changes.push(change));
+  writes = 0;
+  store.onChange((batch) => {
+    writes += 1;
+    changes.push(...batch);
+  });
 });
 
 afterEach(async () => {
@@ -128,6 +134,25 @@ describe('RemoteConnectionStore change announcements', () => {
     expect(changes).toEqual([{ ownerKey: OWNER, ref, status: 'removed' }]);
   });
 
+  it('announces a sweep of several expired rows as ONE write, not one per row', async () => {
+    // Each call becomes one `community_connections_changed` frame, and each
+    // frame costs every open window a list read that re-verifies with every
+    // Community — so N swept rows must not cost N of those.
+    const past = new Date(Date.now() - 1_000).toISOString();
+    const refs = [
+      await pending('remote_a', OWNER, past),
+      await pending('remote_b', OWNER, past),
+      await pending('remote_c', OWNER, past),
+    ];
+    changes.length = 0;
+    writes = 0;
+
+    await store.sweepExpired(OWNER);
+
+    expect(writes).toBe(1);
+    expect(changes).toEqual(refs.map((ref) => ({ ownerKey: OWNER, ref, status: 'removed' })));
+  });
+
   it('does not announce an access re-verification, which every list read performs', async () => {
     // Announcing it would make each window's re-read trigger every window to
     // re-read again, forever.
@@ -179,7 +204,7 @@ describe('RemoteConnectionStore change announcements', () => {
 
   it('stops announcing to a listener that unsubscribed', async () => {
     const late: RemoteConnectionChange[] = [];
-    const off = store.onChange((change) => late.push(change));
+    const off = store.onChange((batch) => late.push(...batch));
     off();
 
     await connected('remote_a');

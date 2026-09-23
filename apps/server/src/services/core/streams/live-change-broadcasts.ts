@@ -44,10 +44,11 @@ export interface ConfigChangeSource {
 /** The narrow slice of `RemoteConnectionStore` this wiring needs. */
 export interface CommunityConnectionsSource {
   /**
-   * Subscribe to committed connection-list changes. The change names an owner
-   * and a ref, and this wiring passes neither on. Returns an unsubscribe.
+   * Subscribe to committed connection-list writes, one call per write with
+   * every change it made. The changes name owners and refs, and this wiring
+   * passes neither on. Returns an unsubscribe.
    */
-  onChange(listener: (change: { ownerKey: string }) => void): () => void;
+  onChange(listener: (changes: readonly { ownerKey: string }[]) => void): () => void;
 }
 
 /** The narrow slice of the global fan-out this wiring needs. */
@@ -158,6 +159,15 @@ export interface CommunityConnectionsChangedEvent {
  * person's, and an agent can never manage them), and it carries only a stamp
  * — see {@link CommunityConnectionsChangedEvent} for why nothing about the
  * owner or the Community may ride on it.
+ *
+ * **It is not free, so it is sent sparingly.** Every frame costs one
+ * owner-scoped list read per open operator window, and that read re-verifies
+ * each of the owner's connections with its Community over the network. So
+ * the store announces only a change to the list's SHAPE — a row added,
+ * connected, told to reconnect, or removed — and one frame per committed
+ * write however many rows it touched. It never announces an access
+ * re-check: the list read itself performs one per row, so announcing it would
+ * have every window's read trigger another read in every window, forever.
  *
  * @param deps - The mesh core, the config manager, the Community connection
  *   store, and the fan-out.

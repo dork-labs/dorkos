@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(community): push connection changes so a window leaves an ended Community in seconds'
+  - 'fix(community): send one connection-change frame per write, not per row'
 ---
 
 ### Fixed

@@ -76,8 +76,11 @@ export interface RemoteConnectionChange {
   status: ConnectionRecord['status'] | 'removed';
 }
 
-/** Subscriber to {@link RemoteConnectionStore.onChange}. */
-export type RemoteConnectionChangeListener = (change: RemoteConnectionChange) => void;
+/**
+ * Subscriber to {@link RemoteConnectionStore.onChange}: called once per
+ * committed write, with every change that write made (never empty).
+ */
+export type RemoteConnectionChangeListener = (changes: readonly RemoteConnectionChange[]) => void;
 
 const noEffectiveAccess = { read: false, post: false, enrollAgent: false, stream: false } as const;
 
@@ -118,7 +121,11 @@ export class RemoteConnectionStore {
    * construction. Listeners run after the write is on disk, so a reader that
    * lists in response sees the new state.
    *
-   * @param listener - Called synchronously, once per change.
+   * One call per committed WRITE, not per row: a sweep that removes three
+   * expired rows is one call carrying three changes, so a subscriber that
+   * turns calls into broadcasts sends one frame, not three.
+   *
+   * @param listener - Called synchronously, once per write that changed the list.
    * @returns An unsubscribe function.
    */
   onChange(listener: RemoteConnectionChangeListener): () => void {
@@ -128,18 +135,21 @@ export class RemoteConnectionStore {
     };
   }
 
-  /** Tell every listener; one that throws never fails the write it reports. */
+  /**
+   * Tell every listener once about one committed write; one that throws never
+   * fails the write it reports. A write that changed nothing is not announced.
+   */
   private announce(changes: readonly RemoteConnectionChange[]): void {
-    for (const change of changes)
-      for (const listener of this.listeners) {
-        try {
-          listener(change);
-        } catch (error) {
-          logger.warn('[RemoteConnectionStore] A connection change listener failed', {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
+    if (!changes.length) return;
+    for (const listener of this.listeners) {
+      try {
+        listener(changes);
+      } catch (error) {
+        logger.warn('[RemoteConnectionStore] A connection change listener failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
+    }
   }
 
   private exclusive<T>(action: () => Promise<T>): Promise<T> {

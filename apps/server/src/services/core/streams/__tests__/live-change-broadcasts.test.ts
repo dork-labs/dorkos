@@ -101,7 +101,8 @@ function fakeConfig() {
 
 /** A Community connection store that just holds its subscriber. */
 function fakeCommunityConnections() {
-  const listeners: Array<(change: { ownerKey: string; ref: string; status: string }) => void> = [];
+  type Change = { ownerKey: string; ref: string; status: string };
+  const listeners: Array<(changes: readonly Change[]) => void> = [];
   const source: CommunityConnectionsSource = {
     onChange: (listener) => {
       listeners.push(listener);
@@ -111,8 +112,8 @@ function fakeCommunityConnections() {
   return {
     source,
     subscriberCount: () => listeners.length,
-    fire: (change: { ownerKey: string; ref: string; status: string }) =>
-      listeners.forEach((listener) => listener(change)),
+    /** One committed write carrying `changes`. */
+    fire: (...changes: Change[]) => listeners.forEach((listener) => listener(changes)),
   };
 }
 
@@ -238,7 +239,7 @@ describe('community_connections_changed', () => {
     expect(communities.subscriberCount()).toBe(1);
   });
 
-  it('goes out the moment the store reports a change, one frame per change', () => {
+  it('goes out the moment the store reports a write, one frame per write', () => {
     communities.fire(ENDED);
     communities.fire({ ...ENDED, status: 'removed' });
 
@@ -246,6 +247,18 @@ describe('community_connections_changed', () => {
       'community_connections_changed',
       'community_connections_changed',
     ]);
+  });
+
+  it('sends ONE frame for a write that changed several rows', () => {
+    // A sweep of three expired rows is one write; three frames would cost
+    // every open window three list reads, each re-verifying every connection.
+    communities.fire(
+      { ...ENDED, ref: 'remote_1', status: 'removed' },
+      { ...ENDED, ref: 'remote_2', status: 'removed' },
+      { ...ENDED, ref: 'remote_3', status: 'removed' }
+    );
+
+    expect(fanOut.sent.map((entry) => entry.event)).toEqual(['community_connections_changed']);
   });
 
   it('carries a stamp and nothing else — no owner, no ref, no status', () => {
