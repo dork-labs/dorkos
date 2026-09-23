@@ -5,6 +5,7 @@
  */
 import {
   readFlyApps,
+  readFlyOrganizationId,
   readFlyOrganizations,
   readFlyRegions,
   type FlyAppIdentity,
@@ -180,6 +181,9 @@ export function createDefaultCommunityCreationDependencies(input: {
     if (!id) throw new ProviderMutationError('INVALID_RESPONSE');
     return exactFlyApp(input.options, input.plan.fly.organizationId, id, input.plan.fly.appName);
   };
+  // The plan records the Fly organization by slug, as flyctl does; Fly's add-on API wants the
+  // organization's GraphQL ID instead, as `fly ext tigris create` sends it.
+  let flyOrganizationId: string | undefined;
   return {
     persist: input.persist,
     now: input.now,
@@ -237,14 +241,23 @@ export function createDefaultCommunityCreationDependencies(input: {
           );
           if (!confirmed) throw new FlyGraphqlClientError('TERMS_NOT_ACCEPTED');
         }
+        // Resolved before the creation intent is recorded, so a failed read cannot strand one.
+        flyOrganizationId = await readFlyOrganizationId(
+          input.options.fly,
+          input.plan.fly.organizationId
+        );
       },
       create: async () => {
         const exactApp = await app();
+        const organizationId = (flyOrganizationId ??= await readFlyOrganizationId(
+          input.options.fly,
+          input.plan.fly.organizationId
+        ));
         const created = await useTigrisClient(input.options, (client) =>
           client.createTigris({
             clientMutationId: input.latestJournal().runId,
             name: input.plan.tigris.bucketName,
-            organizationId: input.plan.fly.organizationId,
+            organizationId,
             appId: exactApp.id,
             primaryRegion: input.plan.fly.region,
           })

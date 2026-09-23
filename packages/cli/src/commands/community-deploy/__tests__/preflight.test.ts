@@ -102,10 +102,8 @@ describe('Community deployment preflight', () => {
           {
             id: 'app-foreign',
             name: selection.appName,
-            organizationId: 'org-id',
             organizationSlug: 'dork-labs',
-            organizationName: 'Dork Labs',
-            status: 'running',
+            status: 'deployed',
           },
         ],
       })

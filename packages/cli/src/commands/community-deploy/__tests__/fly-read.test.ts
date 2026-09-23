@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   readFlyApps,
   readFlyIdentity,
+  readFlyOrganizationId,
   readFlyOrganizations,
   readFlyRegions,
   readFlyRuntimeInventory,
@@ -30,7 +31,7 @@ afterEach(async () => {
 const options = (executable: string, env: Readonly<Record<string, string>> = {}) => ({
   executable,
   env,
-  timeoutMs: 1_000,
+  timeoutMs: 10_000,
 });
 
 describe('Fly read-only contracts', () => {
@@ -72,20 +73,76 @@ printf '%s' '[{"code":"ord","name":"Chicago, Illinois (US)","latitude":41.88,"lo
   it('binds app identity to the explicitly selected organization', async () => {
     const executable = await fakeFlyctl(`
 test "$1 $2 $3 $4 $5" = "apps list --org dork-labs --json" || exit 9
-printf '%s' '[{"ID":"app_123","Name":"community-space","Status":"running","Organization":{"ID":"org_123","Slug":"dork-labs","Name":"Dork Labs","PaidPlan":true},"Secrets":{"SHOULD_NOT_ESCAPE":"CANARY_SECRET"}}]'
+printf '%s' '[{"ID":"community-space","Name":"community-space","Status":"deployed","Organization":{"ID":"","Slug":"dork-labs","Name":"Dork Labs","PaidPlan":true},"Secrets":{"SHOULD_NOT_ESCAPE":"CANARY_SECRET"}}]'
 `);
     const result = await readFlyApps(options(executable), 'dork-labs');
     expect(result).toEqual([
       {
-        id: 'app_123',
+        id: 'community-space',
         name: 'community-space',
-        organizationId: 'org_123',
         organizationSlug: 'dork-labs',
-        organizationName: 'Dork Labs',
-        status: 'running',
+        status: 'deployed',
       },
     ]);
     expect(JSON.stringify(result)).not.toContain('CANARY_SECRET');
+  });
+
+  // flyctl v0.4.104 lists apps through the Machines API, which blanks the organization ID; the
+  // GraphQL listing it replaced filled both. An organization with apps must read under either.
+  it.each([
+    ['Machines API listing (organization ID blank)', 'apps.json'],
+    ['GraphQL listing (organization ID and name present)', 'apps-graphql.json'],
+  ])('reads an organization that already has apps from the %s', async (_label, fixture) => {
+    const document = await readFile(new URL(`./fixtures/fly/${fixture}`, import.meta.url), 'utf8');
+    const executable = await fakeFlyctl(`
+test "$1 $2 $3 $4 $5" = "apps list --org fixture-org --json" || exit 9
+printf '%s' "$FIXTURE_JSON"
+`);
+    await expect(
+      readFlyApps(options(executable, { FIXTURE_JSON: document }), 'fixture-org')
+    ).resolves.toEqual([
+      {
+        id: 'community-fixture',
+        name: 'community-fixture',
+        organizationSlug: 'fixture-org',
+        status: 'deployed',
+      },
+    ]);
+  });
+
+  it('never reads the organization ID or name, whether blank, missing, or set', async () => {
+    const fixture = JSON.parse(
+      await readFile(new URL('./fixtures/fly/apps.json', import.meta.url), 'utf8')
+    ) as Array<{ Organization: Record<string, unknown> }>;
+    const executable = await fakeFlyctl(`printf '%s' "$FIXTURE_JSON"`);
+    for (const organization of [
+      { ID: '', Name: '' },
+      { ID: undefined, Name: undefined },
+      { ID: 'org_fixture_01', Name: 'Fixture Organization' },
+    ]) {
+      const variant = structuredClone(fixture);
+      Object.assign(variant[0]!.Organization, organization);
+      await expect(
+        readFlyApps(options(executable, { FIXTURE_JSON: JSON.stringify(variant) }), 'fixture-org')
+      ).resolves.toHaveLength(1);
+    }
+  });
+
+  it('resolves the selected organization ID and binds it to the slug', async () => {
+    const executable = await fakeFlyctl(`
+test "$1 $2 $3 $4" = "orgs show personal --json" || exit 9
+printf '%s' '{"ID":"org_fixture_01","InternalNumericID":"1","Name":"Operator","Slug":"personal","Type":"PERSONAL","Members":{"Edges":[]}}'
+`);
+    await expect(readFlyOrganizationId(options(executable), 'personal')).resolves.toBe(
+      'org_fixture_01'
+    );
+
+    const otherOrganization = await fakeFlyctl(
+      `printf '%s' '{"ID":"org_fixture_02","Slug":"dork-labs"}'`
+    );
+    await expect(
+      readFlyOrganizationId(options(otherOrganization), 'personal')
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
   it('rejects duplicate identities, controls, and malformed trusted fields', async () => {
@@ -102,7 +159,7 @@ printf '%s' '[{"ID":"app_123","Name":"community-space","Status":"running","Organ
     });
 
     const wrongOrganization = await fakeFlyctl(
-      `printf '%s' '[{"ID":"app_123","Name":"community-space","Status":"running","Organization":{"ID":"org_other","Slug":"personal","Name":"Personal"}}]'`
+      `printf '%s' '[{"ID":"community-space","Name":"community-space","Status":"deployed","Organization":{"ID":"","Slug":"personal","Name":"Personal"}}]'`
     );
     await expect(readFlyApps(options(wrongOrganization), 'dork-labs')).rejects.toMatchObject({
       code: 'INVALID_RESPONSE',
@@ -117,9 +174,7 @@ printf '%s' '[{"ID":"app_123","Name":"community-space","Status":"running","Organ
       [0, 'ID'],
       [0, 'Name'],
       [0, 'Status'],
-      [0, 'Organization', 'ID'],
       [0, 'Organization', 'Slug'],
-      [0, 'Organization', 'Name'],
     ] as const;
     const executable = await fakeFlyctl(`printf '%s' "$FIXTURE_JSON"`);
     await Promise.all(
@@ -127,7 +182,7 @@ printf '%s' '[{"ID":"app_123","Name":"community-space","Status":"running","Organ
         expect(
           readFlyApps(
             options(executable, { FIXTURE_JSON: JSON.stringify(mutation.value) }),
-            'dork-labs'
+            'fixture-org'
           ),
           mutation.label
         ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })

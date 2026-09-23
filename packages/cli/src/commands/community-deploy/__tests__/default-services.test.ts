@@ -6,6 +6,7 @@ import { createDefaultCommunityCreationDependencies } from '../runtime/default-s
 const mocks = vi.hoisted(() => ({
   createNeonProject: vi.fn(),
   readFlyApps: vi.fn(),
+  readFlyOrganizationId: vi.fn(),
   readFlySecretInventory: vi.fn(),
   verifyTigrisSecretNames: vi.fn(),
   createTigris: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../fly-mutate.js', () => ({ createFlyApp: vi.fn() }));
 vi.mock('../fly-read.js', () => ({
   readFlyApps: mocks.readFlyApps,
+  readFlyOrganizationId: mocks.readFlyOrganizationId,
   readFlyOrganizations: vi.fn(),
   readFlyRegions: vi.fn(),
 }));
@@ -103,12 +105,11 @@ beforeEach(() => {
     {
       id: 'app_fixture_01',
       name: 'community-fixture-app',
-      organizationId: 'org_fixture_01',
       organizationSlug: 'fixture-org',
-      organizationName: 'Fixture Org',
-      status: 'running',
+      status: 'deployed',
     },
   ]);
+  mocks.readFlyOrganizationId.mockResolvedValue('org_fixture_graphql_01');
   mocks.createTigris.mockResolvedValue({
     addOnId: 'addon_fixture_01',
     addOnName: 'community-fixture-bucket',
@@ -139,5 +140,13 @@ describe('default Community creation boundaries', () => {
     });
     expect(mocks.readFlySecretInventory).not.toHaveBeenCalled();
     expect(mocks.verifyTigrisSecretNames).not.toHaveBeenCalled();
+  });
+
+  it('creates Tigris under the Fly organization ID resolved from the planned slug', async () => {
+    await dependencies().tigris.create();
+    expect(mocks.readFlyOrganizationId).toHaveBeenCalledWith(expect.anything(), 'fixture-org');
+    expect(mocks.createTigris).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: 'org_fixture_graphql_01', appId: 'app_fixture_01' })
+    );
   });
 });
