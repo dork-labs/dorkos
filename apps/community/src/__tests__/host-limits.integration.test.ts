@@ -6,6 +6,7 @@
  * Tests run in order and share one host whose first community, A, the operator owns.
  */
 import { randomUUID } from 'node:crypto';
+import { request as httpRequest } from 'node:http';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { assertMemberRoom } from '../host/limits.js';
 import { runHostKeyCommand } from '../host-keys.js';
@@ -266,6 +267,76 @@ it('lets exactly one of two admissions racing for the last seat through', async 
   expect(await count('SELECT 1 FROM members WHERE community_id=$1 AND active', [a])).toBe(4);
 });
 
+it('lets a channel invitation and an upload to that channel commit together without a deadlock', async () => {
+  // Purpose: an upload holds its channel and then checks the file limit; a channel invitation
+  // holds the member limit and then joins that channel. If the upload locked the limit row too,
+  // each would wait on the other and one would fail.
+  await setLimits(a, { maxActiveMembers: 100, maxStorageBytes: 1024 * MiB });
+  // The uploader is not the inviter: the invitation also locks its issuer's member row, which
+  // is a different ordering from the one under test here.
+  const uploaderCookie = await signIn('second@limits.test');
+  const room = await createChannel(h, a, operator.cookie, 'join-and-upload', [uploaderCookie]);
+  const issued = await expectStatus(
+    await h.call(`${tenant(a)}/invites`, {
+      cookie: operator.cookie,
+      body: { seats: 1, channelId: room },
+    }),
+    201,
+    'channel invite'
+  );
+  const joiner = await boundJoiner((await issued.json()).token, 'channel@limits.test');
+  const [joined, uploaded] = await holdingLock(
+    h,
+    'SELECT 1 FROM community_limits WHERE community_id=$1 FOR UPDATE',
+    [a],
+    async (release) => {
+      const joining = redeem(joiner);
+      await waitForLockWaiters(h, 1, 'community_limits');
+      const uploading = upload(1, 'during-join', room, uploaderCookie);
+      // Before the fix the upload queued behind the join's limit lock; now it never waits there.
+      await Promise.race([uploading, waitForLockWaiters(h, 2).catch(() => undefined)]);
+      await release();
+      return Promise.all([joining, uploading]);
+    }
+  );
+  expect([joined.status, uploaded.status]).toEqual([200, 201]);
+  // The joiner took their seat; free it again for the tests that count four.
+  await expectStatus(
+    await h.call(`${tenant(a)}/me/leave`, {
+      cookie: joiner,
+      body: { password: TENANCY_PASSWORD, communityName: 'Operator Community' },
+    }),
+    204,
+    'channel joiner leaves'
+  );
+  await setLimits(a, { maxActiveMembers: 4, maxStorageBytes: null });
+});
+
+it('lets only one of two first limit writes through', async () => {
+  // Purpose: with no limit row yet there is nothing to lock, so both would pass the version
+  // check; only the write itself can refuse the loser.
+  const fresh = await createPendingCommunity(h, operator.cookie, 'Fresh limits');
+  const statuses = await holdingLock(
+    h,
+    'SELECT 1 FROM communities WHERE id=$1 FOR UPDATE',
+    [fresh.communityId],
+    async (release) => {
+      const writes = [1, 2].map((members) =>
+        h.call(`/api/v1/host/communities/${fresh.communityId}/limits`, {
+          method: 'PUT',
+          bearer: keyAll,
+          body: { limitsVersion: 1, maxActiveMembers: members, maxStorageBytes: null },
+        })
+      );
+      await waitForLockWaiters(h, 2, 'FOR SHARE');
+      await release();
+      return (await Promise.all(writes)).map((response) => response.status).sort();
+    }
+  );
+  expect(statuses).toEqual([200, 409]);
+  expect((await usage(fresh.communityId)).limits.limitsVersion).toBe(2);
+});
+
 it('never counts an already active member twice', async () => {
   // Purpose: fails if re-admitting someone who is already in counts them as a new seat.
   const client = await h.pool.connect();
@@ -296,6 +367,12 @@ it('rows 6, 7, 8, and 16: a key lowers limits without removing anything, overrid
     const refusal = await h.call(`${tenant(a)}/invites/${step}`, { body: { token: fullToken } });
     expect(refusal.status, step).toBe(409);
     expect((await refusal.json()).code, step).toBe('MEMBER_LIMIT_REACHED');
+    // Someone already in the community takes no new seat, so their link still opens.
+    const member = await h.call(`${tenant(a)}/invites/${step}`, {
+      body: { token: fullToken },
+      cookie: operator.cookie,
+    });
+    expect(member.status, `${step} as a member`).toBe(200);
   }
   const refusedUpload = await upload(1, 'below-limit');
   expect(refusedUpload.status).toBe(409);
@@ -423,8 +500,9 @@ it('lets only one of two concurrent uploads that would jointly pass the storage 
   expect(await count('SELECT 1 FROM managed_blobs WHERE community_id=$1', [a])).toBe(reservations);
 });
 
-it('always lets the owner export, and frees space the moment a file is deleted', async () => {
-  // Purpose: fails if exports count against the limit, or if bytes queued for deletion do.
+it('always lets the owner export, refuses a larger icon, and frees space when the icon is removed', async () => {
+  // Purpose: fails if exports count against the limit, if bytes queued for deletion do, if an
+  // over-limit icon slips past either check, or if a same-size replacement is refused.
   const counted = (await usage(a)).storage.countedBytes;
   await setLimits(a, { maxActiveMembers: null, maxStorageBytes: counted });
   await expectStatus(
@@ -450,8 +528,76 @@ it('always lets the owner export, and frees space the moment a file is deleted',
     200,
     'icon'
   );
-  const afterIcon = (await icon.json()).settingsVersion;
+  let afterIcon = (await icon.json()).settingsVersion;
   expect((await upload(1, 'full')).status).toBe(409);
+
+  // Over the limit, an icon no larger than the current one can still replace it; a larger one
+  // is refused on its declared size, and, sent without a size, by the check at commit.
+  await setLimits(a, { maxActiveMembers: null, maxStorageBytes: counted });
+  const putIcon = (bytes: Buffer, init: { chunked?: boolean } = {}) =>
+    fetch(`${h.baseUrl}${tenant(a)}/settings/icon`, {
+      method: 'PUT',
+      headers: {
+        cookie: operator.cookie,
+        origin: h.config.publicUrl,
+        'if-match': `"${afterIcon}"`,
+        'content-type': 'image/png',
+      },
+      body: init.chunked
+        ? new ReadableStream({
+            start(controller) {
+              controller.enqueue(new Uint8Array(bytes));
+              controller.close();
+            },
+          })
+        : bytes,
+      ...(init.chunked ? { duplex: 'half' } : {}),
+    } as RequestInit);
+  const same = await putIcon(Buffer.concat([png.subarray(0, 8), Buffer.alloc(64, 2)]));
+  expect(same.status).toBe(200);
+  afterIcon = (await same.json()).settingsVersion;
+  const larger = Buffer.concat([png.subarray(0, 8), Buffer.alloc(128, 3)]);
+  // Refused before its body is read, the server closes that connection; send it on a socket of
+  // its own so no later request reuses the closed one.
+  const refusedDeclared = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const outgoing = httpRequest(
+      `${h.baseUrl}${tenant(a)}/settings/icon`,
+      {
+        method: 'PUT',
+        agent: false,
+        headers: {
+          cookie: operator.cookie,
+          origin: h.config.publicUrl,
+          'if-match': `"${afterIcon}"`,
+          'content-type': 'image/png',
+          'content-length': larger.length,
+        },
+      },
+      (response) => {
+        let body = '';
+        response.on('data', (chunk) => (body += chunk));
+        response.on('end', () => resolve({ status: response.statusCode ?? 0, body }));
+      }
+    );
+    outgoing.on('error', reject);
+    outgoing.end(larger);
+  });
+  expect(refusedDeclared.status).toBe(409);
+  expect(JSON.parse(refusedDeclared.body).code).toBe('STORAGE_LIMIT_REACHED');
+  const blobsBefore = await count(
+    "SELECT 1 FROM managed_blobs WHERE community_id=$1 AND state IN ('reserved','stored')",
+    [a]
+  );
+  const refusedAtCommit = await putIcon(larger, { chunked: true });
+  expect(refusedAtCommit.status).toBe(409);
+  expect((await refusedAtCommit.json()).code).toBe('STORAGE_LIMIT_REACHED');
+  expect(
+    await count(
+      "SELECT 1 FROM managed_blobs WHERE community_id=$1 AND state IN ('reserved','stored')",
+      [a]
+    )
+  ).toBe(blobsBefore);
+  await setLimits(a, { maxActiveMembers: null, maxStorageBytes: counted + png.length });
   // A retry of an upload that already landed still gets its receipt while the space is full.
   expect((await retryOfLanded()).status).toBe(200);
   await expectStatus(
@@ -465,6 +611,21 @@ it('always lets the owner export, and frees space the moment a file is deleted',
   );
   await expectStatus(await upload(1, 'freed'), 201, 'upload into freed space');
   await setLimits(a, { maxActiveMembers: null, maxStorageBytes: null });
+  // Leave an icon in place, so the usage report below counts one.
+  const settingsNow = await h.call(`${tenant(a)}/settings`, { cookie: operator.cookie });
+  await expectStatus(
+    await h.call(`${tenant(a)}/settings/icon`, {
+      method: 'PUT',
+      cookie: operator.cookie,
+      headers: {
+        'if-match': `"${(await settingsNow.json()).settingsVersion}"`,
+        'content-type': 'image/png',
+      },
+      raw: png,
+    }),
+    200,
+    'final icon'
+  );
 });
 
 it('caps active agents per person with 409 AGENT_LIMIT_REACHED, honouring one member’s override only', async () => {
@@ -564,12 +725,14 @@ it('reports usage equal to independently computed sums, and nothing that names a
       exportBytes: await bytes("purpose='export' AND state IN ('stored','committed')"),
       importStagingBytes: 0,
       pendingDeleteBytes: await bytes("state='pending_delete'"),
-      countedBytes: attachmentBytes,
+      countedBytes:
+        attachmentBytes + (await bytes("purpose='icon' AND state IN ('stored','committed')")),
     },
     limits: { maxActiveMembers: null, maxStorageBytes: null, limitsVersion: expect.any(Number) },
     lastPostDate: newest.rows[0].created_at.toISOString().slice(0, 10),
   });
   expect(report.storage.exportBytes).toBeGreaterThan(0);
+  expect(report.storage.iconBytes).toBe(72);
   const text = JSON.stringify(report);
   for (const identity of [
     'Operator',

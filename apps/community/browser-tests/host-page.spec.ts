@@ -69,7 +69,7 @@ test.beforeAll(async () => {
   const app = createCommunityApp({ config, pool });
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
   app.use('/assets/*', serveStatic({ root: staticRoot }));
-  for (const path of ['/', '/host'])
+  for (const path of ['/', '/host', '/c/:communityId', '/c/:communityId/join'])
     app.get(
       path,
       serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
@@ -194,8 +194,10 @@ test('a host operator creates a key, sees it once, replaces it, and revokes it',
   }
 });
 
-test('a host operator sets a community limit beside its current use', async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+test('a host operator sets a community limit beside its current use, on a phone', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   try {
     const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
@@ -227,5 +229,47 @@ test('a host operator sets a community limit beside its current use', async ({ b
       .toEqual([{ max_active_members: null }]);
   } finally {
     await context.close();
+  }
+});
+
+test('an invitation to a full community says so before sign-up, and that the link still works', async ({
+  browser,
+}) => {
+  const communityId = (await pool.query<{ id: string }>('SELECT id FROM communities')).rows[0].id;
+  const ownerContext = await browser.newContext();
+  const guest = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  try {
+    const signedIn = await ownerContext.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    const invite = await ownerContext.request.post(
+      `${baseUrl}/api/v1/communities/${communityId}/invites`,
+      { headers: { origin: baseUrl }, data: { seats: 1 } }
+    );
+    expect(invite.status()).toBe(201);
+    const { token } = (await invite.json()) as { token: string };
+    await pool.query(
+      `INSERT INTO community_limits(community_id,max_active_members) VALUES($1,1)
+       ON CONFLICT(community_id) DO UPDATE SET max_active_members=1`,
+      [communityId]
+    );
+
+    const page = await guest.newPage();
+    await page.goto(`${baseUrl}/c/${communityId}/join#invite=${encodeURIComponent(token)}`);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    const alert = page.getByRole('alert');
+    await expect(alert).toContainText('This community is full. Ask its owner to make room.');
+    await expect(alert).toContainText(
+      'Your invitation still works. Open it again once the owner has made room.'
+    );
+    await expect(alert).not.toContainText('new invitation link');
+    await expect(page.getByLabel('Password')).toHaveCount(0);
+    await shot(page, 'join-full-community');
+  } finally {
+    await pool.query('DELETE FROM community_limits');
+    await ownerContext.close();
+    await guest.close();
   }
 });

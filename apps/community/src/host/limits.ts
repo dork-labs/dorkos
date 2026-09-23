@@ -55,16 +55,19 @@ export async function readLimits(
 /**
  * Refuse an admission that would take a community past its member limit.
  *
- * With `lock`, the limit row is taken `FOR UPDATE`, which serializes admissions racing for
- * the last seat; without a limit row there is no limit and nothing is locked. A person who is
- * already an active member is never counted twice.
+ * The limit is read without a lock first, so a community without a member limit takes no lock
+ * at all. With `lock` and a limit, the row is then taken `FOR UPDATE`, which serializes
+ * admissions racing for the last seat. A person who is already an active member is never
+ * counted twice.
  */
 export async function assertMemberRoom(
   db: Queryable,
   communityId: string,
   options: { lock: boolean; userId?: string }
 ): Promise<void> {
-  const { maxActiveMembers } = await readLimits(db, communityId, options.lock ? 'FOR UPDATE' : '');
+  let { maxActiveMembers } = await readLimits(db, communityId);
+  if (maxActiveMembers === null) return;
+  if (options.lock) ({ maxActiveMembers } = await readLimits(db, communityId, 'FOR UPDATE'));
   if (maxActiveMembers === null) return;
   if (options.userId) {
     const already = await db.query(
@@ -103,9 +106,24 @@ async function countedBytes(db: Queryable, communityId: string, exceptKey?: stri
   return Number(sum.rows[0].bytes);
 }
 
+/** Bytes of one counted file, such as an icon about to be replaced; 0 if it does not count. */
+export async function countedBlobBytes(
+  db: Queryable,
+  communityId: string,
+  key: string
+): Promise<number> {
+  const row = await db.query<{ bytes: string | null }>(
+    `SELECT byte_size::text AS bytes FROM managed_blobs
+     WHERE community_id=$1 AND blob_key=$2 AND ${COUNTED_BLOBS}`,
+    [communityId, key]
+  );
+  return Number(row.rows[0]?.bytes ?? 0);
+}
+
 /**
  * Fast refusal before any bytes are sent: would `bytes` more fit? `replacingKey` names a
- * counted file the upload replaces, such as the current icon.
+ * counted file the upload replaces, such as the current icon; a replacement no larger than
+ * what it replaces is always allowed, even in a community already over its limit.
  */
 export async function assertStorageRoom(
   db: Queryable,
@@ -115,6 +133,8 @@ export async function assertStorageRoom(
 ): Promise<void> {
   const { maxStorageBytes } = await readLimits(db, communityId);
   if (maxStorageBytes === null) return;
+  const replaced = replacingKey ? await countedBlobBytes(db, communityId, replacingKey) : 0;
+  if (bytes <= replaced) return;
   if ((await countedBytes(db, communityId, replacingKey ?? undefined)) + bytes > maxStorageBytes)
     throw storageLimitReached();
 }
@@ -122,15 +142,21 @@ export async function assertStorageRoom(
 /**
  * The authoritative check, inside the commit transaction after the new file is stored.
  *
- * Only when a limit exists, a per-community advisory lock serializes commits, and the sum is
- * read after the lock is granted, so two uploads can never jointly pass the limit. The caller's
- * refusal path discards the reservation.
+ * `growth` is how many counted bytes this commit adds; a commit that adds none (an icon no
+ * larger than the one it replaces) always passes. Only when a limit exists, a per-community
+ * advisory lock serializes commits, and the sum is read after the lock is granted, so two
+ * uploads can never jointly pass the limit. The limit row itself is read without a lock: the
+ * caller already holds a channel or community lock, and a row lock here would order against
+ * admissions, which lock the limit row before a channel. The caller's refusal path discards
+ * the reservation.
  */
 export async function assertStorageWithinLimit(
   client: PoolClient,
-  communityId: string
+  communityId: string,
+  growth: number
 ): Promise<void> {
-  const { maxStorageBytes } = await readLimits(client, communityId, 'FOR SHARE');
+  if (growth <= 0) return;
+  const { maxStorageBytes } = await readLimits(client, communityId);
   if (maxStorageBytes === null) return;
   await client.query("SELECT pg_advisory_xact_lock(hashtext('dorkos:storage:' || $1::text))", [
     communityId,

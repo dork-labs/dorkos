@@ -139,6 +139,8 @@ export function communityRefusal(
             error: 'This community is archived, so it’s read-only.',
           };
     case 429:
+      // Community servers from before DOR-2254 answered the agent cap with 429 RATE_LIMITED.
+      // Current servers answer 409 AGENT_LIMIT_REACHED (above); this keeps older ones readable.
       return {
         status: 429,
         code: 'COMMUNITY_LIMIT_REACHED',

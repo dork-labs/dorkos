@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { describeError, request } from '../api.js';
+import { RequestError, describeError, request } from '../api.js';
 
 type Usage = {
   activeMembers: number;
@@ -12,6 +12,11 @@ type Usage = {
 };
 
 const MiB = 1024 * 1024;
+
+/** A byte limit as the MiB field shows it: at most two decimals, never a long fraction. */
+function mibField(bytes: number | null): string {
+  return bytes === null ? '' : String(Number((bytes / MiB).toFixed(2)));
+}
 
 function formatMiB(bytes: number): string {
   const value = bytes / MiB;
@@ -36,9 +41,7 @@ export function HostCommunityLimits({ communityId, name }: { communityId: string
       const body = await request<Usage>(`/api/v1/host/communities/${communityId}/usage`);
       setUsage(body);
       setMembers(body.limits.maxActiveMembers?.toString() ?? '');
-      setStorage(
-        body.limits.maxStorageBytes === null ? '' : String(body.limits.maxStorageBytes / MiB)
-      );
+      setStorage(mibField(body.limits.maxStorageBytes));
     } catch (cause) {
       setError(describeError(cause));
     }
@@ -54,11 +57,23 @@ export function HostCommunityLimits({ communityId, name }: { communityId: string
       await request(`/api/v1/host/communities/${communityId}/limits`, 'PUT', {
         limitsVersion: usage.limits.limitsVersion,
         maxActiveMembers: members.trim() === '' ? null : Number(members),
-        maxStorageBytes: storage.trim() === '' ? null : Math.round(Number(storage) * MiB),
+        // An untouched field keeps the exact stored bytes rather than its rounded display.
+        maxStorageBytes:
+          storage.trim() === ''
+            ? null
+            : storage === mibField(usage.limits.maxStorageBytes)
+              ? usage.limits.maxStorageBytes
+              : Math.round(Number(storage) * MiB),
       });
       await load();
       setMessage('Limits saved.');
     } catch (cause) {
+      if (cause instanceof RequestError && cause.status === 409) {
+        // Someone else changed these limits: show theirs, and let the person decide again.
+        await load();
+        setError('These limits were changed elsewhere. Check the current values and save again.');
+        return;
+      }
       setError(describeError(cause));
     } finally {
       setBusy(false);

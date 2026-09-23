@@ -50,15 +50,21 @@ export function registerHostLimitRoutes(
         throw new ApiError(409, 'STATE_CONFLICT', 'Community limits changed. Read them again.');
       }
       // Lowering a limit below current use removes nothing; it refuses only the next growth.
+      // The version is checked again in the write itself: with no row yet there is nothing to
+      // lock above, so two first writes race to the insert and only one may win it.
       const updated = await client.query<{ limits_version: number }>(
         `INSERT INTO community_limits(community_id,max_active_members,max_storage_bytes,limits_version)
          VALUES($1,$2,$3,2)
          ON CONFLICT(community_id) DO UPDATE SET max_active_members=EXCLUDED.max_active_members,
            max_storage_bytes=EXCLUDED.max_storage_bytes,
            limits_version=community_limits.limits_version+1,updated_at=now()
+         WHERE community_limits.limits_version=$4
          RETURNING limits_version`,
-        [communityId, body.maxActiveMembers, body.maxStorageBytes]
+        [communityId, body.maxActiveMembers, body.maxStorageBytes, body.limitsVersion]
       );
+      if (!updated.rows[0]) {
+        throw new ApiError(409, 'STATE_CONFLICT', 'Community limits changed. Read them again.');
+      }
       await recordHostAudit(client, actor, {
         action: 'community.limits',
         communityId,

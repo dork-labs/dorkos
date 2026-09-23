@@ -289,7 +289,7 @@ export function registerAttachmentRoutes(
         );
         if (!quota.rowCount) throw new ApiError(429, 'RATE_LIMITED', 'Daily upload limit reached.');
         await prepareManagedBlobCommit(client, reservation, stored);
-        await assertStorageWithinLimit(client, principal.community_id);
+        await assertStorageWithinLimit(client, principal.community_id, stored.byteSize);
         const inserted = await client.query<AttachmentRow>(
           `INSERT INTO attachments(community_id,channel_id,uploader_member_id,uploader_agent_id,blob_key,display_name,content_type,byte_size,checksum,idempotency_key,request_hash)
            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,

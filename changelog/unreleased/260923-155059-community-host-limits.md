@@ -2,6 +2,8 @@
 covers:
   - 'feat(community): let a host set community limits and read usage'
   - 'refactor(community): split host routes into records, owner claims, and memberships'
+  - 'refactor(community): gather host-plane modules under src/host'
+  - 'fix(community): refuse no one by deadlock or stale view when community limits apply'
 ---
 
 ### Added
@@ -11,3 +13,4 @@ covers:
 ### Changed
 
 - When a community is full or out of file space, you now get a plain message that says so, and an invitation to a full community says it before you sign up (DOR-2254).
+- The DorkOS app now names a community's agent limit when you add an agent. An older DorkOS app talking to an updated Community server shows "That no longer matches the community" instead; update the app to see the plain message (DOR-2254).

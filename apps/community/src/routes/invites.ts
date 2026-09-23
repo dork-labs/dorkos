@@ -99,6 +99,15 @@ function invitationRefusal(error: ApiError): ApiError {
     : invalidInvitation();
 }
 
+/**
+ * The account already signed in on this browser, if any. An invitation to a full community
+ * still opens for someone who is already an active member, who takes no new seat.
+ */
+async function signedInUserId(c: Context, auth: CommunityAuth): Promise<string | undefined> {
+  const session = await auth.api.getSession({ headers: c.req.raw.headers }).catch(() => null);
+  return session?.user.id;
+}
+
 function admissionCookie(c: Context, config: CommunityConfig): string {
   const value = verifyValue(
     readCookie(c.req.header('cookie') ?? null, 'community_admission'),
@@ -263,7 +272,10 @@ export function registerInviteRoutes(
     try {
       const { invite, communityName } = await validInvite(c, pool, token, config);
       if (invite.use_count >= invite.seat_limit) throw invalidInvitation();
-      await assertMemberRoom(pool, invite.community_id, { lock: false });
+      await assertMemberRoom(pool, invite.community_id, {
+        lock: false,
+        userId: await signedInUserId(c, auth),
+      });
       return json(c, CommunityWireInvitePreviewResponseSchema, {
         communityName,
         inviterName: invite.issuer_name,
@@ -286,7 +298,10 @@ export function registerInviteRoutes(
       preview = await transaction(pool, async (client) => {
         const { invite, communityName } = await validInvite(c, client, token, config, true);
         if (invite.use_count >= invite.seat_limit) throw invalidInvitation();
-        await assertMemberRoom(client, invite.community_id, { lock: false });
+        await assertMemberRoom(client, invite.community_id, {
+          lock: false,
+          userId: await signedInUserId(c, auth),
+        });
         await client.query(
           'INSERT INTO pending_admissions(community_id,invite_id,token_hash,expires_at) VALUES($1,$2,$3,$4)',
           [invite.community_id, invite.id, hashSecret(pending), expiresAt]

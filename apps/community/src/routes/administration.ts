@@ -17,7 +17,7 @@ import {
   type Member,
 } from '../data.js';
 import { AdminSettingsConflict, ApiError, json, readJson } from '../http.js';
-import { assertStorageRoom, assertStorageWithinLimit } from '../host/limits.js';
+import { assertStorageRoom, assertStorageWithinLimit, countedBlobBytes } from '../host/limits.js';
 import {
   BlobStoreError,
   completeManagedBlobCommit,
@@ -280,10 +280,14 @@ export function registerAdministrationRoutes(
           [current.id, stored.key, stored.contentType]
         );
         await completeManagedBlobCommit(client, reservation);
+        const replacedBytes = current.icon_blob_key
+          ? await countedBlobBytes(client, current.id, current.icon_blob_key)
+          : 0;
         if (current.icon_blob_key)
           await queueCommittedBlobDeletion(client, current.id, current.icon_blob_key);
-        // After the old icon is queued for deletion, so replacing an icon counts only the new one.
-        await assertStorageWithinLimit(client, current.id);
+        // After the old icon is queued for deletion, so replacing an icon counts only the new
+        // one, and an icon no larger than the one it replaces always fits.
+        await assertStorageWithinLimit(client, current.id, stored.byteSize - replacedBytes);
         await client.query(
           `INSERT INTO audit_events(community_id,actor_member_id,action,changed_fields)
            VALUES($1,$2,'settings.icon.update',ARRAY['icon'])`,
