@@ -45,6 +45,21 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await expect(skipSetup).toBeVisible();
       await skipSetup.click();
       await expect(skipSetup).toBeHidden();
+      // Answer the remaining one-time questions now, before any page the proof
+      // drives. The full-power door opens on the first launch whose config the
+      // server has confirmed, and remembering where the person is writes
+      // config, so a later answer let the door cover the connection controls.
+      const now = new Date().toISOString();
+      await json(`${env.local}/api/config`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          onboarding: { dismissedAt: now },
+          profile: { rolePromptDismissedAt: now },
+          telemetry: { userHasDecided: true },
+          ui: { fullPowerDecidedAt: now, fullPowerChoice: 'supervised' },
+        }),
+      });
       await bootstrapCommunity(pageA, {
         url: env.communityA,
         secret: env.communityASecret,
@@ -205,17 +220,6 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         json<EnrollmentSnapshot>(`${env.local}/api/communities/${refA}/agents`);
       const localConfig = await json<{ dorkHome: string }>(`${env.local}/api/config`);
       expect(localConfig.dorkHome).toBe(join(env.root, 'local-home'));
-      const now = new Date().toISOString();
-      await json(`${env.local}/api/config`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          onboarding: { dismissedAt: now },
-          profile: { rolePromptDismissedAt: now },
-          telemetry: { userHasDecided: true },
-          ui: { fullPowerDecidedAt: now, fullPowerChoice: 'supervised' },
-        }),
-      });
       await localPage.goto(
         `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}`
       );
