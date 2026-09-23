@@ -43,7 +43,7 @@ import {
   downloadTemplate,
   isGitHubCredentialHost,
   isSupportedTemplateSource,
-  withGitHubToken,
+  gitHubAuthConfig,
   redactAuthTokens,
   TemplateDownloadError,
   UNSUPPORTED_TEMPLATE_SOURCE_MESSAGE,
@@ -497,24 +497,31 @@ describe('the GitHub token only ever goes to GitHub', () => {
     });
   });
 
-  describe('withGitHubToken — the rewrite every git caller shares', () => {
-    // The marketplace fetch calls this directly rather than through
-    // `execGitClone`, so the gate is pinned here on its own.
+  describe('gitHubAuthConfig — the header the marketplace fetch sends', () => {
+    // The marketplace fetch hands this to git through its environment, so the
+    // host gate is pinned here on its own.
+    it('scopes a Basic x-access-token header to a GitHub origin', () => {
+      expect(gitHubAuthConfig('https://github.com/org/repo.git', 'ghp_t')).toEqual({
+        key: 'http.https://github.com/.extraHeader',
+        value: `Authorization: Basic ${Buffer.from('x-access-token:ghp_t').toString('base64')}`,
+      });
+      expect(gitHubAuthConfig('https://www.github.com/o/r.git', 'ghp_t')?.key).toBe(
+        'http.https://www.github.com/.extraHeader'
+      );
+    });
+
     it.each([
-      ['https://github.com/org/repo.git', 'https://x-access-token:ghp_t@github.com/org/repo.git'],
-      ['https://evil.example.com/org/repo.git', 'https://evil.example.com/org/repo.git'],
-      ['https://github.com.evil.com/org/repo.git', 'https://github.com.evil.com/org/repo.git'],
-      ['https://someone:secret@github.com/o/r.git', 'https://someone:secret@github.com/o/r.git'],
-      ['HTTPS://github.com/org/repo.git', 'HTTPS://github.com/org/repo.git'],
-      ['git@github.com:org/repo.git', 'git@github.com:org/repo.git'],
-    ])('%s → %s', (url, expected) => {
-      expect(withGitHubToken(url, 'ghp_t')).toBe(expected);
+      'https://evil.example.com/org/repo.git',
+      'https://github.com.evil.com/org/repo.git',
+      'https://someone:secret@github.com/o/r.git',
+      'https://github.com:8443/o/r.git',
+      'git@github.com:org/repo.git',
+    ])('sends nothing to %s', (url) => {
+      expect(gitHubAuthConfig(url, 'ghp_t')).toBeUndefined();
     });
 
     it('sends nothing when there is no token', () => {
-      expect(withGitHubToken('https://github.com/org/repo.git', undefined)).toBe(
-        'https://github.com/org/repo.git'
-      );
+      expect(gitHubAuthConfig('https://github.com/org/repo.git', undefined)).toBeUndefined();
     });
   });
 

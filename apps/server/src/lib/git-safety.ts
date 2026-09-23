@@ -1,9 +1,9 @@
 /**
  * Hardened environment for spawning `git` against an author-supplied URL.
  *
- * Marketplace package sources (`git-subdir`, `url`) and the shared clone
- * primitive (`template-downloader.execGitClone`) all hand a remote URL to
- * `git`. Git's default configuration honours transport helpers such as `ext::`
+ * The marketplace's package fetch (`services/marketplace/lib/git-tree.ts`, for
+ * every `github`, `url` and `git-subdir` source) and the workspace-template
+ * clone (`template-downloader.execGitClone`) both hand a remote URL to `git`. Git's default configuration honours transport helpers such as `ext::`
  * (`ext::sh -c '<cmd>'`), which turn a clone/ls-remote into arbitrary command
  * execution — and that clone runs at *preview* time, before the install consent
  * gate. `GIT_ALLOW_PROTOCOL` is git's authoritative transport allowlist: it
@@ -11,16 +11,15 @@
  * network-only transports we actually use. `GIT_TERMINAL_PROMPT` stops git from
  * blocking on an interactive credential prompt for a private URL.
  *
- * Every git spawn that touches an author-supplied URL — the marketplace
- * resolvers (`git-subdir`, `package-fetcher`) and `execGitClone` — must build
- * its child env from this helper. It is the runtime backstop; the `git-subdir`
+ * Every git spawn that touches an author-supplied URL — `git-tree.ts` and
+ * `execGitClone` — must build its child env from this helper. It is the runtime backstop; the `git-subdir`
  * and `url` source schemas (`@dorkos/marketplace`) reject unsafe URL transports
  * at parse time.
  *
  * @module lib/git-safety
  */
 
-/** Transports a marketplace clone/ls-remote is allowed to use. Blocks `ext::`, `file::`, etc. */
+/** Transports a marketplace fetch or ls-remote is allowed to use. Blocks `ext::`, `file::`, etc. */
 const ALLOWED_GIT_PROTOCOLS = 'https:ssh:git';
 
 /**

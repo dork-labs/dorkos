@@ -102,6 +102,10 @@ beforeAll(() => {
   bare = path.join(root, 'remote.git');
   url = `file://${bare}`;
   git(root, 'init', '-q', '--bare', '-b', 'main', bare);
+  // Serve filtered fetches, so a subpath fetch really is a partial clone and
+  // its checkout really fetches blobs lazily (a server without this ignores
+  // the filter and the partial-clone path would go unexercised).
+  git(bare, 'config', 'uploadpack.allowFilter', 'true');
   git(root, 'init', '-q', '-b', 'main', work);
   git(work, 'remote', 'add', 'origin', bare);
 
@@ -357,6 +361,36 @@ describe('fetchTree', () => {
       });
       expect(sha).toBe(c.first);
       expect(markerIn(dir)).toBe('first');
+    });
+
+    it('falls back to the exact refname, so a branch beats a tag of the same name', async () => {
+      // Purpose: a bare name would let git's own lookup pick the tag (tags
+      // come first there); the fallback must fetch the branch the lookup chose.
+      const dir = dest();
+      const sha = await fetchTree({
+        cloneUrl: url,
+        commitSha: 'f'.repeat(40),
+        refName: 'refs/heads/develop-or-tag',
+        subpath: 'pkg',
+        destDir: dir,
+      });
+      expect(sha).toBe(c.develop);
+      expect(markerIn(dir)).toBe('develop');
+    });
+
+    it('finds a pinned commit through the branches and tags, sparse to its subpath', async () => {
+      // Purpose: the pin fallback fetches every blob it needs; a filtered one
+      // would leave the checkout asking this same server for blobs it refuses.
+      const dir = dest();
+      const sha = await fetchTree({
+        cloneUrl: url,
+        commitSha: c.first,
+        subpath: 'pkg',
+        destDir: dir,
+      });
+      expect(sha).toBe(c.first);
+      expect(markerIn(dir)).toBe('first');
+      expect(existsSync(path.join(dir, 'other'))).toBe(false);
     });
 
     it('finds a pinned commit through the branches and tags', async () => {
