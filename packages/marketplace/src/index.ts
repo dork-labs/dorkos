@@ -125,4 +125,18 @@ export {
   CLAUDE_PLUGIN_MANIFEST_PATH,
   MARKETPLACE_JSON_FILENAME,
   PACKAGE_MANIFEST_VERSION,
+  INSTALLED_FILES_PATH,
+  INSTALL_METADATA_POSIX_PATH,
+  UNINSTALLED_AGENT_PATH,
+  PACKAGE_DATA_DIR,
+  PACKAGE_SECRETS_PATH,
+  KEPT_COPY_SUFFIXES,
+  AGENT_IDENTITY_FILES,
 } from './constants.js';
+
+// Who owns which paths inside a package (ADR 260923-163513, 260923-163514)
+export {
+  isReservedPackagePath,
+  matchesUserEditable,
+  UserEditablePathSchema,
+} from './user-editable.js';

@@ -16,6 +16,7 @@
  */
 
 import { z } from 'zod';
+import { UserEditablePathSchema } from './user-editable.js';
 import { SkillNameSchema } from '@dorkos/skills/schema';
 import { TASK_PERMISSION_MODES } from '@dorkos/skills/schedule-schema';
 import { PackageTypeSchema } from './package-types.js';
@@ -140,6 +141,18 @@ const BasePackageManifestSchema = z.object({
 
   /** Whether to highlight in marketplace browse UI (registry sets this, not the package). */
   featured: z.boolean().optional(),
+
+  /**
+   * Shipped files a person is expected to edit. On update, an edited copy is
+   * kept and a changed default is written beside it as `<file>.dork-new`. Every
+   * other shipped file is replaced, and an edited copy is saved as
+   * `<file>.dork-old` (ADR 260923-163514). Exact root-relative paths, or a
+   * directory prefix ending in `/**`. Older DorkOS releases strip this field,
+   * so a package that relies on it should set `minDorkosVersion`. Optional
+   * rather than defaulted, so hand-built manifests (tests, synthesized
+   * Claude Code manifests) need not spell it; read it as `userEditable ?? []`.
+   */
+  userEditable: z.array(UserEditablePathSchema).max(100).optional(),
 });
 
 // === The shared schedules slot ===========================================

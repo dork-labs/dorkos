@@ -33,3 +33,53 @@ export const MARKETPLACE_JSON_FILENAME = 'marketplace.json';
  * Increment when introducing breaking changes to the schema.
  */
 export const PACKAGE_MANIFEST_VERSION = 1;
+
+/**
+ * The installed-files record an install writes into the package root: every
+ * file the install put there, with its content hash. DorkOS removes or
+ * replaces only files this record proves are the package's (ADR 260923-163513).
+ * Written and owned by the installer; a package may never ship it.
+ */
+export const INSTALLED_FILES_PATH = '.dork/installed-files.json';
+
+/**
+ * The install provenance sidecar the installer writes after an install. Kept
+ * here as a POSIX path for the reserved-path check; the server spells its own
+ * copy with `path.join`. A package may never ship it.
+ */
+export const INSTALL_METADATA_POSIX_PATH = '.dork/install-metadata.json';
+
+/**
+ * Where an uninstalled agent package's `agent.json` is parked, so a reinstall
+ * of the same package can keep the agent's identity (ADR 260923-163516).
+ * Installer-owned; never scanned by mesh; a package may never ship it.
+ */
+export const UNINSTALLED_AGENT_PATH = '.dork/uninstalled-agent.json';
+
+/**
+ * A package's own data directory, the path `${CLAUDE_PLUGIN_DATA}` resolves to
+ * (ADR 260923-163515). Always the person's: a package may never ship into it.
+ */
+export const PACKAGE_DATA_DIR = '.dork/data';
+
+/** The per-package secrets file. Always the person's; a package may never ship it. */
+export const PACKAGE_SECRETS_PATH = '.dork/secrets.json';
+
+/**
+ * Suffixes of the copies an update saves beside a file: `.dork-old` for the
+ * person's edited copy, `.dork-new` for a package's changed default. Either may
+ * be followed by `.<n>` when the plain name is taken. A package may never ship one.
+ */
+export const KEPT_COPY_SUFFIXES = ['.dork-old', '.dork-new'] as const;
+
+/**
+ * An agent package's identity files. They are the agent's, never the package's:
+ * never recorded as package files, and a shipped copy only seeds an install
+ * where the file is absent (ADR 260923-163516).
+ */
+export const AGENT_IDENTITY_FILES = [
+  AGENT_MANIFEST_PATH,
+  '.dork/SOUL.md',
+  '.dork/NOPE.md',
+  '.dork/MEMORY.md',
+] as const;
