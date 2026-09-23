@@ -112,6 +112,23 @@ async function lockRevocationMember(
   if (!member.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
 }
 
+/**
+ * Delete pairing requests that expired more than an hour ago and were never exchanged.
+ * A pairing lasts ten minutes and nothing else links an abandoned one to a person, so this is
+ * what keeps an install name from outliving an erasure.
+ */
+export async function sweepExpiredPairings(pool: Pool, batchSize = 500): Promise<number> {
+  const result = await pool.query(
+    `DELETE FROM connection_pairings WHERE id IN (
+       SELECT id FROM connection_pairings
+       WHERE consumed_at IS NULL AND expires_at<now()-interval '1 hour'
+       ORDER BY expires_at,id LIMIT $1
+     )`,
+    [batchSize]
+  );
+  return result.rowCount ?? 0;
+}
+
 /** Register browser-approved, verifier-bound pairing and revocable personal grants. */
 export function registerPairingRoutes(
   app: Hono,
@@ -296,9 +313,10 @@ export function registerPairingRoutes(
       await requirePairingMember(client, actor, lifecycle);
       if (pair.rows[0].member_id && pair.rows[0].member_id !== actor.id)
         throw new ApiError(403, 'FORBIDDEN', 'Another member approved this request.');
+      // Record who declined, so erasing that member also removes the install name.
       await client.query(
-        'UPDATE connection_pairings SET cancelled_at=now() WHERE id=$1 AND community_id=$2',
-        [id, actor.community_id]
+        'UPDATE connection_pairings SET cancelled_at=now(),member_id=$3 WHERE id=$1 AND community_id=$2',
+        [id, actor.community_id, actor.id]
       );
       await client.query(
         'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',

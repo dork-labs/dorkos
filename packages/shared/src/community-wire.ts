@@ -74,6 +74,10 @@ export const COMMUNITY_API_V1_ROUTES = {
   meLeave: '/api/v1/me/leave',
   ownerTransfer: '/api/v1/owner/transfer',
   ownerExport: '/api/v1/owner/export',
+  ownerErasures: '/api/v1/owner/erasures',
+  accountFormerMemberships: '/api/v1/account/former-memberships',
+  accountErasures: '/api/v1/account/erasures',
+  accountErasureCancel: '/api/v1/account/erasures/:id/cancel',
 } as const;
 
 /** Public immutable identity and display metadata for one deployment. */
@@ -623,8 +627,78 @@ export const CommunityWireExportResponseSchema = z.strictObject({
   createdAt: timestamp,
 });
 
+/**
+ * One request to erase a person from one community (`membership`) or from the
+ * whole host (`account`). It waits 72 hours in `scheduled`, when the person can
+ * still cancel it. Only the same-origin browser bundle parses this object.
+ */
+export const CommunityWireErasureSchema = z.strictObject({
+  id,
+  kind: z.enum(['membership', 'account']),
+  state: z.enum(['scheduled', 'running', 'completed', 'cancelled']),
+  communityId: id.nullable(),
+  /** Set only on the person's own account routes, for their own memberships. */
+  communityName: z.string().nullable(),
+  executeAfter: timestamp,
+  createdAt: timestamp,
+  completedAt: timestamp.nullable(),
+  cancelledAt: timestamp.nullable(),
+});
+/** One erasure request. */
+export type CommunityWireErasure = z.infer<typeof CommunityWireErasureSchema>;
+/**
+ * Ask to erase yourself. Accounts with a password confirm it; accounts that
+ * sign in only through a provider must have signed in within five minutes.
+ * An account erasure also asks for the account's email, typed exactly.
+ */
+export const CommunityWireErasureCreateRequestSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('membership'),
+    communityId: z.uuid(),
+    password: id.max(128).optional(),
+  }),
+  z.strictObject({
+    kind: z.literal('account'),
+    confirmEmail: z.string().min(1).max(320),
+    password: id.max(128).optional(),
+  }),
+]);
+/** One erasure request, created, repeated or cancelled. */
+export const CommunityWireErasureResponseSchema = z.strictObject({
+  erasure: CommunityWireErasureSchema,
+});
+/** The account's open erasures and those it cancelled in the last 30 days. */
+export const CommunityWireErasureListResponseSchema = z.strictObject({
+  erasures: z.array(CommunityWireErasureSchema),
+});
+/** A community this account belonged to and has left or been removed from. */
+export const CommunityWireFormerMembershipSchema = z.strictObject({
+  communityId: id,
+  communityName: z.string().min(1),
+  leftAt: timestamp.nullable(),
+  erasure: CommunityWireErasureSchema.nullable(),
+});
+/** Communities this account has left, for erasing yourself from one of them. */
+export const CommunityWireFormerMembershipListResponseSchema = z.strictObject({
+  memberships: z.array(CommunityWireFormerMembershipSchema),
+});
+/**
+ * A self-erasure that has finished in this community. The owner sees only the
+ * erased member's id and when it finished, never a scheduled one.
+ */
+export const CommunityWireOwnerErasureSchema = z.strictObject({
+  id,
+  memberId: id,
+  completedAt: timestamp,
+});
+/** Completed self-erasures in one community, newest first. */
+export const CommunityWireOwnerErasureListResponseSchema = z.strictObject({
+  erasures: z.array(CommunityWireOwnerErasureSchema),
+});
+
 /** Stable error codes for expected authorization, state and quota refusals. */
 export const CommunityWireErrorCodeSchema = z.enum([
+  'REAUTH_REQUIRED',
   'UNAUTHENTICATED',
   'FORBIDDEN',
   'NOT_FOUND',
