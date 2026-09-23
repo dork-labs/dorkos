@@ -545,7 +545,7 @@ describe('Marketplace Routes', () => {
    * write path, holding `file` with `content`.
    */
   async function seedTree(name: string, commit: string, file = 'f', content = 'x'): Promise<void> {
-    await cache.materializePackage(name, commit, async (dir) => {
+    await cache.materializePackage(name, commit, '', async (dir) => {
       writeFileSync(join(dir, file), content);
       return commit;
     });

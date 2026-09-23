@@ -3952,13 +3952,16 @@ async function start() {
   if (extensionManager && adapterManager) {
     const marketplaceSourceManager = new MarketplaceSourceManager(dorkHome);
     const marketplaceCache = new MarketplaceCache(dorkHome);
-    // Package trees cached before their keys were verified (DOR-2248) are
-    // never read again; reclaim their disk in the background.
-    marketplaceCache.removeLegacyPackages().catch((err: unknown) => {
-      logger.warn('[Marketplace] could not remove the pre-verification package cache', {
+    // Reclaim what no cache entry is read from: trees cached before their
+    // keys were verified (DOR-2248) and temp fetches a crash left behind.
+    // Awaited, before the routes exist, so it can never race a fetch.
+    try {
+      await marketplaceCache.removeLeftovers();
+    } catch (err) {
+      logger.warn('[Marketplace] could not clear leftover package cache files', {
         error: err instanceof Error ? err.message : String(err),
       });
-    });
+    }
     const marketplaceFetcher = new PackageFetcher(marketplaceCache, gitTreeSource, logger);
     const marketplaceResolver = new PackageResolver(marketplaceSourceManager, marketplaceCache);
     const marketplaceConflictDetector = new ConflictDetector(dorkHome, adapterManager);

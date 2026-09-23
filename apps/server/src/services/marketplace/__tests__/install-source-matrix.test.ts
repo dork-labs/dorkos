@@ -50,7 +50,12 @@ function createFakeCache(): MarketplaceCache {
     materializePackage: vi
       .fn()
       .mockImplementation(
-        async (name: string, sha: string, fetch: (tempDir: string) => Promise<string>) => {
+        async (
+          name: string,
+          sha: string,
+          _subpath: string,
+          fetch: (tempDir: string) => Promise<string>
+        ) => {
           const commitSha = await fetch(`/tmp/cache/.tmp-fetch-${name}-${sha}`);
           return { path: `/tmp/cache/${name}@${commitSha}`, commitSha };
         }

@@ -170,7 +170,7 @@ describe('PackageFetcher', () => {
 
       expect(result.commitSha).toBe(sha('b'));
       expect(result.path).toBe(path.join(cache.cacheRoot, 'trees', `my-plugin@${sha('b')}`));
-      expect(await cache.getPackage('my-plugin', sha('a'))).toBeNull();
+      expect(await cache.getPackage('my-plugin', sha('a'), '')).toBeNull();
     });
 
     it('fails plainly, fetching nothing, when the ref does not exist', async () => {
@@ -184,6 +184,18 @@ describe('PackageFetcher', () => {
         'There\'s no branch or tag named "main" in gitlab.example.com/example/my-plugin.'
       );
       expect(git.fetch).not.toHaveBeenCalled();
+    });
+
+    it('says an empty repository has no commits, rather than no branch named HEAD', async () => {
+      // Purpose: a ref-less source on an empty repository misses `HEAD`;
+      // "no branch or tag named HEAD" is true and useless.
+      const git = buildGitMock({ lookedUp: { kind: 'missing' } });
+      await expect(
+        new PackageFetcher(cache, git, buildLogger()).fetchFromGit({
+          packageName: 'x',
+          gitUrl: 'https://gitlab.example.com/o/empty.git',
+        })
+      ).rejects.toThrow('gitlab.example.com/o/empty has no commits yet.');
     });
 
     it('fails plainly, fetching nothing, when the remote cannot be reached', async () => {
@@ -245,7 +257,10 @@ describe('PackageFetcher', () => {
         fetcher.fetchPackage({ packageName: 'flow', source }),
       ]);
 
-      const expected = path.join(cache.cacheRoot, 'trees', `flow@${sha('a')}`, 'plugins/flow');
+      const expected = path.join(
+        (await cache.getPackage('flow', sha('a'), 'plugins/flow'))!.path,
+        'plugins/flow'
+      );
       expect(a.path).toBe(expected);
       expect(b.path).toBe(expected);
       expect(git.fetch).toHaveBeenCalledTimes(1);

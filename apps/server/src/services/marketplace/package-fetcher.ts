@@ -287,7 +287,7 @@ export class PackageFetcher {
     if (found.kind === 'unreachable') throw new GitRemoteUnreachableError(cloneUrl, found.reason);
 
     if (!opts.force) {
-      const cached = await this.cache.getPackage(packageName, found.commitSha);
+      const cached = await this.cache.getPackage(packageName, found.commitSha, subpath);
       if (cached) {
         this.logger.debug('package-fetcher: cache hit', {
           packageName,
@@ -300,6 +300,7 @@ export class PackageFetcher {
     const { path: destDir, commitSha } = await this.cache.materializePackage(
       packageName,
       found.commitSha,
+      subpath,
       (tempDir) =>
         this.git.fetch({
           cloneUrl,

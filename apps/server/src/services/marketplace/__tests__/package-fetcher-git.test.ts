@@ -125,7 +125,10 @@ describe('fetchAtCommit — an install recorded at a commit main has moved past'
       commitSha: older,
     });
 
-    const entry = path.join(cache.cacheRoot, 'trees', `flow@${older}`);
+    // A sparse entry: `flow@<commit>~<subfolder digest>`, the package below it.
+    const entry = path.dirname(path.dirname(result.path));
+    expect(path.dirname(entry)).toBe(path.join(cache.cacheRoot, 'trees'));
+    expect(path.basename(entry)).toMatch(new RegExp(`^flow@${older}~[0-9a-f]{12}$`));
     expect(result).toEqual({
       path: path.join(entry, 'plugins/flow'),
       commitSha: older,
@@ -201,6 +204,52 @@ describe('fetchAtCommit — an install recorded at a commit main has moved past'
         commitSha: older.slice(0, 12),
       })
     ).rejects.toThrow(/not a full commit id/);
+  });
+});
+
+describe('one package, one commit, different subfolders', () => {
+  it('does not serve a sparse entry to a whole-repository request', async () => {
+    // Purpose: the cache key names the tree, and a sparse checkout is a
+    // different tree from the whole repository at the same commit. Keyed by
+    // name and commit alone, the second request came back `fromCache` with
+    // `docs/` missing, and `force` could not recover it.
+    const sparse = await fetcher.fetchAtCommit({
+      packageName: 'flow',
+      sourceKey: monorepoKey(),
+      commitSha: older,
+    });
+    const whole = await fetcher.fetchAtCommit({
+      packageName: 'flow',
+      sourceKey: { cloneUrl: bare, subpath: '', ref: 'HEAD' },
+      commitSha: older,
+    });
+
+    expect(whole.fromCache).toBe(false);
+    expect(readFileSync(path.join(whole.path, 'docs', 'readme'), 'utf-8')).toBe('0.5.0');
+    expect(path.dirname(path.dirname(sparse.path))).not.toBe(whole.path);
+  });
+
+  it('keeps two subfolders of one commit apart', async () => {
+    const flow = await fetcher.fetchAtCommit({
+      packageName: 'flow',
+      sourceKey: monorepoKey(),
+      commitSha: older,
+    });
+    const docs = await fetcher.fetchAtCommit({
+      packageName: 'flow',
+      sourceKey: { cloneUrl: bare, subpath: 'docs', ref: 'HEAD' },
+      commitSha: older,
+    });
+
+    expect(docs.fromCache).toBe(false);
+    expect(readFileSync(path.join(docs.path, 'readme'), 'utf-8')).toBe('0.5.0');
+    expect(readFileSync(path.join(flow.path, 'version'), 'utf-8')).toBe('0.5.0');
+    // Both entries are listed under the package and its commit.
+    const listed = await cache.listPackages();
+    expect(listed.map((p) => [p.packageName, p.commitSha])).toEqual([
+      ['flow', older],
+      ['flow', older],
+    ]);
   });
 });
 

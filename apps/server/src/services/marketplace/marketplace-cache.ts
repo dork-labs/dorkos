@@ -11,15 +11,18 @@
  * │       ├── marketplace.json   # Last-fetched copy (TTL governed)
  * │       └── .last-fetched      # Timestamp stamp
  * └── trees/
- *     └── ${name}@${sha}/        # The tree of commit ${sha}, verified (DOR-2248)
+ *     ├── ${name}@${sha}/            # The tree of commit ${sha}, verified (DOR-2248)
+ *     └── ${name}@${sha}~${digest}/  # One subfolder of it, sparse
  * ```
  *
  * An entry's key is the commit its checkout verifiably holds: the only way in
  * is {@link MarketplaceCache.materializePackage}, which takes the key from the
  * fetch (`lib/git-tree.ts` reads it from `HEAD`) and refuses anything that is
- * not a full commit id. Entries from before that rule lived under `packages/`;
- * they are never read, and {@link MarketplaceCache.removeLegacyPackages}
- * deletes them.
+ * not a full commit id. A sparse (`git-subdir`) entry holds a different tree
+ * from the whole repository at the same commit, so its key carries a digest of
+ * the subfolder: `${name}@${sha}~${digest}`. Entries from before that rule
+ * lived under `packages/`; they are never read, and
+ * {@link MarketplaceCache.removeLeftovers} deletes them.
  *
  * TTL strategy:
  * - `marketplace.json`: 1h default. Past TTL the entry is still served but
@@ -29,6 +32,7 @@
  *
  * @module services/marketplace/marketplace-cache
  */
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rename, writeFile, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseMarketplaceJsonLenient, type MarketplaceJson } from '@dorkos/marketplace';
@@ -49,9 +53,15 @@ const TREES_DIRNAME = 'trees';
 
 /**
  * Where entries lived before their keys were verified (DOR-2248). Never read;
- * removed by {@link MarketplaceCache.removeLegacyPackages}.
+ * removed by {@link MarketplaceCache.removeLeftovers}.
  */
 const LEGACY_PACKAGES_DIRNAME = 'packages';
+
+/** Name prefix of the temp directory a fetch runs in, beside its entry. */
+const TEMP_FETCH_PREFIX = '.tmp-fetch-';
+
+/** Separates an entry's commit from its subfolder digest: `${name}@${sha}~${digest}`. */
+const SUBPATH_SEPARATOR = '~';
 
 /**
  * A cached marketplace.json document along with its freshness metadata.
@@ -197,14 +207,20 @@ export class MarketplaceCache {
   }
 
   /**
-   * Get a cached package by name and commit SHA.
+   * Get a cached package tree by name, commit and subfolder.
    *
    * @param packageName - Logical package name.
    * @param commitSha - The commit whose tree is wanted.
+   * @param subpath - The subfolder a sparse entry holds; `''` for the whole
+   *   repository. Part of the key: a sparse checkout is a different tree.
    * @returns A descriptor when present, `null` otherwise.
    */
-  async getPackage(packageName: string, commitSha: string): Promise<CachedPackage | null> {
-    const path = this.packageDir(packageName, commitSha);
+  async getPackage(
+    packageName: string,
+    commitSha: string,
+    subpath: string
+  ): Promise<CachedPackage | null> {
+    const path = this.packageDir(packageName, commitSha, subpath);
     try {
       const info = await stat(path);
       if (!info.isDirectory()) {
@@ -225,13 +241,15 @@ export class MarketplaceCache {
    * The one way an entry is written. Fetches into a unique temp directory,
    * takes the entry's key from the commit the fetch REPORTS, refuses anything
    * that is not a full commit id, and atomically renames the tree onto
-   * `${name}@${commit}` (DOR-2248). The caller's `expectedSha` never names an
+   * `${name}@${commit}` — `${name}@${commit}~${digest}` for a sparse entry,
+   * where the digest is of the subfolder (DOR-2248). The caller's
+   * `expectedSha` never names an
    * entry: it only short-circuits a tree already cached under it and
    * de-duplicates concurrent fetches of it. The two differ when a ref moved
    * between the caller's lookup and the fetch, and the entry then holds the
    * commit that actually arrived.
    *
-   * Concurrency: two fetches of one `${name}@${expectedSha}` in this process
+   * Concurrency: two fetches of one entry key in this process
    * share one fetch (a UI preview and an install fire together, and two git
    * processes must never collide in one directory). A valid tree another
    * process landed first wins, and ours is discarded. A partial (empty)
@@ -243,6 +261,8 @@ export class MarketplaceCache {
    *
    * @param packageName - Logical package name.
    * @param expectedSha - The commit the caller asked for.
+   * @param subpath - The subfolder the fetch checks out; `''` for the whole
+   *   repository.
    * @param fetch - Populates the temp directory it is given and resolves to
    *   the full commit id of what it put there.
    * @returns Where the tree is, and the commit it is.
@@ -251,22 +271,23 @@ export class MarketplaceCache {
   async materializePackage(
     packageName: string,
     expectedSha: string,
+    subpath: string,
     fetch: (tempDir: string) => Promise<string>
   ): Promise<MaterializedPackage> {
-    const expectedPath = this.packageDir(packageName, expectedSha);
+    const expectedPath = this.packageDir(packageName, expectedSha, subpath);
 
     // Fast path: an already-materialized valid package needs no fetch.
     if (await isNonEmptyDir(expectedPath)) {
       return { path: expectedPath, commitSha: expectedSha };
     }
 
-    const key = `${packageName}@${expectedSha}`;
+    const key = expectedPath;
     const existing = this.inFlight.get(key);
     if (existing) {
       return existing;
     }
 
-    const work = this.fetchAndPromote(packageName, fetch).finally(() => {
+    const work = this.fetchAndPromote(packageName, subpath, fetch).finally(() => {
       this.inFlight.delete(key);
     });
     this.inFlight.set(key, work);
@@ -274,12 +295,30 @@ export class MarketplaceCache {
   }
 
   /**
-   * Delete the `packages/` root entries lived in before their keys were
-   * verified (DOR-2248). None of them is ever read, and a tree there may not
-   * be the commit its name says, so this is disk, not cache. Idempotent.
+   * Delete what no entry is ever read from, once, before any fetch runs (the
+   * server calls it at startup):
+   *
+   * - the `packages/` root entries lived in before their keys were verified
+   *   (DOR-2248): a tree there may not be the commit its name says;
+   * - temp fetch directories a crash left in `trees/`, whose `.git` may still
+   *   hold a half-fetched repository.
+   *
+   * Idempotent. Not safe while a fetch is running in this cache.
    */
-  async removeLegacyPackages(): Promise<void> {
+  async removeLeftovers(): Promise<void> {
     await rm(join(this.cacheRoot, LEGACY_PACKAGES_DIRNAME), { recursive: true, force: true });
+    const treesRoot = join(this.cacheRoot, TREES_DIRNAME);
+    let entries: string[];
+    try {
+      entries = await readdir(treesRoot);
+    } catch {
+      return;
+    }
+    await Promise.all(
+      entries
+        .filter((entry) => entry.startsWith(TEMP_FETCH_PREFIX))
+        .map((entry) => rm(join(treesRoot, entry), { recursive: true, force: true }))
+    );
   }
 
   /**
@@ -291,13 +330,14 @@ export class MarketplaceCache {
    */
   private async fetchAndPromote(
     packageName: string,
+    subpath: string,
     fetch: (tempDir: string) => Promise<string>
   ): Promise<MaterializedPackage> {
     const treesRoot = join(this.cacheRoot, TREES_DIRNAME);
     await mkdir(treesRoot, { recursive: true });
     // The temp dir is a sibling of the final path so `rename` stays on the
     // same filesystem (cross-device renames throw EXDEV).
-    const tempDir = await mkdtemp(join(treesRoot, '.tmp-fetch-'));
+    const tempDir = await mkdtemp(join(treesRoot, TEMP_FETCH_PREFIX));
 
     let commitSha: string;
     let finalPath: string;
@@ -308,7 +348,7 @@ export class MarketplaceCache {
           `Refused to cache ${packageName}: the fetch reported "${commitSha}", which is not a full commit id`
         );
       }
-      finalPath = this.packageDir(packageName, commitSha);
+      finalPath = this.packageDir(packageName, commitSha, subpath);
     } catch (err) {
       await rm(tempDir, { recursive: true, force: true });
       throw err;
@@ -411,7 +451,11 @@ export class MarketplaceCache {
   }
 
   /**
-   * Compute the directory path for a content-addressable package tree.
+   * Compute the directory path for a content-addressable package tree:
+   * `${name}@${sha}` for a whole repository, `${name}@${sha}~${digest}` for a
+   * sparse checkout of `subpath`, the digest being the first 12 hex digits of
+   * the subfolder's SHA-256 (a path may hold characters a directory name
+   * cannot, and its length is unbounded).
    *
    * The containment assertion is the belt to the resolver's braces. Both halves
    * of this key are caller-influenced — the package name comes from the install
@@ -423,27 +467,32 @@ export class MarketplaceCache {
    * @throws {PathEscapeError} When the key would place the directory outside
    *   the cache.
    */
-  private packageDir(packageName: string, commitSha: string): string {
+  private packageDir(packageName: string, commitSha: string, subpath: string): string {
     const root = join(this.cacheRoot, TREES_DIRNAME);
-    return assertContainedIn(root, join(root, `${packageName}@${commitSha}`));
+    const tree = subpath === '' ? '' : `${SUBPATH_SEPARATOR}${subpathDigest(subpath)}`;
+    return assertContainedIn(root, join(root, `${packageName}@${commitSha}${tree}`));
   }
 }
 
+/** The first 12 hex digits of `subpath`'s SHA-256: the sparse-entry suffix. */
+function subpathDigest(subpath: string): string {
+  return createHash('sha256').update(subpath).digest('hex').slice(0, 12);
+}
+
 /**
- * Parse a `${name}@${sha}` directory name back into its components. Uses
- * `lastIndexOf('@')` so scoped names like `@scope/pkg@deadbeef` resolve
- * correctly. Returns `null` when the entry has no `@` separator or when
- * either side is empty.
+ * Parse a `${name}@${sha}` or `${name}@${sha}~${digest}` directory name back
+ * into its package and commit. Uses `lastIndexOf('@')` so scoped names like
+ * `@scope/pkg@deadbeef` resolve correctly. Returns `null` when the entry has
+ * no `@` separator or when either side is empty.
  */
 function parsePackageDirName(entry: string): { packageName: string; commitSha: string } | null {
   const at = entry.lastIndexOf('@');
   if (at <= 0 || at === entry.length - 1) {
     return null;
   }
-  return {
-    packageName: entry.slice(0, at),
-    commitSha: entry.slice(at + 1),
-  };
+  const commitSha = entry.slice(at + 1).split(SUBPATH_SEPARATOR)[0]!;
+  if (commitSha === '') return null;
+  return { packageName: entry.slice(0, at), commitSha };
 }
 
 /**

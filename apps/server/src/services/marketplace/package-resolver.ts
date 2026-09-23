@@ -182,9 +182,9 @@ export class PackageResolver {
       if (isParseableUrl(right)) {
         return {
           // Nothing downstream re-parses this name, and the cache turns it
-          // into a directory under `<cacheRoot>/packages/` that it will
+          // into a directory under `<cacheRoot>/trees/` that it will
           // `rm -rf` and `rename` onto — so a name carrying a separator plants
-          // a cloned, package-author-controlled tree outside the cache.
+          // a fetched, package-author-controlled tree outside the cache.
           kind: 'git',
           packageName: assertPathSegment(left),
           pluginSource: { source: 'url', url: right },

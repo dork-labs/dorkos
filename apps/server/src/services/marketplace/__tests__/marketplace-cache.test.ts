@@ -150,19 +150,19 @@ describe('MarketplaceCache', () => {
 
   /** Materialize an entry for `name` at `commit` and return its path. */
   async function seed(name: string, commit: string): Promise<string> {
-    return (await cache.materializePackage(name, commit, fakeFetch(commit))).path;
+    return (await cache.materializePackage(name, commit, '', fakeFetch(commit))).path;
   }
 
   describe('getPackage', () => {
     it('returns null when the package SHA is not cached', async () => {
-      const result = await cache.getPackage('code-review-suite', sha('a'));
+      const result = await cache.getPackage('code-review-suite', sha('a'), '');
       expect(result).toBeNull();
     });
 
     it('returns the cached package descriptor when present', async () => {
       const path = await seed('code-review-suite', sha('a'));
 
-      const result = await cache.getPackage('code-review-suite', sha('a'));
+      const result = await cache.getPackage('code-review-suite', sha('a'), '');
       expect(result).not.toBeNull();
       expect(result!.packageName).toBe('code-review-suite');
       expect(result!.commitSha).toBe(sha('a'));
@@ -177,7 +177,7 @@ describe('MarketplaceCache', () => {
       await mkdir(legacy, { recursive: true });
       await writeFile(join(legacy, 'README.md'), 'wrong tree\n');
 
-      expect(await cache.getPackage('code-review-suite', sha('a'))).toBeNull();
+      expect(await cache.getPackage('code-review-suite', sha('a'), '')).toBeNull();
       expect(await cache.listPackages()).toEqual([]);
     });
   });
@@ -193,8 +193,8 @@ describe('MarketplaceCache', () => {
       // `..` than the name does: `pkg@..` is itself a segment to climb out of.
       ['pkg', '../../../escape'],
     ])('refuses to derive a package directory from %j @ %j', async (name, commit) => {
-      await expect(cache.getPackage(name, commit)).rejects.toThrow(PathEscapeError);
-      await expect(cache.materializePackage(name, commit, async () => commit)).rejects.toThrow(
+      await expect(cache.getPackage(name, commit, '')).rejects.toThrow(PathEscapeError);
+      await expect(cache.materializePackage(name, commit, '', async () => commit)).rejects.toThrow(
         PathEscapeError
       );
     });
@@ -207,9 +207,36 @@ describe('MarketplaceCache', () => {
     });
   });
 
+  describe('sparse entries', () => {
+    it('keys a subfolder apart from the whole repository at the same commit', async () => {
+      // Purpose: a sparse checkout is a different tree; served for a
+      // whole-repository request it is missing everything else (DOR-2248).
+      const whole = await cache.materializePackage('flow', sha('a'), '', fakeFetch(sha('a')));
+      const sparse = await cache.materializePackage(
+        'flow',
+        sha('a'),
+        'plugins/flow',
+        fakeFetch(sha('a'), 'sparse-marker')
+      );
+
+      expect(sparse.path).not.toBe(whole.path);
+      expect(sparse.path).toMatch(new RegExp(`flow@${sha('a')}~[0-9a-f]{12}$`));
+      expect(await cache.getPackage('flow', sha('a'), 'plugins/flow')).toMatchObject({
+        path: sparse.path,
+      });
+      expect(await cache.getPackage('flow', sha('a'), 'docs')).toBeNull();
+    });
+
+    it('lists a sparse entry under its package and commit', async () => {
+      await cache.materializePackage('flow', sha('a'), 'plugins/flow', fakeFetch(sha('a')));
+      const [entry] = await cache.listPackages();
+      expect(entry).toMatchObject({ packageName: 'flow', commitSha: sha('a') });
+    });
+  });
+
   describe('materializePackage', () => {
     it('fetches into a temp dir then atomically renames onto the final path', async () => {
-      const result = await cache.materializePackage('flow', sha('d'), fakeFetch(sha('d')));
+      const result = await cache.materializePackage('flow', sha('d'), '', fakeFetch(sha('d')));
 
       expect(result).toEqual({
         path: join(cache.cacheRoot, 'trees', `flow@${sha('d')}`),
@@ -221,11 +248,11 @@ describe('MarketplaceCache', () => {
     it('keys the entry by the commit the fetch reports, not the one expected', async () => {
       // Purpose: the fetch reads the commit from the checkout; the caller's
       // expectation came from a lookup that may be stale (DOR-2248).
-      const result = await cache.materializePackage('flow', sha('a'), fakeFetch(sha('b')));
+      const result = await cache.materializePackage('flow', sha('a'), '', fakeFetch(sha('b')));
 
       expect(result.commitSha).toBe(sha('b'));
       expect(result.path).toBe(join(cache.cacheRoot, 'trees', `flow@${sha('b')}`));
-      expect(await cache.getPackage('flow', sha('a'))).toBeNull();
+      expect(await cache.getPackage('flow', sha('a'), '')).toBeNull();
     });
 
     it.each(['tmp-1727100000000', 'local', 'relative-path', 'deadbeef', '../../../escape', ''])(
@@ -233,7 +260,7 @@ describe('MarketplaceCache', () => {
       async (reported) => {
         // Purpose: a placeholder or a partial id must never become a key.
         await expect(
-          cache.materializePackage('flow', sha('a'), fakeFetch(reported))
+          cache.materializePackage('flow', sha('a'), '', fakeFetch(reported))
         ).rejects.toThrow(/not a full commit id/);
 
         const packagesRoot = join(cache.cacheRoot, 'trees');
@@ -249,8 +276,8 @@ describe('MarketplaceCache', () => {
       const fetch = vi.fn(fakeFetch(sha('c'), '.dork-manifest', 25));
 
       const [a, b] = await Promise.all([
-        cache.materializePackage('flow', sha('c'), fetch),
-        cache.materializePackage('flow', sha('c'), fetch),
+        cache.materializePackage('flow', sha('c'), '', fetch),
+        cache.materializePackage('flow', sha('c'), '', fetch),
       ]);
 
       const expected = join(cache.cacheRoot, 'trees', `flow@${sha('c')}`);
@@ -264,7 +291,7 @@ describe('MarketplaceCache', () => {
       await seed('flow', sha('b'));
 
       const fetch = vi.fn(fakeFetch(sha('b')));
-      const result = await cache.materializePackage('flow', sha('b'), fetch);
+      const result = await cache.materializePackage('flow', sha('b'), '', fetch);
 
       expect(result.path).toBe(join(cache.cacheRoot, 'trees', `flow@${sha('b')}`));
       expect(fetch).not.toHaveBeenCalled();
@@ -277,15 +304,15 @@ describe('MarketplaceCache', () => {
       const fetchError = new Error("Couldn't fetch github.com/o/r: repository not found");
       const fetch = vi.fn().mockRejectedValue(fetchError);
 
-      await expect(cache.materializePackage('flow', sha('e'), fetch)).rejects.toThrow(
+      await expect(cache.materializePackage('flow', sha('e'), '', fetch)).rejects.toThrow(
         /repository not found/
       );
 
       // No valid package was left behind, and the in-flight lock cleared so a
       // retry can run.
-      expect(await cache.getPackage('flow', sha('e'))).toBeNull();
+      expect(await cache.getPackage('flow', sha('e'), '')).toBeNull();
       const retry = vi.fn(fakeFetch(sha('e')));
-      await cache.materializePackage('flow', sha('e'), retry);
+      await cache.materializePackage('flow', sha('e'), '', retry);
       expect(retry).toHaveBeenCalledTimes(1);
     });
 
@@ -294,7 +321,7 @@ describe('MarketplaceCache', () => {
       const finalPath = join(cache.cacheRoot, 'trees', `flow@${sha('f')}`);
       await mkdir(finalPath, { recursive: true });
 
-      const result = await cache.materializePackage('flow', sha('f'), fakeFetch(sha('f')));
+      const result = await cache.materializePackage('flow', sha('f'), '', fakeFetch(sha('f')));
 
       expect(result.path).toBe(finalPath);
       // The fresh content landed, replacing the empty partial dir.
@@ -311,7 +338,7 @@ describe('MarketplaceCache', () => {
     });
   });
 
-  describe('removeLegacyPackages', () => {
+  describe('removeLeftovers', () => {
     it('removes the pre-verification packages/ root and nothing else', async () => {
       // Purpose: old entries are never read, so they are only disk; removing
       // them must not touch verified entries or cached marketplace lists.
@@ -319,15 +346,27 @@ describe('MarketplaceCache', () => {
       await seed('flow', sha('b'));
       await cache.writeMarketplace('dorkos-community', buildMarketplaceJson());
 
-      await cache.removeLegacyPackages();
+      await cache.removeLeftovers();
 
       await expect(access(join(cache.cacheRoot, 'packages'))).rejects.toThrow();
-      expect(await cache.getPackage('flow', sha('b'))).not.toBeNull();
+      expect(await cache.getPackage('flow', sha('b'), '')).not.toBeNull();
       expect(await cache.readMarketplace('dorkos-community')).not.toBeNull();
     });
 
+    it('removes temp fetch directories a crash left behind', async () => {
+      // Purpose: a half-fetched `.git` can outlive a crash; nothing reads it.
+      const leftover = join(cache.cacheRoot, 'trees', '.tmp-fetch-abc123');
+      await mkdir(join(leftover, '.git'), { recursive: true });
+      await seed('flow', sha('b'));
+
+      await cache.removeLeftovers();
+
+      await expect(access(leftover)).rejects.toThrow();
+      expect(await cache.getPackage('flow', sha('b'), '')).not.toBeNull();
+    });
+
     it('is a no-op when there is no legacy root', async () => {
-      await expect(cache.removeLegacyPackages()).resolves.toBeUndefined();
+      await expect(cache.removeLeftovers()).resolves.toBeUndefined();
     });
   });
 
