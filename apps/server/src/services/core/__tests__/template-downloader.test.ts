@@ -40,10 +40,11 @@ import {
   resolveGitAuth,
   classifyGigetError,
   execGitClone,
-  cloneRepository,
   downloadTemplate,
   isGitHubCredentialHost,
   isSupportedTemplateSource,
+  gitHubAuthConfig,
+  withGitHubToken,
   redactAuthTokens,
   TemplateDownloadError,
   UNSUPPORTED_TEMPLATE_SOURCE_MESSAGE,
@@ -497,32 +498,52 @@ describe('the GitHub token only ever goes to GitHub', () => {
     });
   });
 
-  describe('cloneRepository — the marketplace install path', () => {
-    it('still authenticates a github.com package clone', async () => {
-      mockEnv.GITHUB_TOKEN = 'ghp_market';
-      const mockProc = createMockProcess();
-      vi.mocked(spawn).mockReturnValue(mockProc);
-
-      const promise = cloneRepository('https://github.com/org/plugin.git', '/tmp/pkg');
-      mockProc._emit('close', 0);
-      await promise;
-
-      expect(spawnedCloneUrl()).toBe('https://x-access-token:ghp_market@github.com/org/plugin.git');
+  describe('withGitHubToken — the rewrite execGitClone and old git share', () => {
+    // The marketplace fetch calls this directly on git older than 2.31, so
+    // the gate is pinned here on its own.
+    it.each([
+      ['https://github.com/org/repo.git', 'https://x-access-token:ghp_t@github.com/org/repo.git'],
+      ['https://evil.example.com/org/repo.git', 'https://evil.example.com/org/repo.git'],
+      ['https://github.com.evil.com/org/repo.git', 'https://github.com.evil.com/org/repo.git'],
+      ['https://someone:secret@github.com/o/r.git', 'https://someone:secret@github.com/o/r.git'],
+      ['HTTPS://github.com/org/repo.git', 'HTTPS://github.com/org/repo.git'],
+      ['git@github.com:org/repo.git', 'git@github.com:org/repo.git'],
+    ])('%s → %s', (url, expected) => {
+      expect(withGitHubToken(url, 'ghp_t')).toBe(expected);
     });
 
-    it('sends no credential when the package lives on a third-party host', async () => {
-      // A marketplace `url` source is deliberately open (Azure DevOps,
-      // self-hosted Gitea), which is exactly why the token cannot follow it.
-      mockEnv.GITHUB_TOKEN = 'ghp_market';
-      const mockProc = createMockProcess();
-      vi.mocked(spawn).mockReturnValue(mockProc);
+    it('sends nothing when there is no token', () => {
+      expect(withGitHubToken('https://github.com/org/repo.git', undefined)).toBe(
+        'https://github.com/org/repo.git'
+      );
+    });
+  });
 
-      const promise = cloneRepository('https://evil.example.com/org/plugin.git', '/tmp/pkg');
-      mockProc._emit('close', 0);
-      await promise;
+  describe('gitHubAuthConfig — the header the marketplace fetch sends', () => {
+    // The marketplace fetch hands this to git through its environment, so the
+    // host gate is pinned here on its own.
+    it('scopes a Basic x-access-token header to a GitHub origin', () => {
+      expect(gitHubAuthConfig('https://github.com/org/repo.git', 'ghp_t')).toEqual({
+        key: 'http.https://github.com/.extraHeader',
+        value: `Authorization: Basic ${Buffer.from('x-access-token:ghp_t').toString('base64')}`,
+      });
+      expect(gitHubAuthConfig('https://www.github.com/o/r.git', 'ghp_t')?.key).toBe(
+        'http.https://www.github.com/.extraHeader'
+      );
+    });
 
-      expect(spawnedCloneUrl()).toBe('https://evil.example.com/org/plugin.git');
-      expect(JSON.stringify(vi.mocked(spawn).mock.calls[0])).not.toContain('ghp_market');
+    it.each([
+      'https://evil.example.com/org/repo.git',
+      'https://github.com.evil.com/org/repo.git',
+      'https://someone:secret@github.com/o/r.git',
+      'https://github.com:8443/o/r.git',
+      'git@github.com:org/repo.git',
+    ])('sends nothing to %s', (url) => {
+      expect(gitHubAuthConfig(url, 'ghp_t')).toBeUndefined();
+    });
+
+    it('sends nothing when there is no token', () => {
+      expect(gitHubAuthConfig('https://github.com/org/repo.git', undefined)).toBeUndefined();
     });
   });
 

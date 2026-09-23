@@ -7,9 +7,9 @@
  * file-scoped transaction engine. Only the external side-effect surfaces are
  * stubbed, because each of them reaches out of the install pipeline entirely:
  *
- * - `templateDownloader.cloneRepository` — the network. A throwing stub by
- *   default, so a test that accidentally leaves the local-fixture path fails
- *   loudly instead of hitting git.
+ * - the fetcher's {@link GitTreeSource} (`lookup`, `fetch`) — the network.
+ *   Throwing stubs by default, so a test that accidentally leaves the
+ *   local-fixture path fails loudly instead of hitting git.
  * - `extensionCompiler.compile` / `extensionManager.enable` / `.disable` /
  *   `.forgetRunApproval` — the extension subsystem.
  * - `agentCreator.createAgentWorkspace` — the real one pulls in configManager,
@@ -37,7 +37,7 @@ import { MarketplaceSourceManager } from '../marketplace-source-manager.js';
 import { PackageFetcher } from '../package-fetcher.js';
 import { PackageResolver } from '../package-resolver.js';
 import { PermissionPreviewBuilder } from '../permission-preview.js';
-import type { TemplateDownloader } from '../../core/template-downloader.js';
+import type { GitTreeSource } from '../lib/git-tree.js';
 import { AdapterInstallFlow } from '../flows/install-adapter.js';
 import { AgentInstallFlow } from '../flows/install-agent.js';
 import { PluginInstallFlow } from '../flows/install-plugin.js';
@@ -57,7 +57,10 @@ export interface InstallerTestSpies {
   createAgentWorkspace: ReturnType<typeof vi.fn>;
   adapterAdd: ReturnType<typeof vi.fn>;
   adapterRemove: ReturnType<typeof vi.fn>;
-  templateClone: ReturnType<typeof vi.fn>;
+  /** `GitTreeSource.lookup` — resolves a ref to a commit. */
+  gitLookup: ReturnType<typeof vi.fn>;
+  /** `GitTreeSource.fetch` — populates a temp dir and returns its commit. */
+  gitFetch: ReturnType<typeof vi.fn>;
 }
 
 /** Everything {@link buildInstallerForTests} hands back. */
@@ -89,14 +92,15 @@ export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
   const sourceManager = new MarketplaceSourceManager(dorkHome);
   const cache = new MarketplaceCache(dorkHome);
 
-  const templateClone = vi.fn(async () => {
-    throw new Error('templateDownloader.cloneRepository must not be called for local fixtures');
+  const gitLookup = vi.fn(async () => {
+    throw new Error('git lookup must not be called for local fixtures');
   });
-  const templateDownloader = {
-    cloneRepository: templateClone,
-  } as unknown as TemplateDownloader;
+  const gitFetch = vi.fn(async () => {
+    throw new Error('git fetch must not be called for local fixtures');
+  });
+  const git: GitTreeSource = { lookup: gitLookup, fetch: gitFetch };
 
-  const fetcher = new PackageFetcher(cache, templateDownloader, logger);
+  const fetcher = new PackageFetcher(cache, git, logger);
   const resolver = new PackageResolver(sourceManager, cache);
 
   // Adapter manager stub — just enough surface for ConflictDetector
@@ -186,7 +190,8 @@ export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
       createAgentWorkspace,
       adapterAdd,
       adapterRemove,
-      templateClone,
+      gitLookup,
+      gitFetch,
     },
   };
 }

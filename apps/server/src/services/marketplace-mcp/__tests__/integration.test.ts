@@ -5,7 +5,7 @@
  *
  *   - real {@link MarketplaceSourceManager} rooted at an `mkdtemp` `dorkHome`
  *   - real {@link MarketplaceCache} rooted at the same `dorkHome`
- *   - real {@link PackageFetcher} backed by a stub `TemplateDownloader`
+ *   - real {@link PackageFetcher} backed by a stub `GitTreeSource`
  *   - real {@link TokenConfirmationProvider} for the issue / approve / decline cycle
  *   - real {@link ensurePersonalMarketplace} bootstrap so the personal source is on disk
  *   - **stub** `InstallerLike` (preview / install / update spies) — never instantiates
@@ -41,7 +41,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import { MarketplaceSourceManager } from '../../marketplace/marketplace-source-manager.js';
 import { MarketplaceCache } from '../../marketplace/marketplace-cache.js';
 import { PackageFetcher } from '../../marketplace/package-fetcher.js';
-import type { TemplateDownloader } from '../../core/template-downloader.js';
+import type { GitTreeSource } from '../../marketplace/lib/git-tree.js';
 import type { InstallerLike, PreviewResult } from '../../marketplace/marketplace-installer.js';
 import type { InstallRequest, InstallResult, PermissionPreview } from '../../marketplace/types.js';
 import type { UninstallFlow } from '../../marketplace/flows/uninstall.js';
@@ -159,17 +159,16 @@ function buildLogger(): Logger {
 }
 
 /**
- * Build a stub `TemplateDownloader`. The integration test never reaches the
- * git-clone path because every fetch is `file://` based, so the stub throws
- * if it is ever invoked — that surfaces accidental network use as a test
- * failure rather than a silent skip.
+ * Build a stub `GitTreeSource`. The integration test never reaches git
+ * because every fetch is `file://` based, so the stub throws if it is ever
+ * invoked — that surfaces accidental network use as a test failure rather
+ * than a silent skip.
  */
-function buildStubDownloader(): TemplateDownloader {
-  return {
-    cloneRepository: vi.fn(async () => {
-      throw new Error('TemplateDownloader.cloneRepository must not be called in this test');
-    }),
-  } as TemplateDownloader;
+function buildStubGit(): GitTreeSource {
+  const refuse = async (): Promise<never> => {
+    throw new Error('GitTreeSource must not be called in this test');
+  };
+  return { lookup: vi.fn(refuse), fetch: vi.fn(refuse) };
 }
 
 /**
@@ -391,8 +390,8 @@ describe('marketplace-mcp integration', () => {
     logger = buildLogger();
     sourceManager = new MarketplaceSourceManager(dorkHome);
     const cache = new MarketplaceCache(dorkHome);
-    const downloader = buildStubDownloader();
-    const fetcher = new PackageFetcher(cache, downloader, logger);
+    const git = buildStubGit();
+    const fetcher = new PackageFetcher(cache, git, logger);
 
     // Bootstrap the personal marketplace so scenario 2 sees BOTH community
     // (file:// fixture) and personal sources.

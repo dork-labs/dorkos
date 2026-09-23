@@ -79,10 +79,12 @@ const STRUCTURAL_EXCLUDES = ['node_modules', 'dist', 'src/core-extensions/**'];
  * but by rewriting it onto the `ui` capability handlers, under a new name and in
  * a new place (`session/browser-seat/__tests__/devtools-reads.test.ts`), where it
  * type-checks like everything else.
+ * DOR-2248 deleted `git-subdir.test.ts` with the resolver it tested; its
+ * replacement, `source-resolvers/__tests__/git.test.ts`, type-checks.
  * **Only ever lower this.** Lowering it means a file was fixed and freed; raising
  * it means a test file was given up on, which needs a reason in review.
  */
-const QUARANTINE_BASELINE = 104;
+const QUARANTINE_BASELINE = 103;
 
 /**
  * The `exclude` array from the server tsconfig.
