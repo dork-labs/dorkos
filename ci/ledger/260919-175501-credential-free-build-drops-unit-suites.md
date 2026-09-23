@@ -6,7 +6,7 @@ status: active
 actor: agent
 gates:
   - wf.credential-free-build.credential-free-build
-prs: []
+prs: [2005]
 hypothesis:
   metric: 'gate.wf.credential-free-build.credential-free-build.failure_rate@merge_group'
   slo: 'wasted-queue-builds'
