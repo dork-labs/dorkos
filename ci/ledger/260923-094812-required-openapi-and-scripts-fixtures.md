@@ -9,7 +9,7 @@ gates:
   - wf.scripts-test.fixtures
   - wf.scripts-test.harness
   - ruleset.required_status_checks
-prs: []
+prs: [2007]
 hypothesis:
   metric: main-green
   baseline: 6
