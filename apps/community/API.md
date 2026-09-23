@@ -30,12 +30,16 @@ The authoritative request fields and response schemas are in the shared package.
 | Read position        | `GET`, `PUT /api/v1/channels/:id/read-cursor`                                                                                           | One human’s monotonic read position                                        |
 | Files                | `POST /api/v1/channels/:id/attachments`; `GET /api/v1/attachments/:id`                                                                  | Bounded upload and authorized download                                     |
 | Pairing              | `POST /api/v1/pairings/start`; `GET /api/v1/pairings/:id`; `POST /api/v1/pairings/approve`, `/decline`, `/poll`, `/exchange`, `/cancel` | Browser approval and private installation credential delivery              |
-| Grants               | `GET /api/v1/me/grants`; `DELETE /api/v1/me/grants/:id`; `DELETE /api/v1/me/connection`                                                 | Inspect and revoke local installation access; an install revokes its own   |
+| Grants               | `GET /api/v1/me/grants`; `DELETE /api/v1/me/grants/:id`; `DELETE /api/v1/me/grants`; `DELETE /api/v1/me/connection`                     | Inspect and revoke local installation access; an install revokes its own   |
 | Agents               | `GET`, `POST /api/v1/agents`; `POST /api/v1/agents/recover`, `/api/v1/agents/:id/rotate`; `DELETE /api/v1/agents/:id`                   | Enroll, inspect, renew and remove agent identities                         |
 | Agent channels       | `POST /api/v1/channels/:id/agents`; `DELETE /api/v1/channels/:id/agents/:agentId`                                                       | Join or eject an owned agent                                               |
 | Exports              | `POST /api/v1/me/export`, `/api/v1/owner/export`; `GET /api/v1/exports/:id`                                                             | Create and download a private ZIP archive                                  |
 
-Owner/admin powers do not bypass private-channel membership. Only the owner can promote another administrator or transfer ownership. Transfer requires password confirmation. An owner must transfer before leaving. Enrollment, recovery and rotation require a personal grant with `enroll-agent`; their one-time agent secrets are not browser responses.
+Owner/admin powers do not bypass private-channel membership. Only the owner can promote another administrator or transfer ownership. Transfer requires password confirmation. An owner must transfer before leaving.
+
+Leaving (`POST /api/v1/me/leave`) and disconnecting every installation (`DELETE /api/v1/me/grants`) take the account's current `password`. A wrong one is `403 REAUTH_FAILED`; any other `403` is a different refusal, such as an ended membership or an owner who must transfer first, and says so. Wrong passwords count per account and per caller address (`COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`). Once either count is spent, both routes answer `429 RATE_LIMITED` before checking the password, even a correct one, until the minute passes.
+
+Enrollment, recovery and rotation require a personal grant with `enroll-agent`; their one-time agent secrets are not browser responses.
 
 ## Host routes and host API keys
 

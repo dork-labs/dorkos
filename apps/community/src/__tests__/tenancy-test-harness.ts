@@ -50,7 +50,11 @@ export interface TenancyMember {
  */
 export async function startTenancyHarness(
   label: string,
-  options: { now?: () => Date; hostKeyAttemptsPerMinute?: number } = {}
+  options: {
+    now?: () => Date;
+    hostKeyAttemptsPerMinute?: number;
+    reauthAttemptsPerMinute?: number;
+  } = {}
 ): Promise<TenancyHarness> {
   const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
   if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for tenancy tests');
@@ -76,6 +80,7 @@ export async function startTenancyHarness(
     COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE: 100,
     COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE: 100,
     COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE: options.hostKeyAttemptsPerMinute ?? 100,
+    COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE: options.reauthAttemptsPerMinute ?? 20,
   });
   const blobStore = new FileSystemBlobStore(storagePath);
   const app = createCommunityApp({ config, pool, blobStore, hooks: { now: options.now } });

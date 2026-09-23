@@ -35,6 +35,7 @@ import { createBlobStore, type BlobStore } from './storage/index.js';
 import { DeliveryReceiptGate } from './delivery-receipt-gate.js';
 import { registerCommunityTestControlRoutes } from './routes/test-control.js';
 import { resolveCommunityContext } from './tenant-context.js';
+import { createPasswordConfirmation } from './password-confirmation.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
@@ -74,6 +75,11 @@ export function createCommunityApp({
       throw new ApiError(429, 'RATE_LIMITED', 'Too many attempts. Try again soon.');
     current.push(now);
     attemptTimes.set(key, current);
+  };
+  /** Whether `key` has used its budget this minute, without spending an attempt. */
+  const attemptsExhausted = (key: string, ceiling: number) => {
+    const now = Date.now();
+    return (attemptTimes.get(key) ?? []).filter((time) => now - time < 60_000).length >= ceiling;
   };
   // Use the socket peer. Proxy headers are client-controlled until a trusted proxy is configured.
   const peer = (c: Parameters<typeof getConnInfo>[0]) => getConnInfo(c).remote.address ?? 'unknown';
@@ -342,11 +348,19 @@ export function createCommunityApp({
       );
     },
   });
-  registerMemberRoutes(communityApi, { pool, auth });
+  const confirmPassword = createPasswordConfirmation({
+    auth,
+    ceiling: config.limits.reauthAttemptsPerMinute,
+    peer,
+    exhausted: attemptsExhausted,
+    record: limitAttempts,
+  });
+  registerMemberRoutes(communityApi, { pool, auth, confirmPassword });
   registerPairingRoutes(communityApi, {
     pool,
     auth,
     config,
+    confirmPassword,
     limitStart: (c) => limitAttempts(`pairing:${peer(c)}`, config.limits.pairingAttemptsPerMinute),
   });
   registerAgentRoutes(communityApi, { pool, auth, config });

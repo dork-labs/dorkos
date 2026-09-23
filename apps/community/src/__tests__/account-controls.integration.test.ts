@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   admit,
   bootstrapHost,
@@ -170,5 +170,97 @@ describe('account controls revoke exactly their stated scope', () => {
     ).toEqual([first, second].sort());
     expect(await installWorks(first, install)).toBe(200);
     expect((await h.call(`${tenant(first)}/me`, { cookie: neighbour.cookie })).status).toBe(200);
+  });
+});
+
+describe('password confirmation names its failure and limits guesses', () => {
+  it('answers a wrong password with REAUTH_FAILED and every other refusal with its own reason', async () => {
+    const wrongLeave = await h.call(`${tenant(first)}/me/leave`, {
+      cookie: neighbour.cookie,
+      body: { password: 'not-the-password', communityName: 'Owner Community' },
+    });
+    expect(wrongLeave.status).toBe(403);
+    expect(await wrongLeave.json()).toMatchObject({ code: 'REAUTH_FAILED' });
+    const wrongDisconnect = await h.call(`${tenant(first)}/me/grants`, {
+      method: 'DELETE',
+      cookie: neighbour.cookie,
+      body: { password: 'not-the-password' },
+    });
+    expect(wrongDisconnect.status).toBe(403);
+    expect(await wrongDisconnect.json()).toMatchObject({ code: 'REAUTH_FAILED' });
+    // The right password on a refused action is not a password failure, and must not read as one.
+    const owner = await signInAgain(OWNER_EMAIL);
+    const ownerLeave = await h.call(`${tenant(first)}/me/leave`, {
+      cookie: owner,
+      body: { password: TENANCY_PASSWORD, communityName: 'Owner Community' },
+    });
+    expect(ownerLeave.status).toBe(403);
+    expect(await ownerLeave.json()).toEqual({
+      code: 'FORBIDDEN',
+      message: 'Transfer ownership before leaving.',
+    });
+  });
+
+  describe('on a host that allows three wrong guesses a minute', () => {
+    let limited: TenancyHarness;
+    let a: string;
+    let b: string;
+    let person: TenancyMember;
+    let personInB: TenancyMember;
+
+    beforeAll(async () => {
+      limited = await startTenancyHarness('reauth_limit', { reauthAttemptsPerMinute: 3 });
+      const host = await bootstrapHost(limited, 'Limit Owner', 'owner@reauth-limit.test');
+      a = host.communityId;
+      const pending = await createPendingCommunity(limited, host.cookie, 'Limit B');
+      b = pending.communityId;
+      const bOwner = await claimAsNewAccount(limited, pending.token, 'B', 'b@reauth-limit.test');
+      person = await admit(limited, a, host.cookie, {
+        name: 'Guesser',
+        email: 'guesser@reauth-limit.test',
+      });
+      personInB = await admit(limited, b, bOwner.cookie, { cookie: person.cookie });
+    });
+    afterAll(async () => {
+      await limited?.close();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const leave = (cookie: string, communityId: string, password: string) =>
+      limited.call(`/api/v1/communities/${communityId}/me/leave`, {
+        cookie,
+        body: { password, communityName: communityId === a ? 'Limit Owner Community' : 'Limit B' },
+      });
+    const disconnectAll = (cookie: string, communityId: string, password: string) =>
+      limited.call(`/api/v1/communities/${communityId}/me/grants`, {
+        method: 'DELETE',
+        cookie,
+        body: { password },
+      });
+
+    it('refuses the fourth wrong guess, and even the right one, until the minute passes', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date());
+      // Three wrong guesses, spread over both routes and both of the account's communities:
+      // they share one budget.
+      expect((await leave(person.cookie, a, 'guess-1')).status).toBe(403);
+      expect((await disconnectAll(personInB.cookie, b, 'guess-2')).status).toBe(403);
+      expect((await disconnectAll(person.cookie, a, 'guess-3')).status).toBe(403);
+      const fourth = await leave(person.cookie, a, 'guess-4');
+      expect(fourth.status).toBe(429);
+      expect(await fourth.json()).toMatchObject({ code: 'RATE_LIMITED' });
+      // The right password is refused too, so a guesser learns nothing while limited, and
+      // nothing is disconnected.
+      expect((await disconnectAll(person.cookie, a, TENANCY_PASSWORD)).status).toBe(429);
+      expect(
+        (await limited.call(`/api/v1/communities/${a}/me`, { cookie: person.cookie })).status
+      ).toBe(200);
+
+      vi.setSystemTime(new Date(Date.now() + 61_000));
+      expect((await disconnectAll(person.cookie, a, TENANCY_PASSWORD)).status).toBe(204);
+      expect((await leave(personInB.cookie, b, TENANCY_PASSWORD)).status).toBe(204);
+    });
   });
 });

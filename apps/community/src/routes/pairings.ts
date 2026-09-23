@@ -30,6 +30,7 @@ import {
   revokeCallingConnectionGrant,
   transaction,
 } from '../data.js';
+import type { ConfirmPassword } from '../password-confirmation.js';
 import { ApiError, json, readJson } from '../http.js';
 import { equalSecret, hashSecret, randomToken } from '../security.js';
 import { resolveCommunityContext } from '../tenant-context.js';
@@ -119,7 +120,14 @@ export function registerPairingRoutes(
     auth,
     config,
     limitStart,
-  }: { pool: Pool; auth: CommunityAuth; config: CommunityConfig; limitStart: (c: Context) => void }
+    confirmPassword,
+  }: {
+    pool: Pool;
+    auth: CommunityAuth;
+    config: CommunityConfig;
+    limitStart: (c: Context) => void;
+    confirmPassword: ConfirmPassword;
+  }
 ) {
   app.get('/me/connection-access', async (c) => {
     const { member: grant, lifecycle } = await requireConnectionGrant(c, pool, 'read');
@@ -528,14 +536,7 @@ export function registerPairingRoutes(
       allowDeletionPending: true,
     });
     const body = await readJson(c, CommunityWireDisconnectAllRequestSchema);
-    try {
-      await auth.api.verifyPassword({
-        headers: c.req.raw.headers,
-        body: { password: body.password },
-      });
-    } catch {
-      throw new ApiError(403, 'FORBIDDEN', 'Reauthentication failed.');
-    }
+    await confirmPassword(c, actor.user_id, body.password);
     await transaction(pool, async (client) => {
       await lockRevocationMember(client, actor);
       await client.query(

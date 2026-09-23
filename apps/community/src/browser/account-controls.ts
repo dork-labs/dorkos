@@ -16,13 +16,17 @@ export function describeInstallAccess(scopes: readonly string[]): string {
 }
 
 /**
- * Explain a refused password confirmation and that nothing changed.
+ * Explain a refused password-confirmed action and whether anything changed.
  *
- * The server answers every failed reauthentication with one terse 403; the person needs to
- * know it was the password and that the action did not happen.
+ * Only `REAUTH_FAILED` means the password was wrong, and a spent guess budget (`RATE_LIMITED`)
+ * also changed nothing, so both say so. Every other refusal (an ended membership, an owner who
+ * must transfer first) keeps the server's own plain reason, because that is what the person
+ * needs to act on.
  */
 export function describeReauthenticationError(cause: unknown, unchanged: string): string {
-  if (cause instanceof RequestError && cause.status === 403 && cause.code === 'FORBIDDEN')
+  if (cause instanceof RequestError && cause.code === 'REAUTH_FAILED')
     return `That password is not right. ${unchanged}`;
+  if (cause instanceof RequestError && cause.code === 'RATE_LIMITED')
+    return `${cause.message} ${unchanged}`;
   return describeError(cause);
 }
