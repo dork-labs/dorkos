@@ -277,6 +277,8 @@ test.describe('Community membership in the DorkOS app is accessible (task 3.2)',
   test('the switcher’s Manage and Add actions, desktop menu and phone sheet', async ({
     page,
   }, testInfo) => {
+    // Two full page loads and eight axe passes; under a parallel run it brushes 30s.
+    test.slow();
     await mockCommunities(page, [ALPHA]);
     await page.goto('/channels?community=alpha&id=general');
     await new BasePage(page).waitForAppReady();
