@@ -149,7 +149,10 @@ export class CommunityNavigationPreferenceService {
     next: CommunityNavigationPrefs
   ): void {
     if (JSON.stringify(previous) === JSON.stringify(next)) return;
-    this.config.set('ui', { ...this.config.get('ui'), communityNavigation: next });
+    // Only this path, never the whole `ui` section: the settings broadcast
+    // recognizes a write that stored nothing else as movement, not a settings
+    // change, and stays quiet for it (DOR-2227).
+    this.config.setDot('ui.communityNavigation', next);
   }
 
   private serialized<T>(operation: () => Promise<T>): Promise<T> {

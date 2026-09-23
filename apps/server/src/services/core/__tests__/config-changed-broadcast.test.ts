@@ -39,6 +39,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
+import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
+import { CommunityNavigationPreferenceService } from '../../communities/community-navigation-preferences.js';
 import { ConfigManager } from '../config-manager.js';
 import { eventFanOut, type EncodedBroadcast, type FanOutClient } from '../event-fan-out.js';
 import { wireLiveChangeBroadcasts } from '../streams/live-change-broadcasts.js';
@@ -144,5 +147,58 @@ describe('config_changed', () => {
     expect(payloads(operator)).toHaveLength(1);
     expect(payloads(program)).toHaveLength(1);
     expect(payloads(agent)).toHaveLength(0);
+  });
+});
+
+describe('remembered Community navigation is movement, not a settings change (DOR-2227)', () => {
+  /** The real navigation service over the real manager, with one connected Community. */
+  function navigation(): CommunityNavigationPreferenceService {
+    const connection = {
+      ref: CommunityRefSchema.parse('remote_a'),
+      status: 'connected',
+    } as unknown as CommunityConnectionDescriptor;
+    return new CommunityNavigationPreferenceService(
+      manager,
+      { list: async () => [connection] },
+      async () => true
+    );
+  }
+
+  it('saving where the person was sends no config_changed, and still saves it', async () => {
+    const operator = connect({ kind: 'operator' });
+
+    await navigation().remember('owner-a', {
+      ref: 'remote_a',
+      roomId: 'general',
+      threadId: null,
+      scrollAnchorEntryId: null,
+    });
+    await navigation().rememberInstallation('owner-a', { path: '/session', search: {} });
+
+    expect(payloads(operator)).toEqual([]);
+    const [owner] = manager.get('ui').communityNavigation.owners;
+    expect(owner?.destinations).toEqual([expect.objectContaining({ roomId: 'general' })]);
+    expect(owner?.installationDestination).toEqual({ path: '/session', search: {} });
+  });
+
+  it('any other settings write still sends it', () => {
+    const operator = connect({ kind: 'operator' });
+
+    manager.setDot('ui.theme', 'dark');
+
+    expect(payloads(operator)).toEqual([expect.objectContaining({ sections: ['ui'] })]);
+  });
+
+  it('a write carrying navigation AND another setting still sends it', () => {
+    const operator = connect({ kind: 'operator' });
+    const ui = manager.get('ui');
+
+    manager.set('ui', {
+      ...ui,
+      theme: 'dark',
+      communityNavigation: { version: 1, owners: [] },
+    });
+
+    expect(payloads(operator)).toEqual([expect.objectContaining({ sections: ['ui'] })]);
   });
 });

@@ -5835,6 +5835,20 @@ describe('ConfigManager.onChange (the live-apply primitive)', () => {
     expect(seen).toEqual([['runtimes']]);
   });
 
+  it('reports the exact path each write stored, beside its section', () => {
+    // The settings broadcast tells remembered Community navigation apart from
+    // the rest of `ui` by this, so a dot-path write must name its whole path
+    // and a whole-section write must name only the section.
+    const manager = new ConfigManager(dir);
+    const seen: string[][] = [];
+    manager.onChange((change) => seen.push([...change.paths]));
+
+    manager.setDot('runtimes.default', 'codex');
+    manager.set('ui', { ...manager.get('ui'), theme: 'dark' });
+
+    expect(seen).toEqual([['runtimes.default'], ['ui']]);
+  });
+
   it('reports every section on a whole-config reset', () => {
     const manager = new ConfigManager(dir);
     const seen: string[][] = [];
