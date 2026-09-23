@@ -312,7 +312,24 @@ On a pull request you will see four checks, not one:
 
 Local runs are never sharded — you always get the whole suite. If you need to
 reproduce one shard exactly, pass the same flag: `pnpm --filter @dorkos/e2e e2e
---shard=2/3`.
+--shard=2/3`. Add `--list` to see which spec files a shard draws without
+running them.
+
+### How the thirds are cut
+
+Not by test count. `reporters/balanced-shard-reporter.ts` takes over
+`--shard`: it weighs every spec file (per project) by how long it took in real
+merge-queue runs, recorded in `reporters/shard-timings.json`, and deals the
+files out heaviest first to whichever shard has the least so far. A file is
+never split, so its `beforeAll` and serial tests run together. Each shard prints
+one line with its estimate, for example `balanced shard 3/3: 32 of 91 spec
+units, ~17.4 min of tests (shards: 17.4 / 17.4 / 17.4 min)`.
+
+A new spec needs nothing: it is weighed at its project's average time per test.
+Refresh the timings when those printed estimates drift away from the shards'
+real times — `pnpm --filter @dorkos/e2e shard-timings` rebuilds the file from
+the seven latest green queue runs (it needs `gh` signed in). The fan-in's
+`assert-browser-tests-executed.sh` fails if any test ran in two shards.
 
 ### Measure startup before changing the budget
 

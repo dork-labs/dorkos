@@ -26,19 +26,31 @@ const FlyRegionSchema = z
     deprecated: z.boolean(),
   })
   .passthrough();
-const FlyAppSchema = z
+/**
+ * One `fly.App` as flyctl renders it for `apps list --json` and `apps create --json`.
+ *
+ * flyctl marshals its Go struct without JSON tags, so every field is always present and a field the
+ * underlying API call did not fetch arrives as an empty string rather than missing. The two
+ * commands fetch different fields (flyctl v0.4.104):
+ *
+ * - `apps list` reads the Machines API, which reports the organization's slug and name but not its
+ *   GraphQL ID, so `Organization.ID` is `""`.
+ * - `apps create` reads the app back over GraphQL asking only for the organization's id, slug and
+ *   paid plan, so `Organization.Name` is `""`.
+ *
+ * Only the fields every variant fills are trusted: the app's ID and name, and the organization
+ * slug the operator selected. The organization's ID and name are deliberately not read.
+ */
+export const FlyAppResponseSchema = z
   .object({
     ID: ExternalIdentifierSchema,
     Name: ExternalIdentifierSchema,
-    Organization: z
-      .object({
-        ID: ExternalIdentifierSchema,
-        Slug: ExternalIdentifierSchema,
-        Name: ExternalLabelSchema,
-      })
-      .passthrough(),
-    Status: ExternalLabelSchema,
+    Organization: z.object({ Slug: ExternalIdentifierSchema }).passthrough(),
+    Status: z.union([z.literal(''), ExternalLabelSchema]),
   })
+  .passthrough();
+const FlyOrganizationDetailSchema = z
+  .object({ ID: ExternalIdentifierSchema, Slug: ExternalIdentifierSchema })
   .passthrough();
 const FlyImageDigestSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/u);
 const FlyImageComponentSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,511}$/u);
@@ -122,13 +134,9 @@ export interface FlyAppIdentity {
   id: string;
   /** Globally visible app name. */
   name: string;
-  /** Provider-issued organization ID. */
-  organizationId: string;
-  /** Stable organization slug. */
+  /** Stable organization slug the app belongs to. */
   organizationSlug: string;
-  /** Human-readable organization name. */
-  organizationName: string;
-  /** Provider-reported app status. */
+  /** Provider-reported app status, empty when Fly reports none. */
   status: string;
 }
 
@@ -237,6 +245,16 @@ export async function readFlyRegions(options: FlySessionReadOptions): Promise<Fl
   }));
 }
 
+/** Map one parsed flyctl app to the identity the launcher keeps. */
+export function toFlyAppIdentity(app: z.infer<typeof FlyAppResponseSchema>): FlyAppIdentity {
+  return {
+    id: app.ID,
+    name: app.Name,
+    organizationSlug: app.Organization.Slug,
+    status: app.Status,
+  };
+}
+
 /** Read Fly apps in one explicitly selected organization. */
 export async function readFlyApps(
   options: FlySessionReadOptions,
@@ -248,7 +266,7 @@ export async function readFlyApps(
       ...options,
       args: ['apps', 'list', '--org', slug, '--json'],
       parse: (stdout) => {
-        const parsed = z.array(FlyAppSchema).parse(parseExternalJson(stdout));
+        const parsed = z.array(FlyAppResponseSchema).parse(parseExternalJson(stdout));
         requireUniqueExternalIds(parsed, (app) => app.ID);
         if (parsed.some((app) => app.Organization.Slug !== slug)) {
           throw new Error('ORGANIZATION_BINDING_MISMATCH');
@@ -257,14 +275,31 @@ export async function readFlyApps(
       },
     })
   ).value;
-  return apps.map((app) => ({
-    id: app.ID,
-    name: app.Name,
-    organizationId: app.Organization.ID,
-    organizationSlug: app.Organization.Slug,
-    organizationName: app.Organization.Name,
-    status: app.Status,
-  }));
+  return apps.map(toFlyAppIdentity);
+}
+
+/**
+ * Resolve the GraphQL ID of one explicitly selected organization.
+ *
+ * Fly's add-on creation takes the organization's ID, not its slug, and `apps list` no longer
+ * reports that ID, so it is read from `orgs show` and bound back to the selected slug.
+ */
+export async function readFlyOrganizationId(
+  options: FlySessionReadOptions,
+  organizationSlug: string
+): Promise<string> {
+  const slug = ExternalIdentifierSchema.parse(organizationSlug);
+  return (
+    await runProviderCommand({
+      ...options,
+      args: ['orgs', 'show', slug, '--json'],
+      parse: (stdout) => {
+        const parsed = FlyOrganizationDetailSchema.parse(parseExternalJson(stdout));
+        if (parsed.Slug !== slug) throw new Error('ORGANIZATION_BINDING_MISMATCH');
+        return parsed.ID;
+      },
+    })
+  ).value;
 }
 
 /** Read exact Machine, release, and public-address state for one verified app. */

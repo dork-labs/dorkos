@@ -50,7 +50,12 @@ import {
   type ServerPrincipalProof,
 } from './principal/server-principal.js';
 import type { ConnectorRuntimePrincipalService } from './principal/runtime-principal-service.js';
-import type { ConnectorRegistry } from './registry.js';
+import type {
+  ConnectorOperatorQueryService,
+  ConnectorServiceDirectory,
+} from './resources/operator-query-service.js';
+import { dorkosToolNameFor } from '../runtimes/shared/dorkos-tool-names.js';
+import { SERVICE_CATALOG_TOOL_NAME } from './connector-capabilities.js';
 import type { ConnectorAuthenticationFlowService } from './resources/authentication-flow-service.js';
 import type {
   PreparedPrivateSessionMessage,
@@ -60,6 +65,8 @@ import type {
 
 const DEFAULT_REQUEST_TTL_MS = 2 * 60 * 60_000;
 const DEFAULT_LIVE_HOLD_MS = 10 * 60_000;
+/** The same ceiling the agent-facing catalog tool gives one catalog read. */
+const SERVICE_DIRECTORY_TIMEOUT_MS = 30_000;
 
 type RuntimeClaims = Extract<ServerPrincipalClaims, { kind: 'runtime' }>;
 type AgentRequestRef = Extract<PrivateSessionMessageSourceRef, { kind: 'connector_agent_request' }>;
@@ -98,7 +105,8 @@ export interface ConnectorAgentRequestResumePort {
 /** Construction dependencies for durable agent requests. */
 export interface ConnectorAgentRequestServiceOptions {
   readonly db: Db;
-  readonly registry: ConnectorRegistry;
+  /** The catalog read the agent-facing lookup tool uses, so both agree on what exists. */
+  readonly services: Pick<ConnectorOperatorQueryService, 'serviceDirectory'>;
   readonly runtimePrincipals: Pick<ConnectorRuntimePrincipalService, 'revalidatePrincipal'>;
   readonly authority: ConnectorAgentRequestAuthorityPort;
   readonly bootEpoch: string;
@@ -117,6 +125,8 @@ export interface ConnectorAgentRequestServiceOptions {
   readonly createSecret?: () => string;
   readonly requestTtlMs?: number;
   readonly liveHoldMs?: number;
+  /** Override the catalog read's ceiling (default 30s) in focused tests. */
+  readonly serviceDirectoryTimeoutMs?: number;
 }
 
 function authenticationIdempotencyKey(requestId: string): string {
@@ -277,6 +287,99 @@ function parseResolutionClaim(value: string | null): ConnectorAgentResolutionCla
   return { version: 1, decision: decision.data, ...(managedCommandId && { managedCommandId }) };
 }
 
+const MAX_SERVICE_SUGGESTIONS = 5;
+
+/**
+ * Words that name a route DorkOS connects through rather than a service. An
+ * agent that has heard of Composio writes `composio-emails`; matching on that
+ * word would suggest the unrelated `composio_search` toolkit. The registered
+ * routes' types are added to these at request time; their labels are not, since
+ * a person may name a route after a service.
+ */
+const ROUTE_WORDS = ['composio', 'nango', 'dorkos', 'mcp'];
+
+function words(value: string): string[] {
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/**
+ * Real service ids that share a word with a guessed one, shortest first.
+ *
+ * `gmail_inbox` and `composio_gmail` both suggest `gmail`. A route name is not
+ * a service word, and a word shorter than three letters would match nearly
+ * everything, so both are ignored. No match means no suggestion: the refusal
+ * then points only at the catalog tool rather than at an unrelated service.
+ */
+function suggestServices(guess: string, directory: ConnectorServiceDirectory): string[] {
+  const ignored = new Set([...ROUTE_WORDS, ...directory.routeTypes.flatMap(words)]);
+  const guessWords = new Set<string>();
+  for (const word of words(guess)) {
+    if (word.length < 3 || ignored.has(word)) continue;
+    guessWords.add(word);
+    if (word.length > 3 && word.endsWith('s')) guessWords.add(word.slice(0, -1));
+  }
+  if (guessWords.size === 0) return [];
+  return directory.services
+    .filter((service) => service.requestable)
+    .filter((service) => {
+      const serviceWords = [...words(service.serviceSlug), ...words(service.displayName)].filter(
+        (word) => !ignored.has(word)
+      );
+      return [...guessWords].some((guessWord) =>
+        serviceWords.some((word) => word.includes(guessWord) || guessWord.includes(word))
+      );
+    })
+    .map((service) => service.serviceSlug)
+    .sort((left, right) => left.length - right.length || left.localeCompare(right))
+    .slice(0, MAX_SERVICE_SUGGESTIONS);
+}
+
+/**
+ * The refusal for a service id an agent may not request, written so the agent
+ * has one next step instead of a dead end (DOR-2231): wait out a partial
+ * catalog, hand the person the one setup step only they can take, send a
+ * Messaging-only service to the person, or look the exact id up. The catalog
+ * warning text is not repeated to the agent.
+ */
+function unavailableServiceMessage(
+  serviceSlug: string,
+  directory: ConnectorServiceDirectory,
+  catalogTool: string
+): string {
+  const quoted = JSON.stringify(serviceSlug);
+  const listed = directory.services.find((service) => service.serviceSlug === serviceSlug);
+  if (listed && !listed.requestable) {
+    return (
+      `${listed.displayName} connects through Messaging, not an account, so an agent cannot ` +
+      'request it. Ask the person to set it up under Messaging in Connections in the DorkOS app.'
+    );
+  }
+  if (directory.warnings.length > 0) {
+    return (
+      `DorkOS could not load the full list of services just now, so ${quoted} could not be ` +
+      'checked. Try again in a moment.'
+    );
+  }
+  if (!directory.services.some((service) => service.requestable)) {
+    return (
+      'DorkOS has no account services set up yet, so there is nothing to request. Ask the person to ' +
+      'open Connections in the DorkOS app and, under Accounts, link their DorkOS account or add ' +
+      "their own under Advanced account setup. Then ask again. Signing in to a service's " +
+      'command-line tool in a shell does not give DorkOS access.'
+    );
+  }
+  const suggestions = suggestServices(serviceSlug, directory);
+  return [
+    `DorkOS has no service with the id ${quoted}. Service ids are exact, lowercase names.`,
+    ...(suggestions.length > 0 ? [`Close matches: ${suggestions.join(', ')}.`] : []),
+    `Search the services by name with ${catalogTool} (for example {"query":"mail"}), then ask ` +
+      'again with the exact serviceSlug of an entry in its toolkits list.',
+  ].join(' ');
+}
+
 /** Durable private request service. */
 export class ConnectorAgentRequestService {
   private readonly now: () => Date;
@@ -304,11 +407,19 @@ export class ConnectorAgentRequestService {
   ): Promise<ConnectorAgentRequestStatus> {
     const claims = await this.requireLiveRuntimePrincipal(principal);
     const input = ConnectorAgentConnectionRequestInputSchema.parse(rawInput);
-    const catalog = await this.options.registry.listToolkits();
-    if (!catalog.toolkits.some((service) => service.slug === input.serviceSlug)) {
+    const directory = await this.readServiceDirectory();
+    if (
+      !directory.services.some(
+        (service) => service.serviceSlug === input.serviceSlug && service.requestable
+      )
+    ) {
       throw new ConnectorAgentRequestError(
         'service_unavailable',
-        'That service is not available on this DorkOS installation.'
+        unavailableServiceMessage(
+          input.serviceSlug,
+          directory,
+          dorkosToolNameFor(claims.runtime, SERVICE_CATALOG_TOOL_NAME)
+        )
       );
     }
     const intentHash = digest({
@@ -411,6 +522,30 @@ export class ConnectorAgentRequestService {
         .run();
     });
     return this.getForRuntime(principal, requestId);
+  }
+
+  /** The catalog read, where running out of time reads as a partial list rather than a crash. */
+  private async readServiceDirectory(): Promise<ConnectorServiceDirectory> {
+    const signal = AbortSignal.timeout(
+      this.options.serviceDirectoryTimeoutMs ?? SERVICE_DIRECTORY_TIMEOUT_MS
+    );
+    // Not every route stops mid-call when the signal fires, so the deadline is
+    // also raced here: the agent hears "try again" on time either way.
+    const deadline = new Promise<never>((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    });
+    // The race settles once; a deadline firing after a successful read is not an error.
+    deadline.catch(() => undefined);
+    try {
+      return await Promise.race([this.options.services.serviceDirectory(signal), deadline]);
+    } catch (error) {
+      if (!signal.aborted) throw error;
+      return {
+        services: [],
+        warnings: [{ code: 'catalog_timeout', message: 'The service list took too long.' }],
+        routeTypes: [],
+      };
+    }
   }
 
   /** Read one own request without exposing owner account inventory. */

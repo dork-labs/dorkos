@@ -34,8 +34,9 @@
  * version-parity test below is that guard widened to the whole workspace.
  *
  * NOTE FOR WHOEVER EDITS `.github/dependabot.yml` NEXT: it is in the
- * `scripts-test` workflow's path filters precisely so this file runs on a PR
- * that touches nothing else. If you move the config, move that filter too.
+ * scope list that starts the `scripts-test` workflow's `harness` job
+ * (scripts/scripts-test-scope.sh) precisely so this file runs on a PR that
+ * touches nothing else. If you move the config, move that entry too.
  *
  * STDLIB ONLY. Like its neighbours here, this file imports nothing outside
  * `node:*` — `scripts/` has no package.json of its own, and keeping the

@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 10 / 11 (4.2 is proven except post-selection heading focus; see Known Issues)
+**Tasks Completed:** 4 / 11 (1.1, 1.2, 2.2 and 3.2; audited against main 5cd6dd794 on 2026-09-23)
 
 ## Tasks Completed
 
@@ -98,7 +98,12 @@ Decisions to confirm: Create community is hidden because the local descriptor ca
 host-operator signal; Community sign-out stays on the Community's site; Invite visibility uses
 lifecycle + reachability because the descriptor carries no role, and the Community page rechecks.
 
-### Session 3 - 2026-09-23
+### Session 3 - 2026-09-23 (status audit)
+
+- Sessions 1 and 2 landed on main as #1986 (7f90b1c17, attention aggregates), #1992 (d5d73c251, the switcher, contextual navigation and phone sheet) and #2002 (538a6c580, lifecycle actions and connection cleanup).
+- The Phase 4 proof is PR #2015, still open. Along the way it found and fixed four gaps: ⌘⇧K inside text fields, the unannounced failed switch, a missing `menu` parent on the phone sheet, and sheet and popover scrolling. Those fixes are not on main yet. It reports two other gaps as not met: DOR-2240 and DOR-2241.
+
+### Session 4 - 2026-09-23 (Phase 4 proof, PR #2015)
 
 **Tasks 4.1 and 4.2:** Prove switching, accessibility and cross-community isolation (DOR-2186).
 
@@ -117,7 +122,7 @@ lifecycle + reachability because the descriptor carries no role, and the Communi
   painted under its own name and address, and Alpha's event stream is closed before any Beta answer
   arrives (page-clock timings). Back/Forward walks the same history without a stale frame.
 - `apps/e2e/tests/connections/community-switcher-access.spec.ts` proves the keyboard-only journey
-  (⌘⇧K from anywhere, arrows, Home/End, typeahead, Enter, Escape returning focus to the trigger),
+  (⌘⇧K from anywhere, arrows, Home/End, typeahead, Enter, Escape returning focus to where it was),
   row names and states in words, axe clean in both themes on desktop and on the phone sheet, 44px
   rows, reduced motion, 200% zoom, long labels, fifty Communities at desktop and 390px, that the
   shell loads no Community detail until one is chosen, that the labelled target frame paints before
@@ -168,20 +173,14 @@ lifecycle + reachability because the descriptor carries no role, and the Communi
 
 ## Known Issues
 
-- **Post-selection heading focus is not met.** The spec moves focus to the new page heading after a
-  phone selection, but no route renders a heading inside `main` (the Community channel surface has
-  none), so `focusPageHeading` finds nothing; the composer's mount focus and the sheet's focus
-  restore then decide where focus lands. Fixing it needs a page-heading decision, not a test.
-- **Drafts are not restored after A→B→A.** The spec restores a Community room's draft from its
-  qualified key on return, but drafts live in the keyed surface's state and are also scoped to the
-  route epoch, so switching away discards them. They never cross owners or Communities (proven);
-  keeping them needs a draft store design that reconciles with the epoch fence.
-- Effective `read`, `post`, and `enrollAgent` capabilities will come from the reviewed Community
-  administration contract. The local app must consume that server projection rather than infer
-  write access from lifecycle, membership, or a restored read-only connection.
-- The implementation is stacked on accepted DOR-2191 head
-  `1d3be34510d072831cb58d49052879332dc96c1c`; do not open a PR until that dependency lands and the
-  branch is reconciled with current `main`.
+- None beyond Remaining Work. The earlier notes are resolved on main: the effective-capability projection landed in #1984 (7d365fc36), and the DOR-2191 stacking dependency merged as #1957.
+
+## Remaining Work
+
+- **DOR-2240 (Task 2.3):** after a selection on the phone, focus should move to the target page's heading. `focusPageHeading` in `CommunityContextSwitcher.tsx` finds nothing because no route renders a heading inside `main`, so this needs a page-heading decision first.
+- **DOR-2241 (Task 1.4):** a draft should be restored after A→B→A. Drafts live in the keyed room surface and are scoped to the route epoch, so leaving a room drops them. They never cross owners or Communities. Restoring them needs a draft-store design.
+- **DOR-2242 (Task 3.1):** Create community should be in the switcher for a host operator. The local connection descriptor carries no host-operator signal, so this needs a small contract addition first.
+- **PR #2015 (Tasks 1.3, 2.1, 2.3, 4.1, 4.2):** merging it lands the Phase 4 proof and its four fixes: failed-switch announcement, ⌘⇧K in text fields, the phone sheet's `menu` role, and popover and sheet scrolling.
 
 ## Implementation Notes
 

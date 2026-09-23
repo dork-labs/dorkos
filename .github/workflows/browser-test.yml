@@ -207,12 +207,15 @@ jobs:
     # of a shard's wall time; at six it is ~40% and the runner bill has doubled
     # for a six-minute gain.
     #
-    # `--shard` divides by TEST COUNT, not by duration, and the split is even:
-    # `playwright test --list --shard=i/3` reports 110 / 109 / 109 of 328
-    # collected. What that does not prove is that the three take equally LONG —
-    # shards 1 and 2 are pure `chromium` (the cockpit leg) while shard 3 carries
-    # all six test-mode projects, and only a real CI run can weigh them. The
-    # timeouts below are sized with that unknown in mind.
+    # THE CUT IS BY MEASURED DURATION, NOT TEST COUNT. Playwright's own
+    # `--shard` splits by test count in `projects` order, which put every
+    # test-mode project — tests about 40% longer than a cockpit test — on
+    # shard 3: 2026-09-16..23 its suite step ran p95 27.6 min against the 30-min
+    # `globalTimeout` while shards 1 and 2 ran 20.7 and 21.8, and it hit the
+    # limit once. `--shard=i/N` is still passed (and still recorded in each
+    # report), but `apps/e2e/reporters/balanced-shard-reporter.ts` owns the cut:
+    # whole spec files, weighed by `shard-timings.json`, dealt heaviest-first to
+    # the lightest shard. Ledger: ci/ledger/260923-095643-balance-browser-shards.md.
     strategy:
       # NEVER cancel the siblings. `fail-fast: true` (the default) cancels every
       # other shard the moment one fails, and a cancelled job uploads nothing —

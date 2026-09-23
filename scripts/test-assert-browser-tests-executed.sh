@@ -608,6 +608,25 @@ shardSilent=$tmp/shardSilent/apps/e2e/test-results
 check 'a shard that executed nothing is named' "$tmp/shardSilent" 1 'shards executed no tests' \
   "$shardSilent/shard-1.json" "$shardSilent/shard-2.json" "$shardSilent/shard-3.json"
 
+# Two runners that cut the suite differently. The balanced-shard reporter
+# computes the partition on every runner, so a disagreement shows up as one
+# test in two shards: every spec is still present and every total is healthy,
+# which is exactly why the union has to be checked for doubles as well as gaps.
+make_workspace "$tmp/shardDoubled"
+make_shards "$tmp/shardDoubled" 3
+python3 - "$tmp/shardDoubled/apps/e2e/test-results" <<'PY'
+import json, sys
+root = sys.argv[1]
+first = json.load(open(f'{root}/shard-1.json'))
+second = json.load(open(f'{root}/shard-2.json'))
+first['suites'].append(second['suites'][0])
+first['stats']['expected'] += 1
+json.dump(first, open(f'{root}/shard-1.json', 'w'))
+PY
+shardDoubled=$tmp/shardDoubled/apps/e2e/test-results
+check 'a test that ran in two shards is named' "$tmp/shardDoubled" 1 'ran in more than one shard' \
+  "$shardDoubled/shard-1.json" "$shardDoubled/shard-2.json" "$shardDoubled/shard-3.json"
+
 # A shard whose artifact never arrived. Without the completeness check this is
 # the dangerous case: two thirds of the suite would be certified while the
 # missing third's specs read as "on disk but never ran" — a true statement with a

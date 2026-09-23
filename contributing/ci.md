@@ -40,8 +40,8 @@ This guide covers everything between an agent's edit and a change on `main`: the
 | Your PR is behind `main`                                                                                                              | Nothing                                                                                                                                                         | The queue tests the combined tree; being behind blocks nothing                    |
 | A PR check failed and it is yours                                                                                                     | Fix and push                                                                                                                                                    |                                                                                   |
 | A PR check failed and it is not yours (red elsewhere, infra)                                                                          | `gh run rerun <run-id> --failed`, once                                                                                                                          | One job, not a 19-to-25-job round                                                 |
-| Your PR was ejected from the queue for failed checks, first time                                                                      | Read the failing job; once it is plainly not yours, `gh pr merge --auto <n>`                                                                                    | 85% re-pass unchanged; merge-tail runs only every 2-3 h                           |
-| Same job ejected it twice with no change in between                                                                                   | Treat it as real: reproduce, fix, push                                                                                                                          |                                                                                   |
+| Your PR was ejected from the queue for failed checks, first time                                                                      | Read the failing job; once it is plainly not yours, `gh pr merge --auto <n>`, once                                                                              | 85% re-pass unchanged; merge-tail runs only every 2-3 h                           |
+| Same check ejected it twice on the same head commit                                                                                   | Stop re-arming. It is a regression only the queue can see: read the log, fix, push                                                                              | Browser tests run only in the queue; merge-tail will not re-arm it either         |
 | The queue itself is broken or backed up                                                                                               | Say so; do not push, rerun or re-arm                                                                                                                            | Load is the problem. Incident mode (freeze, shed, break-glass) is phase 1b        |
 | You are tempted to merge with admin rights                                                                                            | Don't. `gh pr merge --auto <n>`                                                                                                                                 | Admin merges skip every required check; reserved for `/ci-break-glass` (phase 1b) |
 
@@ -52,7 +52,7 @@ EDIT     Claude Code hooks: four PreToolUse guards on every Bash call; typecheck
 TURN END prettier --write on changed files (Stop hook); checkpoint in worktrees
 COMMIT   lefthook pre-commit: prettier, drizzle generate, dir-size, turbo lint --affected, turbo typecheck --affected (the last two under the machine-wide slot cap)
 PUSH     lefthook pre-push: a prettier check on the changed files. No tests run at push (DOR-2160)
-PR       ~19-25 Actions jobs; the 9 required checks below must pass ON THE PR before it may enter the queue
+PR       ~19-25 Actions jobs; the required checks below must pass ON THE PR before it may enter the queue
 ARM      agents arm with gh pr merge --auto; merge-tail (every 2-3 h, throttled) is the backstop
 QUEUE    merge_group: the required checks re-run on main + everything ahead, up to 5 PRs per group, ALLGREEN
 MAIN     squash merge; a few push-to-main legs (db-check, CLI smoke, scripts-test, desktop smoke)
@@ -60,7 +60,7 @@ MAIN     squash merge; a few push-to-main legs (db-check, CLI smoke, scripts-tes
 
 ## Required checks
 
-Ruleset 19893973 is the **only** protection on `main`. Classic branch protection was deleted on 2026-09-19, and `db-check`, `deletion` and `non_fast_forward` moved into the ruleset then. All 9 contexts are pinned to the GitHub Actions app (integration id 15368), so nothing else can post a status that satisfies them. No human approval is required and conversation resolution is off.
+Ruleset 19893973 is the **only** protection on `main`. Classic branch protection was deleted on 2026-09-19, and `db-check`, `deletion` and `non_fast_forward` moved into the ruleset then. Every context is pinned to the GitHub Actions app (integration id 15368), so nothing else can post a status that satisfies it; a context added later is pinned the same way. No human approval is required and conversation resolution is off.
 
 <!-- The block below is generated from ci/required-checks.json and checked byte for byte
      by the CI Steward census; prettier would add blank lines inside it, hence the ignore. -->
@@ -75,6 +75,8 @@ Ruleset 19893973 is the **only** protection on `main`. Classic branch protection
 - `lint`
 - `credential-free-build`
 - `db-check`
+- `openapi-fresh`
+- `fixtures`
 <!-- ci-steward:required-checks:end -->
 <!-- prettier-ignore-end -->
 
@@ -138,7 +140,7 @@ Nothing that reaches `main` reaches it with less checking. The queue runs the fu
 - The scope decision lives **inside the job**, never in a workflow-level `paths:` filter, so the check always reports. A path-filtered workflow reports nothing, which keeps a PR out of the queue and then stalls the queue for an hour.
 - **It is not a required check yet.** Making it one is a ruleset change, the operator's to make, and it needs no edit to the workflow (and, under the steward, a ledger entry first).
 
-**Other Actions checks.** `fragment-present` and `no-fragment-under-skip-label` (changelog), `scripts-test` (the shell fixture suites, path-filtered and advisory), and CLI smoke tests (Node 22/24) plus integration tests, which run on push to `main` and on PRs that touch what they package. Locally: `pnpm smoke:docker` and `pnpm smoke:integration`. Advisory checks such as `site-build`, `openapi-fresh`, `harness-windows` and the Claude `review` do not block the queue, but any red check stops merge-tail arming a PR.
+**Other Actions checks.** `fragment-present` and `no-fragment-under-skip-label` (changelog), `scripts-test` (its `fixtures` job is required and runs on every PR and merge group; its `harness` job is advisory, PR and push only, and scoped by `scripts/scripts-test-scope.sh`), and CLI smoke tests (Node 22/24) plus integration tests, which run on push to `main` and on PRs that touch what they package. Locally: `pnpm smoke:docker` and `pnpm smoke:integration`. Advisory checks such as `site-build`, `harness-windows` and the Claude `review` do not block the queue, but any red check stops merge-tail arming a PR.
 
 **Capacity.** The org is on the GitHub **Team** plan: 60 concurrent jobs, not the Free plan's 20. One push to a PR starts 19 jobs (docs-only) to 25 (code); a queue entry costs about 19 to 20. Twenty agents each pushing once is 400 to 500 jobs, 7 to 8 full refills of the pool, and the queue's own builds wait behind them. That arithmetic is why no remedy anywhere here is "push an empty commit".
 
@@ -149,7 +151,7 @@ Nothing that reaches `main` reaches it with less checking. The queue runs the fu
 - **Every required check must report on `merge_group`.** A required check that fires only on `pull_request` blocks the queue forever. Any new required check needs `merge_group:` in its `on:` list, and the census enforces it (the deadlock invariant below).
 - **Some checks stay PR-only on purpose.** Fragment _coverage_ needs the PR's labels and number, which the `merge_group` payload does not carry, so it is answered before queueing and not re-asked. Fragment _validity_ does re-run in the queue. This is sound only because a PR cannot enter the queue until its required checks pass on the PR, and neither its labels nor its diff can change afterwards.
 - **A skipped job satisfies a required context.** A job-level `if:` that skips posts a _skipped_ check run, and GitHub counts skipped as passing. Never "fix" a required check by making it skip.
-- **An ejection is usually not your fault.** 22% of PRs are ejected at least once; 85% of failed-checks ejections (209 of 247 over 30 days) re-pass with no change. The first response to one is to read the failing job without pushing or rerunning, and to re-arm with `gh pr merge --auto <n>` once it is plainly not yours (merge-tail would re-arm it too, but only every 2-3 hours). It counts as real only on a second ejection by the same job with no commit in between.
+- **An ejection is usually not your fault.** 22% of PRs are ejected at least once; 85% of failed-checks ejections (209 of 247 over 30 days) re-pass with no change. The first response to one is to read the failing job without pushing or rerunning, and to re-arm with `gh pr merge --auto <n>`, once, when it is plainly not yours (merge-tail would re-arm it too, but only every 2-3 hours). Green PR checks are not evidence that it is not yours: the browser tests run only in the queue. **If the same check fails again on the same head commit, stop re-arming:** it is a regression that only the queue can see, so read the log and push a fix. PR #1964 was re-armed unchanged four times after one browser assertion broke, and cost 17 queue builds, its own and every PR stacked behind it. The one exception is the same check red on `main` too, a break that landed there: wait for the fix on `main`, then re-arm.
 
 ## The main canary: who watches `main`
 
@@ -201,7 +203,7 @@ triggered. Reading the review's runs does need `actions: read`; if the app lacks
 it, the tick says so in its summary and in a warning rather than quietly
 retrying nothing.
 
-`merge-tail.yml` arms auto-merge on PRs that are finished. Its schedule says every 10 minutes, but GitHub throttles it: over 200 scheduled runs from 2026-08-25 to 09-19 the median gap was 162 minutes (p90 305, max 748), so it runs roughly every 2-3 hours and is a backstop, not the arming path. Arm your own green PR with `gh pr merge --auto <n>`, and re-arm after a failed-checks ejection once the failing job's log shows it was not yours; arming is idempotent. A finished PR is open, not a draft, no hold label (`hold`, `do-not-merge`, `do not merge`, `wip`, `blocked`), not conflicting, mergeability known, no requested changes, no unresolved review threads (outdated ones count), and every check settled green with none cancelled. Its decision is `scripts/should-arm-automerge.sh`, pinned by `scripts/test-should-arm-automerge.sh`, and it is affirmative: anything unknown is a skip.
+`merge-tail.yml` arms auto-merge on PRs that are finished. Its schedule says every 10 minutes, but GitHub throttles it: over 200 scheduled runs from 2026-08-25 to 09-19 the median gap was 162 minutes (p90 305, max 748), so it runs roughly every 2-3 hours and is a backstop, not the arming path. Arm your own green PR with `gh pr merge --auto <n>`, and re-arm after a failed-checks ejection once the failing job's log shows it was not yours; arming is idempotent. A finished PR is open, not a draft, no hold label (`hold`, `do-not-merge`, `do not merge`, `wip`, `blocked`), not conflicting, mergeability known, no requested changes, no unresolved review threads (outdated ones count), and every check settled green with none cancelled. It also will not re-arm a PR whose head commit the queue has ejected twice with the same check failing: the PR's own checks cannot see a queue-only failure, so it reads that from the PR timeline (the `REMOVED_FROM_MERGE_QUEUE_EVENT`s since the head was pushed, each with the check runs that failed on its merge-group commit), comments on the PR once per head naming the check, and arms again after a new commit. Its decision is `scripts/should-arm-automerge.sh`, pinned by `scripts/test-should-arm-automerge.sh`, and it is affirmative: anything unknown is a skip.
 
 - Apply `hold` (or `do-not-merge`, `wip`, `blocked`) to keep a green PR from being armed. The queue itself does not read labels, so a hold label on a PR that is **already** armed does nothing: disarm it with `gh pr merge --disable-auto <n>`.
 - Agents may arm their own PR: `gh pr merge --auto <n>` (no strategy flag; the queue owns it). In practice most PRs are armed at creation.
@@ -442,6 +444,7 @@ gh api repos/{owner}/{repo}/rules/branches/main
 - ❌ Editing the ruleset, then writing the ledger. ✅ Ledger and `ci/required-checks.json` first.
 - ❌ A pipeline change with "should be faster" as its reason. ✅ One catalogue metric, a baseline, a target, a date.
 - ❌ Pushing or rerunning on the first failed-checks ejection. ✅ Read the failing job, then re-arm with `gh pr merge --auto <n>` once it is plainly not yours.
+- ❌ Re-arming again after the same check failed twice on the same head. ✅ Stop: it is a real regression only the queue can see. Read the log, fix, push.
 
 ## Troubleshooting
 

@@ -554,14 +554,24 @@ export function ConversationTimeline({
               `sticky top-1` asks for. `room-entry-actions.spec.ts` posts filler
               entries before the tall one so the offset under test is non-zero,
               which is the only offset where the two differ.
+
+              And `position` is a CLASS while `top` stays inline, because of
+              what a feedback screenshot does otherwise (DOR-2230). snapdom
+              re-draws the app from its DOM, and inside a scrolled container it
+              adds the scroll offset to the inline `top` of every element whose
+              INLINE style says `position: absolute`. This box is already inside
+              the scrolled content, so that pushed it a whole scroll height down
+              and out of the picture: a report of a scrolled conversation
+              arrived as an empty list with the jump arrow still on it. snapdom
+              checks only the inline `position`, so a class leaves it alone.
+              The offset stays an inline `top` rather than an inherited CSS
+              variable: a variable restyles every row in the window each time
+              the window moves, measured at around ten times the cost.
             */}
             <div
-              style={{
-                position: 'absolute',
-                top: virtualizer.getVirtualItems()[0]?.start ?? 0,
-                left: 0,
-                width: '100%',
-              }}
+              data-slot="conversation-window"
+              className="absolute left-0 w-full"
+              style={{ top: virtualizer.getVirtualItems()[0]?.start ?? 0 }}
             >
               {virtualizer.getVirtualItems().map((virtualRow) => (
                 <div

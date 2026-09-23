@@ -1107,12 +1107,15 @@ export interface AccountsAccessData {
   accountCount: number | null;
   /** Whether this session has received a different successful snapshot before. */
   changed: boolean;
+  /** Whether this turn can call the `dorkos` server's service lookup tool. Absent means no. */
+  serviceCatalog?: boolean;
 }
 
 /** Zod schema for {@link AccountsAccessData}. */
 export const AccountsAccessDataSchema = z.object({
   accountCount: z.number().int().nonnegative().nullable(),
   changed: z.boolean(),
+  serviceCatalog: z.boolean().optional(),
 });
 
 /**

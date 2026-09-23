@@ -24,6 +24,12 @@ name: merge-tail
 # is silent: a refusal that stops matching keeps returning ARM and the first
 # symptom is unreviewed code on main.
 #
+# It also stops re-arming a PR the queue keeps rejecting: once the same check
+# has failed twice in the queue on the same head commit, the PR is not armed
+# again until a new commit lands, and the author is told once, in a PR comment.
+# The PR's own checks cannot see this (the browser suite runs only in the
+# queue), and #1964 was re-armed unchanged five times before anyone fixed it.
+#
 # WHOSE KEY IT HOLDS: the `dorkos-merge-tail` GitHub App (client id in the
 # `MERGE_TAIL_APP_CLIENT_ID` secret, key in the `MERGE_TAIL_APP_PRIVATE_KEY`
 # secret). It can write code and pull requests and read checks, and it has NO
@@ -173,6 +179,7 @@ jobs:
           work=$(mktemp -d)
           armed=0; skipped=0; failed=0; perm_denied=0
           rereviewed=0; cleared=0; review_failed=0; review_unreadable=0
+          repeat_declined=0; repeat_commented=0; comment_failed=0; history_unknown=0
 
           gh pr list --repo "$REPO" --state open --limit 100 \
             --json number --jq '.[].number' > "$work/prs.txt" || {
@@ -402,12 +409,27 @@ jobs:
             # the merge queue reports `autoMergeRequest: null`, so without it
             # the gate's already-armed branch misses every queued pull request
             # and this workflow re-arms them all on every tick.
+            #
+            # The same call reads the queue's memory for the repeat-ejection
+            # rule (scripts/should-arm-automerge.sh explains it): the head
+            # commit's check suites, whose earliest is when the head was pushed,
+            # and the last 10 queue removals with the check runs that failed on
+            # each removal's merge-group commit. Riding this query costs no extra
+            # call per PR. Ten removals is plenty: the rule counts only the ones
+            # since the current head was pushed, and it fires at two.
             gh api graphql -F number="$pr" -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query='
               query($owner:String!,$name:String!,$number:Int!){
                 repository(owner:$owner,name:$name){
                   pullRequest(number:$number){
                     mergeQueueEntry{ position state }
-                    reviewThreads(last:100){ nodes{ isResolved } } } } }' \
+                    reviewThreads(last:100){ nodes{ isResolved } }
+                    commits(last:1){ nodes{ commit{ oid
+                      checkSuites(first:50){ nodes{ createdAt } } } } }
+                    timelineItems(last:10, itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT]){ nodes{
+                      ... on RemovedFromMergeQueueEvent{ createdAt reason
+                        beforeCommit{ checkSuites(first:20){ nodes{
+                          checkRuns(first:50, filterBy:{conclusions:[FAILURE,TIMED_OUT,STARTUP_FAILURE]}){
+                            nodes{ name } } } } } } } } } } }' \
               > "$work/gql.json" 2>/dev/null
             threads=$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]?
                            | select(.isResolved == false)] | length' \
@@ -423,11 +445,81 @@ jobs:
               skipped=$(( skipped + 1 )); continue
             fi
 
+            # The queue's memory, flattened into the two fields the gate reads.
+            # Anything unreadable becomes null, which the gate treats as
+            # unknown history and skips: a partial GraphQL answer must not read
+            # as "never ejected". `headSince` is null when the commit list and
+            # `headRefOid` disagree (a push landed between the two reads).
+            jq -s '
+                .[0] as $meta | .[1].data.repository.pullRequest as $p
+                | ($p.commits.nodes[0].commit // null) as $head
+                | $meta + {
+                    headSince: (if $head != null and $head.oid == $meta.headRefOid
+                                then ([$head.checkSuites.nodes[]?.createdAt] | min)
+                                else null end),
+                    queueRemovals: (if ($p.timelineItems.nodes | type) == "array"
+                                    then [$p.timelineItems.nodes[]
+                                          | {at: .createdAt, reason,
+                                             failedChecks: ([.beforeCommit.checkSuites.nodes[]?
+                                                             .checkRuns.nodes[]?.name] | unique)}]
+                                    else null end) }' \
+              "$work/meta.json" "$work/gql.json" > "$work/meta-queue.json" 2>/dev/null \
+              || jq '. + {queueRemovals: null}' "$work/meta.json" > "$work/meta-queue.json"
+
             jq -s --argjson t "$threads" --argjson q "$queued" \
               '.[0] + {checks: .[1], unresolvedThreads: $t, mergeQueueEntry: $q}' \
-              "$work/meta.json" "$work/checks.json" > "$work/payload.json"
+              "$work/meta-queue.json" "$work/checks.json" > "$work/payload.json"
 
             verdict=$(./scripts/should-arm-automerge.sh "$work/payload.json")
+
+            if [[ "$verdict" == "SKIP queue-history-unknown" ]]; then
+              history_unknown=$(( history_unknown + 1 ))
+            fi
+
+            # A repeat is the one refusal a fully green PR can earn, so it has
+            # to be SAID where the author looks, or the PR just sits there
+            # looking finished. Once per head, not once per tick: the comment
+            # carries a marker naming the head SHA, and an existing comment with
+            # that marker means the author has already been told. A new commit
+            # is a new head, and if the queue rejects that one twice too, that
+            # is news worth a new comment. If the existing comments cannot be
+            # read, say nothing rather than risk a comment on every tick.
+            if [[ "$verdict" == "SKIP repeat-queue-failure" ]]; then
+              repeat_declined=$(( repeat_declined + 1 ))
+              marker="<!-- merge-tail:repeat-queue-failure head=$head_sha -->"
+              if [[ "$DRY_RUN" == "true" || -z "$head_sha" ]]; then
+                : # a dry run changes nothing; no head, no marker to de-duplicate on
+              elif ! gh api --paginate "repos/$REPO/issues/$pr/comments?per_page=100" \
+                     --jq '.[].body' > "$work/comments.txt" 2>/dev/null; then
+                echo "PR #$pr -> could not read comments; not telling the author this tick"
+                comment_failed=$(( comment_failed + 1 ))
+              elif grep -qF -- "$marker" "$work/comments.txt"; then
+                : # already told about this head
+              else
+                ./scripts/should-arm-automerge.sh --repeat-failure "$work/payload.json" \
+                  > "$work/repeats.txt" 2>/dev/null || : > "$work/repeats.txt"
+                {
+                  echo "**merge-tail will not re-arm this pull request.** The merge queue has rejected this exact commit (\`${head_sha:0:7}\`) at least twice, and the same check failed each time:"
+                  echo
+                  sed 's/.*/- `&`/' "$work/repeats.txt"
+                  echo
+                  echo "A check that fails twice on unchanged code is most likely a real regression, not a flaky test. This pull request's own checks can all be green while this happens, because the browser tests run only in the merge queue."
+                  echo
+                  echo "**What to do:** open the failing job in the merge-group run (\`gh run list --event merge_group -L 100 --json headBranch,name,conclusion,databaseId\`, rows whose \`headBranch\` contains \`pr-$pr-\`), fix the cause and push. merge-tail arms the new commit once it is green."
+                  echo
+                  echo "If the same check is also red on \`main\` or on other pull requests, the fault is not in this branch: once \`main\` is fixed, re-arm this one yourself with \`gh pr merge --auto $pr\`."
+                  echo
+                  echo "$marker"
+                } > "$work/comment.md"
+                if gh pr comment "$pr" --repo "$REPO" --body-file "$work/comment.md" >/dev/null 2>&1; then
+                  echo "PR #$pr -> told the author about the repeated queue failure"
+                  repeat_commented=$(( repeat_commented + 1 ))
+                else
+                  echo "PR #$pr -> could not post the repeated-queue-failure comment"
+                  comment_failed=$(( comment_failed + 1 ))
+                fi
+              fi
+            fi
 
             if [[ "$verdict" != "ARM" ]]; then
               echo "PR #$pr -> $verdict"
@@ -474,6 +566,7 @@ jobs:
           echo
           echo "armed=$armed skipped=$skipped failed=$failed perm_denied=$perm_denied"
           echo "reviews re-requested=$rereviewed stranded-labels-cleared=$cleared label-failed=$review_failed unreadable=$review_unreadable"
+          echo "repeat-queue-failures declined=$repeat_declined authors-told=$repeat_commented comment-failed=$comment_failed queue-history-unknown=$history_unknown"
 
           # The summary is written BEFORE the failure exit, not after. The
           # permission-denied bullet below only ever prints when perm_denied > 0,
@@ -494,6 +587,15 @@ jobs:
             echo "- skipped: $skipped"
             echo "- arm failed: $failed"
             echo "- reviews re-requested: $rereviewed"
+            if [[ "$repeat_declined" -gt 0 ]]; then
+              echo "- not re-armed after a repeated queue failure: $repeat_declined (authors told this tick: $repeat_commented)"
+            fi
+            if [[ "$comment_failed" -gt 0 ]]; then
+              echo "- repeated-queue-failure comment could not be read or posted: $comment_failed"
+            fi
+            if [[ "$history_unknown" -gt 0 ]]; then
+              echo "- **could not read the queue history of $history_unknown PR(s); they were not armed**"
+            fi
             if [[ "$cleared" -gt 0 ]]; then
               echo "- stranded re-review labels cleared: $cleared"
             fi
@@ -527,6 +629,12 @@ jobs:
           # not be discoverable only by reading a log nobody opens.
           if [[ "$review_unreadable" -gt 0 ]]; then
             echo "::warning::merge-tail could not read claude-code-review runs on $review_unreadable pull request(s), so no lost review was re-requested. The merge-tail app probably needs the Actions: read permission."
+          fi
+          # The same inert shape for arming: if the queue-history read breaks
+          # (a GraphQL schema change, a missing Checks: read), every PR that was
+          # ever ejected skips as unknown and nothing says why.
+          if [[ "$history_unknown" -gt 0 ]]; then
+            echo "::warning::merge-tail could not read the merge-queue history of $history_unknown pull request(s), so it did not arm them. Check the GraphQL query in the arming step."
           fi
 
           if [[ "$perm_denied" -gt 0 ]]; then

@@ -184,6 +184,8 @@ canary:
     changelog-fragment-check.yml: Measures a pull request's diff and labels against its base; main has no diff and no labels, so there is nothing for it to check here.
     operating-skills-version-check.yml: Compares the seeded skill pack's version against the base branch's; on main there is no base branch to outrank.
     db-check.yml: Fails when a Drizzle schema change ships without its migration, which is a property of a diff and not of a tree.
+    docs-openapi-check.yml: Regenerates docs/api from the committed schemas and diffs the result, a pure function of the tree; the queue runs it against the exact tree main receives, so a scheduled rerun could only repeat that verdict.
+    scripts-test.yml: Its push-to-main leg already runs fixtures against every commit that lands on main (and harness whenever the commit is in scope), which is what a canary would add.
 
 # The verdict engine (ci-steward verdicts, plan §4.4).
 verdicts:

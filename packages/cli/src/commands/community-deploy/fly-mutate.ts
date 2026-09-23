@@ -4,29 +4,17 @@
  * @module commands/community-deploy/fly-mutate
  */
 import { z } from 'zod';
-import {
-  ExternalIdentifierSchema,
-  ExternalLabelSchema,
-  parseExternalJson,
-} from './provider-contract.js';
+import { ExternalIdentifierSchema, parseExternalJson } from './provider-contract.js';
 import { ProviderMutationError, runProviderMutation } from './provider-mutation.js';
 import type { FlySessionReadOptions, FlySecretInventoryItem } from './tigris-session.js';
-import type { FlyAppIdentity, FlyRuntimeInventory } from './fly-read.js';
+import {
+  FlyAppResponseSchema,
+  readFlyApps,
+  toFlyAppIdentity,
+  type FlyAppIdentity,
+  type FlyRuntimeInventory,
+} from './fly-read.js';
 
-const FlyCreatedAppSchema = z
-  .object({
-    ID: ExternalIdentifierSchema,
-    Name: ExternalIdentifierSchema,
-    Status: ExternalLabelSchema,
-    Organization: z
-      .object({
-        ID: ExternalIdentifierSchema,
-        Slug: ExternalIdentifierSchema,
-        Name: ExternalLabelSchema,
-      })
-      .passthrough(),
-  })
-  .passthrough();
 const SecretNameSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/u);
 const ImageReferenceSchema = z
   .string()
@@ -44,7 +32,15 @@ export interface FlyMutationReceipt {
   operation: 'secrets-stage' | 'deploy' | 'destroy';
 }
 
-/** Create one planned Fly app and retain only its non-secret identity. */
+/**
+ * Create one planned Fly app and retain only its non-secret identity.
+ *
+ * The created app is bound by its name and the organization slug the operator selected. When the
+ * command succeeds but its JSON cannot be read, the app is identified by the same name and slug
+ * through a read-only listing instead of being reported as uncertain: preflight already proved the
+ * name was absent from that organization, so an exact match there is the app this call created.
+ * A response naming a different app or organization is never adopted.
+ */
 export async function createFlyApp(
   options: FlySessionReadOptions,
   appName: string,
@@ -56,21 +52,27 @@ export async function createFlyApp(
     ...options,
     args: ['apps', 'create', app, '--org', organization, '--json', '--yes'],
     parse: (stdout) => {
-      const parsed = FlyCreatedAppSchema.parse(parseExternalJson(stdout));
-      if (parsed.Name !== app || parsed.Organization.Slug !== organization) {
+      let document: unknown;
+      try {
+        document = parseExternalJson(stdout);
+      } catch {
+        return null;
+      }
+      const parsed = FlyAppResponseSchema.safeParse(document);
+      if (!parsed.success) return null;
+      if (parsed.data.Name !== app || parsed.data.Organization.Slug !== organization) {
         throw new Error('APP_BINDING_MISMATCH');
       }
-      return parsed;
+      return toFlyAppIdentity(parsed.data);
     },
   });
-  return {
-    id: created.ID,
-    name: created.Name,
-    organizationId: created.Organization.ID,
-    organizationSlug: created.Organization.Slug,
-    organizationName: created.Organization.Name,
-    status: created.Status,
-  };
+  if (created) return created;
+  const matches = await readFlyApps(options, organization).catch(() => {
+    throw new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
+  });
+  const exact = matches.filter((candidate) => candidate.name === app);
+  if (exact.length !== 1) throw new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
+  return exact[0]!;
 }
 
 /** Stage secrets over stdin; completion must be proved through secret inventory readback. */

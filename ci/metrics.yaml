@@ -123,6 +123,18 @@ tracked:
   - id: tracked.green-to-armed
     unit: minutes
     definition: Per merged PR, time from its final head's required checks all going green to the first auto-merge arming or queue entry after that; p50. Not yet computed by the collector (it needs the head SHA's check completion joined to the AUTO_MERGE_ENABLED and ADDED_TO_MERGE_QUEUE timeline events); the event-driven merge-tail experiment adds it.
+  - id: tracked.repeat-ejections
+    unit: count
+    definition: >-
+      Queue ejections, per 7 days, that repeat an earlier one on the same PR
+      head: an ejection whose merge-group commit failed a check that also failed
+      in an earlier ejection since that head was pushed (push time = the
+      earliest check suite on the head commit). Each is a queue build spent
+      re-learning a failure the queue already reported, plus the rebuilds of
+      every PR stacked behind it. Not yet computed by the collector: it needs
+      the failing check names of each REMOVED_FROM_MERGE_QUEUE_EVENT's
+      merge-group commit and the head's first check-suite time, the same two
+      reads merge-tail's repeat rule makes.
   - id: tracked.review-runs-per-merged-pr
     unit: count
     definition: Automated review runs per merged PR.

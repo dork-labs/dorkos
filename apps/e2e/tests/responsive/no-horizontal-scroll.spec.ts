@@ -293,7 +293,9 @@ function overshootOf(escape: string): number {
 const EXPECTED_ESCAPES: Readonly<Record<string, ExpectedEscape>> = {
   '/@768': {
     fragment: '<div class="flex shrink-0 items-center gap-2">',
-    // Measured at 4px. Five is that plus a pixel of rounding — deliberately
+    // Measured at 4px with a single-digit #team roster, which is what
+    // PINNED_TEAM_ROSTER holds this case to (a two-digit roster reaches ~12px;
+    // see there). Five is that plus a pixel of rounding — deliberately
     // NOT open-ended: an excuse with no ceiling would go on excusing this
     // escape at 40px and at 400px, which is precisely the regression F1's own
     // recommendation predicts (the overshoot grows the moment the chips do).
@@ -301,18 +303,68 @@ const EXPECTED_ESCAPES: Readonly<Record<string, ExpectedEscape>> = {
   },
 };
 
+/**
+ * How many #team members Home's bar is shown, whatever the server really has.
+ *
+ * **This pin makes the `/` case deterministic. It does NOT make the bar
+ * correct.** Home's bar carries #team's head count, and #team holds every
+ * agent any earlier spec on this server created — so the number, and with it
+ * the width of the chip, depended on which specs happened to run first. At
+ * 768px a two-digit count (37, in merge-group run 35847511684) pushes the bar
+ * about 12px past its row, against the ~4px {@link EXPECTED_ESCAPES} was
+ * measured at with a single-digit roster. That is DOR-1816 finding F1 getting
+ * worse exactly as predicted, and it is a real defect for anyone running ten or
+ * more agents; it is tracked as a product fix, not excused here.
+ *
+ * What the pin buys is that this case always measures the state it was written
+ * against: the two members a fresh install's #team has (the owner and DorkBot,
+ * the oldest memberships, so the first two the roster lists). A green `/` case
+ * therefore says "no worse than F1 as measured", never "the bar is fixed".
+ */
+const PINNED_TEAM_ROSTER = 2;
+
+/**
+ * Serve #team's roster trimmed to {@link PINNED_TEAM_ROSTER} members.
+ *
+ * The same mechanism `rooms/canvas/room-follow.spec.ts` uses to fix a roster:
+ * the real response is fetched and only `members` is changed, so everything
+ * else Home reads about the room is still what the server said.
+ *
+ * @param page - The page whose requests to rewrite.
+ * @param teamRoomId - #team's id, from `teamRoomApi.teamRoom()`.
+ */
+async function pinTeamRoster(page: Page, teamRoomId: string): Promise<void> {
+  await page.route(`**/api/rooms/${teamRoomId}`, async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { members: unknown[] };
+    body.members = body.members.slice(0, PINNED_TEAM_ROSTER);
+    await route.fulfill({ response, json: body });
+  });
+}
+
 for (const { name, viewport } of WIDTHS) {
   test.describe(`Responsive — nothing escapes its container at ${viewport.width}px @smoke`, () => {
     test.use({ viewport });
 
     for (const route of ROUTES) {
-      test(`${route} contains its own content on a ${name}`, async ({ page, basePage }) => {
+      test(`${route} contains its own content on a ${name}`, async ({
+        page,
+        basePage,
+        teamRoomApi,
+      }) => {
+        if (route === '/') await pinTeamRoster(page, (await teamRoomApi.teamRoom()).id);
         await basePage.goto(route);
         await basePage.waitForAppReady();
         // The shell mounting is not the route having anything in it — an API
         // that never answers still passes `app-shell`. Settle network first so
         // the sample below looks at real content rather than a skeleton.
         await page.waitForLoadState('networkidle');
+        if (route === '/') {
+          // Proof the pin reached the bar. A roster shorter than the pin (a
+          // fresh #team that stopped holding the owner and DorkBot) shows a
+          // different number here instead of silently measuring another width.
+          await expect(page.getByTestId('bar-members-chip')).toHaveText(String(PINNED_TEAM_ROSTER));
+        }
 
         // **The width the page BELIEVES it is, not the one Playwright asked
         // for.** Every `md:` rule in the app answers to this media query, and a

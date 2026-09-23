@@ -381,6 +381,28 @@ shard uploaded its results.json."
 A repeated shard would count one third of the suite twice and leave another
 third unchecked."
   fi
+  # No test may run in two shards. The cut is made by a custom reporter
+  # (apps/e2e/reporters/balanced-shard-reporter.ts) that every shard computes
+  # independently, so a partition that came out differently on two runners
+  # would run some tests twice and — the half that matters — others never.
+  # Missing files are assertion 2's; this is the other symptom, and the only
+  # one visible from the reports. A test's identity is its project plus
+  # Playwright's spec id (a hash of file and title path), so tests a loop
+  # generates from one line stay distinct.
+  doubled=$(
+    for report in "${reports[@]}"; do
+      jq -r '.suites[] | recurse(.suites[]?) | .specs[]? | . as $s
+             | .tests[]? | "[\(.projectName)] \($s.file) › \($s.title) (\($s.id))"' "$report" | sort -u
+    done | sort | uniq -d
+  )
+  if [ -n "$doubled" ]; then
+    fail "these tests ran in more than one shard:
+$(printf '%s\n' "$doubled" | sed 's/^/  /')
+The shards disagreed about how the suite was cut, so the union counts these
+twice and may be missing others entirely. Every shard must compute the same
+partition from the same inputs — check that apps/e2e/reporters/shard-timings.json
+and the collected test list were identical on every runner."
+  fi
   # Last, because a structural problem above explains itself better than its
   # symptom does.
   if [ -n "$silent_shards" ]; then

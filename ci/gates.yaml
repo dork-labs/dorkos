@@ -158,7 +158,7 @@ gates:
   # --- scripts-test.yml ---
   - id: wf.scripts-test.fixtures
     source: .github/workflows/scripts-test.yml
-    purpose: Runs the shell fixture suites that pin the repo's guard hooks, gate scripts and assert scripts.
+    purpose: The required fixtures check; runs the shell fixture suites that pin the repo's guard hooks, gate scripts and assert scripts, and the docs-coverage-map drift check, on every PR and merge group.
   - id: wf.scripts-test.harness
     source: .github/workflows/scripts-test.yml
     purpose: Typechecks and tests the TypeScript under scripts/, which no workspace package covers.

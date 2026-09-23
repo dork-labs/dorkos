@@ -25,10 +25,15 @@
 # Usage:
 #   scripts/should-arm-automerge.sh <pr.json>
 #   gh pr view N --json ... | scripts/should-arm-automerge.sh -
+#   scripts/should-arm-automerge.sh --repeat-failure <pr.json>
 #
 # Prints exactly one line:
 #   ARM               arm auto-merge on this PR
 #   SKIP <reason>     leave it alone; <reason> is a stable machine-readable slug
+#
+# `--repeat-failure` prints, one per line, the checks behind a
+# `SKIP repeat-queue-failure` (nothing when there are none), so the caller can
+# name them without restating the rule. Both modes share one jq definition.
 #
 # Exit status is 0 for a readable verdict and 2 only when the input itself could
 # not be parsed, so a malformed payload can never be mistaken for a quiet ARM.
@@ -44,7 +49,10 @@
 #     "reviewDecision": "APPROVED",
 #     "labels": [{"name": "hold"}],
 #     "unresolvedThreads": 0,
-#     "checks": [{"name": "typecheck", "bucket": "pass"}]
+#     "checks": [{"name": "typecheck", "bucket": "pass"}],
+#     "headSince": "2026-09-21T15:02:45Z",
+#     "queueRemovals": [{"at": "2026-09-21T14:10:19Z",
+#                        "failedChecks": ["browser-shard (2/3)", "browser-test"]}]
 #   }
 #
 # `bucket` follows `gh pr checks --json bucket`: pass | fail | pending | skipping | cancel.
@@ -55,12 +63,58 @@
 # already handled. `mergeQueueEntry` is GraphQL-only — `gh pr view --json` does
 # not expose it, so a caller building this payload from `gh pr view` alone will
 # silently omit it and get a more permissive gate than it thinks.
+#
+# `headSince` and `queueRemovals` are the queue's memory, which the PR's own
+# checks do not have. The browser suite runs only in the merge queue, so a PR
+# that breaks a browser test reads fully green on the PR, is ejected, and before
+# this rule was re-armed unchanged on the next tick: PR #1964 was ejected five
+# times for one assertion (17 queue builds, its own and everything stacked
+# behind it) before anyone pushed a fix.
+#   headSince      when the current head was first pushed: the earliest check
+#                  suite on the head commit. GitHub records no push time for a
+#                  plain push (`pushedDate` is null) and a commit's own date is
+#                  when it was written, not pushed, so it would count an
+#                  ejection of the OLD head against a fix written before it.
+#   queueRemovals  the PR's recent REMOVED_FROM_MERGE_QUEUE_EVENTs, each with
+#                  the names of the check runs that failed on the queue's
+#                  merge-group commit. An entry with no failed check is not a
+#                  failure (merged, a conflict, a manual dequeue, a timeout),
+#                  which is why `reason` is not read: it is often null.
+# The rule: a check that failed in REPEAT_EJECTIONS or more removals since the
+# current head was pushed is a regression the queue keeps finding, not a flake.
+# A new commit moves `headSince` and resets it. Both fields are REQUIRED:
+# a missing `queueRemovals` is unknown history, and unknown is a skip.
 
 set -uo pipefail
 
+# Two ejections for the same check on the same head. The first is allowed a
+# re-arm because 85% of failed-checks ejections re-pass unchanged; the second is
+# the documented point at which a failure counts as real.
+REPEAT_EJECTIONS=2
+
+# The checks that failed in at least $n queue removals of the current head.
+# Shared by the verdict and by --repeat-failure so the two cannot disagree.
+REPEATS_DEF='
+  def repeated_failures($n):
+    (.headSince // null) as $since
+    | [ (.queueRemovals // [])[]
+        | select(type == "object")
+        | select($since != null and ((.at // "") > $since))
+        | [(.failedChecks // [])[] | tostring] | unique ]
+    | [ .[][] ] | group_by(.) | map(select(length >= $n) | .[0]);
+  def history_known:
+    ((.queueRemovals | type) == "array")
+    and ( (.headSince // null) != null
+          or ([.queueRemovals[] | select(type == "object")
+               | select(((.failedChecks // []) | length) > 0)] | length) == 0 );
+'
+
+mode=verdict
+if [[ "${1:-}" == "--repeat-failure" ]]; then mode=repeats; shift; fi
+
 src=${1:-}
 if [[ -z "$src" ]]; then
-  echo "usage: $0 <pr.json>|-" >&2
+  echo "usage: $0 [--repeat-failure] <pr.json>|-" >&2
   exit 2
 fi
 if [[ "$src" == "-" ]]; then payload=$(cat); else payload=$(cat "$src" 2>/dev/null); fi
@@ -70,11 +124,18 @@ if ! jq -e . >/dev/null 2>&1 <<<"$payload"; then
   exit 2
 fi
 
+if [[ "$mode" == "repeats" ]]; then
+  jq -r --argjson n "$REPEAT_EJECTIONS" "$REPEATS_DEF"'
+    if history_known then repeated_failures($n)[] else empty end' <<<"$payload" 2>/dev/null \
+    || exit 2
+  exit 0
+fi
+
 # Labels that mean "a human is not done with this yet". Checked before anything
 # else that could look green, so a hold always wins.
 HOLD_LABELS='["hold","do-not-merge","do not merge","wip","blocked"]'
 
-verdict=$(jq -r --argjson hold "$HOLD_LABELS" '
+verdict=$(jq -r --argjson hold "$HOLD_LABELS" --argjson repeat "$REPEAT_EJECTIONS" "$REPEATS_DEF"'
   # gh emits labels as objects; some callers pass bare strings. Indexing a
   # string with .name is a jq error, not a null, so it must be branched on type
   # or the whole gate returns unreadable-payload and arms nothing.
@@ -117,6 +178,13 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" '
   elif ((buckets) | any(. == "fail"))               then "SKIP failing-checks"
   elif ((buckets) | any(. == "cancel"))             then "SKIP cancelled-checks"
   elif ((buckets) | any(. == "pending"))            then "SKIP checks-in-flight"
+
+  # Last, because it is the one refusal a fully green PR can earn: the PR
+  # checks above cannot see the queue, where the browser suite runs. Unknown
+  # history is a skip like any other unknown; merge-tail names the checks and
+  # tells the author once, per head (see the workflow).
+  elif (history_known | not)                        then "SKIP queue-history-unknown"
+  elif (repeated_failures($repeat) | length) > 0    then "SKIP repeat-queue-failure"
   else "ARM"
   end
 ' <<<"$payload" 2>/dev/null)
