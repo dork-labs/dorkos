@@ -3,7 +3,7 @@ import { createAuthClient } from 'better-auth/react';
 import { ArrowRight, Crown, KeyRound, ShieldCheck } from 'lucide-react';
 import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
 import { describeError, hostRequest, RequestError, request } from '../api.js';
-import { rememberCommunity } from './CommunityChooser.js';
+import { rememberCommunity } from '../remembered-community.js';
 import {
   clearOwnerClaimFragment,
   forgetPendingOwnerClaim,

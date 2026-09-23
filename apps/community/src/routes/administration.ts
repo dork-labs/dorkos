@@ -9,13 +9,8 @@ import {
   CommunityAdminSettingsUpdateRequestSchema,
 } from '@dorkos/shared/community-admin-wire';
 import type { CommunityAuth } from '../auth.js';
-import {
-  reauthenticate,
-  requireMember,
-  requireSessionUser,
-  transaction,
-  type Member,
-} from '../data.js';
+import type { ConfirmPassword } from '../password-confirmation.js';
+import { requireMember, requireSessionUser, transaction, type Member } from '../data.js';
 import { AdminSettingsConflict, ApiError, json, readJson } from '../http.js';
 import {
   BlobStoreError,
@@ -152,7 +147,12 @@ function deletionProjection(row: {
 /** Register settings and owner lifecycle operations for one tenant-qualified Community. */
 export function registerAdministrationRoutes(
   app: Hono,
-  { pool, auth, blobStore }: { pool: Pool; auth: CommunityAuth; blobStore: BlobStore }
+  {
+    pool,
+    auth,
+    blobStore,
+    confirmPassword,
+  }: { pool: Pool; auth: CommunityAuth; blobStore: BlobStore; confirmPassword: ConfirmPassword }
 ): void {
   app.get('/settings', async (c) => {
     const actor = await requireMember(c, auth, pool);
@@ -370,7 +370,7 @@ export function registerAdministrationRoutes(
   app.post('/owner/lifecycle', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityAdminOwnerLifecycleRequestSchema);
-    await reauthenticate(auth, c.req.raw, body.password);
+    await confirmPassword(c, actor.user_id, body.password);
     const row = await transaction(pool, async (client) => {
       const current = await lockSettings(client, actor.community_id);
       const currentActor = await lockMember(client, actor, ['owner']);
@@ -444,7 +444,7 @@ export function registerAdministrationRoutes(
   app.post('/owner/deletion', async (c) => {
     const actor = await requireMember(c, auth, pool, { allowDeletionPending: true });
     const body = await readJson(c, CommunityAdminDeletionRequestSchema);
-    await reauthenticate(auth, c.req.raw, body.password);
+    await confirmPassword(c, actor.user_id, body.password);
     const existing = await transaction(pool, async (client) => {
       const current = await lockSettings(client, actor.community_id);
       await lockMember(client, actor, ['owner']);
@@ -542,7 +542,7 @@ export function registerAdministrationRoutes(
       c,
       z.strictObject({ lifecycleVersion: z.int().positive(), password: z.string().min(1) })
     );
-    await reauthenticate(auth, c.req.raw, body.password);
+    await confirmPassword(c, actor.user_id, body.password);
     const result = await transaction(pool, async (client) => {
       const current = await client.query<
         SettingsRow & { delete_after: Date | null; delete_requested_by: string | null }

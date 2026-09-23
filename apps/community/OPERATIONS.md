@@ -117,6 +117,8 @@ docker compose -f apps/community/compose.yml run --rm --no-deps -T community \
 
 Failed key attempts are limited per network address (`COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`). The server sees the address that connected to it, so behind a reverse proxy every caller shares the proxy's address and one limit. A program that keeps sending a wrong key can then briefly block other programs' failed attempts; programs with a valid key are never blocked.
 
+Wrong passwords work differently. Leaving, disconnecting all installations, transferring ownership, exporting, archiving, deleting, and issuing or replacing a host key all ask for the person's password. Wrong passwords count per account, not per address (`COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`). After too many in a minute, that account must wait the rest of the minute, even with the right password. Everyone else behind the same proxy is unaffected.
+
 Keys belong to the host, not to the person who made them. Removing a host operator does not stop the keys that operator created. When someone leaves, open **API keys**, find the keys that show their name, and replace or revoke them. **Replace** gives a new key with the same permissions and keeps the old one working for up to a day, so a program can switch over without downtime.
 
 ## Storage and hosting choices

@@ -138,7 +138,9 @@ test('a host operator creates a key, sees it once, replaces it, and revokes it',
     await section.getByLabel('Create communities').check();
     await section.getByLabel('Your password').fill('not-my-password');
     await section.getByRole('button', { name: 'Create key' }).click();
-    await expect(section.getByRole('alert')).toContainText('Reauthentication failed');
+    await expect(section.getByRole('alert')).toContainText(
+      'That password is not right. No key was created.'
+    );
     expect((await pool.query('SELECT 1 FROM host_api_keys')).rowCount).toBe(0);
 
     await section.getByLabel('Your password').fill(operator.password);

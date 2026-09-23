@@ -9,6 +9,7 @@ import {
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
 import { lockActiveCommunity, requireMember, transaction, type Member } from '../data.js';
+import type { ConfirmPassword } from '../password-confirmation.js';
 import { ApiError, json, readJson } from '../http.js';
 import {
   BlobStoreError,
@@ -319,7 +320,12 @@ export async function sweepExpiredExports(pool: Pool, blobStore: BlobStore, batc
 /** Register personal and reauthenticated owner exports and their private downloads. */
 export function registerExportRoutes(
   app: Hono,
-  { pool, auth, blobStore }: { pool: Pool; auth: CommunityAuth; blobStore: BlobStore }
+  {
+    pool,
+    auth,
+    blobStore,
+    confirmPassword,
+  }: { pool: Pool; auth: CommunityAuth; blobStore: BlobStore; confirmPassword: ConfirmPassword }
 ) {
   const create = async (member: Member, scope: 'personal' | 'owner') => {
     const currentResult = await pool.query<Member>(
@@ -410,14 +416,7 @@ export function registerExportRoutes(
   app.post('/owner/export', async (c) => {
     const member = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireOwnerExportRequestSchema);
-    try {
-      await auth.api.verifyPassword({
-        headers: c.req.raw.headers,
-        body: { password: body.password },
-      });
-    } catch {
-      throw new ApiError(403, 'FORBIDDEN', 'Reauthentication failed.');
-    }
+    await confirmPassword(c, member.user_id, body.password);
     const archive = await create(member, 'owner');
     return json(
       c,
