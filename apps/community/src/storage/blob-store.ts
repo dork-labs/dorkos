@@ -22,8 +22,28 @@ export interface PutBlobInput {
   source: AsyncIterable<Uint8Array>;
   displayName: string;
   maxBytes: number;
-  kind?: 'attachment' | 'export' | 'icon';
+  kind?: BlobKind;
   signal?: AbortSignal;
+}
+
+/**
+ * What a put holds, which decides the accepted first bytes and the size ceiling. `export` is a
+ * whole version 1 archive; `export_segment` is one piece of a segmented archive, which starts with
+ * a local file header, a central directory record, or the ZIP64 end record.
+ */
+export type BlobKind = 'attachment' | 'export' | 'export_segment' | 'icon';
+
+/** An inclusive byte range of a stored object, as in an HTTP `Range: bytes=start-end`. */
+export interface BlobRange {
+  start: number;
+  end: number;
+}
+
+/** Options for {@link BlobStore.get}. */
+export interface BlobGetOptions {
+  signal?: AbortSignal;
+  /** Read only these bytes; `byteSize` of the result is the range's length. */
+  range?: BlobRange;
 }
 
 /** Streaming read response; the caller owns and must consume or destroy the body. */
@@ -51,6 +71,7 @@ export class BlobStoreError extends Error {
       | 'BLOB_INVALID_KEY'
       | 'BLOB_LIST_INCOMPLETE'
       | 'BLOB_NOT_FOUND'
+      | 'BLOB_RANGE_NOT_SATISFIABLE'
       | 'BLOB_TOO_LARGE'
       | 'BLOB_TYPE_REJECTED',
     message: string
@@ -63,7 +84,8 @@ export class BlobStoreError extends Error {
 /** Backend-neutral byte store. Authorization and metadata lifetime belong to Postgres callers. */
 export interface BlobStore {
   put(input: PutBlobInput): Promise<StoredBlob>;
-  get(key: BlobKey, options?: { signal?: AbortSignal }): Promise<BlobRead>;
+  /** Open a stored object, or the inclusive `range` of it, as a stream. */
+  get(key: BlobKey, options?: BlobGetOptions): Promise<BlobRead>;
   delete(key: BlobKey, options?: { signal?: AbortSignal }): Promise<void>;
   /** Return one complete namespace snapshot or fail without returning a partial result. */
   listNamespace(options?: { signal?: AbortSignal }): Promise<BlobNamespaceSnapshot>;
@@ -73,6 +95,18 @@ export interface BlobStore {
 export function validateBlobKey(key: string): void {
   if (!/^[a-f0-9]{64}$/.test(key)) {
     throw new BlobStoreError('BLOB_INVALID_KEY', 'Invalid blob key');
+  }
+}
+
+/** Refuse a range that is not two safe integers with `0 <= start <= end`. */
+export function validateBlobRange(range: BlobRange): void {
+  if (
+    !Number.isSafeInteger(range.start) ||
+    !Number.isSafeInteger(range.end) ||
+    range.start < 0 ||
+    range.end < range.start
+  ) {
+    throw new BlobStoreError('BLOB_RANGE_NOT_SATISFIABLE', 'Invalid blob range');
   }
 }
 
@@ -128,11 +162,20 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'application/zip',
 ]);
 
-function detectedType(
-  sample: Buffer,
-  textValid: boolean,
-  kind: 'attachment' | 'export' | 'icon'
-): string {
+const ZIP_SEGMENT_SIGNATURES = [
+  Buffer.from([0x50, 0x4b, 0x03, 0x04]), // local file header
+  Buffer.from([0x50, 0x4b, 0x01, 0x02]), // central directory record
+  Buffer.from([0x50, 0x4b, 0x06, 0x06]), // ZIP64 end of central directory record
+];
+
+function detectedType(sample: Buffer, textValid: boolean, kind: BlobKind): string {
+  if (kind === 'export_segment') {
+    const head = sample.subarray(0, 4);
+    if (ZIP_SEGMENT_SIGNATURES.some((signature) => head.equals(signature))) {
+      return 'application/zip';
+    }
+    throw new BlobStoreError('BLOB_TYPE_REJECTED', 'Export segment must start a ZIP record');
+  }
   if (kind === 'export') {
     if (sample.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) {
       return 'application/zip';
@@ -161,7 +204,10 @@ function detectedType(
 
 /** Stage a bounded source to a private temporary file and verify its bytes. */
 export async function stageBlob(directory: string, input: PutBlobInput) {
-  const ceiling = input.kind === 'export' ? 1024 * 1024 * 1024 : 25 * 1024 * 1024;
+  const ceiling =
+    input.kind === 'export' || input.kind === 'export_segment'
+      ? 1024 * 1024 * 1024
+      : 25 * 1024 * 1024;
   if (!Number.isSafeInteger(input.maxBytes) || input.maxBytes < 1 || input.maxBytes > ceiling) {
     throw new BlobStoreError('BLOB_TOO_LARGE', 'Invalid blob size limit');
   }
