@@ -670,6 +670,20 @@ describe('the boot migration off the legacy task directories', () => {
       expect(await fs.readFile(globalDestination('careful'), 'utf-8')).toBe(plain);
     });
 
+    it('never rewrites a marketplace install sibling (DOR-2273)', async () => {
+      // A crash-left backup of a schedule skill is a copy for install recovery
+      // to settle; rewriting it would change what recovery restores.
+      const name = `hand-written.dorkos-bak-${Date.now()}-9f1c2d3e-0000-4000-8000-000000000000`;
+      const original = legacyFile('hand-written', { cron: '0 2 * * *' });
+      await fs.mkdir(path.join(dorkHome, 'skills', name), { recursive: true });
+      await fs.writeFile(globalDestination(name), original, 'utf-8');
+
+      const report = await migrate();
+
+      expect(report.foldedInPlace).toBe(0);
+      expect(await fs.readFile(globalDestination(name), 'utf-8')).toBe(original);
+    });
+
     it('leaves an ordinary skill entirely alone', async () => {
       const plain = '---\nname: helper\ndescription: a plain skill\n---\nHelp.';
       await fs.mkdir(path.join(dorkHome, 'skills', 'helper'), { recursive: true });

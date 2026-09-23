@@ -206,6 +206,92 @@ describe('the plugin bridges the client’s colour family', () => {
     }
   });
 
+  it('pins the Obsidian destructive red to the SAME literals the client uses, per vault theme', () => {
+    // Same drift as the green above: the client writes `--color-destructive`
+    // in its `.copilot-view-content` block, this plugin writes both that and the
+    // raw `--destructive`. The AA math is owned by the client's
+    // `destructive-contrast` guard; matching its literals carries it here.
+    // `.theme-dark` blocks are read on their own, because `copilotBlock` would
+    // concatenate them after the light block and `tokenValue` reads the first.
+    const themeDark = (css: string) =>
+      [...css.matchAll(/\.theme-dark \.copilot-view-content\s*\{([\s\S]*?)\n\}/g)]
+        .map((m) => m[1]!)
+        .join('\n');
+    const clientLight = tokenValue(copilotBlock(CLIENT_CSS), '--color-destructive');
+    const clientDark = tokenValue(themeDark(CLIENT_CSS), '--color-destructive');
+    expect({ clientLight, clientDark }).toEqual({ clientLight: '#ca1c27', clientDark: '#ff554b' });
+    const pluginLight = copilotBlock(PLUGIN_CSS);
+    const pluginDark = themeDark(PLUGIN_CSS);
+    expect({
+      light: tokenValue(pluginLight, '--color-destructive'),
+      lightRaw: tokenValue(pluginLight, '--destructive'),
+      dark: tokenValue(pluginDark, '--color-destructive'),
+      darkRaw: tokenValue(pluginDark, '--destructive'),
+    }).toEqual({
+      light: clientLight,
+      lightRaw: clientLight,
+      dark: clientDark,
+      darkRaw: clientDark,
+    });
+  });
+
+  it('binds `dark:` to the vault theme, so a red fill keeps its white label in every vault/OS pairing', () => {
+    // Tailwind's default `dark:` is the OS `prefers-color-scheme` query. Here the
+    // surfaces and the red come from the VAULT, so the two used to disagree:
+    // a dark vault on a light OS painted the dark red SOLID under white (3.2:1),
+    // and a light vault on a dark OS dimmed the light red to 60% over a light
+    // surface (2.4:1 on the Button). With the variant keyed to `.theme-dark`,
+    // the OS no longer takes part, and the fill is decided by the vault alone.
+    const built = builtStylesheet();
+    expect(PLUGIN_CSS).toMatch(/@custom-variant dark \(&:is\(\.theme-dark \*\)\);/);
+    // The emitted rule is scoped by the class, not wrapped in the media query.
+    expect(built).toMatch(/\.dark\\:bg-destructive\\\/60:is\(\.theme-dark \*\)/);
+    expect(built).not.toMatch(/prefers-color-scheme:\s*dark/);
+
+    const rgb = (hex: string) => {
+      const n = parseInt(hex.slice(1), 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    };
+    const lum = (c: number[]) =>
+      c
+        .map((v) => {
+          v /= 255;
+          return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+        })
+        .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i]!, 0);
+    const ratio = (a: number[], b: number[]) => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x) as [number, number];
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    const over = (fg: number[], alpha: number, bg: number[]) =>
+      fg.map((v, i) => v * alpha + bg[i]! * (1 - alpha));
+    const white = [255, 255, 255];
+    const lightRed = rgb(tokenValue(copilotBlock(PLUGIN_CSS), '--destructive')!);
+    const darkRed = rgb(
+      PLUGIN_CSS.match(
+        /\.theme-dark \.copilot-view-content\s*\{[^}]*--destructive:\s*(#[0-9a-f]{6})/
+      )![1]!
+    );
+    // Obsidian's default surfaces: #f6f6f6 light, #262626 dark.
+    const rows = {
+      'light vault (any OS): solid light red under white': ratio(white, lightRed),
+      'dark vault (any OS): 60% dark red over #262626 under white': ratio(
+        white,
+        over(darkRed, 0.6, rgb('#262626'))
+      ),
+      'dark vault (any OS): 60% dark red over #1e1e1e under white': ratio(
+        white,
+        over(darkRed, 0.6, rgb('#1e1e1e'))
+      ),
+    };
+    const failing = Object.entries(rows).filter(([, r]) => r < 4.5);
+    expect(failing).toEqual([]);
+    // The two pairings the OS used to decide, proven to have been failures, so
+    // the rows above are measuring the thing that was broken.
+    expect(ratio(white, darkRed)).toBeLessThan(4.5);
+    expect(ratio(white, over(lightRed, 0.6, rgb('#f6f6f6')))).toBeLessThan(4.5);
+  });
+
   it("declares `--size-icon-*`, so `button.tsx`'s default icon size resolves (DOR-1750)", () => {
     // button.tsx's base class is `[&_svg:not([class*='size-'])]:size-(--size-icon-sm)`
     // — the default size for every unsized svg a `<Button>` renders, and

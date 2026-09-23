@@ -59,6 +59,16 @@
  * token added per file, by hand, for the same reason as above. The measured
  * diff before the edit was exactly that one `class-added` entry per file; no
  * element, attribute, text, or other token moved.
+ *
+ * ## The destructive-contrast amendment (2026-09-23)
+ *
+ * The dark-mode destructive red was lightened so error text reads at 4.5:1 on
+ * near-black, which left it too light to hold a white label, so every solid
+ * red fill now dims itself with `dark:bg-destructive/60` (the destructive
+ * button's own treatment; `__tests__/destructive-contrast.test.ts`). The Stop
+ * button in the two `streaming-queue` baselines gained that one token, added
+ * by hand for the same reason as above. The measured diff before the edit was
+ * that one `class-added` entry per file on the Stop `button`; nothing else.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import React, { createRef } from 'react';

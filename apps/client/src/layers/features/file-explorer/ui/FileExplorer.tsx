@@ -249,7 +249,7 @@ export function FileExplorer({ source: sourceProp, className }: FileExplorerProp
             <AlertDialogCancel onClick={explorer.cancelRecursiveDelete}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => void explorer.confirmRecursiveDelete()}
-              className="bg-destructive hover:bg-destructive/90 text-white"
+              className="bg-destructive hover:bg-destructive/90 dark:bg-destructive/60 text-white"
             >
               Delete
             </AlertDialogAction>

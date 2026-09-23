@@ -22,6 +22,9 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runTransaction, withInstallTargetLock, _internal } from '../transaction.js';
+import { _internal as recoveryInternal, recoverInterruptedInstall } from '../install-recovery.js';
+import { currentRecordOwner, formatRecordOwner, type RecordOwner } from '../lib/record-owner.js';
+import { randomUUID } from 'node:crypto';
 
 /** Returns true when `target` exists on disk (file or directory). */
 async function pathExists(target: string): Promise<boolean> {
@@ -210,9 +213,11 @@ describe('runTransaction (file-scoped)', () => {
     await expect(access(stagingDirsObserved[0])).rejects.toThrow();
   });
 
-  it('does not create a backup when the target does not exist (fresh install success)', async () => {
+  it('marks a fresh install with an absent record and leaves nothing behind once it commits', async () => {
+    // A fresh install has no backup to restore, but a crash mid-activate still
+    // needs undoing, so the transaction marks the target absent until commit.
     const target = path.join(scratch, 'fresh-success');
-    const moveAsideSpy = vi.spyOn(_internal, 'moveTargetAside');
+    const beginSpy = vi.spyOn(_internal, 'beginRecord');
 
     const result = await runTransaction({
       name: 'fresh-success',
@@ -229,11 +234,36 @@ describe('runTransaction (file-scoped)', () => {
     });
 
     expect(result.ok).toBe(true);
-    // moveTargetAside runs but returns undefined (no backup) for a fresh install.
-    expect(moveAsideSpy).toHaveBeenCalledWith(target);
-    await expect(moveAsideSpy.mock.results[0]?.value).resolves.toBeUndefined();
+    await expect(beginSpy.mock.results[0]?.value).resolves.toMatchObject({ kind: 'absent' });
     const siblings = await readdir(scratch);
-    expect(siblings.some((s) => s.includes('.dorkos-bak-'))).toBe(false);
+    expect(siblings).toEqual(['fresh-success']);
+  });
+
+  it('rolls back and rethrows when the commit itself fails', async () => {
+    // Until the commit lands, recovery would undo this install — so a failed
+    // commit must undo it now rather than report a success recovery reverts.
+    const target = path.join(scratch, 'commit-fails');
+    await mkdir(target, { recursive: true });
+    await writeFile(path.join(target, 'old.txt'), 'old', 'utf8');
+    vi.spyOn(_internal, 'commitRecord').mockRejectedValueOnce(new Error('rename refused'));
+
+    await expect(
+      runTransaction({
+        name: 'commit-fails',
+        target,
+        stage: async (staging) => {
+          stagingDirsObserved.push(staging.path);
+          await writeFile(path.join(staging.path, 'new.txt'), 'new', 'utf8');
+        },
+        activate: async (staging) => {
+          const { atomicMove } = await import('../lib/atomic-move.js');
+          await atomicMove(staging.path, target);
+        },
+      })
+    ).rejects.toThrow('rename refused');
+
+    expect(await readFile(path.join(target, 'old.txt'), 'utf8')).toBe('old');
+    expect(await readdir(scratch)).toEqual(['commit-fails']);
   });
 
   it('returns the activate result and logs a warning when success-path staging cleanup fails', async () => {
@@ -268,7 +298,7 @@ describe('runTransaction (file-scoped)', () => {
     // Force the partial-target removal to throw during rollback; the original
     // activate error must still be the thrown error.
     const removeSpy = vi
-      .spyOn(_internal, 'removePath')
+      .spyOn(recoveryInternal, 'removePath')
       .mockRejectedValueOnce(new Error('remove exploded'));
 
     const activateError = new Error('activate failed');
@@ -289,6 +319,9 @@ describe('runTransaction (file-scoped)', () => {
     expect(removeSpy).toHaveBeenCalled();
     // The cleanup failure was logged, not thrown.
     expect(warnSpy).toHaveBeenCalled();
+    // And the backup is still on disk for the next recovery, which restores it.
+    await recoverInterruptedInstall(target);
+    expect(await readFile(path.join(target, 'orig.txt'), 'utf8')).toBe('orig');
   });
 
   it('uses the staging prefix dorkos-install-<name>- under the OS temp dir', async () => {
@@ -306,6 +339,377 @@ describe('runTransaction (file-scoped)', () => {
     });
 
     expect(result.ok).toBe(true);
+  });
+});
+
+/**
+ * A crash is a transaction that stops at some step and never runs another
+ * line. Each test parks a real transaction at one step (a promise that never
+ * settles, so no cleanup or rollback runs), then runs recovery the way the
+ * next server start would and checks the person has a working install.
+ */
+describe('runTransaction crash windows (DOR-2273)', () => {
+  let scratch: string;
+  const parked: string[] = [];
+
+  beforeEach(async () => {
+    scratch = await mkdtemp(path.join(tmpdir(), 'transaction-crash-'));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
+    for (const dir of parked.splice(0)) await rm(dir, { recursive: true, force: true });
+  });
+
+  /** A promise that never settles: the process "died" here. */
+  const never = (): Promise<never> => new Promise<never>(() => undefined);
+
+  /** Seed an installed v1 at `target`. */
+  async function installV1(target: string): Promise<void> {
+    await mkdir(target, { recursive: true });
+    await writeFile(path.join(target, 'version.txt'), 'v1', 'utf8');
+  }
+
+  /** Which version stands at `target`. */
+  async function versionAt(target: string): Promise<string> {
+    return readFile(path.join(target, 'version.txt'), 'utf8');
+  }
+
+  /**
+   * Start a v2 install of `target` and resolve once it has reached `crashAt`,
+   * where it stops for good. The transaction itself is left pending.
+   */
+  async function crashInstall(
+    target: string,
+    crashAt: 'before-activate' | 'mid-activate' | 'before-commit' | 'after-commit' | 'mid-rollback'
+  ): Promise<void> {
+    let reached!: () => void;
+    const reachedCrash = new Promise<void>((resolve) => (reached = resolve));
+    const crash = (): Promise<never> => {
+      reached();
+      return never();
+    };
+
+    if (crashAt === 'before-commit')
+      vi.spyOn(_internal, 'commitRecord').mockImplementationOnce(crash);
+    if (crashAt === 'after-commit')
+      vi.spyOn(recoveryInternal, 'removePath').mockImplementationOnce(crash);
+    if (crashAt === 'mid-rollback')
+      vi.spyOn(recoveryInternal, 'move').mockImplementationOnce(crash);
+
+    void runTransaction({
+      name: `crash-${crashAt}`,
+      target,
+      stage: async (staging) => {
+        parked.push(staging.path);
+        await writeFile(path.join(staging.path, 'version.txt'), 'v2', 'utf8');
+      },
+      activate: async (staging) => {
+        if (crashAt === 'before-activate') return crash();
+        // A multi-step activate: the files land, then something else runs
+        // (an agent's workspace scaffold, extension enabling).
+        await mkdir(target, { recursive: true });
+        await writeFile(path.join(target, 'version.txt'), 'v2-half', 'utf8');
+        if (crashAt === 'mid-activate') return crash();
+        if (crashAt === 'mid-rollback') throw new Error('activate failed');
+        await writeFile(path.join(target, 'version.txt'), 'v2', 'utf8');
+        void staging;
+      },
+    }).catch(() => undefined);
+
+    await reachedCrash;
+  }
+
+  it('restores v1 after a crash between moving it aside and activating', async () => {
+    const target = path.join(scratch, 'flow');
+    await installV1(target);
+    await crashInstall(target, 'before-activate');
+    expect(await pathExists(target)).toBe(false); // the person has nothing
+
+    await recoverInterruptedInstall(target);
+
+    expect(await versionAt(target)).toBe('v1');
+    expect(await readdir(scratch)).toEqual(['flow']);
+  });
+
+  it('restores v1 after a crash half-way through activation', async () => {
+    const target = path.join(scratch, 'flow');
+    await installV1(target);
+    await crashInstall(target, 'mid-activate');
+    expect(await versionAt(target)).toBe('v2-half');
+
+    await recoverInterruptedInstall(target);
+
+    expect(await versionAt(target)).toBe('v1');
+    expect(await readdir(scratch)).toEqual(['flow']);
+  });
+
+  it('restores v1 after a crash between activation and commit', async () => {
+    // v2 looks finished, but nothing proves it was: uncommitted is undone.
+    const target = path.join(scratch, 'flow');
+    await installV1(target);
+    await crashInstall(target, 'before-commit');
+    expect(await versionAt(target)).toBe('v2');
+
+    await recoverInterruptedInstall(target);
+
+    expect(await versionAt(target)).toBe('v1');
+    expect(await readdir(scratch)).toEqual(['flow']);
+  });
+
+  it('keeps v2 and deletes v1 after a crash between commit and cleanup', async () => {
+    const target = path.join(scratch, 'flow');
+    await installV1(target);
+    await crashInstall(target, 'after-commit');
+    expect((await readdir(scratch)).some((n) => n.endsWith('.committed'))).toBe(true);
+
+    await recoverInterruptedInstall(target);
+
+    expect(await versionAt(target)).toBe('v2');
+    expect(await readdir(scratch)).toEqual(['flow']);
+  });
+
+  it('restores v1 after a crash half-way through a rollback', async () => {
+    // The failed install's partial target is gone and v1 is not back yet.
+    const target = path.join(scratch, 'flow');
+    await installV1(target);
+    await crashInstall(target, 'mid-rollback');
+    expect(await pathExists(target)).toBe(false);
+
+    await recoverInterruptedInstall(target);
+
+    expect(await versionAt(target)).toBe('v1');
+    expect(await readdir(scratch)).toEqual(['flow']);
+  });
+
+  it('removes a half-written fresh install after a crash', async () => {
+    const target = path.join(scratch, 'flow');
+    await crashInstall(target, 'mid-activate');
+    expect(await versionAt(target)).toBe('v2-half');
+
+    await recoverInterruptedInstall(target);
+
+    expect(await readdir(scratch)).toEqual([]);
+  });
+
+  it('settles a crash-left record before the next install of that target', async () => {
+    // "Next operation on that target": without this, the new install would
+    // move the half-written target aside as its own backup and v1 would
+    // linger, only to be restored over v2 later.
+    const target = path.join(scratch, 'flow');
+    await mkdir(target, { recursive: true });
+    await writeFile(path.join(target, 'version.txt'), 'v2-half', 'utf8');
+    const backup = path.join(
+      scratch,
+      `flow.dorkos-bak-${Date.now()}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}`
+    );
+    await installV1(backup);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let seenAtActivate = '';
+
+    await runTransaction({
+      name: 'after-crash',
+      target,
+      stage: async (staging) => {
+        parked.push(staging.path);
+        await writeFile(path.join(staging.path, 'version.txt'), 'v3', 'utf8');
+      },
+      activate: async (staging) => {
+        const siblings = await readdir(scratch);
+        const current = siblings.find((n) => n !== 'flow' && !n.endsWith('.absent'))!;
+        seenAtActivate = await versionAt(path.join(scratch, current));
+        const { atomicMove } = await import('../lib/atomic-move.js');
+        await atomicMove(staging.path, target);
+      },
+    });
+
+    // The install moved aside the restored v1, not the half-written v2.
+    expect(seenAtActivate).toBe('v1');
+    expect(await versionAt(target)).toBe('v3');
+    expect(await readdir(scratch)).toEqual(['flow']);
+  });
+
+  it('checks again after staging, and refuses if another process started on the target meanwhile', async () => {
+    // Staging runs npm and can take minutes. A record another server writes in
+    // that time must stop this transaction before it moves that server's
+    // half-activated target aside as its own backup.
+    const { spawn } = await import('node:child_process');
+    const other = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      stdio: 'ignore',
+    });
+    await new Promise((resolve) => other.once('spawn', resolve));
+    try {
+      const target = path.join(scratch, 'flow');
+      await installV1(target);
+      const { _internal: ownerInternal } = await import('../lib/record-owner.js');
+      const owner: RecordOwner = {
+        ...currentRecordOwner(),
+        pid: other.pid!,
+        startedAt: ownerInternal.readProcessStartSeconds(other.pid!) ?? 0,
+      };
+      const theirs = path.join(
+        scratch,
+        `flow.dorkos-bak-${Date.now()}-${formatRecordOwner(owner)}-${randomUUID()}`
+      );
+      const activate = vi.fn();
+
+      await expect(
+        runTransaction({
+          name: 'raced',
+          target,
+          stage: async (staging) => {
+            parked.push(staging.path);
+            // The other server moves v1 aside and starts writing v2.
+            const { rename } = await import('node:fs/promises');
+            await rename(target, theirs);
+            await mkdir(target, { recursive: true });
+            await writeFile(path.join(target, 'version.txt'), 'v2-theirs-half', 'utf8');
+          },
+          activate,
+        })
+      ).rejects.toThrow(/Another DorkOS app may be changing/);
+
+      expect(activate).not.toHaveBeenCalled();
+      expect(await versionAt(target)).toBe('v2-theirs-half');
+      expect(await versionAt(theirs)).toBe('v1');
+      expect(await readdir(scratch)).toHaveLength(2);
+      await expect(access(parked[0]!)).rejects.toThrow();
+    } finally {
+      await new Promise<void>((resolve) => {
+        other.once('exit', () => resolve());
+        other.kill();
+      });
+    }
+  });
+
+  it('keeps a kept pre-commit-records backup when the install fails', async () => {
+    // Only a finished change supersedes it; a failed install proves nothing.
+    const target = path.join(scratch, 'flow');
+    await installV1(target);
+    const legacy = path.join(
+      scratch,
+      `flow.dorkos-bak-${Date.now() - 11 * 60_000}-${randomUUID()}`
+    );
+    await installV1(legacy);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      runTransaction({
+        name: 'fails',
+        target,
+        stage: async (staging) => {
+          parked.push(staging.path);
+        },
+        activate: async () => {
+          throw new Error('activate failed');
+        },
+      })
+    ).rejects.toThrow('activate failed');
+
+    expect(await versionAt(target)).toBe('v1');
+    expect(await versionAt(legacy)).toBe('v1');
+  });
+
+  it('keeps a kept pre-commit-records backup when the commit itself fails', async () => {
+    // Activation finished but the commit did not, so the install is rolled
+    // back: nothing was superseded.
+    const target = path.join(scratch, 'flow');
+    await installV1(target);
+    const legacy = path.join(
+      scratch,
+      `flow.dorkos-bak-${Date.now() - 11 * 60_000}-${randomUUID()}`
+    );
+    await installV1(legacy);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(_internal, 'commitRecord').mockRejectedValueOnce(new Error('rename refused'));
+
+    await expect(
+      runTransaction({
+        name: 'commit-fails',
+        target,
+        stage: async (staging) => {
+          parked.push(staging.path);
+          await writeFile(path.join(staging.path, 'version.txt'), 'v2', 'utf8');
+        },
+        activate: async (staging) => {
+          const { atomicMove } = await import('../lib/atomic-move.js');
+          await atomicMove(staging.path, target);
+        },
+      })
+    ).rejects.toThrow('rename refused');
+
+    expect(await versionAt(target)).toBe('v1');
+    expect(await versionAt(legacy)).toBe('v1');
+  });
+
+  it('removes a kept pre-commit-records backup once its own install commits', async () => {
+    // Kept because nothing proved which copy was whole; a committed install
+    // settles that, and left behind it would be restored if the package were
+    // later uninstalled.
+    const target = path.join(scratch, 'flow');
+    await installV1(target);
+    await installV1(
+      path.join(scratch, `flow.dorkos-bak-${Date.now() - 11 * 60_000}-${randomUUID()}`)
+    );
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await runTransaction({
+      name: 'supersede',
+      target,
+      stage: async (staging) => {
+        parked.push(staging.path);
+        await writeFile(path.join(staging.path, 'version.txt'), 'v2', 'utf8');
+      },
+      activate: async (staging) => {
+        const { atomicMove } = await import('../lib/atomic-move.js');
+        await atomicMove(staging.path, target);
+      },
+    });
+
+    expect(await versionAt(target)).toBe('v2');
+    expect(await readdir(scratch)).toEqual(['flow']);
+  });
+
+  it('refuses to start while another running process owns a record for the target', async () => {
+    // Two servers on one project: moving the other one's half-activated
+    // target aside would destroy its install.
+    const { spawn } = await import('node:child_process');
+    const other = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      stdio: 'ignore',
+    });
+    await new Promise((resolve) => other.once('spawn', resolve));
+    try {
+      const target = path.join(scratch, 'flow');
+      await mkdir(target, { recursive: true });
+      await writeFile(path.join(target, 'version.txt'), 'v2-theirs', 'utf8');
+      const { _internal: ownerInternal } = await import('../lib/record-owner.js');
+      const owner: RecordOwner = {
+        ...currentRecordOwner(),
+        pid: other.pid!,
+        startedAt: ownerInternal.readProcessStartSeconds(other.pid!) ?? 0,
+      };
+      await installV1(
+        path.join(
+          scratch,
+          `flow.dorkos-bak-${Date.now()}-${formatRecordOwner(owner)}-${randomUUID()}`
+        )
+      );
+      const activate = vi.fn();
+
+      await expect(
+        runTransaction({ name: 'blocked', target, stage: async () => undefined, activate })
+      ).rejects.toThrow(/Another DorkOS app may be changing .* Try again in 10 minutes\./);
+
+      expect(activate).not.toHaveBeenCalled();
+      expect(await versionAt(target)).toBe('v2-theirs');
+      expect(await readdir(scratch)).toHaveLength(2);
+    } finally {
+      await new Promise<void>((resolve) => {
+        other.once('exit', () => resolve());
+        other.kill();
+      });
+    }
   });
 });
 

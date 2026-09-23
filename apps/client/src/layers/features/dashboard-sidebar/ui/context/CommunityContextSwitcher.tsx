@@ -42,6 +42,11 @@ import {
   useCommunityNavigation,
   useMoveCommunityNavigation,
 } from '@/layers/entities/community';
+import {
+  CommunityHostingDialogs,
+  useCommunityHostingEntry,
+  type CommunityHostingDialog,
+} from '@/layers/features/community-hosting';
 import { useHeaderBlockMenu } from './use-header-block-menu';
 import {
   buildCommunityContextNodes,
@@ -186,6 +191,10 @@ export function CommunityContextSwitcher({
   const [open, setOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [disconnecting, setDisconnecting] = useState<CommunityConnectionDescriptor | null>(null);
+  // Hosted communities: `null` while this DorkOS is not linked to an account,
+  // and then no row is drawn and nothing is asked of the account.
+  const hosting = useCommunityHostingEntry();
+  const [hostingDialog, setHostingDialog] = useState<CommunityHostingDialog>(null);
   const selectedIndex = selectedRef
     ? destinations.findIndex((connection) => connection.ref === selectedRef)
     : -1;
@@ -226,6 +235,13 @@ export function CommunityContextSwitcher({
     // The pinned origin again: the only host these connections talked to.
     onCreate: (origin) => openExternalLink(new URL(COMMUNITY_HOST_ADMIN_PATH, origin).toString()),
     onDeploy: () => openExternalLink(COMMUNITY_DEPLOY_GUIDE_URL),
+    hosting: hosting
+      ? {
+          onStart: () => setHostingDialog({ kind: 'start' }),
+          onMove: () => setHostingDialog({ kind: 'move', moveId: hosting.unfinishedMoveId }),
+          onOpenHosted: hosting.hasHosted ? () => setHostingDialog({ kind: 'hosted' }) : null,
+        }
+      : null,
   });
   const menu = useHeaderBlockMenu(contextNodes);
   const guarded = useGuardedMenuNodes(menu.nodes);
@@ -436,6 +452,14 @@ export function CommunityContextSwitcher({
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
+  // "Done: the new community is selected in the switcher" (spec P5): read the
+  // connection list fresh, then select the new one the ordinary way.
+  async function selectConnected(ref: string) {
+    const fresh = await connections.refetch();
+    const connection = fresh.data?.find((c) => c.ref === ref && c.status === 'connected');
+    if (connection) await selectCommunity(connection);
+  }
+
   function routeAwayFrom(connection: CommunityConnectionDescriptor) {
     // The connection's content is already erased; leave only if it was the
     // one on screen. Another Community or this DorkOS stays where it was.
@@ -586,6 +610,13 @@ export function CommunityContextSwitcher({
         </ResponsiveDropdownMenuContent>
       </ResponsiveDropdownMenu>
       <JoinCommunityDialog open={joinOpen} onOpenChange={setJoinOpen} />
+      <CommunityHostingDialogs
+        entry={hosting}
+        dialog={hostingDialog}
+        onDialogChange={setHostingDialog}
+        installName={installationLabelPending ? 'My DorkOS' : installationLabel}
+        onConnected={(ref) => void selectConnected(ref)}
+      />
       <DisconnectCommunityDialog
         connection={disconnecting}
         onOpenChange={(next) => {

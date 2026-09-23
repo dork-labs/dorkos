@@ -718,7 +718,8 @@ describe('TouchChipStrip — the link gate inside the plugin', () => {
     // green.
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('unsupported-scheme'),
-      'javascript:alert(1)'
+      // Logged redacted: a link can carry a credential past its scheme.
+      'javascript:…'
     );
   });
 
@@ -730,7 +731,7 @@ describe('TouchChipStrip — the link gate inside the plugin', () => {
     expect(openSpy).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('unsupported-scheme'),
-      'dorkos-evil://take-over'
+      'dorkos-evil:…'
     );
   });
 

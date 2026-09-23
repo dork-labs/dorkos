@@ -469,6 +469,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: 5.2.0
         version: 5.2.0(vite@6.4.3(@types/node@24.13.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13)(yaml@2.9.1))
+      axe-core:
+        specifier: ^4.13.0
+        version: 4.13.0
       tsx:
         specifier: 4.23.13
         version: 4.23.13

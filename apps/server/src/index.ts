@@ -35,6 +35,7 @@ import {
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from './services/core/config/tunnel-settings.js';
 import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/cloud-link.js';
+import { initMoveStaging } from './services/core/cloud/community-move-upload.js';
 import {
   initConfigManager,
   configManager,
@@ -224,6 +225,7 @@ import { createAgentWorkspace } from './services/core/agent-creator.js';
 import { gitTreeSource } from './services/marketplace/lib/git-tree.js';
 import { MarketplaceSourceManager } from './services/marketplace/marketplace-source-manager.js';
 import { MarketplaceCache } from './services/marketplace/marketplace-cache.js';
+import { PackageCacheRetention } from './services/marketplace/package-cache-retention.js';
 import { PackageResolver } from './services/marketplace/package-resolver.js';
 import { PackageFetcher } from './services/marketplace/package-fetcher.js';
 import { ConflictDetector } from './services/marketplace/conflict-detector.js';
@@ -280,7 +282,15 @@ import {
 import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
 import { ActivityService } from './services/activity/activity-service.js';
 import { createPluginReloadActivityWriter } from './services/activity/plugin-reload-activity.js';
-import { sweepStaleInstallBackups } from './services/marketplace/backup-janitor.js';
+import {
+  globalSweepDirs,
+  projectSweepDirs,
+  projectsOfAgents,
+  recoverInterruptedInstalls,
+  retryInFlightTargetsLater,
+  type InstallSweepSummary,
+} from './services/marketplace/backup-janitor.js';
+import { currentRecordOwner } from './services/marketplace/lib/record-owner.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
@@ -552,6 +562,26 @@ function registeredAgentRoots(
   });
 }
 
+/**
+ * Log what an install-recovery sweep did, when it did anything.
+ *
+ * @param scope - Which installs were swept, for the log line.
+ * @param summary - The sweep's totals.
+ */
+function logInstallSweep(scope: string, summary: InstallSweepSummary): void {
+  const { settled, kept, discarded, inFlightTargets } = summary;
+  if (settled + kept + discarded + inFlightTargets.length > 0) {
+    logger.info(
+      `[Marketplace] Settled interrupted ${scope}: ${settled} settled, ${kept} kept, ${discarded} leftovers removed, ${inFlightTargets.length} left to another running DorkOS`
+    );
+  }
+  // A target left to another process is looked at once more when every record
+  // there has aged past the point where its owner matters.
+  retryInFlightTargetsLater(inFlightTargets, logger, (retry) =>
+    logInstallSweep(`${scope} (retry)`, { ...retry, inFlightTargets: [] })
+  );
+}
+
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
 let taskRegistrar: TaskRegistrar | undefined;
@@ -685,6 +715,15 @@ async function start() {
   // boot must not fail over a cleanup.
   await reapOrphanedWarmProcesses().catch((error: unknown) => {
     logger.warn('[DorkOS] could not sweep leftover agent processes', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+
+  // Empty the hosted-community move staging directory. A copy a previous run
+  // left behind can never be sent: its upload token died with that process.
+  // After the instance lock for the same reason as the sweep above.
+  await initMoveStaging(dorkHome).catch((error: unknown) => {
+    logger.warn('[DorkOS] could not set up community move staging', {
       error: error instanceof Error ? error.message : String(error),
     });
   });
@@ -932,21 +971,23 @@ async function start() {
   // "While you were away" — composed once the day's first activity arrives.
   watchShiftReport(notificationStore);
 
-  // Sweep crash-left marketplace install backups (`<target>.dorkos-bak-<ts>-<uuid>`,
-  // see transaction.ts + ADR-0304). A hard crash mid-install can leave one of
-  // these behind forever; before DOR-175 a crash-left agent backup could also
-  // resurface as a phantom duplicate agent via mesh discovery. Only backups
-  // whose embedded timestamp is >24h old are removed — see backup-janitor.ts
-  // for why that guard can never race a live install.
+  // Settle marketplace installs a crash interrupted (DOR-2273): restore the
+  // previous version of a package whose reinstall never finished, remove a
+  // half-written fresh install, and delete leftovers of finished ones. Runs
+  // before the app serves anything, so nothing lists a half-written package.
+  // Project installs are swept once Mesh knows the projects (below); see
+  // services/marketplace/install-recovery.ts for the rules.
   try {
-    const sweptBackups = await sweepStaleInstallBackups(dorkHome, logger);
-    if (sweptBackups > 0) {
-      logger.info(
-        `[Marketplace] Swept ${sweptBackups} stale install backup${sweptBackups === 1 ? '' : 's'}`
-      );
-    }
+    // Read this process's own start time now, as close to its real start as
+    // possible: records it writes carry it, and a wall-clock step between
+    // start and a late first read would misstate it (record-owner.ts).
+    currentRecordOwner();
+    logInstallSweep(
+      'global installs',
+      await recoverInterruptedInstalls(globalSweepDirs(dorkHome), logger)
+    );
   } catch (err) {
-    logger.warn('[Marketplace] Startup backup sweep failed', logError(err));
+    logger.warn('[Marketplace] Startup install recovery failed', logError(err));
   }
 
   // Initialize directory boundary (must happen before app creation)
@@ -1873,6 +1914,25 @@ async function start() {
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();
       remoteCommunitySubscriptions?.start();
+    }
+
+    // Settle marketplace installs a crash interrupted inside registered
+    // projects (`<projectPath>/.dork/` and `.agents/skills/`, including the
+    // project an installed agent lives in), which only the registry can list —
+    // the global ones were settled before the app started (DOR-2273). This
+    // writes into a person's repository only to finish undoing a change DorkOS
+    // itself was making there, and only to entries whose names prove they are
+    // DorkOS's own records. Fire-and-forget: each target is settled under its
+    // install lock, so an install that races it simply waits.
+    try {
+      const projects = projectsOfAgents(meshCore.listWithPaths().map((a) => a.projectPath));
+      recoverInterruptedInstalls(projects.flatMap(projectSweepDirs), logger)
+        .then((summary) => logInstallSweep('project installs', summary))
+        .catch((err: unknown) => {
+          logger.warn('[Marketplace] Project install recovery failed', logError(err));
+        });
+    } catch (err) {
+      logger.warn('[Marketplace] Project install recovery failed', logError(err));
     }
 
     // Bring every agent workspace DorkOS owns up to the current Operating DorkOS
@@ -4061,6 +4121,18 @@ async function start() {
         name: a.displayName ?? a.name,
       }));
 
+    // The package cache's retention owner (DOR-2249): sweeps after every new
+    // entry and once now, in the background, keeping what installs need.
+    const marketplaceCacheRetention = new PackageCacheRetention({
+      cache: marketplaceCache,
+      dorkHome,
+      // No registry means agent-scoped installs are invisible, so the sweep
+      // must remove nothing rather than read that as "none installed".
+      listAgentScopes: () => (meshCore ? listAgentScopes() : undefined),
+      logger,
+    });
+    marketplaceCacheRetention.start();
+
     // The one post-change notifier, handed to BOTH surfaces that mutate installed
     // packages: the HTTP router below and the marketplace MCP tools
     // (`marketplaceMcpDeps`). It is required on both deps types, so a surface
@@ -4097,6 +4169,7 @@ async function start() {
         capabilityRegistry: () => capabilityRegistry,
         sourceManager: marketplaceSourceManager,
         cache: marketplaceCache,
+        cacheRetention: marketplaceCacheRetention,
         fetcher: marketplaceFetcher,
         installer: marketplaceInstaller,
         uninstallFlow: marketplaceUninstallFlow,

@@ -36,6 +36,27 @@ function writeSkill(parent: string, name: string): void {
 }
 
 describe('scanInstalledPlugins', () => {
+  it("never reads the install engine's own siblings as plugins (DOR-2273)", () => {
+    // A crash mid-reinstall leaves `<name>.dorkos-bak-<ts>-<uuid>` beside the
+    // package: the previous install, valid manifest and skills included. Read
+    // as a plugin it would project a second copy of every skill it carries.
+    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
+    dorkHome = mkdtempSync(join(tmpdir(), 'harness-home-'));
+    const stamp = `${Date.now()}-3fa85f64-5717-4562-b3fc-2c963f66afa6`;
+    for (const root of [join(projectRoot, '.dork', 'plugins'), join(dorkHome, 'plugins')]) {
+      writeManifest(join(root, 'flow'), 'flow', ['skills']);
+      writeManifest(join(root, `flow.dorkos-bak-${stamp}`), 'flow', ['skills']);
+      writeManifest(join(root, `flow.dorkos-bak-${stamp}.committed`), 'flow', ['skills']);
+    }
+
+    const plugins = scanInstalledPlugins({ dorkHome, projectRoot });
+
+    expect(plugins.map((p) => `${p.location.scope}:${p.name}`)).toEqual([
+      'global:flow',
+      'project:flow',
+    ]);
+  });
+
   it('SRC-02: discovers project + global plugins and enumerates project portable assets', () => {
     projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
     dorkHome = mkdtempSync(join(tmpdir(), 'harness-home-'));

@@ -224,7 +224,9 @@
   --muted-foreground: 0 0% 32%;
   --accent: 0 0% 94%;
   --accent-foreground: 0 0% 9%;
-  --destructive: 0 84.2% 60.2%;
+  /* Readable as text AND under a white label (WCAG AA). Contrast table and
+     guard: `__tests__/destructive-contrast.test.ts`. */
+  --destructive: 356 76% 45%;
   --destructive-foreground: 0 0% 98%;
   --border: 0 0% 83%;
   --input: 0 0% 83%;
@@ -480,7 +482,9 @@
   --muted-foreground: 0 0% 64%;
   --accent: 0 0% 12%;
   --accent-foreground: 0 0% 87%;
-  --destructive: 0 72% 50.5%;
+  /* Lighter, for text on near-black; too light to hold a white label, so solid
+     fills add `dark:bg-destructive/60`. See `__tests__/destructive-contrast.test.ts`. */
+  --destructive: 2.5 95% 62%;
   --destructive-foreground: 0 0% 98%;
   --border: 0 0% 25%;
   --input: 0 0% 25%;
@@ -2027,7 +2031,9 @@ body {
   --color-muted-foreground: var(--text-muted);
   --color-accent: var(--interactive-accent);
   --color-accent-foreground: var(--text-on-accent);
-  --color-destructive: #e53e3e;
+  /* Light-vault red; `.theme-dark` below lifts it. Kept in sync with
+     apps/obsidian-plugin/src/styles/plugin.css. */
+  --color-destructive: #ca1c27;
   --color-destructive-foreground: #fff;
   --color-border: var(--background-modifier-border);
   --color-input: var(--background-modifier-form-field);
@@ -2086,4 +2092,10 @@ body {
   color: var(--text-normal);
   background-color: var(--background-secondary);
   font-family: var(--font-interface);
+}
+
+/* Dark-vault red (Obsidian puts `.theme-dark` on the body). Kept in sync with
+   apps/obsidian-plugin/src/styles/plugin.css. */
+.theme-dark .copilot-view-content {
+  --color-destructive: #ff554b;
 }

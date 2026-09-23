@@ -173,7 +173,7 @@ if (process.argv[2] === 'harness') {
 
 // `cache` subcommand has its own subcommand namespace
 // (`list`/`prune`/`clear`). Intercept before the top-level parseArgs call
-// so its sub-flags (`--keep-last-n`, `--yes`) aren't rejected as unknown
+// so its sub-flags (`--yes`) aren't rejected as unknown
 // options. Talks to a running DorkOS server via the marketplace HTTP API;
 // does not boot the server itself. Dispatch + help text live in
 // commands/cache-dispatcher.ts so this file stays focused on global flag

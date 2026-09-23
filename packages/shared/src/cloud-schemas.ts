@@ -78,7 +78,10 @@ export interface StartLinkResult {
 
 import type {
   Balance,
+  CommunityMove,
+  CommunityNameCheckResponse,
   Entitlements,
+  HostedCommunity,
   Member,
   Nudge,
   Org,
@@ -157,4 +160,133 @@ export interface CloudCreditsStatus {
   ready: boolean;
   /** Per-runtime state, so the app can say what actually works today. */
   runtimes: Record<'claude-code' | 'opencode' | 'codex', CloudCreditsRuntimeState>;
+}
+
+// ---------------------------------------------------------------------------
+// Hosted communities (community-host-operator-api P5).
+//
+// The local server makes every hosted-community call with this instance's own
+// credential and hands the browser the parsed value, never the service's raw
+// body. Two one-time credentials exist in this family, and neither is in any
+// shape below except the one that exists to open it: a move's upload token
+// never leaves the local server (it streams the export itself), and an owner
+// claim link reaches the browser only as the answer to the one action whose job
+// is to open it (`CloudCommunityClaimLinkResponse`), never in a list, a poll or
+// a start.
+// ---------------------------------------------------------------------------
+
+/**
+ * A refusal from a hosted-community write.
+ *
+ * `problem` is the service's own envelope, rendered in its own words with its
+ * `actionUrl` when it has one; `message` is the local server's plain sentence
+ * for everything the service did not describe (unlinked, unreachable). Both
+ * answer HTTP 200, for the reason `CloudSeatActionResponse` gives.
+ */
+export type CloudCommunityRefusal =
+  { ok: false; problem: Problem } | { ok: false; message: string };
+
+/**
+ * How the local server is getting a move's export to its Community server.
+ *
+ * The browser hands the file to the local server once; the local server then
+ * sends it on with the upload token it alone holds. This is that second leg,
+ * kept in the local server's memory only: after a restart it is gone, and the
+ * move's own state (read from the service) is what is left.
+ *
+ * - `sending`: bytes are going out; `sentBytes` of `totalBytes`.
+ * - `sent`: the Community server took the whole file.
+ * - `failed`: it did not. `rejected` means the server refused the bytes and the
+ *   same file can be sent again; `interrupted` means the connection broke and
+ *   it can be sent again; `expired` means the upload window closed, so the move
+ *   has to start over.
+ */
+export interface CloudCommunityMoveUpload {
+  state: 'sending' | 'sent' | 'failed';
+  sentBytes: number;
+  totalBytes: number;
+  failure: 'rejected' | 'interrupted' | 'expired' | null;
+}
+
+/** One move, as the service reports it, plus how its upload is going here. */
+export type CloudCommunityMove = CommunityMove & {
+  /** The local upload leg, or `null` when this server is not sending anything for it. */
+  upload: CloudCommunityMoveUpload | null;
+};
+
+/**
+ * How many hosted communities this account may keep, when the service says.
+ *
+ * Numbers only, straight from the entitlement's optional `communities` group:
+ * either may be `null` when the service did not say, and the app then says
+ * nothing about it.
+ */
+export interface CloudCommunityAllowance {
+  maxCommunities: number | null;
+  usedCommunities: number | null;
+}
+
+/**
+ * `GET /api/cloud/communities` — this account's hosted communities and moves.
+ *
+ * `available: false` when this instance is not linked or the service does not
+ * serve the family, with no request leaving the machine in the first case.
+ */
+export type CloudHostedCommunitiesResponse =
+  | { available: false }
+  | {
+      available: true;
+      communities: HostedCommunity[];
+      moves: CloudCommunityMove[];
+      allowance: CloudCommunityAllowance | null;
+    };
+
+/** `GET /api/cloud/communities/name-check` — is this web address free right now? Advisory. */
+export type CloudCommunityNameCheckResponse =
+  { available: false } | { available: true; check: CommunityNameCheckResponse };
+
+/**
+ * `POST /api/cloud/communities` — the started community.
+ *
+ * `claimReady` says the local server holds this community's first owner-claim
+ * link, so opening it (`claim-link`) will not have to ask for a fresh one. The
+ * link itself is not here.
+ */
+export type CloudCommunityStartResponse =
+  { ok: true; community: HostedCommunity; claimReady: boolean } | CloudCommunityRefusal;
+
+/**
+ * `POST /api/cloud/communities/:communityId/claim-link` — the owner-claim link.
+ *
+ * The one browser-facing shape that carries a one-time credential, because its
+ * whole job is to be opened in the person's own browser. Sent `no-store`; the
+ * caller opens it at once and keeps no copy.
+ */
+export type CloudCommunityClaimLinkResponse =
+  { ok: true; claimUrl: string; expiresAt: string } | CloudCommunityRefusal;
+
+/** `POST /api/cloud/communities/:communityId/keep` — the kept community and those it held. */
+export type CloudCommunityKeepResponse =
+  { ok: true; community: HostedCommunity; heldCommunityIds: string[] } | CloudCommunityRefusal;
+
+/** `POST /api/cloud/communities/:communityId/restore` — the reopened community. */
+export type CloudCommunityRestoreResponse =
+  { ok: true; community: HostedCommunity } | CloudCommunityRefusal;
+
+/** A move write (start, cancel, send again) — the move as it now stands. */
+export type CloudCommunityMoveResponse =
+  { ok: true; move: CloudCommunityMove } | CloudCommunityRefusal;
+
+/** `GET /api/cloud/communities/moves/:moveId` — one move, read from the service every time. */
+export type CloudCommunityMovePollResponse =
+  { available: false } | { available: true; move: CloudCommunityMove };
+
+/** What a move needs besides the export file itself. */
+export interface CloudCommunityMoveStartInput {
+  /** A key the app chooses, so a retried start never makes a second move. */
+  idempotencyKey: string;
+  /** The new community's name, 1 to 80 characters. */
+  name: string;
+  /** The new community's web address, when the person chose one. */
+  shortName?: string;
 }

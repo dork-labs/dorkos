@@ -464,7 +464,7 @@ export function ConnectionDetailSheet({
             <AlertDialogCancel>Keep connected</AlertDialogCancel>
             <AlertDialogAction
               disabled={!impact.data || disconnect.isPending}
-              className="bg-destructive hover:bg-destructive/90 text-white"
+              className="bg-destructive hover:bg-destructive/90 dark:bg-destructive/60 text-white"
               onClick={() => {
                 if (!connectionId) return;
                 disconnect.mutate(

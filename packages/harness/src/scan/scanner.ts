@@ -9,6 +9,7 @@
  */
 import { lstatSync, readdirSync, statSync, type Dirent } from 'node:fs';
 import { join } from 'node:path';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 
 /** A single authored skill discovered under `.agents/skills`. */
 export interface SkillEntry {
@@ -225,6 +226,9 @@ export function listSkillDirs(
     if (isLink && options.followSymlinks === false) continue;
     const isManagedProjection = isLink && entry.name.includes(INSTALLED_PROJECTION_MARKER);
     if (isManagedProjection && !options.includeManagedProjections) continue;
+    // A marketplace install's own sibling (a crash-left backup of a schedule
+    // skill) is a copy, never a skill to project (DOR-2273).
+    if (isInstallSiblingName(entry.name)) continue;
     const absEntry = join(absRoot, entry.name);
     if (!resolvesToDirectory(absEntry, entry)) continue;
     const sourceDir = `${relPrefix}/${entry.name}`;

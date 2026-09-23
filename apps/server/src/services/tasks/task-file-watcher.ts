@@ -80,6 +80,7 @@ import type { TaskStore } from './task-store.js';
 import type { TaskRegistrar } from './task-registrar.js';
 import type { ScheduleIdentityRegistry } from './schedule-identity.js';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { readTaskRootFile, scanTaskRoot, type ReadOutcome } from './skills-root-discovery.js';
 import { isPackageOwnedInRoot } from './task-file-update.js';
 import { reservedDirsFor, type TaskRoot } from './skills-roots.js';
@@ -363,10 +364,16 @@ export class TaskFileWatcher implements TaskWatchHealth {
     // above is about. Nothing else in the repo treats a dot-directory as a
     // skill: the shared scanner, the symlink walk and the harness's own filter
     // all skip it.
+    //
+    // A marketplace install's own sibling (`<slug>.dorkos-bak-…`, a crash-left
+    // backup of a schedule skill) is the same no-backstop slot again: the
+    // scanner skips it, a live event did not, and the copy would run as a
+    // second schedule that nothing retires (DOR-2273).
     const isSkillFile = (filePath: string): boolean =>
       path.basename(filePath) === SKILL_FILENAME &&
       path.dirname(path.dirname(filePath)) === root.dir &&
       !path.basename(path.dirname(filePath)).startsWith('.') &&
+      !isInstallSiblingName(path.basename(path.dirname(filePath))) &&
       !reservedDirsFor(root).includes(path.basename(path.dirname(filePath)));
     watcher.on('add', (filePath) => {
       if (isSkillFile(filePath)) void this.handleFileChange(filePath, root);

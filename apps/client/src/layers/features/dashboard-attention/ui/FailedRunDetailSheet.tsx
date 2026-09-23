@@ -121,7 +121,7 @@ const EXPLANATION_TONE = {
   error: {
     box: 'bg-destructive/10 border-destructive/20',
     heading: 'text-destructive',
-    body: 'text-destructive/80',
+    body: 'text-destructive',
   },
   warning: {
     box: 'bg-status-warning-bg border-status-warning-border',

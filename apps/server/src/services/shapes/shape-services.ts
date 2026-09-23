@@ -11,6 +11,7 @@ import path from 'node:path';
 import type { ShapePackageManifest } from '@dorkos/marketplace';
 import { MarketplacePackageManifestSchema } from '@dorkos/marketplace';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { configManager } from '../core/config-manager.js';
 import { logConfigWrite } from '../core/operator/config-write.js';
 import type {
@@ -129,6 +130,18 @@ export function clearActiveShape(): void {
 }
 
 /**
+ * The installed-Shape directory names under `shapesRoot`. The install
+ * engine's own siblings (a crash-left backup carries the previous install's
+ * valid manifest) are skipped, or one Shape would be listed twice (DOR-2273).
+ *
+ * @throws When `shapesRoot` cannot be listed.
+ */
+async function listShapeDirNames(shapesRoot: string): Promise<string[]> {
+  const dirents = await readdir(shapesRoot, { withFileTypes: true });
+  return dirents.filter((d) => d.isDirectory() && !isInstallSiblingName(d.name)).map((d) => d.name);
+}
+
+/**
  * Read + parse every installed Shape manifest under `{dorkHome}/shapes/`.
  * Unreadable / non-Shape directories are skipped silently. Used by the
  * agent-create re-bind seam (`rebindShapeSchedulesForAgent`) to find Shape
@@ -143,8 +156,7 @@ export async function listInstalledShapeManifests(
   const shapesRoot = path.join(dorkHome, 'shapes');
   let entries: string[];
   try {
-    const dirents = await readdir(shapesRoot, { withFileTypes: true });
-    entries = dirents.filter((d) => d.isDirectory()).map((d) => d.name);
+    entries = await listShapeDirNames(shapesRoot);
   } catch {
     return []; // No shapes/ dir yet — nothing installed.
   }
@@ -173,8 +185,7 @@ export async function listInstalledShapes(
   const shapesRoot = path.join(dorkHome, 'shapes');
   let entries: string[];
   try {
-    const dirents = await readdir(shapesRoot, { withFileTypes: true });
-    entries = dirents.filter((d) => d.isDirectory()).map((d) => d.name);
+    entries = await listShapeDirNames(shapesRoot);
   } catch {
     return []; // No shapes/ dir yet — nothing installed.
   }

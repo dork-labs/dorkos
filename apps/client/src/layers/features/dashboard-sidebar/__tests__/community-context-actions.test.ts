@@ -69,6 +69,7 @@ describe('buildCommunityContextNodes', () => {
     creationOrigins: [] as string[],
     onCreate: () => {},
     onDeploy: () => {},
+    hosting: null,
   };
 
   it('offers only "Add community" while this DorkOS is selected', () => {
@@ -114,6 +115,32 @@ describe('buildCommunityContextNodes', () => {
           .filter((node) => node.id.startsWith('add-community-create'))
           .map((node) => (node.kind === 'action' ? node.label : null))
     ).toEqual(['Create a community on a.example.com', 'Create a community on b.example.com:8443']);
+  });
+
+  // Purpose: the hosted entry points exist only while linked (spec P5). Fails
+  // if an unlinked install draws them, or a linked one misses either.
+  it('adds Start and Move beside the other paths only while linked', () => {
+    const linked = {
+      onStart: () => {},
+      onMove: () => {},
+      onOpenHosted: null,
+    };
+    const [add] = buildCommunityContextNodes({ ...handlers, selected: null, hosting: linked });
+    expect(add!.kind === 'submenu' && add!.items.map((node) => node.id)).toEqual([
+      'add-community-connect',
+      'add-community-join',
+      'add-community-start',
+      'add-community-move',
+      'add-community-deploy',
+    ]);
+    const [withList] = buildCommunityContextNodes({
+      ...handlers,
+      selected: null,
+      hosting: { ...linked, onOpenHosted: () => {} },
+    });
+    expect(withList!.kind === 'submenu' && withList!.items.map((node) => node.id)).toContain(
+      'add-community-hosted'
+    );
   });
 
   it('puts the selected Community’s actions first, with only the local disconnect drawn as destructive', () => {

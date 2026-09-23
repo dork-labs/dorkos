@@ -1192,6 +1192,18 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       ready: false,
       runtimes: { 'claude-code': 'follow-up', opencode: 'follow-up', codex: 'follow-up' },
     }),
+    // Hosted communities: reads default to "not linked"; writes stay unstubbed
+    // so a test that drives them must say what the server would answer.
+    listHostedCommunities: vi.fn().mockResolvedValue({ available: false }),
+    checkHostedCommunityName: vi.fn().mockResolvedValue({ available: false }),
+    startHostedCommunity: vi.fn(),
+    getHostedCommunityClaimLink: vi.fn(),
+    keepHostedCommunity: vi.fn(),
+    restoreHostedCommunity: vi.fn(),
+    startHostedCommunityMove: vi.fn(),
+    getHostedCommunityMove: vi.fn().mockResolvedValue({ available: false }),
+    cancelHostedCommunityMove: vi.fn(),
+    retryHostedCommunityMoveUpload: vi.fn(),
     sendFeedback: vi.fn().mockResolvedValue({ ok: true }),
     listMyFeedback: vi.fn().mockResolvedValue([]),
     // Connectors (connector-completion spec §Detailed Design 5). Reads default

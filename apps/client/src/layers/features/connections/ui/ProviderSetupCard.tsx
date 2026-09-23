@@ -95,7 +95,7 @@ export function ProviderSetupCard({ status }: { status: ConnectorProviderStatus 
                 <AlertDialogCancel>Keep key</AlertDialogCancel>
                 <AlertDialogAction
                   onClick={() => remove.mutate({ provider: status.type })}
-                  className="bg-destructive hover:bg-destructive/90 text-white"
+                  className="bg-destructive hover:bg-destructive/90 dark:bg-destructive/60 text-white"
                 >
                   Remove key
                 </AlertDialogAction>

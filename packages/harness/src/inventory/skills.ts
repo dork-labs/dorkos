@@ -42,6 +42,7 @@ import { join, resolve, sep } from 'node:path';
 import { scanSkillDirs, AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
 import { CLAUDE_SKILLS_DIR } from '../plan/installed-projector.js';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { readDirEntries, readTextFile, relPath } from './read.js';
 import {
@@ -280,6 +281,8 @@ function lockedSkillFolders(
   const records: UnreadableSource[] = [];
   for (const entry of entries) {
     if (found.has(entry.name)) continue;
+    // The scanner skips install siblings; they are not somebody's locked skill.
+    if (isInstallSiblingName(entry.name)) continue;
     const isLink = entry.isSymbolicLink();
     if (
       isLink &&

@@ -38,7 +38,12 @@ import type { MarketplacePackageManifest, PackageType } from '@dorkos/marketplac
 import { installRootCandidates, type InstallRootCandidate } from '../lib/locate-install.js';
 import { assertPackageName } from '../lib/package-paths.js';
 import { readInstallMetadata } from '../installed-metadata.js';
-import { withInstallTargetLock } from '../transaction.js';
+import { hasInstallRecords, type InstallRecord } from '../install-recovery.js';
+import {
+  releaseSupersededRecords,
+  settleInterruptedInstall,
+  withInstallTargetLock,
+} from '../transaction.js';
 
 /** Staging directory prefix used by the uninstall flow. */
 const STAGING_DIR_PREFIX = 'dorkos-uninstall-';
@@ -190,9 +195,21 @@ export class UninstallFlow {
    * uninstall restores it.
    *
    * {@link UninstallFlow.locate} stays OUTSIDE the lock, because the path to
-   * lock is not known until it has run. The residue is narrow — a package
-   * removed between the probe and the lock leaves this flow's `atomicMove`
-   * throwing `ENOENT`, which is a loud failure, not a destructive one.
+   * lock is not known until it has run. It counts a root with transaction
+   * records beside it as a candidate even when the root itself is missing —
+   * a crash can leave the previous install only in a backup (DOR-2273), and
+   * calling that "not installed" would let a later recovery bring the package
+   * back. Inside the lock the root is settled and read again
+   * ({@link UninstallFlow.settleAndReread}); when settling leaves nothing
+   * there (a half-written fresh install removed, or a package removed between
+   * the probe and the lock), the search moves on to the next candidate and
+   * never offers that one again.
+   *
+   * The crash window of `MarketplaceInstaller.update()` — between this
+   * uninstall moving the package to the system temp directory and the
+   * reinstall committing — is not covered here: nothing on disk beside the
+   * target describes a package that is in the temp directory. DOR-2245
+   * replaces this temp-dir uninstall with an in-place one that journals it.
    *
    * @param req - Uninstall request — name, optional purge flag, optional project path.
    * @returns The uninstall result, including any data paths preserved on disk.
@@ -201,13 +218,26 @@ export class UninstallFlow {
    */
   async uninstall(req: UninstallRequest): Promise<UninstallResult> {
     assertPackageName(req.name);
-    const located = await this.locate(req);
-    return withInstallTargetLock(located.installRoot, () => this.removeLocated(req, located));
+    // Each pass either removes the package or finds its candidate empty once
+    // settled. An empty candidate is never offered again — a record settling
+    // could not delete (a stuck `.committed`) would otherwise keep offering
+    // it every pass, and a later candidate holding the package would never
+    // be reached — so this ends after at most one pass per candidate.
+    const triedEmpty = new Set<string>();
+    for (;;) {
+      const located = await this.locate(req, triedEmpty);
+      const result = await withInstallTargetLock(located.installRoot, () =>
+        this.removeLocated(req, located)
+      );
+      if (result) return result;
+      triedEmpty.add(located.installRoot);
+    }
   }
 
   /**
-   * Stage the located package aside, run its side-effects, and either commit
-   * the removal or restore the staged copy.
+   * Settle the located root, then stage the package aside, run its
+   * side-effects, and either commit the removal or restore the staged copy.
+   * Returns `undefined` when settling left nothing at the root.
    *
    * Split from {@link UninstallFlow.uninstall} so that entry point is one
    * readable "locate, then do it under the target's lock" pair. Never call this
@@ -218,8 +248,11 @@ export class UninstallFlow {
    */
   private async removeLocated(
     req: UninstallRequest,
-    located: LocatedPackage
-  ): Promise<UninstallResult> {
+    probed: LocatedPackage
+  ): Promise<UninstallResult | undefined> {
+    const settled = await this.settleAndReread(probed);
+    if (!settled) return undefined;
+    const { located, kept } = settled;
     const stagingDir = await mkdtemp(path.join(tmpdir(), `${STAGING_DIR_PREFIX}${req.name}-`));
     const stagingPath = path.join(stagingDir, 'pkg');
 
@@ -237,11 +270,40 @@ export class UninstallFlow {
         ? []
         : await this.restorePreservedData(stagingPath, located.installRoot);
       await rm(stagingDir, { recursive: true, force: true });
+      await releaseSupersededRecords(kept);
       return { ok: true, packageName: req.name, removedFiles, preservedData };
     } catch (err) {
       await this.rollbackFromStaging(stagingPath, located.installRoot, stagingDir);
       throw err;
     }
+  }
+
+  /**
+   * Settle an install a crash interrupted at the located root, then read what
+   * stands there now (DOR-2273). Uninstall must remove the last committed
+   * install, never a half-written one, and must not leave that install's
+   * backup behind for a later recovery to put back. Settling can restore an
+   * older version or remove a half-written fresh install, so the manifest read
+   * before the lock is stale. Returns `undefined` when nothing stands at the
+   * root afterwards, and the records settling kept, to release once the
+   * removal finishes.
+   *
+   * @internal
+   */
+  private async settleAndReread(
+    probed: LocatedPackage
+  ): Promise<{ located: LocatedPackage; kept: InstallRecord[] } | undefined> {
+    const { kept } = await settleInterruptedInstall(probed.installRoot);
+    if (!(await pathExists(probed.installRoot))) return undefined;
+    const manifest = await readManifestIfPresent(probed.installRoot);
+    return {
+      located: {
+        installRoot: probed.installRoot,
+        manifest,
+        inferredType: manifest?.type ?? probed.inferredType,
+      },
+      kept,
+    };
   }
 
   /**
@@ -259,12 +321,23 @@ export class UninstallFlow {
    * by the conflict detector's package-name rule, so the ambiguity is visible
    * before it is ever created.
    *
+   * @param req - The uninstall request.
+   * @param skip - Roots already settled and found empty in this uninstall.
+   * @throws {PackageNotInstalledError} When no candidate outside `skip` holds
+   *   the package or records of it.
    * @internal
    */
-  private async locate(req: UninstallRequest): Promise<LocatedPackage> {
+  private async locate(
+    req: UninstallRequest,
+    skip: ReadonlySet<string> = new Set()
+  ): Promise<LocatedPackage> {
     const candidates = this.candidatePaths(req);
     for (const candidate of candidates) {
-      if (!(await pathExists(candidate.installRoot))) continue;
+      if (skip.has(candidate.installRoot)) continue;
+      const present =
+        (await pathExists(candidate.installRoot)) ||
+        (await hasInstallRecords(candidate.installRoot));
+      if (!present) continue;
       const manifest = await readManifestIfPresent(candidate.installRoot);
       return {
         installRoot: candidate.installRoot,

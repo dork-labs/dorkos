@@ -18,7 +18,8 @@ const badgeVariants = cva(
       variant: {
         default: 'border-transparent bg-primary text-primary-foreground',
         secondary: 'border-transparent bg-secondary text-secondary-foreground',
-        destructive: 'border-transparent bg-destructive text-destructive-foreground',
+        destructive:
+          'border-transparent bg-destructive text-destructive-foreground dark:bg-destructive/60',
         outline: 'text-foreground',
       },
       // The two sizes that actually exist. Before this axis, two thirds of the
