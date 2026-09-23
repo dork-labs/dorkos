@@ -14,7 +14,7 @@ covers:
   - 'fix(client): focus the selected context when the shortcut opens the switcher'
   - 'fix(client): name a community channel tab from its community'
   - 'fix(client): read a community tab title under its verified access'
-  # The subjects below shipped in v0.81.0 (#1984, #1985, #1986). They are
+  # The subjects below shipped in v0.81.0 (#1975–#1986). They are
   # listed only because this branch's history still carries their pre-squash
   # commits; this fragment adds no entry for them.
   - 'feat(community): add administration lifecycle API'
