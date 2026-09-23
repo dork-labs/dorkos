@@ -64,6 +64,14 @@ export type { MergedMarketplaceEntry, MergeMarketplaceResult } from './merge-mar
 export { resolvePluginSource, ResolvePluginSourceError } from './source-resolver.js';
 export type { ResolvedSourceDescriptor, ResolveContext } from './source-resolver.js';
 
+// Package version resolution (Claude Code's chain)
+export {
+  resolvePackageVersion,
+  isRealCommitSha,
+  RELATIVE_PATH_SENTINEL_SHA,
+} from './package-version.js';
+export type { VersionSource, ResolvedPackageVersion } from './package-version.js';
+
 // CC validator (strict-mode oracle)
 export {
   CcMarketplaceJsonSchema,

@@ -26,6 +26,7 @@
  * @module services/marketplace/marketplace-installer
  */
 import {
+  isRealCommitSha,
   isSafeGitUrl,
   type MarketplacePackageManifest,
   type PackageType,
@@ -53,7 +54,6 @@ import {
   disclosedEffectsOf,
   sameDisclosedEffects,
 } from './disclosed-effects.js';
-import { RELATIVE_PATH_SENTINEL_SHA } from './source-resolvers/relative-path.js';
 import { UnsupportedSourceUrlError } from './source-url-policy.js';
 import type { ConflictReport, InstallRequest, InstallResult, PermissionPreview } from './types.js';
 import { cp, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
@@ -656,7 +656,11 @@ export class MarketplaceInstaller implements InstallerLike {
         pluginRoot: resolved.pluginRoot,
         force: req.force,
       });
-      return { path: fetched.path, commitSha: realCommitSha(fetched.commitSha) };
+      // A placeholder commit is never recorded as provenance (DOR-147, "never
+      // fabricate"): remote same-repo packages resolve the marketplace repo's
+      // real commit, while file:// ones and a failed ls-remote return a sentinel.
+      const commitSha = isRealCommitSha(fetched.commitSha) ? fetched.commitSha : undefined;
+      return { path: fetched.path, commitSha };
     }
 
     // Legacy path: bare gitUrl (deprecated — kept for backward compat with
@@ -669,7 +673,8 @@ export class MarketplaceInstaller implements InstallerLike {
       gitUrl: resolved.gitUrl,
       force: req.force,
     });
-    return { path: fetched.path, commitSha: realCommitSha(fetched.commitSha) };
+    const commitSha = isRealCommitSha(fetched.commitSha) ? fetched.commitSha : undefined;
+    return { path: fetched.path, commitSha };
   }
 
   /**
@@ -852,27 +857,6 @@ function deriveSourceProvenance(resolved: ResolvedPackageSource): {
       // NpmSourceNotSupportedError before reaching this point anyway.)
       return {};
   }
-}
-
-/**
- * Filter out sentinel/placeholder commit SHAs the fetcher returns for
- * non-git or degraded-resolution paths — these are never persisted as
- * `commitSha` provenance, per the "never fabricate" rule (DOR-147).
- * `RELATIVE_PATH_SENTINEL_SHA` covers same-repo packages from local
- * (`file://`) marketplaces — remote same-repo packages never hit it,
- * because {@link MarketplaceInstaller.buildFetchableSource} converts them
- * to a `git-subdir` fetch that resolves the marketplace repo's real
- * commit SHA; `'local'` covers `file://` gitUrl resolutions;
- * `tmp-<timestamp>` is {@link PackageFetcher}'s degraded fallback when
- * `git ls-remote` fails (offline, missing git binary, malformed output).
- *
- * @internal
- */
-function realCommitSha(sha: string): string | undefined {
-  if (sha === 'local' || sha === RELATIVE_PATH_SENTINEL_SHA || /^tmp-\d+$/.test(sha)) {
-    return undefined;
-  }
-  return sha;
 }
 
 /**

@@ -5,7 +5,8 @@
  * directories — no real disk I/O.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { relativePathResolver, RELATIVE_PATH_SENTINEL_SHA } from '../relative-path.js';
+import { RELATIVE_PATH_SENTINEL_SHA } from '@dorkos/marketplace';
+import { relativePathResolver } from '../relative-path.js';
 import { PackageNotFoundError } from '../../errors.js';
 import type { FetchPackageOptions } from '../../package-fetcher.js';
 

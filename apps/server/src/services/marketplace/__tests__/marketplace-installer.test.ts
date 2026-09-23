@@ -26,7 +26,7 @@ import type {
 } from '@dorkos/marketplace';
 import type { InstallRequest, InstallResult, PermissionPreview } from '../types.js';
 import type { ResolvedPackageSource } from '../package-resolver.js';
-import { RELATIVE_PATH_SENTINEL_SHA } from '../source-resolvers/relative-path.js';
+import { RELATIVE_PATH_SENTINEL_SHA } from '@dorkos/marketplace';
 
 // Mock the validator module. Tests override `validatePackage.mockResolvedValue`
 // per-case. Placed before the installer import so vi.mock hoisting captures it.

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-import { validatePackage } from '../package-validator.js';
+import { readDeclaredVersion, validatePackage } from '../package-validator.js';
 import {
   AGENT_MANIFEST_PATH,
   CLAUDE_PLUGIN_MANIFEST_PATH,
@@ -702,5 +702,96 @@ describe('declared schedules (DOR-1487)', () => {
     const result = await validatePackage(pkgRoot);
 
     expect(result.issues.some((i) => i.code === 'SCHEDULE_SKILL_MISSING')).toBe(false);
+  });
+});
+
+describe('readDeclaredVersion', () => {
+  const tempDirs: string[] = [];
+
+  afterEach(async () => {
+    while (tempDirs.length > 0) {
+      const dir = tempDirs.pop();
+      if (dir) await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  /** A package root with the given raw file contents (`undefined` = file absent). */
+  async function makePackage(files: { manifest?: string; plugin?: string }): Promise<string> {
+    const dir = await makeTempDir();
+    tempDirs.push(dir);
+    if (files.manifest !== undefined) {
+      await writeText(path.join(dir, PACKAGE_MANIFEST_PATH), files.manifest);
+    }
+    if (files.plugin !== undefined) {
+      await writeText(path.join(dir, CLAUDE_PLUGIN_MANIFEST_PATH), files.plugin);
+    }
+    return dir;
+  }
+
+  it("reads plugin.json's version when both files agree", async () => {
+    // Purpose: the ordinary case reads the one version the package states.
+    const dir = await makePackage({
+      manifest: JSON.stringify({ version: '1.0.0' }),
+      plugin: JSON.stringify({ version: '1.0.0' }),
+    });
+    expect(await readDeclaredVersion(dir)).toBe('1.0.0');
+  });
+
+  it('prefers plugin.json when the two files disagree', async () => {
+    // Purpose: flow shipped manifest 0.6.0 beside plugin.json 0.7.2. Claude Code
+    // runs 0.7.2, so that is what DorkOS must report for an existing install.
+    const dir = await makePackage({
+      manifest: JSON.stringify({ version: '0.6.0' }),
+      plugin: JSON.stringify({ version: '0.7.2' }),
+    });
+    expect(await readDeclaredVersion(dir)).toBe('0.7.2');
+  });
+
+  it('falls through to the manifest when plugin.json declares no version', async () => {
+    // Purpose: a plugin.json without `version` states nothing, so the
+    // manifest's version is the package's own statement.
+    const dir = await makePackage({
+      manifest: JSON.stringify({ version: '2.1.0' }),
+      plugin: JSON.stringify({ name: 'x' }),
+    });
+    expect(await readDeclaredVersion(dir)).toBe('2.1.0');
+  });
+
+  it('reads the manifest when there is no plugin.json', async () => {
+    // Purpose: agent packages ship only a manifest.
+    const dir = await makePackage({ manifest: JSON.stringify({ version: '3.0.0' }) });
+    expect(await readDeclaredVersion(dir)).toBe('3.0.0');
+  });
+
+  it('returns undefined when neither file exists', async () => {
+    // Purpose: "declares none" must stay distinguishable from a real version.
+    const dir = await makePackage({});
+    expect(await readDeclaredVersion(dir)).toBeUndefined();
+  });
+
+  it('falls through an unparseable plugin.json to the manifest, without throwing', async () => {
+    // Purpose: installed trees are read without any validity gate; one broken
+    // file must not cost the package its version, or throw on the listing path.
+    const dir = await makePackage({
+      manifest: JSON.stringify({ version: '1.4.0' }),
+      plugin: '{ not json',
+    });
+    expect(await readDeclaredVersion(dir)).toBe('1.4.0');
+  });
+
+  it('returns undefined when both files are unparseable or declare a non-string version', async () => {
+    // Purpose: garbage is "declares none", never a thrown error or a bogus string.
+    const broken = await makePackage({ manifest: '[', plugin: 'nope' });
+    expect(await readDeclaredVersion(broken)).toBeUndefined();
+    const nonString = await makePackage({
+      manifest: JSON.stringify({ version: 1 }),
+      plugin: JSON.stringify({ version: '' }),
+    });
+    expect(await readDeclaredVersion(nonString)).toBeUndefined();
+  });
+
+  it('never throws for a path that does not exist', async () => {
+    // Purpose: the function is documented total; callers rely on that.
+    await expect(readDeclaredVersion('/definitely/not/here')).resolves.toBeUndefined();
   });
 });

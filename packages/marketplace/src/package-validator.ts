@@ -125,6 +125,47 @@ const SCHEDULE_SKILL_SOURCE_DIRS = [
 const PermissiveSkillFrontmatterSchema = z.unknown();
 
 /**
+ * The version a package tree states about itself: `plugin.json`'s `version`
+ * when that file declares one, else `.dork/manifest.json`'s. Reads the two
+ * files directly and NEVER gates on validity, so an install whose files
+ * disagree (or that fails validation for any other reason) still has a
+ * readable version. `undefined` when neither file declares one. Never throws.
+ *
+ * `plugin.json` comes first because Claude Code loads the plugin by it. For a
+ * package that validates the order is moot (`VERSION_MISMATCH` holds the two
+ * equal); for an install that predates that rule it makes DorkOS report what
+ * Claude Code actually runs.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @returns The declared version, or `undefined` when neither file states one.
+ */
+export async function readDeclaredVersion(packagePath: string): Promise<string | undefined> {
+  return (
+    (await readVersionField(path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH))) ??
+    (await readVersionField(path.join(packagePath, PACKAGE_MANIFEST_PATH)))
+  );
+}
+
+/**
+ * Read a JSON file's non-empty string `version` field. A missing or
+ * unreadable file, invalid JSON, a non-object, or a missing, empty or
+ * non-string `version` all read as "declares none". Never throws.
+ *
+ * @param filePath - Absolute path to the JSON file.
+ * @internal
+ */
+async function readVersionField(filePath: string): Promise<string | undefined> {
+  try {
+    const parsed: unknown = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+    if (parsed === null || typeof parsed !== 'object') return undefined;
+    const version = (parsed as Record<string, unknown>).version;
+    return typeof version === 'string' && version !== '' ? version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Validate a marketplace package on disk.
  *
  * Performs, in order:
