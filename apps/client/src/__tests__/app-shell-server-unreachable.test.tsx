@@ -186,6 +186,13 @@ vi.mock('@/layers/entities/config', async (importOriginal) => ({
   useConfigSync: () => {},
 }));
 
+// `community_connections_changed` rides the same stream; its subscriber is
+// stubbed for the same reason.
+vi.mock('@/layers/entities/community', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/community')>()),
+  useCommunityConnectionsSync: () => {},
+}));
+
 // Remote access rides the same stream (DOR-1743): `useTunnelSync` refreshes the
 // config read on a `tunnel_status` event, and `useRemoteAccessAnnouncer` reads
 // that config. No-op'd here for the same reason as the *Sync hooks above.
