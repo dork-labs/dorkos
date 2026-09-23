@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- Community switching now opens saved content immediately when a remote host is offline, remembers each community’s last room, and exposes lifecycle and availability state to keyboard and screen-reader users.
+- Switching to a community whose server is offline now shows its saved messages right away. Each community reopens in the room you last used. Keyboard and screen-reader users also hear when a community is offline, archived, or waiting for approval.

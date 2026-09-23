@@ -5,4 +5,4 @@ covers:
 
 ### Added
 
-- The context switcher now separates direct mentions from other unread Community activity and marks counts that were last checked before an outage.
+- The switcher shows mentions of you apart from other unread messages in each community. When a community can't be reached, its counts are marked as last checked.
