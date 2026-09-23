@@ -76,20 +76,18 @@ export function createCommunityApp({
     current.push(now);
     attemptTimes.set(key, current);
   };
-  /** Whether `key` has used its budget this minute, without spending an attempt. */
-  const attemptsExhausted = (key: string, ceiling: number) => {
-    const now = Date.now();
-    return (attemptTimes.get(key) ?? []).filter((time) => now - time < 60_000).length >= ceiling;
+  /** Give back the most recent attempt spent under `key`, as for a confirmed password. */
+  const refundAttempt = (key: string) => {
+    attemptTimes.get(key)?.pop();
   };
   // Use the socket peer. Proxy headers are client-controlled until a trusted proxy is configured.
   const peer = (c: Parameters<typeof getConnInfo>[0]) => getConnInfo(c).remote.address ?? 'unknown';
-  // Every server-side password check spends this one guess budget (see its TSDoc).
+  // Every server-side password check spends from this one per-account budget (see its TSDoc).
   const confirmPassword = createPasswordConfirmation({
     auth,
     ceiling: config.limits.reauthAttemptsPerMinute,
-    peer,
-    exhausted: attemptsExhausted,
-    record: limitAttempts,
+    spend: limitAttempts,
+    refund: refundAttempt,
   });
   app.use('/api/*', async (c, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {

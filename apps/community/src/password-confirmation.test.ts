@@ -7,17 +7,21 @@ import type { CommunityAuth } from './auth.js';
 import { ApiError } from './http.js';
 import { createPasswordConfirmation } from './password-confirmation.js';
 
-// The Postgres fixture proves the limit end to end from one address. These cases pull the two
-// budgets apart, which one socket peer cannot: the account budget follows a guesser across
-// addresses, and the address budget follows one address across accounts.
+// The Postgres fixture proves the limit end to end. These cases control timing, which real HTTP
+// cannot: a burst held open inside verifyPassword shows the check and the spend are one step.
 
 const RIGHT = 'right-password';
 
-function harness() {
+function harness(ceiling = 2) {
   const spent = new Map<string, number>();
+  const checked: string[] = [];
+  let hold: Promise<void> | null = null;
+  let release = () => undefined as void;
   const auth = {
     api: {
       verifyPassword: async ({ body }: { body: { password: string } }) => {
+        checked.push(body.password);
+        if (hold) await hold;
         if (body.password !== RIGHT) throw new Error('INVALID_PASSWORD');
         return { status: true };
       },
@@ -25,22 +29,31 @@ function harness() {
   } as unknown as CommunityAuth;
   const confirm = createPasswordConfirmation({
     auth,
-    ceiling: 2,
-    peer: (c) => c.req.header('x-peer') ?? 'unknown',
-    exhausted: (key, ceiling) => (spent.get(key) ?? 0) >= ceiling,
-    record: (key) => spent.set(key, (spent.get(key) ?? 0) + 1),
+    ceiling,
+    // The same contract as the app's limitAttempts: check and spend synchronously.
+    spend: (key, limit) => {
+      if ((spent.get(key) ?? 0) >= limit) throw new ApiError(429, 'RATE_LIMITED', 'limited');
+      spent.set(key, (spent.get(key) ?? 0) + 1);
+    },
+    refund: (key) => spent.set(key, (spent.get(key) ?? 1) - 1),
   });
-  const context = (peer: string) =>
-    ({
-      req: {
-        raw: { headers: new Headers() },
-        header: (name: string) => (name === 'x-peer' ? peer : undefined),
-      },
-    }) as unknown as Context;
-  return { confirm, context };
+  const context = { req: { raw: { headers: new Headers() } } } as unknown as Context;
+  return {
+    checked,
+    confirm: (account: string, password: string) => confirm(context, account, password),
+    holdVerification() {
+      hold = new Promise<void>((resolve) => {
+        release = () => {
+          hold = null;
+          resolve();
+        };
+      });
+    },
+    release: () => release(),
+  };
 }
 
-async function refusal(attempt: Promise<void>) {
+async function outcome(attempt: Promise<void>) {
   try {
     await attempt;
     return 'accepted';
@@ -51,31 +64,37 @@ async function refusal(attempt: Promise<void>) {
 }
 
 describe('createPasswordConfirmation', () => {
-  it('accepts the right password without spending the budget', async () => {
-    const { confirm, context } = harness();
+  it('refunds a correct password, so the right one never spends the budget', async () => {
+    const { confirm } = harness();
     for (let attempt = 0; attempt < 5; attempt++)
-      expect(await refusal(confirm(context('10.0.0.1'), 'account-1', RIGHT))).toBe('accepted');
+      expect(await outcome(confirm('account-1', RIGHT))).toBe('accepted');
   });
 
-  it('follows one account across addresses', async () => {
-    const { confirm, context } = harness();
-    expect(await refusal(confirm(context('10.0.0.1'), 'account-1', 'x'))).toBe('403 REAUTH_FAILED');
-    expect(await refusal(confirm(context('10.0.0.2'), 'account-1', 'x'))).toBe('403 REAUTH_FAILED');
-    expect(await refusal(confirm(context('10.0.0.3'), 'account-1', RIGHT))).toBe(
-      '429 RATE_LIMITED'
-    );
-    // Another account on a fresh address is untouched.
-    expect(await refusal(confirm(context('10.0.0.4'), 'account-2', RIGHT))).toBe('accepted');
+  it('refuses even the right password once an account has spent its budget, and only that account', async () => {
+    const { confirm, checked } = harness();
+    expect(await outcome(confirm('account-1', 'x'))).toBe('403 REAUTH_FAILED');
+    expect(await outcome(confirm('account-1', 'y'))).toBe('403 REAUTH_FAILED');
+    expect(await outcome(confirm('account-1', RIGHT))).toBe('429 RATE_LIMITED');
+    expect(checked).toEqual(['x', 'y']);
+    // Another account (from the same address, which the budget no longer looks at) is untouched.
+    expect(await outcome(confirm('account-2', RIGHT))).toBe('accepted');
   });
 
-  it('follows one address across accounts', async () => {
-    const { confirm, context } = harness();
-    expect(await refusal(confirm(context('10.0.0.9'), 'account-1', 'x'))).toBe('403 REAUTH_FAILED');
-    expect(await refusal(confirm(context('10.0.0.9'), 'account-2', 'x'))).toBe('403 REAUTH_FAILED');
-    expect(await refusal(confirm(context('10.0.0.9'), 'account-3', RIGHT))).toBe(
-      '429 RATE_LIMITED'
+  it('checks exactly the budget from a concurrent burst, however long each check takes', async () => {
+    const { confirm, checked, holdVerification, release } = harness(2);
+    holdVerification();
+    const burst = [...['a', 'b', 'c', 'd', 'e', 'f', 'g'], RIGHT].map((password) =>
+      outcome(confirm('account-1', password))
     );
-    expect(await refusal(confirm(context('10.0.0.8'), 'account-3', RIGHT))).toBe('accepted');
+    // Every attempt has reached the limiter while the first checks are still pending.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(checked).toEqual(['a', 'b']);
+    release();
+    const results = await Promise.all(burst);
+    expect(results.slice(0, 2)).toEqual(['403 REAUTH_FAILED', '403 REAUTH_FAILED']);
+    // The right password landed after the budget was spent, so it was refused unchecked.
+    expect(results.slice(2)).toEqual(Array(6).fill('429 RATE_LIMITED'));
+    expect(checked).toEqual(['a', 'b']);
   });
 });
 

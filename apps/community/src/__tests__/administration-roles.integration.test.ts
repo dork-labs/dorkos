@@ -1527,8 +1527,8 @@ beforeAll(async () => {
     COMMUNITY_STORAGE_PATH: storagePath,
     COMMUNITY_AGENTS_PER_OWNER: '100',
     COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE: '100',
-    // Every route's wrong-password case comes from this one test peer; the limit is proven in
-    // account-controls.integration.test.ts.
+    // One owner makes every route's wrong-password case within a minute; the limit itself is
+    // proven in account-controls.integration.test.ts.
     COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE: '20',
   });
   app = createCommunityApp({

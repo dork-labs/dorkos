@@ -208,6 +208,7 @@ describe('password confirmation names its failure and limits guesses', () => {
     let person: TenancyMember;
     let personInB: TenancyMember;
     let operator: string;
+    let burster: TenancyMember;
 
     beforeAll(async () => {
       limited = await startTenancyHarness('reauth_limit', { reauthAttemptsPerMinute: 3 });
@@ -222,6 +223,10 @@ describe('password confirmation names its failure and limits guesses', () => {
         email: 'guesser@reauth-limit.test',
       });
       personInB = await admit(limited, b, bOwner.cookie, { cookie: person.cookie });
+      burster = await admit(limited, a, host.cookie, {
+        name: 'Burster',
+        email: 'burster@reauth-limit.test',
+      });
     });
     afterAll(async () => {
       await limited?.close();
@@ -259,6 +264,16 @@ describe('password confirmation names its failure and limits guesses', () => {
       expect(
         (await limited.call(`/api/v1/communities/${a}/me`, { cookie: person.cookie })).status
       ).toBe(200);
+      // Another account from the same address is not locked out: behind a reverse proxy every
+      // member shares one address, so the budget belongs to the account alone.
+      expect(
+        (
+          await limited.call(`/api/v1/communities/${a}/owner/export`, {
+            cookie: operator,
+            body: { password: TENANCY_PASSWORD },
+          })
+        ).status
+      ).toBe(201);
 
       vi.setSystemTime(new Date(Date.now() + 61_000));
       expect((await disconnectAll(person.cookie, a, TENANCY_PASSWORD)).status).toBe(204);
@@ -266,7 +281,7 @@ describe('password confirmation names its failure and limits guesses', () => {
     });
 
     it('shares that budget with owner transfer, owner export and host key issue', async () => {
-      // The previous test's guesses from this address fall out of the window first.
+      // Clear of the previous test's window.
       vi.useFakeTimers({ toFake: ['Date'] });
       vi.setSystemTime(new Date(Date.now() + 120_000));
       const base = `/api/v1/communities/${a}`;
@@ -295,6 +310,27 @@ describe('password confirmation names its failure and limits guesses', () => {
 
       vi.setSystemTime(new Date(Date.now() + 61_000));
       expect((await issueKey(TENANCY_PASSWORD)).status).toBe(201);
+    });
+
+    it('checks exactly the budget from a concurrent burst, and refuses the right password after it', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(Date.now() + 60 * 60_000));
+      // 30 wrong guesses and the right password, all in flight at once.
+      const burst = await Promise.all(
+        [...Array.from({ length: 30 }, (_, i) => `guess-${i}`), TENANCY_PASSWORD].map((password) =>
+          disconnectAll(burster.cookie, a, password)
+        )
+      );
+      const statuses = burst.map((response) => response.status);
+      const checked = statuses.filter((status) => status === 403 || status === 204).length;
+      // Exactly the budget of passwords was checked; the rest were refused unchecked.
+      expect(checked).toBe(3);
+      expect(statuses.filter((status) => status === 429)).toHaveLength(28);
+      const rightInBudget = statuses.at(-1) === 204;
+      // With three wrong guesses checked, the right password is refused like any other.
+      expect((await disconnectAll(burster.cookie, a, TENANCY_PASSWORD)).status).toBe(
+        rightInBudget ? 204 : 429
+      );
     });
   });
 });
