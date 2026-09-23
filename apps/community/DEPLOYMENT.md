@@ -38,6 +38,7 @@ Most people can keep the default limits. Restart the service after changing one.
 | `COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE`      |           10 per IP |            100 per IP |
 | `COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE` |           20 per IP |            100 per IP |
 | `COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE`        |            5 per IP |            100 per IP |
+| `COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`       |           20 per IP |            100 per IP |
 
 ## Optional Google and GitHub sign-in
 

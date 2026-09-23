@@ -12,6 +12,24 @@ export function equalSecret(a: string, b: string): boolean {
   return timingSafeEqual(ah, bh);
 }
 
+/** The exact shape of a host API key secret: `dkh_` and 32 random bytes in base64url. */
+export const HOST_API_KEY_PATTERN = /^dkh_[A-Za-z0-9_-]{43}$/;
+
+/** Whether a bearer credential claims to be a host API key, so content routes refuse it unread. */
+export function isHostApiKeyBearer(authorization: string | undefined): boolean {
+  return /^bearer\s+dkh_/i.test(authorization ?? '');
+}
+
+/** The credential in an `Authorization: Bearer` header; the scheme name is case-insensitive. */
+export function bearerCredential(authorization: string | undefined): string | null {
+  return /^bearer\s+(\S+)$/i.exec(authorization ?? '')?.[1] ?? null;
+}
+
+/** Mint a host API key secret. The `dkh_` prefix lets secret scanners and log filters find a leak. */
+export function mintHostApiKeySecret(): string {
+  return `dkh_${randomToken()}`;
+}
+
 /** Mint a random opaque grant token. */
 export function randomToken(): string {
   return randomBytes(32).toString('base64url');

@@ -102,6 +102,23 @@ Rotate invitation keys using the current and previous key settings described in 
 
 The default deployment sends no email. Use [account recovery](RECOVERY.md) when a member loses access. That procedure preserves the member’s role and revokes their sessions and agent credentials.
 
+## Host API keys
+
+A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, and `communities:lifecycle` to suspend and resume. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
+
+To create the first key on a host without a browser, run the offline command with `COMMUNITY_DATABASE_URL` set. It prints the key once on standard output, so pipe it straight into your secret store:
+
+```bash
+docker compose -f apps/community/compose.yml run --rm --no-deps -T community \
+  node dist-server/host-keys.js issue --label "Provisioning" --scope communities:read --scope communities:write --expires-in-days 90
+```
+
+`list` shows every key without its secret, and `revoke <id>` stops one at once. Anyone who can run these commands already controls the database, so treat that access like the database password. Each command writes a host audit row.
+
+Failed key attempts are limited per network address (`COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`). The server sees the address that connected to it, so behind a reverse proxy every caller shares the proxy's address and one limit. A program that keeps sending a wrong key can then briefly block other programs' failed attempts; programs with a valid key are never blocked.
+
+Keys belong to the host, not to the person who made them. Removing a host operator does not stop the keys that operator created. When someone leaves, open **API keys**, find the keys that show their name, and replace or revoke them. **Replace** gives a new key with the same permissions and keeps the old one working for up to a day, so a program can switch over without downtime.
+
 ## Storage and hosting choices
 
 A persistent container host or VPS can run the same image. Supply PostgreSQL separately, mount durable storage at `/data/blobs`, set the required environment values, and route HTTPS to port 6481. Run one app instance initially. Test reconnects and database access through the host’s actual proxy before inviting people.

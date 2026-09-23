@@ -29,6 +29,9 @@ import { parseConfig, type CommunityConfig } from '../config.js';
 import { migrate } from '../migrate.js';
 import { registerAdministrationRoutes } from '../routes/administration.js';
 import { registerHostRoutes } from '../routes/host.js';
+import { registerHostKeyRoutes } from '../routes/host-keys.js';
+import { createHostAuthority } from '../host-authority.js';
+import { issueHostApiKey } from '../host-key-store.js';
 import { hashSecret, randomToken } from '../security.js';
 import { FileSystemBlobStore } from '../storage/index.js';
 import {
@@ -233,6 +236,28 @@ async function account(name: string): Promise<{ userId: string; cookie: string }
   const email = `${name.toLowerCase().replaceAll(' ', '-')}@roles.test`;
   const userId = await seedCredentialAccount(pool, { name, email, password });
   return { userId, cookie: await signIn(email) };
+}
+
+/** Issue a live key straight into the database, as the offline command would. */
+async function offlineKey(): Promise<{ id: string }> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const issued = await issueHostApiKey(client, {
+      label: 'Matrix fixture',
+      scopes: ['communities:read'],
+      expiresAt: null,
+      issuer: { kind: 'offline' },
+      now: new Date(),
+    });
+    await client.query('COMMIT');
+    return { id: issued.key.id };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /** Create a pending community as the first-install host operator and return its claim. */
@@ -552,6 +577,102 @@ const actions: Action<unknown>[] = [
       );
       const inAlpha = (MEMBERS_OF_A as readonly Role[]).includes(role);
       expect(memberships.some((row) => row.communityId === alphaId)).toBe(inAlpha);
+    },
+  }),
+  define({
+    rule: 'Read one host community record: host operator yes, community roles no',
+    route: 'GET /host/communities/:id',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({ method: 'GET', path: `/api/v1/host/communities/${alphaId}` }),
+    effect: async (body) => {
+      const row = JSON.parse(body.toString('utf8')) as Record<string, unknown>;
+      expect(row.id).toBe(alphaId);
+      // The same metadata-only projection as the list.
+      expect(Object.keys(row).sort()).toEqual([
+        'createdAt',
+        'deletionState',
+        'description',
+        'id',
+        'lifecycle',
+        'lifecycleVersion',
+        'name',
+        'ownerPresent',
+        'settingsVersion',
+      ]);
+    },
+  }),
+  define({
+    rule: 'List host API keys: host operator session only; a bearer never manages keys',
+    route: 'GET /host/api-keys',
+    allowed: HOST_ROLES,
+    status: 200,
+    refused: { agent: 403 },
+    call: () => ({ method: 'GET', path: '/api/v1/host/api-keys' }),
+    effect: async (body) => {
+      expect(Array.isArray(JSON.parse(body.toString('utf8')).keys)).toBe(true);
+    },
+  }),
+  define({
+    rule: 'Issue a host API key: host operator session and password; a bearer never issues keys',
+    route: 'POST /host/api-keys',
+    allowed: HOST_ROLES,
+    status: 201,
+    refused: { agent: 403 },
+    call: (_prepared, secret) => ({
+      method: 'POST',
+      path: '/api/v1/host/api-keys',
+      body: {
+        label: 'Matrix key',
+        scopes: ['communities:read'],
+        expiresInDays: 30,
+        password: secret,
+      },
+    }),
+    effect: async (body, role) => {
+      const issued = JSON.parse(body.toString('utf8')) as { key: { id: string }; secret: string };
+      const stored = await pool.query(
+        'SELECT secret_hash,issued_by_user_id FROM host_api_keys WHERE id=$1',
+        [issued.key.id]
+      );
+      expect(stored.rows).toEqual([
+        {
+          secret_hash: hashSecret(issued.secret),
+          issued_by_user_id: userIds[role as keyof typeof userIds],
+        },
+      ]);
+    },
+  }),
+  define<{ id: string }>({
+    rule: 'Rotate a host API key: host operator session and password; a bearer never rotates keys',
+    route: 'POST /host/api-keys/:id/rotate',
+    allowed: HOST_ROLES,
+    status: 201,
+    refused: { agent: 403 },
+    prepare: offlineKey,
+    call: ({ id }, secret) => ({
+      method: 'POST',
+      path: `/api/v1/host/api-keys/${id}/rotate`,
+      body: { overlapMinutes: 5, password: secret },
+    }),
+    effect: async (body, _role, { id }) => {
+      const rotated = JSON.parse(body.toString('utf8')) as { key: { id: string } };
+      expect(rotated.key.id).not.toBe(id);
+      const old = await pool.query('SELECT expires_at FROM host_api_keys WHERE id=$1', [id]);
+      expect(old.rows[0].expires_at).not.toBeNull();
+    },
+  }),
+  define<{ id: string }>({
+    rule: 'Revoke a host API key: any host operator session; a bearer never revokes keys',
+    route: 'POST /host/api-keys/:id/revoke',
+    allowed: HOST_ROLES,
+    status: 200,
+    refused: { agent: 403 },
+    prepare: offlineKey,
+    call: ({ id }) => ({ method: 'POST', path: `/api/v1/host/api-keys/${id}/revoke`, body: {} }),
+    effect: async (_body, _role, { id }) => {
+      const key = await pool.query('SELECT revoked_at FROM host_api_keys WHERE id=$1', [id]);
+      expect(key.rows[0].revoked_at).not.toBeNull();
     },
   }),
   define<{ key: string }>({
@@ -1405,6 +1526,7 @@ beforeAll(async () => {
     COMMUNITY_PUBLIC_URL: origin,
     COMMUNITY_STORAGE_PATH: storagePath,
     COMMUNITY_AGENTS_PER_OWNER: '100',
+    COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE: '100',
   });
   app = createCommunityApp({
     config,
@@ -1544,7 +1666,10 @@ it('classifies every registered route, and puts every host and settings route in
   const modules = new Hono();
   const auth = createCommunityAuth(pool, config);
   const blobStore = new FileSystemBlobStore(storagePath);
-  registerHostRoutes(modules, { pool, auth, config, blobStore });
+  const now = () => new Date();
+  const authority = createHostAuthority({ auth, pool, now, limitKeyMiss: () => undefined });
+  registerHostRoutes(modules, { pool, auth, config, blobStore, authority, now });
+  registerHostKeyRoutes(modules, { pool, auth, authority, now });
   registerAdministrationRoutes(modules, { pool, auth, blobStore });
   const administration = [
     ...new Set(modules.routes.map((route) => `${route.method} ${route.path}`)),

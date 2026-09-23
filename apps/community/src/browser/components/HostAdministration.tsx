@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { describeError, request } from '../api.js';
 import { ownerClaimLink } from '../owner-claim.js';
 import { FocusDialog } from './CommunityAdministration.js';
+import { HostApiKeys } from './HostApiKeys.js';
 
 type Lifecycle = 'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
 type Community = {
@@ -369,6 +370,7 @@ export function HostAdministration() {
           )}
         </section>
       </div>
+      <HostApiKeys />
       {confirmation && (
         <FocusDialog
           title={

@@ -48,7 +48,10 @@ export interface TenancyMember {
  * Start a Community server on a fresh database, the way `main.ts` assembles it,
  * with rate limits raised so concurrency, not a limiter, decides every outcome.
  */
-export async function startTenancyHarness(label: string): Promise<TenancyHarness> {
+export async function startTenancyHarness(
+  label: string,
+  options: { now?: () => Date; hostKeyAttemptsPerMinute?: number } = {}
+): Promise<TenancyHarness> {
   const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
   if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for tenancy tests');
   const admin = new Pool({ connectionString: adminUrl });
@@ -72,9 +75,10 @@ export async function startTenancyHarness(label: string): Promise<TenancyHarness
     COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE: 100,
     COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE: 100,
     COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE: 100,
+    COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE: options.hostKeyAttemptsPerMinute ?? 100,
   });
   const blobStore = new FileSystemBlobStore(storagePath);
-  const app = createCommunityApp({ config, pool, blobStore });
+  const app = createCommunityApp({ config, pool, blobStore, hooks: { now: options.now } });
   const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' });
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();

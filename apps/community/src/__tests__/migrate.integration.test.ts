@@ -217,7 +217,7 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();
@@ -407,7 +407,7 @@ it('expands a populated version-four database without changing files or cleanup 
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     expect(
       (
         await db.query(
@@ -963,5 +963,137 @@ it('serves a populated version-four community through the current HTTP contract 
     await db.end();
     await admin.query(`DROP DATABASE IF EXISTS ${upgradeName}`);
     await rm(blobs, { recursive: true, force: true });
+  }
+});
+
+it('keeps version-eleven host audit rows, receipts, and revoked claims valid, and old writes working, after host keys arrive', async () => {
+  // Purpose: fails if migration 0012 rejects or reinterprets rows written by a person before
+  // keys existed, or if code from before 0012 (the phase 1 backout) can no longer write them.
+  const upgradeName = `community_host_keys_upgrade_${randomUUID().replaceAll('-', '')}`;
+  const upgradeUrl = new URL(adminUrl);
+  upgradeUrl.pathname = `/${upgradeName}`;
+  await admin.query(`CREATE DATABASE ${upgradeName}`);
+  const db = new Pool({ connectionString: upgradeUrl.toString() });
+  try {
+    await db.query(
+      'CREATE TABLE community_migrations(version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())'
+    );
+    for (const [version, filename] of [
+      [1, '0001_foundation.sql'],
+      [2, '0002_admission.sql'],
+      [3, '0003_files.sql'],
+      [4, '0004_cleanup_backoff.sql'],
+      [5, '0005_tenant_expand.sql'],
+      [6, '0006_tenant_backfill.sql'],
+      [7, '0007_tenant_relations.sql'],
+      [8, '0008_tenant_contract.sql'],
+      [9, '0009_backout_fence.sql'],
+      [10, '0010_administration.sql'],
+      [11, '0011_membership_protocol.sql'],
+    ] as const) {
+      await db.query(
+        await readFile(
+          fileURLToPath(new URL(`../../migrations/${filename}`, import.meta.url)),
+          'utf8'
+        )
+      );
+      await db.query('INSERT INTO community_migrations(version) VALUES($1)', [version]);
+    }
+    await db.query(
+      "INSERT INTO \"user\"(id,name,email) VALUES('operator-11','Operator','operator-11@example.test')"
+    );
+    await db.query("INSERT INTO host_operators(user_id) VALUES('operator-11')");
+    const community = (
+      await db.query("INSERT INTO communities(name) VALUES('Pending eleven') RETURNING id")
+    ).rows[0].id;
+    // What version-eleven code writes when it creates, reissues, and revokes an owner claim.
+    const writeLegacyRows = async (key: string) => {
+      const grant = (
+        await db.query(
+          `INSERT INTO bootstrap_grants(token_hash,purpose,community_id,expires_at,revoked_at,revoked_by)
+           VALUES($1,'owner_claim',$2,now()+interval '1 day',now(),'operator-11') RETURNING id`,
+          [hashSecret(key), community]
+        )
+      ).rows[0].id;
+      await db.query(
+        `INSERT INTO community_creation_receipts(
+           idempotency_key,operator_user_id,payload_hash,community_id,owner_claim_grant_id
+         ) VALUES($1,'operator-11',$2,$3,$4)`,
+        [key, 'a'.repeat(64), key === 'before' ? community : await secondCommunity(), grant]
+      );
+      await db.query(
+        `INSERT INTO host_audit_events(actor_user_id,community_id,action,changed_fields)
+         VALUES('operator-11',$1,'owner_claim.revoke',ARRAY['owner_claim'])`,
+        [community]
+      );
+    };
+    const secondCommunity = async () =>
+      (await db.query("INSERT INTO communities(name) VALUES('Pending twelve') RETURNING id"))
+        .rows[0].id;
+    await writeLegacyRows('before');
+
+    await migrate(upgradeUrl.toString());
+
+    expect(
+      (
+        await db.query(
+          'SELECT actor_kind,actor_user_id,actor_api_key_id,subject_api_key_id FROM host_audit_events'
+        )
+      ).rows
+    ).toEqual([
+      {
+        actor_kind: 'person',
+        actor_user_id: 'operator-11',
+        actor_api_key_id: null,
+        subject_api_key_id: null,
+      },
+    ]);
+    expect(
+      (
+        await db.query(
+          'SELECT operator_user_id,operator_api_key_id FROM community_creation_receipts'
+        )
+      ).rows
+    ).toEqual([{ operator_user_id: 'operator-11', operator_api_key_id: null }]);
+    expect(
+      (await db.query('SELECT revoked_by,revoked_by_api_key_id FROM bootstrap_grants')).rows
+    ).toEqual([{ revoked_by: 'operator-11', revoked_by_api_key_id: null }]);
+
+    // Code that predates 0012 still writes the same shapes, and they still mean a person.
+    await writeLegacyRows('after');
+    expect((await db.query('SELECT DISTINCT actor_kind FROM host_audit_events')).rows).toEqual([
+      { actor_kind: 'person' },
+    ]);
+
+    // The new checks bite: an actor must be named exactly once.
+    await expect(
+      db.query(
+        "INSERT INTO host_audit_events(actor_kind,action) VALUES('api_key','community.create')"
+      )
+    ).rejects.toThrow(/host_audit_events_actor/);
+    await expect(
+      db.query(
+        "INSERT INTO host_audit_events(actor_kind,actor_user_id,action) VALUES('offline','operator-11','api_key.issue')"
+      )
+    ).rejects.toThrow(/host_audit_events_actor/);
+    await expect(
+      db.query(
+        `UPDATE bootstrap_grants SET revoked_by=NULL,revoked_by_api_key_id=NULL
+         WHERE revoked_at IS NOT NULL`
+      )
+    ).rejects.toThrow(/bootstrap_grants_revocation/);
+    const key = (scopes: string, via = 'command', issuer: string | null = null) =>
+      db.query(
+        `INSERT INTO host_api_keys(label,prefix,secret_hash,scopes,issued_via,issued_by_user_id)
+         VALUES('Key','dkh_abcdef',$1,$2::text[],$3,$4)`,
+        [hashSecret(randomUUID()), scopes, via, issuer]
+      );
+    await expect(key('{communities:read,members:read}')).rejects.toThrow(/host_api_keys_scopes/);
+    await expect(key('{}')).rejects.toThrow(/host_api_keys_scopes/);
+    await expect(key('{communities:read}', 'browser')).rejects.toThrow(/host_api_keys_issuer/);
+    await key('{communities:read}', 'browser', 'operator-11');
+  } finally {
+    await db.end();
+    await admin.query(`DROP DATABASE IF EXISTS ${upgradeName}`);
   }
 });

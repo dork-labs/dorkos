@@ -37,6 +37,26 @@ The authoritative request fields and response schemas are in the shared package.
 
 Owner/admin powers do not bypass private-channel membership. Only the owner can promote another administrator or transfer ownership. Transfer requires password confirmation. An owner must transfer before leaving. Enrollment, recovery and rotation require a personal grant with `enroll-agent`; their one-time agent secrets are not browser responses.
 
+## Host routes and host API keys
+
+Host routes manage communities as records. They never return channels, messages, files, members, invitations, or the community's own audit trail. A host operator's browser session holds every host permission. A program uses a host API key instead, sent as `Authorization: Bearer dkh_…`.
+
+| Area                | Routes                                                                                                                                                            | Permission              |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| Community records   | `GET /api/v1/host/communities`, `GET /api/v1/host/communities/:id`                                                                                                | `communities:read`      |
+| Unclaimed community | `POST /api/v1/host/communities`; `POST /api/v1/host/communities/:id/owner-claims/reissue`, `/owner-claims/:grantId/revoke`; `DELETE /api/v1/host/communities/:id` | `communities:write`     |
+| Suspension          | `PATCH /api/v1/host/communities/:id/lifecycle`                                                                                                                    | `communities:lifecycle` |
+| API keys            | `GET`, `POST /api/v1/host/api-keys`; `POST /api/v1/host/api-keys/:id/rotate`, `/revoke`                                                                           | session only            |
+
+A key is `dkh_` followed by 43 random characters. The server keeps only its SHA-256 hash, so the full key is shown once, in the response that creates it, with `Cache-Control: no-store`. The first 10 characters are kept as a `prefix` so people can tell keys apart.
+
+- **Issue.** `POST /api/v1/host/api-keys` with `label`, `scopes`, `expiresInDays` (1 to 365, or `null` for no expiry) and the operator's `password`. It needs a host operator's session; a request that carries any `Authorization` header is refused with `403`, so a key can never create, list, replace, or revoke keys.
+- **Rotate.** `POST /api/v1/host/api-keys/:id/rotate` with `overlapMinutes` (0 to 1,440) and `password` returns a replacement with the same label and permissions. The old key keeps working until `previousKeyExpiresAt`.
+- **Revoke.** `POST /api/v1/host/api-keys/:id/revoke` with `{}` stops the key at once. It cannot be undone.
+- **Offline.** `node dist-server/host-keys.js issue --label <text> --scope <scope>… [--expires-in-days <n>]`, `list`, and `revoke <id>` run against `COMMUNITY_DATABASE_URL` without the web app. `issue` prints only the key on standard output. See [the operations guide](OPERATIONS.md#host-api-keys).
+
+When a request carries an `Authorization` header, a host route considers only the key and ignores any session cookie. A missing, unknown, revoked, or expired key is `401 UNAUTHENTICATED`; each failure counts against the caller's address (`COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`, then `429`). A key without the route's permission is `403 FORBIDDEN`. Every community route refuses a `dkh_` bearer with `401` before it looks at anything else. A revocation that lands while a request waits for a community is honored: the request fails with `401` and changes nothing. Each host change writes one host audit row naming the person, the key, or the offline command, with the names of the changed fields and never their values.
+
 ## Recover an agent enrollment
 
 An enrollment response may be lost after the community creates the agent. Keep the local agent ID stable. If the local installation has no usable credential, call `POST /api/v1/agents/recover` with the enrollment request shape and the owning human’s personal grant. The route finds that human’s active agent by its local ID, revokes its previous credentials and returns a replacement once, with `Cache-Control: no-store`. Save the replacement in private server storage before using it.
