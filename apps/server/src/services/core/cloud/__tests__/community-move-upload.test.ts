@@ -6,24 +6,34 @@
  * after a refusal, and no copy (or token) kept once an upload has landed.
  */
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Readable } from 'node:stream';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   CommunityMoveUploads,
   discardStagedArchive,
+  initMoveStaging,
+  moveStagingRoot,
   stageArchive,
   StagingError,
 } from '../community-move-upload.js';
 
 const servers: Server[] = [];
 
-/** The staging directories currently in the system temp directory. */
+/** A throwaway data directory for this file. */
+const dorkHome = mkdtempSync(path.join(tmpdir(), 'dorkos-move-staging-test-'));
+
+beforeAll(async () => {
+  await initMoveStaging(dorkHome);
+});
+
+/** The staging directories on disk right now. */
 function stagingDirs(): string[] {
-  return readdirSync(tmpdir()).filter((name) => name.startsWith('dorkos-community-move-'));
+  return readdirSync(moveStagingRoot(dorkHome));
 }
 
 afterEach(async () => {
@@ -44,6 +54,18 @@ async function uploadRoute(status: number): Promise<string> {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}/upload`;
 }
+
+describe('initMoveStaging', () => {
+  // Purpose: a copy a crashed run left behind can never be sent (its token
+  // died with that process). Fails if boot does not clear it.
+  it('empties what a previous run left behind', async () => {
+    const leftover = path.join(moveStagingRoot(dorkHome), 'move-crashed');
+    mkdirSync(leftover, { recursive: true });
+    writeFileSync(path.join(leftover, 'export.zip'), 'bytes');
+    await initMoveStaging(dorkHome);
+    expect(stagingDirs()).toEqual([]);
+  });
+});
 
 describe('stageArchive', () => {
   // Purpose: the service is told the size and digest this measures; a wrong
@@ -96,16 +118,30 @@ describe('CommunityMoveUploads', () => {
     expect(uploads.retry('move_1')).toBe(false);
   });
 
-  // Purpose: a refused upload can be sent again from the same copy.
-  it('keeps the copy after a refusal so it can be sent again', async () => {
+  // Purpose: refused bytes would be refused again. Fails if the copy lingers
+  // or a retry is allowed.
+  it('lets go of the copy after a refusal', async () => {
     const staged = await stageArchive(Readable.from([Buffer.from('export')]));
     const uploads = new CommunityMoveUploads();
     await uploads.begin('move_1', staged, target(await uploadRoute(400)));
     expect(uploads.progress('move_1')).toMatchObject({ state: 'failed', failure: 'rejected' });
-    expect(existsSync(staged.filePath)).toBe(true);
-    uploads.discard('move_1');
+    expect(uploads.retry('move_1')).toBe(false);
     await vi.waitFor(() => expect(existsSync(staged.filePath)).toBe(false));
-    expect(uploads.progress('move_1')).toBeNull();
+  });
+
+  // Purpose: a window further out than one timer can wait must not close at once.
+  it('keeps the copy for a window longer than a timer can hold', async () => {
+    const staged = await stageArchive(Readable.from([Buffer.from('export')]));
+    const uploads = new CommunityMoveUploads();
+    const far = {
+      ...target('http://127.0.0.1:1/upload'),
+      expiresAt: new Date(Date.now() + 40 * 86_400_000).toISOString(),
+    };
+    await uploads.begin('move_far', staged, far);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(uploads.progress('move_far')).toMatchObject({ failure: 'interrupted' });
+    expect(existsSync(staged.filePath)).toBe(true);
+    uploads.discard('move_far');
   });
 
   it('reports a broken connection as interrupted', async () => {

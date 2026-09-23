@@ -231,7 +231,8 @@ export function moveProgressStep(
       const upload = move.upload!;
       return {
         title: `Uploading ${move.name}`,
-        description: 'Your DorkOS is sending the export to the new host.',
+        description:
+          'Your DorkOS is sending the export to the new host. You can close this window, but keep DorkOS running until this finishes.',
         body: (
           <>
             <ByteProgress
@@ -246,19 +247,29 @@ export function moveProgressStep(
       };
     }
     case 'upload-failed':
-      return step.canSendAgain
+      if (step.why === 'interrupted') {
+        return {
+          title: 'The upload didn’t finish',
+          description:
+            'The connection broke. Your DorkOS still has the file; send it again to carry on.',
+          body: notice,
+          actions: (
+            <>
+              {cancelMove}
+              <Button disabled={handlers.busy} onClick={handlers.onSendAgain}>
+                Send again
+              </Button>
+            </>
+          ),
+        };
+      }
+      return step.why === 'refused'
         ? {
-            title: 'The upload didn’t finish',
-            description: 'Your DorkOS still has the file. Send it again to carry on.',
+            title: 'The new host didn’t accept the file',
+            description:
+              'The file arrived changed or incomplete. Cancel the move, export the old community again, then start again.',
             body: notice,
-            actions: (
-              <>
-                {cancelMove}
-                <Button disabled={handlers.busy} onClick={handlers.onSendAgain}>
-                  Send again
-                </Button>
-              </>
-            ),
+            actions: cancelMove,
           }
         : {
             title: 'This move can’t carry on',
@@ -272,7 +283,7 @@ export function moveProgressStep(
       return {
         title: `Moving ${move.name}`,
         description:
-          'The new host is reading your history and files. You can close this; the move keeps going and shows here again when you come back.',
+          'The new host is reading your history and files. You can close this window, or quit DorkOS; the move keeps going and shows here again when you come back.',
         body: (
           <>
             <p role="status" className="text-muted-foreground flex items-center gap-2 text-sm">

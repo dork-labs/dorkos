@@ -13,8 +13,11 @@
  * module's memory and in the one request that spends it; it is never logged,
  * never written to disk and never part of any response.
  *
- * **What survives what.** The staged copy lives in the system temp directory
- * until the upload lands, the move is cancelled, or the upload window closes.
+ * **What survives what.** The staged copy lives under the data directory
+ * (`<dorkHome>/tmp/community-moves/`) until the upload lands, the move is
+ * cancelled, or the upload window closes. That directory is emptied at every
+ * boot ({@link initMoveStaging}): a copy left by a crash is useless, because
+ * the token that could send it lived only in the dead process's memory.
  * The upload's progress lives in memory only: after a restart it is gone, the
  * move reads `awaiting_upload` from the service with no local upload, and the
  * way forward is the contract's own, cancel and start again. The move's state
@@ -24,10 +27,9 @@
  */
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Transform, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -44,6 +46,38 @@ import { logger, logError } from '../../../lib/logger.js';
  * megabytes in practice; this leaves generous room above that.
  */
 export const MOVE_STAGING_MAX_BYTES = 16 * 1024 ** 3;
+
+/** Where staged exports live, once {@link initMoveStaging} has run. */
+let stagingRoot: string | null = null;
+
+/**
+ * The directory under the data directory that holds staged exports.
+ *
+ * @param dorkHome - The resolved data directory.
+ */
+export function moveStagingRoot(dorkHome: string): string {
+  return path.join(dorkHome, 'tmp', 'community-moves');
+}
+
+/**
+ * Set up the staging directory for this run, emptying whatever a previous run
+ * left behind. Called once at boot, after the instance lock, so no other live
+ * server shares this data directory.
+ *
+ * @param dorkHome - The resolved data directory.
+ */
+export async function initMoveStaging(dorkHome: string): Promise<void> {
+  const root = moveStagingRoot(dorkHome);
+  await rm(root, { recursive: true, force: true });
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  stagingRoot = root;
+}
+
+/**
+ * The longest a timer can wait. `setTimeout` treats anything above 2^31-1 ms
+ * (about 24.8 days) as zero and fires at once.
+ */
+const MAX_TIMER_MS = 2 ** 31 - 1;
 
 /** An export file, copied to this machine and measured. */
 export interface StagedArchive {
@@ -83,7 +117,8 @@ export async function stageArchive(
   body: Readable,
   maxBytes: number = MOVE_STAGING_MAX_BYTES
 ): Promise<StagedArchive> {
-  const dir = await mkdtemp(path.join(tmpdir(), 'dorkos-community-move-'));
+  if (stagingRoot === null) throw new Error('Move staging is not set up yet.');
+  const dir = await mkdtemp(path.join(stagingRoot, 'move-'));
   const filePath = path.join(dir, 'export.zip');
   const hash = createHash('sha256');
   let bytes = 0;
@@ -131,8 +166,8 @@ interface UploadJob {
   progress: CloudCommunityMoveUpload;
   /** Stops the request in flight, when there is one. */
   abort: (() => void) | null;
-  /** Removes the staged copy when the upload window closes. */
-  expiry: ReturnType<typeof setTimeout>;
+  /** Removes the staged copy when the upload window closes. Set once the job is built. */
+  expiry: ReturnType<typeof setTimeout> | undefined;
 }
 
 /**
@@ -146,7 +181,8 @@ function outcomeOf(status: number): 'sent' | CloudCommunityMoveUpload['failure']
   // `upload_expired`, and the token can never work again.
   if (status === 401) return 'expired';
   // 400 IMPORT_ARCHIVE_INVALID (and any other refusal of these bytes): the move
-  // stays `awaiting_upload` and the same token works until the window closes.
+  // stays `awaiting_upload`, but these exact bytes would be refused again, so
+  // the way on is a fresh export and a fresh move.
   if (status >= 400 && status < 500) return 'rejected';
   return 'interrupted';
 }
@@ -251,16 +287,28 @@ export class CommunityMoveUploads {
    */
   begin(moveId: string, staged: StagedArchive, target: CommunityMoveUpload): Promise<void> {
     this.discard(moveId);
-    const windowMs = Math.max(0, Date.parse(target.expiresAt) - Date.now());
+    const expiresAt = Date.parse(target.expiresAt);
     const job: UploadJob = {
       staged,
       target,
       progress: { state: 'sending', sentBytes: 0, totalBytes: staged.bytes, failure: null },
       abort: null,
-      // The token is worthless once the window closes, and so is the copy.
-      expiry: setTimeout(() => this.discard(moveId), windowMs),
+      expiry: undefined,
     };
-    job.expiry.unref?.();
+    // The token is worthless once the window closes, and so is the copy. A
+    // window longer than one timer can hold waits in steps.
+    const arm = () => {
+      job.expiry = setTimeout(
+        () => {
+          if (this.jobs.get(moveId) !== job) return;
+          if (Date.now() < expiresAt) arm();
+          else this.discard(moveId);
+        },
+        Math.min(MAX_TIMER_MS, Math.max(0, expiresAt - Date.now()))
+      );
+      job.expiry.unref?.();
+    };
+    arm();
     this.jobs.set(moveId, job);
     return this.run(moveId, job);
   }
@@ -269,11 +317,15 @@ export class CommunityMoveUploads {
    * Send a move's export again from the copy this process still holds.
    *
    * @param moveId - The move to send again.
-   * @returns `false` when there is nothing to send: no job, already sent, still sending, or expired.
+   * Only after a broken connection: the Community server never judged those
+   * bytes. A file it refused would be refused again, and a closed window never
+   * reopens, so both of those end the upload for good.
+   *
+   * @returns `false` when there is nothing to send again.
    */
   retry(moveId: string): boolean {
     const job = this.jobs.get(moveId);
-    if (!job || job.target === null || job.progress.state !== 'failed') return false;
+    if (!job || job.target === null || job.progress.failure !== 'interrupted') return false;
     void this.run(moveId, job);
     return true;
   }
@@ -313,9 +365,9 @@ export class CommunityMoveUploads {
     if (target === null) return;
     await send(job, target);
     if (this.jobs.get(moveId) !== job) return;
-    if (job.progress.state === 'sent' || job.progress.failure === 'expired') {
-      // Keep the finished progress so a poll can still say "sent" until the
-      // window closes, but the token and the copy are spent now.
+    if (job.progress.state === 'sent' || job.progress.failure !== 'interrupted') {
+      // Keep the finished progress so a poll can still say what happened until
+      // the window closes, but the token and the copy are of no further use.
       job.target = null;
       void discardStagedArchive(job.staged);
     }

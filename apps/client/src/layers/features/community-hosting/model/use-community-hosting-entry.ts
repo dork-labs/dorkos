@@ -16,8 +16,6 @@ export interface CommunityHostingEntry {
   unfinishedMoveId: string | null;
   /** The account hosts at least one community, or has a recent move to show. */
   hasHosted: boolean;
-  /** Communities or moves that are waiting on the owner. */
-  attentionCount: number;
 }
 
 /**
@@ -37,18 +35,9 @@ export function useCommunityHostingEntry(): CommunityHostingEntry | null {
   const data = list.data?.available === true ? list.data : null;
   const communities = data?.communities ?? [];
   const moves = data?.moves ?? [];
-  const attention =
-    communities.filter(
-      (c) =>
-        c.actions.claimLink ||
-        c.state === 'held' ||
-        c.state === 'deletion_pending' ||
-        c.state === 'unrecognised'
-    ).length + moves.filter((m) => m.state === 'ready' || m.state === 'failed').length;
   return {
     allowance: data?.allowance ?? null,
     unfinishedMoveId: moves.find(isUnfinishedMove)?.moveId ?? null,
     hasHosted: communities.length > 0 || moves.length > 0,
-    attentionCount: attention,
   };
 }

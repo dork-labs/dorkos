@@ -19,9 +19,16 @@ import { TransportProvider } from '@/layers/shared/model';
 import { CommunityHostingDialogs, type CommunityHostingDialog } from '../index';
 
 const mockOpenExternalLink = vi.fn((_href: string) => true);
+const mockWindowGo = vi.fn((_href: string) => true);
+const mockWindowClose = vi.fn();
+let mockPopupBlocked = false;
+const mockOpenLater = vi.fn(() =>
+  mockPopupBlocked ? null : { go: mockWindowGo, close: mockWindowClose }
+);
 vi.mock('@/layers/shared/lib', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/lib')>()),
   openExternalLink: (href: string) => mockOpenExternalLink(href),
+  openExternalWindowLater: () => mockOpenLater(),
 }));
 vi.mock('@/layers/entities/community', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/community')>()),
@@ -44,6 +51,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  mockPopupBlocked = false;
 });
 
 const CLAIM_URL = startFixture.claim.claimUrl;
@@ -56,7 +64,7 @@ function renderDialogs(transport: Transport, dialog: CommunityHostingDialog) {
     <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>
         <CommunityHostingDialogs
-          entry={{ allowance: null, unfinishedMoveId: null, hasHosted: false, attentionCount: 0 }}
+          entry={{ allowance: null, unfinishedMoveId: null, hasHosted: false }}
           dialog={dialog}
           onDialogChange={vi.fn()}
           installName="My DorkOS"
@@ -117,7 +125,10 @@ describe('Start a community', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: /Open in your browser/ }));
-    await waitFor(() => expect(mockOpenExternalLink).toHaveBeenCalledWith(CLAIM_URL));
+    // The window opens in the press itself, before the link is fetched.
+    expect(mockOpenLater).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockWindowGo).toHaveBeenCalledWith(CLAIM_URL));
+    expect(mockOpenExternalLink).not.toHaveBeenCalledWith(CLAIM_URL);
     const cached = JSON.stringify(
       client
         .getQueryCache()
@@ -149,6 +160,59 @@ describe('Start a community', () => {
       installName: 'My DorkOS',
     });
     expect(onConnected).toHaveBeenCalledWith('ref-1');
+  });
+
+  // Purpose: a blocked window must not be reported as opened, and must not
+  // spend a claim link. Fails if the link is fetched anyway.
+  it('says so when the browser blocks the window, and fetches nothing', async () => {
+    mockPopupBlocked = true;
+    const transport = linkedTransport();
+    vi.mocked(transport.startHostedCommunity).mockResolvedValue({
+      ok: true,
+      community: community as never,
+      claimReady: true,
+    });
+    vi.mocked(transport.listHostedCommunities).mockResolvedValue({
+      available: true,
+      communities: [community as never],
+      moves: [],
+      allowance: null,
+    });
+    renderDialogs(transport, { kind: 'start' });
+    fireEvent.change(screen.getByLabelText('Community name'), { target: { value: 'Night shift' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start community' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Open in your browser/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Your browser blocked the new window.'
+    );
+    expect(transport.getHostedCommunityClaimLink).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /Open in your browser/ })).toBeInTheDocument();
+  });
+
+  it('closes the waiting window when the claim link is refused', async () => {
+    const transport = linkedTransport();
+    vi.mocked(transport.startHostedCommunity).mockResolvedValue({
+      ok: true,
+      community: community as never,
+      claimReady: false,
+    });
+    vi.mocked(transport.listHostedCommunities).mockResolvedValue({
+      available: true,
+      communities: [community as never],
+      moves: [],
+      allowance: null,
+    });
+    vi.mocked(transport.getHostedCommunityClaimLink).mockResolvedValue({
+      ok: false,
+      problem: { code: 'conflict', status: 409, title: 'Not waiting for an owner.' } as never,
+    });
+    renderDialogs(transport, { kind: 'start' });
+    fireEvent.change(screen.getByLabelText('Community name'), { target: { value: 'Night shift' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start community' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Open in your browser/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not waiting for an owner.');
+    expect(mockWindowClose).toHaveBeenCalled();
+    expect(mockWindowGo).not.toHaveBeenCalled();
   });
 
   it('does not move on while the sign-in is unfinished', async () => {

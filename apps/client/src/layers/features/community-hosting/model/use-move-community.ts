@@ -3,9 +3,11 @@
  * then hand over to claim and connect.
  *
  * Where a move is comes from the service on every poll. Nothing about it is
- * kept in this app beyond the move's id while the dialog is open, so closing
- * the app or reloading loses nothing: the switcher reads the unfinished move
- * from the account and the dialog picks it up again.
+ * kept in this page beyond the move's id while the dialog is open, so closing
+ * the window or reloading loses nothing: the switcher reads the unfinished
+ * move from the account and the dialog picks it up again. The upload itself
+ * runs in this DorkOS's server, so DorkOS has to keep running until it lands;
+ * the import after that needs nothing from this machine.
  *
  * @module features/community-hosting/model/use-move-community
  */
@@ -23,7 +25,17 @@ import { WEB_ADDRESS_RESERVED, WEB_ADDRESS_TAKEN, type StartFailure } from './us
 /** Where one move is, as the dialog draws it. */
 export type MoveStep =
   | { kind: 'uploading'; move: CloudCommunityMove }
-  | { kind: 'upload-failed'; move: CloudCommunityMove; canSendAgain: boolean }
+  | {
+      kind: 'upload-failed';
+      move: CloudCommunityMove;
+      /**
+       * `interrupted`: the connection broke and the same copy can go again.
+       * `refused`: the new host would not take these bytes. `lost`: the window
+       * closed, or this DorkOS no longer holds the copy (it restarted, or
+       * another DorkOS started the move).
+       */
+      why: 'interrupted' | 'refused' | 'lost';
+    }
   | { kind: 'importing'; move: CloudCommunityMove }
   | { kind: 'ready'; move: CloudCommunityMove }
   | { kind: 'failed'; move: CloudCommunityMove }
@@ -42,13 +54,13 @@ export function moveStepOf(move: CloudCommunityMove): MoveStep {
       if (upload?.state === 'sending') return { kind: 'uploading', move };
       // Sent, and the service has not noticed yet: that is the import starting.
       if (upload?.state === 'sent') return { kind: 'importing', move };
-      // Refused or broken off: the same file can go again. Expired, or no
-      // upload here at all (this DorkOS restarted, or another one started the
-      // move): the token is gone and only a fresh move can finish it.
-      const canSendAgain =
-        upload?.state === 'failed' &&
-        (upload.failure === 'rejected' || upload.failure === 'interrupted');
-      return { kind: 'upload-failed', move, canSendAgain };
+      const why =
+        upload?.state === 'failed' && upload.failure === 'interrupted'
+          ? 'interrupted'
+          : upload?.state === 'failed' && upload.failure === 'rejected'
+            ? 'refused'
+            : 'lost';
+      return { kind: 'upload-failed', move, why };
     }
     case 'importing':
       return { kind: 'importing', move };

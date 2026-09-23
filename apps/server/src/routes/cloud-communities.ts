@@ -255,6 +255,13 @@ export function createCloudCommunitiesRouter(
       req.resume();
       return res.status(400).json({ ok: false, message: 'Give the community a name.' });
     }
+    // The browser can leave after the last byte arrives but before this
+    // answers (a cancel, a stall, a closed tab). A move started for nobody
+    // would upload and import with no one watching, so it is cancelled.
+    let browserLeft = false;
+    res.on('close', () => {
+      if (!res.writableEnded) browserLeft = true;
+    });
     let staged;
     try {
       staged = await stageArchive(req);
@@ -275,28 +282,41 @@ export function createCloudCommunitiesRouter(
       }
       return;
     }
+    if (browserLeft) {
+      await discardStagedArchive(staged);
+      return;
+    }
+    let started;
     try {
-      const started = await startMove({
+      started = await startMove({
         ...query.data,
         archiveBytes: staged.bytes,
         archiveSha256: staged.sha256,
       });
-      if (started.upload !== null) {
-        void uploads.begin(started.move.moveId, staged, started.upload);
-      } else {
-        // A replay: the service issued this move's token to an earlier request
-        // and keeps no copy. Whatever this process is already doing for the
-        // move stands; this second copy is not needed.
-        await discardStagedArchive(staged);
-      }
-      return res.json({
-        ok: true,
-        move: withUpload(started.move),
-      } satisfies CloudCommunityMoveResponse);
     } catch (error) {
       await discardStagedArchive(staged);
       return writeFailed(res, error, 'start a move');
     }
+    if (browserLeft) {
+      await discardStagedArchive(staged);
+      uploads.discard(started.move.moveId);
+      await cancelMove(started.move.moveId).catch((error: unknown) =>
+        logger.warn('[Cloud] Could not cancel a move nobody was waiting for', logError(error))
+      );
+      return;
+    }
+    if (started.upload !== null) {
+      void uploads.begin(started.move.moveId, staged, started.upload);
+    } else {
+      // A replay: the service issued this move's token to an earlier request
+      // and keeps no copy. Whatever this process is already doing for the
+      // move stands; this second copy is not needed.
+      await discardStagedArchive(staged);
+    }
+    return res.json({
+      ok: true,
+      move: withUpload(started.move),
+    } satisfies CloudCommunityMoveResponse);
   });
 
   /** GET /moves/:moveId — one move, read from the service every time. */

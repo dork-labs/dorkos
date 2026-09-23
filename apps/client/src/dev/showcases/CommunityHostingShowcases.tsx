@@ -209,7 +209,7 @@ function MoveShowcase() {
             })}
           />
           <State
-            label="Upload refused, can send again"
+            label="Upload refused by the new host"
             step={moveAt({
               state: 'awaiting_upload',
               upload: {
@@ -217,6 +217,18 @@ function MoveShowcase() {
                 sentBytes: 0,
                 totalBytes: 70_254_592,
                 failure: 'rejected',
+              },
+            })}
+          />
+          <State
+            label="Upload broken off, can send again"
+            step={moveAt({
+              state: 'awaiting_upload',
+              upload: {
+                state: 'failed',
+                sentBytes: 0,
+                totalBytes: 70_254_592,
+                failure: 'interrupted',
               },
             })}
           />

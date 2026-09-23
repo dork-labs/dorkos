@@ -9,7 +9,11 @@
  * reaches the browser. No test here reaches a real service.
  */
 import { createHash } from 'node:crypto';
+import { mkdtempSync, readdirSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import express from 'express';
@@ -41,7 +45,16 @@ vi.mock('../../services/core/auth/cloud-link-client.js', () => ({
 }));
 
 const { createCloudCommunitiesRouter } = await import('../cloud-communities.js');
-const { CommunityMoveUploads } = await import('../../services/core/cloud/community-move-upload.js');
+const { CommunityMoveUploads, initMoveStaging, moveStagingRoot } =
+  await import('../../services/core/cloud/community-move-upload.js');
+
+/** A throwaway data directory for this file's staged exports. */
+const dorkHome = mkdtempSync(path.join(tmpdir(), 'dorkos-move-route-test-'));
+
+/** The staged copies on disk right now. */
+function stagedCopies(): string[] {
+  return readdirSync(moveStagingRoot(dorkHome));
+}
 
 /** The one-time credentials the fixtures carry. None may ever reach the browser uninvited. */
 const START_CLAIM_URL = startFixture.claim.claimUrl;
@@ -65,7 +78,10 @@ interface Script {
   moveStartStatus: number;
   moveStartBody: unknown;
   moveBody: unknown;
+  /** Upload answers in order. `0` breaks the connection instead of answering. */
   uploadStatus: number[];
+  /** When set, the move start waits for this before answering. */
+  moveStartGate: Promise<void> | null;
   entitlements: unknown;
 }
 
@@ -81,6 +97,7 @@ function defaultScript(): Script {
     moveStartBody: null,
     moveBody: moveImportingFixture,
     uploadStatus: [200],
+    moveStartGate: null,
     entitlements: {
       ...entitlementsFixture,
       limits: {
@@ -137,6 +154,7 @@ const fake = listeningServer(async (req, res) => {
   if (route.endsWith('/keep')) return send(res, 200, keepFixture);
   if (route.endsWith('/restore')) return send(res, 200, restoreFixture);
   if (route === 'POST /v1/communities/moves') {
+    if (script.moveStartGate) await script.moveStartGate;
     return send(res, script.moveStartStatus, script.moveStartBody);
   }
   if (route === 'POST /v1/communities/moves/move_0001/cancel') {
@@ -145,6 +163,7 @@ const fake = listeningServer(async (req, res) => {
   if (route === 'GET /v1/communities/moves/move_0001') return send(res, 200, script.moveBody);
   if (route === 'PUT /upload/imp_0001') {
     const status = script.uploadStatus.shift() ?? 200;
+    if (status === 0) return req.socket.destroy();
     return send(res, status, status === 200 ? { ok: true } : { code: 'IMPORT_ARCHIVE_INVALID' });
   }
   return send(res, 404, { code: 'not_found', status: 404, title: 'Not here' });
@@ -185,8 +204,9 @@ function serviceRequests() {
   return received.filter((r) => r.path.startsWith('/v1/'));
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   service.baseUrl = fakeOrigin();
+  await initMoveStaging(dorkHome);
 });
 
 beforeEach(() => {
@@ -481,12 +501,33 @@ describe('moving a community in', () => {
     expect(first.text + second.text).not.toContain(UPLOAD_TOKEN);
   });
 
-  // Purpose: a refused upload keeps the token usable, so sending again works.
-  // Fails if a rejection throws the file away or a retry cannot reach it.
-  it('sends the same file again after the Community server refuses it', async () => {
+  // Purpose: a broken connection never reached a verdict, so the same copy can
+  // go again. Fails if the copy is thrown away or a retry cannot reach it.
+  it('sends the same file again after the connection breaks', async () => {
     script.moveStartBody = moveStartAnswer();
-    script.uploadStatus = [400, 200];
+    script.uploadStatus = [0, 200];
     script.moveBody = { ...moveImportingFixture, state: 'awaiting_upload', report: null };
+    await startMoveRequest().expect(200);
+    expect(await uploadSettled('move_0001')).toMatchObject({
+      state: 'failed',
+      failure: 'interrupted',
+    });
+    expect(stagedCopies()).toHaveLength(1);
+    const retry = await request(server)
+      .post('/api/cloud/communities/moves/move_0001/upload')
+      .expect(200);
+    expect(retry.body.ok).toBe(true);
+    expect(await uploadSettled('move_0001')).toMatchObject({ state: 'sent' });
+    const puts = received.filter((r) => r.method === 'PUT');
+    expect(puts.at(-1)!.body.equals(archive)).toBe(true);
+    await vi.waitFor(() => expect(stagedCopies()).toHaveLength(0));
+  });
+
+  // Purpose: bytes the Community server refused would be refused again.
+  // Fails if a retry is offered or the copy lingers.
+  it('does not send refused bytes again, and lets go of the copy', async () => {
+    script.moveStartBody = moveStartAnswer();
+    script.uploadStatus = [400];
     await startMoveRequest().expect(200);
     expect(await uploadSettled('move_0001')).toMatchObject({
       state: 'failed',
@@ -495,11 +536,9 @@ describe('moving a community in', () => {
     const retry = await request(server)
       .post('/api/cloud/communities/moves/move_0001/upload')
       .expect(200);
-    expect(retry.body.ok).toBe(true);
-    expect(await uploadSettled('move_0001')).toMatchObject({ state: 'sent' });
-    const puts = received.filter((r) => r.method === 'PUT');
-    expect(puts).toHaveLength(2);
-    expect(puts[1]!.body.equals(archive)).toBe(true);
+    expect(retry.body.ok).toBe(false);
+    expect(received.filter((r) => r.method === 'PUT')).toHaveLength(1);
+    await vi.waitFor(() => expect(stagedCopies()).toHaveLength(0));
   });
 
   // Purpose: a closed window spends the token for good. Fails if a retry is offered.
@@ -522,6 +561,37 @@ describe('moving a community in', () => {
     expect(res.body.move.upload).toBeNull();
     expect(uploads.progress('move_0001')).toBeNull();
     expect(received.filter((r) => r.method === 'PUT')).toHaveLength(0);
+    expect(stagedCopies()).toHaveLength(0);
+  });
+
+  // Purpose: the browser may leave after the last byte but before the move
+  // starts (a cancel, a stall). Fails if a move is left running for nobody.
+  it('cancels the move and sends nothing when the browser leaves before the answer', async () => {
+    let release!: () => void;
+    script.moveStartGate = new Promise((resolve) => (release = resolve));
+    script.moveStartBody = moveStartAnswer();
+    const port = (server.address() as AddressInfo).port;
+    const client = httpRequest({
+      host: '127.0.0.1',
+      port,
+      method: 'POST',
+      path: '/api/cloud/communities/moves?idempotencyKey=gone&name=Old%20garden',
+      headers: { 'content-type': 'application/zip', 'content-length': String(archive.length) },
+    });
+    client.on('error', () => {});
+    client.end(archive);
+    await vi.waitFor(() =>
+      expect(received.some((r) => r.path === '/v1/communities/moves')).toBe(true)
+    );
+    client.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release();
+    await vi.waitFor(() =>
+      expect(received.some((r) => r.path === '/v1/communities/moves/move_0001/cancel')).toBe(true)
+    );
+    expect(uploads.progress('move_0001')).toBeNull();
+    expect(received.filter((r) => r.method === 'PUT')).toHaveLength(0);
+    await vi.waitFor(() => expect(stagedCopies()).toHaveLength(0));
   });
 
   it('forgets the upload and asks the service to cancel', async () => {
@@ -533,6 +603,7 @@ describe('moving a community in', () => {
       .expect(200);
     expect(res.body).toMatchObject({ ok: true, move: { state: 'cancelled', upload: null } });
     expect(uploads.progress('move_0001')).toBeNull();
+    await vi.waitFor(() => expect(stagedCopies()).toHaveLength(0));
   });
 
   it('refuses an empty file without starting a move', async () => {
@@ -558,5 +629,6 @@ describe('moving a community in', () => {
     const res = await startMoveRequest().expect(200);
     expect(res.body).toEqual({ ok: false, problem: tooLarge });
     expect(received.filter((r) => r.method === 'PUT')).toHaveLength(0);
+    expect(stagedCopies()).toHaveLength(0);
   });
 });

@@ -3,10 +3,10 @@
  * the browser, then connect this DorkOS to it with the ordinary pairing flow.
  *
  * **The claim link is never kept.** It is a one-time credential. It is fetched
- * only when the person presses the button that opens it, handed straight to
- * {@link openExternalLink} (the app's one link seam, which on the desktop app
- * goes through the shell's own http(s)-only guard), and dropped. It never
- * enters React state, the query cache, or a log.
+ * only when the person presses the button that opens it, and goes straight
+ * into a window opened in that press ({@link openExternalWindowLater}; on the
+ * desktop app, the shell's own http(s)-only `openExternal`), then is dropped.
+ * It never enters React state, the query cache, or a log.
  *
  * @module features/community-hosting/model/use-claim-and-connect
  */
@@ -14,7 +14,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Problem } from '@dork-labs/cloud-api';
 import type { CloudCommunityRefusal } from '@dorkos/shared/cloud-schemas';
-import { isCommunityAuthorityCurrent, openExternalLink } from '@/layers/shared/lib';
+import {
+  isCommunityAuthorityCurrent,
+  openExternalLink,
+  openExternalWindowLater,
+} from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import {
   communityKeys,
@@ -74,6 +78,9 @@ export interface ClaimAndConnect {
 
 const NOT_CLAIMED_YET: HostingNotice = {
   message: 'Your sign-in isn’t finished yet. Finish it in your browser, then try again.',
+};
+const POPUP_BLOCKED: HostingNotice = {
+  message: 'Your browser blocked the new window. Allow pop-ups for DorkOS, then try again.',
 };
 const CONNECT_FAILED: HostingNotice = {
   message: 'Couldn’t connect this DorkOS to the community. Try again.',
@@ -137,19 +144,30 @@ export function useClaimAndConnect(
 
   const openClaim = useCallback(() => {
     if (!target || claim.busy) return;
+    // The window opens now, inside the press: after the round trip below a
+    // browser (Safari above all) would count it as a pop-up and block it.
+    const pending = openExternalWindowLater();
+    if (pending === null) {
+      setClaim((c) => ({ ...c, notice: POPUP_BLOCKED }));
+      return;
+    }
     setClaim((c) => ({ ...c, busy: true, notice: null }));
     transport
       .getHostedCommunityClaimLink(target.communityId)
       .then((answer) => {
-        if (answer.ok) {
-          // Straight to the link seam and dropped: never stored anywhere.
-          openExternalLink(answer.claimUrl);
-          setClaim({ opened: true, busy: false, notice: null });
-        } else {
+        if (!answer.ok) {
+          pending.close();
           setClaim((c) => ({ ...c, busy: false, notice: noticeOf(answer) }));
+          return;
         }
+        // Straight into the waiting window and dropped: never stored anywhere.
+        const opened = pending.go(answer.claimUrl);
+        setClaim((c) => ({ opened: c.opened || opened, busy: false, notice: null }));
       })
-      .catch(() => setClaim((c) => ({ ...c, busy: false, notice: UNREACHABLE_NOTICE })));
+      .catch(() => {
+        pending.close();
+        setClaim((c) => ({ ...c, busy: false, notice: UNREACHABLE_NOTICE }));
+      });
   }, [target, claim.busy, transport]);
 
   const startConnect = useCallback(async () => {

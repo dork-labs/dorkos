@@ -282,20 +282,46 @@ describe('Move a community here', () => {
     expect(screen.getByRole('button', { name: 'Cancel move' })).toBeInTheDocument();
   });
 
-  it('offers to send again after a refused upload, and only a restart after a lost one', () => {
-    const refused = moveStepOf(
-      move({
-        state: 'awaiting_upload',
-        upload: { state: 'failed', sentBytes: 5, totalBytes: 100, failure: 'rejected' },
-      })
-    );
-    const { unmount } = show(moveProgressStep(refused as never, progressHandlers));
+  // Purpose: only a broken connection can be fixed by sending the same bytes.
+  // Fails if a refused upload offers Send again.
+  it('offers Send again only after a broken connection', () => {
+    const failedWith = (failure: 'interrupted' | 'rejected') =>
+      moveStepOf(
+        move({
+          state: 'awaiting_upload',
+          upload: { state: 'failed', sentBytes: 5, totalBytes: 100, failure },
+        })
+      );
+    const first = show(moveProgressStep(failedWith('interrupted') as never, progressHandlers));
     expect(screen.getByRole('button', { name: 'Send again' })).toBeInTheDocument();
-    unmount();
+    first.unmount();
+    const second = show(moveProgressStep(failedWith('rejected') as never, progressHandlers));
+    expect(screen.queryByRole('button', { name: 'Send again' })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'The new host didn’t accept the file' })
+    ).toBeInTheDocument();
+    second.unmount();
     const lost = moveStepOf(move({ state: 'awaiting_upload', upload: null }));
     show(moveProgressStep(lost as never, progressHandlers));
     expect(screen.queryByRole('button', { name: 'Send again' })).not.toBeInTheDocument();
     expect(screen.getByText(/Cancel the move, then start again/)).toBeInTheDocument();
+  });
+
+  it('says the upload needs DorkOS running, but not this window', () => {
+    show(
+      moveProgressStep(
+        moveStepOf(
+          move({
+            state: 'awaiting_upload',
+            upload: { state: 'sending', sentBytes: 1, totalBytes: 2, failure: null },
+          })
+        ) as never,
+        progressHandlers
+      )
+    );
+    expect(
+      screen.getByText(/You can close this window, but keep DorkOS running/)
+    ).toBeInTheDocument();
   });
 
   it('says the import is running, with counts only, and that closing is fine', () => {
