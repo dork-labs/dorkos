@@ -353,7 +353,7 @@ stateDiagram-v2
 `managed_blobs.purpose` gains `import_staging`. Its bytes appear in usage as import staging and never count against the storage limit.
 
 1. **Create.** `POST /api/v1/host/imports` (scope `communities:import`) with an idempotency key, the community `name`, optional `description`, `admissionPolicy`, `shortName`, and `limits`. One transaction creates a `pending_owner` community, its limits and short name, the import row, and a one-time **upload token** (24-hour expiry). No owner claim is issued yet. Replaying the same key returns the same import with `uploadToken: null`; a different payload under the key is `409 IDEMPOTENCY_CONFLICT`.
-2. **Upload.** `PUT /api/v1/imports/:importId/archive` accepts either the upload token as a bearer or host authority with `communities:import`. The upload token lets a host hand the upload to the person who holds the file without handing them a host key. Headers: `Content-Length` (required, at most 1 GiB), `X-Archive-SHA256` (required). The body streams into a reserved staging blob with the existing `BlobStore.put` byte limit; this route joins the attachment route in bypassing the ~96 KiB JSON body buffer in `app.ts`. A hash or length mismatch discards the blob (`400 IMPORT_ARCHIVE_INVALID`). Repeating the upload with the same hash after success is `200`; a different hash is `409 IDEMPOTENCY_CONFLICT`. Success consumes the upload token and moves the job to `validating`.
+2. **Upload.** `PUT /api/v1/imports/:importId/archive` accepts either the upload token as a bearer or host authority with `communities:import`. The upload token lets a host hand the upload to the person who holds the file without handing them a host key. Headers: `Content-Length` (required, at most 1 GiB), `X-Archive-SHA256` (required). The body streams into a reserved staging blob with the existing `BlobStore.put` byte limit; this route joins the attachment route in bypassing the ~96 KiB JSON body buffer in `app.ts`. A hash or length mismatch discards the blob (`400 IMPORT_ARCHIVE_INVALID`). Neither a mismatch nor a dropped connection spends the upload token: it stays valid, and the job stays `awaiting_upload`, until it succeeds or its window closes. Repeating the upload with the same hash after success is `200`; a different hash is `409 IDEMPOTENCY_CONFLICT`. Success consumes the upload token and moves the job to `validating`.
 3. **Validate** (background worker, like the deletion worker, one job at a time per replica with `SKIP LOCKED`). Stream the staging blob through `fflate`'s `Unzip`:
    - the first entry must be `manifest.json`, at most 16 MiB; every other entry must be `attachments/<uuid>`; any other name, a duplicate name, a directory, or an encrypted entry fails the job;
    - the manifest parses with `CommunityExportManifestV1Schema` (strict), `scope` must be `owner`, and every collection is within 10,000 rows;
@@ -391,12 +391,11 @@ A new `communities.ts` module, exported from `src/index.ts`, with routes added t
 | `POST /v1/communities/moves`                    | picks an export file (size and SHA-256 declared first)                    | the move, `replayed`, and a one-time upload target (first answer only)                                             |
 | `GET /v1/communities/moves`                     | reopens the app after a move finished or failed                           | unfinished moves and those finished within the last 7 days, newest first                                           |
 | `GET /v1/communities/moves/{moveId}`            | waits while it imports                                                    | state, a typed failure code, a counts-only report, and `pollAfterMs`                                               |
-| `POST /v1/communities/moves/{moveId}/upload`    | retries an upload that broke or whose window closed                       | a fresh upload target; the last token stops working. `conflict` unless `awaiting_upload`                           |
 | `POST /v1/communities/moves/{moveId}/cancel`    | cancels before it is ready                                                | the cancelled move                                                                                                 |
 
-Credentials: the claim link and the upload token are returned once, only by the routes that create them, and carry a one-time-credential marker in the schema (and its JSON Schema). No list or poll has a field for either; the local server relays the parsed value, never the raw body, so one leaked into the wrong shape stops there. Once a move is `ready`, the app gets its claim link from `claim-link`, which is exactly the host's P3 step 6. The upload goes straight to the Community server's import route (P3 step 2): a broken or mismatched upload (`400 IMPORT_ARCHIVE_INVALID`) keeps the move `awaiting_upload` and the token usable until it expires, and the `upload` route replaces a lost or expired one, so retrying never costs the community or its short name. A failed or cancelled move removes its `pending_owner` community and frees the short name at once (P6 exception).
+Credentials: the claim link and the upload token are returned once, only by the routes that create them, and carry a one-time-credential marker in the schema (and its JSON Schema). No list or poll has a field for either; the local server relays the parsed value, never the raw body, so one leaked into the wrong shape stops there. Once a move is `ready`, the app gets its claim link from `claim-link`, which is exactly the host's P3 step 6. The upload goes straight to the Community server's import route (P3 step 2): a broken or mismatched upload (`400 IMPORT_ARCHIVE_INVALID`) keeps the move `awaiting_upload` and the token usable until its window closes (P3 step 2). A window that closes first cancels the host import (the P3 state diagram), which the service reports as a `failed` move with `upload_expired`. There is no token reissue on the host, so recovery from a lost token or a closed window is cancel and start again, which is cheap because a failed or cancelled move removes its `pending_owner` community and frees the short name at once (P6 exception).
 
-Links: a link a person is sent to (`claimUrl`, `actionUrl`) is `https:` only; a server link (`communityUrl`, an upload `url`) is `https:` or loopback `http:`. Both rules are also a JSON Schema `pattern`. Field combinations are enforced: `hold` exactly when `held`, `deletionAt` exactly when `deletion_pending`, `failureCode` exactly when a move `failed`, a name check's `reason` exactly when unavailable, and a credential only on a first answer.
+Links: a link the service sends a person to (`actionUrl`) is `https:` only; a link to a Community server (`communityUrl`, `claimUrl`, an upload `url`) is `https:` or loopback `http:`, so local development works. Both rules are also a JSON Schema `pattern`. Field combinations are enforced one way, so a later release can widen them: a `held` community has `hold`, a `deletion_pending` one has `deletionAt`, a `failed` move has `failureCode`; a name check's `reason` is set exactly when unavailable, and a credential comes only on a first answer. A community's `state` and hold `reason`, and a move's `state` and `failureCode`, are tolerant: a value from a later release reads as `unrecognised` instead of failing the whole list or poll.
 
 `EntitlementLimitsSchema` (`billing.ts`, a non-strict object) gains one optional group, and `EntitlementsSchema.used` one optional count, both additive:
 
@@ -755,11 +754,13 @@ CommunityShortNameSchema; // the P6 grammar, lower case by grammar
 HttpsUrlSchema; // https: only, also a JSON Schema pattern
 ServerUrlSchema; // https:, or http: to a loopback address
 ONE_TIME_CREDENTIAL_META; // marks claimUrl and the upload token
+tolerantEnum(known); // a later member reads as UNRECOGNISED ('unrecognised')
 HostedCommunitySchema = {
   communityId, orgId, name /* 1–80 */, shortName: nullable, communityUrl: ServerUrl,
   state: 'provisioning' | 'pending_owner' | 'active' | 'archived' | 'held' | 'suspended' | 'deletion_pending',
-  hold: { reason: 'over_limit' | 'inactive' | 'host', since, deletionNoticeAt: nullable } | null, // exactly when held
-  deletionAt: nullable, // exactly when deletion_pending
+  // state, hold.reason: tolerant
+  hold: { reason: 'over_limit' | 'inactive' | 'host', since, deletionNoticeAt: nullable } | null, // always set when held
+  deletionAt: nullable, // always set when deletion_pending
   notice: { title, detail, actionUrl?, actionLabel? } | null,
   kept: boolean, moveId: nullable,
   limits: { maxActiveMembers: nullable, maxStorageBytes: nullable },
@@ -769,7 +770,7 @@ HostedCommunitySchema = {
 };
 CommunityStartRequestSchema = { idempotencyKey /* per caller */, name /* trimmed, 1–80 */, shortName?, orgId? };
 CommunityStartResponseSchema = { community, claim: CommunityClaimLink | null, replayed: boolean };
-CommunityClaimLinkSchema = { communityId, claimUrl /* https, one-time credential */, expiresAt };
+CommunityClaimLinkSchema = { communityId, claimUrl /* ServerUrl, one-time credential */, expiresAt };
 CommunityNameCheckResponseSchema = { name, available, reason: 'taken' | 'reserved' | null };
 CommunityKeepRequestSchema = { expectedHeldCommunityIds: Id[] };
 CommunityKeepResponseSchema = { community, heldCommunityIds: Id[] };
@@ -780,7 +781,7 @@ CommunityMoveSchema = {
   moveId, communityId, communityUrl, name,
   state: 'awaiting_upload' | 'importing' | 'ready' | 'failed' | 'cancelled' | 'claimed',
   failureCode: 'not_owner_export' | 'archive_invalid' | 'checksum_mismatch' | 'version_unsupported'
-    | 'too_large' | 'storage_limit_reached' | 'upload_expired' | 'storage_unavailable' | null, // exactly when failed
+    | 'too_large' | 'storage_limit_reached' | 'upload_expired' | 'storage_unavailable' | null, // always set when failed; state and failureCode tolerant
   report: { channels, entries, attachments, historicalMembers, historicalAgents, attachmentBytes, countedBytes } | null,
   pollAfterMs: nullable, updatedAt,
 };
@@ -793,7 +794,7 @@ EntitlementCommunityLimitsSchema = { maxCommunities, maxMembersPerCommunity, max
 // problem.ts: ProblemSchema gains actionUrl? (https) and actionLabel? (1–60), each dropped when malformed
 ```
 
-The failure codes map from P3's `failure_code`: `IMPORT_ARCHIVE_INVALID` to `archive_invalid`, `IMPORT_NOT_OWNER_EXPORT` to `not_owner_export`, `IMPORT_CHECKSUM_MISMATCH` (an attachment that does not match the export's own manifest) to `checksum_mismatch`, `IMPORT_VERSION_UNSUPPORTED` to `version_unsupported`, `IMPORT_TOO_LARGE` to `too_large`, `STORAGE_LIMIT_REACHED` to `storage_limit_reached`, `IMPORT_STORAGE_UNAVAILABLE` to `storage_unavailable`; an upload window that closes before the file arrives is `upload_expired`.
+The failure codes map from P3's `failure_code`: `IMPORT_ARCHIVE_INVALID` to `archive_invalid`, `IMPORT_NOT_OWNER_EXPORT` to `not_owner_export`, `IMPORT_CHECKSUM_MISMATCH` (an attachment that does not match the export's own manifest) to `checksum_mismatch`, `IMPORT_VERSION_UNSUPPORTED` to `version_unsupported`, `IMPORT_TOO_LARGE` to `too_large`, `STORAGE_LIMIT_REACHED` to `storage_limit_reached`, `IMPORT_STORAGE_UNAVAILABLE` to `storage_unavailable`; an import cancelled because its upload window closed before a matching file arrived is reported as a failed move with `upload_expired`.
 
 ### Data model changes (migrations)
 
@@ -908,7 +909,7 @@ Each test carries a purpose comment. Every acceptance criterion below names the 
 
 **P5**
 
-- `packages/cloud-api` conformance fixtures parse for every new route and `Problem` code; the catalog-blindness test lists every new enum with its reason; the credential marker appears on exactly the claim link and upload token, at exactly the paths that create them, and no field named like a credential appears anywhere else in the family; `javascript:`, `file:`, `data:` and non-loopback `http:` links are refused; each tied field combination has a negative test.
+- `packages/cloud-api` conformance fixtures parse for every new route and `Problem` code; the catalog-blindness test lists every new enum with its reason; the credential marker appears on exactly the claim link and upload token, at exactly the paths that create them, and no field named like a credential appears anywhere else in the family; `javascript:`, `file:`, `data:` and non-loopback `http:` links are refused; each tied field combination has a negative test; a list with one item in an unknown state still parses, with that item read as `unrecognised` and the others intact.
 - With the installation unlinked, the switcher renders neither item and the client makes no request to `/api/cloud/communities/*` (asserted with a mock transport). Fails if the items render inert or probe the service.
 - Each dialog state renders at phone, tablet, and desktop widths in the Dev Playground, and the move state survives a reload.
 

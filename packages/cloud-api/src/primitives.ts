@@ -184,3 +184,33 @@ export const ServerUrlSchema = z
  * prove marked fields appear only where the contract says they may.
  */
 export const ONE_TIME_CREDENTIAL_META = 'x-dorkos-one-time-credential' as const;
+
+/**
+ * What a tolerant enum field reads as when the service sends a value this
+ * release does not know.
+ */
+export const UNRECOGNISED = 'unrecognised' as const;
+
+/**
+ * Wraps a published enum so a value added in a later release reads as
+ * {@link UNRECOGNISED} instead of failing the whole response.
+ *
+ * The additive rule lets the service add enum members in a minor release. For
+ * a field inside a list or a poll, a strict enum would turn one new state on
+ * one item into a failed parse of the whole page. This keeps every other item
+ * and gives the app one value to render generically ("in a state this version
+ * does not know"). A value that is not a string at all still fails: tolerance
+ * is for new members, not for a broken response. The known set stays published
+ * as the wrapped enum itself, so a consumer can still narrow on it.
+ *
+ * @param known - The published enum of known members.
+ */
+export function tolerantEnum<T extends z.ZodEnum>(known: T) {
+  return z.union([
+    known,
+    z
+      .string()
+      .transform((): typeof UNRECOGNISED => UNRECOGNISED)
+      .describe('A value this release does not know. It reads as unrecognised.'),
+  ]);
+}

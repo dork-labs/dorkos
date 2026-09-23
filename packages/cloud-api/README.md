@@ -36,18 +36,18 @@ body is neither.
 
 ## What is in the contract
 
-| Group                     | Covers                                                                                                                                                                                        |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`                                                                                                                               |
-| Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                                                    |
-| Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                                                 |
-| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage                                                   |
-| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `POST /v1/checkout`, `/v1/topup`, `/v1/refunds`, `/v1/portal`, `GET /v1/statement`                         |
-| Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                                     |
-| Seats, orgs and addresses | organizations, membership, invitations, agents and claims, seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                                               |
-| Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation, instance credentials, the command stream and its acknowledgement, event batches                      |
-| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, and moves: start, list, poll, a fresh upload target, cancel |
-| Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                                         |
+| Group                     | Covers                                                                                                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`                                                                                                          |
+| Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                               |
+| Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                            |
+| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage                              |
+| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `POST /v1/checkout`, `/v1/topup`, `/v1/refunds`, `/v1/portal`, `GET /v1/statement`    |
+| Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                |
+| Seats, orgs and addresses | organizations, membership, invitations, agents and claims, seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                          |
+| Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation, instance credentials, the command stream and its acknowledgement, event batches |
+| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, and moves: start, list, poll, cancel   |
+| Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                    |
 
 ### What is deliberately not in it
 
@@ -140,25 +140,31 @@ The service starts a community on a Community server and hands ownership to a pe
 that server's single-use owner claim; it never owns one itself.
 
 - **Two credentials, each returned once.** The claim link and a move's upload token appear only
-  in the answer that created them (a start, a move start, `claim-link`, or a move's `upload`
-  route), never in a list or a poll. Both carry the `ONE_TIME_CREDENTIAL_META` marker, which
+  in the answer that created them (a start, a move start, or `claim-link`), never in a list or
+  a poll. Both carry the `ONE_TIME_CREDENTIAL_META` marker, which
   reaches the JSON Schema too, and `src/__tests__/communities.test.ts` pins exactly where they
-  may appear. A caller that lost one asks for a fresh one, which revokes the last.
+  may appear. A lost claim link is replaced by `claim-link`, which revokes the last; a lost
+  upload token by cancelling the move and starting a new one.
 - **Relay the parsed value, never the raw body.** Objects here are not strict, so a field the
   schema does not define is dropped by `parse`. A server that relays these answers to a browser
   (the DorkOS server does) must serialize what it parsed, so a credential a service leaks into
   the wrong shape stops there.
-- **Links are checked by scheme.** A link a person is sent to (`claimUrl`, `actionUrl`) is
-  `https:` only (`HttpsUrlSchema`). A link to a server (`communityUrl`, an upload `url`) is
-  `https:`, or `http:` to a loopback address for local use (`ServerUrlSchema`). Both rules are
+- **Links are checked by scheme.** A link the service sends a person to (`actionUrl`) is
+  `https:` only (`HttpsUrlSchema`). A link to a Community server (`communityUrl`, `claimUrl`,
+  an upload `url`) is `https:`, or `http:` to a loopback address for local use
+  (`ServerUrlSchema`). Both rules are
   also a `pattern` in the JSON Schema. A malformed `actionUrl` or `actionLabel` is dropped
   rather than failing the whole refusal.
 - **Retries are safe.** A start or a move takes an idempotency key, scoped to the caller. A
   repeat answers `replayed: true` and without the credential.
 - **The upload goes straight to the Community server**, so the file never passes through the
-  service. A broken upload leaves the move waiting and the token usable; an expired or lost token
-  is replaced through `POST /v1/communities/moves/{moveId}/upload`, so a person never has to give
-  up the community and its short name to try again.
+  service. A mismatched or broken upload leaves the move waiting and the token usable until the
+  window closes. A closed window fails the move with `upload_expired`; a failed or cancelled
+  move frees its short name at once, so starting again with the same name works.
+- **New states do not break a page.** A hosted community's `state` and hold `reason`, and a
+  move's `state` and `failureCode`, are tolerant (`tolerantEnum`): a value added in a later
+  release reads as `unrecognised`, and every other item in the list still parses. Render it
+  generically. The known members stay published as their own enums.
 
 Every link to a community is a runtime value.
 

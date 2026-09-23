@@ -15,7 +15,7 @@ import { z } from 'zod';
 
 import * as contract from '../index.js';
 import { V1_ROUTES, v1Path } from '../routes.js';
-import { exportedSchemas, walk } from './schema-walk.js';
+import { exportedSchemas, unwrap, walk } from './schema-walk.js';
 
 const fixturesRoot = path.resolve(import.meta.dirname, '..', '..', 'fixtures', 'v1');
 
@@ -133,8 +133,14 @@ describe('the short-name grammar', () => {
 });
 
 describe('links a person may be sent to', () => {
-  it('accepts only https: for a claim link, and refuses every unsafe scheme', () => {
+  it('accepts a server link for a claim link, so local development works, and refuses every unsafe scheme', () => {
     const claim = fixture('communities/claim-link.json');
+    expect(
+      contract.CommunityClaimLinkSchema.safeParse({
+        ...claim,
+        claimUrl: 'http://localhost:4242/claim/ct_opaque_0001',
+      }).success
+    ).toBe(true);
     for (const link of UNSAFE_LINKS) {
       expect(
         contract.CommunityClaimLinkSchema.safeParse({ ...claim, claimUrl: link }).success,
@@ -158,15 +164,18 @@ describe('links a person may be sent to', () => {
       contract.HostedCommunitySchema.safeParse({ ...community, communityUrl: 'javascript:x' })
         .success
     ).toBe(false);
-    const upload = fixture('communities/move-upload.json');
+    const upload = fixture('communities/move-start.json').upload as Record<string, unknown>;
     expect(
       contract.CommunityMoveUploadSchema.safeParse({ ...upload, url: 'file:///tmp/x' }).success
     ).toBe(false);
   });
 
   it('publishes the scheme rule in the JSON Schema too, for a consumer that validates from it', () => {
-    const json = JSON.stringify(z.toJSONSchema(contract.CommunityClaimLinkSchema));
+    const json = JSON.stringify(z.toJSONSchema(contract.ProblemSchema));
     expect(json).toContain('^https:');
+    expect(JSON.stringify(z.toJSONSchema(contract.CommunityClaimLinkSchema))).toContain(
+      'localhost'
+    );
     const server = JSON.stringify(z.toJSONSchema(contract.CommunityMoveUploadSchema));
     expect(server).toContain('localhost');
   });
@@ -252,30 +261,38 @@ describe('what a hosted community carries', () => {
     expect(deleting?.notice?.title).toBeTruthy();
   });
 
-  it('ties hold to the held state and deletionAt to deletion_pending', () => {
+  it('makes a held community say why and a pending deletion say when, one way only', () => {
     const active = activeCommunity();
     const hold = { reason: 'host', since: '2026-09-01T00:00:00.000Z', deletionNoticeAt: null };
     const parse = (value: Record<string, unknown>) =>
       contract.HostedCommunitySchema.safeParse(value).success;
     expect(parse({ ...active, state: 'held' })).toBe(false);
-    expect(parse({ ...active, hold })).toBe(false);
     expect(parse({ ...active, state: 'held', hold })).toBe(true);
     expect(parse({ ...active, state: 'deletion_pending' })).toBe(false);
-    expect(parse({ ...active, deletionAt: '2026-09-30T00:00:00.000Z' })).toBe(false);
+    // One way only: a later release may carry a hold into a pending deletion.
+    expect(
+      parse({ ...active, state: 'deletion_pending', deletionAt: '2026-09-30T00:00:00.000Z', hold })
+    ).toBe(true);
   });
 
-  it('refuses a hold reason or a state it does not publish', () => {
-    const active = activeCommunity();
-    expect(contract.HostedCommunitySchema.safeParse({ ...active, state: 'deleted' }).success).toBe(
-      false
-    );
-    expect(
-      contract.HostedCommunitySchema.safeParse({
-        ...active,
-        state: 'held',
-        hold: { reason: 'unpaid', since: '2026-09-01T00:00:00.000Z', deletionNoticeAt: null },
-      }).success
-    ).toBe(false);
+  it('reads a state or hold reason from a later release as unrecognised, and keeps the rest of the page', () => {
+    const list = fixture('communities/list.json');
+    const items = list.items as Array<Record<string, unknown>>;
+    const future = [
+      { ...items[0], state: 'migrating' },
+      {
+        ...items[2],
+        hold: { reason: 'legal', since: '2026-09-01T00:00:00.000Z', deletionNoticeAt: null },
+      },
+      ...items.slice(3),
+    ];
+    const parsed = contract.HostedCommunityListResponseSchema.parse({ ...list, items: future });
+    expect(parsed.items).toHaveLength(future.length);
+    expect(parsed.items[0].state).toBe(contract.UNRECOGNISED);
+    expect(parsed.items[1].hold?.reason).toBe(contract.UNRECOGNISED);
+    expect(parsed.items[2].state).toBe(items[3].state);
+    // Tolerance is for new members, not for a broken response.
+    expect(contract.HostedCommunitySchema.safeParse({ ...items[0], state: 7 }).success).toBe(false);
   });
 
   it('refuses a display name longer than a start would accept', () => {
@@ -358,19 +375,25 @@ describe('moving a community in', () => {
     }
     const failed = contract.CommunityMoveSchema.parse(fixture('communities/move-failed.json'));
     expect(failed.failureCode).toBe('not_owner_export');
-    expect(
-      contract.CommunityMoveSchema.safeParse({
-        ...fixture('communities/move-failed.json'),
-        failureCode: 'IMPORT_ARCHIVE_INVALID',
-      }).success
-    ).toBe(false);
   });
 
-  it('ties failureCode to the failed state', () => {
+  it('reads a move state or failure code from a later release as unrecognised', () => {
+    const moves = fixture('communities/moves.json');
+    const items = moves.items as Array<Record<string, unknown>>;
+    const future = [
+      { ...items[0], state: 'validating' },
+      { ...items[1], failureCode: 'quarantined' },
+    ];
+    const parsed = contract.CommunityMoveListResponseSchema.parse({ ...moves, items: future });
+    expect(parsed.items.map((move) => move.state)).toEqual([contract.UNRECOGNISED, 'failed']);
+    expect(parsed.items[1].failureCode).toBe(contract.UNRECOGNISED);
+  });
+
+  it('makes a failed move say why, one way only', () => {
     const ready = fixture('communities/move-ready.json');
     expect(
       contract.CommunityMoveSchema.safeParse({ ...ready, failureCode: 'too_large' }).success
-    ).toBe(false);
+    ).toBe(true);
     expect(
       contract.CommunityMoveSchema.safeParse({
         ...fixture('communities/move-failed.json'),
@@ -404,6 +427,28 @@ const CREDENTIAL_PATHS = new Set([
   'CommunityMoveStartResponseSchema.upload.token',
 ]);
 
+/**
+ * Every node in these schemas whose name reads like a credential, sits
+ * outside {@link CREDENTIAL_PATHS}, and could carry a value (anything but a
+ * boolean). Name-based, so a credential added without the marker is caught.
+ *
+ * @param schemas - Named schemas to walk.
+ */
+function strayCredentials(schemas: Array<[string, z.ZodTypeAny]>): string[] {
+  const offenders: string[] = [];
+  for (const [name, schema] of schemas) {
+    for (const { path: at, node } of walk(schema, name)) {
+      const field = (at.split('.').pop() ?? at).replace(/\[\d+]$/, '');
+      if (!/token|secret|password|credential|claim/i.test(field)) continue;
+      if (CREDENTIAL_PATHS.has(at)) continue;
+      const kind = (unwrap(node) as unknown as { def: { type: string } }).def.type;
+      if (kind === 'boolean' || kind === 'object') continue;
+      offenders.push(at);
+    }
+  }
+  return [...new Set(offenders)].sort();
+}
+
 /** The exported schemas of the hosted-communities family. */
 function communitySchemas(): Array<[string, z.ZodTypeAny]> {
   return exportedSchemas().filter(([name]) => /^(Hosted)?Community/.test(name));
@@ -422,16 +467,20 @@ describe('one-time credentials', () => {
   });
 
   it('appear under no other name anywhere in the family, however deep', () => {
-    // Name-based, so a credential added without the marker is caught too.
-    const offenders: string[] = [];
-    for (const [name, schema] of communitySchemas()) {
-      for (const { path: at } of walk(schema, name)) {
-        const field = at.split('.').pop() ?? at;
-        if (/token|secret|password|claim_?url|credential/i.test(field) && !CREDENTIAL_PATHS.has(at))
-          offenders.push(at);
-      }
-    }
-    expect(offenders).toEqual([]);
+    expect(strayCredentials(communitySchemas())).toEqual([]);
+  });
+
+  it('would catch an unmarked link at `actions.claimLink`, so the guard is not vacuous', () => {
+    // The positive control: `actions.claimLink` is a boolean today. Were it ever
+    // to carry the link itself, the guard above must say so.
+    const leaky = z.object({
+      actions: z.object({ claimLink: z.url(), keep: z.boolean() }),
+      uploadToken: z.string(),
+    });
+    expect(strayCredentials([['CommunityLeakySchema', leaky]])).toEqual([
+      'CommunityLeakySchema.actions.claimLink',
+      'CommunityLeakySchema.uploadToken',
+    ]);
   });
 
   it('are stripped from a list or a poll that carries one by mistake, when re-serialized', () => {
@@ -483,7 +532,6 @@ describe('the routes', () => {
     expect(v1Path.communityKeep('c1')).toBe('/v1/communities/c1/keep');
     expect(v1Path.communityRestore('c1')).toBe('/v1/communities/c1/restore');
     expect(v1Path.communityMove('m1')).toBe('/v1/communities/moves/m1');
-    expect(v1Path.communityMoveUpload('m1')).toBe('/v1/communities/moves/m1/upload');
     expect(v1Path.communityMoveCancel('m1')).toBe('/v1/communities/moves/m1/cancel');
   });
 

@@ -312,16 +312,6 @@ export const v1Path = {
    */
   communityMove: (moveId: string) => `/v1/communities/moves/${enc(moveId)}`,
   /**
-   * The route that issues a fresh upload target for one move, answered with
-   * `CommunityMoveUploadSchema`. Only while the move is `awaiting_upload`, and
-   * refused with `conflict` otherwise; the previous token stops working. It is
-   * how a person whose upload broke, or whose window closed, tries again
-   * without giving up the community and its short name.
-   *
-   * @param moveId - The move's opaque identifier.
-   */
-  communityMoveUpload: (moveId: string) => `/v1/communities/moves/${enc(moveId)}/upload`,
-  /**
    * The route that cancels one move, answered with `CommunityMoveSchema`.
    * Allowed until the move is `ready`, and refused with `conflict` after that.
    * Cancelling removes the new community and everything uploaded for it.

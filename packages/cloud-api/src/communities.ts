@@ -8,6 +8,7 @@ import {
   ServerUrlSchema,
   TimestampSchema,
   pageOf,
+  tolerantEnum,
 } from './primitives.js';
 
 /*
@@ -76,13 +77,14 @@ const IdempotencyKeySchema = z
 /**
  * A link that carries a single-use credential.
  *
- * `https:` only, and marked with {@link ONE_TIME_CREDENTIAL_META} so a relay can
+ * A server link (`https:`, or `http:` to loopback for local use, since the
+ * link points at the Community server), marked with {@link ONE_TIME_CREDENTIAL_META} so a relay can
  * refuse to pass it on and a test can pin where it appears.
  *
  * @param description - What the link is for.
  */
 function oneTimeLink(description: string) {
-  return HttpsUrlSchema.meta({ description, [ONE_TIME_CREDENTIAL_META]: true });
+  return ServerUrlSchema.meta({ description, [ONE_TIME_CREDENTIAL_META]: true });
 }
 
 /**
@@ -187,8 +189,13 @@ export const HostedCommunityKeepActionSchema = z
  * button only when the service will accept it and never re-derives the rule.
  * A new action arrives as a new optional field of `actions`.
  *
- * `hold` is set exactly when the state is `held`, and `deletionAt` exactly
- * when it is `deletion_pending`; the schema refuses any other combination.
+ * A `held` community always says why (`hold`), and one in `deletion_pending`
+ * always says when (`deletionAt`). The rules run one way only: a later release
+ * may carry a hold into another state (a held community whose deletion has
+ * started, for instance), and that must still parse.
+ *
+ * `state` and `hold.reason` are tolerant: a value added in a later release
+ * reads as `unrecognised` rather than failing the page it arrives in.
  */
 export const HostedCommunitySchema = z
   .object({
@@ -203,19 +210,23 @@ export const HostedCommunitySchema = z
     communityUrl: ServerUrlSchema.describe(
       'The community`s canonical link on its Community server, built on its permanent identifier. A runtime value; pair a DorkOS installation with this.'
     ),
-    state: HostedCommunityStateSchema,
+    state: tolerantEnum(HostedCommunityStateSchema).describe(
+      'Where the community is in its lifecycle. A state this release does not know reads as unrecognised.'
+    ),
     hold: z
       .object({
-        reason: HostedCommunityHoldReasonSchema,
+        reason: tolerantEnum(HostedCommunityHoldReasonSchema).describe(
+          'Why the community is on hold. A reason this release does not know reads as unrecognised.'
+        ),
         since: TimestampSchema,
         deletionNoticeAt: TimestampSchema.nullable().describe(
           'When the host may delete the community if the hold is not lifted, or null when no deletion is planned. The owner can export until then.'
         ),
       })
       .nullable()
-      .describe('Why and since when the community is on hold. Set exactly when the state is held.'),
+      .describe('Why and since when the community is on hold. Always set when the state is held.'),
     deletionAt: TimestampSchema.nullable().describe(
-      'When the Community server will delete the community for good. Set exactly when the state is deletion_pending.'
+      'When the Community server will delete the community for good. Always set when the state is deletion_pending.'
     ),
     notice: HostedCommunityNoticeSchema.nullable().describe(
       'What the service wants the owner to read about this community, or null when there is nothing.'
@@ -272,18 +283,14 @@ export const HostedCommunitySchema = z
     createdAt: TimestampSchema,
   })
   .superRefine((community, ctx) => {
-    if ((community.state === 'held') !== (community.hold !== null)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['hold'],
-        message: 'hold is set exactly when the state is held',
-      });
+    if (community.state === 'held' && community.hold === null) {
+      ctx.addIssue({ code: 'custom', path: ['hold'], message: 'a held community says why' });
     }
-    if ((community.state === 'deletion_pending') !== (community.deletionAt !== null)) {
+    if (community.state === 'deletion_pending' && community.deletionAt === null) {
       ctx.addIssue({
         code: 'custom',
         path: ['deletionAt'],
-        message: 'deletionAt is set exactly when the state is deletion_pending',
+        message: 'a community pending deletion says when',
       });
     }
   })
@@ -507,7 +514,8 @@ export type CommunityMoveState = z.infer<typeof CommunityMoveStateSchema>;
  *
  * An upload whose bytes do not match the declared size or digest is not a
  * failure of the move: the upload is refused and the move stays
- * `awaiting_upload` (see {@link CommunityMoveUploadSchema}).
+ * `awaiting_upload` (see {@link CommunityMoveUploadSchema}). An upload window
+ * that closes before a matching file arrives is `upload_expired`.
  */
 export const CommunityMoveFailureCodeSchema = z
   .enum([
@@ -564,7 +572,9 @@ export const CommunityMoveReportSchema = z
  * new community and everything uploaded for it, and frees its short name at
  * once, so starting again with the same name works.
  *
- * `failureCode` is set exactly when the state is `failed`.
+ * A `failed` move always says why (`failureCode`); the rule runs one way only.
+ * `state` and `failureCode` are tolerant: a value added in a later release
+ * reads as `unrecognised` rather than failing the page it arrives in.
  */
 export const CommunityMoveSchema = z
   .object({
@@ -574,10 +584,14 @@ export const CommunityMoveSchema = z
     ),
     communityUrl: ServerUrlSchema.describe('The new community`s canonical link. A runtime value.'),
     name: z.string().min(1).max(80).describe('The name the new community was given.'),
-    state: CommunityMoveStateSchema,
-    failureCode: CommunityMoveFailureCodeSchema.nullable().describe(
-      'Why the move failed. Set exactly when the state is failed.'
+    state: tolerantEnum(CommunityMoveStateSchema).describe(
+      'Where the move is. A state this release does not know reads as unrecognised.'
     ),
+    failureCode: tolerantEnum(CommunityMoveFailureCodeSchema)
+      .nullable()
+      .describe(
+        'Why the move failed. Always set when the state is failed. A code this release does not know reads as unrecognised.'
+      ),
     report: CommunityMoveReportSchema.nullable().describe(
       'What the export holds, once it has been read. Null before then.'
     ),
@@ -590,12 +604,8 @@ export const CommunityMoveSchema = z
     updatedAt: TimestampSchema,
   })
   .superRefine((move, ctx) => {
-    if ((move.state === 'failed') !== (move.failureCode !== null)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['failureCode'],
-        message: 'failureCode is set exactly when the state is failed',
-      });
+    if (move.state === 'failed' && move.failureCode === null) {
+      ctx.addIssue({ code: 'custom', path: ['failureCode'], message: 'a failed move says why' });
     }
   })
   .describe('One move of a community into hosting, from an owner export.');
@@ -673,8 +683,9 @@ export const COMMUNITY_ARCHIVE_DIGEST_HEADER = 'X-Archive-SHA256' as const;
  *   digest. Nothing is kept, the move stays `awaiting_upload`, and the same
  *   token may be used again until `expiresAt`;
  * - a dropped connection part-way: the same, the token still works;
- * - `401`: the token has expired or been replaced. Ask
- *   `POST /v1/communities/moves/{moveId}/upload` for a new one.
+ * - `401`: the upload window has closed. The move is then `failed` with
+ *   `upload_expired`, and the app starts a new move. A failed move frees its
+ *   short name at once, so the new move can use the same one.
  */
 export const CommunityMoveUploadSchema = z
   .object({
@@ -696,8 +707,8 @@ export type CommunityMoveUpload = z.infer<typeof CommunityMoveUploadSchema>;
  *
  * The first answer carries the upload target, and no later answer does: the
  * token is a credential the service keeps no copy of. `upload` is therefore
- * null exactly when `replayed` is true, and a caller that lost it asks
- * `POST /v1/communities/moves/{moveId}/upload` for a fresh one.
+ * null exactly when `replayed` is true. A caller that lost it cancels the move
+ * and starts a new one; cancelling frees the short name at once.
  */
 export const CommunityMoveStartResponseSchema = z
   .object({
