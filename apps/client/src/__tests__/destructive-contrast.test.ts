@@ -266,39 +266,185 @@ function sourceFiles(dir: string): string[] {
   return out;
 }
 
-describe('solid destructive fills dim themselves in dark mode', () => {
-  // Class strings are single-line string literals in this codebase. A string
-  // that paints a solid red fill (`bg-destructive` with no `/alpha`) AND puts a
-  // label on it must also carry the dark-mode dimming, or its label drops to
-  // ~3.4:1 on a dark screen. Hover-only fills (`hover:bg-destructive/90` plus
-  // `hover:text-destructive-foreground`) need the hover twin.
-  const LITERAL = /(['"`])((?:(?!\1).)*?bg-destructive(?:(?!\1).)*)\1/g;
-  const LABEL = /(^|\s)(hover:)?text-(white|destructive-foreground)(\s|$)/;
+/** A string literal found in source: its text and where it starts and ends. */
+interface Literal {
+  text: string;
+  start: number;
+  end: number;
+}
 
-  const offenders: string[] = [];
-  let inspected = 0;
-  for (const file of sourceFiles(SRC)) {
-    const text = readFileSync(file, 'utf8');
-    for (const m of text.matchAll(LITERAL)) {
-      const classes = m[2]!;
-      if (!LABEL.test(classes)) continue;
-      inspected++;
-      const solid = /(^|\s)bg-destructive(\s|$)/.test(classes);
-      const hoverSolid = /(^|\s)hover:bg-destructive\/(9\d|100)(\s|$)/.test(classes);
-      const where = `${relative(SRC, file)}: ${classes.slice(0, 80)}`;
-      if (solid && !/(^|\s)dark:bg-destructive\/60(\s|$)/.test(classes)) offenders.push(where);
-      else if (!solid && hoverSolid && !/(^|\s)dark:hover:bg-destructive\/60(\s|$)/.test(classes)) {
-        offenders.push(where);
+/**
+ * Every string literal in `src`: single, double and template quotes, template
+ * literals across lines included. Comments are skipped so prose that names a
+ * class is not read as markup. A `${…}` inside a template is kept as text,
+ * which is enough here: the guard only asks which class tokens a literal holds.
+ */
+function stringLiterals(src: string): Literal[] {
+  const out: Literal[] = [];
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i]!;
+    if (c === '/' && src[i + 1] === '/') {
+      i = src.indexOf('\n', i);
+      if (i < 0) break;
+    } else if (c === '/' && src[i + 1] === '*') {
+      i = src.indexOf('*/', i + 2);
+      if (i < 0) break;
+      i += 2;
+    } else if (c === "'" || c === '"' || c === '`') {
+      let j = i + 1;
+      while (j < src.length && src[j] !== c) {
+        if (src[j] === '\\') j++;
+        if (c !== '`' && src[j] === '\n') break;
+        j++;
       }
+      out.push({ text: src.slice(i + 1, j), start: i, end: j + 1 });
+      i = j + 1;
+    } else {
+      i++;
     }
   }
+  return out;
+}
 
-  it('finds the fills it is guarding (the scan is not vacuous)', () => {
-    // button.tsx, badge.tsx, the dialogs and the composer's Stop button.
-    expect(inspected).toBeGreaterThanOrEqual(10);
+/** Calls whose arguments merge into ONE element's class list. */
+const MERGE_CALL = /\b(cn|clsx|cx|twMerge|cva)\s*\($/;
+
+/**
+ * The span of source that becomes one element's classes around `lit`.
+ *
+ * A literal inside `cn(…)`, `clsx(…)` or `cva(…)` merges with its sibling
+ * arguments, so the unit is the whole call (the outermost merge call, so a
+ * nested `cn` inside a `cva` still counts as one). A literal outside any merge
+ * call stands alone. The walk counts brackets backwards from the literal and
+ * ignores brackets inside other literals.
+ */
+function classUnit(src: string, lit: Literal, literals: Literal[]): string {
+  const inLiteral = (pos: number) => literals.some((l) => pos >= l.start && pos < l.end);
+  let unit: [number, number] | null = null;
+  let depth = 0;
+  for (let p = lit.start - 1; p >= 0; p--) {
+    if (inLiteral(p)) continue;
+    const ch = src[p];
+    if (ch === ')' || ch === ']' || ch === '}') depth++;
+    else if (ch === '(' || ch === '[' || ch === '{') {
+      if (depth > 0) {
+        depth--;
+        continue;
+      }
+      if (ch === '(' && MERGE_CALL.test(src.slice(Math.max(0, p - 12), p + 1))) {
+        // Find this call's closing paren, then keep walking for an outer one.
+        let d = 0;
+        let q = p;
+        for (; q < src.length; q++) {
+          if (inLiteral(q)) continue;
+          if (src[q] === '(') d++;
+          else if (src[q] === ')' && --d === 0) break;
+        }
+        unit = [p, q + 1];
+      }
+      // Keep climbing past any other opener: the OUTERMOST merge call wins.
+    }
+  }
+  return unit ? src.slice(unit[0], unit[1]) : lit.text;
+}
+
+/** A class token the label on a red fill is painted with. */
+const LABEL = /(^|[\s'"`])(hover:)?text-(white|destructive-foreground)(?=[\s'"`]|$)/;
+/** A solid (un-alpha'd) destructive fill. */
+const SOLID = /(^|[\s'"`])bg-destructive(?=[\s'"`]|$)/;
+/** A hover-only near-solid fill. */
+const HOVER_SOLID = /(^|[\s'"`])hover:bg-destructive\/(9\d|100)(?=[\s'"`]|$)/;
+const DIMMED = /(^|[\s'"`])dark:bg-destructive\/60(?=[\s'"`]|$)/;
+const HOVER_DIMMED = /(^|[\s'"`])dark:hover:bg-destructive\/60(?=[\s'"`]|$)/;
+
+/**
+ * The labelled red fills in `src` that skip the dark-mode dimming.
+ *
+ * The unit judged is everything that becomes ONE element's classes: a lone
+ * literal (single- or multi-line), or a whole `cn`/`clsx`/`cva` call, so a fill
+ * in one argument and its label in the next is caught. It also returns how
+ * many labelled fills it inspected, so a scan that finds nothing can be told
+ * apart from a clean one.
+ */
+function undimmedFills(src: string): { offenders: string[]; inspected: number } {
+  const literals = stringLiterals(src);
+  const seen = new Set<string>();
+  const offenders: string[] = [];
+  let inspected = 0;
+  for (const lit of literals) {
+    if (!SOLID.test(lit.text) && !HOVER_SOLID.test(lit.text)) continue;
+    const unit = classUnit(src, lit, literals);
+    if (seen.has(unit)) continue;
+    seen.add(unit);
+    if (!LABEL.test(unit)) continue;
+    inspected++;
+    const solid = SOLID.test(unit);
+    if ((solid && !DIMMED.test(unit)) || (!solid && !HOVER_DIMMED.test(unit))) {
+      offenders.push(unit.replace(/\s+/g, ' ').slice(0, 100));
+    }
+  }
+  return { offenders, inspected };
+}
+
+describe('solid destructive fills dim themselves in dark mode', () => {
+  // A labelled solid red fill must carry `dark:bg-destructive/60`, or its label
+  // drops to ~3.4:1 on a dark screen. A hover-only fill needs the hover twin.
+
+  it('catches a fill and its label split across cn() arguments', () => {
+    const src = `const c = cn('bg-destructive rounded-md', 'text-destructive-foreground px-3');`;
+    expect(undimmedFills(src).offenders).toHaveLength(1);
+    expect(undimmedFills(src.replace('rounded-md', 'rounded-md dark:bg-destructive/60'))).toEqual({
+      offenders: [],
+      inspected: 1,
+    });
   });
 
-  it('every labelled solid fill carries `dark:bg-destructive/60`', () => {
+  it('catches a fill and its label split across clsx() lines and nested calls', () => {
+    const src = [
+      'const c = clsx(',
+      "  'inline-flex',",
+      "  confirming && cn('bg-destructive', 'hover:bg-destructive/90'),",
+      "  'text-white',",
+      ');',
+    ].join('\n');
+    expect(undimmedFills(src).offenders).toHaveLength(1);
+  });
+
+  it('catches a multi-line template literal', () => {
+    const src = 'const c = `\n  bg-destructive\n  text-white\n`;';
+    expect(undimmedFills(src).offenders).toHaveLength(1);
+  });
+
+  it('catches a hover-only fill without the hover twin', () => {
+    const src = `x = 'bg-muted hover:bg-destructive/90 hover:text-destructive-foreground';`;
+    expect(undimmedFills(src).offenders).toHaveLength(1);
+    expect(
+      undimmedFills(src.replace("foreground'", "foreground dark:hover:bg-destructive/60'"))
+        .offenders
+    ).toEqual([]);
+  });
+
+  it('leaves unlabelled fills, tints and comments alone', () => {
+    const src = [
+      "const swatch = { bg: 'bg-destructive' };",
+      "const chip = 'bg-destructive/10 text-destructive';",
+      '// bg-destructive text-white in prose is not markup',
+    ].join('\n');
+    expect(undimmedFills(src)).toEqual({ offenders: [], inspected: 0 });
+  });
+
+  it('every labelled solid fill in the app carries the dark dimming', () => {
+    const offenders: string[] = [];
+    let inspected = 0;
+    for (const file of sourceFiles(SRC)) {
+      const result = undimmedFills(readFileSync(file, 'utf8'));
+      inspected += result.inspected;
+      offenders.push(...result.offenders.map((o) => `${relative(SRC, file)}: ${o}`));
+    }
+    // button.tsx, badge.tsx, the dialogs and the composer's Stop button: a scan
+    // that inspected none of them would pass while guarding nothing.
+    expect(inspected).toBeGreaterThanOrEqual(10);
     expect(offenders).toEqual([]);
   });
 });

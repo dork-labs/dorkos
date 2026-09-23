@@ -1,4 +1,15 @@
 @import 'tailwindcss';
+/*
+ * `dark:` follows the VAULT's theme, not the OS. Tailwind's default is the
+ * `prefers-color-scheme` media query, but every colour in this embed comes from
+ * the vault (`--background-secondary`, the `.theme-dark` overrides below), so a
+ * dark vault on a light-mode OS used to get light-mode utilities over dark
+ * surfaces and the reverse. Obsidian puts `theme-dark` on the body and swaps it
+ * live when the vault's theme changes, so no script has to follow it. The red
+ * fills show the cost of getting this wrong: `dark:bg-destructive/60` over a
+ * light vault left a white label at 2.4:1 (`plugin-styles.test.ts`).
+ */
+@custom-variant dark (&:is(.theme-dark *));
 @source '../../../node_modules/streamdown/dist/*.js';
 /*
  * The guard's own prose is not markup.
@@ -382,12 +393,9 @@
   --color-muted-foreground: var(--text-muted);
   --color-accent: var(--interactive-accent);
   --color-accent-foreground: var(--text-on-accent);
-  /*
-   * The destructive red, dark enough to be readable text on Obsidian's light
-   * surfaces (5.2:1 on #f6f6f6) and to hold a white label (5.7:1). The former
-   * #e53e3e was 3.8:1 and 4.1:1. Dark vaults get a lighter red below. Same
-   * literals as the client's Obsidian block (`index.css`).
-   */
+  /* Destructive red for a light vault; `.theme-dark` below lifts it. Same
+     literals as the client's Obsidian block; contrast table in
+     `apps/client/src/__tests__/destructive-contrast.test.ts`. */
   --color-destructive: #ca1c27;
   --color-destructive-foreground: #fff;
   --color-border: var(--background-modifier-border);
@@ -536,10 +544,10 @@
   --status-warning-dot: hsl(38 92% 60%);
   --brand: hsl(24 88% 55%);
   /*
-   * Error text on a dark vault: the light theme's red is 2.7:1 on #262626,
-   * this is 4.8:1. It is too light to hold a white label, so a solid
-   * destructive fill relies on `dark:bg-destructive/60`, which in this build
-   * follows the OS colour scheme rather than the vault's theme.
+   * Error text on a dark vault. Too light to hold a white label, so a solid
+   * destructive fill dims itself with `dark:bg-destructive/60`, which the
+   * `@custom-variant` at the top binds to this same `.theme-dark`. Contrast
+   * table: `apps/client/src/__tests__/destructive-contrast.test.ts`.
    */
   --color-destructive: #ff554b;
   --destructive: #ff554b;
