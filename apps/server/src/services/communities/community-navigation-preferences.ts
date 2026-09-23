@@ -14,6 +14,7 @@ import type {
   CommunityNavigationDestination,
   CommunityInstallationDestination,
   CommunityNavigationPrefs,
+  UserConfig,
 } from '@dorkos/shared/config-schema';
 import type { ConfigManager } from '../core/config-manager.js';
 import type { RemoteCommunityPairingService } from './remote/pairing-service.js';
@@ -31,7 +32,7 @@ export class CommunityNavigationPreferenceService {
   private writeTail: Promise<void> = Promise.resolve();
 
   constructor(
-    private readonly config: ConfigManager,
+    private readonly config: Pick<ConfigManager, 'get' | 'setDot'>,
     private readonly connections: Pick<RemoteCommunityPairingService, 'list'>,
     private readonly canReadRoom: CommunityNavigationRoomAuthorizer
   ) {}
@@ -149,7 +150,13 @@ export class CommunityNavigationPreferenceService {
     next: CommunityNavigationPrefs
   ): void {
     if (JSON.stringify(previous) === JSON.stringify(next)) return;
-    this.config.set('ui', { ...this.config.get('ui'), communityNavigation: next });
+    // Only this path, never the whole `ui` section: the settings broadcast
+    // recognizes a write that stored nothing else as movement, not a settings
+    // change, and stays quiet for it (DOR-2227).
+    this.config.setDot(
+      'ui.communityNavigation',
+      next satisfies UserConfig['ui']['communityNavigation']
+    );
   }
 
   private serialized<T>(operation: () => Promise<T>): Promise<T> {

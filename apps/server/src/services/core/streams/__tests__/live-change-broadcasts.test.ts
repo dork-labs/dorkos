@@ -189,7 +189,7 @@ describe('config_changed', () => {
   });
 
   it('carries section names and a stamp, and nothing else', () => {
-    config.fire({ sections: ['tunnel'] });
+    config.fire({ sections: ['tunnel'], paths: ['tunnel'] });
 
     const { data } = fanOut.only('config_changed');
     expect(Object.keys(data as object).sort()).toEqual(['changedAt', 'sections']);
@@ -200,7 +200,7 @@ describe('config_changed', () => {
     // The mutation probe for `operatorAudience`. Deleting the audience argument
     // from the wiring turns the agent case green-to-red here, which is exactly
     // what the verbatim-copy version of this suite could not do.
-    config.fire({ sections: ['ui'] });
+    config.fire({ sections: ['ui'], paths: ['ui'] });
 
     expect(fanOut.only('config_changed').audience).toBeDefined();
     expect(fanOut.reaches('config_changed', { kind: 'operator' })).toBe(true);
@@ -219,12 +219,48 @@ describe('config_changed', () => {
     // `ConfigManager` only ever hands over section names, so this is really a
     // guard on the wiring not reaching back for values — checked against the
     // encoded frames, which is what a connection actually receives.
-    config.fire({ sections: ['tunnel', 'profile'] });
+    config.fire({ sections: ['tunnel', 'profile'], paths: ['tunnel', 'profile'] });
 
     const { event, data } = fanOut.only('config_changed');
     const encoded = encodeBroadcast(event, data);
     expect(`${encoded.json}\n${encoded.sse}`).toMatch(/^[^]*tunnel[^]*$/);
     expect(`${encoded.json}\n${encoded.sse}`).not.toContain('authtoken');
+  });
+
+  describe('remembered Community navigation (DOR-2227)', () => {
+    it('stays quiet for a write that stored nothing but navigation state', () => {
+      // Moving between Communities saves where the person was. Broadcasting
+      // that made every open window refetch the whole config on ordinary
+      // movement.
+      config.fire({ sections: ['ui'], paths: ['ui.communityNavigation'] });
+      config.fire({ sections: ['ui'], paths: ['ui.communityNavigation.owners'] });
+
+      expect(fanOut.sent).toEqual([]);
+    });
+
+    it('still broadcasts a write that stored navigation AND something else', () => {
+      config.fire({ sections: ['ui'], paths: ['ui.communityNavigation', 'ui.theme'] });
+
+      expect(fanOut.only('config_changed').data).toMatchObject({ sections: ['ui'] });
+    });
+
+    it('still broadcasts a whole-`ui` write, which is what the Settings screen sends', () => {
+      config.fire({ sections: ['ui'], paths: ['ui'] });
+
+      expect(fanOut.sent.map((entry) => entry.event)).toEqual(['config_changed']);
+    });
+
+    it('matches the navigation path whole, never a sibling that shares its prefix', () => {
+      config.fire({ sections: ['ui'], paths: ['ui.communityNavigationHint'] });
+
+      expect(fanOut.sent.map((entry) => entry.event)).toEqual(['config_changed']);
+    });
+
+    it('still broadcasts a write that reported no paths at all', () => {
+      config.fire({ sections: ['ui'], paths: [] });
+
+      expect(fanOut.sent.map((entry) => entry.event)).toEqual(['config_changed']);
+    });
   });
 });
 
@@ -306,7 +342,7 @@ describe('a server with no mesh', () => {
       eventFanOut: soloFanOut,
     });
 
-    soloConfig.fire({ sections: ['ui'] });
+    soloConfig.fire({ sections: ['ui'], paths: ['ui'] });
 
     expect(soloFanOut.sent.map((entry) => entry.event)).toEqual(['config_changed']);
   });
