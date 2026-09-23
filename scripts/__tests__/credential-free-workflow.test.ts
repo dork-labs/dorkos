@@ -23,16 +23,16 @@
  *     runner with no secrets wired in, the two are indistinguishable from the
  *     log — which is exactly why it has to be asserted from the file.
  *
- *  3. **Letting the cost story drift from the numbers it rests on.** The
- *     ceiling and the test step's fan-out are a matched pair, argued from
- *     measured runs in the workflow's own header. `--concurrency=1` there is a
- *     SERIAL pass over the affected set, which for a `packages/shared` change
- *     is 20 of 25 packages and measured 40m53s in the queue against a
- *     50-minute ceiling; a ceiling above the queue's own
- *     `check_response_timeout_minutes` stalls every PR for the whole window
- *     instead of going red. Both are one-character edits that change no output
- *     until the day a shared-package PR is in the queue, so both are pinned
- *     below with the reasoning rather than left to a comment.
+ *  3. **Letting the ceiling drift past the queue's own window.** A ceiling
+ *     above the queue's `check_response_timeout_minutes` stalls every PR for
+ *     the whole window instead of going red. It is a one-character edit that
+ *     changes no output until the day a run hangs, so it is pinned below.
+ *
+ *  4. **Losing the ground the unit suites stand on.** This job no longer runs
+ *     the unit suites (ledger 260919-175501): test.yml runs them, on runners
+ *     where no hosted-side variable is set. That is true only while test.yml
+ *     sets none and reads no secret, so that is pinned too. If it ever has to
+ *     change, the unit suites belong back under the scrub, here or there.
  *
  * Same shape of guard, for the same reason, as `vitest-flake-reporter.test.ts`
  * beside it: a flag or a trigger whose absence changes no output has to be
@@ -53,7 +53,22 @@ const repoRoot = path.resolve(import.meta.dirname, '..', '..');
 const WORKFLOW_REL = '.github/workflows/credential-free-build.yml';
 const SCRUB_REL = 'scripts/run-credential-free.sh';
 
+const TEST_WORKFLOW_REL = '.github/workflows/test.yml';
+
 const workflow = readFileSync(path.join(repoRoot, WORKFLOW_REL), 'utf8');
+
+/**
+ * The scrub's variable-name patterns, read from `CLOUD_ENV_PATTERNS` in
+ * scripts/run-credential-free.sh and turned into anchored regexes (`*` is the
+ * only glob character the list uses).
+ */
+function scrubPatterns(): RegExp[] {
+  const script = readFileSync(path.join(repoRoot, SCRUB_REL), 'utf8');
+  const block = script.match(/^CLOUD_ENV_PATTERNS=\(\n([\s\S]*?)^\)/m)?.[1] ?? '';
+  return [...block.matchAll(/'([^']+)'/g)].map(
+    (m) => new RegExp(`^${(m[1] as string).replace(/\*/g, '.*')}$`)
+  );
+}
 
 /**
  * Every `run:` command in the workflow, as single-line strings.
@@ -108,9 +123,9 @@ describe('credential-free-build workflow', () => {
     // green. Change it deliberately when you add or remove a step.
     expect(
       commands.length,
-      `${WORKFLOW_REL} has ${commands.length} \`run:\` steps, expected 6. If you added or ` +
+      `${WORKFLOW_REL} has ${commands.length} \`run:\` steps, expected 5. If you added or ` +
         `removed one on purpose, update this number; if you did not, a step went missing.`
-    ).toBe(6);
+    ).toBe(5);
     const unscrubbed = commands.filter((c) => !c.startsWith(`bash ${SCRUB_REL}`));
     expect(
       unscrubbed,
@@ -157,9 +172,9 @@ describe('credential-free-build workflow', () => {
     // The queue's `check_response_timeout_minutes` is 120, read off the live
     // branch ruleset. A job permitted to outlive it does not go red — it holds
     // every PR behind it for the full window, which is strictly worse than
-    // failing. The lower bound is the other half: the measured worst case is
-    // ~41 minutes in the test step on a `packages/shared` change, so a ceiling
-    // back down near 50 re-creates the timeout this pin exists to record.
+    // failing. The lower bound keeps a cold, whole-monorepo build+typecheck+lint
+    // (estimated near 16 minutes on a runner, plus the CLI build and the boot
+    // probe) well inside the ceiling, so a hang goes red and a slow run does not.
     // There is exactly one uncommented `timeout-minutes:` in this workflow and
     // it is the job's. Asserting the count keeps that true: a step-level
     // timeout added above the job key would otherwise silently retarget this.
@@ -174,33 +189,53 @@ describe('credential-free-build workflow', () => {
       declared,
       `${WORKFLOW_REL} declares no job-level \`timeout-minutes\` — an untimed job can stall the queue.`
     ).toBeDefined();
-    // The floor is the measured worst case with runaway headroom, not the old
-    // 50 plus one: run 35064083857 spent 40m53s in the test step alone and
-    // 8m34s in the step before it, so a ceiling in the sixties re-creates the
-    // very timeout this pin records. The roof is the queue's own window.
-    expect(Number(declared)).toBeGreaterThanOrEqual(90);
+    // The floor is about twice that estimate; the roof is the queue's window.
+    expect(Number(declared)).toBeGreaterThanOrEqual(30);
     expect(Number(declared)).toBeLessThan(120);
   });
 
-  it('never runs the test leg serially, and never at turbo`s default fan-out', () => {
-    // Both ends matter and they fail in opposite directions. `1` is a serial
-    // chain over the affected set — 20 of 25 packages for a `packages/shared`
-    // change, 40m53s measured in the queue. Turbo's default (15, from
-    // turbo.json) has every task spawning its own vitest worker pool on a
-    // 4-vCPU runner, which is the ~10x oversubscription DOR-121 is about and
-    // the shape of the `Killed` runs this workflow's header documents. The
-    // window between them is small on purpose; widening it wants a measurement
-    // in the header, not a looser test.
-    const testStep = runCommands().find((c) => c.includes('turbo test'));
-
-    expect(testStep, `${WORKFLOW_REL} has no \`turbo test\` step to check.`).toBeDefined();
-    const fanOut = testStep?.match(/--concurrency=(\d+)/)?.[1];
+  it('does not re-run the unit suites, and test.yml runs them with no hosted variable', () => {
+    // The unit suites run in test.yml's `test-shard`, which in the queue
+    // retries once, names every retried test and applies the quarantine lane.
+    // A second, unprotected copy here only re-ran the same suites in the same
+    // environment and ejected queue builds on flakes the shards had absorbed
+    // (ledger 260919-175501). This keeps it from coming back by accident.
+    const testSteps = runCommands().filter((c) => /\bturbo\b.*\btest\b/.test(c));
     expect(
-      fanOut,
-      `the \`turbo test\` step in ${WORKFLOW_REL} sets no \`--concurrency\`, so it runs at turbo's default of 15.`
-    ).toBeDefined();
-    expect(Number(fanOut)).toBeGreaterThan(1);
-    expect(Number(fanOut)).toBeLessThanOrEqual(4);
+      testSteps,
+      `${WORKFLOW_REL} runs the unit suites again (${testSteps.join(' | ')}). test.yml ` +
+        `already runs them; see "WHY THE UNIT SUITES ARE NOT RUN HERE" in its header.`
+    ).toEqual([]);
+
+    // What makes that safe: test.yml's runners have no hosted-side variable,
+    // because the workflow sets none and reads no secret. A `secrets.` or
+    // `vars.` line, or an `env:` key from the scrub's list, would let a unit
+    // test pass only because a hosted credential was present, and nothing
+    // would say so. The patterns come from the scrub script itself, so the
+    // two lists cannot drift apart.
+    const testWorkflow = readFileSync(path.join(repoRoot, TEST_WORKFLOW_REL), 'utf8');
+    const code = testWorkflow
+      .split('\n')
+      .filter((line) => !/^\s*#/.test(line))
+      .join('\n');
+    const secretRefs = [...code.matchAll(/\b(?:secrets|vars)\.[A-Za-z0-9_]+/g)].map((m) => m[0]);
+    expect(
+      secretRefs,
+      `${TEST_WORKFLOW_REL} now reads ${secretRefs.join(', ')}. The unit suites no longer run ` +
+        `under the credential-free scrub, so they are credential-free only while test.yml ` +
+        `reads no secret. Put the suites back under scripts/run-credential-free.sh first.`
+    ).toEqual([]);
+    const patterns = scrubPatterns();
+    expect(patterns.length, `could not read the scrub patterns from ${SCRUB_REL}.`).toBeGreaterThan(
+      5
+    );
+    const envKeys = [...code.matchAll(/^\s+([A-Z][A-Z0-9_]*):/gm)].map((m) => m[1] as string);
+    const hosted = envKeys.filter((name) => patterns.some((re) => re.test(name)));
+    expect(
+      hosted,
+      `${TEST_WORKFLOW_REL} sets hosted-side variable(s) ${hosted.join(', ')}. The unit suites ` +
+        `run there without the credential-free scrub, so this would let a test depend on one.`
+    ).toEqual([]);
   });
 
   it('never cancels a merge-group run in progress', () => {
