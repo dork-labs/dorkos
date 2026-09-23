@@ -285,7 +285,9 @@ test('Disconnecting asks first, then removes only that Community and leaves it',
   await page.route('**/api/community-connections/alpha', async (route) => {
     if (route.request().method() !== 'DELETE') return route.fallback();
     disconnected = true;
-    await route.fulfill({ status: 204 });
+    // The local server removed its copy but could not reach Alpha to end the
+    // grant there, so the person is told how to finish.
+    await route.fulfill({ json: { remoteRevoked: false } });
   });
   // Once the server has dropped the connection, it stops listing it.
   await page.route('**/api/community-connections', async (route) => {
@@ -308,6 +310,12 @@ test('Disconnecting asks first, then removes only that Community and leaves it',
   await confirm.getByRole('button', { name: 'Disconnect' }).click();
   await expect(confirm).toBeHidden();
   expect(disconnected).toBe(true);
+  await expect(
+    page.getByText(
+      'Alpha is disconnected here, but it couldn’t be reached. To finish, remove this DorkOS under Local connections on Alpha.',
+      { exact: true }
+    )
+  ).toBeVisible();
   // Routed away, and nothing of Alpha is left on screen.
   await expect(page).not.toHaveURL(/community=alpha/);
   await expect(page.getByText('Message 2', { exact: true })).toBeHidden();

@@ -120,12 +120,23 @@ export const CommunityConnectionPollResponseSchema = z.strictObject({
   status: z.enum(['pending', 'connected', 'expired', 'cancelled']),
 });
 
+/**
+ * The outcome of disconnecting this install. The local credential is always
+ * removed; `remoteRevoked` is false only when the Community could not be told
+ * to end this install's access, so the person can end it there themselves.
+ */
+export const CommunityDisconnectResponseSchema = z.strictObject({
+  remoteRevoked: z.boolean(),
+});
+
 /** Inputs for connecting this install to a community. */
 export type CommunityConnectionStartRequest = z.infer<typeof CommunityConnectionStartRequestSchema>;
 /** Public approval URL and the pending local connection. */
 export type CommunityConnectionStartResponse = z.infer<
   typeof CommunityConnectionStartResponseSchema
 >;
+/** The outcome of disconnecting this install from a community. */
+export type CommunityDisconnectResponse = z.infer<typeof CommunityDisconnectResponseSchema>;
 /** Public outcome of polling browser approval. */
 export type CommunityConnectionPollResponse = z.infer<typeof CommunityConnectionPollResponseSchema>;
 
@@ -143,8 +154,12 @@ export interface CommunityConnectionTransport {
   pollCommunityConnection(ref: string): Promise<CommunityConnectionPollResponse>;
   /** Cancel an outstanding approval and erase the pending local proof. */
   cancelCommunityConnection(ref: string): Promise<void>;
-  /** Disconnect this installation and discard its local credentials and cached content. */
-  disconnectCommunity(ref: string): Promise<void>;
+  /**
+   * Disconnect this installation: end its access on the community, then discard
+   * its local credentials and cached content. Resolves with whether the
+   * community confirmed the access is gone.
+   */
+  disconnectCommunity(ref: string): Promise<CommunityDisconnectResponse>;
   /** Read and reconcile this owner's saved Community order and destinations. */
   getCommunityNavigation(): Promise<CommunityNavigationState>;
   /** Remember the last canonical route visited inside this owner's local installation. */

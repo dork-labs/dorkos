@@ -73,11 +73,14 @@ describe('community connection transport', () => {
       '/api/community-connections/community-b/poll',
     ]);
   });
-  it('handles no-content cancellation and disconnect without a JSON parse error', async () => {
+  it('handles no-content cancellation and reads the disconnect outcome', async () => {
     const fetch = answer(null, 204);
     const methods = createCommunityMethods('/api');
     await methods.cancelCommunityConnection('a/b');
-    await methods.disconnectCommunity('community-b');
+    fetch.mockResolvedValueOnce(new Response(JSON.stringify({ remoteRevoked: false })));
+    await expect(methods.disconnectCommunity('community-b')).resolves.toEqual({
+      remoteRevoked: false,
+    });
     expect(fetch).toHaveBeenNthCalledWith(
       1,
       '/api/community-connections/a%2Fb/cancel',

@@ -570,6 +570,26 @@ export class PackageFetcher {
   }
 
   /**
+   * Look up the commit `ref` points at in `cloneUrl`, for comparison against an
+   * installed commit. Same rules as the fetch path: a refused address throws
+   * `UnsupportedSourceUrlError`; a failed lookup returns a `tmp-<ms>` placeholder
+   * (test with `isRealCommitSha`), never a real-looking SHA.
+   *
+   * The ref is required so no caller reaches the private `'HEAD'` default by
+   * accident: an install fetches at `sourceKeyOf(...).ref`, and a lookup at any
+   * other ref would compare two different places.
+   *
+   * @param cloneUrl - The URL git is given (`SourceKey.cloneUrl`).
+   * @param ref - The effective ref (`SourceKey.ref`).
+   * @returns The commit SHA, or a `tmp-<ms>` placeholder when the lookup failed.
+   * @throws {UnsupportedSourceUrlError} When `cloneUrl` is an address this
+   *   fetcher will not hand to `git`.
+   */
+  async lookupCommitSha(cloneUrl: string, ref: string): Promise<string> {
+    return this.resolveCommitSha(cloneUrl, ref);
+  }
+
+  /**
    * Resolve a commit SHA for `${gitUrl}#${ref}` via `git ls-remote`.
    *
    * Falls back to a deterministic `tmp-${Date.now()}` placeholder when the

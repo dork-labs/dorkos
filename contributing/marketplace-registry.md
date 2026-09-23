@@ -154,7 +154,7 @@ CC-standard fields only. Anything else must go in the sidecar.
 | `name`        | kebab-case string       | Required                                 |
 | `source`      | discriminated union     | Required                                 |
 | `description` | string                  | Optional                                 |
-| `version`     | semver string           | Optional                                 |
+| `version`     | semver string           | Optional; see the note below the table   |
 | `author`      | `{ name, email? }`      | **Object shape**, not bare string        |
 | `homepage`    | URL                     | Optional                                 |
 | `repository`  | URL                     | Optional                                 |
@@ -168,6 +168,8 @@ CC-standard fields only. Anything else must go in the sidecar.
 | `hooks`       | unknown                 | Same                                     |
 | `mcpServers`  | unknown                 | Same                                     |
 | `lspServers`  | unknown                 | Same                                     |
+
+**The entry `version` is only a fallback.** Claude Code uses it only when the package's own `plugin.json` declares no version; when `plugin.json` has one, it silently wins and the entry's is never seen. So leave it unset beside a package version (`dork-labs/marketplace` sets it on no entry). `dorkos marketplace validate` fails with `ENTRY_VERSION_MISMATCH` when a relative-path entry's `version` differs from its `plugin.json`'s.
 
 ## Sidecar `dorkos.json`
 

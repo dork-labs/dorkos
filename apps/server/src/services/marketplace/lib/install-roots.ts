@@ -24,7 +24,7 @@
  * @module services/marketplace/lib/install-roots
  */
 import path from 'node:path';
-import type { PackageType } from '@dorkos/marketplace';
+import { PackageNameSchema, type PackageType } from '@dorkos/marketplace';
 
 /**
  * The `dorkHome` subdirectories that hold installed marketplace packages.
@@ -204,4 +204,25 @@ export function installRootsUnder(scopeRoot: string): ScopedInstallRoot[] {
  */
 export function installKey(kind: InstallRootDir, name: string): string {
   return `${kind}:${name}`;
+}
+
+/**
+ * The name an install is known by for updates: its manifest name when that is
+ * a valid package name, else its directory name.
+ *
+ * A manifest read off disk has no schema in front of it, and the update flow
+ * hands this name to `installer.update()`, which uninstalls by name, joining
+ * it into dorkHome. The directory is the honest fallback: it is a real
+ * directory a walk just enumerated, so it cannot climb anywhere. The update
+ * route's "installed anywhere?" check uses the same rule, so it never 404s a
+ * package the flow can check.
+ *
+ * @param manifestName - The name the install's manifest states.
+ * @param installPath - Absolute path to the install root.
+ * @returns The name to check and apply the update under.
+ */
+export function updateNameOf(manifestName: string, installPath: string): string {
+  return PackageNameSchema.safeParse(manifestName).success
+    ? manifestName
+    : path.basename(installPath);
 }

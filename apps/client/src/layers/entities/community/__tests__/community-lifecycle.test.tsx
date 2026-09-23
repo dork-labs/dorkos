@@ -229,18 +229,37 @@ describe('useEndCommunityConnection', () => {
   }
 
   it('disconnects a connected Community and then erases it', async () => {
-    const disconnectCommunity = vi.fn().mockResolvedValue(undefined);
+    const disconnectCommunity = vi.fn().mockResolvedValue({ remoteRevoked: true });
     const cancelCommunityConnection = vi.fn().mockResolvedValue(undefined);
     const transport = createMockTransport({ disconnectCommunity, cancelCommunityConnection });
     client.setQueryData(communityKeys.connections(authority), [connection('a'), connection('b')]);
     const before = getCommunityConnectionGeneration('a');
     const hook = renderHook(() => useEndCommunityConnection(), { wrapper: wrapper(transport) });
 
-    await act(() => hook.result.current.mutateAsync(connection('a')));
+    const outcome = await act(() => hook.result.current.mutateAsync(connection('a')));
 
+    expect(outcome).toEqual({ remoteRevoked: true });
     expect(disconnectCommunity).toHaveBeenCalledWith('a');
     expect(cancelCommunityConnection).not.toHaveBeenCalled();
     expect(getCommunityConnectionGeneration('a')).toBe(before + 1);
+  });
+
+  it('still erases local state and reports it when the Community could not be told', async () => {
+    const disconnectCommunity = vi.fn().mockResolvedValue({ remoteRevoked: false });
+    const transport = createMockTransport({ disconnectCommunity });
+    client.setQueryData(communityKeys.connections(authority), [connection('a'), connection('b')]);
+    client.setQueryData([...communityKeys.remote(authority, 'a'), 'rooms'], ['A private']);
+    const hook = renderHook(() => useEndCommunityConnection(), { wrapper: wrapper(transport) });
+
+    const outcome = await act(() => hook.result.current.mutateAsync(connection('a')));
+
+    expect(outcome).toEqual({ remoteRevoked: false });
+    expect(client.getQueryData([...communityKeys.remote(authority, 'a'), 'rooms'])).toBeUndefined();
+    expect(
+      client
+        .getQueryData<CommunityConnectionDescriptor[]>(communityKeys.connections(authority))
+        ?.map((row) => row.ref)
+    ).toEqual(['b']);
   });
 
   it('cancels a pending approval instead of disconnecting', async () => {
@@ -254,7 +273,7 @@ describe('useEndCommunityConnection', () => {
   });
 
   it('keeps the Community and its content when the server does not confirm', async () => {
-    const failure = deferred<void>();
+    const failure = deferred<{ remoteRevoked: boolean }>();
     const disconnectCommunity = vi.fn(() => failure.promise);
     const transport = createMockTransport({ disconnectCommunity });
     client.setQueryData([...communityKeys.remote(authority, 'a'), 'rooms'], ['A private']);

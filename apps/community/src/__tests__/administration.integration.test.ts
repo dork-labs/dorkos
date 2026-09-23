@@ -963,6 +963,11 @@ it('rejects foreign objects on every id-taking community route, even for an owne
       route: 'POST /invites/redeem',
       call: (x) => ({ path: '/invites/redeem', body: {}, cookie: x.admission }),
     },
+    {
+      // B's join attempt read at A's URL must look exactly like no join attempt at all.
+      route: 'GET /invites/pending',
+      call: (x) => ({ path: '/invites/pending', cookie: x.admission }),
+    },
     { route: 'GET /exports/:id', call: (x) => ({ path: `/exports/${x.archive}` }) },
     { route: 'GET /pairings/:id', call: (x) => ({ path: `/pairings/${x.pairing}` }) },
     {
@@ -1050,6 +1055,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     'POST /me/leave': 'the caller only',
     'DELETE /me/grants': "revokes all of the caller's own grants; takes only a password",
     'GET /me/connection-access': 'the calling grant only',
+    'DELETE /me/connection': 'the calling grant revokes itself only',
     'GET /me/host-access': "the calling grant's own account; takes no id",
     'GET /me/grants': "lists the caller's own grants",
     'GET /members': 'lists the URL community',

@@ -146,7 +146,7 @@ test('a revoked community grant gives a direct remove-and-reconnect path', async
     }
     if (request.method() === 'DELETE' && path === '/api/community-connections/remote_revoked') {
       removed = true;
-      await route.fulfill({ status: 204 });
+      await route.fulfill({ json: { remoteRevoked: true } });
       return;
     }
     await route.continue();

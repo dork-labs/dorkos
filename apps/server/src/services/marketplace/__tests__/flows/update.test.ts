@@ -1,32 +1,42 @@
 /**
  * Tests for {@link UpdateFlow}.
  *
- * The update flow is advisory by default — it enumerates installed packages,
- * compares their versions to the latest marketplace entry, and returns a
- * list of {@link UpdateCheckResult} describing what could be updated.
- * Only when `apply: true` does it invoke the injected installer to actually
- * perform the reinstall.
+ * The update flow is advisory by default: it enumerates installed packages,
+ * asks the installer what installing each one now would give
+ * (`resolveLatest`), compares by Claude Code's version chain, and returns one
+ * {@link UpdateCheckResult} per package with an honest status. Only when
+ * `apply: true` does it reinstall.
  *
  * Each test stages a handcrafted installed package on disk under a temp
- * `dorkHome`, then drives `UpdateFlow.run()` with mocked
- * installer/fetcher/sourceManager dependencies. The seven cases below cover
- * the three advisory scenarios (no update, has update, missing package error),
- * the apply flow (single package + multi-package), and the marketplace
- * resolution branches (scoped via `installedFrom`, fallback scan).
+ * `dorkHome`, then drives `UpdateFlow.run()` with mocked installer, fetcher
+ * and source manager. The marketplace entries carry NO `version` by default,
+ * because that is the shape `dork-labs/marketplace` actually publishes (the
+ * old suite set one everywhere, and passed against a shape nobody ships).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
-import type { MarketplaceJson, PluginPackageManifest } from '@dorkos/marketplace';
+import type { MarketplaceJson, PluginPackageManifest, SourceKey } from '@dorkos/marketplace';
 import {
-  PackageNotInstalledForUpdateError,
+  UPDATE_MEMO_TTL_MS,
   UpdateFlow,
   type InstallerLike,
+  type UpdateCheckResult,
   type UpdateFlowDeps,
 } from '../../flows/update.js';
-import type { InstallResult, MarketplaceSource } from '../../types.js';
+import type { InstallMetadata } from '../../installed-metadata.js';
+import type {
+  InstallRequest,
+  InstallResult,
+  LatestResolution,
+  MarketplaceSource,
+  ResolveLatestOptions,
+} from '../../types.js';
+
+const SHA_A = 'a'.repeat(40);
+const SHA_B = 'b'.repeat(40);
 
 /** Construct a no-op logger that satisfies the {@link Logger} interface. */
 function buildLogger(): Logger {
@@ -56,17 +66,22 @@ function buildPluginManifest(
   };
 }
 
-/**
- * Stage an installed package on disk under `<dorkHome>/plugins/<name>/` with
- * its canonical `.dork/manifest.json` and an optional
- * `.dork/install-metadata.json` sidecar (read by the update flow's
- * provenance lookup when present).
- */
-async function stageInstalledPlugin(opts: {
-  dorkHome: string;
-  manifest: PluginPackageManifest;
+/** What a staged install carries on disk besides its files. */
+interface StageOptions {
+  /** `.dork/manifest.json`; `null` for a Claude-Code-only install with none. */
+  manifest: PluginPackageManifest | null;
+  /** Directory name; defaults to the manifest's name. */
+  dirName?: string;
+  /** `.claude-plugin/plugin.json`, when the install ships one. */
+  pluginJson?: Record<string, unknown>;
+  /** Shortcut for `metadata.installedFrom`. */
   installedFrom?: string;
-}): Promise<string> {
+  /** Extra `.dork/install-metadata.json` fields; a sidecar is written when either is set. */
+  metadata?: Partial<InstallMetadata>;
+}
+
+/** Stage an install under `<dorkHome>/plugins/<name>/`. */
+async function stageInstalledPlugin(opts: StageOptions & { dorkHome: string }): Promise<string> {
   return stagePluginUnder(path.join(opts.dorkHome, 'plugins'), opts);
 }
 
@@ -75,11 +90,7 @@ async function stageInstalledPlugin(opts: {
  * exactly where `PluginInstallFlow.computeInstallRoot` lands an install that
  * carried a `projectPath`.
  */
-async function stageProjectPlugin(opts: {
-  projectPath: string;
-  manifest: PluginPackageManifest;
-  installedFrom?: string;
-}): Promise<string> {
+async function stageProjectPlugin(opts: StageOptions & { projectPath: string }): Promise<string> {
   return stagePluginUnder(path.join(opts.projectPath, '.dork', 'plugins'), opts);
 }
 
@@ -87,9 +98,6 @@ async function stageProjectPlugin(opts: {
  * Stage an installed agent package under `<scopeRoot>/agents/<name>/` — the
  * root `AgentInstallFlow` lands an agent in, and a different root from the
  * plugin stagers above, so the two can hold the same package name at once.
- *
- * The update flow reads a manifest shallowly (name/version/type, no schema
- * validation), so this minimal document is exactly what it consumes.
  */
 async function stageInstalledAgent(opts: {
   scopeRoot: string;
@@ -100,68 +108,66 @@ async function stageInstalledAgent(opts: {
   await mkdir(path.join(installRoot, '.dork'), { recursive: true });
   await writeFile(
     path.join(installRoot, '.dork', 'manifest.json'),
-    JSON.stringify(
-      {
-        schemaVersion: 1,
-        name: opts.name,
-        version: opts.version,
-        type: 'agent',
-        description: 'Fixture agent used by update tests.',
-      },
-      null,
-      2
-    ),
+    JSON.stringify({
+      schemaVersion: 1,
+      name: opts.name,
+      version: opts.version,
+      type: 'agent',
+      description: 'Fixture agent used by update tests.',
+    }),
     'utf-8'
   );
   return installRoot;
 }
 
-/**
- * Write a package's `.dork/manifest.json` (plus optional
- * `.dork/install-metadata.json` sidecar) into `<root>/<name>/`. Shared by the
- * global and project-scoped stagers so both produce byte-identical layouts.
- */
-async function stagePluginUnder(
-  root: string,
-  opts: { manifest: PluginPackageManifest; installedFrom?: string }
-): Promise<string> {
-  const installRoot = path.join(root, opts.manifest.name);
+/** Write an install's files into `<root>/<name>/`. */
+async function stagePluginUnder(root: string, opts: StageOptions): Promise<string> {
+  const name = opts.dirName ?? opts.manifest?.name ?? String(opts.pluginJson?.name);
+  const installRoot = path.join(root, name);
   await mkdir(path.join(installRoot, '.dork'), { recursive: true });
-  await writeFile(
-    path.join(installRoot, '.dork', 'manifest.json'),
-    JSON.stringify(opts.manifest, null, 2),
-    'utf-8'
-  );
-  if (opts.installedFrom !== undefined) {
+  if (opts.manifest) {
+    await writeFile(
+      path.join(installRoot, '.dork', 'manifest.json'),
+      JSON.stringify(opts.manifest, null, 2),
+      'utf-8'
+    );
+  }
+  if (opts.pluginJson) {
+    await mkdir(path.join(installRoot, '.claude-plugin'), { recursive: true });
+    await writeFile(
+      path.join(installRoot, '.claude-plugin', 'plugin.json'),
+      JSON.stringify(opts.pluginJson),
+      'utf-8'
+    );
+  }
+  if (opts.installedFrom !== undefined || opts.metadata !== undefined) {
     await writeFile(
       path.join(installRoot, '.dork', 'install-metadata.json'),
-      JSON.stringify(
-        {
-          name: opts.manifest.name,
-          version: opts.manifest.version,
-          type: opts.manifest.type,
-          installedFrom: opts.installedFrom,
-          installedAt: '2025-01-01T00:00:00.000Z',
-        },
-        null,
-        2
-      ),
+      JSON.stringify({
+        name,
+        version: opts.manifest?.version ?? '0.0.0',
+        type: 'plugin',
+        installedAt: '2025-01-01T00:00:00.000Z',
+        ...(opts.installedFrom !== undefined && { installedFrom: opts.installedFrom }),
+        ...opts.metadata,
+      }),
       'utf-8'
     );
   }
   return installRoot;
 }
 
-/** Build a minimal {@link MarketplaceJson} document with a single entry. */
-function buildMarketplaceJson(
-  entries: Array<{ name: string; version?: string; source?: string }>
-): MarketplaceJson {
+/**
+ * Build a {@link MarketplaceJson}. Entries set no `version` unless a test
+ * asks for one — our real marketplace's shape.
+ */
+function buildMarketplaceJson(entries: Array<{ name: string; version?: string }>): MarketplaceJson {
   return {
     name: 'fixture-marketplace',
     plugins: entries.map((entry) => ({
       name: entry.name,
-      source: entry.source ?? `https://example.com/${entry.name}`,
-      version: entry.version,
+      source: `https://example.com/${entry.name}`,
+      ...(entry.version !== undefined && { version: entry.version }),
     })),
   };
 }
@@ -190,32 +196,51 @@ function buildInstallResult(name: string, version: string, installPath: string):
   };
 }
 
+/** The fake installer's answer to `resolveLatest`. */
+type ResolveLatestImpl = (
+  req: InstallRequest,
+  opts: ResolveLatestOptions
+) => Promise<LatestResolution>;
+
 /**
- * Build a deps object with mock installer, fetcher, and source manager. The
- * caller supplies the marketplace document each fetcher call should yield.
+ * Build a deps object with mock installer, fetcher, and source manager.
+ * `latest` maps a package name to the version its staged tree declares; a
+ * test that needs another answer passes `resolveLatest`.
  */
 async function buildDeps(opts: {
   marketplaceJson: MarketplaceJson;
   sources?: MarketplaceSource[];
+  latest?: Record<string, string>;
+  resolveLatest?: ResolveLatestImpl;
+  now?: () => number;
 }): Promise<{
   deps: UpdateFlowDeps;
   dorkHome: string;
-  installer: { update: ReturnType<typeof vi.fn> };
-  fetcher: { fetchMarketplaceJson: ReturnType<typeof vi.fn> };
-  sourceManager: {
-    list: ReturnType<typeof vi.fn>;
-    get: ReturnType<typeof vi.fn>;
+  installer: {
+    update: ReturnType<typeof vi.fn>;
+    resolveLatest: ReturnType<typeof vi.fn<ResolveLatestImpl>>;
   };
+  fetcher: {
+    fetchMarketplaceJson: ReturnType<typeof vi.fn>;
+    lookupCommitSha: ReturnType<typeof vi.fn>;
+  };
+  sourceManager: { list: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn> };
 }> {
   const dorkHome = await mkdtemp(path.join(tmpdir(), 'update-flow-home-'));
-  const installer: InstallerLike = {
-    update: vi.fn(async (req) =>
+  const resolveLatest = vi.fn<ResolveLatestImpl>(
+    opts.resolveLatest ??
+      (async (req) => ({ kind: 'resolved', declaredVersion: opts.latest?.[req.name] }))
+  );
+  const installer = {
+    update: vi.fn(async (req: InstallRequest) =>
       buildInstallResult(req.name, '2.0.0', path.join(dorkHome, 'plugins', req.name))
     ),
-  };
+    resolveLatest,
+  } satisfies InstallerLike;
   const sources = opts.sources ?? [buildSource()];
   const fetcher = {
     fetchMarketplaceJson: vi.fn(async () => opts.marketplaceJson),
+    lookupCommitSha: vi.fn(async () => SHA_A),
   };
   const sourceManager = {
     list: vi.fn(async () => sources),
@@ -228,15 +253,29 @@ async function buildDeps(opts: {
     sourceManager,
     fetcher,
     logger: buildLogger(),
+    ...(opts.now && { now: opts.now }),
   };
 
-  return {
-    deps,
-    dorkHome,
-    installer: installer as { update: ReturnType<typeof vi.fn> },
-    fetcher,
-    sourceManager,
+  return { deps, dorkHome, installer, fetcher, sourceManager };
+}
+
+/** A fake `resolveLatest` that consults the memoized commit lookup, as the real one does. */
+function lookingUp(ref = 'main', answer: LatestResolution = { kind: 'unchanged' }) {
+  return async (_req: InstallRequest, opts: ResolveLatestOptions): Promise<LatestResolution> => {
+    try {
+      await opts.commitLookup('https://example.com/marketplace', ref);
+    } catch (err) {
+      return { kind: 'unresolved', reason: (err as Error).message };
+    }
+    return answer;
   };
+}
+
+/** Every result keeps `hasUpdate` a pure function of `status`. */
+function expectConsistent(checks: UpdateCheckResult[]): void {
+  for (const check of checks) {
+    expect(check.hasUpdate).toBe(check.status === 'update-available');
+  }
 }
 
 describe('UpdateFlow', () => {
@@ -250,279 +289,664 @@ describe('UpdateFlow', () => {
     vi.restoreAllMocks();
   });
 
-  it('reports no update available when installed version matches latest', async () => {
-    const marketplaceJson = buildMarketplaceJson([{ name: 'stable-plugin', version: '1.0.0' }]);
-    const ctx = await buildDeps({ marketplaceJson });
+  /** Build deps and register the temp dorkHome for cleanup. */
+  async function setup(opts: Parameters<typeof buildDeps>[0]) {
+    const ctx = await buildDeps(opts);
     cleanupDirs.push(ctx.dorkHome);
-    await stageInstalledPlugin({
-      dorkHome: ctx.dorkHome,
-      manifest: buildPluginManifest({ name: 'stable-plugin', version: '1.0.0' }),
+    return ctx;
+  }
+
+  describe('finding a new version', () => {
+    it("detects an update from the package's own version when the entry sets none", async () => {
+      // Purpose: the original DOR-2244 bug. With no entry version the old
+      // check fell back to the installed version and said "up to date" forever.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'flow' }]),
+        latest: { flow: '0.7.3' },
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'flow', version: '0.7.2' }),
+      });
+
+      const result = await new UpdateFlow(ctx.deps).run({ name: 'flow' });
+
+      expect(result.checks).toEqual([
+        {
+          packageName: 'flow',
+          installedVersion: '0.7.2',
+          latestVersion: '0.7.3',
+          hasUpdate: true,
+          marketplace: 'fixture-marketplace',
+          status: 'update-available',
+          installedVersionSource: 'package',
+          latestVersionSource: 'package',
+        },
+      ]);
+      expect(ctx.installer.update).not.toHaveBeenCalled();
     });
 
-    const flow = new UpdateFlow(ctx.deps);
-    const result = await flow.run({ name: 'stable-plugin' });
+    it('lists and checks an install whose version files disagree, at the version Claude Code runs', async () => {
+      // Purpose: flow's installs today carry manifest 0.6.0 beside plugin.json
+      // 0.7.2. They must be checked (never gated on validity) as 0.7.2.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'flow' }]),
+        latest: { flow: '0.7.3' },
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'flow', version: '0.6.0' }),
+        pluginJson: { name: 'flow', version: '0.7.2' },
+      });
 
-    expect(result.checks).toHaveLength(1);
-    expect(result.checks[0]).toEqual(
-      expect.objectContaining({
-        packageName: 'stable-plugin',
+      const [check] = (await new UpdateFlow(ctx.deps).run({})).checks;
+
+      expect(check).toMatchObject({
+        installedVersion: '0.7.2',
+        latestVersion: '0.7.3',
+        status: 'update-available',
+      });
+    });
+
+    it('checks a Claude-Code-only install that has no .dork/manifest.json', async () => {
+      // Purpose: 8 of 14 dork-labs/marketplace packages ship no manifest; the
+      // old reader could not see them, so they were never checked.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'code-reviewer' }]),
+        latest: { 'code-reviewer': '1.1.0' },
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: null,
+        pluginJson: { name: 'code-reviewer', version: '1.0.0' },
+      });
+
+      const result = await new UpdateFlow(ctx.deps).run({});
+
+      expect(result.checks).toHaveLength(1);
+      expect(result.checks[0]).toMatchObject({
+        packageName: 'code-reviewer',
+        installedVersion: '1.0.0',
+        latestVersion: '1.1.0',
+        status: 'update-available',
+      });
+    });
+
+    it('compares a package that declares no version by commit, reporting full SHAs', async () => {
+      // Purpose: Claude Code's step 3. The SHA, not a masking 0.0.0, is the version.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'unversioned' }]),
+        resolveLatest: async () => ({ kind: 'resolved', commitSha: SHA_B }),
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: null,
+        pluginJson: { name: 'unversioned' },
+        installedFrom: 'fixture-marketplace',
+        metadata: { commitSha: SHA_A },
+      });
+
+      const [check] = (await new UpdateFlow(ctx.deps).run({})).checks;
+
+      expect(check).toMatchObject({
+        installedVersion: SHA_A,
+        latestVersion: SHA_B,
+        installedVersionSource: 'commit',
+        latestVersionSource: 'commit',
+        status: 'update-available',
+      });
+    });
+
+    it('never offers a rollback as an update', async () => {
+      // Purpose: a lower version in the marketplace is reported as current,
+      // with a note, rather than presented as an improvement.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'pkg' }]),
+        latest: { pkg: '1.1.0' },
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'pkg', version: '1.2.0' }),
+      });
+
+      const [check] = (await new UpdateFlow(ctx.deps).run({})).checks;
+
+      expect(check).toMatchObject({ status: 'current', hasUpdate: false, latestVersion: '1.1.0' });
+      expect(check?.note).toMatch(/^rollback: /);
+    });
+
+    it('reports current when the latest version equals the installed one', async () => {
+      // Purpose: equal semver is current, with no note.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'stable-plugin' }]),
+        latest: { 'stable-plugin': '1.0.0' },
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'stable-plugin', version: '1.0.0' }),
+      });
+
+      const [check] = (await new UpdateFlow(ctx.deps).run({ name: 'stable-plugin' })).checks;
+
+      expect(check).toMatchObject({ status: 'current', latestVersion: '1.0.0' });
+      expect(check?.note).toBeUndefined();
+    });
+
+    it('reports current, without staging, when the installer says nothing changed', async () => {
+      // Purpose: the short-circuit answer maps to current, and apply leaves it alone.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'pkg' }]),
+        resolveLatest: async () => ({ kind: 'unchanged' }),
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'pkg', version: '1.0.0' }),
+      });
+
+      const result = await new UpdateFlow(ctx.deps).run({ apply: true });
+
+      expect(result.checks[0]).toMatchObject({
+        status: 'current',
         installedVersion: '1.0.0',
         latestVersion: '1.0.0',
-        hasUpdate: false,
-      })
-    );
-    expect(result.applied).toHaveLength(0);
-    expect(ctx.installer.update).not.toHaveBeenCalled();
-  });
-
-  // The manifest is read off disk with no schema validation, and the name it
-  // yields is handed to `installer.update()` — which uninstalls by name, and
-  // joins that name into dorkHome. The directory entry name is the honest
-  // fallback: it is a real directory that was actually walked, so it cannot
-  // climb anywhere.
-  it('falls back to the directory name when the manifest name is not a package name', async () => {
-    const marketplaceJson = buildMarketplaceJson([{ name: 'honest-plugin', version: '2.0.0' }]);
-    const ctx = await buildDeps({ marketplaceJson });
-    cleanupDirs.push(ctx.dorkHome);
-    const installRoot = path.join(ctx.dorkHome, 'plugins', 'honest-plugin');
-    await mkdir(path.join(installRoot, '.dork'), { recursive: true });
-    await writeFile(
-      path.join(installRoot, '.dork', 'manifest.json'),
-      JSON.stringify({
-        ...buildPluginManifest({ name: 'honest-plugin', version: '1.0.0' }),
-        name: '../../../../etc/cron.d',
-      }),
-      'utf-8'
-    );
-
-    const flow = new UpdateFlow(ctx.deps);
-    const result = await flow.run({ apply: true });
-
-    expect(result.checks[0]?.packageName).toBe('honest-plugin');
-    expect(ctx.installer.update).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'honest-plugin' })
-    );
-  });
-
-  it('reports update available but does not install in advisory mode', async () => {
-    const marketplaceJson = buildMarketplaceJson([{ name: 'outdated-plugin', version: '2.0.0' }]);
-    const ctx = await buildDeps({ marketplaceJson });
-    cleanupDirs.push(ctx.dorkHome);
-    await stageInstalledPlugin({
-      dorkHome: ctx.dorkHome,
-      manifest: buildPluginManifest({ name: 'outdated-plugin', version: '1.0.0' }),
+      });
+      expect(ctx.installer.update).not.toHaveBeenCalled();
     });
 
-    const flow = new UpdateFlow(ctx.deps);
-    const result = await flow.run({ name: 'outdated-plugin' });
+    it('passes the recorded commit, entry version and source key to the installer', async () => {
+      // Purpose: the short-circuit can only compare what it is given.
+      const sourceKey: SourceKey = {
+        cloneUrl: 'https://example.com/marketplace',
+        subpath: 'plugins/pkg',
+        ref: 'main',
+      };
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'pkg' }]),
+        resolveLatest: async () => ({ kind: 'unchanged' }),
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'pkg', version: '1.0.0' }),
+        installedFrom: 'fixture-marketplace',
+        metadata: { commitSha: SHA_A, entryVersion: '1.0.0', sourceKey },
+      });
 
-    expect(result.checks).toHaveLength(1);
-    expect(result.checks[0]).toEqual(
-      expect.objectContaining({
-        packageName: 'outdated-plugin',
-        installedVersion: '1.0.0',
-        latestVersion: '2.0.0',
-        hasUpdate: true,
+      await new UpdateFlow(ctx.deps).run({});
+
+      expect(ctx.installer.resolveLatest).toHaveBeenCalledWith(
+        { name: 'pkg', marketplace: 'fixture-marketplace' },
+        expect.objectContaining({
+          installed: { commitSha: SHA_A, entryVersion: '1.0.0', sourceKey },
+        })
+      );
+    });
+  });
+
+  describe('nothing is dropped', () => {
+    it('reports an unreachable marketplace as unknown, never current', async () => {
+      // Purpose: the old flow dropped the package and then said "All N up to date".
+      const ctx = await setup({ marketplaceJson: buildMarketplaceJson([]) });
+      ctx.fetcher.fetchMarketplaceJson.mockRejectedValue(new Error('ENOTFOUND'));
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'pkg', version: '1.0.0' }),
+      });
+
+      const result = await new UpdateFlow(ctx.deps).run({});
+
+      expect(result.checks).toEqual([
+        {
+          packageName: 'pkg',
+          installedVersion: '1.0.0',
+          latestVersion: '',
+          hasUpdate: false,
+          marketplace: '',
+          status: 'unknown',
+          installedVersionSource: 'package',
+          note: "couldn't read the marketplace list from fixture-marketplace",
+        },
+      ]);
+    });
+
+    it('reports a package no enabled marketplace lists as unknown', async () => {
+      // Purpose: same rule, different reason — the note must say which.
+      const ctx = await setup({ marketplaceJson: buildMarketplaceJson([{ name: 'other' }]) });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'pkg', version: '1.0.0' }),
+      });
+
+      const [check] = (await new UpdateFlow(ctx.deps).run({})).checks;
+
+      expect(check).toMatchObject({
+        status: 'unknown',
+        note: 'no enabled marketplace lists this package',
+      });
+      expect(ctx.installer.resolveLatest).not.toHaveBeenCalled();
+    });
+
+    it("reports a new version DorkOS can't install as unknown, with the validator's message", async () => {
+      // Purpose: a version that would be refused is never offered, and the
+      // person is told why.
+      const reason =
+        "the new version can't be installed: .dork/manifest.json says version 1.0.0 but " +
+        '.claude-plugin/plugin.json says 1.1.0.';
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'pkg' }]),
+        resolveLatest: async () => ({ kind: 'unresolved', reason }),
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'pkg', version: '1.0.0' }),
+      });
+
+      const [check] = (await new UpdateFlow(ctx.deps).run({ apply: true })).checks;
+
+      expect(check).toMatchObject({ status: 'unknown', latestVersion: '', note: reason });
+      expect(ctx.installer.update).not.toHaveBeenCalled();
+    });
+
+    it('asks for a reinstall when the installed side names no version at all', async () => {
+      // Purpose: a package with no declared version, no entry version and no
+      // real commit cannot be compared; saying "current" would be a guess.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'bare' }]),
+        latest: { bare: '1.0.0' },
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: null,
+        pluginJson: { name: 'bare' },
+        metadata: { commitSha: 'tmp-123' },
+      });
+
+      const [check] = (await new UpdateFlow(ctx.deps).run({})).checks;
+
+      expect(check).toMatchObject({
+        status: 'unknown',
+        installedVersion: '',
+        note: 'reinstall this package to enable update checks',
+      });
+    });
+
+    it('returns one "not installed in this scope" result for a named package it cannot find', async () => {
+      // Purpose: the route decides 404 vs this; the flow never throws for it.
+      const ctx = await setup({ marketplaceJson: buildMarketplaceJson([{ name: 'anything' }]) });
+
+      const result = await new UpdateFlow(ctx.deps).run({ name: 'ghost-plugin' });
+
+      expect(result.checks).toEqual([
+        {
+          packageName: 'ghost-plugin',
+          installedVersion: '',
+          latestVersion: '',
+          hasUpdate: false,
+          marketplace: '',
+          status: 'unknown',
+          note: 'not installed in this scope',
+        },
+      ]);
+    });
+
+    it('keeps hasUpdate equal to status === "update-available" on every result', async () => {
+      // Purpose: old clients read hasUpdate; it must never disagree with status.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'up' }, { name: 'same' }]),
+        latest: { up: '2.0.0', same: '1.0.0' },
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'up', version: '1.0.0' }),
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'same', version: '1.0.0' }),
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'unlisted', version: '1.0.0' }),
+      });
+
+      const { checks } = await new UpdateFlow(ctx.deps).run({});
+
+      expect(checks.map((c) => c.status).sort()).toEqual([
+        'current',
+        'unknown',
+        'update-available',
+      ]);
+      expectConsistent(checks);
+    });
+  });
+
+  describe('which marketplace', () => {
+    it('uses the installedFrom marketplace when it lists the package', async () => {
+      // Purpose: provenance scopes the lookup, so only that index is fetched.
+      const scopedSource = buildSource({ name: 'scoped-marketplace' });
+      const otherSource = buildSource({ name: 'other-marketplace' });
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'scoped-plugin' }]),
+        sources: [scopedSource, otherSource],
+        latest: { 'scoped-plugin': '3.0.0' },
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'scoped-plugin', version: '1.0.0' }),
+        installedFrom: 'scoped-marketplace',
+      });
+
+      const [check] = (await new UpdateFlow(ctx.deps).run({ name: 'scoped-plugin' })).checks;
+
+      expect(check?.marketplace).toBe('scoped-marketplace');
+      expect(ctx.fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(1);
+      expect(ctx.fetcher.fetchMarketplaceJson).toHaveBeenCalledWith(scopedSource);
+    });
+
+    it('falls back to scanning every enabled source when installedFrom is absent', async () => {
+      // Purpose: pre-provenance installs still find their marketplace.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'lost-plugin' }]),
+        sources: [buildSource({ name: 'marketplace-a' }), buildSource({ name: 'marketplace-b' })],
+        latest: { 'lost-plugin': '5.0.0' },
+      });
+      ctx.fetcher.fetchMarketplaceJson.mockImplementation(async (source: MarketplaceSource) =>
+        source.name === 'marketplace-a'
+          ? buildMarketplaceJson([])
+          : buildMarketplaceJson([{ name: 'lost-plugin' }])
+      );
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'lost-plugin', version: '4.0.0' }),
+      });
+
+      const [check] = (await new UpdateFlow(ctx.deps).run({ name: 'lost-plugin' })).checks;
+
+      expect(check).toMatchObject({ marketplace: 'marketplace-b', status: 'update-available' });
+      expect(ctx.fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(2);
+    });
+
+    it('passes the MATCHED source when two enabled sources list the same name', async () => {
+      // Purpose: a bare name would throw AmbiguousPackageError in the resolver;
+      // the flow must name the source it matched instead.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'dup' }]),
+        sources: [buildSource({ name: 'marketplace-a' }), buildSource({ name: 'marketplace-b' })],
+        latest: { dup: '2.0.0' },
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'dup', version: '1.0.0' }),
+      });
+
+      await new UpdateFlow(ctx.deps).run({});
+
+      expect(ctx.installer.resolveLatest).toHaveBeenCalledWith(
+        { name: 'dup', marketplace: 'marketplace-a' },
+        expect.anything()
+      );
+    });
+
+    it('checks a direct install against its recorded source, not a marketplace', async () => {
+      // Purpose: a `name@url` install has no marketplace; its own source key
+      // (with its ref) is what the check and the apply must use.
+      const sourceKey: SourceKey = {
+        cloneUrl: 'https://example.com/tool.git',
+        subpath: '',
+        ref: 'release',
+      };
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([]),
+        latest: { tool: '2.0.0' },
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'tool', version: '1.0.0' }),
+        metadata: { sourceRepo: sourceKey.cloneUrl, sourceKey, commitSha: SHA_A },
+      });
+
+      const result = await new UpdateFlow(ctx.deps).run({ apply: true });
+
+      expect(ctx.installer.resolveLatest).toHaveBeenCalledWith(
+        { name: 'tool', source: sourceKey.cloneUrl },
+        expect.objectContaining({ installed: expect.objectContaining({ sourceKey }) })
+      );
+      expect(result.checks[0]).toMatchObject({ status: 'update-available', marketplace: '' });
+      expect(result.checks[0]?.note).toBeUndefined();
+      expect(ctx.installer.update).toHaveBeenCalledWith({
+        name: 'tool',
+        source: sourceKey.cloneUrl,
+        projectPath: undefined,
+      });
+      expect(ctx.sourceManager.list).not.toHaveBeenCalled();
+    });
+
+    it('says a pre-sourceKey direct install was checked against its default branch', async () => {
+      // Purpose: without a recorded ref the check cannot know the branch; it
+      // must say so rather than silently compare against the default.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([]),
+        latest: { tool: '1.0.0' },
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'tool', version: '1.0.0' }),
+        metadata: { sourceRepo: 'https://example.com/tool.git' },
+      });
+
+      const [check] = (await new UpdateFlow(ctx.deps).run({})).checks;
+
+      expect(ctx.installer.resolveLatest).toHaveBeenCalledWith(
+        { name: 'tool', source: 'https://example.com/tool.git' },
+        expect.anything()
+      );
+      expect(check?.status).toBe('current');
+      expect(check?.note).toMatch(/default branch/);
+    });
+  });
+
+  describe('apply', () => {
+    it('reinstalls only update-available packages, from the matched marketplace', async () => {
+      // Purpose: an apply never runs on unknown or current.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'up' }, { name: 'same' }]),
+        latest: { up: '2.0.0', same: '1.0.0' },
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'up', version: '1.0.0' }),
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'same', version: '1.0.0' }),
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'unlisted', version: '1.0.0' }),
+      });
+
+      const result = await new UpdateFlow(ctx.deps).run({ apply: true });
+
+      expect(ctx.installer.update).toHaveBeenCalledTimes(1);
+      expect(ctx.installer.update).toHaveBeenCalledWith({
+        name: 'up',
         marketplace: 'fixture-marketplace',
-      })
-    );
-    expect(result.applied).toHaveLength(0);
-    expect(ctx.installer.update).not.toHaveBeenCalled();
+        projectPath: undefined,
+      });
+      expect(result.applied.map((a) => a.packageName)).toEqual(['up']);
+    });
+
+    // The manifest is read off disk with no schema validation, and the name it
+    // yields is handed to `installer.update()` — which uninstalls by name, and
+    // joins that name into dorkHome. The directory entry name is the honest
+    // fallback: it is a real directory that was actually walked, so it cannot
+    // climb anywhere.
+    it('falls back to the directory name when the manifest name is not a package name', async () => {
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'honest-plugin' }]),
+        latest: { 'honest-plugin': '2.0.0' },
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        dirName: 'honest-plugin',
+        manifest: {
+          ...buildPluginManifest({ name: 'honest-plugin', version: '1.0.0' }),
+          name: '../../../../etc/cron.d',
+        },
+      });
+
+      const result = await new UpdateFlow(ctx.deps).run({ apply: true });
+
+      expect(result.checks[0]?.packageName).toBe('honest-plugin');
+      expect(ctx.installer.update).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'honest-plugin' })
+      );
+    });
+
+    it('never lists a crash-left install backup, even with a valid manifest (DOR-175)', async () => {
+      // A crash mid-install leaves `<name>.dorkos-bak-<ts>-<uuid>` beside the
+      // real installation — a byte-for-byte move-aside carrying a valid manifest
+      // under the same package name. Without the exclusion, update-all would see
+      // a phantom duplicate and could target the backup path with an apply.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'alpha' }]),
+        latest: { alpha: '2.0.0' },
+      });
+      const realRoot = await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'alpha', version: '1.0.0' }),
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        dirName: `alpha.dorkos-bak-${Date.now()}-3fa85f64-5717-4562-b3fc-2c963f66afa6`,
+        manifest: buildPluginManifest({ name: 'alpha', version: '0.9.0' }),
+      });
+
+      const result = await new UpdateFlow(ctx.deps).run({ apply: true });
+
+      expect(result.checks).toHaveLength(1);
+      expect(result.checks[0]).toMatchObject({ packageName: 'alpha', installedVersion: '1.0.0' });
+      expect(ctx.installer.update).toHaveBeenCalledTimes(1);
+      expect(result.applied[0]?.installPath).toBe(realRoot);
+    });
   });
 
-  it('invokes installer.update when apply is true and an update exists', async () => {
-    const marketplaceJson = buildMarketplaceJson([{ name: 'outdated-plugin', version: '2.0.0' }]);
-    const ctx = await buildDeps({ marketplaceJson });
-    cleanupDirs.push(ctx.dorkHome);
-    await stageInstalledPlugin({
-      dorkHome: ctx.dorkHome,
-      manifest: buildPluginManifest({ name: 'outdated-plugin', version: '1.0.0' }),
+  describe('memoized commit lookups', () => {
+    /** One installed package whose check consults the commit lookup. */
+    async function stageOne(ctx: Awaited<ReturnType<typeof setup>>, name = 'pkg') {
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name, version: '1.0.0' }),
+      });
+    }
+
+    it('shares a lookup across run() calls within the TTL, and repeats it after', async () => {
+      // Purpose: the CLI sends one request per package, so the memo must live
+      // on the instance — and must expire, or a push would never be seen.
+      let now = 1_000;
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'pkg' }]),
+        resolveLatest: lookingUp(),
+        now: () => now,
+      });
+      await stageOne(ctx);
+      const flow = new UpdateFlow(ctx.deps);
+
+      await flow.run({});
+      await flow.run({});
+      expect(ctx.fetcher.lookupCommitSha).toHaveBeenCalledTimes(1);
+
+      now += UPDATE_MEMO_TTL_MS + 1;
+      await flow.run({});
+      expect(ctx.fetcher.lookupCommitSha).toHaveBeenCalledTimes(2);
     });
 
-    const flow = new UpdateFlow(ctx.deps);
-    const result = await flow.run({ name: 'outdated-plugin', apply: true });
+    it('shares one in-flight lookup between concurrent runs', async () => {
+      // Purpose: the CLI and the app checking together cost one ls-remote.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'pkg' }]),
+        resolveLatest: lookingUp(),
+      });
+      await stageOne(ctx);
+      let release: (sha: string) => void = () => {};
+      ctx.fetcher.lookupCommitSha.mockImplementation(
+        () => new Promise<string>((resolve) => (release = resolve))
+      );
+      const flow = new UpdateFlow(ctx.deps);
 
-    expect(result.checks[0]?.hasUpdate).toBe(true);
-    expect(ctx.installer.update).toHaveBeenCalledTimes(1);
-    expect(ctx.installer.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'outdated-plugin',
-        marketplace: 'fixture-marketplace',
-      })
-    );
-    expect(result.applied).toHaveLength(1);
-    expect(result.applied[0]?.packageName).toBe('outdated-plugin');
+      const both = Promise.all([flow.run({}), flow.run({})]);
+      await vi.waitFor(() => expect(ctx.fetcher.lookupCommitSha).toHaveBeenCalled());
+      release(SHA_A);
+      await both;
+
+      expect(ctx.fetcher.lookupCommitSha).toHaveBeenCalledTimes(1);
+    });
+
+    it('never keeps a failed lookup or a placeholder', async () => {
+      // Purpose: a retry after the network returns must look again, not
+      // replay the failure for a minute.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'pkg' }]),
+        resolveLatest: lookingUp(),
+      });
+      await stageOne(ctx);
+      ctx.fetcher.lookupCommitSha
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValueOnce('tmp-1')
+        .mockResolvedValue(SHA_A);
+      const flow = new UpdateFlow(ctx.deps);
+
+      await flow.run({});
+      await flow.run({});
+      await flow.run({});
+      await flow.run({});
+
+      expect(ctx.fetcher.lookupCommitSha).toHaveBeenCalledTimes(3);
+    });
+
+    it('is cleared by clearMemos() and by an apply', async () => {
+      // Purpose: "I just pushed; check again" after a refresh, and a check
+      // right after an install, must both ask again.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'pkg' }]),
+        resolveLatest: lookingUp('main', { kind: 'resolved', declaredVersion: '2.0.0' }),
+      });
+      await stageOne(ctx);
+      const flow = new UpdateFlow(ctx.deps);
+
+      await flow.run({});
+      flow.clearMemos();
+      await flow.run({});
+      expect(ctx.fetcher.lookupCommitSha).toHaveBeenCalledTimes(2);
+
+      // The apply run's own check is served from the memo; the apply then
+      // clears it, so only the run after it looks again.
+      await flow.run({ apply: true });
+      expect(ctx.installer.update).toHaveBeenCalledTimes(1);
+      expect(ctx.fetcher.lookupCommitSha).toHaveBeenCalledTimes(2);
+      await flow.run({});
+      expect(ctx.fetcher.lookupCommitSha).toHaveBeenCalledTimes(3);
+    });
+
+    it('treats a full-SHA ref as its own commit, with no ls-remote', async () => {
+      // Purpose: ls-remote matches ref names only, so asking it about a pinned
+      // SHA would report the package unreachable.
+      let seen: string | undefined;
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'pkg' }]),
+        resolveLatest: async (_req, opts) => {
+          seen = await opts.commitLookup('https://example.com/marketplace', SHA_B);
+          return { kind: 'unchanged' };
+        },
+      });
+      await stageOne(ctx);
+
+      await new UpdateFlow(ctx.deps).run({});
+
+      expect(seen).toBe(SHA_B);
+      expect(ctx.fetcher.lookupCommitSha).not.toHaveBeenCalled();
+    });
   });
 
-  it('does not call installer.install when apply is true but nothing needs updating', async () => {
-    const marketplaceJson = buildMarketplaceJson([{ name: 'stable-plugin', version: '1.0.0' }]);
-    const ctx = await buildDeps({ marketplaceJson });
-    cleanupDirs.push(ctx.dorkHome);
-    await stageInstalledPlugin({
-      dorkHome: ctx.dorkHome,
-      manifest: buildPluginManifest({ name: 'stable-plugin', version: '1.0.0' }),
-    });
-
-    const flow = new UpdateFlow(ctx.deps);
-    const result = await flow.run({ name: 'stable-plugin', apply: true });
-
-    expect(result.checks[0]?.hasUpdate).toBe(false);
-    expect(ctx.installer.update).not.toHaveBeenCalled();
-    expect(result.applied).toHaveLength(0);
-  });
-
-  it('returns checks for every installed package when no name is supplied', async () => {
-    const marketplaceJson = buildMarketplaceJson([
-      { name: 'alpha', version: '1.1.0' },
-      { name: 'beta', version: '2.0.0' },
-    ]);
-    const ctx = await buildDeps({ marketplaceJson });
-    cleanupDirs.push(ctx.dorkHome);
-    await stageInstalledPlugin({
-      dorkHome: ctx.dorkHome,
-      manifest: buildPluginManifest({ name: 'alpha', version: '1.0.0' }),
-    });
-    await stageInstalledPlugin({
-      dorkHome: ctx.dorkHome,
-      manifest: buildPluginManifest({ name: 'beta', version: '2.0.0' }),
-    });
-
-    const flow = new UpdateFlow(ctx.deps);
-    const result = await flow.run({});
-
-    expect(result.checks).toHaveLength(2);
-    const alpha = result.checks.find((c) => c.packageName === 'alpha');
-    const beta = result.checks.find((c) => c.packageName === 'beta');
-    expect(alpha?.hasUpdate).toBe(true);
-    expect(alpha?.latestVersion).toBe('1.1.0');
-    expect(beta?.hasUpdate).toBe(false);
-  });
-
-  it('never lists a crash-left install backup, even with a valid manifest (DOR-175)', async () => {
-    // A crash mid-install leaves `<name>.dorkos-bak-<ts>-<uuid>` beside the
-    // real installation — a byte-for-byte move-aside carrying a valid manifest
-    // under the same package name. Without the exclusion, update-all would see
-    // a phantom duplicate and could target the backup path with an apply.
-    const marketplaceJson = buildMarketplaceJson([{ name: 'alpha', version: '2.0.0' }]);
-    const ctx = await buildDeps({ marketplaceJson });
-    cleanupDirs.push(ctx.dorkHome);
-    const realRoot = await stageInstalledPlugin({
-      dorkHome: ctx.dorkHome,
-      manifest: buildPluginManifest({ name: 'alpha', version: '1.0.0' }),
-    });
-    // Stage the backup sibling exactly as the transaction engine names it.
-    const backupRoot = path.join(
-      ctx.dorkHome,
-      'plugins',
-      `alpha.dorkos-bak-${Date.now()}-3fa85f64-5717-4562-b3fc-2c963f66afa6`
-    );
-    await mkdir(path.join(backupRoot, '.dork'), { recursive: true });
-    await writeFile(
-      path.join(backupRoot, '.dork', 'manifest.json'),
-      JSON.stringify(buildPluginManifest({ name: 'alpha', version: '0.9.0' }), null, 2),
-      'utf-8'
-    );
-
-    const flow = new UpdateFlow(ctx.deps);
-    const result = await flow.run({ apply: true });
-
-    // Exactly one check — the backup never became a phantom second package.
-    expect(result.checks).toHaveLength(1);
-    expect(result.checks[0]).toEqual(
-      expect.objectContaining({ packageName: 'alpha', installedVersion: '1.0.0', hasUpdate: true })
-    );
-    // The single apply targeted the real package, not the backup path.
-    expect(ctx.installer.update).toHaveBeenCalledTimes(1);
-    expect(ctx.installer.update).toHaveBeenCalledWith(expect.objectContaining({ name: 'alpha' }));
-    expect(result.applied).toHaveLength(1);
-    expect(result.applied[0]?.installPath).toBe(realRoot);
-  });
-
-  it('throws PackageNotInstalledForUpdateError when a named package is missing', async () => {
-    const marketplaceJson = buildMarketplaceJson([{ name: 'anything', version: '1.0.0' }]);
-    const ctx = await buildDeps({ marketplaceJson });
-    cleanupDirs.push(ctx.dorkHome);
-
-    const flow = new UpdateFlow(ctx.deps);
-    await expect(flow.run({ name: 'ghost-plugin' })).rejects.toBeInstanceOf(
-      PackageNotInstalledForUpdateError
-    );
-  });
-
-  it('uses the installedFrom marketplace when present instead of scanning all sources', async () => {
-    const scopedSource = buildSource({ name: 'scoped-marketplace' });
-    const otherSource = buildSource({
-      name: 'other-marketplace',
-      source: 'https://other.example.com/marketplace',
-    });
-    const scopedJson = buildMarketplaceJson([{ name: 'scoped-plugin', version: '3.0.0' }]);
-    const otherJson = buildMarketplaceJson([{ name: 'scoped-plugin', version: '9.9.9' }]);
-
-    const ctx = await buildDeps({
-      marketplaceJson: scopedJson,
-      sources: [scopedSource, otherSource],
-    });
-    cleanupDirs.push(ctx.dorkHome);
-
-    ctx.fetcher.fetchMarketplaceJson.mockImplementation(async (source: MarketplaceSource) => {
-      if (source.name === 'scoped-marketplace') return scopedJson;
-      return otherJson;
-    });
-
-    await stageInstalledPlugin({
-      dorkHome: ctx.dorkHome,
-      manifest: buildPluginManifest({ name: 'scoped-plugin', version: '1.0.0' }),
-      installedFrom: 'scoped-marketplace',
-    });
-
-    const flow = new UpdateFlow(ctx.deps);
-    const result = await flow.run({ name: 'scoped-plugin' });
-
-    expect(result.checks).toHaveLength(1);
-    expect(result.checks[0]?.marketplace).toBe('scoped-marketplace');
-    expect(result.checks[0]?.latestVersion).toBe('3.0.0');
-    // Only the scoped marketplace was queried — no fallback scan.
-    expect(ctx.fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(1);
-    expect(ctx.fetcher.fetchMarketplaceJson).toHaveBeenCalledWith(scopedSource);
-  });
-
-  it('falls back to scanning all enabled sources when installedFrom is absent', async () => {
-    const sourceA = buildSource({ name: 'marketplace-a' });
-    const sourceB = buildSource({
-      name: 'marketplace-b',
-      source: 'https://b.example.com/marketplace',
-    });
-    const emptyJson = buildMarketplaceJson([]);
-    const hitJson = buildMarketplaceJson([{ name: 'lost-plugin', version: '5.0.0' }]);
-
-    const ctx = await buildDeps({
-      marketplaceJson: hitJson,
-      sources: [sourceA, sourceB],
-    });
-    cleanupDirs.push(ctx.dorkHome);
-
-    ctx.fetcher.fetchMarketplaceJson.mockImplementation(async (source: MarketplaceSource) => {
-      if (source.name === 'marketplace-a') return emptyJson;
-      return hitJson;
-    });
-
-    await stageInstalledPlugin({
-      dorkHome: ctx.dorkHome,
-      manifest: buildPluginManifest({ name: 'lost-plugin', version: '4.0.0' }),
-    });
-
-    const flow = new UpdateFlow(ctx.deps);
-    const result = await flow.run({ name: 'lost-plugin' });
-
-    expect(result.checks).toHaveLength(1);
-    expect(result.checks[0]?.marketplace).toBe('marketplace-b');
-    expect(result.checks[0]?.latestVersion).toBe('5.0.0');
-    expect(result.checks[0]?.hasUpdate).toBe(true);
-    // Both marketplaces were scanned.
-    expect(ctx.fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(2);
-  });
-
-  describe('project-scoped installs', () => {
+  describe('scopes', () => {
     /** Make a temp directory standing in for a caller's `projectPath`. */
     async function makeProjectDir(): Promise<string> {
       const dir = await mkdtemp(path.join(tmpdir(), 'update-flow-project-'));
@@ -530,86 +954,83 @@ describe('UpdateFlow', () => {
       return dir;
     }
 
+    it('checks every installed package when no name is supplied', async () => {
+      // Purpose: the name-less run covers the whole scope.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'alpha' }, { name: 'beta' }]),
+        latest: { alpha: '1.1.0', beta: '2.0.0' },
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'alpha', version: '1.0.0' }),
+      });
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'beta', version: '2.0.0' }),
+      });
+
+      const { checks } = await new UpdateFlow(ctx.deps).run({});
+
+      expect(checks.find((c) => c.packageName === 'alpha')?.status).toBe('update-available');
+      expect(checks.find((c) => c.packageName === 'beta')?.status).toBe('current');
+    });
+
     it('finds a package installed only in the project when projectPath is supplied', async () => {
-      const marketplaceJson = buildMarketplaceJson([{ name: 'local-plugin', version: '2.0.0' }]);
-      const ctx = await buildDeps({ marketplaceJson });
-      cleanupDirs.push(ctx.dorkHome);
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'local-plugin' }]),
+        latest: { 'local-plugin': '2.0.0' },
+      });
       const projectPath = await makeProjectDir();
       await stageProjectPlugin({
         projectPath,
         manifest: buildPluginManifest({ name: 'local-plugin', version: '1.0.0' }),
       });
 
-      const flow = new UpdateFlow(ctx.deps);
-      const result = await flow.run({ name: 'local-plugin', projectPath });
+      const result = await new UpdateFlow(ctx.deps).run({ name: 'local-plugin', projectPath });
 
-      expect(result.checks).toHaveLength(1);
-      expect(result.checks[0]).toEqual(
-        expect.objectContaining({
-          packageName: 'local-plugin',
-          installedVersion: '1.0.0',
-          latestVersion: '2.0.0',
-          hasUpdate: true,
-        })
-      );
+      expect(result.checks[0]).toMatchObject({
+        packageName: 'local-plugin',
+        installedVersion: '1.0.0',
+        latestVersion: '2.0.0',
+        status: 'update-available',
+      });
     });
 
-    it('still throws when the package is in neither scope', async () => {
-      const marketplaceJson = buildMarketplaceJson([{ name: 'anything', version: '1.0.0' }]);
-      const ctx = await buildDeps({ marketplaceJson });
-      cleanupDirs.push(ctx.dorkHome);
+    it('answers "not installed in this scope" when the package is in neither scope', async () => {
+      // Purpose: replaces the old throw; the route owns the 404.
+      const ctx = await setup({ marketplaceJson: buildMarketplaceJson([{ name: 'anything' }]) });
       const projectPath = await makeProjectDir();
 
-      const flow = new UpdateFlow(ctx.deps);
-      await expect(flow.run({ name: 'ghost-plugin', projectPath })).rejects.toBeInstanceOf(
-        PackageNotInstalledForUpdateError
-      );
+      const result = await new UpdateFlow(ctx.deps).run({ name: 'ghost-plugin', projectPath });
+
+      expect(result.checks).toHaveLength(1);
+      expect(result.checks[0]).toMatchObject({
+        status: 'unknown',
+        note: 'not installed in this scope',
+      });
     });
 
     it('finds a global-only package when projectPath is supplied — the project scan adds, never replaces', async () => {
-      const marketplaceJson = buildMarketplaceJson([{ name: 'global-plugin', version: '3.0.0' }]);
-      const ctx = await buildDeps({ marketplaceJson });
-      cleanupDirs.push(ctx.dorkHome);
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'global-plugin' }]),
+        latest: { 'global-plugin': '3.0.0' },
+      });
       const projectPath = await makeProjectDir();
       await stageInstalledPlugin({
         dorkHome: ctx.dorkHome,
         manifest: buildPluginManifest({ name: 'global-plugin', version: '1.0.0' }),
       });
 
-      const flow = new UpdateFlow(ctx.deps);
-      const result = await flow.run({ name: 'global-plugin', projectPath });
+      const result = await new UpdateFlow(ctx.deps).run({ name: 'global-plugin', projectPath });
 
-      expect(result.checks).toHaveLength(1);
       expect(result.checks[0]?.installedVersion).toBe('1.0.0');
     });
 
     it('resolves a name installed in both scopes to the project copy when projectPath is supplied', async () => {
-      const marketplaceJson = buildMarketplaceJson([{ name: 'both-plugin', version: '9.0.0' }]);
-      const ctx = await buildDeps({ marketplaceJson });
-      cleanupDirs.push(ctx.dorkHome);
-      const projectPath = await makeProjectDir();
-      await stageInstalledPlugin({
-        dorkHome: ctx.dorkHome,
-        manifest: buildPluginManifest({ name: 'both-plugin', version: '1.0.0' }),
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'both-plugin' }]),
+        latest: { 'both-plugin': '9.0.0' },
       });
-      const projectRoot = await stageProjectPlugin({
-        projectPath,
-        manifest: buildPluginManifest({ name: 'both-plugin', version: '2.0.0' }),
-      });
-
-      const flow = new UpdateFlow(ctx.deps);
-      const result = await flow.run({ name: 'both-plugin', projectPath });
-
-      expect(result.checks).toHaveLength(1);
-      // The project copy (2.0.0) shadows the global one (1.0.0) for this project.
-      expect(result.checks[0]?.installedVersion).toBe('2.0.0');
-      expect(projectRoot).toContain(path.join('.dork', 'plugins'));
-    });
-
-    it('resolves the same name to the global copy when no projectPath is supplied', async () => {
-      const marketplaceJson = buildMarketplaceJson([{ name: 'both-plugin', version: '9.0.0' }]);
-      const ctx = await buildDeps({ marketplaceJson });
-      cleanupDirs.push(ctx.dorkHome);
       const projectPath = await makeProjectDir();
       await stageInstalledPlugin({
         dorkHome: ctx.dorkHome,
@@ -620,17 +1041,38 @@ describe('UpdateFlow', () => {
         manifest: buildPluginManifest({ name: 'both-plugin', version: '2.0.0' }),
       });
 
-      const flow = new UpdateFlow(ctx.deps);
-      const result = await flow.run({ name: 'both-plugin' });
+      const result = await new UpdateFlow(ctx.deps).run({ name: 'both-plugin', projectPath });
 
+      // The project copy (2.0.0) shadows the global one (1.0.0) for this project.
       expect(result.checks).toHaveLength(1);
+      expect(result.checks[0]?.installedVersion).toBe('2.0.0');
+    });
+
+    it('resolves the same name to the global copy when no projectPath is supplied', async () => {
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'both-plugin' }]),
+        latest: { 'both-plugin': '9.0.0' },
+      });
+      const projectPath = await makeProjectDir();
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'both-plugin', version: '1.0.0' }),
+      });
+      await stageProjectPlugin({
+        projectPath,
+        manifest: buildPluginManifest({ name: 'both-plugin', version: '2.0.0' }),
+      });
+
+      const result = await new UpdateFlow(ctx.deps).run({ name: 'both-plugin' });
+
       expect(result.checks[0]?.installedVersion).toBe('1.0.0');
     });
 
     it('checks a name installed in both scopes once, so an applied update reinstalls once', async () => {
-      const marketplaceJson = buildMarketplaceJson([{ name: 'both-plugin', version: '9.0.0' }]);
-      const ctx = await buildDeps({ marketplaceJson });
-      cleanupDirs.push(ctx.dorkHome);
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'both-plugin' }]),
+        latest: { 'both-plugin': '9.0.0' },
+      });
       const projectPath = await makeProjectDir();
       await stageInstalledPlugin({
         dorkHome: ctx.dorkHome,
@@ -641,11 +1083,9 @@ describe('UpdateFlow', () => {
         manifest: buildPluginManifest({ name: 'both-plugin', version: '2.0.0' }),
       });
 
-      const flow = new UpdateFlow(ctx.deps);
-      const result = await flow.run({ apply: true, projectPath });
+      const result = await new UpdateFlow(ctx.deps).run({ apply: true, projectPath });
 
       expect(result.checks).toHaveLength(1);
-      expect(result.checks[0]?.installedVersion).toBe('2.0.0');
       expect(ctx.installer.update).toHaveBeenCalledTimes(1);
       expect(ctx.installer.update).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'both-plugin', projectPath })
@@ -657,27 +1097,27 @@ describe('UpdateFlow', () => {
       // in the other root (a non-blocking warning, not an error), so these are
       // two genuinely different packages. Deduping on the name alone would drop
       // one of them from update-all — and each resolves its own marketplace.
-      const marketplaceJson = buildMarketplaceJson([{ name: 'twin', version: '9.0.0' }]);
-      const ctx = await buildDeps({ marketplaceJson });
-      cleanupDirs.push(ctx.dorkHome);
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'twin' }]),
+        latest: { twin: '9.0.0' },
+      });
       await stageInstalledPlugin({
         dorkHome: ctx.dorkHome,
         manifest: buildPluginManifest({ name: 'twin', version: '1.0.0' }),
       });
       await stageInstalledAgent({ scopeRoot: ctx.dorkHome, name: 'twin', version: '1.5.0' });
 
-      const flow = new UpdateFlow(ctx.deps);
-      const result = await flow.run({});
+      const result = await new UpdateFlow(ctx.deps).run({});
 
-      expect(result.checks).toHaveLength(2);
       expect(result.checks.map((c) => c.installedVersion).sort()).toEqual(['1.0.0', '1.5.0']);
       expect(result.checks.every((c) => c.packageName === 'twin')).toBe(true);
     });
 
     it('shadows only the matching root: project plugin wins, global agent survives', async () => {
-      const marketplaceJson = buildMarketplaceJson([{ name: 'twin', version: '9.0.0' }]);
-      const ctx = await buildDeps({ marketplaceJson });
-      cleanupDirs.push(ctx.dorkHome);
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'twin' }]),
+        latest: { twin: '9.0.0' },
+      });
       const projectPath = await makeProjectDir();
       await stageInstalledPlugin({
         dorkHome: ctx.dorkHome,
@@ -689,31 +1129,29 @@ describe('UpdateFlow', () => {
         manifest: buildPluginManifest({ name: 'twin', version: '2.0.0' }),
       });
 
-      const flow = new UpdateFlow(ctx.deps);
-      const result = await flow.run({ projectPath });
+      const result = await new UpdateFlow(ctx.deps).run({ projectPath });
 
       // The project's plugins/twin shadows the global plugins/twin (1.0.0 is
       // gone), while the global agents/twin is a different root and survives.
-      expect(result.checks).toHaveLength(2);
       expect(result.checks.map((c) => c.installedVersion).sort()).toEqual(['1.5.0', '2.0.0']);
     });
 
     it('skips an unreadable project manifest, mirroring the global walk', async () => {
-      const marketplaceJson = buildMarketplaceJson([{ name: 'broken-plugin', version: '2.0.0' }]);
-      const ctx = await buildDeps({ marketplaceJson });
-      cleanupDirs.push(ctx.dorkHome);
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'broken-plugin' }]),
+        latest: { 'broken-plugin': '2.0.0' },
+      });
       const projectPath = await makeProjectDir();
       const brokenRoot = path.join(projectPath, '.dork', 'plugins', 'broken-plugin', '.dork');
       await mkdir(brokenRoot, { recursive: true });
       await writeFile(path.join(brokenRoot, 'manifest.json'), '{ not json', 'utf-8');
-
       const flow = new UpdateFlow(ctx.deps);
-      const result = await flow.run({ projectPath });
 
-      expect(result.checks).toHaveLength(0);
-      await expect(flow.run({ name: 'broken-plugin', projectPath })).rejects.toBeInstanceOf(
-        PackageNotInstalledForUpdateError
-      );
+      expect((await flow.run({ projectPath })).checks).toHaveLength(0);
+      expect((await flow.run({ name: 'broken-plugin', projectPath })).checks[0]).toMatchObject({
+        status: 'unknown',
+        note: 'not installed in this scope',
+      });
     });
   });
 });

@@ -108,6 +108,9 @@ describe('a marketplace install approval binds the commands it disclosed', () =>
       update: async () => {
         throw new Error('not used');
       },
+      resolveLatest: async () => {
+        throw new Error('not used');
+      },
     };
 
     approvals = new ApprovalService(createTestDb());

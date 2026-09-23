@@ -316,6 +316,18 @@ export class RemoteConnectionStore {
     return token;
   }
 
+  /**
+   * Read the personal bearer still stored for a connection in any state, or
+   * null. Only disconnect uses it, to revoke a grant the Community may still
+   * hold after local state stopped trusting it; every other caller goes
+   * through {@link personalToken}, which fails closed.
+   */
+  async storedPersonalToken(ref: CommunityRef, ownerKey: string): Promise<string | null> {
+    // Owner check first; a pending record never received a personal bearer.
+    await this.get(ref, ownerKey);
+    return this.credentials.get(`community:${ref}:personal`);
+  }
+
   /** Persist a rejected personal grant so every later read fails closed with a useful status. */
   async requireReconnect(ref: CommunityRef, ownerKey: string): Promise<void> {
     return this.exclusive(async () => {

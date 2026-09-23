@@ -18,6 +18,7 @@ export {
 } from './model/use-community-navigation';
 export {
   endCommunityConnection,
+  unconfirmedDisconnectMessage,
   useEndCommunityConnection,
   type CommunityConnectionEnd,
 } from './model/community-lifecycle';

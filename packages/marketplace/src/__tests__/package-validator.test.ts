@@ -5,7 +5,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-import { validatePackage } from '../package-validator.js';
+import { readDeclaredVersion, validatePackage } from '../package-validator.js';
 import {
   AGENT_MANIFEST_PATH,
   CLAUDE_PLUGIN_MANIFEST_PATH,
@@ -258,6 +258,142 @@ describe('validatePackage', () => {
 
       expect(result.issues.some((i) => i.code === 'CLAUDE_PLUGIN_MISSING')).toBe(false);
       expect(result.ok).toBe(true);
+    });
+  });
+
+  describe('VERSION_MISMATCH', () => {
+    /** A plugin package whose manifest says `manifestVersion`; plugin.json as given (raw). */
+    async function makeVersionedPackage(manifestVersion: string, pluginJson: string | null) {
+      const dir = await tempDir();
+      const pkg = path.join(dir, 'versioned');
+      await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
+        schemaVersion: 1,
+        name: 'versioned',
+        version: manifestVersion,
+        type: 'plugin',
+        description: 'A plugin with two version files',
+        category: 'productivity',
+      });
+      if (pluginJson !== null) {
+        await writeText(path.join(pkg, CLAUDE_PLUGIN_MANIFEST_PATH), pluginJson);
+      }
+      return pkg;
+    }
+
+    it('fails when plugin.json states a different version than the manifest', async () => {
+      // Purpose: flow shipped manifest 0.6.0 beside plugin.json 0.7.2, so DorkOS
+      // and Claude Code reported different versions of one install. That must
+      // not publish or install.
+      const pkg = await makeVersionedPackage(
+        '0.6.0',
+        JSON.stringify({ name: 'versioned', version: '0.7.2' })
+      );
+
+      const result = await validatePackage(pkg);
+
+      expect(result.ok).toBe(false);
+      const mismatches = result.issues.filter((i) => i.code === 'VERSION_MISMATCH');
+      expect(mismatches).toEqual([
+        {
+          level: 'error',
+          code: 'VERSION_MISMATCH',
+          message:
+            '.dork/manifest.json says version 0.6.0 but .claude-plugin/plugin.json says 0.7.2. ' +
+            'Set both to the same version: Claude Code loads 0.7.2, DorkOS would report 0.6.0.',
+          path: CLAUDE_PLUGIN_MANIFEST_PATH,
+        },
+      ]);
+    });
+
+    it('fails when plugin.json declares no version beside a versioned manifest', async () => {
+      // Purpose: Claude Code would fall back to the entry or the commit while
+      // DorkOS reports the manifest's version — the same disagreement.
+      const pkg = await makeVersionedPackage('1.0.0', JSON.stringify({ name: 'versioned' }));
+
+      const result = await validatePackage(pkg);
+
+      expect(result.ok).toBe(false);
+      expect(result.issues.filter((i) => i.code === 'VERSION_MISMATCH')).toEqual([
+        {
+          level: 'error',
+          code: 'VERSION_MISMATCH',
+          message:
+            '.dork/manifest.json says version 1.0.0 but .claude-plugin/plugin.json has no version. ' +
+            'Add "version": "1.0.0" to plugin.json so Claude Code and DorkOS agree.',
+          path: CLAUDE_PLUGIN_MANIFEST_PATH,
+        },
+      ]);
+    });
+
+    it('says nothing when the two files agree', async () => {
+      // Purpose: the check must not fire on the ordinary, correct package.
+      const pkg = await makeVersionedPackage(
+        '1.0.0',
+        JSON.stringify({ name: 'versioned', version: '1.0.0' })
+      );
+
+      const result = await validatePackage(pkg);
+
+      expect(result.issues.some((i) => i.code === 'VERSION_MISMATCH')).toBe(false);
+      expect(result.ok).toBe(true);
+    });
+
+    it('says nothing for a manifest-only agent package', async () => {
+      // Purpose: an agent needs no plugin.json, so there is nothing to disagree with.
+      const result = await validatePackage(path.join(FIXTURES_DIR, 'valid-agent'));
+
+      expect(result.issues.some((i) => i.code === 'VERSION_MISMATCH')).toBe(false);
+    });
+
+    it('leaves an unparseable plugin.json to its existing handling', async () => {
+      // Purpose: a broken plugin.json is not a version disagreement; reporting
+      // one would bury the real problem under a misleading message.
+      const pkg = await makeVersionedPackage('1.0.0', '{ not json');
+
+      const result = await validatePackage(pkg);
+
+      expect(result.issues.some((i) => i.code === 'VERSION_MISMATCH')).toBe(false);
+    });
+
+    it('reports declaredVersion on a failed result', async () => {
+      // Purpose: the update check reads the version of a tree that does not
+      // validate; the result must still carry it.
+      const pkg = await makeVersionedPackage(
+        '0.6.0',
+        JSON.stringify({ name: 'versioned', version: '0.7.2' })
+      );
+      expect((await validatePackage(pkg)).declaredVersion).toBe('0.7.2');
+
+      const dir = await tempDir();
+      const invalid = path.join(dir, 'schema-invalid');
+      await writeJson(path.join(invalid, PACKAGE_MANIFEST_PATH), {
+        schemaVersion: 1,
+        name: 'schema-invalid',
+        version: '2.0.0',
+      });
+      const invalidResult = await validatePackage(invalid);
+      expect(invalidResult.ok).toBe(false);
+      expect(invalidResult.issues.some((i) => i.code === 'MANIFEST_SCHEMA_INVALID')).toBe(true);
+      expect(invalidResult.declaredVersion).toBe('2.0.0');
+    });
+
+    it('keeps "declares no version" apart from a real 0.0.0 for Claude-Code-only packages', async () => {
+      // Purpose: the synthesized manifest must say 0.0.0 (the schema requires a
+      // version), but that placeholder must never be reported as the package's.
+      const dir = await tempDir();
+      const none = path.join(dir, 'cc-none');
+      await writeJson(path.join(none, CLAUDE_PLUGIN_MANIFEST_PATH), { name: 'cc-none' });
+      const noneResult = await validatePackage(none);
+      expect(noneResult.ok).toBe(true);
+      expect(noneResult.manifest?.version).toBe('0.0.0');
+      expect(noneResult.declaredVersion).toBeUndefined();
+
+      const zero = path.join(dir, 'cc-zero');
+      await writeJson(path.join(zero, CLAUDE_PLUGIN_MANIFEST_PATH), {
+        name: 'cc-zero',
+        version: '0.0.0',
+      });
+      expect((await validatePackage(zero)).declaredVersion).toBe('0.0.0');
     });
   });
 
@@ -702,5 +838,96 @@ describe('declared schedules (DOR-1487)', () => {
     const result = await validatePackage(pkgRoot);
 
     expect(result.issues.some((i) => i.code === 'SCHEDULE_SKILL_MISSING')).toBe(false);
+  });
+});
+
+describe('readDeclaredVersion', () => {
+  const tempDirs: string[] = [];
+
+  afterEach(async () => {
+    while (tempDirs.length > 0) {
+      const dir = tempDirs.pop();
+      if (dir) await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  /** A package root with the given raw file contents (`undefined` = file absent). */
+  async function makePackage(files: { manifest?: string; plugin?: string }): Promise<string> {
+    const dir = await makeTempDir();
+    tempDirs.push(dir);
+    if (files.manifest !== undefined) {
+      await writeText(path.join(dir, PACKAGE_MANIFEST_PATH), files.manifest);
+    }
+    if (files.plugin !== undefined) {
+      await writeText(path.join(dir, CLAUDE_PLUGIN_MANIFEST_PATH), files.plugin);
+    }
+    return dir;
+  }
+
+  it("reads plugin.json's version when both files agree", async () => {
+    // Purpose: the ordinary case reads the one version the package states.
+    const dir = await makePackage({
+      manifest: JSON.stringify({ version: '1.0.0' }),
+      plugin: JSON.stringify({ version: '1.0.0' }),
+    });
+    expect(await readDeclaredVersion(dir)).toBe('1.0.0');
+  });
+
+  it('prefers plugin.json when the two files disagree', async () => {
+    // Purpose: flow shipped manifest 0.6.0 beside plugin.json 0.7.2. Claude Code
+    // runs 0.7.2, so that is what DorkOS must report for an existing install.
+    const dir = await makePackage({
+      manifest: JSON.stringify({ version: '0.6.0' }),
+      plugin: JSON.stringify({ version: '0.7.2' }),
+    });
+    expect(await readDeclaredVersion(dir)).toBe('0.7.2');
+  });
+
+  it('falls through to the manifest when plugin.json declares no version', async () => {
+    // Purpose: a plugin.json without `version` states nothing, so the
+    // manifest's version is the package's own statement.
+    const dir = await makePackage({
+      manifest: JSON.stringify({ version: '2.1.0' }),
+      plugin: JSON.stringify({ name: 'x' }),
+    });
+    expect(await readDeclaredVersion(dir)).toBe('2.1.0');
+  });
+
+  it('reads the manifest when there is no plugin.json', async () => {
+    // Purpose: agent packages ship only a manifest.
+    const dir = await makePackage({ manifest: JSON.stringify({ version: '3.0.0' }) });
+    expect(await readDeclaredVersion(dir)).toBe('3.0.0');
+  });
+
+  it('returns undefined when neither file exists', async () => {
+    // Purpose: "declares none" must stay distinguishable from a real version.
+    const dir = await makePackage({});
+    expect(await readDeclaredVersion(dir)).toBeUndefined();
+  });
+
+  it('falls through an unparseable plugin.json to the manifest, without throwing', async () => {
+    // Purpose: installed trees are read without any validity gate; one broken
+    // file must not cost the package its version, or throw on the listing path.
+    const dir = await makePackage({
+      manifest: JSON.stringify({ version: '1.4.0' }),
+      plugin: '{ not json',
+    });
+    expect(await readDeclaredVersion(dir)).toBe('1.4.0');
+  });
+
+  it('returns undefined when both files are unparseable or declare a non-string version', async () => {
+    // Purpose: garbage is "declares none", never a thrown error or a bogus string.
+    const broken = await makePackage({ manifest: '[', plugin: 'nope' });
+    expect(await readDeclaredVersion(broken)).toBeUndefined();
+    const nonString = await makePackage({
+      manifest: JSON.stringify({ version: 1 }),
+      plugin: JSON.stringify({ version: '' }),
+    });
+    expect(await readDeclaredVersion(nonString)).toBeUndefined();
+  });
+
+  it('never throws for a path that does not exist', async () => {
+    // Purpose: the function is documented total; callers rely on that.
+    await expect(readDeclaredVersion('/definitely/not/here')).resolves.toBeUndefined();
   });
 });

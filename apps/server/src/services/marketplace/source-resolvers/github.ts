@@ -5,14 +5,15 @@
  *
  * @module services/marketplace/source-resolvers/github
  */
-import type { ResolvedSourceDescriptor } from '@dorkos/marketplace';
+import { sourceKeyOf, type ResolvedSourceDescriptor } from '@dorkos/marketplace';
 import type { FetchedPackage, FetchPackageOptions, FetcherDeps } from '../package-fetcher.js';
 
 /**
  * Resolve a github plugin source by cloning the canonical
  * `https://github.com/<repo>.git` URL at the requested ref or pinned SHA.
  *
- * Pin precedence: `sha > ref > 'main'`.
+ * Pin precedence (`sha > ref > 'main'`) and the clone URL come from
+ * `sourceKeyOf`, the one normalizer install and the update check share.
  *
  * @param resolved - Resolved github source descriptor (cloneUrl is pre-built
  *   by `@dorkos/marketplace`'s `resolvePluginSource`).
@@ -25,10 +26,12 @@ export async function githubResolver(
   opts: FetchPackageOptions,
   deps: FetcherDeps
 ): Promise<FetchedPackage> {
-  const ref = resolved.sha ?? resolved.ref ?? 'main';
+  // The key owns the clone URL and the pin precedence, so the commit an
+  // install records and the one the update check looks up name one place.
+  const key = sourceKeyOf(resolved);
   return deps.cloneRepository({
-    cloneUrl: resolved.cloneUrl,
-    ref,
+    cloneUrl: key.cloneUrl,
+    ref: key.ref,
     packageName: opts.packageName,
     force: opts.force,
   });

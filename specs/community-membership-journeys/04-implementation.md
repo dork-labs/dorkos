@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 4 / 10 (1.1–1.3 and 2.4; audited against main 5cd6dd794 on 2026-09-23)
+**Tasks Completed:** 6 / 10 (1.1–1.3, 2.1, 2.2 and 2.4)
 
 ## Tasks Completed
 
@@ -54,6 +54,14 @@
 - #2002 (538a6c580) routed the DorkOS switcher's Leave, Invite and settings actions to the Community's own pages and its Disconnect to the local connection; that work is tracked in `specs/community-switcher-navigation/`.
 - The two-Desktop acceptance run passed 20/20 steps on main 30df6cdc2 (evidence local). Its durable driver is PR #2016, still open. That PR's extended run on main 8c4bb8490 adds steps 20–29 and reports two product-contract failures, listed under Remaining Work.
 
+### Session 6 - 2026-09-23
+
+**Branch:** `feat/community-membership-states`
+
+- Closed DOR-2181 Task 2.1. The chooser is a labelled list that takes focus on its heading; suspended and unavailable memberships stay focusable (`aria-disabled`) and carry their reason as a description; a remembered choice the account can no longer see is forgotten. Every community route the account cannot enter, including an unknown ID that used to fall through to first-host setup, returns to the chooser with one notice that reads the same in every case. Zero memberships explain how to join and, only for a host operator, link to host administration.
+- Closed DOR-2181 Task 2.2. A new read, `GET /api/v1/invites/pending`, returns the live join attempt's community, inviter, channel, expiry and (when signed in) whether the account's membership is new, active or inactive, from the HttpOnly admission cookie alone; it applies bind's liveness checks and never writes, is sent `no-store`, looks up the tenant-scoped attempt before revealing that a community is closed, and reports when the attempt is bound to a different account. The join page resumes from it after a reload or sign-in return, shows reactivation scope before an inactive member rejoins, and reports every failure as "Membership was not added." (or "Your account was created, but membership was not added.") with one recovery: try again, open the link again, or ask for a new invitation. Each step moves focus to its heading; errors are alerts.
+- Removed the chooser's dead `communityPendingInvite` session-storage read (nothing wrote it) and the join-path bind/redeem retries the pending read replaces.
+
 ## Files Modified/Created
 
 **Source files:**
@@ -91,8 +99,6 @@
 ## Remaining Work
 
 - **1.4 Disconnect revokes the grant (DOR-2180).** DorkOS's Disconnect deletes only the local credential (`PairingService.disconnect`), so the grant stays live on the Community. The spec says "Disconnect this installation" revokes the selected grant. Found by PR #2016 step 25; a fix is in progress.
-- **2.1 entry proof (DOR-2181).** The chooser states exist. Still needed: browser proof of the zero-membership, suspended, removed and stale last-selection routes, and focus/keyboard behaviour at narrow widths.
-- **2.2 invitation review (DOR-2181).** The preview must survive a reload from server state (there is no read of the pending admission today). Failures must say membership was not added and offer one recovery action. An account created before a failed redeem must be reported as such. Inactive members need the reactivation scope, and step changes need focus moves and announcements.
 - **2.3 separate controls (DOR-2181).** The Community app needs a browser sign-out control and a "disconnect all my installations" control (the API exists), with scope summaries that name what ends and what remains. Its Disconnect control also depends on the 1.4 fix.
 - **3.1 cross-device proof (DOR-2182).** Covered by the two-Desktop acceptance run on main 30df6cdc2 (20/20 steps). It closes when the durable driver, PR #2016, merges.
 - **3.2 exact-scope proof (DOR-2182).** Blocked on the 1.4 Disconnect fix, and on Community refusals being passed through rather than reported as 502 "Community unavailable." (`apps/server/src/routes/remote-communities.ts` `fail`). Both were found by PR #2016's extended run. Accessibility and Cloud-unavailable proof across the whole journey set is still to be written.
