@@ -1,11 +1,17 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RemoteCommunityEntry } from '@dorkos/shared/community-views';
 import { useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import {
   communityKeys,
+  communityAccessState,
+  isCommunityContentAuthorityCurrent,
   mergeRemoteCommunityEntries,
+  useCommunityContentAuthority,
+  useCommunityConnections,
+  useCommunityNavigation,
+  useRememberCommunityNavigation,
   useRemoteCommunityHistory,
   useRemoteCommunityMembers,
   useRemoteCommunityRoom,
@@ -48,28 +54,103 @@ export function RemoteCommunitySurface({
   onThread: (rootId?: string) => void;
 }) {
   const transport = useTransport();
+  const connections = useCommunityConnections();
+  const connection = connections.data?.find((item) => item.ref === community);
+  const access = communityAccessState(connection?.access);
+  const authority = useCommunityContentAuthority(true, access.fingerprint);
+  const ownerAddress = authority ? JSON.stringify([authority.ownerKey, authority.epoch]) : '';
+  const contextAddress = authority
+    ? JSON.stringify([
+        authority.ownerKey,
+        authority.epoch,
+        authority.route.epoch,
+        authority.accessFingerprint,
+      ])
+    : '';
   const queries = useQueryClient();
-  const roomQuery = useRemoteCommunityRoom(community, roomId);
+  const navigation = useCommunityNavigation();
+  const rememberNavigation = useRememberCommunityNavigation();
+  const remembered = navigation.data?.destinations.find(
+    (destination) => destination.ref === community && destination.roomId === roomId
+  );
+  const anchorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noteTopRow = useCallback(
+    (entryId: string | undefined) => {
+      if (!entryId || !authority) return;
+      if (anchorTimer.current) clearTimeout(anchorTimer.current);
+      anchorTimer.current = setTimeout(() => {
+        rememberNavigation.mutate({
+          ref: community,
+          roomId,
+          threadId: threadId ?? null,
+          scrollAnchorEntryId: entryId,
+        });
+      }, 400);
+    },
+    [authority, community, rememberNavigation, roomId, threadId]
+  );
+  useEffect(
+    () => () => {
+      if (anchorTimer.current) clearTimeout(anchorTimer.current);
+    },
+    []
+  );
+  useEffect(() => {
+    if (connection?.status === 'reconnect-required' && authority)
+      queries.removeQueries({ queryKey: communityKeys.remote(authority, community) });
+  }, [authority, community, connection?.status, queries]);
+  const roomQuery = useRemoteCommunityRoom(
+    community,
+    roomId,
+    access.capabilities.read,
+    access.fingerprint
+  );
   const [streamRevision, setStreamRevision] = useState(0);
-  const stream = useRemoteCommunityStream(community, roomId, true, streamRevision);
+  const stream = useRemoteCommunityStream(
+    community,
+    roomId,
+    access.capabilities.stream,
+    streamRevision,
+    access.fingerprint,
+    access.cacheReadable
+  );
   const removed = stream.status === 'removed';
   const room = removed ? null : (stream.room ?? roomQuery.data);
   const history = useRemoteCommunityHistory(
     community,
     roomId,
     threadId,
-    !removed && room?.readable === true
+    !removed && access.capabilities.read && room?.readable === true,
+    access.fingerprint
   );
-  const roster = useRemoteCommunityMembers(community, roomId, !removed && room?.readable === true);
-  const [receipts, setReceipts] = useState<RemoteCommunityEntry[]>([]);
+  const roster = useRemoteCommunityMembers(
+    community,
+    roomId,
+    !removed && access.capabilities.read && room?.readable === true,
+    access.fingerprint
+  );
+  const [receiptState, setReceiptState] = useState<{
+    address: string;
+    entries: RemoteCommunityEntry[];
+  }>(() => ({ address: contextAddress, entries: [] }));
+  const receipts = useMemo(
+    () => (receiptState.address === contextAddress ? receiptState.entries : []),
+    [contextAddress, receiptState]
+  );
   const [receiptRevision, setReceiptRevision] = useState(0);
   const [showMembers, setShowMembers] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [action, setAction] = useState<string | null>(null);
-  const marked = useRef<string | null>(null);
+  const [actionState, setActionState] = useState<{
+    address: string;
+    name: string | null;
+    error: string | null;
+  }>({ address: '', name: null, error: null });
+  const action = actionState.address === contextAddress ? actionState.name : null;
+  const actionError = actionState.address === contextAddress ? actionState.error : null;
+  const marked = useRef<{ address: string; cursor: string } | null>(null);
   const composer = useRef<ComposerInputHandle>(null);
   const timeline = useRef<ConversationTimelineHandle>(null);
-  const canSend = !removed && stream.status === 'live' && room?.writable === true;
+  const canSend =
+    !removed && access.capabilities.post && stream.status === 'live' && room?.writable === true;
   const entries = useMemo(
     () =>
       removed
@@ -85,12 +166,18 @@ export function RemoteCommunitySurface({
   );
   const onReceipt = useCallback(
     (entry: RemoteCommunityEntry) => {
-      setReceipts((current) =>
-        mergeRemoteCommunityEntries(community, roomId, current, [entry]).slice(-500)
-      );
+      setReceiptState((current) => ({
+        address: contextAddress,
+        entries: mergeRemoteCommunityEntries(
+          community,
+          roomId,
+          current.address === contextAddress ? current.entries : [],
+          [entry]
+        ).slice(-500),
+      }));
       setReceiptRevision((current) => current + 1);
     },
-    [community, roomId]
+    [contextAddress, community, roomId]
   );
   // A person who sends a message expects to see their confirmed post, even if
   // they were reading earlier history when it arrived. Incoming activity keeps
@@ -104,7 +191,9 @@ export function RemoteCommunitySurface({
     canSend,
     entries,
     onReceipt,
-    threadId ?? 'channel'
+    ownerAddress || 'unresolved',
+    threadId ?? 'channel',
+    contextAddress || 'unresolved'
   );
   const visible = entries.filter((entry) =>
     threadId ? entry.id === threadId || entry.threadRootEntryId === threadId : entry.depth === 0
@@ -128,29 +217,41 @@ export function RemoteCommunitySurface({
     canSend,
     canSendReason: removed
       ? 'You no longer have access to this channel.'
-      : room?.archived
-        ? 'This channel is archived.'
-        : !room?.joined
-          ? 'Join this channel to send messages.'
-          : 'Reconnecting. Saved messages are read-only until the connection returns.',
+      : !access.capabilities.post && access.cacheReadable
+        ? 'This community is read-only.'
+        : room?.archived
+          ? 'This channel is archived.'
+          : !room?.joined
+            ? 'Join this channel to send messages.'
+            : 'Reconnecting. Saved messages are read-only until the connection returns.',
     attachments: drafts.attachments,
     async send() {
       drafts.send(threadId);
     },
   };
   async function perform(name: string, work: () => Promise<unknown>) {
-    if (action) return;
-    setAction(name);
-    setActionError(null);
+    if (action || !authority) return;
+    const captured = authority;
+    const address = contextAddress;
+    setActionState({ address, name, error: null });
     try {
       await work();
+      if (!isCommunityContentAuthorityCurrent(captured)) return;
       if (name === 'join' || name === 'leave' || name.startsWith('retry:'))
         setStreamRevision((current) => current + 1);
-      await queries.invalidateQueries({ queryKey: communityKeys.remote(community) });
+      await queries.invalidateQueries({ queryKey: communityKeys.remote(captured, community) });
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : 'The action could not be completed.');
+      if (isCommunityContentAuthorityCurrent(captured))
+        setActionState({
+          address,
+          name,
+          error: cause instanceof Error ? cause.message : 'The action could not be completed.',
+        });
     } finally {
-      setAction(null);
+      if (isCommunityContentAuthorityCurrent(captured))
+        setActionState((current) =>
+          current.address === address ? { ...current, name: null } : current
+        );
     }
   }
   function markRead() {
@@ -161,17 +262,20 @@ export function RemoteCommunitySurface({
       history.hasNextPage ||
       !latest ||
       stream.status !== 'live' ||
-      marked.current === latest.cursor
+      (marked.current?.address === contextAddress && marked.current.cursor === latest.cursor) ||
+      !authority
     )
       return;
-    marked.current = latest.cursor;
+    const captured = authority;
+    marked.current = { address: contextAddress, cursor: latest.cursor };
     void transport
       .setRemoteCommunityReadCursor(community, roomId, latest.cursor)
       .then(() => {
-        void queries.invalidateQueries({ queryKey: communityKeys.rooms(community) });
+        if (isCommunityContentAuthorityCurrent(captured))
+          void queries.invalidateQueries({ queryKey: communityKeys.rooms(captured, community) });
       })
       .catch(() => {
-        marked.current = null;
+        if (marked.current?.address === contextAddress) marked.current = null;
       });
   }
   return (
@@ -186,7 +290,7 @@ export function RemoteCommunitySurface({
               Back to channel
             </Button>
           )}
-          {!removed && room && !room.joined && !room.stale && (
+          {!removed && access.capabilities.post && room && !room.joined && !room.stale && (
             <Button
               size="sm"
               disabled={action !== null}
@@ -197,25 +301,29 @@ export function RemoteCommunitySurface({
               Join channel
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={removed}
-            onClick={() => setShowMembers(!showMembers)}
-          >
-            {showMembers ? 'Hide members' : 'Members'}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={action !== null}
-            onClick={() =>
-              void perform('stop', () => transport.haltRemoteCommunityRoom(community, roomId))
-            }
-          >
-            {action === 'stop' ? 'Stopping…' : 'Stop my agents'}
-          </Button>
-          {room?.joined && (
+          {access.cacheReadable && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={removed}
+              onClick={() => setShowMembers(!showMembers)}
+            >
+              {showMembers ? 'Hide members' : 'Members'}
+            </Button>
+          )}
+          {access.capabilities.enrollAgent && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={action !== null}
+              onClick={() =>
+                void perform('stop', () => transport.haltRemoteCommunityRoom(community, roomId))
+              }
+            >
+              {action === 'stop' ? 'Stopping…' : 'Stop my agents'}
+            </Button>
+          )}
+          {access.capabilities.post && room?.joined && (
             <Button
               variant="ghost"
               size="sm"
@@ -223,7 +331,10 @@ export function RemoteCommunitySurface({
               onClick={() =>
                 void perform('leave', async () => {
                   await transport.leaveRemoteCommunityRoom(community, roomId);
-                  queries.removeQueries({ queryKey: communityKeys.room(community, roomId) });
+                  if (authority)
+                    queries.removeQueries({
+                      queryKey: communityKeys.room(authority, community, roomId),
+                    });
                 })
               }
             >
@@ -288,11 +399,16 @@ export function RemoteCommunitySurface({
                     )}
                   </div>
                 ))}
-                <RemoteCommunityAgents
-                  community={community}
-                  roomId={roomId}
-                  online={stream.status === 'live'}
-                />
+                {access.capabilities.enrollAgent && (
+                  <RemoteCommunityAgents
+                    key={contextAddress}
+                    community={community}
+                    roomId={roomId}
+                    online={stream.status === 'live'}
+                    canEnroll
+                    accessFingerprint={access.fingerprint}
+                  />
+                )}
               </div>
             )}
             {history.isError && (
@@ -319,6 +435,8 @@ export function RemoteCommunitySurface({
               rows={rows}
               label={threadId ? 'Community thread' : 'Community messages'}
               busy={history.isFetching}
+              resumeRow={() => remembered?.scrollAnchorEntryId ?? undefined}
+              onTopRow={noteTopRow}
               onReachedBottom={markRead}
               onOpenThread={onThread}
               empty={

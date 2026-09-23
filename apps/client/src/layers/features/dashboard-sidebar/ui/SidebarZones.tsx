@@ -11,6 +11,7 @@ import { CommunityChannelGroups } from './CommunityChannelGroups';
  */
 import { useCallback, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { communityRefFromRouteDestination, useCommunityRouteEpoch } from '@/layers/shared/model';
 import {
   setGroupCollapsed,
   setSectionCollapsed,
@@ -121,6 +122,8 @@ export function SidebarZones({
   silenceLiveRegion = false,
 }: SidebarZonesProps) {
   const { update } = useUpdateSidebarPrefs();
+  const route = useCommunityRouteEpoch();
+  const selectedCommunity = communityRefFromRouteDestination(route.destination);
   const boot = useBootState();
   const reducedMotion = useReducedMotion();
   // Getting started leaves the shared slot the frame a real signal wants it and
@@ -197,6 +200,13 @@ export function SidebarZones({
   // moment the panel settled.
   const zoneReveal = { variants: REVEAL_ZONE, transition: revealTransition(reducedMotion) };
 
+  if (selectedCommunity)
+    return (
+      <div className="flex min-h-0 flex-col" data-community-context={selectedCommunity}>
+        <CommunityChannelGroups />
+      </div>
+    );
+
   return (
     // The damping's "not under a hand" half reads the pointer and focus here,
     // one element above every zone — the smallest wrapper that contains
@@ -270,7 +280,6 @@ export function SidebarZones({
                   )}
                 </motion.div>
               ))}
-            {draws('library') && <CommunityChannelGroups />}
             {/* There is no empty-Library branch on purpose. `AgentOnboardingCard`
                 used to hang off `library === undefined`, and that condition is
                 reachable — but only in the wrong moment. `useSidebarState`

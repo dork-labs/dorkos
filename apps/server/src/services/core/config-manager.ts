@@ -3296,6 +3296,20 @@ export function seedRoomCanvasOps(store: {
  * bodies suppressed, and `ui.promos` had no on-disk case at all. An upgrade-boot
  * test for a nested seed has to read `config.json` itself.
  */
+/** Persist the owner-qualified Community navigation block in an existing `ui` section. */
+export function seedCommunityNavigationPrefs(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object' || Array.isArray(ui)) return;
+  if ('communityNavigation' in ui) return;
+  store.set('ui', {
+    ...(ui as Record<string, unknown>),
+    communityNavigation: { version: 1, owners: [] },
+  });
+}
+
 export const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -4025,6 +4039,15 @@ export const CONFIG_MIGRATIONS = {
     // never reached (spec `tool-only-room-replies` §A2). Nested leaves, so this
     // body is the only thing that touches either; see `retireToolOnlyReplies`.
     retireToolOnlyReplies(store);
+  },
+  // 0.81.0 has merged (the second graduated experiment), so 0.82.0 is the next
+  // key. This adds one nested preference block under `ui`; every older sibling
+  // is preserved, and repeated execution leaves an existing owner history intact.
+  '0.82.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    seedCommunityNavigationPrefs(store);
   },
 } as const;
 

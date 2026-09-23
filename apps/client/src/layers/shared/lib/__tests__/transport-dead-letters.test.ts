@@ -22,10 +22,9 @@ describe('HttpTransport.listRelayDeadLetters', () => {
     const transport = new HttpTransport(BASE_URL);
     const result = await transport.listRelayDeadLetters();
 
-    expect(fetch).toHaveBeenCalledWith(
-      `${BASE_URL}/relay/dead-letters`,
-      expect.objectContaining({ headers: { 'Content-Type': 'application/json' } })
-    );
+    const [url, init] = vi.mocked(fetch).mock.calls[0]!;
+    expect(url).toBe(`${BASE_URL}/relay/dead-letters`);
+    expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json');
     expect(result).toEqual(mockDeadLetters);
   });
 

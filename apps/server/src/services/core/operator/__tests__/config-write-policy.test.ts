@@ -168,6 +168,11 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'tunnel.domain',
       'tunnel.enabled',
       'ui.autonomyAcknowledgedAt',
+      // Whose saved navigation this is, and where the person's next "switch
+      // back to this DorkOS" lands. An agent could otherwise steer that click.
+      'ui.communityNavigation.owners[].installationDestination.path',
+      'ui.communityNavigation.owners[].installationDestination.search',
+      'ui.communityNavigation.owners[].ownerKey',
       'ui.fullPowerChoice',
       'ui.fullPowerDecidedAt',
       // Three uploads.* leaves a person can tighten past the shipped default,

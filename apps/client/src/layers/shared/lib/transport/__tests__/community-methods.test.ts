@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCommunityMethods } from '../community-methods';
 import { communityStubs } from '../../direct/community-stubs';
+import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 
 const connection = {
   ref: 'community-a',
@@ -93,6 +94,43 @@ describe('community connection transport', () => {
     await expect(createCommunityMethods('/api').listCommunityConnections()).rejects.toMatchObject({
       status: 403,
     });
+  });
+  it('uses owner-scoped navigation endpoints without accepting a replacement order', async () => {
+    const state = {
+      ownerKey: 'owner-a',
+      installationDestination: { path: '/' as const, search: {} },
+      order: ['community-a'],
+      destinations: [],
+    };
+    const fetch = answer(state);
+    fetch.mockImplementation(async () => new Response(JSON.stringify(state)));
+    const methods = createCommunityMethods('/api');
+    await expect(methods.getCommunityNavigation()).resolves.toEqual(state);
+    await methods.moveCommunityNavigation({
+      ref: CommunityRefSchema.parse('community-a'),
+      direction: 'down',
+    });
+    await methods.rememberCommunityNavigation({
+      ref: 'community-a',
+      roomId: 'room-a',
+      threadId: null,
+      scrollAnchorEntryId: null,
+    });
+    await methods.rememberCommunityInstallationDestination({
+      path: '/tasks',
+      search: { view: 'board' },
+    });
+    fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ destination: state.destinations[0] ?? null }))
+    );
+    await methods.resolveCommunityNavigation('community-a');
+    expect(fetch.mock.calls.map((call) => [call[0], call[1]?.method ?? 'GET'])).toEqual([
+      ['/api/community-connections/navigation', 'GET'],
+      ['/api/community-connections/navigation/move', 'POST'],
+      ['/api/community-connections/navigation/destination', 'PUT'],
+      ['/api/community-connections/navigation/installation', 'PUT'],
+      ['/api/community-connections/navigation/community-a/destination', 'GET'],
+    ]);
   });
   it('refuses server-owned mutations in embedded mode', async () => {
     await expect(communityStubs.listCommunityConnections()).resolves.toEqual([]);

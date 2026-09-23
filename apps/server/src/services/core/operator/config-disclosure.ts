@@ -169,6 +169,17 @@ export const CONFIG_DISCLOSURE = {
   'ui.shapes.autoFollowAgent': 'expose',
   'ui.statusBar.pins': 'expose',
   'ui.composer.richText': 'expose',
+  // Owner and tenant-qualified navigation history is local UI state. Withhold
+  // the whole shape so a tokenless config read cannot enumerate private room IDs.
+  'ui.communityNavigation.version': 'withhold',
+  'ui.communityNavigation.owners[].ownerKey': 'withhold',
+  'ui.communityNavigation.owners[].order': 'withhold',
+  'ui.communityNavigation.owners[].destinations[].ref': 'withhold',
+  'ui.communityNavigation.owners[].destinations[].roomId': 'withhold',
+  'ui.communityNavigation.owners[].destinations[].threadId': 'withhold',
+  'ui.communityNavigation.owners[].destinations[].scrollAnchorEntryId': 'withhold',
+  'ui.communityNavigation.owners[].installationDestination.path': 'withhold',
+  'ui.communityNavigation.owners[].installationDestination.search': 'withhold',
   // A timestamp saying the person read what Full autonomy means. Names nothing
   // and unlocks nothing on being read — an agent that learns the date is no
   // closer to anything than one that does not.

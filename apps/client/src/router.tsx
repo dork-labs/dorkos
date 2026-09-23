@@ -36,6 +36,7 @@ import {
 import { DEFAULT_TEAM_VIEW, LEGACY_TABLE_VIEW, TEAM_VIEWS } from '@/layers/shared/lib';
 import { resolveSessionForCwd, SESSION_LOOKUP_FAILED_MESSAGE } from '@/layers/entities/session';
 import type { Transport } from '@dorkos/shared/transport';
+import { createCommunityRouteMemory } from './app/community-route-memory';
 
 // ── Router context ──────────────────────────────────────────
 interface RouterContext {
@@ -645,13 +646,16 @@ const routeTree = rootRoute.addChildren([
  * @param transport - The transport loaders reach the server through
  */
 export function createAppRouter(queryClient: QueryClient, transport: Transport) {
-  return createRouter({
+  const router = createRouter({
     routeTree,
     context: { queryClient, transport },
     defaultPreload: 'intent',
     defaultErrorComponent: RouteErrorFallback,
     defaultNotFoundComponent: NotFoundFallback,
   });
+  const rememberRoute = createCommunityRouteMemory(queryClient, transport);
+  router.subscribe('onLoad', ({ toLocation }) => rememberRoute(toLocation));
+  return router;
 }
 
 // ── Type registration ───────────────────────────────────────

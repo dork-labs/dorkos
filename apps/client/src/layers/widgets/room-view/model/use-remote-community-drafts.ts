@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RemoteCommunityEntry } from '@dorkos/shared/community-views';
 import { useTransport } from '@/layers/shared/model';
 import type { ConversationAttachmentPort } from '@/layers/features/conversation';
 import type { PendingFile } from '@/layers/features/composer';
 
 interface Delivery {
+  address: string;
+  context: string;
+  ref: string;
+  roomId: string;
   key: string;
   text: string;
   parentEntryId?: string;
@@ -21,36 +25,68 @@ export function useRemoteCommunityDrafts(
   canSend: boolean,
   entries: RemoteCommunityEntry[],
   onReceipt: (entry: RemoteCommunityEntry) => void,
-  draftKey = 'channel'
+  ownerKey: string,
+  draftKey = 'channel',
+  contextKey = ownerKey
 ) {
   const transport = useTransport();
-  const [drafts, setDrafts] = useState<Record<string, { text: string; files: PendingFile[] }>>({});
+  const address = JSON.stringify([ownerKey, ref, roomId, contextKey]);
+  const [draftState, setDraftState] = useState<{
+    address: string;
+    drafts: Record<string, { text: string; files: PendingFile[] }>;
+  }>(() => ({ address, drafts: {} }));
+  const drafts = draftState.address === address ? draftState.drafts : {};
   const text = drafts[draftKey]?.text ?? '';
   const staged = drafts[draftKey]?.files ?? [];
   function setText(next: string) {
-    setDrafts((current) => ({
-      ...current,
-      [draftKey]: { text: next, files: current[draftKey]?.files ?? [] },
-    }));
+    setDraftState((current) => {
+      const values = current.address === address ? current.drafts : {};
+      return {
+        address,
+        drafts: {
+          ...values,
+          [draftKey]: { text: next, files: values[draftKey]?.files ?? [] },
+        },
+      };
+    });
   }
   function setStaged(next: PendingFile[] | ((current: PendingFile[]) => PendingFile[])) {
-    setDrafts((current) => ({
-      ...current,
-      [draftKey]: {
-        text: current[draftKey]?.text ?? '',
-        files: typeof next === 'function' ? next(current[draftKey]?.files ?? []) : next,
-      },
-    }));
+    setDraftState((current) => {
+      const values = current.address === address ? current.drafts : {};
+      return {
+        address,
+        drafts: {
+          ...values,
+          [draftKey]: {
+            text: values[draftKey]?.text ?? '',
+            files: typeof next === 'function' ? next(values[draftKey]?.files ?? []) : next,
+          },
+        },
+      };
+    });
   }
-  const [error, setError] = useState<string | null>(null);
+  const [errorState, setErrorState] = useState<{
+    address: string;
+    context: string;
+    message: string;
+  } | null>(null);
+  function setError(message: string | null) {
+    setErrorState(message === null ? null : { address, context: contextKey, message });
+  }
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const jobs = useRef(new Map<string, Delivery>());
   const running = useRef(new Set<string>());
+  const authority = useRef(address);
+  const context = useRef(contextKey);
   const alive = useRef(true);
   const allowed = useRef(canSend);
-  allowed.current = canSend;
   const receipt = useRef(onReceipt);
-  receipt.current = onReceipt;
+  useLayoutEffect(() => {
+    authority.current = address;
+    context.current = contextKey;
+    allowed.current = canSend;
+    receipt.current = onReceipt;
+  }, [address, canSend, contextKey, onReceipt]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -60,44 +96,62 @@ export function useRemoteCommunityDrafts(
   useEffect(() => {
     let changed = false;
     for (const entry of entries) {
-      if (entry.originIdempotencyKey && jobs.current.delete(entry.originIdempotencyKey))
+      if (!entry.originIdempotencyKey) continue;
+      const job = jobs.current.get(entry.originIdempotencyKey);
+      if (
+        job?.address === authority.current &&
+        job.context === context.current &&
+        jobs.current.delete(entry.originIdempotencyKey)
+      )
         changed = true;
     }
     if (changed) setDeliveries([...jobs.current.values()]);
   }, [entries]);
 
   function publish() {
-    if (alive.current) setDeliveries([...jobs.current.values()].map((job) => ({ ...job })));
+    if (alive.current)
+      setDeliveries(
+        [...jobs.current.values()]
+          .filter((job) => job.address === authority.current && job.context === context.current)
+          .map((job) => ({ ...job }))
+      );
   }
 
   async function deliver(job: Delivery) {
-    if (running.current.has(job.key) || !allowed.current || !alive.current) return;
+    if (
+      running.current.has(job.key) ||
+      !allowed.current ||
+      !alive.current ||
+      job.address !== authority.current
+    )
+      return;
     running.current.add(job.key);
     job.status = 'sending';
     job.error = undefined;
     publish();
     try {
       for (let i = job.attachmentIds.length; i < job.files.length; i++) {
-        if (!allowed.current || !alive.current)
+        if (!allowed.current || !alive.current || job.address !== authority.current)
           throw new Error('Reconnect to this channel before retrying.');
         const attachment = await transport.uploadRemoteCommunityAttachment(
-          ref,
-          roomId,
+          job.ref,
+          job.roomId,
           job.files[i]!.file,
           `${job.key}:file:${i}`
         );
         job.attachmentIds.push(attachment.id);
       }
-      if (!allowed.current || !alive.current)
+      if (!allowed.current || !alive.current || job.address !== authority.current)
         throw new Error('Reconnect to this channel before retrying.');
-      const entry = await transport.postRemoteCommunityEntry(ref, roomId, {
+      const entry = await transport.postRemoteCommunityEntry(job.ref, job.roomId, {
         text: job.text,
         parentEntryId: job.parentEntryId,
         attachmentIds: job.attachmentIds,
         idempotencyKey: job.key,
       });
       jobs.current.delete(job.key);
-      if (alive.current) receipt.current(entry);
+      if (alive.current && job.address === authority.current && job.context === context.current)
+        receipt.current(entry);
     } catch (cause) {
       job.status = 'failed';
       job.error =
@@ -115,6 +169,10 @@ export function useRemoteCommunityDrafts(
       return;
     }
     const job: Delivery = {
+      address,
+      context: contextKey,
+      ref,
+      roomId,
       key: crypto.randomUUID(),
       text: text.trim() ? text : staged.map((item) => item.file.name).join(', '),
       parentEntryId,
@@ -169,8 +227,13 @@ export function useRemoteCommunityDrafts(
     text,
     setText,
     attachments,
-    deliveries,
-    error,
+    deliveries: deliveries.filter(
+      (delivery) => delivery.address === address && delivery.context === contextKey
+    ),
+    error:
+      errorState?.address === address && errorState.context === contextKey
+        ? errorState.message
+        : null,
     send,
     retry(key: string) {
       const job = jobs.current.get(key);

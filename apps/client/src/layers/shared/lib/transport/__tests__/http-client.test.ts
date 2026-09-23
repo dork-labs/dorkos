@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fetchJSON, fetchNoContent, buildQueryString } from '../http-client';
+import { createProfileMethods } from '../profile-methods';
 import { getAuthRequired, setAuthRequired } from '../../auth-signal';
+import {
+  confirmCommunityAuthority,
+  getCommunityAuthority,
+  invalidateCommunityAuthority,
+} from '../../community-authority-state';
 
 describe('fetchJSON', () => {
   const BASE_URL = 'http://localhost:4242';
@@ -8,11 +14,13 @@ describe('fetchJSON', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     setAuthRequired(false);
+    invalidateCommunityAuthority();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     setAuthRequired(false);
+    invalidateCommunityAuthority();
   });
 
   it('sends credentials so the Better Auth session cookie rides every call', async () => {
@@ -23,6 +31,67 @@ describe('fetchJSON', () => {
     await fetchJSON(BASE_URL, '/api/test');
 
     expect(fetchSpy.mock.calls[0][1]?.credentials).toBe('include');
+  });
+
+  it('defaults a JSON string body to application/json', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+    await fetchJSON(BASE_URL, '/api/test', { method: 'POST', body: '{}' });
+
+    expect(new Headers(fetchSpy.mock.calls[0][1]?.headers).get('Content-Type')).toBe(
+      'application/json'
+    );
+  });
+
+  it('leaves the avatar upload untyped so fetch writes its multipart boundary', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ avatarUrl: '/a.png' }), { status: 200 }));
+
+    await createProfileMethods(BASE_URL).uploadProfileAvatar(
+      new Blob(['png'], { type: 'image/png' }),
+      'me.png'
+    );
+
+    const init = fetchSpy.mock.calls[0][1];
+    expect(init?.body).toBeInstanceOf(FormData);
+    expect(new Headers(init?.headers).has('Content-Type')).toBe(false);
+  });
+
+  it('sends the confirmed owner as a compare-only precondition', async () => {
+    const authority = invalidateCommunityAuthority();
+    confirmCommunityAuthority(authority.epoch, 'owner-a');
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+    await fetchJSON(BASE_URL, '/api/community-connections');
+
+    expect(new Headers(fetchSpy.mock.calls[0][1]?.headers).get('X-DorkOS-Community-Owner')).toBe(
+      'owner-a'
+    );
+  });
+
+  it('invalidates authority when another tab changed the server owner', async () => {
+    const authority = invalidateCommunityAuthority();
+    confirmCommunityAuthority(authority.epoch, 'owner-a');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: 'The local owner changed.',
+          code: 'COMMUNITY_OWNER_CHANGED',
+        }),
+        { status: 409 }
+      )
+    );
+
+    await expect(fetchJSON(BASE_URL, '/api/community-connections')).rejects.toThrow(
+      'The local owner changed.'
+    );
+    expect(getCommunityAuthority().ownerKey).toBeNull();
+    expect(getCommunityAuthority().epoch).toBeGreaterThan(authority.epoch);
   });
 
   it('flips the auth-required signal on a 401 AUTH_REQUIRED response', async () => {
@@ -102,10 +171,12 @@ describe('fetchNoContent', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     setAuthRequired(false);
+    invalidateCommunityAuthority();
   });
   afterEach(() => {
     vi.restoreAllMocks();
     setAuthRequired(false);
+    invalidateCommunityAuthority();
   });
 
   it('resolves on a 204 without touching the body', async () => {

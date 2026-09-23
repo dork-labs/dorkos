@@ -4,7 +4,12 @@ import type {
   RemoteCommunityEnrollment,
   RemoteCommunityEjectionResponse,
 } from '@dorkos/shared/community-views';
-import { communityKeys, useRemoteCommunityAgents } from '@/layers/entities/community';
+import {
+  communityKeys,
+  isCommunityContentAuthorityCurrent,
+  useCommunityContentAuthority,
+  useRemoteCommunityAgents,
+} from '@/layers/entities/community';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { useTransport } from '@/layers/shared/model';
 import {
@@ -32,14 +37,19 @@ export function RemoteCommunityAgents({
   community,
   roomId,
   online,
+  canEnroll,
+  accessFingerprint,
 }: {
   community: string;
   roomId: string;
   online: boolean;
+  canEnroll: boolean;
+  accessFingerprint: string;
 }) {
   const transport = useTransport();
   const queries = useQueryClient();
-  const agents = useRemoteCommunityAgents(community);
+  const authority = useCommunityContentAuthority(true, accessFingerprint);
+  const agents = useRemoteCommunityAgents(community, canEnroll, accessFingerprint);
   const local = useRegisteredAgents();
   const [selected, setSelected] = useState('');
   const [handle, setHandle] = useState('');
@@ -53,11 +63,14 @@ export function RemoteCommunityAgents({
       (agent) => !active.some((enrollment) => enrollment.localAgentId === agent.id)
     ) ?? [];
   async function refresh() {
-    await queries.invalidateQueries({ queryKey: communityKeys.remote(community) });
+    if (authority && isCommunityContentAuthorityCurrent(authority))
+      await queries.invalidateQueries({ queryKey: communityKeys.remote(authority, community) });
   }
   async function enroll(event: FormEvent) {
     event.preventDefault();
-    if (!selected || pending || !online) return;
+    if (!selected || pending || !online || !canEnroll) return;
+    if (!authority) return;
+    const captured = authority;
     setPending(true);
     setError(null);
     try {
@@ -66,13 +79,17 @@ export function RemoteCommunityAgents({
         selected,
         handle.trim() ? { handle: handle.trim() } : {}
       );
+      if (!isCommunityContentAuthorityCurrent(captured)) return;
       setSelected('');
       setHandle('');
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The agent could not join this community.');
+      if (isCommunityContentAuthorityCurrent(captured))
+        setError(
+          cause instanceof Error ? cause.message : 'The agent could not join this community.'
+        );
     } finally {
-      setPending(false);
+      if (isCommunityContentAuthorityCurrent(captured)) setPending(false);
     }
   }
   return (
@@ -96,12 +113,13 @@ export function RemoteCommunityAgents({
           agent={agent}
           roomId={roomId}
           online={online}
+          canEnroll={canEnroll}
           onChanged={refresh}
           onNotice={setNotice}
         />
       ))}
       {local.isError && <p role="alert">Local agents could not be loaded.</p>}
-      {available.length > 0 && (
+      {canEnroll && available.length > 0 && (
         <form onSubmit={(event) => void enroll(event)} className="flex flex-wrap items-end gap-2">
           <div className="min-w-40 flex-1 space-y-1">
             <Label htmlFor={`${id}-agent`}>Local agent</Label>
@@ -151,12 +169,14 @@ function EnrolledAgent({
   agent,
   roomId,
   online,
+  canEnroll,
   onChanged,
   onNotice,
 }: {
   agent: RemoteCommunityEnrollment;
   roomId: string;
   online: boolean;
+  canEnroll: boolean;
   onChanged: () => Promise<void>;
   onNotice: (message: string) => void;
 }) {
@@ -197,7 +217,7 @@ function EnrolledAgent({
         <Button
           variant="outline"
           size="sm"
-          disabled={pending !== null || !agent.active || (!joined && !online)}
+          disabled={pending !== null || !canEnroll || !agent.active || (!joined && !online)}
           onClick={() =>
             void run('membership', async () => {
               if (joined)
@@ -222,7 +242,7 @@ function EnrolledAgent({
         <Button
           variant="ghost"
           size="sm"
-          disabled={pending !== null}
+          disabled={pending !== null || !canEnroll}
           onClick={() =>
             void run('stop', () =>
               transport.haltRemoteCommunityAgent(agent.community, roomId, agent.localAgentId)
@@ -233,7 +253,7 @@ function EnrolledAgent({
         </Button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button variant="ghost" size="sm" disabled={pending !== null}>
+            <Button variant="ghost" size="sm" disabled={pending !== null || !canEnroll}>
               Remove from community
             </Button>
           </AlertDialogTrigger>

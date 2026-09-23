@@ -28,6 +28,26 @@ vi.mock('@/layers/entities/room', async (importOriginal) => ({
   useRoom: (roomId: string | null) => ({ data: roomById(roomId) }),
 }));
 
+const communityRoom = vi.fn<(ref: string, roomId: string, fingerprint: string) => unknown>(
+  () => undefined
+);
+/** The listed connection's access; `null` lists no connection at all. */
+let connectionAccess: unknown = null;
+vi.mock('@/layers/entities/community', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/community')>()),
+  useCommunityConnections: () => ({
+    data: connectionAccess === null ? [] : [{ ref: 'alpha', access: connectionAccess }],
+  }),
+  // Enabled and keyed the way the real query is: a disabled read has no data.
+  useRemoteCommunityRoom: (ref: string, roomId: string, enabled: boolean, fingerprint: string) => ({
+    data: enabled ? communityRoom(ref, roomId, fingerprint) : undefined,
+  }),
+}));
+
+const readable = { read: true, post: true, enrollAgent: true, stream: true };
+const nothing = { read: false, post: false, enrollAgent: false, stream: false };
+
+import { communityAccessState } from '@/layers/entities/community';
 import { AppTabStrip } from '../ui/AppTabStrip';
 import { APP_TAB_PANEL_ID } from '../ui/AppTabItem';
 
@@ -87,6 +107,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   agentByPath.mockReturnValue(null);
   roomById.mockReturnValue(null);
+  communityRoom.mockReset().mockReturnValue(undefined);
+  connectionAccess = null;
 });
 
 afterEach(cleanup);
@@ -112,6 +134,46 @@ describe('AppTabStrip', () => {
     roomById.mockImplementation((roomId) => (roomId === 'room-1' ? channelRoom() : null));
     renderStrip([GENERAL_CHANNEL]);
     expect(screen.getByRole('tab', { name: /#general/ })).toBeInTheDocument();
+  });
+
+  it('names a community channel tab from that community, never the local rooms', () => {
+    // A community room id is not a local room id. Asking the local rooms route
+    // for it answered 404 twice and left the tab reading "Channels".
+    connectionAccess = {
+      state: 'verified',
+      effective: readable,
+      lastKnown: {
+        lifecycle: 'active',
+        capabilities: readable,
+        verifiedAt: '2026-09-23T00:00:00Z',
+      },
+    };
+    communityRoom.mockImplementation((ref, roomId) =>
+      ref === 'alpha' && roomId === 'general'
+        ? { kind: 'channel', slug: 'general', title: 'General' }
+        : undefined
+    );
+    renderStrip([{ id: 't9', href: '/channels?community=alpha&id=general' }]);
+    expect(screen.getByRole('tab', { name: /#general/ })).toBeInTheDocument();
+    expect(roomById).not.toHaveBeenCalledWith('general');
+    // The same cache key the channel bar reads: keyed by the access fingerprint.
+    expect(communityRoom).toHaveBeenCalledWith(
+      'alpha',
+      'general',
+      communityAccessState(connectionAccess as never).fingerprint
+    );
+  });
+
+  it('drops a community channel tab title once that community revokes read access', () => {
+    connectionAccess = { state: 'reconnect-required', effective: nothing, lastKnown: null };
+    communityRoom.mockImplementation(() => ({
+      kind: 'channel',
+      slug: 'general',
+      title: 'General',
+    }));
+    renderStrip([{ id: 't9', href: '/channels?community=alpha&id=general' }]);
+    expect(screen.queryByRole('tab', { name: /#general/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Channels/ })).toBeInTheDocument();
   });
 
   it('names a DM channel tab after its title, with no # mark', () => {

@@ -51,9 +51,10 @@ describe('remote community delivery drafts', () => {
     vi.mocked(transport.postRemoteCommunityEntry)
       .mockRejectedValueOnce(new Error('Lost response'))
       .mockResolvedValue(entry);
-    const { result } = renderHook(() => useRemoteCommunityDrafts('a', 'same', true, [], receipt), {
-      wrapper,
-    });
+    const { result } = renderHook(
+      () => useRemoteCommunityDrafts('a', 'same', true, [], receipt, 'owner-a'),
+      { wrapper }
+    );
     act(() => {
       result.current.setText('hello');
       result.current.attachments.add([new File(['data'], 'notes.txt')]);
@@ -85,7 +86,7 @@ describe('remote community delivery drafts', () => {
       })
     );
     const { result, rerender } = renderHook(
-      ({ entries }) => useRemoteCommunityDrafts('a', 'same', true, entries, receipt),
+      ({ entries }) => useRemoteCommunityDrafts('a', 'same', true, entries, receipt, 'owner-a'),
       {
         wrapper,
         initialProps: { entries: [] as RemoteCommunityEntry[] },
@@ -110,7 +111,7 @@ describe('remote community delivery drafts', () => {
       })
     );
     const { result, rerender } = renderHook(
-      ({ allowed }) => useRemoteCommunityDrafts('a', 'same', allowed, [], receipt),
+      ({ allowed }) => useRemoteCommunityDrafts('a', 'same', allowed, [], receipt, 'owner-a'),
       {
         wrapper,
         initialProps: { allowed: true },
@@ -129,7 +130,7 @@ describe('remote community delivery drafts', () => {
     const { transport, receipt, wrapper } = harness();
     vi.mocked(transport.postRemoteCommunityEntry).mockReturnValue(new Promise(() => {}));
     const { result, rerender } = renderHook(
-      ({ key }) => useRemoteCommunityDrafts('a', 'same', true, [], receipt, key),
+      ({ key }) => useRemoteCommunityDrafts('a', 'same', true, [], receipt, 'owner-a', key),
       {
         wrapper,
         initialProps: { key: 'channel' },
@@ -150,9 +151,10 @@ describe('remote community delivery drafts', () => {
     vi.mocked(transport.postRemoteCommunityEntry)
       .mockRejectedValueOnce(new Error('retry'))
       .mockReturnValue(new Promise(() => {}));
-    const { result } = renderHook(() => useRemoteCommunityDrafts('a', 'same', true, [], receipt), {
-      wrapper,
-    });
+    const { result } = renderHook(
+      () => useRemoteCommunityDrafts('a', 'same', true, [], receipt, 'owner-a'),
+      { wrapper }
+    );
     act(() =>
       result.current.attachments.add(Array.from({ length: 9 }, () => new File(['x'], 'x.txt')))
     );
@@ -167,5 +169,58 @@ describe('remote community delivery drafts', () => {
       result.current.retry(key);
     });
     expect(transport.postRemoteCommunityEntry).toHaveBeenCalledTimes(2);
+  });
+
+  it('hides another owner’s draft immediately and discards its late receipt', async () => {
+    const { transport, receipt, wrapper } = harness();
+    let resolve!: (value: RemoteCommunityEntry) => void;
+    vi.mocked(transport.postRemoteCommunityEntry).mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      })
+    );
+    const { result, rerender } = renderHook(
+      ({ owner }) => useRemoteCommunityDrafts('a', 'same', true, [], receipt, owner),
+      { wrapper, initialProps: { owner: 'owner-a' } }
+    );
+    act(() => result.current.setText('owner a private draft'));
+    act(() => result.current.send());
+
+    rerender({ owner: 'owner-b' });
+    expect(result.current.text).toBe('');
+    expect(result.current.deliveries).toEqual([]);
+    act(() => result.current.setText('owner b draft'));
+    await act(async () => resolve(entry));
+
+    expect(receipt).not.toHaveBeenCalled();
+    expect(result.current.text).toBe('owner b draft');
+    expect(result.current.deliveries).toEqual([]);
+  });
+
+  it('does not insert a late receipt into a newer route epoch for the same owner and room', async () => {
+    const { transport, receipt, wrapper } = harness();
+    let resolve!: (value: RemoteCommunityEntry) => void;
+    vi.mocked(transport.postRemoteCommunityEntry).mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      })
+    );
+    const { result, rerender } = renderHook(
+      ({ context }) =>
+        useRemoteCommunityDrafts('a', 'same', true, [], receipt, 'owner-a', 'channel', context),
+      { wrapper, initialProps: { context: 'epoch-1' } }
+    );
+    act(() => result.current.setText('first epoch'));
+    act(() => result.current.send());
+
+    rerender({ context: 'epoch-3' });
+    expect(result.current.text).toBe('');
+    expect(result.current.deliveries).toEqual([]);
+    act(() => result.current.setText('final epoch'));
+    await act(async () => resolve(entry));
+
+    expect(receipt).not.toHaveBeenCalled();
+    expect(result.current.text).toBe('final epoch');
+    expect(result.current.deliveries).toEqual([]);
   });
 });

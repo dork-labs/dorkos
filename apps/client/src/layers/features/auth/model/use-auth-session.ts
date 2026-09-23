@@ -10,9 +10,10 @@
  * @module features/auth/model/use-auth-session
  */
 import { useCallback, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
   clearBootCache,
+  invalidateCommunityAuthority,
   isBootQueryKey,
   isStreamOwnedQuery,
   setAuthRequired,
@@ -34,6 +35,12 @@ import type { AuthError, AuthSession, AuthUser } from './auth-client';
  */
 function refetchableOnAuthChange(query: { meta?: Record<string, unknown> }): boolean {
   return !isStreamOwnedQuery(query);
+}
+
+function invalidateProtectedCommunityState(queryClient: QueryClient): void {
+  invalidateCommunityAuthority();
+  void queryClient.cancelQueries({ queryKey: ['communities'] });
+  queryClient.removeQueries({ queryKey: ['communities'] });
 }
 
 /** TanStack Query key for the current auth session. */
@@ -77,6 +84,7 @@ export function useSignIn(): AuthActionState<[email: string, password: string]> 
     async (email: string, password: string): Promise<AuthActionResult> => {
       setIsPending(true);
       setError(null);
+      invalidateProtectedCommunityState(queryClient);
       const { error: err } = await client.signIn.email({ email, password });
       setIsPending(false);
       if (err) {
@@ -107,6 +115,7 @@ export function useSignUp(): AuthActionState<[email: string, password: string, n
     async (email: string, password: string, name: string): Promise<AuthActionResult> => {
       setIsPending(true);
       setError(null);
+      invalidateProtectedCommunityState(queryClient);
       const { error: err } = await client.signUp.email({ email, password, name });
       setIsPending(false);
       if (err) {
@@ -133,12 +142,16 @@ export function useSignOut(): AuthActionState<[]> {
   const run = useCallback(async (): Promise<AuthActionResult> => {
     setIsPending(true);
     setError(null);
+    invalidateProtectedCommunityState(queryClient);
     const { error: err } = await client.signOut();
     setIsPending(false);
     if (err) {
       setError(err);
       return { ok: false, error: err };
     }
+    // Community descriptors and content are owner-private. Remove them before
+    // publishing the signed-out session so the next render cannot reuse the
+    // previous owner's same-browser cache while a refetch is still pending.
     queryClient.setQueryData<AuthSession | null>(authSessionKey, null);
     // Forget the sidebar's local memory, in the cache and on disk. It holds this
     // person's channels, agents and today's conversations, and the whole point

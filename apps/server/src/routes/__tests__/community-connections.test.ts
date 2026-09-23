@@ -5,9 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
+
+const owner = vi.hoisted(() => ({ id: 'author-a' }));
 
 vi.mock('../room-caller.js', () => ({
   resolveCaller: (req: { headers: Record<string, string> }) => {
@@ -16,10 +18,10 @@ vi.mock('../room-caller.js', () => ({
   },
 }));
 vi.mock('../../services/rooms/index.js', () => ({
-  getRoomService: () => ({ authorRegistry: { isOwner: (id: string) => id === 'author-a' } }),
+  getRoomService: () => ({ authorRegistry: { isOwner: (id: string) => id === owner.id } }),
 }));
 vi.mock('../../services/core/auth/index.js', () => ({
-  readOwnerAccount: () => ({ id: 'user-a' }),
+  readOwnerAccount: () => ({ id: owner.id }),
 }));
 vi.mock('../../lib/caller-authority.js', () => ({
   isLocalCaller: () => true,
@@ -47,6 +49,18 @@ let directory: string;
 let app: ReturnType<typeof express>;
 let server: Server;
 const ref = CommunityRefSchema.parse('remote_owner_a');
+const navigation = {
+  get: vi.fn(async () => ({ ownerKey: 'author-a', order: [ref], destinations: [] })),
+  move: vi.fn(async () => ({ ownerKey: 'author-a', order: [ref], destinations: [] })),
+  remember: vi.fn(async () => ({ ownerKey: 'author-a', order: [ref], destinations: [] })),
+  rememberInstallation: vi.fn(async (_owner: string, installationDestination: unknown) => ({
+    ownerKey: 'author-a',
+    installationDestination,
+    order: [ref],
+    destinations: [],
+  })),
+  resolve: vi.fn(async () => null),
+};
 
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'community-route-'));
@@ -67,7 +81,7 @@ beforeAll(async () => {
   app.use(express.json());
   app.use(
     '/api/community-connections',
-    createCommunityConnectionsRouter(new RemoteCommunityPairingService(store))
+    createCommunityConnectionsRouter(new RemoteCommunityPairingService(store), navigation as never)
   );
   server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -76,6 +90,9 @@ afterAll(async () => {
   server.closeAllConnections();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   if (directory) await rm(directory, { recursive: true, force: true });
+});
+afterEach(() => {
+  owner.id = 'author-a';
 });
 
 describe('local connection route authority and public projection', () => {
@@ -185,6 +202,80 @@ describe('local connection route authority and public projection', () => {
       (await request(server).get('/api/community-connections').set('x-test-author', 'author-a'))
         .body.connections
     ).toEqual([]);
+  });
+
+  it('keeps navigation state behind owner authority and static routes', async () => {
+    expect(
+      (
+        await request(server)
+          .get('/api/community-connections/navigation')
+          .set('x-test-author', 'author-b')
+      ).status
+    ).toBe(403);
+    const response = await request(server)
+      .get('/api/community-connections/navigation')
+      .set('x-test-author', 'author-a');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      ownerKey: 'author-a',
+      installationDestination: { path: '/', search: {} },
+      order: [ref],
+      destinations: [],
+    });
+    expect(navigation.get).toHaveBeenCalledWith('author-a');
+
+    expect(
+      (
+        await request(server)
+          .post('/api/community-connections/navigation/move')
+          .set('x-test-author', 'author-a')
+          .send({ ref, direction: 'sideways' })
+      ).status
+    ).toBe(400);
+
+    const remembered = await request(server)
+      .put('/api/community-connections/navigation/installation')
+      .set('x-test-author', 'author-a')
+      .send({ destination: { path: '/tasks', search: { view: 'board' } } });
+    expect(remembered.status).toBe(200);
+    expect(navigation.rememberInstallation).toHaveBeenCalledWith('author-a', {
+      path: '/tasks',
+      search: { view: 'board' },
+    });
+    expect(
+      (
+        await request(server)
+          .put('/api/community-connections/navigation/installation')
+          .set('x-test-author', 'author-a')
+          .send({ destination: { path: '/channels', search: { community: ref } } })
+      ).status
+    ).toBe(400);
+  });
+
+  it('rejects a stale browser owner precondition before reading another owner’s data', async () => {
+    owner.id = 'author-b';
+    const response = await request(server)
+      .get('/api/community-connections')
+      .set('x-test-author', 'author-b')
+      .set('x-dorkos-community-owner', 'author-a');
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      error: 'The local owner changed. Reload Community data for the current account.',
+      code: 'COMMUNITY_OWNER_CHANGED',
+    });
+  });
+
+  it('serves a request whose owner precondition matches the signed-in owner', async () => {
+    // The other half of the fence: a check that refused every request carrying
+    // the header would lock the owner out of their own communities.
+    for (const path of ['/api/community-connections', '/api/community-connections/navigation']) {
+      const response = await request(server)
+        .get(path)
+        .set('x-test-author', 'author-a')
+        .set('x-dorkos-community-owner', 'author-a');
+      expect(response.status).toBe(200);
+    }
   });
 });
 

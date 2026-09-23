@@ -17,6 +17,7 @@ import {
   installClientErrorHandlers,
   installBreadcrumbHandlers,
   isDesktopShell,
+  registerCommunityAuthorityCleanup,
   registerLinkNavigator,
   registerTabOpener,
   useRenderSlot,
@@ -48,6 +49,11 @@ import { initializeExtensions } from './app/init-extensions';
 import { ErrorBoundary } from 'react-error-boundary';
 import { AppCrashFallback } from '@/layers/shared/ui/app-crash-fallback';
 import './index.css';
+
+registerCommunityAuthorityCleanup(() => {
+  void queryClient.cancelQueries({ queryKey: ['communities'] });
+  queryClient.removeQueries({ queryKey: ['communities'] });
+});
 
 // Dev playground — lazy-loaded, tree-shaken from production builds
 const DevPlayground = import.meta.env.DEV ? React.lazy(() => import('./dev/DevPlayground')) : null;

@@ -9,8 +9,10 @@ import {
   type RemoteCommunityEvent,
 } from '@dorkos/shared/community-views';
 import type { Transport } from '@dorkos/shared/transport';
-import { TransportProvider } from '@/layers/shared/model';
+import { getCommunityRouteEpoch, TransportProvider } from '@/layers/shared/model';
+import { confirmCommunityAuthority, invalidateCommunityAuthority } from '@/layers/shared/lib';
 import { communityKeys } from '../model/use-community-connections';
+import { communityNavigationKeys } from '../model/use-community-navigation';
 import {
   mergeRemoteCommunityEntries,
   useRemoteCommunityStream,
@@ -89,17 +91,36 @@ function setup() {
         options?.signal?.addEventListener('abort', () => resolve(), { once: true });
       })
   );
-  const transport = createMockTransport({ subscribeRemoteCommunityRoom: subscribe });
+  const transport = createMockTransport({
+    subscribeRemoteCommunityRoom: subscribe,
+    getCommunityNavigation: vi
+      .fn()
+      .mockResolvedValue({ ownerKey: 'owner-a', order: [], destinations: [] }),
+  });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const authority = invalidateCommunityAuthority();
+  confirmCommunityAuthority(authority.epoch, 'owner-a');
+  const confirmed = {
+    epoch: authority.epoch,
+    ownerKey: 'owner-a',
+    route: getCommunityRouteEpoch(),
+    accessFingerprint: 'legacy',
+  };
+  client.setQueryData(communityNavigationKeys.authority(authority.epoch), {
+    ownerKey: 'owner-a',
+    order: [],
+    destinations: [],
+  });
   const wrapper = ({ children }: PropsWithChildren) => (
     <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
-  return { streams, subscribe, client, wrapper };
+  return { streams, subscribe, client, wrapper, authority: confirmed };
 }
 afterEach(() => {
   cleanup();
+  invalidateCommunityAuthority();
   vi.useRealTimers();
 });
 
@@ -125,9 +146,9 @@ describe('remote room stream lifecycle', () => {
   });
 
   it('erases revoked community caches while keeping another community intact', () => {
-    const { streams, wrapper, client } = setup();
-    client.setQueryData(communityKeys.entries('a', 'same'), { private: true });
-    client.setQueryData(communityKeys.entries('b', 'same'), { keep: true });
+    const { streams, wrapper, client, authority } = setup();
+    client.setQueryData(communityKeys.entries(authority, 'a', 'same'), { private: true });
+    client.setQueryData(communityKeys.entries(authority, 'b', 'same'), { keep: true });
     const hook = renderHook(() => useRemoteCommunityStream('a', 'same'), { wrapper });
     act(() => streams[0].emit(snapshot()));
     act(() =>
@@ -140,22 +161,58 @@ describe('remote room stream lifecycle', () => {
     );
     expect(hook.result.current.status).toBe('removed');
     expect(hook.result.current.entries).toEqual([]);
-    expect(client.getQueryData(communityKeys.entries('a', 'same'))).toBeUndefined();
-    expect(client.getQueryData(communityKeys.entries('b', 'same'))).toEqual({ keep: true });
+    expect(client.getQueryData(communityKeys.entries(authority, 'a', 'same'))).toBeUndefined();
+    expect(client.getQueryData(communityKeys.entries(authority, 'b', 'same'))).toEqual({
+      keep: true,
+    });
   });
 
   it('keeps last authorized history explicitly stale and unwritable during an outage', async () => {
-    const { streams, wrapper, client } = setup();
+    const { streams, wrapper, client, authority } = setup();
     const hook = renderHook(() => useRemoteCommunityStream('a', 'same'), { wrapper });
     act(() => streams[0].emit(snapshot()));
     act(() => streams[0].reject(Object.assign(new Error('Unavailable'), { status: 503 })));
     await waitFor(() => expect(hook.result.current.status).toBe('offline'));
     expect(hook.result.current.entries).toHaveLength(1);
     expect(hook.result.current.room).toMatchObject({ writable: false, stale: true });
-    expect(client.getQueryData(communityKeys.room('a', 'same'))).toMatchObject({
+    expect(client.getQueryData(communityKeys.room(authority, 'a', 'same'))).toMatchObject({
       writable: false,
       stale: true,
     });
+  });
+
+  it('turns a verified stream into cache-only history without reconnecting', () => {
+    const { streams, wrapper } = setup();
+    const hook = renderHook(
+      ({ enabled, cacheReadable }) =>
+        useRemoteCommunityStream('a', 'same', enabled, 0, 'verified-generation', cacheReadable),
+      { wrapper, initialProps: { enabled: true, cacheReadable: false } }
+    );
+    act(() => streams[0].emit(snapshot()));
+    hook.rerender({ enabled: false, cacheReadable: true });
+
+    expect(streams[0].signal?.aborted).toBe(true);
+    expect(streams).toHaveLength(1);
+    expect(hook.result.current.status).toBe('offline');
+    expect(hook.result.current.entries).toHaveLength(1);
+    expect(hook.result.current.room).toMatchObject({ stale: true, writable: false });
+  });
+
+  it('discards late stream events after the owner generation is invalidated', () => {
+    const { streams, wrapper, client, authority } = setup();
+    const hook = renderHook(() => useRemoteCommunityStream('a', 'same'), { wrapper });
+    act(() => streams[0].emit(snapshot()));
+    expect(hook.result.current.entries).toHaveLength(1);
+
+    act(() => {
+      invalidateCommunityAuthority();
+      client.removeQueries({ queryKey: communityKeys.remote(authority, 'a') });
+      streams[0].emit({ type: 'entry', entry: entry('a', 2) });
+    });
+
+    expect(hook.result.current.entries).toEqual([]);
+    expect(hook.result.current.status).toBe('connecting');
+    expect(client.getQueryData(communityKeys.room(authority, 'a', 'same'))).toBeUndefined();
   });
 
   it('replaces private agent deliveries and removes them only on a matching remote confirmation', () => {

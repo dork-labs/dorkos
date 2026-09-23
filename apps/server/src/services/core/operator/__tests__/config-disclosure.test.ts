@@ -145,6 +145,23 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z',
       fullPowerDecidedAt: '2026-08-22T11:15:00.000Z',
       fullPowerChoice: 'full',
+      communityNavigation: {
+        version: 1,
+        owners: [
+          {
+            ownerKey: 'LEAK-13-owner',
+            order: ['LEAK-14-community'],
+            destinations: [
+              {
+                ref: 'LEAK-14-community',
+                roomId: 'LEAK-15-private-room',
+                threadId: 'LEAK-16-private-thread',
+                scrollAnchorEntryId: 'LEAK-17-private-entry',
+              },
+            ],
+          },
+        ],
+      },
     },
     profile: {
       roles: ['Engineer'],
@@ -274,6 +291,15 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'runtimes.environment.inherit.opencode',
       'tunnel.auth',
       'tunnel.authtoken',
+      'ui.communityNavigation.owners[].destinations[].ref',
+      'ui.communityNavigation.owners[].destinations[].roomId',
+      'ui.communityNavigation.owners[].destinations[].scrollAnchorEntryId',
+      'ui.communityNavigation.owners[].destinations[].threadId',
+      'ui.communityNavigation.owners[].installationDestination.path',
+      'ui.communityNavigation.owners[].installationDestination.search',
+      'ui.communityNavigation.owners[].order',
+      'ui.communityNavigation.owners[].ownerKey',
+      'ui.communityNavigation.version',
       // The one entry here that is not a secret: `ui.sidebar.sections` is a
       // record of objects, a shape `classifySchemaLeaves` cannot name a path
       // inside, so fail-closed applies. See its comment in CONFIG_DISCLOSURE.

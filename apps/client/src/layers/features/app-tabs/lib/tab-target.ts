@@ -38,6 +38,12 @@ export interface TabTarget {
   dir: string | null;
   /** The `?id=` room id for a channel tab, else `null`. */
   roomId: string | null;
+  /**
+   * The `?community=` connection ref for a channel tab in a connected
+   * community, else `null`. Its room id is that community's, not a local
+   * room's, so the room has to be read through the community.
+   */
+  community: string | null;
 }
 
 /**
@@ -113,7 +119,7 @@ export function parseTabHref(href: string): TabTarget {
   try {
     url = new URL(href, PARSE_BASE);
   } catch {
-    return { pathname: '/', sessionId: null, dir: null, roomId: null };
+    return { pathname: '/', sessionId: null, dir: null, roomId: null, community: null };
   }
   const pathname = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, '') || '/' : '/';
   if (pathname === '/session') {
@@ -122,6 +128,7 @@ export function parseTabHref(href: string): TabTarget {
       sessionId: url.searchParams.get('session') || null,
       dir: url.searchParams.get('dir') || null,
       roomId: null,
+      community: null,
     };
   }
   if (pathname === '/channels') {
@@ -130,9 +137,10 @@ export function parseTabHref(href: string): TabTarget {
       sessionId: null,
       dir: null,
       roomId: url.searchParams.get('id') || null,
+      community: url.searchParams.get('community') || null,
     };
   }
-  return { pathname, sessionId: null, dir: null, roomId: null };
+  return { pathname, sessionId: null, dir: null, roomId: null, community: null };
 }
 
 /**

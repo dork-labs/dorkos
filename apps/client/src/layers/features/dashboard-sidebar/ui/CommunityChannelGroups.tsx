@@ -1,6 +1,10 @@
 import { Link } from '@tanstack/react-router';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
-import { useCommunityConnections, useRemoteCommunityRooms } from '@/layers/entities/community';
+import {
+  communityAccessState,
+  useCommunityConnections,
+  useRemoteCommunityRooms,
+} from '@/layers/entities/community';
 import { getPlatform } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { useSafeSearch } from '@/layers/shared/model';
@@ -9,7 +13,15 @@ import { useSafeSearch } from '@/layers/shared/model';
 export function CommunityChannelGroups() {
   const embedded = getPlatform().isEmbedded;
   const connections = useCommunityConnections(!embedded);
+  const search = useSafeSearch() as { community?: string };
   if (embedded) return null;
+  if (!search.community) return null;
+  if (connections.isPending)
+    return (
+      <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
+        Loading community…
+      </p>
+    );
   if (connections.isError)
     return (
       <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
@@ -19,29 +31,51 @@ export function CommunityChannelGroups() {
         </Button>
       </p>
     );
-  return (
-    <>
-      {connections.data
-        ?.filter((connection) => connection.status === 'connected')
-        .map((connection) => (
-          <CommunityChannels key={connection.ref} connection={connection} />
-        ))}
-    </>
-  );
+  const connection = connections.data?.find(({ ref }) => ref === search.community);
+  if (!connection)
+    return (
+      <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
+        This community is no longer connected.
+      </p>
+    );
+  if (connection.status !== 'connected')
+    return (
+      <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
+        Reconnect this community to open its channels.
+      </p>
+    );
+  return <CommunityChannels connection={connection} />;
 }
 
 function CommunityChannels({ connection }: { connection: CommunityConnectionDescriptor }) {
-  const rooms = useRemoteCommunityRooms(connection.ref);
+  const access = communityAccessState(connection.access);
+  const rooms = useRemoteCommunityRooms(
+    connection.ref,
+    access.capabilities.read,
+    access.fingerprint
+  );
   const search = useSafeSearch() as { community?: string; id?: string };
   return (
     <section aria-label={connection.label} className="px-2 py-2">
       <h3 className="text-muted-foreground px-2 text-xs font-medium">{connection.label}</h3>
-      {rooms.isPending && (
+      {!access.cacheReadable && (
+        <p role="status" className="text-muted-foreground px-2 py-1 text-xs">
+          {connection.status === 'reconnect-required'
+            ? 'Reconnect to view channels.'
+            : 'Channel access is unavailable.'}
+        </p>
+      )}
+      {access.cacheReadable && !access.verified && (
+        <p role="status" className="text-muted-foreground px-2 py-1 text-xs">
+          Saved channels
+        </p>
+      )}
+      {access.verified && rooms.isPending && (
         <p role="status" className="text-muted-foreground px-2 py-1 text-xs">
           Loading channels…
         </p>
       )}
-      {rooms.isError && (
+      {access.verified && rooms.isError && (
         <p role="status" className="text-muted-foreground px-2 py-1 text-xs">
           Community unavailable.{' '}
           <Button variant="ghost" size="sm" onClick={() => void rooms.refetch()}>

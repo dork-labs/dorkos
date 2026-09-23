@@ -7,6 +7,12 @@
  */
 import { z } from 'zod';
 import { CommunityRefSchema } from './community-adapter.js';
+import type {
+  CommunityNavigationMoveRequest,
+  CommunityNavigationState,
+} from './community-navigation.js';
+import type { CommunityNavigationDestination } from './config-schema.js';
+import type { CommunityInstallationDestination } from './config-schema.js';
 import { CommunityConnectionAccessSchema } from './community-wire.js';
 
 /**
@@ -122,4 +128,18 @@ export interface CommunityConnectionTransport {
   cancelCommunityConnection(ref: string): Promise<void>;
   /** Disconnect this installation and discard its local credentials and cached content. */
   disconnectCommunity(ref: string): Promise<void>;
+  /** Read and reconcile this owner's saved Community order and destinations. */
+  getCommunityNavigation(): Promise<CommunityNavigationState>;
+  /** Remember the last canonical route visited inside this owner's local installation. */
+  rememberCommunityInstallationDestination(
+    destination: CommunityInstallationDestination
+  ): Promise<CommunityNavigationState>;
+  /** Move one Community by one position without replacing the whole saved order. */
+  moveCommunityNavigation(input: CommunityNavigationMoveRequest): Promise<CommunityNavigationState>;
+  /** Remember the latest authorized room, thread and scroll anchor for one Community. */
+  rememberCommunityNavigation(
+    destination: CommunityNavigationDestination
+  ): Promise<CommunityNavigationState>;
+  /** Return a remembered destination only when the owner can still read its room. */
+  resolveCommunityNavigation(ref: string): Promise<CommunityNavigationDestination | null>;
 }

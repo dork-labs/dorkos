@@ -51,6 +51,7 @@ import { MomentHost } from '@/layers/widgets/moments';
 import { usePulseFreshness } from '@/layers/widgets/pulse';
 import {
   DashboardSidebar,
+  MobileCommunityContextSwitcher,
   SidebarFooterStrip,
   SidebarHeaderBlock,
 } from '@/layers/features/dashboard-sidebar';
@@ -789,6 +790,7 @@ export function AppShell() {
                           <Separator orientation="vertical" className="mr-1 h-4" />
                         </>
                       )}
+                      {isMobile && <MobileCommunityContextSwitcher />}
                       {/* ── The route's bar, cross-faded on route change.
                             ONLY the route's own half fades: identity, chips and
                             page actions are what differ between routes, so they

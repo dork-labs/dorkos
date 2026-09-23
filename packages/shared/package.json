@@ -384,6 +384,10 @@
     "./community-views": {
       "types": "./src/community-views.ts",
       "default": "./dist/community-views.js"
+    },
+    "./community-navigation": {
+      "types": "./src/community-navigation.ts",
+      "default": "./dist/community-navigation.js"
     }
   },
   "scripts": {

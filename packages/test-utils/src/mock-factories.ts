@@ -1143,6 +1143,22 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     pollCommunityConnection: vi.fn(),
     cancelCommunityConnection: vi.fn().mockResolvedValue(undefined),
     disconnectCommunity: vi.fn().mockResolvedValue(undefined),
+    getCommunityNavigation: vi
+      .fn()
+      .mockResolvedValue({ ownerKey: 'local-owner', order: [], destinations: [] }),
+    moveCommunityNavigation: vi
+      .fn()
+      .mockResolvedValue({ ownerKey: 'local-owner', order: [], destinations: [] }),
+    rememberCommunityNavigation: vi
+      .fn()
+      .mockResolvedValue({ ownerKey: 'local-owner', order: [], destinations: [] }),
+    rememberCommunityInstallationDestination: vi.fn().mockResolvedValue({
+      ownerKey: 'local-owner',
+      installationDestination: { path: '/', search: {} },
+      order: [],
+      destinations: [],
+    }),
+    resolveCommunityNavigation: vi.fn().mockResolvedValue(null),
 
     // Cloud account link (accounts-and-auth P2)
     startCloudLink: vi.fn().mockResolvedValue({

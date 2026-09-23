@@ -256,15 +256,13 @@ describe('qualified remote community transport', () => {
     ).resolves.toEqual(attachment);
     const [url, options] = fetch.mock.calls[0];
     expect(url).toBe('/api/communities/community-a/rooms/same-id/attachments');
-    expect(options).toMatchObject({
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'x-file-name': encodeURIComponent(attachment.name),
-        'x-file-content-type': attachment.contentType,
-        'x-file-size': '3',
-        'idempotency-key': 'stable',
-      },
+    expect(options?.method).toBe('POST');
+    expect(Object.fromEntries((options?.headers as Headers).entries())).toMatchObject({
+      'content-type': 'application/octet-stream',
+      'x-file-name': encodeURIComponent(attachment.name),
+      'x-file-content-type': attachment.contentType,
+      'x-file-size': '3',
+      'idempotency-key': 'stable',
     });
     expect(options.body).toBe(file);
     await expect((options.body as File).text()).resolves.toBe('abc');

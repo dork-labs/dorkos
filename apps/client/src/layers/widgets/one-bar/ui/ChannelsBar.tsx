@@ -1,5 +1,9 @@
 import { useSafeSearch } from '@/layers/shared/model';
-import { useRemoteCommunityRoom, useCommunityConnections } from '@/layers/entities/community';
+import {
+  communityAccessState,
+  useRemoteCommunityRoom,
+  useCommunityConnections,
+} from '@/layers/entities/community';
 import {
   BridgeVisibilityBadge,
   RoomAvatar,
@@ -105,9 +109,16 @@ export function ChannelsBar() {
 }
 
 function RemoteChannelsBar({ community, roomId }: { community: string; roomId: string }) {
-  const room = useRemoteCommunityRoom(community, roomId);
   const connections = useCommunityConnections();
-  const label = connections.data?.find((connection) => connection.ref === community)?.label;
+  const connection = connections.data?.find((item) => item.ref === community);
+  const access = communityAccessState(connection?.access);
+  const room = useRemoteCommunityRoom(
+    community,
+    roomId,
+    access.capabilities.read,
+    access.fingerprint
+  );
+  const label = connection?.label;
   return (
     <OneBar
       identity={<BarTitle>{room.data?.title ?? 'Community channel'}</BarTitle>}

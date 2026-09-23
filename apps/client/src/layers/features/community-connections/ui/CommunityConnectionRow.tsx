@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
-import { communityKeys } from '@/layers/entities/community';
+import { isCommunityAuthorityCurrent, type ConfirmedCommunityAuthority } from '@/layers/shared/lib';
+import { communityKeys, withinCommunityAuthority } from '@/layers/entities/community';
 import { useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 
@@ -10,10 +11,17 @@ interface Props {
   approvalUrl?: string;
   onOutcome: (message: string) => void;
   onRemoved: () => void;
+  authority: ConfirmedCommunityAuthority;
 }
 
 /** One owner-scoped connection, with bounded approval polling and an explicit disconnect action. */
-export function CommunityConnectionRow({ connection, approvalUrl, onOutcome, onRemoved }: Props) {
+export function CommunityConnectionRow({
+  connection,
+  approvalUrl,
+  onOutcome,
+  onRemoved,
+  authority,
+}: Props) {
   const transport = useTransport();
   const client = useQueryClient();
   const [confirm, setConfirm] = useState(false);
@@ -24,8 +32,9 @@ export function CommunityConnectionRow({ connection, approvalUrl, onOutcome, onR
   const pending = connection.status === 'pending';
   const reconnectRequired = connection.status === 'reconnect-required';
   const poll = useQuery({
-    queryKey: communityKeys.approval(connection.ref),
-    queryFn: () => transport.pollCommunityConnection(connection.ref),
+    queryKey: communityKeys.approval(authority, connection.ref),
+    queryFn: () =>
+      withinCommunityAuthority(authority, () => transport.pollCommunityConnection(connection.ref)),
     enabled: pending,
     retry: false,
     refetchInterval: (query) =>
@@ -43,8 +52,8 @@ export function CommunityConnectionRow({ connection, approvalUrl, onOutcome, onR
           ? `Approval for ${connection.label} expired. Connect again to continue.`
           : `Approval for ${connection.label} was cancelled.`
     );
-    void client.invalidateQueries({ queryKey: communityKeys.connections });
-  }, [pending, poll.data, connection.label, client, onOutcome]);
+    void client.invalidateQueries({ queryKey: communityKeys.connections(authority) });
+  }, [pending, poll.data, connection.label, client, onOutcome, authority]);
   useEffect(() => {
     if (confirm) cancelButton.current?.focus();
     else if (wasConfirming.current) disconnectButton.current?.focus();
@@ -60,10 +69,12 @@ export function CommunityConnectionRow({ connection, approvalUrl, onOutcome, onR
         ? transport.cancelCommunityConnection(connection.ref)
         : transport.disconnectCommunity(connection.ref),
     onSuccess: async () => {
-      await client.cancelQueries({ queryKey: communityKeys.remote(connection.ref) });
-      client.removeQueries({ queryKey: communityKeys.remote(connection.ref) });
-      client.setQueryData<CommunityConnectionDescriptor[]>(communityKeys.connections, (rows) =>
-        rows?.filter((row) => row.ref !== connection.ref)
+      if (!isCommunityAuthorityCurrent(authority)) return;
+      await client.cancelQueries({ queryKey: communityKeys.remote(authority, connection.ref) });
+      client.removeQueries({ queryKey: communityKeys.remote(authority, connection.ref) });
+      client.setQueryData<CommunityConnectionDescriptor[]>(
+        communityKeys.connections(authority),
+        (rows) => rows?.filter((row) => row.ref !== connection.ref)
       );
       onOutcome(
         pending
@@ -75,7 +86,7 @@ export function CommunityConnectionRow({ connection, approvalUrl, onOutcome, onR
       onRemoved();
     },
     // Cancellation can erase local proof even when the remote host cannot answer.
-    onSettled: () => client.invalidateQueries({ queryKey: communityKeys.connections }),
+    onSettled: () => client.invalidateQueries({ queryKey: communityKeys.connections(authority) }),
   });
   const error = remove.error ?? poll.error;
 
