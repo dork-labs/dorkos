@@ -20,7 +20,7 @@ A host's only tool against a problem community is suspension, which blocks every
 
 ## Decision
 
-We will add a `held` lifecycle state, set and released by the host, in which the community is read-only for members, credentials are revoked as in archive, and the owner can still export and request deletion but cannot archive, restore, or transfer. A hold may carry a deletion notice date at least seven days out, shown to members. Only after that date may the host request deletion, which enters the existing seven-day `deletion_pending` state and worker with a host requester; the host can cancel it back to `held`, and the owner cannot. Suspended communities must be moved to `held` first, so the owner always gets an export window before a host-started deletion.
+We will add a `held` lifecycle state, set and released by the host, in which the community is read-only for members, credentials are revoked as in archive, and the owner can still export and request deletion, and member erasure (`specs/community-member-erasure/`) still runs, but the owner cannot archive, restore, or transfer. A hold may carry a deletion notice date at least seven days out, shown to members. Only after that date may the host request deletion, which enters the existing seven-day `deletion_pending` state and worker with a host requester; the host can cancel it back to `held`, and the owner cannot. Suspended communities must be moved to `held` first, so the owner always gets an export window before a host-started deletion.
 
 ## Consequences
 
