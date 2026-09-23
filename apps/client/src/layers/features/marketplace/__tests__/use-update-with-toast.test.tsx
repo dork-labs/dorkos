@@ -23,12 +23,14 @@ vi.mock('@/layers/entities/marketplace', () => ({
 const mockLoading = vi.fn(() => 'toast-id-abc');
 const mockSuccess = vi.fn();
 const mockError = vi.fn();
+const mockWarning = vi.fn();
 
 vi.mock('sonner', () => ({
   toast: {
     loading: (...args: unknown[]) => mockLoading(...(args as Parameters<typeof mockLoading>)),
     success: (...args: unknown[]) => mockSuccess(...(args as Parameters<typeof mockSuccess>)),
     error: (...args: unknown[]) => mockError(...(args as Parameters<typeof mockError>)),
+    warning: (...args: unknown[]) => mockWarning(...(args as Parameters<typeof mockWarning>)),
   },
 }));
 
@@ -78,8 +80,38 @@ function appliedResult(version: string): UpdateResult {
   };
 }
 
-/** An UpdateResult where nothing needed updating. */
-const NO_UPDATE_RESULT: UpdateResult = { checks: [], applied: [] };
+/** An UpdateResult whose check found the package current. */
+const NO_UPDATE_RESULT: UpdateResult = {
+  checks: [
+    {
+      packageName: '@dorkos/code-reviewer',
+      installedVersion: '2.0.0',
+      latestVersion: '2.0.0',
+      hasUpdate: false,
+      marketplace: 'dorkos-community',
+      status: 'current',
+    },
+  ],
+  applied: [],
+};
+
+/** An UpdateResult whose check could not run, with the server's reason. */
+function unknownResult(note?: string): UpdateResult {
+  return {
+    checks: [
+      {
+        packageName: '@dorkos/code-reviewer',
+        installedVersion: '2.0.0',
+        latestVersion: '',
+        hasUpdate: false,
+        marketplace: '',
+        status: 'unknown',
+        ...(note !== undefined && { note }),
+      },
+    ],
+    applied: [],
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -146,6 +178,48 @@ describe('useUpdateWithToast', () => {
       });
     });
 
+    it("says it couldn't check, and why, instead of 'already up to date'", () => {
+      // Purpose: the app used to say "already up to date" when the check could
+      // not run at all (offline, a new version that can't install). Nothing was
+      // confirmed, so it is a warning, and it carries the reason.
+      const { result } = renderHook(() => useUpdateWithToast());
+
+      act(() => {
+        result.current.mutate({ name: '@dorkos/code-reviewer', options: { apply: true } });
+      });
+      const perCall = fakes.mutate.mock.calls[0][1] as {
+        onSuccess: (result: UpdateResult) => void;
+      };
+      act(() => {
+        perCall.onSuccess(unknownResult("couldn't reach github.com"));
+      });
+
+      expect(mockWarning).toHaveBeenCalledWith(
+        "Couldn't check Code Reviewer for updates: couldn't reach github.com",
+        { id: 'toast-id-abc' }
+      );
+      expect(mockSuccess).not.toHaveBeenCalled();
+    });
+
+    it("still says it couldn't check when the server gave no reason", () => {
+      // Purpose: a missing note must not fall back to the reassuring text.
+      const { result } = renderHook(() => useUpdateWithToast());
+
+      act(() => {
+        result.current.mutate({ name: '@dorkos/code-reviewer', options: { apply: true } });
+      });
+      const perCall = fakes.mutate.mock.calls[0][1] as {
+        onSuccess: (result: UpdateResult) => void;
+      };
+      act(() => {
+        perCall.onSuccess(unknownResult());
+      });
+
+      expect(mockWarning).toHaveBeenCalledWith("Couldn't check Code Reviewer for updates", {
+        id: 'toast-id-abc',
+      });
+    });
+
     it('replaces the loading toast with an error toast on failure', () => {
       const { result } = renderHook(() => useUpdateWithToast());
 
@@ -205,6 +279,23 @@ describe('useUpdateWithToast', () => {
         id: 'toast-id-abc',
       });
       expect(returned?.applied[0]?.version).toBe('3.0.0');
+    });
+
+    it("warns that it couldn't check through the awaitable path too", async () => {
+      // Purpose: both entry points share one formatter; this pins the second.
+      fakes.mutateAsync.mockResolvedValue(
+        unknownResult('no enabled marketplace lists this package')
+      );
+      const { result } = renderHook(() => useUpdateWithToast());
+
+      await act(async () => {
+        await result.current.mutateAsync({ name: '@dorkos/code-reviewer', options: {} });
+      });
+
+      expect(mockWarning).toHaveBeenCalledWith(
+        "Couldn't check Code Reviewer for updates: no enabled marketplace lists this package",
+        { id: 'toast-id-abc' }
+      );
     });
 
     it('re-throws the error after firing an error toast', async () => {
