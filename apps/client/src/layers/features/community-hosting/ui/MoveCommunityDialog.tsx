@@ -251,7 +251,7 @@ export function moveProgressStep(
         return {
           title: 'The upload didn’t finish',
           description:
-            'The connection broke. Your DorkOS still has the file; send it again to carry on.',
+            'The upload stopped part way. Your DorkOS still has the file; send it again to carry on.',
           body: notice,
           actions: (
             <>
