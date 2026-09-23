@@ -207,6 +207,14 @@ import type {
   CloudOrgsResponse,
   CloudPlanResponse,
   CloudSeatActionResponse,
+  CloudCommunityClaimLinkResponse,
+  CloudCommunityKeepResponse,
+  CloudCommunityMovePollResponse,
+  CloudCommunityMoveResponse,
+  CloudCommunityNameCheckResponse,
+  CloudCommunityRestoreResponse,
+  CloudCommunityStartResponse,
+  CloudHostedCommunitiesResponse,
   CloudSeatsResponse,
   CloudUsageResponse,
   StartLinkResult,
@@ -1068,7 +1076,52 @@ export const cloudStubs = {
   async selectCloudCredits(): Promise<CloudCreditsStatus> {
     return { enabled: false, ready: false, runtimes: CREDITS_RUNTIMES_OFF };
   },
+
+  // Hosted communities: an embed has no cloud link of its own, so the switcher
+  // never offers them here. Reads answer the unlinked shape; writes refuse.
+  async listHostedCommunities(): Promise<CloudHostedCommunitiesResponse> {
+    return { available: false };
+  },
+
+  async checkHostedCommunityName(): Promise<CloudCommunityNameCheckResponse> {
+    return { available: false };
+  },
+
+  async startHostedCommunity(): Promise<CloudCommunityStartResponse> {
+    return { ok: false, message: HOSTED_COMMUNITIES_UNAVAILABLE };
+  },
+
+  async getHostedCommunityClaimLink(): Promise<CloudCommunityClaimLinkResponse> {
+    return { ok: false, message: HOSTED_COMMUNITIES_UNAVAILABLE };
+  },
+
+  async keepHostedCommunity(): Promise<CloudCommunityKeepResponse> {
+    return { ok: false, message: HOSTED_COMMUNITIES_UNAVAILABLE };
+  },
+
+  async restoreHostedCommunity(): Promise<CloudCommunityRestoreResponse> {
+    return { ok: false, message: HOSTED_COMMUNITIES_UNAVAILABLE };
+  },
+
+  async startHostedCommunityMove(): Promise<CloudCommunityMoveResponse> {
+    return { ok: false, message: HOSTED_COMMUNITIES_UNAVAILABLE };
+  },
+
+  async getHostedCommunityMove(): Promise<CloudCommunityMovePollResponse> {
+    return { available: false };
+  },
+
+  async cancelHostedCommunityMove(): Promise<CloudCommunityMoveResponse> {
+    return { ok: false, message: HOSTED_COMMUNITIES_UNAVAILABLE };
+  },
+
+  async retryHostedCommunityMoveUpload(): Promise<CloudCommunityMoveResponse> {
+    return { ok: false, message: HOSTED_COMMUNITIES_UNAVAILABLE };
+  },
 };
+
+/** What an embed says to a hosted-community write it cannot make. */
+const HOSTED_COMMUNITIES_UNAVAILABLE = 'Hosted communities are not available in Obsidian.';
 
 /** The per-runtime credits state an embed always reports: nothing is wired here. */
 const CREDITS_RUNTIMES_OFF = {

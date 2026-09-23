@@ -24,6 +24,7 @@ import { InboxShowcases } from '../showcases/InboxShowcases';
 import { PresenceStripShowcases } from '../showcases/PresenceStripShowcases';
 import { HomeStatesShowcases } from '../showcases/HomeStatesShowcases';
 import { ConnectionsShowcases } from '../showcases/ConnectionsShowcases';
+import { CommunityHostingShowcases } from '../showcases/CommunityHostingShowcases';
 import { McpServerCardShowcases } from '../showcases/McpServerCardShowcases';
 
 /**
@@ -96,6 +97,7 @@ export function HomeInboxPage() {
       <PresenceStripShowcases />
       <HomeStatesShowcases />
       <ConnectionsShowcases />
+      <CommunityHostingShowcases />
       <McpServerCardShowcases />
     </PlaygroundPageLayout>
   );

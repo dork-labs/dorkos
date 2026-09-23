@@ -6,7 +6,8 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Sources: PipPanelShowcases, ApprovalsShowcases, ScheduleApprovalShowcases,
  * TriageHeaderShowcases, InboxShowcases, PresenceStripShowcases,
- * HomeStatesShowcases, ConnectionsShowcases, McpServerCardShowcases.
+ * HomeStatesShowcases, ConnectionsShowcases, CommunityHostingShowcases,
+ * McpServerCardShowcases.
  *
  * See `features-agent-sections.ts` for why this used to share a page — and a
  * file — with `FEATURE_AGENT_SECTIONS`, and no longer does.
@@ -173,6 +174,28 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
       'discovery',
       'dismiss',
     ],
+  },
+  // CommunityHostingShowcases
+  {
+    id: 'start-a-community',
+    title: 'Start a community',
+    page: 'home-inbox',
+    category: 'Communities',
+    keywords: ['community', 'hosted', 'start', 'claim', 'web address', 'cloud'],
+  },
+  {
+    id: 'move-a-community-here',
+    title: 'Move a community here',
+    page: 'home-inbox',
+    category: 'Communities',
+    keywords: ['community', 'hosted', 'move', 'import', 'export', 'upload', 'failure'],
+  },
+  {
+    id: 'hosted-communities',
+    title: 'Hosted communities',
+    page: 'home-inbox',
+    category: 'Communities',
+    keywords: ['community', 'hosted', 'hold', 'keep', 'restore', 'deletion', 'notice'],
   },
   // ConnectionsShowcases
   {

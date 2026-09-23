@@ -59,6 +59,13 @@ const mockGetCommunityNavigation = vi.fn();
 const mockListRemoteCommunityRooms = vi.fn();
 const mockMoveCommunityNavigation = vi.fn();
 const mockSetGlobalPaletteOpen = vi.fn();
+let mockCloudLinked = false;
+const mockGetCloudStatus = vi.fn(() =>
+  Promise.resolve({ linked: mockCloudLinked, accountLabel: null, lastHeartbeatAt: null })
+);
+const mockListHostedCommunities = vi.fn(() =>
+  Promise.resolve({ available: true, communities: [], moves: [], allowance: null })
+);
 let mockSearch: { community?: string } = {};
 let mockPathname = '/';
 let mockConnections: Array<{
@@ -109,6 +116,8 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
       getCommunityNavigation: mockGetCommunityNavigation,
       resolveCommunityNavigation: mockResolveCommunityNavigation,
       listRemoteCommunityRooms: mockListRemoteCommunityRooms,
+      getCloudStatus: mockGetCloudStatus,
+      listHostedCommunities: mockListHostedCommunities,
     }),
     useSettingsDeepLink: () => ({ open: mockOpenSettings }),
     useProfileDeepLink: () => ({ open: mockOpenProfile }),
@@ -136,6 +145,11 @@ vi.mock('@/layers/entities/community', async (importOriginal) => ({
   useCommunityConnections: () => ({ data: mockConnections }),
   useCommunityNavigation: () => ({ data: { ownerKey: 'owner-a', order: mockCommunityOrder } }),
   useMoveCommunityNavigation: () => ({ mutate: mockMoveCommunityNavigation }),
+  // The hosted-community dialogs pair through these; no test here gets that far.
+  useConfirmedCommunityAuthority: () => null,
+  communityKeys: (await importOriginal<typeof import('@/layers/entities/community')>())
+    .communityKeys,
+  withinCommunityAuthority: (_authority: unknown, run: () => unknown) => run(),
   useEndCommunityConnection: () => ({
     mutate: mockEndConnection,
     reset: () => {},
@@ -181,6 +195,7 @@ beforeEach(() => {
   mockSearch = {};
   mockConnections = [];
   mockCommunityOrder = [];
+  mockCloudLinked = false;
   mockResolveCommunityNavigation.mockResolvedValue(null);
   mockGetCommunityNavigation.mockResolvedValue({
     ownerKey: 'owner-a',
@@ -1288,6 +1303,42 @@ describe('the context switcher’s lifecycle actions', () => {
     expect(mockOpenExternalLink).toHaveBeenCalledWith(
       'https://dorkos.ai/docs/guides/cli-usage#community-server'
     );
+  });
+
+  // Purpose: an install with no DorkOS account must neither show the hosted
+  // entry points nor ask the account anything (spec P5). Fails if the rows
+  // render inert or the list is read anyway.
+  it('offers no hosted community rows, and asks nothing, while unlinked', async () => {
+    renderMobileSwitcher();
+    await waitFor(() => expect(mockGetCloudStatus).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    const add = within(await screen.findByRole('group', { name: 'Add community' }));
+    expect(add.getByRole('menuitem', { name: /Connect a community/ })).toBeInTheDocument();
+    expect(add.queryByRole('menuitem', { name: /Start a community/ })).not.toBeInTheDocument();
+    expect(add.queryByRole('menuitem', { name: /Move a community here/ })).not.toBeInTheDocument();
+    expect(mockListHostedCommunities).not.toHaveBeenCalled();
+  });
+
+  it('offers Start and Move while linked, and Start opens its form', async () => {
+    mockCloudLinked = true;
+    renderMobileSwitcher();
+    await waitFor(() => expect(mockListHostedCommunities).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    const add = within(await screen.findByRole('group', { name: 'Add community' }));
+    expect(add.getByRole('menuitem', { name: /Move a community here…/ })).toBeInTheDocument();
+    fireEvent.click(add.getByRole('menuitem', { name: /Start a community…/ }));
+    expect(await screen.findByLabelText('Community name')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start community' })).toBeDisabled();
+  });
+
+  it('offers nothing when the linked account does not host communities', async () => {
+    mockCloudLinked = true;
+    mockListHostedCommunities.mockResolvedValueOnce({ available: false } as never);
+    renderMobileSwitcher();
+    await waitFor(() => expect(mockListHostedCommunities).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    const add = within(await screen.findByRole('group', { name: 'Add community' }));
+    expect(add.queryByRole('menuitem', { name: /Start a community/ })).not.toBeInTheDocument();
   });
 
   it('opens an invitation link on its own site, and refuses anything else', async () => {
