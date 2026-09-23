@@ -62,6 +62,47 @@ entries:
     kind: step-if
     reason: Same scope decision as the version comparison; runs on both events whenever the seeded pack content changed.
 
+  # --- docs-openapi-check.yml ---
+  # One scope step decides for all seven: on merge_group it always says run, so
+  # the queue regenerates unconditionally; on pull_request it skips the steps
+  # only when the diff touches none of the generators, their inputs or docs/api.
+  # A skipped STEP leaves the job green and the context reported (#1655).
+  - workflow: docs-openapi-check.yml
+    job: openapi-fresh
+    step: pnpm/action-setup
+    kind: step-if
+    reason: Toolchain for the regeneration; runs whenever the scope step says run, which is every merge_group build and every pull request that can reach docs/api.
+  - workflow: docs-openapi-check.yml
+    job: openapi-fresh
+    step: actions/setup-node
+    kind: step-if
+    reason: Toolchain for the regeneration; same scope decision as the steps below, always run in the merge queue.
+  - workflow: docs-openapi-check.yml
+    job: openapi-fresh
+    step: Install dependencies
+    kind: step-if
+    reason: Needed only to regenerate; same scope decision, always run in the merge queue.
+  - workflow: docs-openapi-check.yml
+    job: openapi-fresh
+    step: Build workspace packages
+    kind: step-if
+    reason: Needed only to regenerate; same scope decision, always run in the merge queue.
+  - workflow: docs-openapi-check.yml
+    job: openapi-fresh
+    step: Regenerate OpenAPI spec
+    kind: step-if
+    reason: Always run in the merge queue, where the cross-PR staleness this check exists for is visible; on a pull request only when the diff can reach the generated spec.
+  - workflow: docs-openapi-check.yml
+    job: openapi-fresh
+    step: Regenerate API reference MDX
+    kind: step-if
+    reason: Same scope decision as the spec regeneration; always run in the merge queue.
+  - workflow: docs-openapi-check.yml
+    job: openapi-fresh
+    step: Fail if generated API docs are out of date
+    kind: step-if
+    reason: The assertion itself; always run in the merge queue, and on every pull request whose diff can reach docs/api. A pull request that cannot reach it has nothing to regenerate, and the queue still checks its combined tree.
+
   # --- test.yml ---
   - workflow: test.yml
     job: test

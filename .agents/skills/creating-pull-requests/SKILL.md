@@ -478,6 +478,8 @@ this block byte for byte, so it cannot drift quietly):
 - `lint`
 - `credential-free-build`
 - `db-check`
+- `openapi-fresh`
+- `fixtures`
 <!-- ci-steward:required-checks:end -->
 <!-- prettier-ignore-end -->
 

@@ -41,9 +41,10 @@
  * dependency, the assertions are about the presence of specific lines, and a
  * parser would add a dependency to check less.
  *
- * `.github/workflows/credential-free-build.yml` is inside scripts-test.yml's
- * own path filter, so the one PR shape these regressions take — an edit to that
- * workflow alone — triggers the job that runs this file.
+ * `.github/workflows/credential-free-build.yml` is in the scope list that
+ * starts scripts-test.yml's `harness` job (scripts/scripts-test-scope.sh), so
+ * the one PR shape these regressions take — an edit to that workflow alone —
+ * triggers the job that runs this file.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
