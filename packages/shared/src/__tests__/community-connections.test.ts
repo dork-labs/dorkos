@@ -53,6 +53,29 @@ describe('local community connection DTOs', () => {
     ).toBe(false);
   });
 
+  it('reports host authority only on a verified connection, and treats its absence as no', () => {
+    expect(CommunityConnectionDescriptorSchema.parse(connection)).not.toHaveProperty(
+      'hostOperator'
+    );
+    expect(
+      CommunityConnectionDescriptorSchema.parse({ ...connection, hostOperator: true })
+    ).toMatchObject({ hostOperator: true });
+    const unverified = {
+      ...connection,
+      access: {
+        state: 'unverified' as const,
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: access.lastKnown,
+      },
+    };
+    expect(
+      CommunityConnectionDescriptorSchema.safeParse({ ...unverified, hostOperator: true }).success
+    ).toBe(false);
+    expect(
+      CommunityConnectionDescriptorSchema.safeParse({ ...unverified, hostOperator: false }).success
+    ).toBe(true);
+  });
+
   it('accepts a connection whose remote grant must be replaced', () => {
     expect(
       CommunityConnectionDescriptorSchema.parse({

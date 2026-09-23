@@ -48,8 +48,25 @@ export const CommunityConnectionDescriptorSchema = z
     expiresAt: z.iso.datetime().nullable(),
     access: CommunityConnectionAccessSchema.nullable(),
     attention: CommunityConnectionAttentionSchema.nullable(),
+    /**
+     * `true` when the host just confirmed that the account behind this
+     * connection runs the host, so the app may offer the host's own "create a
+     * community" page. Absent means no: the host did not say, is too old to
+     * say, or could not be reached. It opens a page and grants nothing; that
+     * page checks host authority again.
+     */
+    hostOperator: z.boolean().optional(),
   })
   .superRefine((connection, context) => {
+    if (
+      connection.hostOperator &&
+      (connection.status !== 'connected' || connection.access?.state !== 'verified')
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Only a verified connection can report host authority.',
+      });
+    }
     if (connection.status === 'pending' && connection.access !== null) {
       context.addIssue({ code: 'custom', message: 'Pending connections cannot have access.' });
     }

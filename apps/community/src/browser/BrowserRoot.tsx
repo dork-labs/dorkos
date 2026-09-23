@@ -1,3 +1,4 @@
+import { COMMUNITY_HOST_ADMIN_PATH } from '@dorkos/shared/community-wire';
 import { CommunityApp } from './CommunityApp.js';
 import { CommunityChooser } from './components/CommunityChooser.js';
 import { DeletionRecovery } from './components/DeletionRecovery.js';
@@ -16,7 +17,7 @@ export function BrowserRoot({
 }) {
   const pairing = pathname === '/pairing' || /^\/c\/[^/]+\/pairing$/.test(pathname);
   if (pairing) return <Pairing search={search} />;
-  if (pathname === '/host') return <HostAdministration />;
+  if (pathname === COMMUNITY_HOST_ADMIN_PATH) return <HostAdministration />;
   if (pathname === OWNER_CLAIM_PATH) return <OwnerClaim />;
   const deletion = /^\/c\/([^/]+)\/deletion$/u.exec(pathname);
   if (deletion) return <DeletionRecovery communityId={deletion[1]} />;

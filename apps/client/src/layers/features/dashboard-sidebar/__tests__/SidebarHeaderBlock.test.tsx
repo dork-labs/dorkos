@@ -78,6 +78,7 @@ let mockConnections: Array<{
       verifiedAt: string;
     } | null;
   } | null;
+  hostOperator?: boolean;
   attention?: {
     state: 'verified' | 'stale' | 'unavailable';
     unreadCount: number | null;
@@ -1314,6 +1315,88 @@ describe('the context switcher’s lifecycle actions', () => {
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
     fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
     expect(mockOpenConnections).toHaveBeenCalledWith('messaging');
+  });
+
+  it('offers Create a community only for a host that says the person runs it', async () => {
+    mockConnections = [alpha()];
+    renderMobileSwitcher();
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    let add = within(await screen.findByRole('group', { name: 'Add community' }));
+    expect(add.queryByRole('menuitem', { name: /Create a community/ })).not.toBeInTheDocument();
+    cleanup();
+
+    mockConnections = [alpha({ hostOperator: true })];
+    renderMobileSwitcher();
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    add = within(await screen.findByRole('group', { name: 'Add community' }));
+    // In the spec's order: connect, join, create, then run your own.
+    expect(add.getAllByRole('menuitem').map((row) => row.textContent)).toEqual([
+      'Connect a community',
+      'Join with an invitation…',
+      'Create a community…, opens on a.example.com',
+      'Run your own community',
+    ]);
+    fireEvent.click(
+      add.getByRole('menuitem', { name: 'Create a community…, opens on a.example.com' })
+    );
+    // The host's own administration page, on the connection's pinned origin.
+    expect(mockOpenExternalLink).toHaveBeenCalledWith('https://a.example.com/host');
+    expect(mockOpenConnections).not.toHaveBeenCalled();
+  });
+
+  it('names each host when the person runs more than one, once per host', async () => {
+    mockConnections = [
+      alpha({ hostOperator: true }),
+      alpha({ ref: 'a2', remoteCommunityId: 'remote-a2', label: 'Alpha Two', hostOperator: true }),
+      alpha({
+        ref: 'b',
+        remoteCommunityId: 'remote-b',
+        label: 'Beta',
+        pinnedOrigin: 'https://b.example.com',
+        hostOperator: true,
+      }),
+      alpha({
+        ref: 'c',
+        remoteCommunityId: 'remote-c',
+        label: 'Gamma',
+        pinnedOrigin: 'https://c.example.com',
+      }),
+    ];
+    renderMobileSwitcher();
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    const add = within(await screen.findByRole('group', { name: 'Add community' }));
+    expect(
+      add
+        .getAllByRole('menuitem', { name: /^Create a community/ })
+        .map((row) => row.getAttribute('data-menu-item-id'))
+    ).toEqual(['add-community-create-a.example.com', 'add-community-create-b.example.com']);
+    fireEvent.click(
+      add.getByRole('menuitem', {
+        name: 'Create a community on b.example.com…, opens on b.example.com',
+      })
+    );
+    expect(mockOpenExternalLink).toHaveBeenCalledWith('https://b.example.com/host');
+  });
+
+  it('reaches Create a community from the keyboard in the desktop menu', async () => {
+    mockSearch = { community: 'a' };
+    mockConnections = [alpha({ hostOperator: true })];
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    const selected = await screen.findByRole('menuitemradio', { name: /Alpha/ });
+    await waitFor(() => expect(selected).toHaveFocus());
+    const manage = screen.getByRole('menuitem', { name: /Manage Alpha/ });
+    fireEvent.keyDown(selected, { key: 'ArrowDown' });
+    await waitFor(() => expect(manage).toHaveFocus());
+    const add = screen.getByRole('menuitem', { name: /Add community/ });
+    fireEvent.keyDown(manage, { key: 'ArrowDown' });
+    await waitFor(() => expect(add).toHaveFocus());
+    fireEvent.keyDown(add, { key: 'ArrowRight' });
+    const create = await screen.findByRole('menuitem', {
+      name: 'Create a community…, opens on a.example.com',
+    });
+    fireEvent.keyDown(create, { key: 'Enter' });
+    expect(mockOpenExternalLink).toHaveBeenCalledWith('https://a.example.com/host');
   });
 
   it('reaches the Community’s actions from the keyboard in the desktop menu', async () => {

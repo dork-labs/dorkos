@@ -35,6 +35,11 @@ const RecordSchema = z.strictObject({
   expiresAt: z.iso.datetime().nullable(),
   agentIds: z.array(z.string().min(1)),
   access: CommunityConnectionAccessSchema.nullable().optional(),
+  /**
+   * The host's last verified answer to "does this account run the host?".
+   * Absent on records written before hosts could say, which reads as "no".
+   */
+  hostOperator: z.boolean().optional(),
 });
 type ConnectionRecord = z.infer<typeof RecordSchema>;
 
@@ -183,6 +188,11 @@ export class RemoteConnectionStore {
       status,
       expiresAt,
       access: projectedAccess(record),
+      // Offered only on a connection the host verified just now: an offline or
+      // revoked connection cannot open the host's page, so it offers nothing.
+      ...(status === 'connected' && record.access?.state === 'verified' && record.hostOperator
+        ? { hostOperator: true }
+        : {}),
       attention:
         status === 'pending'
           ? null
@@ -265,11 +275,20 @@ export class RemoteConnectionStore {
     });
   }
 
-  /** Persist the latest exact-grant verification or bounded outage snapshot. */
+  /**
+   * Persist the latest exact-grant verification or bounded outage snapshot.
+   *
+   * @param ref - The local connection ref.
+   * @param ownerKey - The local owner the connection belongs to.
+   * @param access - The access the host verified, or the outage snapshot.
+   * @param hostOperator - The host's answer from the same verification; left
+   *   unchanged when omitted, as an outage snapshot does.
+   */
   async updateAccess(
     ref: CommunityRef,
     ownerKey: string,
-    access: CommunityConnectionAccess
+    access: CommunityConnectionAccess,
+    hostOperator?: boolean
   ): Promise<RemoteConnectionDescriptor> {
     return this.exclusive(async () => {
       const records = await this.read();
@@ -277,7 +296,11 @@ export class RemoteConnectionStore {
         (item) => item.ref === ref && item.ownerKey === ownerKey && item.status === 'connected'
       );
       if (index < 0) throw new RemoteConnectionNotFoundError();
-      records[index] = RecordSchema.parse({ ...records[index], access });
+      records[index] = RecordSchema.parse({
+        ...records[index],
+        access,
+        ...(hostOperator === undefined ? {} : { hostOperator }),
+      });
       await this.write(records);
       return this.project(records[index]!);
     });

@@ -10,6 +10,7 @@ import {
   COMMUNITY_API_V1_ROUTES,
   CommunityWireConnectionAccessResponseSchema,
   CommunityWireCommunitySchema,
+  CommunityWireHostAccessResponseSchema,
   CommunityWirePairingStartResponseSchema,
   type CommunityConnectionAccess,
 } from '@dorkos/shared/community-wire';
@@ -68,6 +69,35 @@ export class RemoteCommunityUpgradeRequiredError extends Error {
   constructor() {
     super('The Community server does not support tenant-qualified connections');
     this.name = 'RemoteCommunityUpgradeRequiredError';
+  }
+}
+
+/**
+ * Ask a Community whether the account behind this installation's grant runs
+ * its host, which decides only whether the app offers "Create a community".
+ *
+ * Every failure reads as "no": a host built before this read answers 404, and
+ * an offer the app cannot confirm is an offer it does not make. The answer
+ * grants nothing either way: the host's creation page signs the person in and
+ * checks host authority again.
+ */
+async function readHostOperator(
+  origin: URL,
+  remoteCommunityId: string,
+  authorization: string
+): Promise<boolean> {
+  try {
+    return CommunityWireHostAccessResponseSchema.parse(
+      await pinnedJson(
+        origin,
+        communityApiPath(remoteCommunityId, COMMUNITY_API_V1_ROUTES.hostAccess),
+        undefined,
+        undefined,
+        { authorization }
+      )
+    ).hostOperator;
+  } catch {
+    return false;
   }
 }
 
@@ -144,11 +174,15 @@ export class RemoteCommunityPairingService {
     const record = await this.store.get(ref, ownerKey);
     if (record.status !== 'connected') return this.store.project(record);
     const authorization = await this.store.personalToken(ref, ownerKey);
+    const origin = parseCommunityOrigin(record.pinnedOrigin);
+    // Asked beside the access check, not after it, so a list costs no extra
+    // round trip; it never throws, so it cannot fail the access check.
+    const hostOperator = readHostOperator(origin, record.remoteCommunityId, authorization);
     let access: CommunityConnectionAccess;
     try {
       access = CommunityWireConnectionAccessResponseSchema.parse(
         await pinnedJson(
-          parseCommunityOrigin(record.pinnedOrigin),
+          origin,
           communityApiPath(record.remoteCommunityId, COMMUNITY_API_V1_ROUTES.connectionAccess),
           undefined,
           undefined,
@@ -168,7 +202,7 @@ export class RemoteCommunityPairingService {
       this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, unavailable.access!);
       return unavailable;
     }
-    const verified = await this.store.updateAccess(ref, ownerKey, access);
+    const verified = await this.store.updateAccess(ref, ownerKey, access, await hostOperator);
     this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, verified.access!);
     return verified;
   }
