@@ -10,6 +10,10 @@ import { request as httpRequest, Agent as HttpAgent } from 'node:http';
 import { request as httpsRequest, Agent as HttpsAgent } from 'node:https';
 import { BlockList, isIP } from 'node:net';
 import type { LookupFunction } from 'node:net';
+import {
+  CommunityWireErrorCodeSchema,
+  type CommunityWireErrorCode,
+} from '@dorkos/shared/community-wire';
 
 const blocked = new BlockList();
 for (const [address, prefix, type] of [
@@ -47,10 +51,17 @@ export class PinnedOriginError extends Error {
   }
 }
 
-/** A remote status observed through the pinned socket, with no response body or URL. */
+/** A remote status observed through the pinned socket, with no free-form body text or URL. */
 export class PinnedHttpError extends Error {
-  /** Preserve only the semantic HTTP status; bodies may contain untrusted detail. */
-  constructor(readonly status: number) {
+  /**
+   * Preserve only the semantic HTTP status and, when the Community sent one,
+   * its error code from the closed wire enum. A remote message is untrusted
+   * text and is never kept, so it cannot reach a person.
+   */
+  constructor(
+    readonly status: number,
+    readonly remoteCode?: CommunityWireErrorCode
+  ) {
     super(`Remote community returned HTTP ${status}`);
     this.name = 'PinnedHttpError';
   }
@@ -147,6 +158,18 @@ export async function checkedAddress(
   };
 }
 
+/** Read only the closed-enum error code from a Community error body; anything else is dropped. */
+function remoteErrorCode(content: Buffer): CommunityWireErrorCode | undefined {
+  try {
+    const parsed = CommunityWireErrorCodeSchema.safeParse(
+      (JSON.parse(content.toString('utf8')) as { code?: unknown } | null)?.code
+    );
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Send one bounded JSON request; redirects and unexpected content never reach another host. */
 export async function pinnedJson(
   origin: URL,
@@ -218,11 +241,11 @@ export async function pinnedJson(
               resolve(null);
               return;
             }
+            const content = Buffer.concat(chunks);
             if (!(options.accept ?? [200, 201]).includes(response.statusCode ?? 0)) {
-              reject(new PinnedHttpError(response.statusCode ?? 502));
+              reject(new PinnedHttpError(response.statusCode ?? 502, remoteErrorCode(content)));
               return;
             }
-            const content = Buffer.concat(chunks);
             if (options.response === 'buffer') {
               resolve(content);
               return;

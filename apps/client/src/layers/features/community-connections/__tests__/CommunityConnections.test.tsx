@@ -128,6 +128,21 @@ describe('community pairing controls', () => {
       text: 'B only',
     });
   });
+  it('says so when this DorkOS disconnected but the Community could not be told', async () => {
+    const user = userEvent.setup();
+    mount(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValueOnce([a, b]).mockResolvedValue([b]),
+        disconnectCommunity: vi.fn().mockResolvedValue({ remoteRevoked: false }),
+      })
+    );
+    await user.click(await screen.findByRole('button', { name: 'Disconnect Community A' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Community A is disconnected here, but it couldn’t be reached. To finish, remove this DorkOS under Local connections on Community A.'
+    );
+    await waitFor(() => expect(screen.queryByText('Community A')).not.toBeInTheDocument());
+  });
   it('retains the connection after a failed disconnect', async () => {
     const user = userEvent.setup();
     mount(
