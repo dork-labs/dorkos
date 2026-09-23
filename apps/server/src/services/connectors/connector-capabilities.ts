@@ -15,6 +15,15 @@ import type { CapabilityDeps } from '../core/capabilities/index.js';
 import { recommendConnector, type RelayAdapterCatalog } from './routing.js';
 import type { ConnectorRegistry } from './registry.js';
 
+/**
+ * The `dorkos` server tool that lists the services an agent can ask for.
+ *
+ * Request guidance and request refusals name it so an agent looks a service id
+ * up instead of guessing one (DOR-2231). It is only callable where the `dorkos`
+ * server itself was attached to the turn, so guidance names it only then.
+ */
+export const SERVICE_CATALOG_TOOL_NAME = 'connector_list_toolkits';
+
 /** The nonprivate connector discovery services available to capability callers. */
 export interface ConnectorCapabilityDeps {
   /** Registry holding the configured provider toolkit catalogs. */
@@ -64,7 +73,9 @@ export const connectorDomain: CapabilityDomain = {
       description:
         'List services you can use with DorkOS. Open Connections in the ' +
         'DorkOS app to connect an account or change access. Follow nextCursor with the ' +
-        'same query to see more services; warnings mean the catalog is incomplete.',
+        'same query to see more services; warnings mean the catalog is incomplete. The ' +
+        'query matches service names. A slug in toolkits is what a service request ' +
+        'takes; a service offering only messages is set up by the person under Messaging.',
       tier: 'observe',
       input: z
         .object({
@@ -76,7 +87,7 @@ export const connectorDomain: CapabilityDomain = {
       output: z.unknown(),
       surfaces: {
         mcp: {
-          toolName: 'connector_list_toolkits',
+          toolName: SERVICE_CATALOG_TOOL_NAME,
           servers: ['in-session', 'external'],
           readOnlyCarveOut: true,
           annotations: { idempotentHint: true, openWorldHint: true },

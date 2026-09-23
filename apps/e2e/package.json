@@ -7,6 +7,7 @@
     "e2e": "E2E_REFRESH_MANIFEST=1 playwright test",
     "e2e:ui": "playwright test --ui",
     "multi-window": "tsx multi-window/run.ts",
+    "community-two-desktop": "tsx community-two-desktop/run.ts",
     "capture": "tsx capture/capture.ts",
     "capture:record": "tsx capture/record.ts",
     "capture:process": "tsx capture/process.ts",

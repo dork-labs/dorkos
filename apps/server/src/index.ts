@@ -2823,7 +2823,7 @@ async function start() {
     recoverAcceptedPrivateSessions();
     connectorAgentRequests = new ConnectorAgentRequestService({
       db,
-      registry: connectorRegistry,
+      services: connectorOperatorQueries,
       runtimePrincipals: connectorRuntimePrincipals,
       authority: requestAuthority,
       bootEpoch: connectorBootEpoch,

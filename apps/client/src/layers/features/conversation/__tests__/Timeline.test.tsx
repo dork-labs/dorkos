@@ -211,6 +211,24 @@ describe('Conversation.Timeline', () => {
     expect(screen.getByTestId('row-entry-2')).toHaveAttribute('data-index', '1');
   });
 
+  it('positions the drawn window by a class, never by an inline position (DOR-2230)', () => {
+    // A feedback screenshot re-draws the app from its DOM with snapdom, and
+    // snapdom "corrects" every element inside a scrolled container whose INLINE
+    // style says `position: absolute` by adding the scroll offset to its inline
+    // `top`. The window is already inside the scrolled content, so that moved it
+    // a whole scroll height down, out of the picture: every report of a
+    // scrolled conversation arrived as an empty list with the jump arrow on it.
+    // The offset itself stays an inline `top` (see the note in Timeline.tsx);
+    // only the inline POSITION is what snapdom keys on. The browser half of
+    // this, that the picture really shows the rows, is
+    // `apps/e2e/tests/dev-playground/timeline-capture.spec.ts`.
+    mount();
+
+    const drawn = screen.getByTestId('row-entry-1').parentElement!.parentElement!;
+    expect(drawn.style.position).toBe('');
+    expect(drawn).toHaveAttribute('data-slot', 'conversation-window');
+  });
+
   it('publishes the message-row count, not the row count', () => {
     // e2e's `waitForHistory` (apps/e2e/pages/RoomsPage.ts, DOR-1377) polls
     // `data-message-row-count` to know a room's whole history has landed,

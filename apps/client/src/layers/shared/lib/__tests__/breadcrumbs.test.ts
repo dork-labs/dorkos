@@ -85,6 +85,187 @@ describe('installBreadcrumbHandlers', () => {
     uninstall();
   });
 
+  it('records what an Error says, not its empty JSON (DOR-2230)', () => {
+    // `JSON.stringify(new Error('x'))` is `{}` — an Error's name and message are
+    // not own enumerable properties — so every React error an error boundary
+    // logged used to reach a bug report as `[Markdown] Render error: {}`.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const uninstall = installBreadcrumbHandlers();
+
+    console.error('[Markdown] Render error:', new TypeError('chunk failed to load'));
+
+    expect(getBreadcrumbs()[0].message).toBe(
+      '[Markdown] Render error: TypeError: chunk failed to load'
+    );
+
+    uninstall();
+  });
+
+  it('keeps what makes an error THIS error: its own fields and its cause', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const uninstall = installBreadcrumbHandlers();
+
+    const refusal = Object.assign(new Error('the capture failed'), { name: 'AppCaptureError' });
+    Object.assign(refusal, { reason: 'failed' });
+    const wrapped = new Error('could not attach a screenshot', { cause: refusal });
+    console.error(wrapped);
+
+    expect(getBreadcrumbs()[0].message).toBe(
+      'Error: could not attach a screenshot (cause: AppCaptureError: the capture failed {"reason":"failed"})'
+    );
+
+    uninstall();
+  });
+
+  it('names an error from another frame, which is not `instanceof Error`', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const uninstall = installBreadcrumbHandlers();
+
+    // What an error thrown in an iframe (or a worker's posted error) looks like
+    // from here: every field an Error has, and the wrong prototype.
+    console.error({ name: 'TypeError', message: 'x is not a function' });
+
+    expect(getBreadcrumbs()[0].message).toBe('TypeError: x is not a function');
+
+    uninstall();
+  });
+
+  it('redacts home paths and secret-shaped tokens before a breadcrumb is kept', () => {
+    // Breadcrumbs leave the machine inside a bug report, and nothing downstream
+    // scrubs them — so every door in, logged or added directly, is redacted.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const uninstall = installBreadcrumbHandlers();
+
+    console.error(
+      new Error('ENOENT: /Users/someone/project/notes.md, key sk-abcdefghijklmnopqrstuvwxyz')
+    );
+    addBreadcrumb('query_error', 'failed reading /home/someone/.dork/config.json');
+
+    const [logged, added] = getBreadcrumbs().map((crumb) => crumb.message);
+    expect(logged).toBe('Error: ENOENT: ~/project/notes.md, key [redacted]');
+    expect(added).toBe('failed reading ~/.dork/config.json');
+
+    uninstall();
+  });
+
+  describe('never costs the original log', () => {
+    /**
+     * Four arguments that make naming or serializing an error throw. The
+     * wrapper records the breadcrumb BEFORE it calls the original, so a throw
+     * there used to mean the real `console.error` never ran at all.
+     */
+    function hostileArguments(): Array<[string, unknown]> {
+      const throwingField = new Error('has a bad field');
+      Object.defineProperty(throwingField, 'detail', {
+        enumerable: true,
+        get() {
+          throw new Error('getter exploded');
+        },
+      });
+      const throwingCause = new Error('has a bad cause');
+      Object.defineProperty(throwingCause, 'cause', {
+        get() {
+          throw new Error('cause exploded');
+        },
+      });
+      const symbolName = new Error('named by a symbol');
+      Object.defineProperty(symbolName, 'name', { value: Symbol('odd') });
+      const nullPrototype = Object.create(null) as Record<string, unknown>;
+      nullPrototype.self = nullPrototype;
+      return [
+        ['an enumerable getter that throws', throwingField],
+        ['a cause getter that throws', throwingCause],
+        ['a Symbol name', symbolName],
+        ['a null-prototype object that refers to itself', nullPrototype],
+      ];
+    }
+
+    it.each(hostileArguments())('with %s', (_label, argument) => {
+      const originalError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const uninstall = installBreadcrumbHandlers();
+
+      expect(() => console.error('context:', argument)).not.toThrow();
+
+      // By identity, not `toHaveBeenCalledWith`: deep equality reads the same
+      // hostile getters and would throw inside the assertion itself.
+      expect(originalError).toHaveBeenCalledTimes(1);
+      expect(originalError.mock.calls[0]![0]).toBe('context:');
+      expect(originalError.mock.calls[0]![1]).toBe(argument);
+      expect(getBreadcrumbs()).toHaveLength(1);
+      expect(getBreadcrumbs()[0].message).toMatch(/^context: /);
+
+      uninstall();
+    });
+  });
+
+  describe('redacts secrets that are inside an object, not only in its text', () => {
+    // Redaction reads TEXT, and JSON puts a quote between a key and its value,
+    // so `"token":"…"` never matched the `token: …` rule. The object is
+    // redacted field by field before it is serialized.
+    it.each<[string, unknown, string]>([
+      ['a token field', { token: 'tok_live_abcdef123456' }, 'tok_live_abcdef123456'],
+      ['an apiKey field', { apiKey: 'AIzaSyA1234567890abcdef' }, 'AIzaSyA1234567890abcdef'],
+      ['a password field', { password: 'hunter2hunter2' }, 'hunter2hunter2'],
+      [
+        'an Authorization header',
+        { headers: { Authorization: 'Basic dXNlcjpwYXNz' } },
+        'dXNlcjpwYXNz',
+      ],
+      ['a Windows home path', { path: 'C:\\Users\\alice\\notes.md' }, 'alice'],
+    ])('in %s', (_label, fields, secret) => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const uninstall = installBreadcrumbHandlers();
+
+      console.error(Object.assign(new Error('request failed'), fields));
+      console.error('plain object:', fields);
+
+      for (const crumb of getBreadcrumbs()) expect(crumb.message).not.toContain(secret);
+      expect(getBreadcrumbs()[0].message).toMatch(/^Error: request failed /);
+
+      uninstall();
+    });
+  });
+
+  it('masks credential fields by name but keeps the counts a limit error is read from', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const uninstall = installBreadcrumbHandlers();
+
+    console.error(
+      Object.assign(new Error('context limit reached'), {
+        maxTokens: 200000,
+        inputTokens: 201234,
+        sessionId: 'sess-42',
+        sessions: 3,
+        accessToken: 'at-value-1',
+        session_token: 'st-value-2',
+        token: 'plain-value-3',
+      })
+    );
+
+    const message = getBreadcrumbs()[0].message;
+    expect(message).toContain('"maxTokens":200000');
+    expect(message).toContain('"inputTokens":201234');
+    expect(message).toContain('"sessionId":"sess-42"');
+    expect(message).toContain('"sessions":3');
+    expect(message).toContain('"accessToken":"[redacted]"');
+    expect(message).toContain('"session_token":"[redacted]"');
+    expect(message).toContain('"token":"[redacted]"');
+    for (const secret of ['at-value-1', 'st-value-2', 'plain-value-3']) {
+      expect(message).not.toContain(secret);
+    }
+
+    uninstall();
+  });
+
+  it('drops the query string of a web address, as the log excerpts do', () => {
+    addBreadcrumb(
+      'query_error',
+      'GET https://example.com/api?session_id=abc123&email=a@b.co failed'
+    );
+
+    expect(getBreadcrumbs()[0].message).toBe('GET https://example.com/api failed');
+  });
+
   it('records a console_warn breadcrumb AND still calls the original console.warn', () => {
     const originalWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const uninstall = installBreadcrumbHandlers();

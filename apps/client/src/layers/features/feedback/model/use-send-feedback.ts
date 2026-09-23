@@ -51,6 +51,7 @@ import {
   captureClientEnvironment,
   getBreadcrumbs,
   getDesktopShellLogExcerpt,
+  redactBreadcrumb,
 } from '@/layers/shared/lib';
 import { configKeys } from '@/layers/entities/config';
 import { buildFeedbackRoute } from '../lib/feedback-route';
@@ -117,7 +118,8 @@ export interface UseSendFeedback {
  * produces for the GitHub path (version, platform, configured runtimes, on/off
  * flags — dropping `kind`/`surface`, which have no slot in
  * {@link FeedbackDiagnostics.clientReport}), plus the current breadcrumb trail
- * and, for a crash report, the stack trace as a trailing breadcrumb.
+ * and, for a crash report, the stack trace as a trailing breadcrumb, redacted
+ * the same way the collected ones are.
  *
  * Also folds in {@link captureClientEnvironment}'s window/browser/shell/theme/
  * locale/timezone snapshot (DOR-1960) — the "what was on screen" half of the
@@ -140,7 +142,9 @@ function buildFeedbackDiagnostics(
     breadcrumbs.push({
       at: new Date().toISOString(),
       kind: 'console_error',
-      message: crashStack.slice(0, MAX_BREADCRUMB_MESSAGE_LEN),
+      // Scrubbed like every other breadcrumb: a stack trace names files by
+      // their full path, home directory and all.
+      message: redactBreadcrumb(crashStack).slice(0, MAX_BREADCRUMB_MESSAGE_LEN),
     });
   }
   // Keep newest within the schema bound if a crash breadcrumb pushed us over.
