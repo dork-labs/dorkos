@@ -56,7 +56,7 @@
 
 ### Session 6 - 2026-09-23
 
-**Branch:** `feat/community-membership-states`
+**PR:** #2021 (`119af0bec`, merged from `feat/community-membership-states`)
 
 - Closed DOR-2181 Task 2.1. The chooser is a labelled list that takes focus on its heading; suspended and unavailable memberships stay focusable (`aria-disabled`) and carry their reason as a description; a remembered choice the account can no longer see is forgotten. Every community route the account cannot enter, including an unknown ID that used to fall through to first-host setup, returns to the chooser with one notice that reads the same in every case. Zero memberships explain how to join and, only for a host operator, link to host administration.
 - Closed DOR-2181 Task 2.2. A new read, `GET /api/v1/invites/pending`, returns the live join attempt's community, inviter, channel, expiry and (when signed in) whether the account's membership is new, active or inactive, from the HttpOnly admission cookie alone; it applies bind's liveness checks and never writes, is sent `no-store`, looks up the tenant-scoped attempt before revealing that a community is closed, and reports when the attempt is bound to a different account. The join page resumes from it after a reload or sign-in return, shows reactivation scope before an inactive member rejoins, and reports every failure as "Membership was not added." (or "Your account was created, but membership was not added.") with one recovery: try again, open the link again, or ask for a new invitation. Each step moves focus to its heading; errors are alerts.
