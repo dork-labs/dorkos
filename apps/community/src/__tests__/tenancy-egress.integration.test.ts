@@ -434,3 +434,167 @@ it('runs install, chat, files, local pairing, agents, export, a second community
 
   expect(refused).toEqual([]);
 }, 60_000);
+
+it('runs every administration request, including a scheduled deletion sweep, with egress blocked', async () => {
+  // The host operator from the journey above, signed in again.
+  const signedIn = await expectStatus(
+    await h.call('/api/auth/sign-in/email', {
+      body: { email: 'operator@egress.test', password: TENANCY_PASSWORD },
+    }),
+    200,
+    'operator sign-in'
+  );
+  const operator = responseCookies(signedIn);
+  const pending = await createPendingCommunity(h, operator, 'Offline admin');
+  const c = `/api/v1/communities/${pending.communityId}`;
+  const owner = await claimAsNewAccount(h, pending.token, 'Admin Owner', 'admin-owner@egress.test');
+  const successor = await admit(h, pending.communityId, owner.cookie, {
+    name: 'Successor',
+    email: 'successor@egress.test',
+  });
+  const version = async () =>
+    (
+      await h.pool.query<{ lifecycle_version: number }>(
+        'SELECT lifecycle_version FROM communities WHERE id=$1',
+        [pending.communityId]
+      )
+    ).rows[0].lifecycle_version;
+
+  // Settings: name and description, a raster icon in the local filesystem store,
+  // and the admission policy closed and reopened, each against its ETag.
+  const settings = await expectStatus(
+    await h.call(`${c}/settings`, { cookie: owner.cookie }),
+    200,
+    'read settings'
+  );
+  let etag = settings.headers.get('etag')!;
+  const patchSettings = async (body: object, step: string) => {
+    const response = await expectStatus(
+      await h.call(`${c}/settings`, {
+        method: 'PATCH',
+        cookie: owner.cookie,
+        headers: { 'if-match': etag },
+        body,
+      }),
+      200,
+      step
+    );
+    etag = `"${(await response.json()).settingsVersion}"`;
+  };
+  await patchSettings({ name: 'Offline admin renamed', description: 'Runs offline' }, 'rename');
+  const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('offline')]);
+  const icon = await expectStatus(
+    await h.call(`${c}/settings/icon`, {
+      method: 'PUT',
+      cookie: owner.cookie,
+      headers: { 'if-match': etag },
+      raw: png,
+    }),
+    200,
+    'upload icon'
+  );
+  etag = `"${(await icon.json()).settingsVersion}"`;
+  const served = await expectStatus(
+    await h.call(`${c}/icon`, { cookie: owner.cookie }),
+    200,
+    'serve icon'
+  );
+  expect(Buffer.from(await served.arrayBuffer())).toEqual(png);
+  await patchSettings({ admissionPolicy: 'closed' }, 'close admission');
+  await patchSettings({ admissionPolicy: 'invite_only' }, 'reopen admission');
+
+  // Ownership transfer, then archive and restore by the new owner.
+  await expectStatus(
+    await h.call(`${c}/owner/transfer`, {
+      cookie: owner.cookie,
+      body: {
+        successorMemberId: successor.memberId,
+        password: TENANCY_PASSWORD,
+        lifecycleVersion: await version(),
+      },
+    }),
+    200,
+    'transfer ownership'
+  );
+  const lifecycle = async (action: 'archive' | 'restore') =>
+    expectStatus(
+      await h.call(`${c}/owner/lifecycle`, {
+        cookie: successor.cookie,
+        body: {
+          action,
+          lifecycleVersion: await version(),
+          password: TENANCY_PASSWORD,
+          confirmName: 'Offline admin renamed',
+        },
+      }),
+      200,
+      action
+    );
+  await lifecycle('archive');
+  await lifecycle('restore');
+
+  // Host suspension and resumption.
+  for (const action of ['suspend', 'resume'] as const) {
+    await expectStatus(
+      await h.call(`/api/v1/host/communities/${pending.communityId}/lifecycle`, {
+        method: 'PATCH',
+        cookie: operator,
+        body: { action, lifecycleVersion: await version() },
+      }),
+      200,
+      `host ${action}`
+    );
+  }
+
+  // Deletion: request, cancel, request again, then a due sweep removes it.
+  await lifecycle('archive');
+  const requestDeletion = async () =>
+    expectStatus(
+      await h.call(`${c}/owner/deletion`, {
+        cookie: successor.cookie,
+        body: {
+          lifecycleVersion: await version(),
+          password: TENANCY_PASSWORD,
+          confirmName: 'Offline admin renamed',
+          confirmIdSuffix: pending.communityId.slice(-8),
+        },
+      }),
+      200,
+      'request deletion'
+    );
+  await requestDeletion();
+  await expectStatus(
+    await h.call(`${c}/owner/deletion/cancel`, {
+      cookie: successor.cookie,
+      body: { lifecycleVersion: await version(), password: TENANCY_PASSWORD },
+    }),
+    200,
+    'cancel deletion'
+  );
+  await requestDeletion();
+  // Fixture shortcut: skip the grace period rather than wait for it.
+  await h.pool.query(
+    `UPDATE communities SET delete_requested_at=now()-interval '8 days',
+       delete_after=now()-interval '1 day' WHERE id=$1`,
+    [pending.communityId]
+  );
+  await h.pool.query(
+    `UPDATE community_deletion_jobs SET delete_after=now()-interval '1 day',next_attempt_at=now()
+     WHERE community_id=$1`,
+    [pending.communityId]
+  );
+  let completed = 0;
+  for (let pass = 0; pass < 20 && !completed; pass++) {
+    const result = await sweepCommunityDeletions(h.pool, h.blobStore, 100);
+    expect(result.failed).toBe(0);
+    completed = result.completed;
+    await h.pool.query('UPDATE community_deletion_jobs SET next_attempt_at=now()');
+    await h.pool.query('UPDATE community_deletion_blob_progress SET next_attempt_at=now()');
+  }
+  expect(completed).toBe(1);
+  expect(
+    (await h.pool.query('SELECT 1 FROM communities WHERE id=$1', [pending.communityId])).rowCount
+  ).toBe(0);
+
+  expect(refused).toEqual([]);
+}, 60_000);

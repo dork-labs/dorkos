@@ -6,8 +6,8 @@
 
 ## Progress
 
-**Status:** In Progress (9 of 10 tasks done)
-**Tasks Completed:** 1.1–1.6, 2.1, 2.2 and 3.2 are done on `main`. Task 3.1 is open on one acceptance criterion: administration with Cloud egress blocked has not been exercised.
+**Status:** Complete (10 of 10 tasks done)
+**Tasks Completed:** 1.1–1.6, 2.1, 2.2, 3.1 and 3.2.
 
 ## Tasks Completed
 
@@ -29,7 +29,7 @@
 
 ## Known Issues
 
-- Task 3.1 still needs one proof: "Cloud egress can be blocked without breaking administration". `apps/community/src/__tests__/tenancy-egress.integration.test.ts` blocks outbound TCP, DNS and UDP and exercises host creation, the owner claim, recovery and the deletion and tombstone sweeps. It does not send a settings edit, archive, restore, transfer, suspend or deletion request. The server code has no outbound client other than the optional S3 blob driver, so this is expected to pass, but it has not been run. Adding those calls to the egress journey closes the task.
+- None open. Task 3.1's last criterion, "Cloud egress can be blocked without breaking administration", is proven by `apps/community/src/__tests__/tenancy-egress.integration.test.ts` › "runs every administration request, including a scheduled deletion sweep, with egress blocked": settings edits and icon upload (local filesystem store), admission policy change, archive, restore, ownership transfer, host suspend and resume, deletion request and cancel, and a due deletion sweep all succeed while every non-local TCP connect, DNS lookup or query, and UDP send is refused, and none is attempted. It passed 5/5; the full PostgreSQL suite passed (585 passed, 4 declared inapplicable, 18 fixtures). Adding a stray `fetch` to the settings route turns it red.
 
 ## Implementation Notes
 

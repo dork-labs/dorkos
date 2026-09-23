@@ -27,5 +27,5 @@ The canonical task graph is [03-tasks.json](./03-tasks.json). Implementation sta
 
 ## Phase 3 — Adversarial Proof (DOR-2178)
 
-- [ ] **3.1** Prove the authority, concurrency, state, accessibility, and revocation matrix. _Open: the acceptance criterion "Cloud egress can be blocked without breaking administration" is not yet exercised; see `04-implementation.md`._
+- [x] **3.1** Prove the authority, concurrency, state, accessibility, and revocation matrix. _Cloud egress: `apps/community/src/__tests__/tenancy-egress.integration.test.ts` › "runs every administration request, including a scheduled deletion sweep, with egress blocked" sends settings edits (name, description, icon upload to the local filesystem store), an admission policy change, archive, restore, ownership transfer, host suspend and resume, deletion request and cancel, and a due deletion sweep with every non-local TCP, DNS and UDP call refused; none is attempted. 5/5 runs; a stray outbound call in the settings route turns it red._
 - [x] **3.2** Prove exact deletion/retry, including orphaned and racing A objects, while tenant B and host identity remain intact.

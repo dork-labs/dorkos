@@ -24,7 +24,7 @@ Remaining: none for this receipt. The items once listed here have landed:
 - The permission matrix: `04-role-matrix-verification.md` (#2001).
 - The backup/restore rehearsal: `apps/community/scripts/rehearse-backup-restore.mjs` (#1988), run as described in `apps/community/OPERATIONS.md`.
 
-The one open item for the wider programme, administration with Cloud egress blocked, is tracked in `04-implementation.md`. No live deployment or production data was changed by this proof.
+The last item for the wider programme, administration with Cloud egress blocked, is now proven by `tenancy-egress.integration.test.ts` (see `04-implementation.md`). No live deployment or production data was changed by this proof.
 
 ## Foreign-object matrix
 
