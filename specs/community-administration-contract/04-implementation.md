@@ -1,13 +1,13 @@
 # Implementation Summary: Community administration lifecycle contract
 
 **Created:** 2026-09-21
-**Last Updated:** 2026-09-21
+**Last Updated:** 2026-09-23
 **Spec:** `specs/community-administration-contract/02-specification.md`
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** Acceptance remains open for phase 1; phases 2 and 3 are tracked separately.
+**Status:** Complete (10 of 10 tasks done)
+**Tasks Completed:** 1.1–1.6, 2.1, 2.2, 3.1 and 3.2.
 
 ## Tasks Completed
 
@@ -29,7 +29,7 @@
 
 ## Known Issues
 
-- Final composed API review remains required. Administration UI and cross-tenant browser proof are tracked by DOR-2177 and DOR-2178.
+- None open. Task 3.1's last criterion, "Cloud egress can be blocked without breaking administration", is proven by `apps/community/src/__tests__/tenancy-egress.integration.test.ts` › "runs every administration request, including a scheduled deletion sweep, with egress blocked": settings edits and icon upload (local filesystem store), admission policy change, archive, restore, ownership transfer, host suspend and resume, deletion request and cancel, and a due deletion sweep all succeed while every non-local TCP connect, DNS lookup or query, and UDP send is refused, and none is attempted. It passed 5/5; the full PostgreSQL suite passed (585 passed, 4 declared inapplicable, 18 fixtures). Adding a stray `fetch` to the settings route turns it red.
 
 ## Implementation Notes
 
@@ -93,3 +93,18 @@
 - Direct deletion recovery checks the signed-in account's host membership before rendering owner controls. Community export has one home under Settings; Account retains personal export.
 - Exact corrections `1a474607f37e40eb1cacc1d17e96a53d5174c859` and `ea455da765caca73cc54a5d54cbd94297aa94a9f` independently accepted. Final correction browser run: **3 passed**, no retries, unchanged deadlines. The API parent supplies the required access fields in client test fixtures; all five affected files pass **36 tests**.
 - API and UI PRs remain held in dependency order. These results do not complete the wider cross-tenant or packaged Desktop acceptance matrix, or deploy the signed-out pairing correction.
+
+### Session 3 - 2026-09-23: task-by-task audit on `main` 30df6cdc2
+
+Each task was checked against code and tests on `main`:
+
+- **1.1** done (#1984): `migrations/0010_administration.sql`; `administration-schema.integration.test.ts` covers lifecycle and resume combinations, tenant-bound icon inventory and deletion progress, lock order, and content-free tombstones. #1994 proves a populated version-four host upgrades (`migrate.integration.test.ts`).
+- **1.2** done (#1984): `routes/host.ts`; `administration.integration.test.ts` "creates a pending tenant idempotently and rotates its private owner claim"; `owner-claim-locks.integration.test.ts`; host rows of the role matrix (#2001).
+- **1.3** done (#1984, #2001): settings ETags and canonical addressing, private raster icons (SVG refused with 415, replaced bytes queued), `attachments.integration.test.ts` "reclaims a stored upload when the community lifecycle changes before metadata commit". #2001 fixed a closed community that still admitted people.
+- **1.4** done (#1984): "archives with immediate credential revocation and restores without revival" (history-only `read`-only grant), `admission.integration.test.ts` transfer race (one owner) and suspension closing live streams, role matrix transfer/archive/restore rows.
+- **1.5** done (#1984): "requests deletion idempotently and cancels back to archived without reviving access" (worker claims nothing before the deadline, retry keeps `deleteAfter`, `423` while pending).
+- **1.6** done (#1984, #1996): `deletion-worker.ts`; "deletes only the due tenant after every owned blob is confirmed absent" with a held export reservation, injected provider failure, retry, tombstone fields and 30-day expiry.
+- **2.1** done (#1985, #2001): `HostAdministration.tsx`, `CommunityAdministration.tsx`; `browser-tests/community.spec.ts` at desktop and 390px, by keyboard.
+- **2.2** done (#1985): `DeletionRecovery.tsx`; the browser suite checks dialog focus, in-dialog failures with retained inputs, archived read-only history, deletion and cancellation.
+- **3.1** open on the egress criterion above. The rest is proven: the role matrix (`04-role-matrix-verification.md`, 399 tests), the foreign-object matrix (`04-isolation-verification.md`), races in `tenancy-concurrency.integration.test.ts` and `admission.integration.test.ts`, and a two-Desktop acceptance run on `main` 30df6cdc2, 20/20 steps, covering switching (#1992), membership and administration together.
+- **3.2** done (#1996, #1997, #2000, #1988): deletion proof and survivor manifest in `04-isolation-verification.md`, third-community deletion under load in `tenancy-concurrency.integration.test.ts`, and the backup/restore rehearsal `apps/community/scripts/rehearse-backup-restore.mjs` (passed twice, per #1988), documented in `apps/community/OPERATIONS.md` as separate from an owner export.

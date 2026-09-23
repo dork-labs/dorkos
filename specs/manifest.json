@@ -42,7 +42,7 @@
       "slug": "community-tenancy-contract",
       "title": "Community tenant identity, authorization, and migration contracts",
       "created": "2026-09-20",
-      "status": "specified",
+      "status": "implemented",
       "linearIssue": "DOR-2171",
       "project": "Multi-Community Hosting"
     },
@@ -3079,7 +3079,7 @@
       "slug": "community-administration-contract",
       "title": "Community administration lifecycle contract",
       "created": "2026-09-20",
-      "status": "specified",
+      "status": "implemented",
       "project": "Community Administration",
       "linearIssue": "DOR-2175"
     },
