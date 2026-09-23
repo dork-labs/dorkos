@@ -52,11 +52,21 @@ Reference the template from the SKILL.md body (e.g. "render results with `ui/wea
 See `packages/marketplace/src/manifest-schema.ts` for the canonical Zod schema. Key fields:
 
 - `name` — kebab-case, must match directory name
-- `version` — semver
+- `version` — semver; must equal `plugin.json`'s (see Versioning)
 - `type` — `plugin | agent | skill-pack | adapter | shape`
 - `description` — 1-1024 chars
 - `requires` — dependency declarations like `adapter:slack@^1.0.0`
 - `layers` — content categories (`skills`, `tasks`, `hooks`, etc.)
+
+## Versioning
+
+A package has one version, and every file that states it must state the same one. DorkOS and Claude Code read versions from different files, so drift between them means the two programs disagree about which version is installed ([ADR 260923-122616](../decisions/260923-122616-package-version-files-must-agree.md)).
+
+- **State it identically in `.claude-plugin/plugin.json` and `.dork/manifest.json`.** `validatePackage` fails with `VERSION_MISMATCH` when both files exist and `plugin.json`'s `version` differs from the manifest's, or is missing. That error blocks `dorkos package validate`, install, and the update check's staging of a new version. It never hides a package that is already installed.
+- **Bump it on every change, documentation included.** Claude Code and DorkOS only deliver a change to people when the version goes up: once a package declares a version, a commit that leaves it alone reaches nobody. `dork-labs/marketplace` enforces this in CI (`tools/schema-check`, `npm run check:bump`).
+- **A package that declares no version is identified by commit.** Claude Code then falls back to the marketplace entry's `version`, else the commit it fetched. With no entry version, every commit to the package's repository counts as an update. Declare a version to opt into version-based updates.
+
+How DorkOS resolves the version (`readDeclaredVersion`, `resolvePackageVersion` in `@dorkos/marketplace`) and how the update check uses it: `contributing/marketplace-installs.md`, "Update flow".
 
 ## Local Development Loop
 

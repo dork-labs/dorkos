@@ -396,6 +396,10 @@ const LocalUpdateCheckResultSchema = z.object({
   latestVersion: z.string(),
   hasUpdate: z.boolean(),
   marketplace: z.string(),
+  status: z.enum(['current', 'update-available', 'unknown']),
+  installedVersionSource: z.enum(['package', 'index', 'commit']).optional(),
+  latestVersionSource: z.enum(['package', 'index', 'commit']).optional(),
+  note: z.string().optional(),
 });
 
 /**

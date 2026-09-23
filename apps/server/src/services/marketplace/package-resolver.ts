@@ -68,6 +68,12 @@ export interface ResolvedPackageSource {
   /** Optional version pin (`#sha` or trailing `@version` syntax — not v1). */
   version?: string;
   /**
+   * The marketplace entry's own `version`, when the entry sets one — Claude
+   * Code's step 2, used only when the package itself declares no version.
+   * Undefined for git and local inputs, which have no entry.
+   */
+  entryVersion?: string;
+  /**
    * Legacy git URL field — kept for backward compatibility with consumers
    * that have not yet migrated to the discriminated-union `pluginSource`.
    *
@@ -226,6 +232,7 @@ export class PackageResolver {
       pluginSource: entry.source,
       pluginRoot: cached.json.metadata?.pluginRoot,
       marketplaceSourceUrl: source.source,
+      entryVersion: entry.version,
       gitUrl: legacyGitUrlFromSource(entry.source),
     };
   }
@@ -283,6 +290,7 @@ export class PackageResolver {
       pluginSource: hit.entry.source,
       pluginRoot: hit.pluginRoot,
       marketplaceSourceUrl: hit.sourceUrl,
+      entryVersion: hit.entry.version,
       gitUrl: legacyGitUrlFromSource(hit.entry.source),
     };
   }

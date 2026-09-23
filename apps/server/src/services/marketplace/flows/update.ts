@@ -1,38 +1,80 @@
 /**
  * Marketplace package update flow.
  *
- * Advisory by default: enumerates installed packages, looks up their latest
- * available version in the marketplace catalog, and returns the comparison
- * result without touching disk. When `apply: true` is set, the flow
- * delegates reinstallation to an injected {@link InstallerLike} with
- * `force: true`. The installer is responsible for running the
- * uninstall-without-purge → install pattern that preserves
- * `.dork/data/` and `.dork/secrets.json` across versions.
+ * Advisory by default: enumerates installed packages, works out what
+ * installing each one right now would give, and returns the comparison
+ * without touching disk. When `apply: true` is set, the flow delegates
+ * reinstallation of every package with an update to an injected
+ * {@link InstallerLike}, which runs the uninstall-without-purge → install
+ * pattern that preserves `.dork/data/` and `.dork/secrets.json` (ADR-0233).
  *
- * The `MarketplaceInstaller` class is built in a sibling task and is
- * injected into this module via the {@link InstallerLike} interface to
- * break the circular dependency between the update flow and the full
- * installer orchestrator.
+ * "What installing now would give" is answered by the installer's own
+ * resolve → stage → validate pipeline (`MarketplaceInstaller.resolveLatest`),
+ * and a version is read by Claude Code's chain on both sides: the version the
+ * package declares, else its marketplace entry's, else the commit
+ * (`resolvePackageVersion`, ADR 260923-122615). Every check ends in one of
+ * three statuses — `current`, `update-available` or `unknown` — and nothing is
+ * dropped: a package that cannot be checked says why, and is never reported
+ * as current.
+ *
+ * The installer is injected through {@link InstallerLike} to break the
+ * circular dependency between this flow and the full installer orchestrator.
  *
  * @module services/marketplace/flows/update
  */
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import path from 'node:path';
-import { gt as semverGt, valid as semverValid, coerce as semverCoerce } from 'semver';
-import { PACKAGE_MANIFEST_PATH, PackageNameSchema } from '@dorkos/marketplace';
-import type { MarketplaceJson, MarketplaceJsonEntry, PackageType } from '@dorkos/marketplace';
+import { gt as semverGt, valid as semverValid } from 'semver';
+import {
+  isRealCommitSha,
+  resolvePackageVersion,
+  type MarketplaceJson,
+  type MarketplaceJsonEntry,
+  type ResolvedPackageVersion,
+  type VersionSource,
+} from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
-import { installKey, installRootsUnder, projectScopeRoot } from '../lib/install-roots.js';
-import type { InstallRequest, InstallResult, MarketplaceSource } from '../types.js';
-import { readInstallMetadata } from '../installed-metadata.js';
+import {
+  installKey,
+  installRootsUnder,
+  projectScopeRoot,
+  updateNameOf,
+} from '../lib/install-roots.js';
+import type {
+  InstallRequest,
+  InstallResult,
+  LatestResolution,
+  MarketplaceSource,
+  ResolveLatestOptions,
+} from '../types.js';
+import { readInstallMetadata, type InstallMetadata } from '../installed-metadata.js';
+import { readInstalledIdentity } from '../installed-scanner.js';
 
 /**
- * Structural interface for the forward-declared `MarketplaceInstaller`
- * (implemented in a sibling task). Declared here so the update flow can
- * be wired against either the real installer or a test double without a
- * circular import on a not-yet-existing module.
+ * How long a commit lookup or a marketplace index fetch is shared between
+ * checks. The CLI sends one request per package, so a memo scoped to one
+ * `run()` would never span packages; one scoped to the instance with this TTL
+ * is "shared within one CLI run or UI burst". Without a refresh, a push made
+ * within the last minute can still read as current.
+ */
+export const UPDATE_MEMO_TTL_MS = 60_000;
+
+/** A ref that is already a full commit SHA — `ls-remote` cannot look one up. */
+const FULL_SHA_RE = /^[0-9a-f]{40}$/i;
+
+/** The note on a check whose installed side names no version at all. */
+const INSTALLED_UNKNOWN_NOTE = 'reinstall this package to enable update checks';
+
+/** The note on a direct install checked against its default branch. */
+const DEFAULT_BRANCH_NOTE =
+  'checked against the default branch: this package was installed before DorkOS recorded which branch it came from';
+
+/**
+ * Structural interface for the forward-declared `MarketplaceInstaller`.
+ * Declared here so the update flow can be wired against either the real
+ * installer or a test double without a circular import.
  */
 export interface InstallerLike {
   /**
@@ -41,6 +83,11 @@ export interface InstallerLike {
    * Preserves user secrets and persisted state across version bumps.
    */
   update(req: InstallRequest): Promise<InstallResult>;
+  /**
+   * Work out what installing a package now would give, without installing.
+   * Never throws: a failure is an `unresolved` result with a reason.
+   */
+  resolveLatest(req: InstallRequest, opts: ResolveLatestOptions): Promise<LatestResolution>;
 }
 
 /**
@@ -54,20 +101,36 @@ export interface UpdateSourceManagerLike {
 }
 
 /**
- * Structural interface for the marketplace.json fetch surface of
- * {@link import('../package-fetcher.js').PackageFetcher}.
+ * Structural interface for the parts of
+ * {@link import('../package-fetcher.js').PackageFetcher} the update check uses.
  */
 export interface UpdateFetcherLike {
   fetchMarketplaceJson(source: MarketplaceSource): Promise<MarketplaceJson>;
+  /** `git ls-remote` for one ref; a `tmp-<ms>` placeholder when it fails. */
+  lookupCommitSha(cloneUrl: string, ref: string): Promise<string>;
 }
+
+/** The outcome of checking one package. */
+export type UpdateStatus = 'current' | 'update-available' | 'unknown';
 
 /** A single comparison result for one installed package. */
 export interface UpdateCheckResult {
   packageName: string;
+  /** The installed version, or the full commit SHA when its source is `'commit'`. */
   installedVersion: string;
+  /** What installing now would give; `''` when `status === 'unknown'`. */
   latestVersion: string;
+  /** Always `status === 'update-available'`. */
   hasUpdate: boolean;
+  /** The marketplace the package was checked against; `''` for direct installs and unknowns. */
   marketplace: string;
+  status: UpdateStatus;
+  /** Which step of Claude Code's chain the installed version came from. */
+  installedVersionSource?: VersionSource;
+  /** Which step of Claude Code's chain the latest version came from. */
+  latestVersionSource?: VersionSource;
+  /** Why a check is `unknown`, or a caveat on a known answer (a rollback, a default branch). */
+  note?: string;
 }
 
 /** A request to check for (and optionally apply) updates. */
@@ -95,26 +158,54 @@ export interface UpdateResult {
 export interface UpdateFlowDeps {
   /** Resolved DorkOS data directory (see `.claude/rules/dork-home.md`). */
   dorkHome: string;
-  /** Installer orchestrator used when `apply: true`. Forward-declared. */
+  /** Installer orchestrator: resolves the latest version, and reinstalls on apply. */
   installer: InstallerLike;
   /** Source manager used to resolve marketplace names to sources. */
   sourceManager: UpdateSourceManagerLike;
-  /** Package fetcher used to retrieve marketplace.json documents. */
+  /** Package fetcher used for marketplace.json documents and commit lookups. */
   fetcher: UpdateFetcherLike;
   /** Logger for diagnostic output. */
   logger: Logger;
+  /** Clock for the memo TTL; defaults to `Date.now`. */
+  now?: () => number;
 }
 
-/** A discovered installed package on disk, plus the raw manifest json. */
+/** A discovered installed package on disk, with its install sidecar. */
 interface InstalledPackage {
   name: string;
-  version: string;
-  type: PackageType;
-  installPath: string;
-  installedFrom?: string;
+  /** From `readDeclaredVersion`; undefined when the package states none. */
+  declaredVersion?: string;
+  metadata: InstallMetadata | null;
 }
 
-/** Thrown when a named package is requested for update but is not installed. */
+/** One check, plus the request that would apply it. */
+interface PlannedCheck {
+  check: UpdateCheckResult;
+  /** The reinstall request, present only when the check can be applied. */
+  request?: InstallRequest;
+}
+
+/** A memoized in-flight or settled promise, and when it stops being shared. */
+interface MemoEntry<T> {
+  promise: Promise<T>;
+  expiresAt: number;
+}
+
+/**
+ * Where an installed package would be reinstalled from: the marketplace that
+ * lists it, its own recorded source (a direct install), or nowhere.
+ */
+type UpdateTarget =
+  | { kind: 'marketplace'; marketplaceName: string }
+  | { kind: 'direct'; source: string; note?: string }
+  | { kind: 'none'; note: string };
+
+/**
+ * Thrown by the route when a named package is installed in no scope at all.
+ * The flow itself cannot tell "not in this scope" from "installed nowhere", so
+ * it returns an `unknown` result for a name missing from its scope and leaves
+ * the 404 to the route, which can see every scope.
+ */
 export class PackageNotInstalledForUpdateError extends Error {
   /**
    * Build a `PackageNotInstalledForUpdateError` for the supplied package name.
@@ -131,86 +222,84 @@ export class PackageNotInstalledForUpdateError extends Error {
  * Advisory-by-default update orchestrator for marketplace packages.
  *
  * Run with no `name` to get a comparison for every installed package; pass
- * `name` to narrow to one. Pass `apply: true` to invoke the injected
- * installer with `force: true` for every entry that has an update available.
+ * `name` to narrow to one. Pass `apply: true` to reinstall every package whose
+ * check is `update-available`. One instance serves the whole server, and it
+ * holds the commit-lookup and index memos (see {@link UPDATE_MEMO_TTL_MS}).
  */
 export class UpdateFlow {
+  private readonly commitMemo = new Map<string, MemoEntry<string>>();
+  private readonly indexMemo = new Map<string, MemoEntry<MarketplaceJson>>();
+
   constructor(private readonly deps: UpdateFlowDeps) {}
 
   /**
    * Execute the update flow.
    *
    * @param req - Update request — name filter, apply flag, project path.
-   * @returns The full {@link UpdateResult} with per-package checks and any
-   *   applied reinstall results.
-   * @throws {PackageNotInstalledForUpdateError} When `req.name` is set but
-   *   no installed package matches.
+   * @returns One check per installed package in scope (or one `unknown`
+   *   "not installed in this scope" check for a named package missing from
+   *   it), and any applied reinstall results.
    */
   async run(req: UpdateRequest): Promise<UpdateResult> {
     const installed = await this.listInstalled(req.projectPath);
-    const filtered = this.filterInstalled(installed, req.name);
 
-    const checks: UpdateCheckResult[] = [];
-    for (const pkg of filtered) {
-      const check = await this.checkOne(pkg);
-      if (check) checks.push(check);
+    let planned: PlannedCheck[];
+    if (req.name) {
+      const match = installed.find((pkg) => pkg.name === req.name);
+      planned = match ? [await this.checkOne(match)] : [{ check: notInScope(req.name) }];
+    } else {
+      planned = [];
+      for (const pkg of installed) planned.push(await this.checkOne(pkg));
     }
 
     const applied: InstallResult[] = [];
     if (req.apply) {
-      for (const check of checks) {
-        if (!check.hasUpdate) continue;
-        const result = await this.deps.installer.update({
-          name: check.packageName,
-          marketplace: check.marketplace,
-          projectPath: req.projectPath,
-        });
-        applied.push(result);
+      try {
+        for (const { check, request } of planned) {
+          if (check.status !== 'update-available' || !request) continue;
+          applied.push(
+            await this.deps.installer.update({ ...request, projectPath: req.projectPath })
+          );
+        }
+      } finally {
+        // What was just installed changes what the next check should see.
+        this.clearMemos();
       }
     }
 
-    return { checks, applied };
+    return { checks: planned.map((p) => p.check), applied };
   }
 
   /**
-   * Narrow the installed list to the requested package when `name` is set.
-   * Throws when the name does not match any installed package.
-   *
-   * @internal
+   * Forget every memoized commit lookup and index fetch, so the next check
+   * asks again. Called after every apply and by the marketplace refresh route,
+   * which is how "I just pushed; check again" gets a fresh answer.
    */
-  private filterInstalled(
-    installed: InstalledPackage[],
-    name: string | undefined
-  ): InstalledPackage[] {
-    if (!name) return installed;
-    const match = installed.find((pkg) => pkg.name === name);
-    if (!match) {
-      throw new PackageNotInstalledForUpdateError(name);
-    }
-    return [match];
+  clearMemos(): void {
+    this.commitMemo.clear();
+    this.indexMemo.clear();
   }
 
   /**
    * Walk every install root in scope ({@link installRootsUnder}:
-   * `plugins/`, `agents/`, `shapes/`), reading each `.dork/manifest.json` for
-   * the canonical package fields and `.dork/install-metadata.json` for the
-   * provenance fields. Unreadable manifests are silently skipped so a single
-   * malformed install never blocks the update check.
+   * `plugins/`, `agents/`, `shapes/`), reading each install's identity through
+   * the installed scanner's {@link readInstalledIdentity} — the same reader the
+   * installed list uses, never gated on validity, so a Claude-Code-only
+   * install and one whose version files disagree are both checked — and its
+   * `.dork/install-metadata.json` sidecar. Unreadable installs are skipped so
+   * one malformed install never blocks the check.
    *
    * Those roots hang off one or two scope roots. `dorkHome` is always walked.
    * When the caller supplied a `projectPath`, that project's own `.dork/` is
    * walked FIRST — a project install is where `PluginInstallFlow` and
    * `AgentInstallFlow` land a scoped install, and it shadows a global package
-   * of the same name for that project. That precedence — and, since DOR-994,
-   * that coverage — matches the installed scanner's merged view and the
-   * uninstall flow's probe. Without it the update flow could not see a
-   * project-scoped package at all and reported it as not installed.
+   * of the same name for that project. That precedence matches the installed
+   * scanner's merged view and the uninstall flow's probe (DOR-994).
    *
    * Results are deduplicated by {@link installKey} (install-root kind plus
    * package name), first root wins — so a project's `plugins/foo` shadows the
    * global `plugins/foo`, while a global `agents/foo` survives as its own
-   * entry, and {@link #checkOne} resolves each one's marketplace
-   * independently.
+   * entry, and each resolves its own marketplace.
    *
    * @param projectPath - Project directory to also scan, when the request
    *   carried one.
@@ -237,25 +326,15 @@ export class UpdateFlow {
         // would target the backup path as a phantom duplicate package.
         if (entry.name.includes(MARKETPLACE_BACKUP_DIR_MARKER)) continue;
         const installPath = path.join(root.dir, entry.name);
-        const manifest = await readInstalledManifest(installPath);
-        if (!manifest) continue;
-        const installMetadata = await readInstallMetadata(installPath);
-        // A manifest read off disk with no schema in front of it, one layer
-        // above a name that reaches `installer.update()` — which uninstalls by
-        // name, joining it into dorkHome. `typeof === 'string'` was never the
-        // question. The directory entry is the honest fallback: it is a real
-        // directory this walk just enumerated, so it cannot climb anywhere.
-        const name = PackageNameSchema.safeParse(manifest.name).success
-          ? (manifest.name as string)
-          : entry.name;
+        const identity = await readInstalledIdentity(installPath);
+        if (!identity) continue;
+        const name = updateNameOf(identity.name, installPath);
         const key = installKey(root.kind, name);
         if (byRootAndName.has(key)) continue;
         byRootAndName.set(key, {
           name,
-          version: typeof manifest.version === 'string' ? manifest.version : '0.0.0',
-          type: (manifest.type as PackageType | undefined) ?? root.representativeType,
-          installPath,
-          installedFrom: installMetadata?.installedFrom,
+          declaredVersion: identity.declaredVersion,
+          metadata: await readInstallMetadata(installPath),
         });
       }
     }
@@ -264,97 +343,276 @@ export class UpdateFlow {
   }
 
   /**
-   * Compare a single installed package against its source marketplace and
-   * build an {@link UpdateCheckResult}. Returns `null` when the package
-   * cannot be found in any enabled marketplace (silent skip — the user is
-   * still told about the packages we could match).
+   * Check one installed package: find where it would be reinstalled from, ask
+   * the installer what that would give, and compare by Claude Code's chain.
    *
    * @internal
    */
-  private async checkOne(pkg: InstalledPackage): Promise<UpdateCheckResult | null> {
-    const match = await this.findMarketplaceEntry(pkg);
-    if (!match) {
+  private async checkOne(pkg: InstalledPackage): Promise<PlannedCheck> {
+    const recorded = pkg.metadata;
+    const installedCommit = isRealCommitSha(recorded?.commitSha) ? recorded.commitSha : undefined;
+    const installed = resolvePackageVersion({
+      declaredVersion: pkg.declaredVersion,
+      entryVersion: recorded?.entryVersion,
+      commitSha: installedCommit,
+    });
+
+    const target = await this.findTarget(pkg);
+    if (target.kind === 'none') {
       this.deps.logger.warn('update-flow: no marketplace entry found for package', {
         packageName: pkg.name,
-        installedVersion: pkg.version,
+        note: target.note,
       });
-      return null;
+      return { check: unknownCheck(pkg.name, installed, target.note) };
     }
-    const latest = match.entry.version ?? pkg.version;
+
+    const request: InstallRequest =
+      target.kind === 'marketplace'
+        ? { name: pkg.name, marketplace: target.marketplaceName }
+        : { name: pkg.name, source: target.source };
+    const latest = await this.deps.installer.resolveLatest(request, {
+      installed: {
+        commitSha: installedCommit,
+        entryVersion: recorded?.entryVersion,
+        sourceKey: recorded?.sourceKey,
+      },
+      commitLookup: (cloneUrl, ref) => this.lookupCommit(cloneUrl, ref),
+    });
+
+    const marketplace = target.kind === 'marketplace' ? target.marketplaceName : '';
+    const check = compareVersions(pkg.name, marketplace, installed, latest);
+    if (target.kind === 'direct' && target.note) {
+      check.note = joinNotes(target.note, check.note);
+    }
+    return { check, request };
+  }
+
+  /**
+   * Decide where a package would be reinstalled from.
+   *
+   * A direct install (`name@url`, `github:`; no `installedFrom`, a recorded
+   * `sourceRepo`) is checked against its own source, rebuilt from its recorded
+   * `sourceKey` when there is one. Everything else searches the marketplaces:
+   * `installedFrom` first if it is enabled, then every enabled source. The
+   * MATCHED source is what the installer receives, never `installedFrom`
+   * blindly, so a bare-name lookup cannot hit `AmbiguousPackageError` when
+   * two sources list the package, and a disabled source is never used.
+   *
+   * @internal
+   */
+  private async findTarget(pkg: InstalledPackage): Promise<UpdateTarget> {
+    const recorded = pkg.metadata;
+    if (!recorded?.installedFrom && recorded?.sourceRepo) {
+      // No "apply reinstalls from the default branch" note: both direct forms
+      // (`name@url`, `github:`) resolve to a ref-less url source, so a recorded
+      // key is always `ref: 'main'`, `subpath: ''` and apply matches it.
+      return recorded.sourceKey
+        ? { kind: 'direct', source: recorded.sourceKey.cloneUrl }
+        : { kind: 'direct', source: recorded.sourceRepo, note: DEFAULT_BRANCH_NOTE };
+    }
+
+    const unreachable: string[] = [];
+    const candidates: MarketplaceSource[] = [];
+    if (recorded?.installedFrom) {
+      const source = await this.deps.sourceManager.get(recorded.installedFrom);
+      if (source?.enabled) candidates.push(source);
+    }
+    for (const source of await this.deps.sourceManager.list()) {
+      if (source.enabled && !candidates.some((c) => c.name === source.name)) {
+        candidates.push(source);
+      }
+    }
+
+    for (const source of candidates) {
+      const entry = await this.findEntry(source, pkg.name, unreachable);
+      if (entry) return { kind: 'marketplace', marketplaceName: source.name };
+    }
     return {
-      packageName: pkg.name,
-      installedVersion: pkg.version,
-      latestVersion: latest,
-      hasUpdate: isNewerVersion(latest, pkg.version),
-      marketplace: match.marketplaceName,
+      kind: 'none',
+      note:
+        unreachable.length > 0
+          ? `couldn't read the marketplace list from ${unreachable.join(', ')}`
+          : 'no enabled marketplace lists this package',
     };
   }
 
   /**
-   * Locate the marketplace entry for an installed package. Uses
-   * `installedFrom` as the primary lookup when present; otherwise scans
-   * every enabled source until a matching entry is found.
+   * Find a package's entry in one marketplace's index (memoized per source).
+   * A fetch failure records the source as unreachable and reads as "not
+   * listed here", so one unreachable marketplace never blocks the others —
+   * but the check still says it could not read it.
    *
    * @internal
    */
-  private async findMarketplaceEntry(
-    pkg: InstalledPackage
-  ): Promise<{ entry: MarketplaceJsonEntry; marketplaceName: string } | null> {
-    if (pkg.installedFrom) {
-      const source = await this.deps.sourceManager.get(pkg.installedFrom);
-      if (source && source.enabled) {
-        const entry = await this.fetchAndFindEntry(source, pkg.name);
-        if (entry) return { entry, marketplaceName: source.name };
-      }
-    }
-
-    const sources = await this.deps.sourceManager.list();
-    for (const source of sources) {
-      if (!source.enabled) continue;
-      if (pkg.installedFrom && source.name === pkg.installedFrom) continue;
-      const entry = await this.fetchAndFindEntry(source, pkg.name);
-      if (entry) return { entry, marketplaceName: source.name };
-    }
-    return null;
-  }
-
-  /**
-   * Fetch a marketplace.json and find the entry for a given package name.
-   * Fetch errors are logged and treated as "entry not found" so one
-   * unreachable marketplace never blocks the whole update check.
-   *
-   * @internal
-   */
-  private async fetchAndFindEntry(
+  private async findEntry(
     source: MarketplaceSource,
-    packageName: string
-  ): Promise<MarketplaceJsonEntry | null> {
+    packageName: string,
+    unreachable: string[]
+  ): Promise<MarketplaceJsonEntry | undefined> {
     try {
-      const json = await this.deps.fetcher.fetchMarketplaceJson(source);
-      return json.plugins.find((entry) => entry.name === packageName) ?? null;
+      const json = await this.memoized(this.indexMemo, source.name, () =>
+        this.deps.fetcher.fetchMarketplaceJson(source)
+      );
+      return json.plugins.find((entry) => entry.name === packageName);
     } catch (err) {
       this.deps.logger.warn('update-flow: failed to fetch marketplace.json', {
         marketplaceName: source.name,
         error: err instanceof Error ? err.message : String(err),
       });
-      return null;
+      unreachable.push(source.name);
+      return undefined;
     }
+  }
+
+  /**
+   * The memoized commit lookup handed to the installer. A ref that is already
+   * a full SHA is its own commit and is returned without `ls-remote`, which
+   * matches ref names only and would report a pinned package unreachable. A
+   * placeholder answer is returned but never kept, so a retry looks again.
+   *
+   * @internal
+   */
+  private lookupCommit(cloneUrl: string, ref: string): Promise<string> {
+    if (FULL_SHA_RE.test(ref)) return Promise.resolve(ref);
+    return this.memoized(
+      this.commitMemo,
+      `${cloneUrl}\n${ref}`,
+      () => this.deps.fetcher.lookupCommitSha(cloneUrl, ref),
+      isRealCommitSha
+    );
+  }
+
+  /**
+   * Share one promise per key for {@link UPDATE_MEMO_TTL_MS}. The in-flight
+   * promise is stored, so concurrent checks (the CLI and the app together)
+   * share one request. A rejection, or a value `keep` refuses, is dropped as
+   * soon as it settles, so a failure is never served from the memo.
+   *
+   * @internal
+   */
+  private memoized<T>(
+    memo: Map<string, MemoEntry<T>>,
+    key: string,
+    load: () => Promise<T>,
+    keep: (value: T) => boolean = () => true
+  ): Promise<T> {
+    const now = (this.deps.now ?? Date.now)();
+    const hit = memo.get(key);
+    if (hit && hit.expiresAt > now) return hit.promise;
+
+    const promise = load();
+    memo.set(key, { promise, expiresAt: now + UPDATE_MEMO_TTL_MS });
+    const forget = () => {
+      if (memo.get(key)?.promise === promise) memo.delete(key);
+    };
+    promise.then((value) => {
+      if (!keep(value)) forget();
+    }, forget);
+    return promise;
   }
 }
 
 /**
- * Compare two semver strings and return true when `latest` is strictly
- * greater than `installed`. Falls back to string inequality when either
- * value is not valid semver (after a best-effort coerce), so malformed
- * versions never silently report "up to date".
+ * Compare an installed package with what installing it now would give, by
+ * Claude Code's chain, in order:
+ *
+ * 1. `unresolved` → unknown, with the reason.
+ * 2. The installed side names no version, entry version or real commit →
+ *    unknown (file:// marketplaces, pre-DOR-147 sidecars, placeholder SHAs).
+ * 3. `unchanged` → current.
+ * 4. The latest side names nothing → unknown.
+ * 5. Both are versions (`package` or `index`) and both valid semver → an
+ *    update only when the latest is strictly newer; a lower one is current
+ *    with a rollback note, never offered as an "update".
+ * 6. Both are versions but one is not semver → an update when they differ.
+ * 7. Either is a commit → an update when they differ, as Claude Code does for
+ *    a package that declares no version.
+ *
+ * @internal
  */
-function isNewerVersion(latest: string, installed: string): boolean {
-  const latestValid = semverValid(latest) ?? semverCoerce(latest)?.version ?? null;
-  const installedValid = semverValid(installed) ?? semverCoerce(installed)?.version ?? null;
-  if (latestValid && installedValid) {
-    return semverGt(latestValid, installedValid);
+function compareVersions(
+  packageName: string,
+  marketplace: string,
+  installed: ResolvedPackageVersion | undefined,
+  latest: LatestResolution
+): UpdateCheckResult {
+  if (latest.kind === 'unresolved') return unknownCheck(packageName, installed, latest.reason);
+  // `unchanged` needs a real recorded commit, so its installed side is always
+  // known; checking this first only keeps the types honest.
+  if (!installed) return unknownCheck(packageName, installed, INSTALLED_UNKNOWN_NOTE);
+  if (latest.kind === 'unchanged') {
+    return knownCheck(packageName, marketplace, installed, installed, 'current');
   }
-  return latest !== installed;
+
+  const latestVersion = resolvePackageVersion(latest);
+  if (!latestVersion) {
+    return unknownCheck(packageName, installed, "couldn't tell which version the marketplace has");
+  }
+
+  const bothVersions = installed.source !== 'commit' && latestVersion.source !== 'commit';
+  if (bothVersions && semverValid(installed.version) && semverValid(latestVersion.version)) {
+    if (semverGt(latestVersion.version, installed.version)) {
+      return knownCheck(packageName, marketplace, installed, latestVersion, 'update-available');
+    }
+    const check = knownCheck(packageName, marketplace, installed, latestVersion, 'current');
+    if (semverGt(installed.version, latestVersion.version)) {
+      check.note =
+        `rollback: the marketplace has ${latestVersion.version}, older than the installed ` +
+        `${installed.version}; a downgrade is never offered as an update`;
+    }
+    return check;
+  }
+
+  const status = latestVersion.version !== installed.version ? 'update-available' : 'current';
+  return knownCheck(packageName, marketplace, installed, latestVersion, status);
+}
+
+/** A check whose both sides are known. @internal */
+function knownCheck(
+  packageName: string,
+  marketplace: string,
+  installed: ResolvedPackageVersion,
+  latest: ResolvedPackageVersion,
+  status: 'current' | 'update-available'
+): UpdateCheckResult {
+  return {
+    packageName,
+    installedVersion: installed.version,
+    latestVersion: latest.version,
+    hasUpdate: status === 'update-available',
+    marketplace,
+    status,
+    installedVersionSource: installed.source,
+    latestVersionSource: latest.source,
+  };
+}
+
+/** A check that could not be answered, and why. @internal */
+function unknownCheck(
+  packageName: string,
+  installed: ResolvedPackageVersion | undefined,
+  note: string
+): UpdateCheckResult {
+  return {
+    packageName,
+    installedVersion: installed?.version ?? '',
+    latestVersion: '',
+    hasUpdate: false,
+    marketplace: '',
+    status: 'unknown',
+    ...(installed && { installedVersionSource: installed.source }),
+    note,
+  };
+}
+
+/** The one result for a named package missing from the requested scope. @internal */
+function notInScope(packageName: string): UpdateCheckResult {
+  return unknownCheck(packageName, undefined, 'not installed in this scope');
+}
+
+/** Join two optional notes into one sentence list. @internal */
+function joinNotes(first: string, second: string | undefined): string {
+  return second ? `${first}; ${second}` : first;
 }
 
 /**
@@ -370,24 +628,5 @@ async function readDirSafe(dir: string): Promise<Dirent[]> {
       return [];
     }
     throw err;
-  }
-}
-
-/**
- * Read and parse `.dork/manifest.json` from an install root. Returns
- * `null` if the file is missing or unparseable — the update check silently
- * skips malformed installs rather than blocking the whole scan.
- */
-async function readInstalledManifest(installRoot: string): Promise<Record<string, unknown> | null> {
-  const manifestPath = path.join(installRoot, PACKAGE_MANIFEST_PATH);
-  try {
-    const s = await stat(manifestPath);
-    if (!s.isFile()) return null;
-    const raw = await readFile(manifestPath, 'utf-8');
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    return parsed as Record<string, unknown>;
-  } catch {
-    return null;
   }
 }

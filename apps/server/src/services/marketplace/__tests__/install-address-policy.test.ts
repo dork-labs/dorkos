@@ -431,6 +431,38 @@ describe('install addresses — the git seam in PackageFetcher', () => {
       expect(vi.mocked(execFile)).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('the public lookupCommitSha door (update check)', () => {
+    it('asks ls-remote for exactly the ref it was given', async () => {
+      // Purpose: the update check compares against a commit recorded at the
+      // key's ref ('main' by default). The private default is 'HEAD', so a
+      // lookup that dropped the ref would compare two different places.
+      const { execFile } = await import('node:child_process');
+      vi.mocked(execFile).mockClear();
+
+      await fetcher.lookupCommitSha('https://example.com/foo/bar.git', 'release');
+
+      const argv = vi.mocked(execFile).mock.calls[0]?.[1] as string[];
+      expect(argv).toEqual([
+        'ls-remote',
+        '--end-of-options',
+        'https://example.com/foo/bar.git',
+        'release',
+      ]);
+    });
+
+    it('propagates a refused address instead of returning a placeholder', async () => {
+      // Purpose: DOR-1799 — a refusal must reach the caller as a refusal, so
+      // the check reports it rather than "couldn't reach".
+      const { execFile } = await import('node:child_process');
+      vi.mocked(execFile).mockClear();
+
+      await expect(fetcher.lookupCommitSha('ext::sh -c id', 'main')).rejects.toBeInstanceOf(
+        UnsupportedSourceUrlError
+      );
+      expect(vi.mocked(execFile)).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('install addresses — the git-subdir ladder', () => {

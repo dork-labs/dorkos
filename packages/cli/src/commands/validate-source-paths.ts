@@ -15,6 +15,15 @@
  * exist" at install time; this check catches the regression before
  * publish.
  *
+ * The same probe reads the `version` in each reachable `plugin.json`. An
+ * entry that sets its own `version` while that `plugin.json` states a
+ * different one fails with `ENTRY_VERSION_MISMATCH`: Claude Code silently
+ * uses `plugin.json`'s version, so the entry's is never seen. An entry
+ * version on a package whose `plugin.json` states none is legitimate (it is
+ * Claude Code's step 2), and `plugin.json` is the only file compared because
+ * it is the only one that masks the entry — the package validator already
+ * holds `.dork/manifest.json` equal to it.
+ *
  * Object-form sources (`github`, `url`, `git-subdir`, `npm`) are not
  * probed — CC clones them at install time and validation should not
  * introduce unreliable network dependencies on external git hosts.
@@ -29,11 +38,21 @@ import { resolvePluginSource, type MarketplaceJson } from '@dorkos/marketplace';
 export type SourcePathCheckResult =
   | { name: string; status: 'ok'; candidate: string }
   | { name: string; status: 'not-found'; candidate: string; sourceInput: string }
+  | {
+      name: string;
+      status: 'version-mismatch';
+      candidate: string;
+      entryVersion: string;
+      pluginVersion: string;
+    }
   | { name: string; status: 'skipped-object-source' };
 
 /** Aggregate report returned by {@link checkSourcePaths}. */
 export interface SourcePathCheckReport {
-  /** `true` when every checked entry passed (skipped entries do not affect this). */
+  /**
+   * `true` when every checked entry is reachable and states no version that
+   * its `plugin.json` contradicts (skipped entries do not affect this).
+   */
   ok: boolean;
   /** Per-entry results in `marketplace.plugins` order. */
   results: SourcePathCheckResult[];
@@ -43,13 +62,22 @@ export interface SourcePathCheckReport {
   totalCount: number;
 }
 
+/** What a probe learned about one candidate plugin.json. */
+export interface ProbeResult {
+  /** Whether the candidate exists. */
+  reachable: boolean;
+  /** plugin.json's `version`, when it parses and declares one. */
+  version?: string;
+}
+
 /**
- * Probe function: returns `true` when the given candidate (an absolute
- * filesystem path or a fully-qualified URL) is reachable. Callers inject
- * the appropriate implementation — {@link localProbe} for filesystem
- * validation, {@link remoteProbe} for URL validation.
+ * Probe function: reports whether the given candidate (an absolute
+ * filesystem path or a fully-qualified URL) is reachable, and the version
+ * it declares. Callers inject the appropriate implementation —
+ * {@link localProbe} for filesystem validation, {@link remoteProbe} for URL
+ * validation.
  */
-export type SourcePathProbe = (candidate: string) => Promise<boolean>;
+export type SourcePathProbe = (candidate: string) => Promise<ProbeResult>;
 
 /**
  * Builder that turns a resolved relative-path source (e.g.
@@ -94,15 +122,25 @@ export async function checkSourcePaths(
       return { name: entry.name, status: 'skipped-object-source' };
     }
     const candidate = buildCandidate(resolved.path);
-    const reachable = await probe(candidate);
-    return reachable
-      ? { name: entry.name, status: 'ok', candidate }
-      : { name: entry.name, status: 'not-found', candidate, sourceInput };
+    const probed = await probe(candidate);
+    if (!probed.reachable) {
+      return { name: entry.name, status: 'not-found', candidate, sourceInput };
+    }
+    if (entry.version && probed.version && entry.version !== probed.version) {
+      return {
+        name: entry.name,
+        status: 'version-mismatch',
+        candidate,
+        entryVersion: entry.version,
+        pluginVersion: probed.version,
+      };
+    }
+    return { name: entry.name, status: 'ok', candidate };
   });
 
   const results = await Promise.all(tasks);
   const checkedCount = results.filter((r) => r.status !== 'skipped-object-source').length;
-  const ok = results.every((r) => r.status !== 'not-found');
+  const ok = results.every((r) => r.status === 'ok' || r.status === 'skipped-object-source');
   return { ok, results, checkedCount, totalCount: marketplace.plugins.length };
 }
 
@@ -126,29 +164,56 @@ export function makeRemoteCandidateBuilder(rawBase: string): ProbeCandidateBuild
   return (resolvedPath) => `${normalized}/${resolvedPath}/.claude-plugin/plugin.json`;
 }
 
-/** Local-filesystem probe backed by `fs.stat`. */
-export async function localProbe(candidate: string): Promise<boolean> {
-  const { stat } = await import('node:fs/promises');
+/**
+ * Local-filesystem probe: reachable when the candidate is a file, and its
+ * `version` when the file parses and declares one.
+ */
+export async function localProbe(candidate: string): Promise<ProbeResult> {
+  const { readFile, stat } = await import('node:fs/promises');
   try {
-    const s = await stat(candidate);
-    return s.isFile();
+    if (!(await stat(candidate)).isFile()) return { reachable: false };
   } catch {
-    return false;
+    return { reachable: false };
+  }
+  try {
+    return withVersion(JSON.parse(await readFile(candidate, 'utf-8')));
+  } catch {
+    // Reachable but unreadable as JSON: not this check's concern.
+    return { reachable: true };
   }
 }
 
 /**
- * Remote HTTP probe that issues a `GET` to the candidate URL and
- * returns `true` on any 2xx response. `GET` is used instead of `HEAD`
- * because GitHub's raw URL handler is inconsistent on `HEAD`.
+ * Remote HTTP probe that issues a `GET` to the candidate URL: reachable on
+ * any 2xx response, with the body's `version` when it is JSON that declares
+ * one. `GET` is used instead of `HEAD` because GitHub's raw URL handler is
+ * inconsistent on `HEAD` — and the body is needed for the version anyway.
  */
-export async function remoteProbe(candidate: string): Promise<boolean> {
+export async function remoteProbe(candidate: string): Promise<ProbeResult> {
+  let res: Response;
   try {
-    const res = await fetch(candidate);
-    return res.ok;
+    res = await fetch(candidate);
   } catch {
-    return false;
+    return { reachable: false };
   }
+  if (!res.ok) return { reachable: false };
+  try {
+    return withVersion(await res.json());
+  } catch {
+    // Reachable but not JSON: not this check's concern.
+    return { reachable: true };
+  }
+}
+
+/** A reachable probe result carrying `plugin`'s non-empty string `version`, if any. */
+function withVersion(plugin: unknown): ProbeResult {
+  const version =
+    plugin !== null && typeof plugin === 'object'
+      ? (plugin as Record<string, unknown>).version
+      : undefined;
+  return typeof version === 'string' && version !== ''
+    ? { reachable: true, version }
+    : { reachable: true };
 }
 
 /**
@@ -156,10 +221,11 @@ export async function remoteProbe(candidate: string): Promise<boolean> {
  *
  * On success: a single `[OK]` line.
  *
- * On failure: a `[FAIL]` line plus per-entry detail lines. When
- * `metadata.pluginRoot` is set AND at least one failing source started
- * with an explicit `./`, a targeted hint is appended pointing at the
- * specific pluginRoot-is-ignored regression.
+ * On failure: a `[FAIL]` line plus per-entry detail lines — one per source
+ * that was not found, and one `ENTRY_VERSION_MISMATCH` line per entry whose
+ * version `plugin.json` contradicts. When `metadata.pluginRoot` is set AND at
+ * least one failing source started with an explicit `./`, a targeted hint is
+ * appended pointing at the specific pluginRoot-is-ignored regression.
  *
  * @returns Two strings. Exactly one is non-empty depending on `report.ok`.
  */
@@ -169,7 +235,10 @@ export function renderSourcePathResults(
 ): { okLine: string; failBlock: string } {
   const { results, checkedCount, totalCount } = report;
   const skippedCount = totalCount - checkedCount;
-  const okCount = results.filter((r) => r.status === 'ok').length;
+  // Reachable entries, including the ones whose version check failed.
+  const okCount = results.filter(
+    (r) => r.status === 'ok' || r.status === 'version-mismatch'
+  ).length;
 
   if (report.ok) {
     let suffix: string;
@@ -183,16 +252,34 @@ export function renderSourcePathResults(
     return { okLine: `[OK]   Plugin sources reachable${suffix}\n`, failBlock: '' };
   }
 
-  const lines: string[] = [`[FAIL] Plugin sources reachable (${okCount}/${checkedCount})\n`];
-  for (const r of results) {
-    if (r.status !== 'not-found') continue;
-    lines.push(`  - ${r.name}: "${r.sourceInput}" → not found at ${r.candidate}\n`);
+  const lines: string[] = [];
+  const notFound = results.filter(
+    (r): r is Extract<SourcePathCheckResult, { status: 'not-found' }> => r.status === 'not-found'
+  );
+  if (notFound.length > 0) {
+    lines.push(`[FAIL] Plugin sources reachable (${okCount}/${checkedCount})\n`);
+    for (const r of notFound) {
+      lines.push(`  - ${r.name}: "${r.sourceInput}" → not found at ${r.candidate}\n`);
+    }
+  }
+  const mismatched = results.filter(
+    (r): r is Extract<SourcePathCheckResult, { status: 'version-mismatch' }> =>
+      r.status === 'version-mismatch'
+  );
+  if (mismatched.length > 0) {
+    lines.push(`[FAIL] Entry versions match plugin.json\n`);
+    for (const r of mismatched) {
+      lines.push(
+        `  - ${r.name}: ENTRY_VERSION_MISMATCH: marketplace.json says version ${r.entryVersion} ` +
+          `but ${r.candidate} says ${r.pluginVersion}. Claude Code silently uses plugin.json's ` +
+          `version, so the entry's is never seen. Remove "version" from the entry, or make ` +
+          `them match.\n`
+      );
+    }
   }
 
   const pluginRoot = marketplace.metadata?.pluginRoot;
-  const failingWithExplicitDotSlash = results.some(
-    (r) => r.status === 'not-found' && r.sourceInput.startsWith('./')
-  );
+  const failingWithExplicitDotSlash = notFound.some((r) => r.sourceInput.startsWith('./'));
 
   if (pluginRoot !== undefined && failingWithExplicitDotSlash) {
     const normalizedRoot = pluginRoot.replace(/^\.\//, '').replace(/\/+$/, '');

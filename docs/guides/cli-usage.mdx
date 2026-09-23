@@ -149,10 +149,12 @@ dorkos uninstall <package>                        # Remove an installed package
 dorkos uninstall <package> --purge                # Also remove preserved data and secrets
 dorkos uninstall <package> --project <path>        # Uninstall from a specific project
 
-dorkos update                                     # Check all installed packages for updates (advisory only)
-dorkos update <package> --apply                   # Apply an available update
+dorkos update                                     # Check every installed package, wherever it's installed
+dorkos update <package> --apply                   # Install an available update
 dorkos update <package> --project <path>          # Check or apply within a specific project
 ```
+
+For each package, `dorkos update` tells you one of three things: a newer version is available, the package is up to date, or it couldn't be checked (with the reason, for example when you're offline). On its own it only checks. Add `--apply` to install the updates it finds.
 
 **`dorkos marketplace`**: manage the marketplace sources that list available packages.
 

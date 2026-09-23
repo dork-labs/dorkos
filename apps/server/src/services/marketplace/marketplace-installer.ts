@@ -2,7 +2,8 @@
  * Marketplace installer orchestrator.
  *
  * The single entry point for every marketplace install path — CLI,
- * HTTP, and (eventually) the update flow. Ties together the resolver,
+ * HTTP, and the update flow, whose checks call `resolveLatest` and whose
+ * applies call `update`. Ties together the resolver,
  * fetcher, validator, permission preview builder, conflict detector, and
  * the four type-specific install flows. Emits exactly one telemetry event
  * per terminal state via {@link reportInstallEvent}.
@@ -26,10 +27,13 @@
  * @module services/marketplace/marketplace-installer
  */
 import {
+  isRealCommitSha,
   isSafeGitUrl,
+  resolvePackageVersion,
   type MarketplacePackageManifest,
   type PackageType,
   type PluginSource,
+  type SourceKey,
 } from '@dorkos/marketplace';
 import { validatePackage } from '@dorkos/marketplace/package-validator';
 import type { Logger } from '@dorkos/shared/logger';
@@ -45,6 +49,13 @@ import type { UninstallFlow } from './flows/uninstall.js';
 import { reportInstallEvent, type InstallEvent } from './telemetry-hook.js';
 import { writeInstallMetadata } from './installed-metadata.js';
 import { locateInstallRoot } from './lib/locate-install.js';
+import {
+  deriveSourceProvenance,
+  hostOf,
+  resolvedFromSourceKey,
+  sameSourceKey,
+  sourceKeyOfFetchable,
+} from './lib/source-provenance.js';
 import { materializePackageSchedules } from './lib/materialize-schedules.js';
 import { withInstallTargetLock } from './transaction.js';
 import { validatePackageSchedules } from './lib/validate-package-schedules.js';
@@ -53,9 +64,15 @@ import {
   disclosedEffectsOf,
   sameDisclosedEffects,
 } from './disclosed-effects.js';
-import { RELATIVE_PATH_SENTINEL_SHA } from './source-resolvers/relative-path.js';
 import { UnsupportedSourceUrlError } from './source-url-policy.js';
-import type { ConflictReport, InstallRequest, InstallResult, PermissionPreview } from './types.js';
+import type {
+  ConflictReport,
+  InstallRequest,
+  InstallResult,
+  LatestResolution,
+  PermissionPreview,
+  ResolveLatestOptions,
+} from './types.js';
 import { cp, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -205,6 +222,7 @@ export interface InstallerLike {
   preview(req: InstallRequest): Promise<PreviewResult>;
   install(req: InstallRequest): Promise<InstallResult>;
   update(req: InstallRequest): Promise<InstallResult>;
+  resolveLatest(req: InstallRequest, opts: ResolveLatestOptions): Promise<LatestResolution>;
 }
 
 /** The tuple returned by {@link MarketplaceInstaller.preview}. */
@@ -343,15 +361,25 @@ export class MarketplaceInstaller implements InstallerLike {
       // the install — the package itself is already on disk.
       try {
         const provenance = deriveSourceProvenance(resolved);
+        // Claude Code's chain, not the manifest: a Claude-Code-only package's
+        // synthesized manifest says 0.0.0 whatever plugin.json states. The
+        // commit is deliberately left out, so `version` stays a version string
+        // and the commit keeps its own field.
+        const resolvedVersion = resolvePackageVersion({
+          declaredVersion: staged.declaredVersion,
+          entryVersion: resolved.entryVersion,
+        });
         await writeInstallMetadata(result.installPath, {
           name: result.packageName,
-          version: result.version,
+          version: resolvedVersion?.version ?? result.version,
           type: result.type,
           installedFrom: resolved.marketplaceName,
           installedAt: new Date().toISOString(),
           sourceRepo: provenance.sourceRepo,
           sourceRef: provenance.sourceRef,
           commitSha: staged.commitSha,
+          ...(resolved.entryVersion !== undefined && { entryVersion: resolved.entryVersion }),
+          ...(staged.sourceKey !== undefined && { sourceKey: staged.sourceKey }),
           ...(result.dependencyWarnings !== undefined &&
             result.dependencyWarnings.length > 0 && {
               dependencyWarnings: result.dependencyWarnings,
@@ -484,10 +512,11 @@ export class MarketplaceInstaller implements InstallerLike {
     const wasActiveShape =
       this.deps.shapeUpdateHooks?.getActiveShapeName() === resolved.packageName;
 
-    // 2. Uninstall WITH purge so the install root is fully removed and
-    //    `atomicMove(stagingDir, installRoot)` does not later trip on
-    //    `ENOTEMPTY`. We do our own data preservation around the call so
-    //    `.dork/data/` and `.dork/secrets.json` survive the round trip.
+    // 2. Uninstall WITHOUT purge: the package is removed, but `.dork/data/`
+    //    and `.dork/secrets.json` stay behind in the install root. Step 3
+    //    copies them aside and removes that data-only root, so
+    //    `atomicMove(stagingDir, installRoot)` does not trip on `ENOTEMPTY`,
+    //    and step 5 copies them back into the fresh install.
     //    `deactivateShape: false` keeps `ui.shapes.active` intact: this
     //    uninstall is the first half of a replace, not a removal — clearing
     //    the pointer here would silently drop the user's cockpit to "no
@@ -596,9 +625,91 @@ export class MarketplaceInstaller implements InstallerLike {
   }
 
   /**
+   * Work out what installing a package right now would give, for the update
+   * check, without installing anything.
+   *
+   * Reuses the install pipeline — resolve, stage into the SHA-keyed cache,
+   * validate — so the answer is what an install would actually get, and adds
+   * one short-circuit: when the source ({@link SourceKey}), the marketplace
+   * entry's version and the source's current commit all equal what the install
+   * recorded, the package is `unchanged` and nothing is staged or cloned. All
+   * three are needed: an entry can be re-pointed or re-versioned in the index
+   * while the package's own repository does not move. A sidecar with no
+   * recorded key never short-circuits.
+   *
+   * A staged tree that fails validation (including `VERSION_MISMATCH`) is
+   * `unresolved`: a version DorkOS would refuse to install is never offered.
+   * A `file://` source has no key and no commit, so it is always staged in
+   * place and validated, which costs nothing remote.
+   *
+   * Never throws. Any resolver, fetch or staging error — a refused address
+   * included (DOR-1799) — becomes `unresolved` with its message, so one bad
+   * package cannot sink a check of many. Runs no package code: stage and
+   * validate only, exactly as {@link preview} does.
+   *
+   * Inherited limit (DOR-2248): the SHA-keyed cache can hold a different tree
+   * than its key names, exactly as it can for an install.
+   *
+   * @param req - `marketplace` names the source the update flow matched; a
+   *   direct install passes `source` instead.
+   * @param opts - What the install recorded, and how to look up a commit.
+   * @returns What an install would resolve to now.
+   */
+  async resolveLatest(req: InstallRequest, opts: ResolveLatestOptions): Promise<LatestResolution> {
+    try {
+      const recordedKey = opts.installed.sourceKey;
+      const resolved =
+        req.source && !req.marketplace && recordedKey
+          ? resolvedFromSourceKey(req.name, recordedKey)
+          : await this.deps.resolver.resolve(buildResolverInput(req));
+
+      const key =
+        resolved.kind !== 'local' && resolved.pluginSource !== undefined
+          ? sourceKeyOfFetchable(this.buildFetchableSource(resolved))
+          : undefined;
+
+      if (
+        key &&
+        recordedKey &&
+        sameSourceKey(key, recordedKey) &&
+        resolved.entryVersion === opts.installed.entryVersion &&
+        isRealCommitSha(opts.installed.commitSha)
+      ) {
+        const current = await opts.commitLookup(key.cloneUrl, key.ref);
+        if (!isRealCommitSha(current)) {
+          return { kind: 'unresolved', reason: `couldn't reach ${hostOf(key.cloneUrl)}` };
+        }
+        if (current === opts.installed.commitSha) return { kind: 'unchanged' };
+      }
+
+      const staged = await this.stagePackage(resolved, req);
+      const validation = await validatePackage(staged.path);
+      if (!validation.ok) {
+        const errors = validation.issues.filter((i) => i.level === 'error').map((i) => i.message);
+        return {
+          kind: 'unresolved',
+          reason: `the new version can't be installed: ${errors.join('; ')}`,
+        };
+      }
+      return {
+        kind: 'resolved',
+        declaredVersion: validation.declaredVersion,
+        entryVersion: resolved.entryVersion,
+        // Staging's commit, not the lookup's: a push that lands between the
+        // two is reported as what an install would actually fetch.
+        commitSha: staged.commitSha,
+        sourceKey: staged.sourceKey,
+      };
+    } catch (err) {
+      return { kind: 'unresolved', reason: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /**
    * Run the resolve → fetch → validate pipeline shared by {@link install}
    * and {@link preview}. Returns the resolved source descriptor, the
-   * parsed manifest, and the path to the staged package on disk.
+   * parsed manifest, the path to the staged package on disk, and what the
+   * install records about where it came from.
    *
    * @internal
    */
@@ -608,6 +719,10 @@ export class MarketplaceInstaller implements InstallerLike {
     packagePath: string;
     /** Resolved commit SHA (DOR-147), when the staging fetch resolved a real one. */
     commitSha?: string;
+    /** Where the package was fetched from; absent for local and `file://` sources. */
+    sourceKey?: SourceKey;
+    /** The version the staged tree declares (`readDeclaredVersion`). */
+    declaredVersion?: string;
   }> {
     const resolved = await this.deps.resolver.resolve(buildResolverInput(req));
     const staged = await this.stagePackage(resolved, req);
@@ -625,6 +740,8 @@ export class MarketplaceInstaller implements InstallerLike {
       manifest: validation.manifest,
       packagePath: staged.path,
       commitSha: staged.commitSha,
+      sourceKey: staged.sourceKey,
+      declaredVersion: validation.declaredVersion,
     };
   }
 
@@ -633,12 +750,17 @@ export class MarketplaceInstaller implements InstallerLike {
    * remote packages are fetched via the source-aware dispatcher in
    * {@link PackageFetcher.fetchPackage}.
    *
+   * Reports the {@link SourceKey} of the concrete source it fetched, computed
+   * from the same source handed to the fetcher, so what an install records is
+   * what the update check later recomputes. The local branch and the legacy
+   * bare-`gitUrl` branch record none.
+   *
    * @internal
    */
   private async stagePackage(
     resolved: ResolvedPackageSource,
     req: InstallRequest
-  ): Promise<{ path: string; commitSha?: string }> {
+  ): Promise<{ path: string; commitSha?: string; sourceKey?: SourceKey }> {
     if (resolved.kind === 'local') {
       if (!resolved.localPath) {
         throw new Error('Resolved local package missing localPath');
@@ -656,7 +778,11 @@ export class MarketplaceInstaller implements InstallerLike {
         pluginRoot: resolved.pluginRoot,
         force: req.force,
       });
-      return { path: fetched.path, commitSha: realCommitSha(fetched.commitSha) };
+      // A placeholder commit is never recorded as provenance (DOR-147, "never
+      // fabricate"): remote same-repo packages resolve the marketplace repo's
+      // real commit, while file:// ones and a failed ls-remote return a sentinel.
+      const commitSha = isRealCommitSha(fetched.commitSha) ? fetched.commitSha : undefined;
+      return { path: fetched.path, commitSha, sourceKey: sourceKeyOfFetchable(source) };
     }
 
     // Legacy path: bare gitUrl (deprecated — kept for backward compat with
@@ -669,7 +795,8 @@ export class MarketplaceInstaller implements InstallerLike {
       gitUrl: resolved.gitUrl,
       force: req.force,
     });
-    return { path: fetched.path, commitSha: realCommitSha(fetched.commitSha) };
+    const commitSha = isRealCommitSha(fetched.commitSha) ? fetched.commitSha : undefined;
+    return { path: fetched.path, commitSha };
   }
 
   /**
@@ -803,76 +930,6 @@ function derivePluginSourceType(source: PluginSource | undefined): InstallEvent[
   if (!source) return 'github';
   if (typeof source === 'string') return 'relative-path';
   return source.source;
-}
-
-/**
- * Derive `.dork/install-metadata.json` source provenance (DOR-147) — the
- * source repo and requested ref — from a resolved package source.
- * Local-directory installs (`dorkos install ./path`) have no upstream repo
- * and return an empty object rather than fabricating one.
- *
- * `sourceRepo` is recorded exactly as the resolver already represents the
- * source: a bare `owner/repo` for `github`-form entries, a full URL for
- * `url`/`git-subdir` entries and legacy `gitUrl` resolutions, or the
- * marketplace's own source URL for same-repo relative-path packages.
- * `sourceRef` is only populated when the source explicitly requested one —
- * the resolvers' implicit `main` default is never recorded here, so its
- * absence means "no ref was requested," not "resolved to main."
- *
- * @internal
- */
-function deriveSourceProvenance(resolved: ResolvedPackageSource): {
-  sourceRepo?: string;
-  sourceRef?: string;
-} {
-  if (resolved.kind === 'local') {
-    return {};
-  }
-
-  const source = resolved.pluginSource;
-  if (source === undefined) {
-    // Legacy bare-gitUrl resolution (pre-superset install inputs).
-    return { sourceRepo: resolved.gitUrl };
-  }
-  if (typeof source === 'string') {
-    // Relative-path source: the plugin lives inside the marketplace's own
-    // repo, so the marketplace source URL IS the source repo.
-    return { sourceRepo: resolved.marketplaceSourceUrl };
-  }
-
-  switch (source.source) {
-    case 'github':
-      return { sourceRepo: source.repo, sourceRef: source.ref };
-    case 'url':
-      return { sourceRepo: source.url, sourceRef: source.ref };
-    case 'git-subdir':
-      return { sourceRepo: source.url, sourceRef: source.ref };
-    case 'npm':
-      // Not git-backed — no repo/ref to record. (Install currently throws
-      // NpmSourceNotSupportedError before reaching this point anyway.)
-      return {};
-  }
-}
-
-/**
- * Filter out sentinel/placeholder commit SHAs the fetcher returns for
- * non-git or degraded-resolution paths — these are never persisted as
- * `commitSha` provenance, per the "never fabricate" rule (DOR-147).
- * `RELATIVE_PATH_SENTINEL_SHA` covers same-repo packages from local
- * (`file://`) marketplaces — remote same-repo packages never hit it,
- * because {@link MarketplaceInstaller.buildFetchableSource} converts them
- * to a `git-subdir` fetch that resolves the marketplace repo's real
- * commit SHA; `'local'` covers `file://` gitUrl resolutions;
- * `tmp-<timestamp>` is {@link PackageFetcher}'s degraded fallback when
- * `git ls-remote` fails (offline, missing git binary, malformed output).
- *
- * @internal
- */
-function realCommitSha(sha: string): string | undefined {
-  if (sha === 'local' || sha === RELATIVE_PATH_SENTINEL_SHA || /^tmp-\d+$/.test(sha)) {
-    return undefined;
-  }
-  return sha;
 }
 
 /**

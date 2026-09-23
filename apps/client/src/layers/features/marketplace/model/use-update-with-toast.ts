@@ -7,6 +7,9 @@
  * - **Pending**: a loading spinner toast while the HTTP request is in-flight.
  * - **Success**: replaces the loading toast with a message that distinguishes
  *   "updated to vX" from "already up to date" using the `UpdateResult` payload.
+ *   When the check could not run (status `unknown`: offline, or a new version
+ *   that can't be installed), it is a warning that says so and why — never
+ *   "already up to date", since nothing was confirmed.
  * - **Error**: replaces the loading toast with an error message.
  *
  * Mirrors `useInstallWithToast`: the toast lifecycle is driven by **per-call
@@ -23,21 +26,49 @@ import { humanizePackageName } from '@/layers/shared/lib';
 import { useUpdatePackage, type UpdatePackageArgs } from '@/layers/entities/marketplace';
 import type { UpdateResult } from '@dorkos/shared/marketplace-schemas';
 
+/** The toast a finished update request shows: a confirmation, or a warning. */
+interface UpdateOutcomeToast {
+  kind: 'success' | 'warning';
+  message: string;
+}
+
 /**
- * Build a success message from an `UpdateResult`.
+ * Describe a finished update request.
  *
  * When a reinstall was applied, report the new version (e.g. "Updated X to
- * v1.2.0"). When the package was already current, say so explicitly so the
- * user knows the click did something even though nothing changed on disk.
+ * v1.2.0"). When the check for this package could not run, say so and pass on
+ * the server's reason as a warning. Otherwise the package was already current,
+ * said explicitly so the person knows the click did something even though
+ * nothing changed on disk.
  *
+ * @param name - The raw package name, to find this package's check.
  * @param label - The humanized package name for display.
+ * @param result - The server's update result.
  */
-function formatUpdateSuccess(label: string, result: UpdateResult): string {
+function describeUpdateOutcome(
+  name: string,
+  label: string,
+  result: UpdateResult
+): UpdateOutcomeToast {
   const applied = result.applied[0];
   if (applied) {
-    return `Updated ${label} to v${applied.version}`;
+    return { kind: 'success', message: `Updated ${label} to v${applied.version}` };
   }
-  return `${label} is already up to date`;
+  const check = result.checks.find((c) => c.packageName === name) ?? result.checks[0];
+  if (check?.status === 'unknown') {
+    const why = check.note ? `: ${check.note}` : '';
+    return { kind: 'warning', message: `Couldn't check ${label} for updates${why}` };
+  }
+  return { kind: 'success', message: `${label} is already up to date` };
+}
+
+/** Show a finished update's toast in place of the loading one. */
+function showUpdateOutcome(outcome: UpdateOutcomeToast, toastId: string | number): void {
+  if (outcome.kind === 'warning') {
+    toast.warning(outcome.message, { id: toastId });
+  } else {
+    toast.success(outcome.message, { id: toastId });
+  }
 }
 
 /**
@@ -70,7 +101,7 @@ export function useUpdateWithToast() {
       const toastId = toast.loading(`Updating ${label}…`);
       baseMutate(args, {
         onSuccess: (result) => {
-          toast.success(formatUpdateSuccess(label, result), { id: toastId });
+          showUpdateOutcome(describeUpdateOutcome(args.name, label, result), toastId);
         },
         onError: (err) => {
           toast.error(formatUpdateError(err), { id: toastId });
@@ -86,7 +117,7 @@ export function useUpdateWithToast() {
       const toastId = toast.loading(`Updating ${label}…`);
       try {
         const result = await baseMutateAsync(args);
-        toast.success(formatUpdateSuccess(label, result), { id: toastId });
+        showUpdateOutcome(describeUpdateOutcome(args.name, label, result), toastId);
         return result;
       } catch (err) {
         toast.error(formatUpdateError(err), { id: toastId });
