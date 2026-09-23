@@ -107,7 +107,7 @@ Quality counts that must never drop silently are asserted inside the queue again
 
 ## The fence
 
-The steward may change gates, never the steward or the judge. An unattended `ci-improve/*` PR fails coverage when it touches `ci/steward-owned-paths.json`: `packages/ci-steward/**`, `ci/slos.yaml`, `ci/metrics.yaml`, `ci/ratchets.yaml`, `ci/required-checks.json`, `ci/steward-owned-paths.json`, `ci/config.yaml`, `.claude/rules/ci-pipeline.md`, `contributing/ci.md`, `claude-code-review.yml`, `REVIEW.md`, `scripts/should-arm-automerge.sh`, `merge-tail.yml`. `typecheck.yml` and `lefthook.yml` are fenced by content (the census steps and the time-wrap must stay present), asserted by a different runner, because a check cannot guard its own removal. The unattended tick never authors a `ratchet-release` or `field-changes`, and runs one active experiment per gate.
+The steward may change gates, never the steward or the judge. An unattended `ci-improve/*` PR fails coverage when it touches `ci/steward-owned-paths.json`: `packages/ci-steward/**`, `ci/slos.yaml`, `ci/metrics.yaml`, `ci/ratchets.yaml`, `ci/required-checks.json`, `ci/steward-owned-paths.json`, `ci/config.yaml`, `.claude/rules/ci-pipeline.md`, `contributing/ci.md`, `claude-code-review.yml`, `REVIEW.md`, `scripts/should-arm-automerge.sh`, `scripts/should-arm-automerge-input.sh`, `merge-tail.yml`. `typecheck.yml` and `lefthook.yml` are fenced by content (the census steps and the time-wrap must stay present), asserted by a different runner, because a check cannot guard its own removal. The unattended tick never authors a `ratchet-release` or `field-changes`, and runs one active experiment per gate.
 
 ## Writing a narrow hypothesis
 
