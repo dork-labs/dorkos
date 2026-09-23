@@ -22,8 +22,9 @@
  * attached, and each guards itself, because each can be reached without the
  * other:
  *
- * - {@link execGitClone}'s `x-access-token@` URL rewrite, gated on
- *   {@link isGitHubCredentialHost} — the host it is about to clone from.
+ * - the `x-access-token@` URL rewrite, {@link withGitHubToken}, gated on
+ *   {@link isGitHubCredentialHost} — the host `git` is about to reach. Both
+ *   {@link execGitClone} and the marketplace's package fetch call it.
  * - the `auth` option handed to giget, gated on the stricter
  *   {@link gigetTarballHostIsGitHub} — because giget sends the token to a
  *   tarball URL that, for every source but the `github:` shorthand, the remote
@@ -329,6 +330,33 @@ export function isGitHubCredentialHost(url: string): boolean {
 }
 
 /**
+ * The address `git` is given for `url`: the operator's GitHub token embedded
+ * as `x-access-token` when, and only when, `url` is a GitHub host
+ * ({@link isGitHubCredentialHost}); otherwise `url` unchanged.
+ *
+ * The one place a token is written into a git address. {@link execGitClone}
+ * and the marketplace's package fetch (`services/marketplace/lib/git-tree.ts`)
+ * both call it, so the host rule cannot drift between them (DOR-1833).
+ *
+ * The result carries a live credential: pass it to `git` as argv and never
+ * log it. Run anything `git` prints through {@link redactAuthTokens}.
+ *
+ * @param url - The clone or fetch address.
+ * @param auth - The token, from {@link resolveGitAuth}; `undefined` sends none.
+ * @returns The address to hand to `git`.
+ */
+export function withGitHubToken(url: string, auth: string | undefined): string {
+  // Two questions, both needed. `isGitHubCredentialHost` is the semantic one —
+  // may this token go to this host at all. The literal `https://` prefix is the
+  // mechanical one: the rewrite below is a string replace, and an address
+  // spelled `HTTPS://` would pass the first question while the replace matched
+  // nothing, leaving a clone that only looks authenticated.
+  return auth && url.startsWith('https://') && isGitHubCredentialHost(url)
+    ? url.replace('https://', `https://x-access-token:${auth}@`)
+    : url;
+}
+
+/**
  * True when the tarball giget downloads for `source` is fetched from a GitHub
  * URL that **giget itself constructs**, and so may carry the operator's token.
  *
@@ -437,15 +465,7 @@ export async function execGitClone(
   auth?: string,
   onProgress?: ProgressCallback
 ): Promise<void> {
-  // Two questions, both needed. `isGitHubCredentialHost` is the semantic one —
-  // may this token go to this host at all. The literal `https://` prefix is the
-  // mechanical one: the rewrite below is a string replace, and an address
-  // spelled `HTTPS://` would pass the first question while the replace matched
-  // nothing, leaving a clone that only looks authenticated.
-  const cloneUrl =
-    auth && url.startsWith('https://') && isGitHubCredentialHost(url)
-      ? url.replace('https://', `https://x-access-token:${auth}@`)
-      : url;
+  const cloneUrl = withGitHubToken(url, auth);
 
   return new Promise<void>((resolve, reject) => {
     const proc = spawn(

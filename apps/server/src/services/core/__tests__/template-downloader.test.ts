@@ -44,6 +44,7 @@ import {
   downloadTemplate,
   isGitHubCredentialHost,
   isSupportedTemplateSource,
+  withGitHubToken,
   redactAuthTokens,
   TemplateDownloadError,
   UNSUPPORTED_TEMPLATE_SOURCE_MESSAGE,
@@ -493,6 +494,27 @@ describe('the GitHub token only ever goes to GitHub', () => {
       vi.mocked(spawn).mockClear();
       expect(await cloneUrlFor('https://www.github.com/org/repo.git', 'ghp_token')).toBe(
         'https://x-access-token:ghp_token@www.github.com/org/repo.git'
+      );
+    });
+  });
+
+  describe('withGitHubToken — the rewrite every git caller shares', () => {
+    // The marketplace fetch calls this directly rather than through
+    // `execGitClone`, so the gate is pinned here on its own.
+    it.each([
+      ['https://github.com/org/repo.git', 'https://x-access-token:ghp_t@github.com/org/repo.git'],
+      ['https://evil.example.com/org/repo.git', 'https://evil.example.com/org/repo.git'],
+      ['https://github.com.evil.com/org/repo.git', 'https://github.com.evil.com/org/repo.git'],
+      ['https://someone:secret@github.com/o/r.git', 'https://someone:secret@github.com/o/r.git'],
+      ['HTTPS://github.com/org/repo.git', 'HTTPS://github.com/org/repo.git'],
+      ['git@github.com:org/repo.git', 'git@github.com:org/repo.git'],
+    ])('%s → %s', (url, expected) => {
+      expect(withGitHubToken(url, 'ghp_t')).toBe(expected);
+    });
+
+    it('sends nothing when there is no token', () => {
+      expect(withGitHubToken('https://github.com/org/repo.git', undefined)).toBe(
+        'https://github.com/org/repo.git'
       );
     });
   });
