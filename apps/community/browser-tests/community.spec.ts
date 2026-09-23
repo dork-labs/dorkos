@@ -165,7 +165,9 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
         }
         await route.continue();
       },
-      { times: 1 }
+      // Opening Manage reads settings once for the invite panel's closed state, and the
+      // Settings section reads them again; both reads fail here.
+      { times: 2 }
     );
     await ownerPage.getByRole('button', { name: 'Manage' }).click();
     await ownerPage
@@ -396,6 +398,41 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await observerPage.getByRole('button', { name: 'Join community' }).click();
     await observerPage.getByRole('button', { name: 'Open community' }).click();
     await expect(observerPage.getByRole('button', { name: 'Join channel' })).toBeVisible();
+    // Closing admission replaces the invite controls with the reason, at every width.
+    const sections = ownerPage.getByRole('navigation', { name: 'Settings sections' });
+    const viewport = ownerPage.viewportSize();
+    await sections.getByRole('button', { name: 'Settings', exact: true }).click();
+    await ownerPage.getByLabel('Admission policy').selectOption('closed');
+    await ownerPage.getByRole('button', { name: 'Save access' }).click();
+    await expect(ownerPage.getByText('Access saved.')).toBeVisible();
+    await sections.getByRole('button', { name: 'Community' }).click();
+    await expect(ownerPage.getByText('This community is closed to new members.')).toBeVisible();
+    await expect(ownerPage.getByRole('button', { name: 'Create invite' })).toHaveCount(0);
+    // The link created before closing was revoked with it, so it is no longer offered.
+    await expect(ownerPage.getByLabel('One-time invite link')).toHaveCount(0);
+    await ownerPage.setViewportSize({ width: 1440, height: 900 });
+    await ownerPage.screenshot({ path: '/tmp/community-closed-desktop.png', fullPage: true });
+    await ownerPage.setViewportSize({ width: 390, height: 844 });
+    const channelsNav = ownerPage.getByRole('complementary', { name: 'Community channels' });
+    if (await channelsNav.evaluate((node) => node.classList.contains('open')))
+      await ownerPage.mouse.click(380, 420);
+    await expect(channelsNav).not.toHaveClass(/open/);
+    // Wait for the navigation to finish sliding away before the screenshot.
+    await expect
+      .poll(async () => {
+        const box = await channelsNav.boundingBox();
+        return box ? box.x + box.width : 0;
+      })
+      .toBeLessThanOrEqual(0);
+    await expect(ownerPage.getByText('This community is closed to new members.')).toBeVisible();
+    await ownerPage.screenshot({ path: '/tmp/community-closed-mobile.png', fullPage: true });
+    if (viewport) await ownerPage.setViewportSize(viewport);
+    await sections.getByRole('button', { name: 'Settings', exact: true }).click();
+    await ownerPage.getByLabel('Admission policy').selectOption('invite_only');
+    await ownerPage.getByRole('button', { name: 'Save access' }).click();
+    await expect(ownerPage.getByText('Access saved.')).toBeVisible();
+    await sections.getByRole('button', { name: 'Community' }).click();
+    await expect(ownerPage.getByRole('button', { name: 'Create invite' })).toBeVisible();
     expect(
       await observerPage.evaluate(
         async (id) => (await fetch(`/api/v1/attachments/${id}`)).status,

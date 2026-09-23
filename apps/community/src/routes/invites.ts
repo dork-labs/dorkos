@@ -59,6 +59,39 @@ function invalidInvitation(): ApiError {
   return new ApiError(403, 'FORBIDDEN', 'This invitation cannot be used. Ask for a new link.');
 }
 
+/** A closed community admits no one new; existing members are unaffected. */
+class AdmissionClosed extends ApiError {
+  constructor() {
+    super(409, 'STATE_CONFLICT', 'This community is closed to new members.');
+  }
+}
+
+/**
+ * Refuse new admission while the owner has closed the community. The write paths call this
+ * after `lockActiveCommunity` has taken the community row in share mode in the same
+ * transaction; that lock is what serializes them with the settings update that closes
+ * admission (it takes the row for update, then revokes every invitation), so an invitation or
+ * admission either commits first and is revoked by the close, or reads `closed` here. With
+ * `lock` the read also takes that share lock itself, so it stays correct for any caller; the
+ * read-only preview reads without it.
+ */
+async function assertAdmissionOpen(
+  client: PoolClient | Pool,
+  communityId: string,
+  lock: boolean
+): Promise<void> {
+  const result = await client.query<{ admission_policy: string }>(
+    `SELECT admission_policy FROM communities WHERE id=$1${lock ? ' FOR SHARE' : ''}`,
+    [communityId]
+  );
+  if (result.rows[0]?.admission_policy === 'closed') throw new AdmissionClosed();
+}
+
+/** Keep the closed-community reason visible; hide every other invitation failure. */
+function invitationRefusal(error: ApiError): ApiError {
+  return error instanceof AdmissionClosed ? error : invalidInvitation();
+}
+
 function admissionCookie(c: Context, config: CommunityConfig): string {
   const value = verifyValue(
     readCookie(c.req.header('cookie') ?? null, 'community_admission'),
@@ -103,6 +136,9 @@ async function validInvite(
   if (!communityId) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
   const signed = inspectInvite(token, communityId, config);
   if (!signed) throw new ApiError(403, 'FORBIDDEN', 'This invitation is invalid or expired.');
+  // Only a link genuinely signed for this community learns that it is closed; a made-up token
+  // gets the same public failure whether the community is open or closed.
+  await assertAdmissionOpen(client, communityId, lock);
   if (lock) {
     const issuer = await client.query<{ issuer_member_id: string }>(
       'SELECT issuer_member_id FROM invites WHERE id=$1 AND community_id=$2',
@@ -157,6 +193,7 @@ export function registerInviteRoutes(
     const result = await transaction(pool, async (client) => {
       if (body.channelId) await lockChannel(client, body.channelId, actor);
       await requireLiveRole(client, actor, ['owner', 'admin']);
+      await assertAdmissionOpen(client, actor.community_id, true);
       const id = randomUUID();
       const expiry = new Date(Date.now() + (body.expiresInDays ?? 7) * 86_400_000);
       const token = issueInvite(id, actor.community_id, expiry, config);
@@ -225,7 +262,7 @@ export function registerInviteRoutes(
         channelName: invite.channel_name,
       });
     } catch (error) {
-      if (error instanceof ApiError) throw invalidInvitation();
+      if (error instanceof ApiError) throw invitationRefusal(error);
       throw error;
     }
   });
@@ -252,7 +289,7 @@ export function registerInviteRoutes(
         };
       });
     } catch (error) {
-      if (error instanceof ApiError) throw invalidInvitation();
+      if (error instanceof ApiError) throw invitationRefusal(error);
       throw error;
     }
     setCookie(c, 'community_admission', signValue(pending, config.authSecret), {
@@ -275,6 +312,7 @@ export function registerInviteRoutes(
     await transaction(pool, async (client) => {
       const tenant = await resolveCommunityContext(c, client);
       await lockActiveCommunity(client, tenant.communityId);
+      await assertAdmissionOpen(client, tenant.communityId, true);
       const result = await client.query<{ account_id: string | null }>(
         `SELECT p.account_id FROM pending_admissions p
          JOIN invites i ON i.id=p.invite_id AND i.community_id=p.community_id
@@ -305,6 +343,7 @@ export function registerInviteRoutes(
     const memberId = await transaction(pool, async (client) => {
       const tenant = await resolveCommunityContext(c, client);
       await lockActiveCommunity(client, tenant.communityId);
+      await assertAdmissionOpen(client, tenant.communityId, true);
       const admission = await client.query<{
         id: string;
         community_id: string;

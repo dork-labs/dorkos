@@ -56,6 +56,7 @@ export function Manage({
   const [invites, setInvites] = useState<Invite[]>([]);
   const [inviteChannel, setInviteChannel] = useState('');
   const [inviteLink, setInviteLink] = useState('');
+  const [admissionClosed, setAdmissionClosed] = useState(false);
   const [directory, setDirectory] = useState<Member[]>([]);
   const [directoryCursor, setDirectoryCursor] = useState<string | null>(null);
   const [roster, setRoster] = useState<Member[]>([]);
@@ -107,6 +108,25 @@ export function Manage({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  // A failed read leaves the invite form in place; the server still refuses an invitation to
+  // a closed community with a plain reason.
+  const readAdmission = useCallback(
+    () =>
+      request<{ admissionPolicy: 'invite_only' | 'closed' }>('/api/v1/settings')
+        .then((body) => {
+          const closed = body.admissionPolicy === 'closed';
+          setAdmissionClosed(closed);
+          // Closing revoked every invitation, including a link still shown from before.
+          if (closed) setInviteLink('');
+        })
+        .catch(() => undefined),
+    []
+  );
+  // Read on every visit to this tab: the owner may have just closed or reopened admission
+  // under Settings.
+  useEffect(() => {
+    if (moderator && !readOnly && tab === 'community') void readAdmission();
+  }, [moderator, readOnly, tab, readAdmission]);
   async function perform(operation: () => Promise<unknown>, success: string) {
     setBusy(true);
     setError('');
@@ -148,6 +168,8 @@ export function Manage({
       await refresh();
     } catch (cause) {
       setError(describeError(cause));
+      // The community may have been closed since this panel last looked.
+      void readAdmission();
     } finally {
       setBusy(false);
     }
@@ -289,31 +311,42 @@ export function Manage({
                 </section>
                 <section className="panel">
                   <h3>Invite someone</h3>
-                  <p className="small muted">
-                    New links last seven days and admit one person unless changed by an admin.
-                  </p>
-                  <div className="field">
-                    <label htmlFor="invite-channel">Channel</label>
-                    <select
-                      id="invite-channel"
-                      value={inviteChannel}
-                      onChange={(event) => setInviteChannel(event.target.value)}
-                    >
-                      <option value="">Community access</option>
-                      {channels.map((channel) => (
-                        <option key={channel.id} value={channel.id}>
-                          #{channel.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <button
-                    className="button primary"
-                    disabled={busy}
-                    onClick={() => void createInvite()}
-                  >
-                    <UserPlus size={16} /> Create invite
-                  </button>
+                  {admissionClosed ? (
+                    <p className="notice mb-0">
+                      This community is closed to new members.{' '}
+                      {me.role === 'owner'
+                        ? 'You can reopen it in Settings, under Access.'
+                        : 'The owner can reopen it in Settings, under Access.'}
+                    </p>
+                  ) : (
+                    <>
+                      <p className="small muted">
+                        New links last seven days and admit one person unless changed by an admin.
+                      </p>
+                      <div className="field">
+                        <label htmlFor="invite-channel">Channel</label>
+                        <select
+                          id="invite-channel"
+                          value={inviteChannel}
+                          onChange={(event) => setInviteChannel(event.target.value)}
+                        >
+                          <option value="">Community access</option>
+                          {channels.map((channel) => (
+                            <option key={channel.id} value={channel.id}>
+                              #{channel.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <button
+                        className="button primary"
+                        disabled={busy}
+                        onClick={() => void createInvite()}
+                      >
+                        <UserPlus size={16} /> Create invite
+                      </button>
+                    </>
+                  )}
                   {inviteLink && (
                     <div className="field mt-4">
                       <label htmlFor="invite-link">One-time invite link</label>

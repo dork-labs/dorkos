@@ -562,7 +562,8 @@ export function CommunityAdministration({
           <h3>Access</h3>
           <form onSubmit={(event) => void saveAccess(event)}>
             <p className="small muted">
-              Closing access revokes every open invitation and pending admission.
+              Closing access revokes every open invitation and pending admission. No one new can
+              join until you reopen it.
             </p>
             <label className="field" htmlFor="community-admission">
               Admission policy
