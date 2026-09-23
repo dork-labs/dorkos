@@ -113,10 +113,10 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
                     {deletionRecovery
                       ? 'Review deletion'
                       : available
-                        ? remembered
-                          ? 'Last opened'
-                          : membership.lifecycle === 'archived'
-                            ? 'Read history'
+                        ? membership.lifecycle === 'archived'
+                          ? 'Read history'
+                          : remembered
+                            ? 'Last opened'
                             : 'Open'
                         : membership.lifecycle === 'suspended'
                           ? 'Suspended'

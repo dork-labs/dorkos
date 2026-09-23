@@ -68,6 +68,7 @@ describe('first-install eligibility', () => {
     await pool.query(
       `INSERT INTO "user"(id,name,email) VALUES('operator','Operator','operator@bootstrap.test')`
     );
+    expect((await preflight()).status).toBe(409);
     await pool.query("INSERT INTO host_operators(user_id) VALUES('operator')");
     expect((await preflight()).status).toBe(409);
     expect(

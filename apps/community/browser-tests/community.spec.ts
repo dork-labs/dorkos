@@ -66,6 +66,7 @@ test.beforeAll(async () => {
     '/join',
     '/pairing',
     '/c/:communityId',
+    '/c/:communityId/join',
     '/c/:communityId/deletion',
   ])
     app.get(
@@ -129,6 +130,10 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await expect(ownerPage.getByText('No communities are available.')).toHaveCount(0);
     await ownerPage.getByRole('button', { name: 'Try again' }).click();
     await expect(ownerPage.getByRole('heading', { name: 'Communities' })).toBeVisible();
+    await expect(ownerPage.getByRole('link', { name: 'Deploy a new host' })).toHaveAttribute(
+      'href',
+      'https://dorkos.ai/docs/self-hosting/deployment'
+    );
     await expect(ownerPage.getByLabel('Gathering Place community')).toContainText('Owner assigned');
     await expect(ownerPage.getByText('Community members')).toHaveCount(0);
     await ownerPage
@@ -177,7 +182,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await ownerPage.locator('#invite-channel').selectOption({ label: '#general' });
     await ownerPage.getByRole('button', { name: 'Create invite' }).click();
     const inviteLink = await ownerPage.getByLabel('One-time invite link').inputValue();
-    expect(inviteLink).toMatch(/\/c\/[0-9a-f-]+#invite=/u);
+    expect(inviteLink).toMatch(/\/c\/[0-9a-f-]+\/join#invite=/u);
     await memberPage.goto(inviteLink.replace('#invite=', '#token='));
     await expect(memberPage.getByRole('heading', { name: 'Come on in.' })).toBeVisible();
     await memberPage.screenshot({ path: '/tmp/community-join-mobile.png', fullPage: true });
@@ -188,6 +193,11 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await memberPage.getByLabel('Email').fill('maya@ui.test');
     await memberPage.getByLabel('Password').fill('password1234');
     await memberPage.getByRole('button', { name: 'Join community' }).click();
+    await expect(
+      memberPage.getByRole('heading', { name: 'You’re in Gathering Place.' })
+    ).toBeVisible();
+    await expect(memberPage.getByText('Connect this DorkOS installation')).toBeVisible();
+    await memberPage.getByRole('button', { name: 'Open community' }).click();
     await expect(memberPage.getByRole('button', { name: 'Open channel navigation' })).toBeVisible({
       timeout: 15000,
     });
@@ -384,6 +394,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await observerPage.getByLabel('Email').fill('niko@ui.test');
     await observerPage.getByLabel('Password').fill('password1234');
     await observerPage.getByRole('button', { name: 'Join community' }).click();
+    await observerPage.getByRole('button', { name: 'Open community' }).click();
     await expect(observerPage.getByRole('button', { name: 'Join channel' })).toBeVisible();
     expect(
       await observerPage.evaluate(
@@ -633,6 +644,8 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     const exportDownload = memberPage.waitForEvent('download');
     await memberPage.getByRole('button', { name: 'Export my data' }).click();
     expect((await exportDownload).suggestedFilename()).toBe('my-community-data.zip');
+    await memberPage.getByLabel('Enter Gathering Place').fill('Gathering Place');
+    await memberPage.getByLabel('Confirm password').fill('password1234');
     memberPage.once('dialog', (dialog) => void dialog.accept());
     await memberPage.getByRole('button', { name: 'Leave community' }).click();
     await expect(memberPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
@@ -672,6 +685,8 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await expect(ownerPage.getByRole('heading', { name: 'Export' })).toHaveCount(0);
     await expect(ownerPage.getByRole('heading', { name: 'Danger zone' })).toHaveCount(0);
     await ownerPage.getByRole('button', { name: 'Account' }).click();
+    await ownerPage.getByLabel('Enter Gathering Place').fill('Gathering Place');
+    await ownerPage.getByLabel('Confirm password').fill('password1234');
     ownerPage.once('dialog', (dialog) => void dialog.accept());
     await ownerPage.getByRole('button', { name: 'Leave community' }).click();
     await expect(ownerPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
@@ -732,9 +747,8 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       memberPage.getByText('This account does not have a community membership yet.')
     ).toBeVisible();
 
-    // Resume the stored invitation after an OAuth callback to the host root.
-    // The auth session is real; only the external OAuth exchange is represented by its saved state.
-    const createdInvite = await observerPage.evaluate(async (communityId) => {
+    // An OAuth handoff uses the tenant-bound pending admission, never the raw invite.
+    const oauthInvite = await observerPage.evaluate(async (communityId) => {
       const response = await fetch(`/api/v1/communities/${communityId}/invites`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -743,32 +757,32 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       if (!response.ok) throw new Error(`invite creation: ${response.status}`);
       return response.json() as Promise<{ token: string }>;
     }, ids.communityId);
-    await ownerPage.route('**/auth-options', (route) =>
-      route.fulfill({
-        json: { google: true, github: false },
-      })
-    );
-    let callbackUrl = '';
-    await ownerPage.route('**/api/auth/sign-in/social', async (route) => {
-      callbackUrl = (route.request().postDataJSON() as { callbackURL: string }).callbackURL;
-      // No external OAuth request: keep the existing real session for callback recovery.
-      await route.fulfill({ status: 400, json: { message: 'Test-owned OAuth boundary' } });
-    });
-    await ownerPage.goto(
-      `${baseUrl}/c/${ids.communityId}#invite=${encodeURIComponent(createdInvite.token)}`
-    );
-    await ownerPage.getByRole('button', { name: 'Continue', exact: true }).click();
-    await ownerPage.getByRole('button', { name: 'Continue with Google' }).click();
-    await expect.poll(() => callbackUrl).toBe(`${baseUrl}/c/${ids.communityId}`);
-    await expect
-      .poll(() => ownerPage.evaluate(() => sessionStorage.getItem('communityPendingInvitePath')))
-      .toBe(`/c/${ids.communityId}`);
-    await ownerPage.goto(baseUrl);
-    await expect(ownerPage).toHaveURL(`${baseUrl}/c/${ids.communityId}`);
-    await expect(ownerPage.getByText('Gathering Place')).toBeVisible();
-    await expect
-      .poll(() => ownerPage.evaluate(() => sessionStorage.getItem('communityPendingInvite')))
-      .toBeNull();
+    const oauth = await browser.newContext();
+    try {
+      const oauthPage = await oauth.newPage();
+      await oauthPage.route('**/auth-options', (route) =>
+        route.fulfill({ json: { google: true, github: false } })
+      );
+      let callbackUrl = '';
+      await oauthPage.route('**/api/auth/sign-in/social', async (route) => {
+        const payload = JSON.parse(route.request().postData() ?? '{}') as { callbackURL?: string };
+        callbackUrl = payload.callbackURL ?? '';
+        await route.fulfill({ status: 400, json: { message: 'Test-owned OAuth boundary' } });
+      });
+      await oauthPage.goto(
+        `${baseUrl}/c/${ids.communityId}/join#invite=${encodeURIComponent(oauthInvite.token)}`
+      );
+      await oauthPage.getByRole('button', { name: 'Continue', exact: true }).click();
+      await expect(oauthPage.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+      await expect.poll(() => oauthPage.evaluate(() => location.hash)).toBe('');
+      await expect
+        .poll(() => oauthPage.evaluate(() => Object.keys(sessionStorage)))
+        .not.toContain('communityPendingInvite');
+      await oauthPage.getByRole('button', { name: 'Continue with Google' }).click();
+      await expect.poll(() => callbackUrl).toBe(`${baseUrl}/c/${ids.communityId}/join`);
+    } finally {
+      await oauth.close();
+    }
 
     await observerPage.getByRole('button', { name: 'Switch community' }).click();
     await expect(observerPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
@@ -829,10 +843,25 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     );
     await expect(finalArchive.getByLabel('Password')).toHaveValue('password1234');
     await finalArchive.getByRole('button', { name: 'Archive community' }).click();
-    await expect(observerPage.getByRole('heading', { name: 'Archived' })).toBeVisible();
+    await expect(
+      observerPage.getByRole('heading', { name: 'Archived', exact: true })
+    ).toBeVisible();
     await expect(observerPage.getByText('Fresh read-only connections are available')).toBeVisible();
-    await observerPage.reload();
+    await observerPage.getByRole('button', { name: 'Switch community' }).click();
+    await expect(observerPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
+    const archivedChoice = observerPage.getByRole('button', { name: /Gathering Place/ });
+    await expect(archivedChoice).toContainText('Read history');
+    const archivedStreamRequests: string[] = [];
+    observerPage.on('request', (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path.endsWith('/events')) archivedStreamRequests.push(path);
+    });
+    await archivedChoice.click();
     await expect(observerPage).toHaveURL(`${baseUrl}/c/${ids.communityId}`);
+    await expect(observerPage.getByText('Archived history is read-only.')).toBeVisible();
+    await expect(observerPage.getByRole('textbox', { name: /Message/ })).toHaveCount(0);
+    await expect(observerPage.getByLabel('Add files')).toHaveCount(0);
+    expect(archivedStreamRequests).toEqual([]);
     await observerPage.getByRole('button', { name: 'Manage' }).click();
     await observerPage
       .getByRole('navigation', { name: 'Settings sections' })
@@ -901,7 +930,9 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     );
     await expect(cancelDeletion.getByLabel('Password')).toHaveValue('password1234');
     await cancelDeletion.getByRole('button', { name: 'Cancel deletion' }).click();
-    await expect(observerPage.getByRole('heading', { name: 'Archived' })).toBeVisible();
+    await expect(
+      observerPage.getByRole('heading', { name: 'Archived', exact: true })
+    ).toBeVisible();
 
     await memberPage.goto(`${baseUrl}/c/${ids.communityId}/deletion`);
     await expect(memberPage.getByRole('alert')).toContainText(

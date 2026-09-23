@@ -33,7 +33,7 @@ export const CommunityWireHandleSchema = z.string().regex(HANDLE_PATTERN);
 export const COMMUNITY_API_V1_ROUTES = {
   community: '/api/v1/community',
   bootstrapPreflight: '/api/v1/bootstrap/preflight',
-  bootstrapClaim: '/api/v1/bootstrap/claim',
+  bootstrapComplete: '/api/v1/bootstrap/complete',
   ownerClaimPreflight: '/api/v1/owner-claims/preflight',
   ownerClaim: '/api/v1/owner-claims/claim',
   hostCommunities: '/api/v1/host/communities',
@@ -41,6 +41,8 @@ export const COMMUNITY_API_V1_ROUTES = {
   memberships: '/api/v1/memberships',
   invites: '/api/v1/invites',
   invitePreview: '/api/v1/invites/preview',
+  invitePreflight: '/api/v1/invites/preflight',
+  inviteBind: '/api/v1/invites/bind',
   inviteRedeem: '/api/v1/invites/redeem',
   pairingStart: '/api/v1/pairings/start',
   pairingApprove: '/api/v1/pairings/approve',
@@ -89,10 +91,20 @@ export const CommunityWireBootstrapPreflightResponseSchema = z.strictObject({
   granted: z.boolean(),
   expiresAt: timestamp,
 });
-/** Owner claim requires the secret again; grant identity stays in an HTTP-only cookie. */
-export const CommunityWireBootstrapClaimRequestSchema = z.strictObject({
+/** First-install setup creates the host account and initial tenant in one transaction. */
+export const CommunityWireBootstrapCompleteRequestSchema = z.strictObject({
   secret: id,
-  name: z.string().min(1),
+  accountName: z.string().trim().min(1).max(128),
+  email: z.email(),
+  password: z.string().min(8).max(128),
+  communityName: z.string().trim().min(1).max(120),
+  channelName: z.string().trim().min(1).max(80),
+});
+/** First-install setup returns only public tenant identities; sign-in remains a separate step. */
+export const CommunityWireBootstrapCompleteResponseSchema = z.strictObject({
+  community: CommunityWireCommunitySchema,
+  memberId: id,
+  channelId: id,
 });
 /** Owner claim yields public community and member identity. */
 export const CommunityWireBootstrapClaimResponseSchema = z.strictObject({
@@ -374,9 +386,13 @@ export const CommunityWireInviteCreateResponseSchema = z.strictObject({
 export const CommunityWireInviteListResponseSchema = z.strictObject({
   invites: z.array(CommunityWireInviteSchema),
 });
-/** Invite preflight only confirms admission eligibility. */
+/** Invite preflight exchanges the fragment for a cookie-bound admission. */
 export const CommunityWireInvitePreflightResponseSchema = z.strictObject({
   granted: z.literal(true),
+  expiresAt: timestamp,
+  communityName: z.string().min(1),
+  inviterName: z.string().min(1),
+  channelName: z.string().nullable(),
 });
 /** Preview and redeem consume a fragment token through same-origin POST. */
 export const CommunityWireInviteTokenRequestSchema = z.strictObject({ token: id });
@@ -386,6 +402,10 @@ export const CommunityWireInvitePreviewResponseSchema = z.strictObject({
   inviterName: z.string().min(1),
   channelName: z.string().nullable(),
 });
+/** Binding attaches a pending admission to exactly one signed-in account. */
+export const CommunityWireInviteBindResponseSchema = z.strictObject({ bound: z.literal(true) });
+/** Redemption needs no reusable invite value after preflight. */
+export const CommunityWireInviteRedeemRequestSchema = z.strictObject({});
 /** An invite redemption receipt contains admitted member identity. */
 export const CommunityWireInviteRedeemResponseSchema = z.strictObject({ memberId: id });
 
@@ -518,6 +538,8 @@ export const CommunityWireGrantSchema = z.strictObject({
 export const CommunityWireGrantListResponseSchema = z.strictObject({
   grants: z.array(CommunityWireGrantSchema),
 });
+/** Disconnecting every installation requires current password confirmation. */
+export const CommunityWireDisconnectAllRequestSchema = z.strictObject({ password: id });
 
 /** An enrolled agent identity and owner bond, without a credential. */
 export const CommunityWireAgentSchema = z.strictObject({
@@ -550,6 +572,11 @@ export const CommunityWireOwnerTransferRequestSchema = z.strictObject({
   successorMemberId: id,
   password: id,
   lifecycleVersion: z.int().positive(),
+});
+/** Leaving confirms both account control and the exact selected community. */
+export const CommunityWireMemberLeaveRequestSchema = z.strictObject({
+  password: id,
+  communityName: z.string().min(1),
 });
 /** Transfer receipt with the new current owner identity. */
 export const CommunityWireOwnerTransferResponseSchema = z.strictObject({

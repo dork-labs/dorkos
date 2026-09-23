@@ -16,6 +16,7 @@ import { discardManagedBlob, FileSystemBlobStore } from '../storage/index.js';
 import { MANAGED_BLOB_RESERVATION_TTL_MS } from '../storage/managed-blobs.js';
 import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
 import { hashSecret } from '../security.js';
+import { bootstrapFirstHost, seedCredentialAccount } from './bootstrap-test-helper.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for attachment HTTP tests');
@@ -111,34 +112,25 @@ beforeAll(async () => {
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('No HTTP address');
   baseUrl = `http://localhost:${address.port}`;
-  const preflight = await post(
-    '/api/v1/bootstrap/preflight',
-    { secret: config.bootstrapSecret },
+  const setup = await bootstrapFirstHost(post, {
+    secret: config.bootstrapSecret,
+    accountName: 'Owner',
+    email: 'files-owner@example.test',
+    password: 'password1234',
+    communityName: 'Files',
+  });
+  ownerCookie = setup.cookie;
+  await seedCredentialAccount(pool, {
+    name: 'Bob',
+    email: 'files-bob@example.test',
+    password: 'password1234',
+  });
+  const bobSignin = await post(
+    '/api/auth/sign-in/email',
+    { email: 'files-bob@example.test', password: 'password1234' },
     ''
   );
-  expect(preflight.status).toBe(200);
-  const grant = cookieOf(preflight);
-  const ownerSignup = await post(
-    '/api/auth/sign-up/email',
-    { name: 'Owner', email: 'files-owner@example.test', password: 'password1234' },
-    grant
-  );
-  ownerCookie = `${grant}; ${cookieOf(ownerSignup)}`;
-  const bobSignup = await post(
-    '/api/auth/sign-up/email',
-    { name: 'Bob', email: 'files-bob@example.test', password: 'password1234' },
-    grant
-  );
-  bobCookie = `${grant}; ${cookieOf(bobSignup)}`;
-  expect(
-    (
-      await post(
-        '/api/v1/bootstrap/claim',
-        { secret: config.bootstrapSecret, name: 'Files' },
-        ownerCookie
-      )
-    ).status
-  ).toBe(200);
+  bobCookie = cookieOf(bobSignin);
   const owner = await pool.query<{ id: string; community_id: string }>(
     "SELECT id,community_id FROM members WHERE role='owner'"
   );
@@ -1293,8 +1285,24 @@ describe('private archives and recoverable leave', () => {
   });
 
   it('requires ownership transfer before leave, then revokes the former member’s session', async () => {
-    expect((await post('/api/v1/me/leave', {}, ownerCookie)).status).toBe(403);
-    expect((await post('/api/v1/me/leave', {}, bobCookie)).status).toBe(204);
+    expect(
+      (
+        await post(
+          '/api/v1/me/leave',
+          { password: 'password1234', communityName: 'Files' },
+          ownerCookie
+        )
+      ).status
+    ).toBe(403);
+    expect(
+      (
+        await post(
+          '/api/v1/me/leave',
+          { password: 'password1234', communityName: 'Files' },
+          bobCookie
+        )
+      ).status
+    ).toBe(204);
     expect((await post('/api/v1/me/export', {}, bobCookie)).status).toBe(403);
     expect(
       (await request(`/api/v1/channels/${channelId}/entries`, { headers: { cookie: ownerCookie } }))

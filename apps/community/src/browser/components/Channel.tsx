@@ -6,13 +6,21 @@ import type { Channel as ChannelType, Entry } from '../types.js';
 
 type Page = { entries: Entry[]; nextCursor: string | null };
 type Post = { entry: Entry; cursor: string };
-type Props = { channel: ChannelType; onChanged: () => void };
+type Props = { channel: ChannelType; onChanged: () => void; readOnly?: boolean };
 function mergeEntries(previous: Entry[], incoming: Entry[]) {
   const byId = new Map(previous.map((entry) => [entry.id, entry]));
   for (const entry of incoming) byId.set(entry.id, entry);
   return [...byId.values()].sort((a, b) => a.seq - b.seq);
 }
-function EntryCard({ entry, onThread }: { entry: Entry; onThread?: (entry: Entry) => void }) {
+function EntryCard({
+  entry,
+  onThread,
+  threadReadOnly = false,
+}: {
+  entry: Entry;
+  onThread?: (entry: Entry) => void;
+  threadReadOnly?: boolean;
+}) {
   return (
     <article className="entry">
       <div className="avatar" aria-hidden="true">
@@ -42,7 +50,7 @@ function EntryCard({ entry, onThread }: { entry: Entry; onThread?: (entry: Entry
         ))}
         {onThread && (
           <button className="button ghost small mt-1" type="button" onClick={() => onThread(entry)}>
-            <MessageCircle size={14} /> Reply in thread
+            <MessageCircle size={14} /> {threadReadOnly ? 'View thread' : 'Reply in thread'}
           </button>
         )}
       </div>
@@ -51,7 +59,7 @@ function EntryCard({ entry, onThread }: { entry: Entry; onThread?: (entry: Entry
 }
 
 /** Render channel history, live events, threads and composition. */
-export function ChannelView({ channel, onChanged }: Props) {
+export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [thread, setThread] = useState<Entry | null>(null);
   const [replies, setReplies] = useState<Entry[]>([]);
@@ -116,7 +124,7 @@ export function ChannelView({ channel, onChanged }: Props) {
     else setLoading(false);
   }, [load, channel.joined]);
   useEffect(() => {
-    if (!channel.joined) return;
+    if (!channel.joined || readOnly) return;
     const source = new EventSource(tenantApiPath(`/api/v1/channels/${channel.id}/events`));
     const receive = (raw: MessageEvent) => {
       try {
@@ -163,7 +171,7 @@ export function ChannelView({ channel, onChanged }: Props) {
       setLivePaused(true);
     };
     return () => source.close();
-  }, [channel.id, channel.joined, onChanged]);
+  }, [channel.id, channel.joined, onChanged, readOnly]);
   useEffect(() => {
     if (!threadId) return;
     let active = true;
@@ -290,9 +298,15 @@ export function ChannelView({ channel, onChanged }: Props) {
           <p className="muted">
             {channel.description ?? 'Join to read and take part in this channel.'}
           </p>
-          <button className="button primary" onClick={() => void join()}>
-            Join channel <ArrowUp size={16} />
-          </button>
+          {readOnly ? (
+            <p className="notice mb-0">
+              Archived history is available only for channels you joined.
+            </p>
+          ) : (
+            <button className="button primary" onClick={() => void join()}>
+              Join channel <ArrowUp size={16} />
+            </button>
+          )}
           {error && (
             <div className="notice error mt-4" role="alert">
               {error}
@@ -325,7 +339,12 @@ export function ChannelView({ channel, onChanged }: Props) {
               </div>
             )}
             {entries.map((entry) => (
-              <EntryCard key={entry.id} entry={entry} onThread={setThread} />
+              <EntryCard
+                key={entry.id}
+                entry={entry}
+                onThread={setThread}
+                threadReadOnly={readOnly}
+              />
             ))}
           </>
         )}
@@ -362,82 +381,90 @@ export function ChannelView({ channel, onChanged }: Props) {
           </div>
         )}
       </div>
-      <form
-        className="composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit();
-        }}
-      >
-        <label htmlFor="message" className="sr-only">
-          Message #{channel.name}
-        </label>
-        <textarea
-          id="message"
-          placeholder={channel.archived ? 'This channel is archived' : `Message #${channel.name}`}
-          disabled={channel.archived || busy}
-          value={text}
-          onChange={(event) => {
-            setText(event.target.value);
-            if (pendingKey) setPendingKey(null);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              void submit();
-            }
-          }}
-        />
-        {files.length > 0 && (
-          <div className="row mt-2">
-            {files.map((file, index) => (
-              <span key={`${file.name}:${index}`} className="badge">
-                {file.name}{' '}
-                <button
-                  type="button"
-                  aria-label={`Remove ${file.name}`}
-                  onClick={() => {
-                    setFiles((old) => old.filter((_, i) => i !== index));
-                    if (file === rejectedFile) {
-                      setRejectedFile(null);
-                      setErrorAction(null);
-                    }
-                  }}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-        {progress !== null && (
-          <p role="status" className="small muted">
-            Uploading {progress}%
+      {readOnly ? (
+        <div className="composer" role="status">
+          <p className="mb-0">
+            Archived history is read-only. Restore the community to post again.
           </p>
-        )}
-        <div className="composer-foot">
-          <label className="button" aria-label="Add files">
-            <Paperclip size={17} /> Attach
-            <input
-              type="file"
-              multiple
-              className="sr-only"
-              disabled={busy || channel.archived}
-              onChange={(event) => {
-                chooseFiles(event.target.files);
-                event.target.value = '';
-              }}
-            />
-          </label>
-          <button
-            className="button primary"
-            disabled={busy || channel.archived || (!text.trim() && !files.length)}
-          >
-            {busy ? 'Sending…' : 'Send'}
-            <ArrowUp size={17} />
-          </button>
         </div>
-      </form>
+      ) : (
+        <form
+          className="composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          <label htmlFor="message" className="sr-only">
+            Message #{channel.name}
+          </label>
+          <textarea
+            id="message"
+            placeholder={channel.archived ? 'This channel is archived' : `Message #${channel.name}`}
+            disabled={channel.archived || busy}
+            value={text}
+            onChange={(event) => {
+              setText(event.target.value);
+              if (pendingKey) setPendingKey(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                void submit();
+              }
+            }}
+          />
+          {files.length > 0 && (
+            <div className="row mt-2">
+              {files.map((file, index) => (
+                <span key={`${file.name}:${index}`} className="badge">
+                  {file.name}{' '}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${file.name}`}
+                    onClick={() => {
+                      setFiles((old) => old.filter((_, i) => i !== index));
+                      if (file === rejectedFile) {
+                        setRejectedFile(null);
+                        setErrorAction(null);
+                      }
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {progress !== null && (
+            <p role="status" className="small muted">
+              Uploading {progress}%
+            </p>
+          )}
+          <div className="composer-foot">
+            <label className="button" aria-label="Add files">
+              <Paperclip size={17} /> Attach
+              <input
+                type="file"
+                multiple
+                className="sr-only"
+                disabled={busy || channel.archived}
+                onChange={(event) => {
+                  chooseFiles(event.target.files);
+                  event.target.value = '';
+                }}
+              />
+            </label>
+            <button
+              className="button primary"
+              disabled={busy || channel.archived || (!text.trim() && !files.length)}
+            >
+              {busy ? 'Sending…' : 'Send'}
+              <ArrowUp size={17} />
+            </button>
+          </div>
+        </form>
+      )}
       {thread && (
         <>
           <button
@@ -471,33 +498,39 @@ export function ChannelView({ channel, onChanged }: Props) {
               ))}
               {replies.length === 0 && <p className="muted small">No replies yet.</p>}
             </div>
-            <form
-              className="composer"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void submit();
-              }}
-            >
-              <label htmlFor="reply" className="sr-only">
-                Reply in thread
-              </label>
-              <textarea
-                id="reply"
-                placeholder="Reply in thread"
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-                disabled={busy || channel.archived}
-              />
-              <div className="composer-foot">
-                <span className="small muted">Replies stay in this thread.</span>
-                <button
-                  className="button primary"
-                  disabled={busy || !text.trim() || channel.archived}
-                >
-                  Reply <ArrowUp size={16} />
-                </button>
+            {readOnly ? (
+              <div className="composer" role="status">
+                <p className="mb-0">Archived threads are read-only.</p>
               </div>
-            </form>
+            ) : (
+              <form
+                className="composer"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submit();
+                }}
+              >
+                <label htmlFor="reply" className="sr-only">
+                  Reply in thread
+                </label>
+                <textarea
+                  id="reply"
+                  placeholder="Reply in thread"
+                  value={text}
+                  onChange={(event) => setText(event.target.value)}
+                  disabled={busy || channel.archived}
+                />
+                <div className="composer-foot">
+                  <span className="small muted">Replies stay in this thread.</span>
+                  <button
+                    className="button primary"
+                    disabled={busy || !text.trim() || channel.archived}
+                  >
+                    Reply <ArrowUp size={16} />
+                  </button>
+                </div>
+              </form>
+            )}
           </aside>
         </>
       )}

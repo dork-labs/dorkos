@@ -8,6 +8,7 @@ import { migrate } from './migrate.js';
 import { createBlobStore } from './storage/index.js';
 import { sweepExpiredAttachments } from './routes/attachments.js';
 import { sweepExpiredExports } from './routes/exports.js';
+import { sweepExpiredAdmissions } from './routes/invites.js';
 import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './deletion-worker.js';
 
@@ -50,6 +51,12 @@ const cleanup = setInterval(() => {
   void sweepExpiredExports(pool, blobStore).catch((error: unknown) => {
     console.error(
       'Community export cleanup unavailable',
+      error instanceof Error ? error.name : 'unknown'
+    );
+  });
+  void sweepExpiredAdmissions(pool).catch((error: unknown) => {
+    console.error(
+      'Community admission cleanup unavailable',
       error instanceof Error ? error.name : 'unknown'
     );
   });
