@@ -19,6 +19,16 @@ import { pluginRootText } from '../plan/installed-projector.js';
 import { getActionContent } from '../plan/content-map.js';
 import type { ProjectionPlan } from '../plan/types.js';
 
+/**
+ * A settings command with DorkOS's plugin-env prefix removed (DOR-2245), so a
+ * test reads the package's own command. A user hook never carries the prefix.
+ */
+function withoutEnvPrefix(command: string): string {
+  return command.startsWith('export CLAUDE_PLUGIN_ROOT=')
+    ? command.slice(command.indexOf('; ') + 2)
+    : command;
+}
+
 let repo = '';
 let dorkHome = '';
 afterEach(() => {
@@ -644,7 +654,7 @@ describe('installed-plugin projection to the external Claude Code CLI', () => {
     const merged = JSON.parse(readFileSync(settingsPath, 'utf8'));
     expect(merged.permissions).toEqual({ allow: ['Bash'] });
     const stopCommands = merged.hooks.Stop.flatMap((g: { hooks: { command: string }[] }) =>
-      g.hooks.map((h) => h.command)
+      g.hooks.map((h) => withoutEnvPrefix(h.command))
     );
     expect(stopCommands).toContain('echo user-owned');
     expect(stopCommands).toContain(
@@ -665,7 +675,7 @@ describe('installed-plugin projection to the external Claude Code CLI', () => {
     const afterSweep = JSON.parse(readFileSync(settingsPath, 'utf8'));
     expect(afterSweep.permissions).toEqual({ allow: ['Bash'] });
     const afterStop = afterSweep.hooks.Stop.flatMap((g: { hooks: { command: string }[] }) =>
-      g.hooks.map((h) => h.command)
+      g.hooks.map((h) => withoutEnvPrefix(h.command))
     );
     expect(afterStop).toEqual(['echo user-owned']);
   });
@@ -844,7 +854,7 @@ function mergedSettingsCommands(plan: ProjectionPlan): string[] {
   if (!content) return [];
   const hooks = JSON.parse(content) as Record<string, { hooks?: { command: string }[] }[]>;
   return Object.values(hooks).flatMap((groups) =>
-    groups.flatMap((group) => (group.hooks ?? []).map((h) => h.command))
+    groups.flatMap((group) => (group.hooks ?? []).map((h) => withoutEnvPrefix(h.command)))
   );
 }
 
@@ -868,7 +878,7 @@ describe('installed-plugin projection — a malformed hooks.json cannot take the
     // Codex hooks file alike; the unreadable event contributes nothing.
     const settings = JSON.parse(readFileSync(join(repo, '.claude', 'settings.local.json'), 'utf8'));
     const stopCommands = settings.hooks.Stop.flatMap((g: { hooks: { command: string }[] }) =>
-      g.hooks.map((h) => h.command)
+      g.hooks.map((h) => withoutEnvPrefix(h.command))
     );
     expect(stopCommands).toEqual(expect.arrayContaining(['good.sh', 'clean.sh']));
     expect(settings.hooks.PreToolUse).toBeUndefined();
