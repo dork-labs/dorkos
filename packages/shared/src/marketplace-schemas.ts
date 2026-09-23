@@ -664,6 +664,12 @@ export interface InstalledPackage {
    * package is on disk but incomplete, and name the command that fixes it.
    */
   dependencyWarnings?: string[];
+  /**
+   * The install folder is a symbolic link to a developer's working copy.
+   * Present, and `true`, only then. Such an install is never updated in place:
+   * its update check is `unknown` and says to update the source instead.
+   */
+  linked?: true;
 }
 
 // ---------------------------------------------------------------------------
