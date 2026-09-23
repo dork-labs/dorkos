@@ -172,6 +172,8 @@ Independent deployment does not mean no relationship with Cloud. The [public hos
 
 The published move contract sends the archive to a Community-server upload target; the Cloud control plane does not carry the file. The planned local-server relay keeps the instance credential and move upload token out of browser responses. A move copies history; it does not transfer live logins or make the old host stop serving. See [the public contract](../packages/cloud-api/README.md#hosted-communities) for one-time credentials, idempotency and forward-compatible states. These are contract promises, not a claim that the complete move flow ships today.
 
+Since this snapshot, `c8fc697ad` (#2037) landed the local app's start/move dialogs and the `/api/cloud/communities/*` relay (`apps/server/src/routes/cloud-communities.ts`). They stay unannounced until the hosted service serves those routes, so the table above still describes what a person can rely on.
+
 ### Runtime tools and room publication
 
 [![Runtime execution and authenticated tool access are distinct paths](../apps/site/public/diagrams/architecture/runtime-tools.svg)](../apps/site/public/diagrams/architecture/runtime-tools.svg)

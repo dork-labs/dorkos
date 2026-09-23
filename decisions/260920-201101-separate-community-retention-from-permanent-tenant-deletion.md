@@ -1,7 +1,7 @@
 ---
 id: 260920-201101
 title: Separate community retention from permanent tenant deletion
-status: proposed
+status: accepted
 created: 2026-09-20
 spec: community-administration-contract
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted.
 
 ## Context
 
