@@ -747,6 +747,23 @@ describe('SidebarHeaderBlock', () => {
     composer.remove();
   });
 
+  it('returns focus to the trigger when the message box is gone by the time the menu closes', async () => {
+    renderBlock();
+    await act(async () => undefined);
+    const composer = document.createElement('div');
+    composer.setAttribute('contenteditable', 'true');
+    composer.tabIndex = 0;
+    document.body.append(composer);
+    composer.focus();
+    fireEvent.keyDown(composer, { key: 'K', metaKey: true, shiftKey: true });
+    expect(await screen.findByText('Switch context')).toBeVisible();
+    // The page under the menu changes and the message box goes away.
+    composer.remove();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByText('Switch context')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('sidebar-header-block')).toHaveFocus());
+  });
+
   it('leaves a key that is still composing text to the input method', async () => {
     renderBlock();
     await act(async () => undefined);
