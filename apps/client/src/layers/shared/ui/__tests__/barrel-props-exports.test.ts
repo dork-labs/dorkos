@@ -119,11 +119,10 @@ describe('shared/ui variant tables', () => {
       }
     }
 
-    // Fourteen variant tables exist today, eleven of which were already on the
-    // barrel; DOR-1871 published the last three. A floor under fourteen catches
-    // the walk finding nothing without pinning a count that a new primitive
-    // would have to bump.
-    expect(subjects).toBeGreaterThanOrEqual(14);
+    // Button's and Field's variant tables now live in @dork-labs/ui and reach
+    // this barrel through leaf re-exports. Keep a floor for local tables so
+    // the source walk cannot pass vacuously.
+    expect(subjects).toBeGreaterThanOrEqual(12);
     expect(missing).toEqual([]);
   });
 });

@@ -71,22 +71,22 @@ describe('PlaygroundSearch', () => {
 
   it('renders all three page group headings', () => {
     renderSearch();
-    expect(screen.getByText('Design Tokens')).toBeInTheDocument();
+    expect(screen.getByText('Client Tokens')).toBeInTheDocument();
     expect(screen.getByText('Components')).toBeInTheDocument();
     expect(screen.getByText('Conversation')).toBeInTheDocument();
   });
 
   it('renders sections from the tokens page', () => {
     renderSearch();
-    expect(screen.getByText('Semantic Colors')).toBeInTheDocument();
+    expect(screen.getByText('Client Surface Color')).toBeInTheDocument();
     expect(screen.getByText('Typography')).toBeInTheDocument();
     expect(screen.getByText('Spacing')).toBeInTheDocument();
   });
 
   it('renders sections from the components page', () => {
     renderSearch();
-    expect(screen.getByText('Button')).toBeInTheDocument();
     expect(screen.getByText('Dialog')).toBeInTheDocument();
+    expect(screen.getByText('AlertDialog')).toBeInTheDocument();
   });
 
   it('renders sections from the conversation page', () => {
@@ -98,16 +98,16 @@ describe('PlaygroundSearch', () => {
   it('calls onSelect with the section when a result is clicked', () => {
     const { onSelect } = renderSearch();
 
-    fireEvent.click(screen.getByText('Semantic Colors'));
+    fireEvent.click(screen.getByText('Client Surface Color'));
     expect(onSelect).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'semantic-colors', page: 'tokens' })
+      expect.objectContaining({ id: 'client-surface-color', page: 'tokens' })
     );
   });
 
   it('calls onOpenChange(false) after selecting a section', () => {
     const { onOpenChange } = renderSearch();
 
-    fireEvent.click(screen.getByText('Semantic Colors'));
+    fireEvent.click(screen.getByText('Client Surface Color'));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -128,6 +128,6 @@ describe('PlaygroundSearch', () => {
 
     expect(screen.getByText('Typography')).toBeInTheDocument();
     // Unrelated sections should be filtered out
-    expect(screen.queryByText('Semantic Colors')).not.toBeInTheDocument();
+    expect(screen.queryByText('Client Surface Color')).not.toBeInTheDocument();
   });
 });

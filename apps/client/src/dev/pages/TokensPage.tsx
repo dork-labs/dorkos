@@ -3,7 +3,6 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import {
-  Button,
   STATUS_TONE_BORDER_LEFT,
   STATUS_TONE_DOT,
   STATUS_TONE_SURFACE,
@@ -18,23 +17,6 @@ interface ColorToken {
   bg: string;
   border?: boolean;
 }
-
-const SEMANTIC_COLORS: ColorToken[] = [
-  { name: 'background', bg: 'bg-background', border: true },
-  { name: 'foreground', bg: 'bg-foreground' },
-  { name: 'card', bg: 'bg-card', border: true },
-  { name: 'popover', bg: 'bg-popover', border: true },
-  { name: 'primary', bg: 'bg-primary' },
-  { name: 'secondary', bg: 'bg-secondary', border: true },
-  { name: 'muted', bg: 'bg-muted', border: true },
-  { name: 'accent', bg: 'bg-accent', border: true },
-  { name: 'destructive', bg: 'bg-destructive' },
-  { name: 'border', bg: 'bg-border' },
-  { name: 'input', bg: 'bg-input' },
-  { name: 'ring', bg: 'bg-ring' },
-  { name: 'brand', bg: 'bg-brand' },
-  { name: 'surface', bg: 'bg-surface', border: true },
-];
 
 const SIDEBAR_COLORS: ColorToken[] = [
   { name: 'sidebar', bg: 'bg-sidebar', border: true },
@@ -127,15 +109,15 @@ const SHADOWS = [
   { cls: 'shadow-xl', label: 'shadow-xl' },
 ] as const;
 
-/** Design tokens reference page — colors, typography, spacing, radii, shadows. */
+/** Client-local token reference; portable colors are shown in the shared UI catalog. */
 export function TokensPage() {
   return (
     <PlaygroundPageLayout
-      title="Design Tokens"
-      description="Visual reference for the design system's color, type, spacing, and shape tokens."
+      title="Client Tokens"
+      description="App-local status, sidebar, type, spacing, and shape tokens. Portable colors live in the shared UI catalog."
       sections={TOKENS_SECTIONS}
     >
-      <SemanticColorsSection />
+      <ClientColorsSection />
       <StatusColorsSection />
       <SidebarColorsSection />
       <TypographySection />
@@ -147,6 +129,19 @@ export function TokensPage() {
   );
 }
 
+function ClientColorsSection() {
+  return (
+    <PlaygroundSection
+      title="Client Surface Color"
+      description="The app's local surface token; portable colors live in the shared UI catalog."
+    >
+      <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-5">
+        <ColorSwatch name="surface" bg="bg-surface" border />
+      </div>
+    </PlaygroundSection>
+  );
+}
+
 function ColorSwatch({ name, bg, border }: { name: string; bg: string; border?: boolean }) {
   return (
     <div className="space-y-1.5">
@@ -154,21 +149,6 @@ function ColorSwatch({ name, bg, border }: { name: string; bg: string; border?: 
       <p className="text-foreground text-xs font-medium">{name}</p>
       <p className="text-muted-foreground text-3xs font-mono">--{name}</p>
     </div>
-  );
-}
-
-function SemanticColorsSection() {
-  return (
-    <PlaygroundSection
-      title="Semantic Colors"
-      description="Core palette tokens used throughout the UI."
-    >
-      <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-5">
-        {SEMANTIC_COLORS.map((c) => (
-          <ColorSwatch key={c.name} name={c.name} bg={c.bg} border={c.border} />
-        ))}
-      </div>
-    </PlaygroundSection>
   );
 }
 
@@ -351,8 +331,8 @@ function ShadowsSection() {
 function SizesSection() {
   return (
     <PlaygroundSection
-      title="Icon & Button Sizes"
-      description="Standard size tokens for icons and interactive elements."
+      title="Client Icon Sizes"
+      description="Client icon sizes follow its mobile scale setting."
     >
       <ShowcaseLabel>Icon Sizes</ShowcaseLabel>
       <div className="flex items-end gap-6">
@@ -366,22 +346,6 @@ function SizesSection() {
             <p className="text-muted-foreground text-3xs font-mono">{icon.label}</p>
           </div>
         ))}
-      </div>
-
-      <ShowcaseLabel>Button Heights</ShowcaseLabel>
-      <div className="flex items-end gap-4">
-        <div className="space-y-1.5 text-center">
-          <Button size="sm">Small</Button>
-          <p className="text-muted-foreground text-3xs font-mono">btn-sm</p>
-        </div>
-        <div className="space-y-1.5 text-center">
-          <Button size="md">Medium</Button>
-          <p className="text-muted-foreground text-3xs font-mono">btn-md</p>
-        </div>
-        <div className="space-y-1.5 text-center">
-          <Button size="lg">Large</Button>
-          <p className="text-muted-foreground text-3xs font-mono">btn-lg</p>
-        </div>
       </div>
     </PlaygroundSection>
   );

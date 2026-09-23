@@ -370,7 +370,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dorkos/shared build
+      - run: pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dorkos/shared build && pnpm --filter @dork-labs/ui build
       - name: Assert community HTTP paths against real Postgres
         env:
           COMMUNITY_TEST_DATABASE_URL: postgres://postgres:community-test-only@localhost:5432/community

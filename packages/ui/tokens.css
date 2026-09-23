@@ -1,0 +1,87 @@
+/* HSL channels are namespaced so a host can keep its own palette. */
+:root,
+.light {
+  --dui-background: 0 0% 98%;
+  --dui-foreground: 0 0% 9%;
+  --dui-card: 0 0% 100%;
+  --dui-card-foreground: 0 0% 9%;
+  --dui-popover: 0 0% 100%;
+  --dui-popover-foreground: 0 0% 9%;
+  --dui-primary: 0 0% 9%;
+  --dui-primary-foreground: 0 0% 98%;
+  --dui-secondary: 0 0% 92%;
+  --dui-secondary-foreground: 0 0% 9%;
+  --dui-muted: 0 0% 96%;
+  --dui-muted-foreground: 0 0% 32%;
+  --dui-accent: 0 0% 94%;
+  --dui-accent-foreground: 0 0% 9%;
+  --dui-destructive: 356 76% 45%;
+  --dui-destructive-foreground: 0 0% 98%;
+  --dui-border: 0 0% 83%;
+  --dui-input: 0 0% 83%;
+  --dui-ring: 24 90% 44%;
+  --dui-brand: 24 90% 44%;
+  --dui-brand-foreground: 0 0% 100%;
+  --dui-success: 152 69% 24%;
+  --dui-size-icon-sm: 1rem;
+}
+
+@media (max-width: 767px) {
+  :root,
+  .light,
+  .dark {
+    --dui-size-icon-sm: 1.25rem;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) {
+    --dui-background: 0 0% 4%;
+    --dui-foreground: 0 0% 87%;
+    --dui-card: 0 0% 4%;
+    --dui-card-foreground: 0 0% 87%;
+    --dui-popover: 0 0% 4%;
+    --dui-popover-foreground: 0 0% 87%;
+    --dui-primary: 0 0% 87%;
+    --dui-primary-foreground: 0 0% 9%;
+    --dui-secondary: 0 0% 14%;
+    --dui-secondary-foreground: 0 0% 87%;
+    --dui-muted: 0 0% 9%;
+    --dui-muted-foreground: 0 0% 64%;
+    --dui-accent: 0 0% 12%;
+    --dui-accent-foreground: 0 0% 87%;
+    --dui-destructive: 2.5 95% 62%;
+    --dui-destructive-foreground: 0 0% 98%;
+    --dui-border: 0 0% 25%;
+    --dui-input: 0 0% 25%;
+    --dui-ring: 24 88% 55%;
+    --dui-brand: 24 88% 55%;
+    --dui-brand-foreground: 0 0% 100%;
+    --dui-success: 152 69% 55%;
+  }
+}
+
+.dark {
+  --dui-background: 0 0% 4%;
+  --dui-foreground: 0 0% 87%;
+  --dui-card: 0 0% 4%;
+  --dui-card-foreground: 0 0% 87%;
+  --dui-popover: 0 0% 4%;
+  --dui-popover-foreground: 0 0% 87%;
+  --dui-primary: 0 0% 87%;
+  --dui-primary-foreground: 0 0% 9%;
+  --dui-secondary: 0 0% 14%;
+  --dui-secondary-foreground: 0 0% 87%;
+  --dui-muted: 0 0% 9%;
+  --dui-muted-foreground: 0 0% 64%;
+  --dui-accent: 0 0% 12%;
+  --dui-accent-foreground: 0 0% 87%;
+  --dui-destructive: 2.5 95% 62%;
+  --dui-destructive-foreground: 0 0% 98%;
+  --dui-border: 0 0% 25%;
+  --dui-input: 0 0% 25%;
+  --dui-ring: 24 88% 55%;
+  --dui-brand: 24 88% 55%;
+  --dui-brand-foreground: 0 0% 100%;
+  --dui-success: 152 69% 55%;
+}

@@ -60,8 +60,20 @@
       "guide": "design-system.md",
       "description": "Color palette, typography, spacing, motion specs",
       "patterns": [
+        "packages/ui/",
+        "apps/design-system/",
         "apps/client/src/index.css",
         "apps/client/src/layers/shared/ui/"
+      ]
+    },
+    {
+      "guide": "shared-ui.md",
+      "description": "Shared primitive ownership, CSS imports, catalog, packed proof and release",
+      "patterns": [
+        "packages/ui/",
+        "apps/design-system/",
+        "apps/client/src/layers/shared/ui/",
+        "apps/community/src/browser/components/Admission"
       ]
     },
     {
@@ -160,6 +172,7 @@
       "guide": "styling-theming.md",
       "description": "Tailwind v4, dark mode, Shadcn",
       "patterns": [
+        "packages/ui/",
         "index.css",
         "apps/client/src/layers/shared/ui/",
         "tailwind"

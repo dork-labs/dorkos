@@ -20,7 +20,7 @@ afterEach(() => cleanup());
  * actions is the one you came for. It used to be `bg-foreground`, the modal's
  * own hand-rolled recipe; the modal composes `Button` now.
  */
-const PRIMARY_CLASS = 'bg-primary';
+const PRIMARY_CLASS = 'bg-dui-primary';
 
 describe('LinkSafetyModal — the dialog claims it keeps (3.3)', () => {
   it('moves focus inside the dialog on open, instead of leaving it on the trigger behind it', () => {

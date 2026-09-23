@@ -12,6 +12,7 @@
     "test": "vite build && tsx scripts/check-plugin-defines.ts && vitest run"
   },
   "dependencies": {
+    "@dork-labs/ui": "workspace:*",
     "@dorkos/client": "workspace:*",
     "@dorkos/server": "workspace:*",
     "react": "^19.3.0",

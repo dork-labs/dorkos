@@ -140,7 +140,7 @@ async function renderPage(pageId: string): Promise<HTMLElement> {
     // component that throws in its own body — before it renders any section at
     // all — sails past it and lands in the router's `CatchBoundary` instead,
     // which renders its own error UI and swallows the throw. Verified by
-    // mutation: a `throw` at the top of `ButtonShowcases` left this file GREEN
+    // mutation: a `throw` at the top of `ControlShowcases` left this file GREEN
     // until this component existed, because the page still rendered *something*
     // (the router's error page) and produced no `data-showcase-error` node.
     //
