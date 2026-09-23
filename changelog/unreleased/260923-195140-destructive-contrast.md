@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(client): destructive red meets WCAG AA contrast in light and dark'
+  - 'fix(obsidian-plugin): bind dark: to the vault theme; tighten the fill guard'
+  - 'chore(changelog): fold the seeded review-fix fragment into the destructive-contrast entry'
 ---
 
 ### Fixed
