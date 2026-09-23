@@ -1,0 +1,8 @@
+{
+  "code": "entitlement_required",
+  "status": 403,
+  "title": "Your account has no room for another community.",
+  "detail": "The text the service chose to explain the refusal.",
+  "actionUrl": "https://account.example.invalid/communities",
+  "actionLabel": "Open your account"
+}

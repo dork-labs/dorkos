@@ -1,0 +1,18 @@
+{
+  "move": {
+    "moveId": "move_0001",
+    "communityId": "5d6e7f80-9102-4a3b-8c4d-5e6f70819203",
+    "communityUrl": "https://community.example.invalid/c/5d6e7f80-9102-4a3b-8c4d-5e6f70819203",
+    "state": "awaiting_upload",
+    "failureCode": null,
+    "report": null,
+    "pollAfterMs": 5000,
+    "updatedAt": "2026-09-23T11:30:00.000Z"
+  },
+  "upload": {
+    "url": "https://community.example.invalid/api/v1/imports/imp_0001/archive",
+    "token": "upl_opaque_0001",
+    "expiresAt": "2026-09-24T11:30:00.000Z",
+    "maxBytes": 1073741824
+  }
+}

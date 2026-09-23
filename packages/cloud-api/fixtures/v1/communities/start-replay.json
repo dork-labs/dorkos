@@ -1,0 +1,25 @@
+{
+  "community": {
+    "communityId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+    "orgId": "org_0001",
+    "name": "Night shift",
+    "shortName": "night-shift",
+    "communityUrl": "https://community.example.invalid/c/9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+    "state": "pending_owner",
+    "hold": null,
+    "kept": false,
+    "moveId": null,
+    "limits": {
+      "maxActiveMembers": null,
+      "maxStorageBytes": null
+    },
+    "usage": null,
+    "actions": {
+      "claimLink": true,
+      "keep": false,
+      "restore": false
+    },
+    "createdAt": "2026-09-23T11:00:00.000Z"
+  },
+  "claim": null
+}

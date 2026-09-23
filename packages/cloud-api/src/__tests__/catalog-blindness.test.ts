@@ -180,6 +180,11 @@ const MECHANISM_ENUMS: Record<string, string> = {
   CustomAddressStatusSchema: 'where a hostname is in its setup',
   CertificateStateSchema: 'where a certificate is in its issuance',
   RemoteCommandOutcomeSchema: 'what an instance did with a command it leased',
+  HostedCommunityStateSchema: 'the Community server`s own lifecycle, not what anybody bought',
+  HostedCommunityHoldReasonSchema: 'which way out of a hold to offer; names no allowance',
+  CommunityNameUnavailableReasonSchema: 'why a short name cannot be used right now',
+  CommunityMoveStateSchema: 'the stages of reading an owner export into a new community',
+  CommunityMoveFailureCodeSchema: 'what went wrong with an export, in terms a person can act on',
 };
 
 /**

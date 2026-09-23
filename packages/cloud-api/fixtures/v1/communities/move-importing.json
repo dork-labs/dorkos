@@ -1,0 +1,18 @@
+{
+  "moveId": "move_0001",
+  "communityId": "5d6e7f80-9102-4a3b-8c4d-5e6f70819203",
+  "communityUrl": "https://community.example.invalid/c/5d6e7f80-9102-4a3b-8c4d-5e6f70819203",
+  "state": "importing",
+  "failureCode": null,
+  "report": {
+    "channels": 12,
+    "entries": 3400,
+    "attachments": 210,
+    "historicalMembers": 18,
+    "historicalAgents": 5,
+    "attachmentBytes": 70254592,
+    "countedBytes": 70254592
+  },
+  "pollAfterMs": 5000,
+  "updatedAt": "2026-09-23T11:34:00.000Z"
+}

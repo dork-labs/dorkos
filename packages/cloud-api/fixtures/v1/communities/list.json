@@ -1,0 +1,105 @@
+{
+  "items": [
+    {
+      "communityId": "4f1c2b7e-8a3d-4e5f-9b6a-1c2d3e4f5a6b",
+      "orgId": "org_0001",
+      "name": "Acme builders",
+      "shortName": "acme",
+      "communityUrl": "https://community.example.invalid/c/4f1c2b7e-8a3d-4e5f-9b6a-1c2d3e4f5a6b",
+      "state": "active",
+      "hold": null,
+      "kept": true,
+      "moveId": null,
+      "limits": {
+        "maxActiveMembers": 200,
+        "maxStorageBytes": 2000000000
+      },
+      "usage": {
+        "activeMembers": 12,
+        "storageBytes": 48213504,
+        "measuredAt": "2026-09-23T12:00:00.000Z"
+      },
+      "actions": {
+        "claimLink": false,
+        "keep": false,
+        "restore": false
+      },
+      "createdAt": "2026-09-01T09:00:00.000Z"
+    },
+    {
+      "communityId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+      "orgId": "org_0001",
+      "name": "Night shift",
+      "shortName": null,
+      "communityUrl": "https://community.example.invalid/c/9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+      "state": "pending_owner",
+      "hold": null,
+      "kept": false,
+      "moveId": null,
+      "limits": {
+        "maxActiveMembers": null,
+        "maxStorageBytes": null
+      },
+      "usage": null,
+      "actions": {
+        "claimLink": true,
+        "keep": false,
+        "restore": false
+      },
+      "createdAt": "2026-09-23T11:00:00.000Z"
+    },
+    {
+      "communityId": "2b3c4d5e-6f70-4812-9a3b-4c5d6e7f8091",
+      "orgId": "org_0001",
+      "name": "Reading group",
+      "shortName": "reading-group",
+      "communityUrl": "https://community.example.invalid/c/2b3c4d5e-6f70-4812-9a3b-4c5d6e7f8091",
+      "state": "held",
+      "hold": {
+        "reason": "inactive",
+        "since": "2026-08-01T00:00:00.000Z",
+        "deletionNoticeAt": null
+      },
+      "kept": false,
+      "moveId": null,
+      "limits": {
+        "maxActiveMembers": 200,
+        "maxStorageBytes": 2000000000
+      },
+      "usage": {
+        "activeMembers": 4,
+        "storageBytes": 1048576,
+        "measuredAt": "2026-09-23T12:00:00.000Z"
+      },
+      "actions": {
+        "claimLink": false,
+        "keep": true,
+        "restore": true
+      },
+      "createdAt": "2025-06-01T09:00:00.000Z"
+    },
+    {
+      "communityId": "5d6e7f80-9102-4a3b-8c4d-5e6f70819203",
+      "orgId": "org_0001",
+      "name": "Old garden",
+      "shortName": "old-garden",
+      "communityUrl": "https://community.example.invalid/c/5d6e7f80-9102-4a3b-8c4d-5e6f70819203",
+      "state": "pending_owner",
+      "hold": null,
+      "kept": false,
+      "moveId": "move_0001",
+      "limits": {
+        "maxActiveMembers": 200,
+        "maxStorageBytes": 2000000000
+      },
+      "usage": null,
+      "actions": {
+        "claimLink": false,
+        "keep": false,
+        "restore": false
+      },
+      "createdAt": "2026-09-23T11:30:00.000Z"
+    }
+  ],
+  "nextCursor": null
+}

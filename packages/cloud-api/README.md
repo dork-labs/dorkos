@@ -46,6 +46,7 @@ body is neither.
 | Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                |
 | Seats, orgs and addresses | organizations, membership, invitations, agents and claims, seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                          |
 | Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation, instance credentials, the command stream and its acknowledgement, event batches |
+| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep, restore, and moves (start, poll, cancel) from an owner export                        |
 | Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                    |
 
 ### What is deliberately not in it
@@ -118,9 +119,30 @@ There is no compile-time exhaustiveness over subscriptions here, deliberately.
 
 Enums that are fine, because they describe mechanism rather than catalog: the `Problem` codes,
 the remote `mode` and `state`, `remoteAccess`, `customAddress`, `support`, `costBasis`, the
-`supports` booleans, `groupBy`, the refusal reasons, and the RFC 8628 error set. Each one is
+`supports` booleans, `groupBy`, the refusal reasons, the RFC 8628 error set, and a hosted
+community's lifecycle, hold reason and move stages. Each one is
 listed by name with its reason in `src/__tests__/catalog-blindness.test.ts`, and a new exported
 enum fails that test until somebody writes down why it is mechanism.
+
+### A refusal names the way out
+
+A refusal a larger allowance would lift is `entitlement_required`, whatever the allowance is: a
+count of communities, members or storage, or anything added later. The service writes the
+`title` and `detail`, and may add an `actionUrl` (with an `actionLabel`) for the page where a
+person can act on it. The app renders those as given and opens the URL; it never knows what the
+person bought or what would change it. Limits reach the app as numbers
+(`limits.communities`, `used.communities`, and each hosted community's `limits` and `usage`),
+so it can say "this community is full" without naming a plan.
+
+### Hosted communities
+
+The service starts a community on a Community server and hands ownership to a person through
+that server's single-use owner claim; it never owns one itself. The claim link and a move's
+upload token are the only credentials this family returns. Each is returned once, never
+appears in a list or a poll, and is replaced by asking again: a fresh claim link from
+`v1Path.communityClaimLink`, or a cancelled and restarted move. A move uploads
+the owner export straight to the Community server's upload route, so the file never passes
+through the service. Every link to a community is a runtime value.
 
 ### Money is never a number
 

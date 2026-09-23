@@ -43,6 +43,10 @@ export const ProblemCodeSchema = z
     'enrolment_required',
     'remote_disabled',
     'address_unavailable',
+    // Hosted communities.
+    'community_name_taken',
+    'community_name_reserved',
+    'import_too_large',
     // The server's own faults.
     'internal_error',
     'temporarily_unavailable',
@@ -64,6 +68,11 @@ export type ProblemCode = z.infer<typeof ProblemCodeSchema>;
  * is an opaque identifier paired with a server-supplied display string: the
  * client renders what it is given and never switches on the value, and no
  * amount ever appears here.
+ *
+ * `actionUrl` is the other half of a refusal a person can do something about:
+ * the page, supplied by the service, where they can do it (raise an allowance,
+ * add credit, contact the host). The client opens it as given, beside `title`
+ * and `detail`, and never builds one itself.
  */
 export const ProblemSchema = z
   .object({
@@ -98,6 +107,17 @@ export const ProblemSchema = z
     freesAt: TimestampSchema.optional().describe(
       'When the blocking condition clears, where the server can say so.'
     ),
+    actionUrl: z
+      .string()
+      .url()
+      .optional()
+      .describe(
+        'A page, supplied by the service, where a person can act on this refusal. Open it as given; a runtime value.'
+      ),
+    actionLabel: z
+      .string()
+      .optional()
+      .describe('The server-supplied text for a link or button that opens `actionUrl`.'),
   })
   .describe(
     'The error envelope every endpoint in this contract returns in place of its success body.'

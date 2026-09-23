@@ -61,6 +61,23 @@
     "remote/command-keepalive-reconnect.json": "RemoteCommandSchema",
     "remote/commands-ack-request.json": "RemoteCommandAckRequestSchema",
     "remote/commands-ack.json": "RemoteCommandAckResponseSchema",
-    "remote/events.json": "RemoteEventBatchResponseSchema"
+    "remote/events.json": "RemoteEventBatchResponseSchema",
+    "problem/community-name-taken.json": "ProblemSchema",
+    "problem/import-too-large.json": "ProblemSchema",
+    "problem/entitlement-required-action.json": "ProblemSchema",
+    "billing/entitlements-communities.json": "EntitlementsSchema",
+    "communities/list.json": "HostedCommunityListResponseSchema",
+    "communities/start-request.json": "CommunityStartRequestSchema",
+    "communities/start.json": "CommunityStartResponseSchema",
+    "communities/start-replay.json": "CommunityStartResponseSchema",
+    "communities/name-check-free.json": "CommunityNameCheckResponseSchema",
+    "communities/name-check-taken.json": "CommunityNameCheckResponseSchema",
+    "communities/claim-link.json": "CommunityClaimLinkSchema",
+    "communities/keep.json": "CommunityKeepResponseSchema",
+    "communities/move-start-request.json": "CommunityMoveStartRequestSchema",
+    "communities/move-start.json": "CommunityMoveStartResponseSchema",
+    "communities/move-importing.json": "CommunityMoveSchema",
+    "communities/move-ready.json": "CommunityMoveSchema",
+    "communities/move-failed.json": "CommunityMoveSchema"
   }
 }

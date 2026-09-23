@@ -1,0 +1,40 @@
+{
+  "planId": "pl_opaque_0000",
+  "planDisplayName": "the entitlement shown in your billing page",
+  "periodStart": "2026-09-15T12:00:00.000Z",
+  "periodEnd": "2026-10-15T12:00:00.000Z",
+  "limits": {
+    "personSeatsIncluded": 1,
+    "agentSeatsIncluded": 0,
+    "includedCreditsMicro": "0",
+    "cloudHours": 0,
+    "storageGb": 1,
+    "remoteAccess": "byo",
+    "alwaysAvailableInstances": 0,
+    "customAddress": "none",
+    "managedConnectionActions": null,
+    "support": "community",
+    "emailAddressPerSeat": false,
+    "communities": {
+      "maxCommunities": 3,
+      "maxMembersPerCommunity": 200,
+      "maxStorageBytesPerCommunity": 2000000000
+    }
+  },
+  "used": {
+    "personSeats": 1,
+    "agentSeats": 0,
+    "communities": 1
+  },
+  "seats": {
+    "total": 1,
+    "assigned": 1,
+    "byKind": {
+      "person": 1,
+      "agent": 0
+    }
+  },
+  "canCreateSeat": false,
+  "canInviteMember": false,
+  "staleAt": "2026-10-15T12:00:00.000Z"
+}
