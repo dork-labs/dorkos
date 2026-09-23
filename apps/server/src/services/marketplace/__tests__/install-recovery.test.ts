@@ -17,6 +17,7 @@ import path from 'node:path';
 import {
   _internal,
   IN_FLIGHT_FLOOR_MS,
+  discardSupersededRecords,
   isRecordSettleable,
   parseInstallRecordName,
   recoverInterruptedInstall,
@@ -100,7 +101,7 @@ describe('parseInstallRecordName', () => {
     );
     // A backup written before owners were stamped still parses, owner-less.
     const legacy = parseInstallRecordName(recordName('flow', { owner: null }));
-    expect(legacy).toMatchObject({ targetName: 'flow', kind: 'backup' });
+    expect(legacy).toMatchObject({ targetName: 'flow', kind: 'legacy-backup' });
     expect(legacy?.owner).toBeUndefined();
   });
 
@@ -114,6 +115,9 @@ describe('parseInstallRecordName', () => {
       `flow.dorkos-bak-${Date.now()}-${randomUUID()}.old`,
       `.dorkos-bak-${Date.now()}-${randomUUID()}`,
       `flow.dorkos-bak-${Date.now()}-${randomUUID().toUpperCase()}`,
+      // The uuid's last group one character short.
+      `flow.dorkos-bak-${Date.now()}-${formatRecordOwner(currentRecordOwner())}-${randomUUID().slice(0, -1)}`,
+      `flow.dorkos-bak-${Date.now()}-${randomUUID().slice(0, -1)}`,
     ]) {
       expect(parseInstallRecordName(name), name).toBeUndefined();
     }
@@ -144,7 +148,9 @@ describe('recoverInterruptedInstall', () => {
 
     expect(await versionAt(target)).toBe('v1');
     expect(await exists(backup)).toBe(false);
-    expect(report.rolledBack.map((r) => r.kind)).toEqual(['backup']);
+    expect(report.settled).toEqual([
+      { record: expect.objectContaining({ kind: 'backup' }), outcome: 'rolled-back' },
+    ]);
   });
 
   it('replaces a half-written target with the backup', async () => {
@@ -189,7 +195,7 @@ describe('recoverInterruptedInstall', () => {
     expect(await versionAt(target)).toBe('v2');
     expect(await readdir(root)).toEqual(['flow']);
     expect(report.discarded).toHaveLength(1);
-    expect(report.rolledBack).toEqual([]);
+    expect(report.settled).toEqual([]);
   });
 
   it('undoes several interrupted transactions newest first, back to the last committed install', async () => {
@@ -204,7 +210,10 @@ describe('recoverInterruptedInstall', () => {
 
     expect(await versionAt(target)).toBe('v1');
     expect(await readdir(root)).toEqual(['flow']);
-    expect(report.rolledBack.map((r) => r.createdAt)).toEqual([now - 1_000, now - 2_000]);
+    expect(report.settled.map(({ record }) => record.createdAt)).toEqual([
+      now - 1_000,
+      now - 2_000,
+    ]);
   });
 
   it('keeps the backup on disk when restoring it fails, so a later attempt can finish', async () => {
@@ -237,9 +246,80 @@ describe('recoverInterruptedInstall', () => {
     expect(await versionAt(path.join(root, 'flow-notes'))).toBe('unrelated');
   });
 
+  it('finishes an interrupted fresh-install rollback that stopped after removing the target', async () => {
+    // The target goes before the marker: stopping between the two must leave
+    // the marker, or the half-written install would never be removed.
+    await writePackage(target, 'v1-half');
+    await writeFile(path.join(root, recordName('flow', { suffix: '.absent' })), '');
+    const realRemove = _internal.removePath;
+    let calls = 0;
+    vi.spyOn(_internal, 'removePath').mockImplementation(async (p) => {
+      calls++;
+      if (calls === 2) throw new Error('stopped here');
+      return realRemove(p);
+    });
+
+    await expect(recoverInterruptedInstall(target)).rejects.toThrow('stopped here');
+    vi.restoreAllMocks();
+    await recoverInterruptedInstall(target);
+
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  describe('a backup from before commit records existed', () => {
+    const old = () => Date.now() - IN_FLIGHT_FLOOR_MS - 1_000;
+
+    it('is restored when the target is missing: it is the only copy', async () => {
+      await writePackage(
+        path.join(root, recordName('flow', { owner: null, createdAt: old() })),
+        'v1'
+      );
+
+      const report = await recoverInterruptedInstall(target);
+
+      expect(await versionAt(target)).toBe('v1');
+      expect(await readdir(root)).toEqual(['flow']);
+      expect(report.settled).toHaveLength(1);
+    });
+
+    it('is kept, with the target, when the target exists: either could be the partial one', async () => {
+      // The old code left one of these behind when deleting it after a
+      // SUCCESSFUL install failed part-way, so it may be the broken copy.
+      await writePackage(target, 'v2');
+      const legacy = path.join(root, recordName('flow', { owner: null, createdAt: old() }));
+      await writePackage(legacy, 'v1-maybe-partial');
+
+      const report = await recoverInterruptedInstall(target);
+
+      expect(await versionAt(target)).toBe('v2');
+      expect(await versionAt(legacy)).toBe('v1-maybe-partial');
+      expect(report.kept.map((r) => r.path)).toEqual([legacy]);
+      expect(report.settled).toEqual([]);
+    });
+
+    it('is deleted once a later change to the target has finished', async () => {
+      await writePackage(target, 'v2');
+      await writePackage(
+        path.join(root, recordName('flow', { owner: null, createdAt: old() })),
+        'v1'
+      );
+      const { kept } = await recoverInterruptedInstall(target);
+
+      expect(await discardSupersededRecords(kept)).toEqual([]);
+
+      expect(await readdir(root)).toEqual(['flow']);
+    });
+  });
+
   it('does nothing when the install root does not exist', async () => {
     const report = await recoverInterruptedInstall(path.join(root, 'missing', 'flow'));
-    expect(report).toEqual({ rolledBack: [], discarded: [], discardFailures: [], inFlight: [] });
+    expect(report).toEqual({
+      settled: [],
+      kept: [],
+      discarded: [],
+      discardFailures: [],
+      inFlight: [],
+    });
   });
 
   describe('when another process wrote the record', () => {
@@ -271,7 +351,7 @@ describe('recoverInterruptedInstall', () => {
 
       await stopProcess(other);
       const afterExit = await recoverInterruptedInstall(target);
-      expect(afterExit.rolledBack).toHaveLength(1);
+      expect(afterExit.settled).toHaveLength(1);
       expect(await versionAt(target)).toBe('v1');
     });
 
@@ -365,15 +445,42 @@ describe('recoverInterruptedInstall', () => {
         path.join(root, recordName('flow', { owner: ownerOf(other), createdAt: old })),
         'v1'
       );
+
+      await recoverInterruptedInstall(target);
+
+      expect(await versionAt(target)).toBe('v1');
+      expect(await readdir(root)).toEqual(['flow']);
+    });
+
+    it('settles a record dated far in the future, whoever wrote it', async () => {
+      // A clock set back leaves records dated ahead of now; measured one way
+      // only, such a record would never age past the floor.
+      other = await startOtherProcess();
+      const ahead = Date.now() + IN_FLIGHT_FLOOR_MS + 1_000;
       await writePackage(
-        path.join(root, recordName('flow', { owner: null, createdAt: old - 1 })),
-        'v0'
+        path.join(root, recordName('flow', { owner: ownerOf(other), createdAt: ahead })),
+        'v1'
       );
 
       await recoverInterruptedInstall(target);
 
-      expect(await versionAt(target)).toBe('v0');
-      expect(await readdir(root)).toEqual(['flow']);
+      expect(await versionAt(target)).toBe('v1');
+    });
+
+    it('reads a running writer that seems to have started a little late as still running', async () => {
+      // A stepped wall clock moves a live process's reported start time; within
+      // the tolerance it is the same process, never a recycled pid.
+      other = await startOtherProcess();
+      const owner = ownerOf(other);
+      await writePackage(
+        path.join(
+          root,
+          recordName('flow', { owner: { ...owner, startedAt: owner.startedAt - 60 } })
+        ),
+        'v1'
+      );
+
+      expect((await recoverInterruptedInstall(target)).inFlight).toHaveLength(1);
     });
 
     it('settles a record whose writer exited', async () => {

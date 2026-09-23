@@ -530,6 +530,87 @@ describe('runTransaction crash windows (DOR-2273)', () => {
     expect(await readdir(scratch)).toEqual(['flow']);
   });
 
+  it('checks again after staging, and refuses if another process started on the target meanwhile', async () => {
+    // Staging runs npm and can take minutes. A record another server writes in
+    // that time must stop this transaction before it moves that server's
+    // half-activated target aside as its own backup.
+    const { spawn } = await import('node:child_process');
+    const other = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      stdio: 'ignore',
+    });
+    await new Promise((resolve) => other.once('spawn', resolve));
+    try {
+      const target = path.join(scratch, 'flow');
+      await installV1(target);
+      const { _internal: ownerInternal } = await import('../lib/record-owner.js');
+      const owner: RecordOwner = {
+        ...currentRecordOwner(),
+        pid: other.pid!,
+        startedAt: ownerInternal.readProcessStartSeconds(other.pid!) ?? 0,
+      };
+      const theirs = path.join(
+        scratch,
+        `flow.dorkos-bak-${Date.now()}-${formatRecordOwner(owner)}-${randomUUID()}`
+      );
+      const activate = vi.fn();
+
+      await expect(
+        runTransaction({
+          name: 'raced',
+          target,
+          stage: async (staging) => {
+            parked.push(staging.path);
+            // The other server moves v1 aside and starts writing v2.
+            const { rename } = await import('node:fs/promises');
+            await rename(target, theirs);
+            await mkdir(target, { recursive: true });
+            await writeFile(path.join(target, 'version.txt'), 'v2-theirs-half', 'utf8');
+          },
+          activate,
+        })
+      ).rejects.toThrow(/Another DorkOS app may be changing/);
+
+      expect(activate).not.toHaveBeenCalled();
+      expect(await versionAt(target)).toBe('v2-theirs-half');
+      expect(await versionAt(theirs)).toBe('v1');
+      expect(await readdir(scratch)).toHaveLength(2);
+      await expect(access(parked[0]!)).rejects.toThrow();
+    } finally {
+      await new Promise<void>((resolve) => {
+        other.once('exit', () => resolve());
+        other.kill();
+      });
+    }
+  });
+
+  it('removes a kept pre-commit-records backup once its own install commits', async () => {
+    // Kept because nothing proved which copy was whole; a committed install
+    // settles that, and left behind it would be restored if the package were
+    // later uninstalled.
+    const target = path.join(scratch, 'flow');
+    await installV1(target);
+    await installV1(
+      path.join(scratch, `flow.dorkos-bak-${Date.now() - 11 * 60_000}-${randomUUID()}`)
+    );
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await runTransaction({
+      name: 'supersede',
+      target,
+      stage: async (staging) => {
+        parked.push(staging.path);
+        await writeFile(path.join(staging.path, 'version.txt'), 'v2', 'utf8');
+      },
+      activate: async (staging) => {
+        const { atomicMove } = await import('../lib/atomic-move.js');
+        await atomicMove(staging.path, target);
+      },
+    });
+
+    expect(await versionAt(target)).toBe('v2');
+    expect(await readdir(scratch)).toEqual(['flow']);
+  });
+
   it('refuses to start while another running process owns a record for the target', async () => {
     // Two servers on one project: moving the other one's half-activated
     // target aside would destroy its install.
@@ -558,7 +639,7 @@ describe('runTransaction crash windows (DOR-2273)', () => {
 
       await expect(
         runTransaction({ name: 'blocked', target, stage: async () => undefined, activate })
-      ).rejects.toThrow(/Another DorkOS app may be changing/);
+      ).rejects.toThrow(/Another DorkOS app may be changing .* Try again in 10 minutes\./);
 
       expect(activate).not.toHaveBeenCalled();
       expect(await versionAt(target)).toBe('v2-theirs');

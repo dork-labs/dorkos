@@ -281,10 +281,14 @@ import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-
 import { ActivityService } from './services/activity/activity-service.js';
 import { createPluginReloadActivityWriter } from './services/activity/plugin-reload-activity.js';
 import {
+  globalSweepDirs,
+  projectSweepDirs,
+  projectsOfAgents,
   recoverInterruptedInstalls,
+  retryInFlightTargetsLater,
   type InstallSweepSummary,
 } from './services/marketplace/backup-janitor.js';
-import { projectScopeRoot } from './services/marketplace/lib/install-roots.js';
+import { currentRecordOwner } from './services/marketplace/lib/record-owner.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
@@ -563,10 +567,16 @@ function registeredAgentRoots(
  * @param summary - The sweep's totals.
  */
 function logInstallSweep(scope: string, summary: InstallSweepSummary): void {
-  const { rolledBack, discarded, inFlight } = summary;
-  if (rolledBack + discarded + inFlight === 0) return;
-  logger.info(
-    `[Marketplace] Settled interrupted ${scope}: ${rolledBack} undone, ${discarded} leftovers removed, ${inFlight} left to another running DorkOS`
+  const { settled, kept, discarded, inFlightTargets } = summary;
+  if (settled + kept + discarded + inFlightTargets.length > 0) {
+    logger.info(
+      `[Marketplace] Settled interrupted ${scope}: ${settled} settled, ${kept} kept, ${discarded} leftovers removed, ${inFlightTargets.length} left to another running DorkOS`
+    );
+  }
+  // A target left to another process is looked at once more when every record
+  // there has aged past the point where its owner matters.
+  retryInFlightTargetsLater(inFlightTargets, logger, (retry) =>
+    logInstallSweep(`${scope} (retry)`, { ...retry, inFlightTargets: [] })
   );
 }
 
@@ -957,7 +967,14 @@ async function start() {
   // Project installs are swept once Mesh knows the projects (below); see
   // services/marketplace/install-recovery.ts for the rules.
   try {
-    logInstallSweep('global installs', await recoverInterruptedInstalls([dorkHome], logger));
+    // Read this process's own start time now, as close to its real start as
+    // possible: records it writes carry it, and a wall-clock step between
+    // start and a late first read would misstate it (record-owner.ts).
+    currentRecordOwner();
+    logInstallSweep(
+      'global installs',
+      await recoverInterruptedInstalls(globalSweepDirs(dorkHome), logger)
+    );
   } catch (err) {
     logger.warn('[Marketplace] Startup install recovery failed', logError(err));
   }
@@ -1889,17 +1906,16 @@ async function start() {
     }
 
     // Settle marketplace installs a crash interrupted inside registered
-    // projects (`<projectPath>/.dork/`), which only the registry can list —
+    // projects (`<projectPath>/.dork/` and `.agents/skills/`, including the
+    // project an installed agent lives in), which only the registry can list —
     // the global ones were settled before the app started (DOR-2273). This
     // writes into a person's repository only to finish undoing a change DorkOS
     // itself was making there, and only to entries whose names prove they are
     // DorkOS's own records. Fire-and-forget: each target is settled under its
     // install lock, so an install that races it simply waits.
     try {
-      const projectScopes = meshCore
-        .listWithPaths()
-        .map((agent) => projectScopeRoot(agent.projectPath));
-      recoverInterruptedInstalls(projectScopes, logger)
+      const projects = projectsOfAgents(meshCore.listWithPaths().map((a) => a.projectPath));
+      recoverInterruptedInstalls(projects.flatMap(projectSweepDirs), logger)
         .then((summary) => logInstallSweep('project installs', summary))
         .catch((err: unknown) => {
           logger.warn('[Marketplace] Project install recovery failed', logError(err));

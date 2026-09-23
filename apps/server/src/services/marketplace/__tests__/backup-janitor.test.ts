@@ -3,8 +3,9 @@
  * interrupted marketplace installs across whole scopes at server startup
  * (DOR-175, DOR-2273). What each kind of record means is tested in
  * `install-recovery.test.ts`; these tests cover the sweep: which directories
- * it reads, that it finds every target with records, and that one bad entry
- * never stops the rest.
+ * it reads, that it finds every target with records, that one bad entry never
+ * stops the rest, and that a target left to another process is looked at
+ * again.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
@@ -12,8 +13,16 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { noopLogger } from '@dorkos/shared/logger';
-import { recoverInterruptedInstalls, _internal } from '../backup-janitor.js';
-import { _internal as recoveryInternal } from '../install-recovery.js';
+import {
+  globalSweepDirs,
+  projectSweepDirs,
+  projectsOfAgents,
+  recoverInterruptedInstalls,
+  retryInFlightTargetsLater,
+  _internal,
+  type InstallSweepSummary,
+} from '../backup-janitor.js';
+import { IN_FLIGHT_FLOOR_MS, _internal as recoveryInternal } from '../install-recovery.js';
 import { currentRecordOwner, formatRecordOwner } from '../lib/record-owner.js';
 
 /** Returns true when `target` exists on disk. */
@@ -27,8 +36,12 @@ async function pathExists(target: string): Promise<boolean> {
 }
 
 /** A record name exactly as the transaction writes it, owned by this process. */
-function recordName(targetName: string, suffix: '' | '.absent' | '.committed' = ''): string {
-  return `${targetName}.dorkos-bak-${Date.now()}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}${suffix}`;
+function recordName(
+  targetName: string,
+  suffix: '' | '.absent' | '.committed' = '',
+  createdAt = Date.now()
+): string {
+  return `${targetName}.dorkos-bak-${createdAt}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}${suffix}`;
 }
 
 /** Write a package directory holding one version file. */
@@ -36,6 +49,9 @@ async function writePackage(dir: string, version: string): Promise<void> {
   await mkdir(dir, { recursive: true });
   await writeFile(path.join(dir, 'version.txt'), version, 'utf8');
 }
+
+/** An empty summary, to compare against. */
+const nothing: InstallSweepSummary = { settled: 0, kept: 0, discarded: 0, inFlightTargets: [] };
 
 describe('recoverInterruptedInstalls', () => {
   let dorkHome: string;
@@ -48,6 +64,7 @@ describe('recoverInterruptedInstalls', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
     await rm(dorkHome, { recursive: true, force: true });
     await rm(project, { recursive: true, force: true });
   });
@@ -57,42 +74,49 @@ describe('recoverInterruptedInstalls', () => {
     // a plugin whose reinstall crashed before the new version landed.
     const pluginsRoot = path.join(dorkHome, 'plugins');
     const old = Date.now() - 25 * 60 * 60 * 1000;
-    const backup = path.join(
-      pluginsRoot,
-      `code-review-suite.dorkos-bak-${old}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}`
-    );
-    await writePackage(backup, 'v1');
+    await writePackage(path.join(pluginsRoot, recordName('code-review-suite', '', old)), 'v1');
 
-    const summary = await recoverInterruptedInstalls([dorkHome], noopLogger);
+    const summary = await recoverInterruptedInstalls(globalSweepDirs(dorkHome), noopLogger);
 
-    expect(summary).toEqual({ rolledBack: 1, discarded: 0, inFlight: 0 });
+    expect(summary).toEqual({ ...nothing, settled: 1 });
     expect(await readFile(path.join(pluginsRoot, 'code-review-suite', 'version.txt'), 'utf8')).toBe(
       'v1'
     );
     expect(await readdir(pluginsRoot)).toEqual(['code-review-suite']);
   });
 
-  it('settles every install root of every scope it is given', async () => {
-    // Global plugins/agents/shapes, and a project's own `.dork/` — the scope
-    // the old sweep never reached, so a project backup lingered forever.
-    const scopes = [dorkHome, path.join(project, '.dork')];
-    for (const scope of scopes) {
-      for (const root of ['plugins', 'agents', 'shapes']) {
-        await writePackage(path.join(scope, root, recordName('pkg')), `${root}-v1`);
-      }
-    }
+  it('sweeps every root a transaction writes into, global and per project', async () => {
+    // Install roots, and the skills roots schedules are materialised into —
+    // where a crash-left backup would be one more live schedule. The project
+    // scope is the one the old sweep never reached.
+    const dirs = [...globalSweepDirs(dorkHome), ...projectSweepDirs(project)];
+    expect(dirs).toEqual([
+      path.join(dorkHome, 'plugins'),
+      path.join(dorkHome, 'agents'),
+      path.join(dorkHome, 'shapes'),
+      path.join(dorkHome, 'skills'),
+      path.join(project, '.dork', 'plugins'),
+      path.join(project, '.dork', 'agents'),
+      path.join(project, '.dork', 'shapes'),
+      path.join(project, '.agents', 'skills'),
+    ]);
+    for (const dir of dirs) await writePackage(path.join(dir, recordName('pkg')), 'v1');
 
-    const summary = await recoverInterruptedInstalls(scopes, noopLogger);
+    const summary = await recoverInterruptedInstalls(dirs, noopLogger);
 
-    expect(summary.rolledBack).toBe(6);
-    for (const scope of scopes) {
-      for (const root of ['plugins', 'agents', 'shapes']) {
-        expect(await readdir(path.join(scope, root))).toEqual(['pkg']);
-        expect(await readFile(path.join(scope, root, 'pkg', 'version.txt'), 'utf8')).toBe(
-          `${root}-v1`
-        );
-      }
+    expect(summary.settled).toBe(dirs.length);
+    for (const dir of dirs) {
+      expect(await readdir(dir)).toEqual(['pkg']);
     }
+  });
+
+  it('sweeps the project an installed agent lives in, as well as the agent', () => {
+    // An agent installed into a project is registered at
+    // `<project>/.dork/agents/<name>`; its own records sit in `<project>/.dork`.
+    const installed = path.join(project, '.dork', 'agents', 'researcher');
+    const plain = path.join(project, 'elsewhere');
+
+    expect(projectsOfAgents([installed, plain, installed])).toEqual([installed, project, plain]);
   });
 
   it('deletes committed leftovers and counts them', async () => {
@@ -100,9 +124,9 @@ describe('recoverInterruptedInstalls', () => {
     await writePackage(path.join(pluginsRoot, 'flow'), 'v2');
     await writePackage(path.join(pluginsRoot, recordName('flow', '.committed')), 'v1');
 
-    const summary = await recoverInterruptedInstalls([dorkHome], noopLogger);
+    const summary = await recoverInterruptedInstalls(globalSweepDirs(dorkHome), noopLogger);
 
-    expect(summary).toEqual({ rolledBack: 0, discarded: 1, inFlight: 0 });
+    expect(summary).toEqual({ ...nothing, discarded: 1 });
     expect(await readdir(pluginsRoot)).toEqual(['flow']);
   });
 
@@ -113,17 +137,23 @@ describe('recoverInterruptedInstalls', () => {
     await writePackage(lookalike, 'not ours');
     const warn = vi.fn();
 
-    const summary = await recoverInterruptedInstalls([dorkHome], { ...noopLogger, warn });
+    const summary = await recoverInterruptedInstalls(globalSweepDirs(dorkHome), {
+      ...noopLogger,
+      warn,
+    });
 
-    expect(summary).toEqual({ rolledBack: 0, discarded: 0, inFlight: 0 });
+    expect(summary).toEqual(nothing);
     expect(await pathExists(lookalike)).toBe(true);
     expect(await pathExists(path.join(pluginsRoot, 'code-review-suite'))).toBe(true);
+    // Only the lookalike is worth a word; an installed package is not.
+    expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('weird-plugin.dorkos-bak-'));
   });
 
   it('tolerates a scope with no install roots yet', async () => {
-    const summary = await recoverInterruptedInstalls([dorkHome], noopLogger);
-    expect(summary).toEqual({ rolledBack: 0, discarded: 0, inFlight: 0 });
+    expect(await recoverInterruptedInstalls(globalSweepDirs(dorkHome), noopLogger)).toEqual(
+      nothing
+    );
   });
 
   it('keeps going when one target cannot be settled, and keeps that target’s backup', async () => {
@@ -138,15 +168,18 @@ describe('recoverInterruptedInstalls', () => {
     });
     const warn = vi.fn();
 
-    const summary = await recoverInterruptedInstalls([dorkHome], { ...noopLogger, warn });
+    const summary = await recoverInterruptedInstalls(globalSweepDirs(dorkHome), {
+      ...noopLogger,
+      warn,
+    });
 
-    expect(summary.rolledBack).toBe(1);
+    expect(summary.settled).toBe(1);
     expect(await pathExists(path.join(pluginsRoot, 'good-plugin'))).toBe(true);
     expect(await pathExists(badBackup)).toBe(true);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('bad-plugin'));
   });
 
-  it('keeps going when one install root cannot be read', async () => {
+  it('keeps going when one directory cannot be read', async () => {
     const pluginsRoot = path.join(dorkHome, 'plugins');
     await mkdir(pluginsRoot, { recursive: true });
     await writePackage(path.join(dorkHome, 'agents', recordName('my-agent')), 'v1');
@@ -156,22 +189,37 @@ describe('recoverInterruptedInstalls', () => {
       return realRead(dir);
     });
 
-    const summary = await recoverInterruptedInstalls([dorkHome], noopLogger);
+    const summary = await recoverInterruptedInstalls(globalSweepDirs(dorkHome), noopLogger);
 
-    expect(summary.rolledBack).toBe(1);
+    expect(summary.settled).toBe(1);
     expect(await pathExists(path.join(dorkHome, 'agents', 'my-agent'))).toBe(true);
   });
 
-  it('reports a target another process may be installing, and leaves it alone', async () => {
+  it('reports a target another process may be installing, and settles it on the retry', async () => {
     // A young backup written before owners were stamped: nothing proves its
-    // writer is gone, so only the age floor may settle it.
+    // writer is gone, so only the age floor may settle it — and a target left
+    // at startup must not wait for the next restart.
     const pluginsRoot = path.join(dorkHome, 'plugins');
     const legacy = path.join(pluginsRoot, `flow.dorkos-bak-${Date.now()}-${randomUUID()}`);
     await writePackage(legacy, 'v1');
 
-    const summary = await recoverInterruptedInstalls([dorkHome], noopLogger);
-
-    expect(summary).toEqual({ rolledBack: 0, discarded: 0, inFlight: 1 });
+    const summary = await recoverInterruptedInstalls(globalSweepDirs(dorkHome), noopLogger);
+    expect(summary).toEqual({ ...nothing, inFlightTargets: [path.join(pluginsRoot, 'flow')] });
     expect(await pathExists(legacy)).toBe(true);
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] });
+    const retried = new Promise<InstallSweepSummary>((resolve) =>
+      retryInFlightTargetsLater(summary.inFlightTargets, noopLogger, resolve)
+    );
+    vi.advanceTimersByTime(IN_FLIGHT_FLOOR_MS);
+
+    expect(await retried).toEqual({ ...nothing, settled: 1 });
+    expect(await readFile(path.join(pluginsRoot, 'flow', 'version.txt'), 'utf8')).toBe('v1');
+  });
+
+  it('schedules no retry when nothing was left', () => {
+    vi.useFakeTimers();
+    retryInFlightTargetsLater([], noopLogger, () => undefined);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

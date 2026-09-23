@@ -100,6 +100,16 @@ describe('listAuthoredSkills', () => {
 });
 
 describe('scanSkillDirs', () => {
+  it('never projects a marketplace install sibling as a skill (DOR-2273)', () => {
+    dir = mkdtempSync(join(tmpdir(), 'harness-scan-'));
+    writeSkillDir('nightly');
+    writeSkillDir(`nightly.dorkos-bak-${Date.now()}-9f1c2d3e-0000-4000-8000-000000000000`);
+
+    expect(scanSkillDirs(skillsRoot(), AGENTS_SKILLS_DIR)).toEqual([
+      { name: 'nightly', sourceDir: '.agents/skills/nightly' },
+    ]);
+  });
+
   it('skips a dangling symlink without throwing', () => {
     // A link whose target was moved or deleted is not a skill. It must not
     // become a phantom entry, and it must not take the whole scan down with it.

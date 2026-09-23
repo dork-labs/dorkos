@@ -15,6 +15,7 @@
  * | `backup`         | the old contents (no suffix)    | activation started, never committed          | replace the target with the old contents     |
  * | `absent`         | an empty file (`.absent`)       | fresh install started, never committed       | remove whatever the install left at target   |
  * | `committed`      | the old contents (`.committed`) | the new install is whole; this is leftovers  | delete it                                    |
+ * | `legacy-backup`  | old contents, no owner in name  | written before these records existed         | restore only if the target is missing        |
  *
  * The commit point is one atomic step: renaming `backup` to `committed`, or
  * unlinking the `absent` marker. Anything the transaction had not committed is
@@ -50,20 +51,24 @@
  *   leaves the whole target alone, and a new transaction refuses to start.
  *
  * A backup written before this module existed (`<createdAt>-<uuid>`, no
- * owner) is read as a `backup` record whose owner cannot be checked, so only
- * the age floor settles it. Rolling it back is right for every crash the old
- * code could leave behind except one: a crash (or a failed delete) in the old
- * success path's removal of the backup, where the new install was whole and
- * the backup is now restored over it. That window is the length of one
- * directory removal, the old janitor already swept anything older than a day,
- * and restoring the previous version still leaves a working install.
+ * owner) is a `legacy-backup`, and the old code left one behind in two very
+ * different situations: a crash mid-install (the backup is the whole copy)
+ * and a failed delete after a SUCCESSFUL install (the backup may be partial,
+ * the target whole). Nothing on disk tells them apart. So it is restored only
+ * when the target is missing, where it is certainly the only copy; beside an
+ * existing target both are kept and logged, and the next install or
+ * uninstall of that target that finishes deletes it
+ * ({@link discardSupersededRecords}). Its writer cannot be checked, so it
+ * waits for the age floor like any unprovable record.
  *
  * Adding a kind of record is one row in the policy table
- * (`INSTALL_RECORD_POLICIES`): its marker, its suffix, and whether recovery
- * rolls it back (with the `undo` that does it) or discards it. DOR-2245's
- * in-place uninstall is the expected next one: its `.dorkos-stage-` leftovers
- * are a `discard` row, and its `.dorkos-uninstall-` directory a `roll-back`
- * row whose `undo` reads the journal that uninstall writes. A new marker must
+ * (`INSTALL_RECORD_POLICIES`): its marker, whether its stamp carries an
+ * owner, its suffix, and its phase — `finished` (deleted) or `unfinished`,
+ * with a `recover` that settles it and reports `rolled-back`,
+ * `rolled-forward` or `kept`. DOR-2245's in-place uninstall is the expected
+ * next one: its `.dorkos-stage-` leftovers are a `finished` row, and its
+ * `.dorkos-uninstall-` directory an `unfinished` row whose `recover` reads the
+ * journal that uninstall writes and rolls back or forward by it. A new marker must
  * also be added to `MARKETPLACE_INSTALL_SIBLING_MARKERS` in
  * `@dorkos/shared/marketplace-schemas`, which every reader of an install root
  * uses to skip these siblings. The sweep in `./backup-janitor.ts` and the
@@ -103,7 +108,16 @@ import {
  * What a transaction record says about its target — see the table in the
  * module header.
  */
-export type InstallRecordKind = 'backup' | 'absent' | 'committed';
+export type InstallRecordKind = 'backup' | 'absent' | 'committed' | 'legacy-backup';
+
+/** What recovering one unfinished record did. */
+export type RecordOutcome =
+  /** The target is back as it was before the record's transaction began. */
+  | 'rolled-back'
+  /** The record's transaction was carried through to its end (no current row does this; DOR-2245's uninstall will). */
+  | 'rolled-forward'
+  /** Nothing proves which side is whole, so target and record were both left as they are. */
+  | 'kept';
 
 /** One transaction record found beside an install target. */
 export interface InstallRecord {
@@ -113,7 +127,7 @@ export interface InstallRecord {
   kind: InstallRecordKind;
   /** `Date.now()` when the transaction wrote the record, parsed from its name. */
   createdAt: number;
-  /** The process that wrote it; absent on a record from before owners were stamped. */
+  /** The process that wrote it; absent on a `legacy-backup`. */
   owner?: RecordOwner;
 }
 
@@ -125,17 +139,23 @@ export interface ParsedInstallRecordName {
   kind: InstallRecordKind;
   /** `Date.now()` when the transaction wrote the record. */
   createdAt: number;
-  /** The process that wrote it; absent on a record from before owners were stamped. */
+  /** The process that wrote it; absent on a `legacy-backup`. */
   owner?: RecordOwner;
 }
 
 /** What {@link recoverInterruptedInstall} did to one target. */
 export interface InstallRecoveryReport {
-  /** Uncommitted records undone, newest first. */
-  rolledBack: InstallRecord[];
-  /** Committed leftovers deleted. */
+  /** Unfinished records settled, newest first, with what settling did. */
+  settled: { record: InstallRecord; outcome: Exclude<RecordOutcome, 'kept'> }[];
+  /**
+   * Unfinished records left in place because nothing proves which side is
+   * whole (a `legacy-backup` beside an existing target). The next change that
+   * finishes on this target supersedes them: see {@link discardSupersededRecords}.
+   */
+  kept: InstallRecord[];
+  /** Leftovers of finished transactions deleted. */
   discarded: InstallRecord[];
-  /** Committed leftovers that could not be deleted, with the reason. Harmless; retried next time. */
+  /** Leftovers that could not be deleted, with the reason. Harmless; retried next time. */
   discardFailures: { record: InstallRecord; error: unknown }[];
   /**
    * Records a transaction in another live process may still own. When this is
@@ -149,21 +169,17 @@ export interface InstallRecoveryReport {
  * How long a record can belong to a running transaction, at most. A record
  * lives only from just before `activate` to its commit or rollback — a rename
  * and some scaffolding, seconds at most (the slow part of an install, the
- * bounded `npm install`, happens in `stage`, before any record exists). Past
- * this age a record is settled whoever wrote it, which is what bounds the
- * wait when its writer cannot be checked: a record from before owners were
- * stamped, or a platform where a process's start time cannot be read.
+ * bounded `npm install`, happens in `stage`, before any record exists). A
+ * record whose `createdAt` is at least this far from now, in either direction
+ * (a clock set back leaves records dated in the future), is settled whoever
+ * wrote it. That bounds the wait when the writer cannot be checked: a
+ * `legacy-backup`, another machine, or a platform where a process's start
+ * time cannot be read.
  */
 export const IN_FLIGHT_FLOOR_MS = 10 * 60_000;
 
-/**
- * The stamp every record carries after its marker: `<createdAt>-<owner>-<uuid>`
- * (the owner is absent on records from before owners were stamped). The uuid
- * is matched in full, as `randomUUID` writes it, so a name that merely
- * contains the marker is never mistaken for a record. Captures: `createdAt`,
- * then the owner's three.
- */
-const RECORD_STAMP = `(\\d+)-(?:${RECORD_OWNER_PATTERN}-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`;
+/** The `<uuid>` every record ends its stamp with, matched in full, as `randomUUID` writes it. */
+const RECORD_UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 
 /**
  * How one kind of record is spelled and what recovery does with it — the
@@ -175,17 +191,28 @@ interface InstallRecordPolicy {
   kind: InstallRecordKind;
   /** Basename marker between the target's name and the stamp. */
   marker: string;
+  /**
+   * Whether the stamp carries its writer: `<createdAt>-<owner>-<uuid>` when
+   * true, `<createdAt>-<uuid>` when false (only records from before owners
+   * were stamped).
+   */
+  owned: boolean;
   /** Fixed suffix after the stamp (`''` for none). */
   suffix: string;
   /**
-   * What recovery does with a record of this kind. `roll-back`: the record is
-   * an uncommitted transaction, undone newest first by `undo`, which must
-   * leave the record on disk until the target is back. `discard`: the record
-   * is leftovers of a committed one, and is deleted.
+   * What recovery does with a record of this kind. `unfinished`: the record's
+   * transaction never reached its end; `recover` settles it (newest first
+   * across a target's records) and says how, and must leave the record on
+   * disk until the target is settled, so a crash part-way is retried.
+   * `finished`: the record is leftovers of a transaction that completed, and
+   * is deleted.
    */
   recovery:
-    | { action: 'roll-back'; undo: (target: string, recordPath: string) => Promise<void> }
-    | { action: 'discard' };
+    | {
+        phase: 'unfinished';
+        recover: (target: string, recordPath: string) => Promise<RecordOutcome>;
+      }
+    | { phase: 'finished' };
 }
 
 /** Every kind of record the install engine writes, and its recovery. */
@@ -193,36 +220,60 @@ const INSTALL_RECORD_POLICIES: readonly InstallRecordPolicy[] = [
   {
     kind: 'backup',
     marker: MARKETPLACE_BACKUP_DIR_MARKER,
+    owned: true,
     suffix: '',
     recovery: {
-      action: 'roll-back',
+      phase: 'unfinished',
       // Whatever stands at the target is the uncommitted install; the backup
       // is the last committed one.
-      undo: async (target, recordPath) => {
+      recover: async (target, recordPath) => {
         await _internal.removePath(target);
         await _internal.move(recordPath, target);
+        return 'rolled-back';
       },
     },
   },
   {
     kind: 'absent',
     marker: MARKETPLACE_BACKUP_DIR_MARKER,
+    owned: true,
     suffix: '.absent',
     recovery: {
-      action: 'roll-back',
+      phase: 'unfinished',
       // There was nothing here before, so whatever stands at the target is
-      // the uncommitted install.
-      undo: async (target, recordPath) => {
+      // the uncommitted install. The target goes first: the marker is what
+      // says it has to.
+      recover: async (target, recordPath) => {
         await _internal.removePath(target);
         await _internal.removePath(recordPath);
+        return 'rolled-back';
       },
     },
   },
   {
     kind: 'committed',
     marker: MARKETPLACE_BACKUP_DIR_MARKER,
+    owned: true,
     suffix: '.committed',
-    recovery: { action: 'discard' },
+    recovery: { phase: 'finished' },
+  },
+  {
+    kind: 'legacy-backup',
+    marker: MARKETPLACE_BACKUP_DIR_MARKER,
+    owned: false,
+    suffix: '',
+    recovery: {
+      phase: 'unfinished',
+      // Written by a server from before commit records existed, which also
+      // left one behind whenever deleting it after a SUCCESSFUL install failed
+      // part-way — so it may be the partial copy, and the target the whole
+      // one. It is restored only where it is certainly the only copy.
+      recover: async (target, recordPath) => {
+        if (await pathExists(target)) return 'kept';
+        await _internal.move(recordPath, target);
+        return 'rolled-back';
+      },
+    },
   },
 ];
 
@@ -245,16 +296,18 @@ export function parseInstallRecordName(entryName: string): ParsedInstallRecordNa
     const idx = entryName.lastIndexOf(policy.marker);
     if (idx <= 0) continue;
     const tail = entryName.slice(idx + policy.marker.length);
-    const match = new RegExp(`^${RECORD_STAMP}${escapeRegExp(policy.suffix)}$`).exec(tail);
+    const ownerGroup = policy.owned ? `${RECORD_OWNER_PATTERN}-` : '';
+    const match = new RegExp(
+      `^(\\d+)-${ownerGroup}${RECORD_UUID}${escapeRegExp(policy.suffix)}$`
+    ).exec(tail);
     if (!match) continue;
     const createdAt = Number(match[1]);
     if (!Number.isSafeInteger(createdAt)) continue;
-    const [, , pid, startedAt, host] = match;
-    const owner =
-      pid === undefined || startedAt === undefined || host === undefined
-        ? undefined
-        : parseRecordOwner(pid, startedAt, host);
-    if (pid !== undefined && owner === undefined) continue;
+    let owner: RecordOwner | undefined;
+    if (policy.owned) {
+      owner = parseRecordOwner(match[2] ?? '', match[3] ?? '', match[4] ?? '');
+      if (owner === undefined) continue;
+    }
     return {
       targetName: entryName.slice(0, idx),
       kind: policy.kind,
@@ -319,35 +372,35 @@ export async function commitInstallRecord(
     await rm(record.path);
     return undefined;
   }
-  if (record.kind === 'committed') return record;
+  if (record.kind !== 'backup') {
+    throw new Error(`Only a transaction's own record can be committed: ${record.path}`);
+  }
   const committedPath = `${record.path}${policyFor('committed').suffix}`;
   await rename(record.path, committedPath);
   return { ...record, path: committedPath, kind: 'committed' };
 }
 
 /**
- * Undo an uncommitted transaction: put `target` back the way it was before
- * the transaction that wrote `record` began.
- *
- * The record is removed (an `absent` marker) or consumed (a `backup` becomes
- * the target again) only after the target is back, so a crash or an error
- * part-way leaves the record in place and the next recovery finishes the job.
+ * Undo this process's own uncommitted transaction after its `activate` or
+ * commit failed: put `target` back the way it was before the transaction
+ * began. The same step crash recovery runs, so a failure part-way leaves the
+ * record in place and the next recovery finishes the job.
  *
  * @param target - Absolute path of the install target.
- * @param record - An uncommitted record for that target.
+ * @param record - The record {@link beginInstallRecord} returned.
  * @throws On any filesystem failure, with the record still on disk.
  */
 export async function rollBackInstallRecord(target: string, record: InstallRecord): Promise<void> {
-  const { recovery } = policyFor(record.kind);
-  if (recovery.action !== 'roll-back') {
-    throw new Error(`A ${record.kind} install record cannot be rolled back: ${record.path}`);
+  const outcome = await recoverRecord(target, record);
+  if (outcome !== 'rolled-back') {
+    throw new Error(`Recovering ${record.path} did not roll it back (${outcome})`);
   }
-  await recovery.undo(target, record.path);
 }
 
 /**
- * Delete a committed leftover. The new install already finished, so this is
- * housekeeping: a failure costs disk space, never the install.
+ * Delete a leftover of a finished transaction. The install it belonged to
+ * already finished, so this is housekeeping: a failure costs disk space,
+ * never the install.
  *
  * @param record - A `committed` record.
  */
@@ -356,11 +409,36 @@ export async function discardCommittedRecord(record: InstallRecord): Promise<voi
 }
 
 /**
- * Bring one install target back to its last committed state after a crash.
+ * Delete records a recovery kept (see {@link InstallRecoveryReport.kept}) once
+ * a later change to the same target has finished — a committed install, or a
+ * completed uninstall. That change is proof the person has what they asked
+ * for, so the kept copy is no longer anyone's only copy; left in place, it
+ * would be restored the next time the target went missing, bringing back a
+ * package the person had since uninstalled.
  *
- * Deletes every committed leftover beside `target`, then undoes every
- * uncommitted record newest first (see the module header for why that order).
- * Stops at the first rollback that fails and throws, leaving that record and
+ * @param records - The `kept` records of the recovery that ran first.
+ * @returns Records that could not be deleted, with the reason.
+ */
+export async function discardSupersededRecords(
+  records: readonly InstallRecord[]
+): Promise<{ record: InstallRecord; error: unknown }[]> {
+  const failures: { record: InstallRecord; error: unknown }[] = [];
+  for (const record of records) {
+    try {
+      await _internal.removePath(record.path);
+    } catch (error) {
+      failures.push({ record, error });
+    }
+  }
+  return failures;
+}
+
+/**
+ * Bring one install target back to a settled state after a crash.
+ *
+ * Deletes every finished leftover beside `target`, then settles every
+ * unfinished record newest first (see the module header for why that order).
+ * Stops at the first record that fails to settle and throws, leaving it and
  * any older ones on disk for the next attempt; carrying on past it would undo
  * an older transaction on top of a newer one that is still half-applied.
  *
@@ -370,13 +448,14 @@ export async function discardCommittedRecord(record: InstallRecord): Promise<voi
  * {@link InstallRecoveryReport.inFlight}).
  *
  * @param target - Absolute path of the install target.
- * @returns What was rolled back and discarded.
- * @throws When an uncommitted record cannot be rolled back.
+ * @returns What was settled, kept and discarded.
+ * @throws When an unfinished record cannot be settled.
  */
 export async function recoverInterruptedInstall(target: string): Promise<InstallRecoveryReport> {
   const records = await listInstallRecords(target);
   const report: InstallRecoveryReport = {
-    rolledBack: [],
+    settled: [],
+    kept: [],
     discarded: [],
     discardFailures: [],
     inFlight: [],
@@ -386,10 +465,10 @@ export async function recoverInterruptedInstall(target: string): Promise<Install
   report.inFlight = records.filter((r) => !isRecordSettleable(r, now));
   if (report.inFlight.length > 0) return report;
 
-  const byRecovery = (action: InstallRecordPolicy['recovery']['action']) =>
-    records.filter((r) => policyFor(r.kind).recovery.action === action);
+  const inPhase = (phase: InstallRecordPolicy['recovery']['phase']) =>
+    records.filter((r) => policyFor(r.kind).recovery.phase === phase);
 
-  for (const record of byRecovery('discard')) {
+  for (const record of inPhase('finished')) {
     try {
       await discardCommittedRecord(record);
       report.discarded.push(record);
@@ -398,29 +477,69 @@ export async function recoverInterruptedInstall(target: string): Promise<Install
     }
   }
 
-  const uncommitted = byRecovery('roll-back').sort(
+  const unfinished = inPhase('unfinished').sort(
     (a, b) => b.createdAt - a.createdAt || b.path.localeCompare(a.path)
   );
-  for (const record of uncommitted) {
-    await rollBackInstallRecord(target, record);
-    report.rolledBack.push(record);
+  for (const record of unfinished) {
+    const outcome = await recoverRecord(target, record);
+    if (outcome === 'kept') report.kept.push(record);
+    else report.settled.push({ record, outcome });
   }
   return report;
 }
 
 /**
+ * Whether any transaction record sits beside `target`. For a caller that
+ * must not conclude "not installed" from a missing target alone: a crash can
+ * leave the target missing with its previous install in a record beside it.
+ *
+ * @param target - Absolute path of the install target.
+ */
+export async function hasInstallRecords(target: string): Promise<boolean> {
+  return (await listInstallRecords(target)).length > 0;
+}
+
+/**
  * Whether recovery may act on `record` now: its writer is this process (whose
  * own transactions the install lock excludes), its writer is provably gone, or
- * it is older than {@link IN_FLIGHT_FLOOR_MS}. Anything else may belong to a
- * transaction still running in another process.
+ * its `createdAt` is at least {@link IN_FLIGHT_FLOOR_MS} from `now` either
+ * way. Anything else may belong to a transaction still running in another
+ * process.
  *
  * @param record - A record found beside an install target.
  * @param now - The current time, in ms since the epoch.
  */
 export function isRecordSettleable(record: InstallRecord, now: number): boolean {
-  if (now - record.createdAt >= IN_FLIGHT_FLOOR_MS) return true;
+  if (Math.abs(now - record.createdAt) >= IN_FLIGHT_FLOOR_MS) return true;
   if (record.owner === undefined) return false;
   return assessRecordOwner(record.owner) !== 'maybe-running';
+}
+
+/**
+ * The latest moment by which every one of `records` is settleable whoever
+ * wrote it — when a refused change is certain to be allowed. `now` when the
+ * list is empty.
+ *
+ * @param records - Records {@link isRecordSettleable} refused.
+ * @param now - The current time, in ms since the epoch.
+ */
+export function settleableBy(records: readonly InstallRecord[], now: number): number {
+  return Math.max(now, ...records.map((r) => r.createdAt + IN_FLIGHT_FLOOR_MS));
+}
+
+/**
+ * Settle one unfinished record by its kind's policy row.
+ *
+ * @internal
+ */
+async function recoverRecord(target: string, record: InstallRecord): Promise<RecordOutcome> {
+  const { recovery } = policyFor(record.kind);
+  if (recovery.phase !== 'unfinished') {
+    throw new Error(
+      `A ${record.kind} install record is finished and has nothing to recover: ${record.path}`
+    );
+  }
+  return recovery.recover(target, record.path);
 }
 
 /**

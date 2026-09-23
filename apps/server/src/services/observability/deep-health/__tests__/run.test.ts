@@ -73,6 +73,20 @@ describe('listAgentHomeDirectories', () => {
   it('returns nothing when there is no agents folder', () => {
     expect(listAgentHomeDirectories(tmpHome)).toEqual([]);
   });
+
+  it('skips a crash-left install backup, which claims the same agent id (DOR-2273)', () => {
+    fs.mkdirSync(path.join(tmpHome, 'agents', 'helper'), { recursive: true });
+    fs.mkdirSync(
+      path.join(
+        tmpHome,
+        'agents',
+        `helper.dorkos-bak-${Date.now()}-9f1c2d3e-0000-4000-8000-000000000000`
+      ),
+      { recursive: true }
+    );
+
+    expect(listAgentHomeDirectories(tmpHome)).toEqual([path.join(tmpHome, 'agents', 'helper')]);
+  });
 });
 
 describe('runDeepHealthChecks', () => {

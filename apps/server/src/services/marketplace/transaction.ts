@@ -102,9 +102,32 @@
  * wrote it, so a transaction that finds another live process's record beside
  * its target refuses to start instead of moving that process's half-activated
  * target aside, and crash recovery never undoes a record whose writer is
- * still running. What is left is two transactions that both check before
- * either writes its record: the same moment, on the same project, in two
- * servers.
+ * still running. The check runs twice — before staging and again right
+ * before the record is written, because staging includes an `npm install`
+ * that can take minutes, time enough for the other server to write a record
+ * of its own. What is left is the gap between that second check and the
+ * rename that writes this transaction's record: two servers would have to
+ * both check the same project's same package within that gap.
+ *
+ * ## The update window belongs to DOR-2245
+ *
+ * `MarketplaceInstaller.update()` is an uninstall, a removal of the data-only
+ * install root, then an install. The uninstall stages the live install (and
+ * the preserved `.dork/data/` and secrets) under the system temp directory,
+ * where no record describes it, so a crash between the uninstall and this
+ * transaction's commit still loses the package and leaves that data only in
+ * the temp directory. Crash recovery here covers installs, not that window;
+ * DOR-2245 replaces the temp-dir uninstall with an in-place one that writes a
+ * journal recovery can finish.
+ *
+ * ## What a rollback does not undo
+ *
+ * Rolling back — after a failed `activate`, a failed commit, or a crash —
+ * restores the target directory. It does not undo what `activate` did outside
+ * it: a Mesh registration, the agent-created hook, an extension enabled. The
+ * crash path matches the failure path here; the adapter flow keeps its own
+ * compensation, and the Mesh reconciler drops a registration whose directory
+ * went away.
  *
  * This design supersedes the git backup-branch rollback of ADR-0231: it is
  * scoped to the actual install location (not `process.cwd()`), it restores
@@ -122,8 +145,10 @@ import {
   beginInstallRecord,
   commitInstallRecord,
   discardCommittedRecord,
+  discardSupersededRecords,
   recoverInterruptedInstall,
   rollBackInstallRecord,
+  settleableBy,
   type InstallRecord,
 } from './install-recovery.js';
 
@@ -341,10 +366,15 @@ async function runTransactionUnlocked<T>(opts: TransactionOptions<T>): Promise<T
     throw err;
   }
 
-  // Phase 2: write the record — the existing target moved aside, or a marker
-  // that there was none. From here until the commit, a crash is rolled back.
+  // Phase 2: check again, then write the record — the existing target moved
+  // aside, or a marker that there was none. Staging can take minutes (npm),
+  // long enough for another server to have started on this target; moving
+  // its half-activated target aside as our backup would destroy its install.
+  // From the record on, a crash is rolled back.
   let record: InstallRecord;
+  let superseded: InstallRecord[];
   try {
+    superseded = (await settleInterruptedInstall(opts.target)).kept;
     record = await _internal.beginRecord(opts.target);
   } catch (err) {
     await runStageFailureCleanup(stagingDir);
@@ -363,23 +393,38 @@ async function runTransactionUnlocked<T>(opts: TransactionOptions<T>): Promise<T
     throw err;
   }
   await runSuccessCleanup(stagingDir, committed);
+  await releaseSupersededRecords(superseded);
   return result;
+}
+
+/** What {@link settleInterruptedInstall} leaves for its caller. */
+export interface SettledInstallTarget {
+  /**
+   * Records recovery could not safely settle and kept (a backup from before
+   * commit records existed, beside a target that exists). Pass them to
+   * {@link releaseSupersededRecords} once the caller's own change to the
+   * target has finished.
+   */
+  kept: InstallRecord[];
 }
 
 /**
  * Settle whatever an interrupted install left beside `target`, before a new
  * change to it starts (DOR-2273): an uncommitted install is undone, and the
- * leftovers of a finished one deleted. Every install does this first, and so
- * does uninstall, so neither ever acts on a half-written package.
+ * leftovers of a finished one deleted. Every install does this (twice: see
+ * the module header), and so does uninstall, so neither acts on a
+ * half-written package.
  *
  * The caller must hold `target`'s {@link withInstallTargetLock}, so nothing in
  * this process is still writing the records it reads.
  *
  * @param target - Absolute path of the install target.
+ * @returns The records recovery kept, for the caller to release once its
+ *   change finishes.
  * @throws When an interrupted install cannot be undone, or when another
  *   running DorkOS app may be mid-install on `target`; nothing was changed.
  */
-export async function settleInterruptedInstall(target: string): Promise<void> {
+export async function settleInterruptedInstall(target: string): Promise<SettledInstallTarget> {
   let report;
   try {
     report = await recoverInterruptedInstall(target);
@@ -390,18 +435,41 @@ export async function settleInterruptedInstall(target: string): Promise<void> {
     );
   }
   if (report.inFlight.length > 0) {
+    const now = Date.now();
+    const minutes = Math.max(1, Math.ceil((settleableBy(report.inFlight, now) - now) / 60_000));
     throw new Error(
-      `Another DorkOS app may be changing ${target} right now, so nothing was changed. Try again in a few minutes.`
+      `Another DorkOS app may be changing ${target} right now, so nothing was changed. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`
     );
   }
-  for (const record of report.rolledBack) {
+  for (const { record, outcome } of report.settled) {
     console.warn(
-      `[marketplace/transaction] undid an interrupted install at ${target} (${record.kind} record ${record.path})`
+      `[marketplace/transaction] settled an interrupted install at ${target} (${record.kind} record ${record.path}: ${outcome})`
+    );
+  }
+  for (const record of report.kept) {
+    console.warn(
+      `[marketplace/transaction] kept ${record.path} beside ${target}: it predates commit records, so nothing proves which copy is whole`
     );
   }
   for (const { record, error } of report.discardFailures) {
     console.warn(
       `[marketplace/transaction] failed to remove finished install leftovers ${record.path}: ${errMessage(error)}`
+    );
+  }
+  return { kept: report.kept };
+}
+
+/**
+ * Delete the records {@link settleInterruptedInstall} kept, now that the
+ * caller's own change to the target has finished and superseded them.
+ * Best-effort: a failure is logged, and the record stays kept.
+ *
+ * @param kept - {@link SettledInstallTarget.kept} from the settle that ran first.
+ */
+export async function releaseSupersededRecords(kept: readonly InstallRecord[]): Promise<void> {
+  for (const { record, error } of await discardSupersededRecords(kept)) {
+    console.warn(
+      `[marketplace/transaction] failed to remove superseded install record ${record.path}: ${errMessage(error)}`
     );
   }
 }

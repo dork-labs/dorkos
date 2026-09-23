@@ -3,6 +3,7 @@ import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import type { z } from 'zod';
 import { noopLogger, type Logger } from '@dorkos/shared/logger';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { SKILL_FILENAME, WIDGET_TEMPLATE_SUFFIX } from './constants.js';
 import { parseSkillFile, type ParsedSkill } from './parser.js';
 import { WidgetTemplateSchema, type WidgetTemplate } from './ui-template.js';
@@ -157,6 +158,10 @@ export async function scanSkillDirectory<T>(
     // Skip non-directories, dotfiles, and caller-declared containers
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
     if (ignoreDirs.has(entry.name)) continue;
+    // A marketplace install's own sibling — a crash-left backup of a schedule
+    // skill, say — is a copy, never a skill: read as one, it would arm the same
+    // schedule a second time (DOR-2273).
+    if (isInstallSiblingName(entry.name)) continue;
 
     const skillPath = path.join(dir, entry.name, SKILL_FILENAME);
 

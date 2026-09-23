@@ -16,8 +16,11 @@
  *   {@link readProcessStartSeconds} — the same function that later reads a
  *   candidate's start time, so both sides come from one clock and one format.
  *   `0` when it could not be read.
- * - `host`, a short hash of the machine's hostname. A project in a synced
- *   folder can carry a record to another machine, where a pid means nothing.
+ * - `host`, a short hash of where the pid means something: the hostname and,
+ *   on Linux, the process's pid namespace. A project in a synced folder can
+ *   carry a record to another machine, and two containers sharing a volume
+ *   can have one hostname and overlapping pids; in either case a pid read
+ *   here says nothing about the writer.
  *
  * The rule never errs towards "gone": a pid that is not running on this host
  * is gone, and a running pid is gone only when its start time was read on both
@@ -33,6 +36,17 @@
  * Windows has no `ps`, so there a running pid is always "possibly running"
  * and the age floor decides; a pid that is not running is still gone.
  *
+ * Two residuals, named on purpose. A wall-clock step of more than the
+ * tolerance between a writer stamping its start time and another process
+ * checking it (NTP correcting a badly wrong clock, a VM resumed from a
+ * snapshot) shifts the start time Linux reports for the writer, and can make
+ * a live writer look like a recycled pid. The server reads its own start time
+ * at boot ({@link currentRecordOwner} is called from `index.ts`) to keep its
+ * side of that window as short as it can be. And containers that share a
+ * volume, a hostname AND a pid namespace are one host as far as this can
+ * tell; they share their pids too, so the check is still about one set of
+ * processes.
+ *
  * The owner is written into the record's own name (see
  * {@link RECORD_OWNER_PATTERN}), so it lands in the same atomic step that
  * creates the record, and no second file can go missing or be orphaned.
@@ -40,6 +54,7 @@
  * @module services/marketplace/lib/record-owner
  */
 import { createHash } from 'node:crypto';
+import { readlinkSync } from 'node:fs';
 import { hostname } from 'node:os';
 import {
   DEFAULT_PID_REUSE_TOLERANCE_MS,
@@ -106,7 +121,9 @@ export function parseRecordOwner(
 let currentOwner: RecordOwner | undefined;
 
 /**
- * The owner this process writes into its records.
+ * The owner this process writes into its records. Computed on first call and
+ * cached; the server calls it once at boot so its start time is read as close
+ * to its real start as possible (see the clock-step residual in the header).
  *
  * @returns This process's pid, start time and host tag.
  */
@@ -114,7 +131,7 @@ export function currentRecordOwner(): RecordOwner {
   currentOwner ??= {
     pid: process.pid,
     startedAt: _internal.readProcessStartSeconds(process.pid) ?? 0,
-    host: hostTag(hostname()),
+    host: hostTag(_internal.hostIdentity()),
   };
   return currentOwner;
 }
@@ -156,12 +173,28 @@ function readProcessStartSeconds(pid: number): number | null {
 }
 
 /**
- * A short, filename-safe tag for a hostname.
+ * Everything that decides whether a pid read here names the same process it
+ * named for the writer: the hostname, plus the pid namespace on Linux (where
+ * containers are the common way to share a hostname and a volume).
  *
  * @internal
  */
-function hostTag(name: string): string {
-  return createHash('sha256').update(name).digest('hex').slice(0, 8);
+function hostIdentity(): string {
+  if (process.platform !== 'linux') return hostname();
+  try {
+    return `${hostname()}\n${readlinkSync('/proc/self/ns/pid')}`;
+  } catch {
+    return hostname();
+  }
+}
+
+/**
+ * A short, filename-safe tag for a host identity.
+ *
+ * @internal
+ */
+function hostTag(identity: string): string {
+  return createHash('sha256').update(identity).digest('hex').slice(0, 8);
 }
 
 /**
@@ -171,4 +204,5 @@ function hostTag(name: string): string {
 export const _internal = {
   isProcessAlive,
   readProcessStartSeconds,
+  hostIdentity,
 };

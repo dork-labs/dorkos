@@ -6,7 +6,7 @@ covers:
 
 ### Fixed
 
-- If DorkOS stops in the middle of installing or updating a package, you get the package back the way it was. Before, a crash at the wrong moment could leave you with neither the old version nor the new one, because DorkOS later deleted the saved copy of the old version instead of putting it back.
-- A package that was half-installed when DorkOS stopped is now cleaned up the next time DorkOS starts, instead of showing up broken.
-- When two copies of DorkOS work on the same project, one no longer undoes an install the other is still in the middle of. If you try to install a package while the other copy is installing it, you are asked to try again in a few minutes.
-- A plugin's leftover saved copy no longer shows up to your coding agents as a second copy of the same plugin's skills.
+- If DorkOS stops in the middle of installing a package over an older version, you get the older version back. Before, a crash at the wrong moment could leave you with neither version, because DorkOS later deleted the saved copy of the old one instead of putting it back. (Updating a package is not covered yet; that fix is on its way.)
+- A package that was half-installed when DorkOS stopped is cleaned up the next time DorkOS starts, instead of showing up broken.
+- When two copies of DorkOS work on the same project, one no longer undoes an install the other is still in the middle of. If you try to install a package while the other copy is installing it, DorkOS tells you how many minutes to wait.
+- A leftover saved copy of a package no longer shows up as a second copy of it: not as a second Shape, not as a second agent in the health check, not as extra skills for your coding agents, and not as a second copy of a scheduled task.

@@ -91,6 +91,7 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { z } from 'zod';
 import {
   ScheduleBlockSchema,
@@ -631,6 +632,9 @@ async function foldStrayLegacyFields(
     // it, and overwritten by the next update.
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
     if (scope === 'global' && entry.name === TASK_TEMPLATES_DIRNAME) continue;
+    // A marketplace install's own sibling (a crash-left backup of a schedule
+    // skill) is a copy for recovery to settle, not a skill to rewrite.
+    if (isInstallSiblingName(entry.name)) continue;
 
     const filePath = path.join(dir, entry.name, SKILL_FILENAME);
     try {

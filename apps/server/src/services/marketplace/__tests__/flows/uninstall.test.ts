@@ -269,6 +269,85 @@ describe('UninstallFlow', () => {
     expect(await readdir(pluginsRoot)).toEqual([]);
   });
 
+  it('finds a package a crash left only in its backup, and removes it for good (DOR-2273)', async () => {
+    // The target is missing and v1 sits in a backup beside it. "Not
+    // installed" here would let a later recovery restore the package the
+    // person just asked to remove.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const pluginsRoot = path.join(deps.dorkHome, 'plugins');
+    await stageInstalledPackage({
+      installRoot: path.join(
+        pluginsRoot,
+        `plugin-a.dorkos-bak-${Date.now()}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}`
+      ),
+      manifest: buildPluginManifest({ name: 'plugin-a' }),
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await new UninstallFlow(deps).uninstall({ name: 'plugin-a' });
+
+    expect(result.ok).toBe(true);
+    expect(await readdir(pluginsRoot)).toEqual([]);
+  });
+
+  it('moves on to the next candidate when settling empties the first (DOR-2273)', async () => {
+    // A half-written fresh install in the project scope is removed by
+    // settling; the real install is the global one, and that is what goes.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const project = await mkdtemp(path.join(tmpdir(), 'uninstall-project-'));
+    cleanupDirs.push(project);
+    const projectPlugins = path.join(project, '.dork', 'plugins');
+    await mkdir(path.join(projectPlugins, 'plugin-a'), { recursive: true });
+    await writeFile(
+      path.join(
+        projectPlugins,
+        `plugin-a.dorkos-bak-${Date.now()}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}.absent`
+      ),
+      ''
+    );
+    const globalRoot = path.join(deps.dorkHome, 'plugins', 'plugin-a');
+    await stageInstalledPackage({
+      installRoot: globalRoot,
+      manifest: buildPluginManifest({ name: 'plugin-a' }),
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await new UninstallFlow(deps).uninstall({
+      name: 'plugin-a',
+      projectPath: project,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await readdir(projectPlugins)).toEqual([]);
+    expect(await pathExists(globalRoot)).toBe(false);
+  });
+
+  it('removes a kept pre-commit-records backup along with the package (DOR-2273)', async () => {
+    // Kept beside a live install because nothing proved which copy was whole;
+    // left after the uninstall, it would be restored as if the crash were new.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const pluginsRoot = path.join(deps.dorkHome, 'plugins');
+    await stageInstalledPackage({
+      installRoot: path.join(pluginsRoot, 'plugin-a'),
+      manifest: buildPluginManifest({ name: 'plugin-a' }),
+    });
+    await stageInstalledPackage({
+      installRoot: path.join(
+        pluginsRoot,
+        `plugin-a.dorkos-bak-${Date.now() - 11 * 60_000}-${randomUUID()}`
+      ),
+      manifest: buildPluginManifest({ name: 'plugin-a' }),
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await new UninstallFlow(deps).uninstall({ name: 'plugin-a' });
+
+    expect(await readdir(pluginsRoot)).toEqual([]);
+  });
+
   /**
    * A load approval is keyed to the extension id and does not expire (DOR-516), so
    * it has to be forgotten when the code behind that id goes away. Otherwise:
