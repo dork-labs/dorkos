@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   RemoteConnectionAuthorizationError,
   RemoteConnectionStore,
@@ -27,6 +27,7 @@ import {
   parseCommunityLink,
   parseCommunityOrigin,
   pinnedJson,
+  PinnedHttpError,
   PinnedOriginError,
 } from '../pinned-origin.js';
 
@@ -56,6 +57,10 @@ const remoteAttachmentId = randomUUID();
 const qualified = `/api/v1/communities/${remoteCommunityId}`;
 const secondQualified = `/api/v1/communities/${secondRemoteCommunityId}`;
 const requests: Array<{ path: string; body: Record<string, string> }> = [];
+/** Every self-revocation the fake Community received, with the bearer that sent it. */
+const revocations: Array<{ path: string; authorization: string | undefined }> = [];
+/** How the fake Community answers a self-revocation: a status, or drop the socket. */
+let revocationAnswer: number | 'hang-up' = 204;
 
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'community-pairing-'));
@@ -84,6 +89,20 @@ beforeAll(async () => {
       (!rejectedPath || req.url === rejectedPath)
     ) {
       send({ error: 'Grant rejected' }, rejectedStatus);
+      return;
+    }
+    if (req.method === 'DELETE' && req.url === `${qualified}/me/connection`) {
+      revocations.push({ path: req.url, authorization: req.headers.authorization });
+      if (revocationAnswer === 'hang-up') {
+        req.socket.destroy();
+        return;
+      }
+      if (revocationAnswer === 204) {
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+      send({ code: 'UNAUTHENTICATED', message: 'untrusted remote text' }, revocationAnswer);
       return;
     }
     if (req.url === `${secondQualified}/community`) {
@@ -594,6 +613,101 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       pollCount = 0;
     }
   });
+  describe('disconnect revokes the grant on the Community', () => {
+    async function connected(owner: string) {
+      approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const service = new RemoteCommunityPairingService(store);
+      const started = await service.start(owner, origin, 'Disconnecting install');
+      expect((await service.poll(started.connection.ref, owner)).status).toBe('connected');
+      approved = false;
+      revocations.length = 0;
+      return { store, service, ref: started.connection.ref };
+    }
+
+    async function expectLocalCopyGone(store: RemoteConnectionStore, ref: string, owner: string) {
+      expect(await store.list(owner)).toEqual([]);
+      expect(
+        await new EncryptedFileCredentialStore(directory).get(`community:${ref}:personal`)
+      ).toBeNull();
+    }
+
+    afterEach(() => {
+      revocationAnswer = 204;
+      revocations.length = 0;
+    });
+
+    it('revokes with its own bearer at the qualified path before deleting the local copy', async () => {
+      const { store, service, ref } = await connected('disconnect-owner');
+      expect(await service.disconnect(ref, 'disconnect-owner')).toEqual({ remoteRevoked: true });
+      expect(revocations).toEqual([
+        { path: `${qualified}/me/connection`, authorization: `Bearer ${token}` },
+      ]);
+      await expectLocalCopyGone(store, ref, 'disconnect-owner');
+    });
+
+    it('counts a grant the Community already refuses as revoked', async () => {
+      const { store, service, ref } = await connected('already-revoked-owner');
+      revocationAnswer = 401;
+      expect(await service.disconnect(ref, 'already-revoked-owner')).toEqual({
+        remoteRevoked: true,
+      });
+      expect(revocations).toHaveLength(1);
+      await expectLocalCopyGone(store, ref, 'already-revoked-owner');
+    });
+
+    it.each([
+      ['unreachable', 'hang-up' as const],
+      ['failing', 500],
+      ['older and without the route', 404],
+      ['refusing', 403],
+    ])(
+      'still deletes the local copy and reports it when the Community is %s',
+      async (_label, answer) => {
+        const { store, service, ref } = await connected('unreachable-owner');
+        revocationAnswer = answer;
+        expect(await service.disconnect(ref, 'unreachable-owner')).toEqual({
+          remoteRevoked: false,
+        });
+        expect(revocations).toHaveLength(1);
+        await expectLocalCopyGone(store, ref, 'unreachable-owner');
+      }
+    );
+
+    it('keeps only the closed-enum code of a refusal, never its text', async () => {
+      revocationAnswer = 403;
+      const error = await pinnedJson(
+        new URL(origin),
+        `${qualified}/me/connection`,
+        undefined,
+        undefined,
+        { method: 'DELETE', accept: [204] }
+      ).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(PinnedHttpError);
+      expect(error).toMatchObject({ status: 403, remoteCode: 'UNAUTHENTICATED' });
+      expect(
+        JSON.stringify({ ...(error as object), message: (error as Error).message })
+      ).not.toContain('untrusted remote text');
+      const unknown = await pinnedJson(new URL(origin), `${qualified}/no-such-route`).catch(
+        (caught: unknown) => caught
+      );
+      expect(unknown).toMatchObject({ status: 404, remoteCode: undefined });
+    });
+
+    it('does not call the Community for a pending request, which has no grant', async () => {
+      approved = false;
+      const store = new RemoteConnectionStore(directory);
+      const service = new RemoteCommunityPairingService(store);
+      const started = await service.start('pending-disconnect-owner', origin, 'Pending install');
+      revocations.length = 0;
+      expect(await service.disconnect(started.connection.ref, 'pending-disconnect-owner')).toEqual({
+        remoteRevoked: true,
+      });
+      expect(revocations).toEqual([]);
+      expect(await store.list('pending-disconnect-owner')).toEqual([]);
+    });
+  });
+
   it('fences local authority even when reconnect persistence fails', async () => {
     approved = true;
     const store = new RemoteConnectionStore(directory);

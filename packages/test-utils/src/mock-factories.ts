@@ -1142,7 +1142,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getCommunityConnection: vi.fn(),
     pollCommunityConnection: vi.fn(),
     cancelCommunityConnection: vi.fn().mockResolvedValue(undefined),
-    disconnectCommunity: vi.fn().mockResolvedValue(undefined),
+    disconnectCommunity: vi.fn().mockResolvedValue({ remoteRevoked: true }),
     getCommunityNavigation: vi
       .fn()
       .mockResolvedValue({ ownerKey: 'local-owner', order: [], destinations: [] }),

@@ -64,6 +64,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   agents: '/api/v1/agents',
   me: '/api/v1/me',
   connectionAccess: '/api/v1/me/connection-access',
+  meConnection: '/api/v1/me/connection',
   members: '/api/v1/members',
   authOptions: '/api/v1/auth-options',
   memberRole: '/api/v1/members/:id/role',
@@ -621,6 +622,8 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'COMMUNITY_DELETION_PENDING',
   'UNAVAILABLE',
 ]);
+/** A Community's machine-readable error code; the closed set a client may branch on. */
+export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;
 /** Public error response; no database cause, credential or path is serialized. */
 export const CommunityWireErrorSchema = z.strictObject({
   code: CommunityWireErrorCodeSchema,

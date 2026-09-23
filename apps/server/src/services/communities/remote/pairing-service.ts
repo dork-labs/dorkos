@@ -31,6 +31,15 @@ import {
   PinnedOriginError,
 } from './pinned-origin.js';
 
+/** What disconnecting told the Community. */
+export interface RemoteDisconnectResult {
+  /**
+   * True when the Community confirmed this installation's grant is gone, or
+   * when there was no grant to end. False when it could not be told.
+   */
+  remoteRevoked: boolean;
+}
+
 /** A pending pairing with an approval page on the accepted community origin. */
 export interface RemotePairingStart {
   /** Non-secret connection descriptor. */
@@ -334,13 +343,59 @@ export class RemoteCommunityPairingService {
     }
   }
 
-  /** Remove this owner's connected or pending local credentials and cache. */
-  async disconnect(ref: CommunityRef, ownerKey: string): Promise<void> {
+  /**
+   * Disconnect this installation: revoke its grant on the Community, then
+   * remove this owner's local credentials and cache.
+   *
+   * The Community is told first, with the installation's own bearer, because
+   * after the local copy is gone nothing could prove which grant to end. The
+   * local copy is removed whatever the Community answers: the person asked to
+   * disconnect, and an unreachable Community must not keep a credential here.
+   * The result says whether the Community confirmed the grant is gone, so the
+   * person can be told when it could not be reached.
+   *
+   * @param ref - Local connection ref.
+   * @param ownerKey - The local owner the connection belongs to.
+   */
+  async disconnect(ref: CommunityRef, ownerKey: string): Promise<RemoteDisconnectResult> {
     this.enter(ref);
     try {
+      const record = await this.store.get(ref, ownerKey);
+      // A pending request never received a grant, and a reconnect-required one
+      // was already refused by the Community: nothing is left to end there.
+      // Revocation never throws, so the local copy is always removed below.
+      const remoteRevoked =
+        record.status === 'connected' ? await this.revokeRemoteGrant(ref, ownerKey, record) : true;
       await this.store.disconnect(ref, ownerKey);
+      return { remoteRevoked };
     } finally {
       this.busy.delete(ref);
+    }
+  }
+
+  private async revokeRemoteGrant(
+    ref: CommunityRef,
+    ownerKey: string,
+    record: { pinnedOrigin: string; remoteCommunityId: string }
+  ): Promise<boolean> {
+    try {
+      await pinnedJson(
+        parseCommunityOrigin(record.pinnedOrigin),
+        communityApiPath(record.remoteCommunityId, COMMUNITY_API_V1_ROUTES.meConnection),
+        undefined,
+        undefined,
+        {
+          method: 'DELETE',
+          authorization: await this.store.personalToken(ref, ownerKey),
+          accept: [204],
+        }
+      );
+      return true;
+    } catch (error) {
+      // 401: the Community no longer accepts this bearer, so its grant is
+      // already gone. Anything else (unreachable, refused, an older Community
+      // without this route) leaves the grant unconfirmed.
+      return error instanceof PinnedHttpError && error.status === 401;
     }
   }
 }

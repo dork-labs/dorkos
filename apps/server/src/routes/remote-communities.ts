@@ -53,6 +53,7 @@ import {
   RemoteConnectionAuthorizationError,
   RemoteConnectionNotFoundError,
 } from '../services/communities/remote/connection-store.js';
+import { communityRefusal, type CommunityRefusalAction } from './remote-community-refusal.js';
 
 function isSafeAttachmentName(value: string): boolean {
   return [...value].every((character) => {
@@ -103,7 +104,11 @@ async function* requestBytes(req: import('express').Request): AsyncIterable<Uint
   for await (const chunk of req) yield typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
 }
 
-function fail(res: import('express').Response, error: unknown): void {
+function fail(
+  res: import('express').Response,
+  error: unknown,
+  action?: CommunityRefusalAction
+): void {
   if (error instanceof RemoteConnectionCapabilityError) {
     res.status(403).json({ code: 'COMMUNITY_ACCESS_DENIED', error: error.message });
     return;
@@ -117,6 +122,11 @@ function fail(res: import('express').Response, error: unknown): void {
   }
   if (error instanceof RemoteConnectionNotFoundError) {
     res.status(404).json({ error: 'Community connection not found.' });
+    return;
+  }
+  const refusal = communityRefusal(error, action);
+  if (refusal) {
+    res.status(refusal.status).json({ code: refusal.code, error: refusal.error });
     return;
   }
   res.status(502).json({ error: 'Community unavailable.' });
@@ -634,7 +644,7 @@ export function createRemoteCommunitiesRouter(): Router {
         })
       );
     } catch (error) {
-      fail(res, error);
+      fail(res, error, 'enroll-agent');
     }
   });
   router.delete('/:ref/agents/:localAgentId', async (req, res) => {
