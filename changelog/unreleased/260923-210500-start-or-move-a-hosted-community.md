@@ -1,5 +1,6 @@
 ---
-covers: []
+covers:
+  - 'feat(client): start or move a hosted community from the switcher'
 ---
 
 ### Added
