@@ -243,8 +243,13 @@ export interface OperatingSkill {
  *   agent that meets a sign-in page and asks for the password in chat. Versions
  *   1 to 21 had no page on it, so the bump is what seeds the new skill into an
  *   agent that already holds the pack.
+ * - 23: the help menu lost its "Report on GitHub" sub-menu (DOR-2232). The public
+ *   GitHub path is one link, "Open one instead", at the bottom of the Send
+ *   feedback form now, and `answering-dorkos-questions` said to look for a menu
+ *   entry that no longer exists. An agent seeded at 22 would keep sending people
+ *   to it.
  */
-export const OPERATING_SKILLS_VERSION = 22;
+export const OPERATING_SKILLS_VERSION = 23;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

@@ -483,31 +483,6 @@ export const FeedbackEventSchema = z.discriminatedUnion('event', [
 export type FeedbackEvent = z.infer<typeof FeedbackEventSchema>;
 
 /**
- * The client→server feedback submission payload: what a cockpit form hands to
- * {@link import('./transport.js').Transport.sendFeedback} (and what the server
- * `POST /api/feedback` route validates). The server fills the rest — `surface`,
- * `distinctId`, `timestamp`, `dorkosVersion`, and (when a session is verified)
- * the reporter's identity — so a producer only ever describes *what the person
- * wrote and observed*.
- *
- * `kind` here includes `idea` (which maps to a `feature_requested` event); the
- * two non-idea kinds map to `feedback_submitted`. The fields beyond
- * `kind`/`message`/`contact`/`route` are new plumbing (feedback-pipeline spec
- * Part 1): `sessionId` names the session a transcript excerpt would come from;
- * `diagnostics` is the bounded client/server diagnostics bundle; `transcriptExcerpt`
- * and `screenshot` are opt-in attachments the dialog lets the user
- * preview and remove before sending; `includeServerLogs` is how the client asks
- * the server to gather and attach a scrubbed log excerpt (see
- * {@link FeedbackDiagnosticsSchema.serverLogExcerpt}) — the client never reads
- * the log file itself; `includeTranscript` is the parallel opt-in that asks the
- * server to gather and attach a bounded, scrubbed `transcriptExcerpt` from
- * `sessionId` (gathered server-side, mirroring `serverLogExcerpt` — the client
- * never truncates or scrubs the transcript itself); `anonymous` is the dialog's
- * "Send anonymously" flag — when `true`, the route skips the server-side
- * identity lookup even for a verified session, so no `reporterEmail`/
- * `reporterName` is attached (the pseudonymous `instanceId` still rides along).
- */
-/**
  * An opt-in screenshot attached to a submission, carried inline as a `data:`
  * URL (feedback-attachments decision 2). The image rides WITH the submission —
  * client → local server → site intake — rather than being uploaded separately
@@ -533,6 +508,85 @@ export const FeedbackScreenshotSchema = z
 /** An attached screenshot, per {@link FeedbackScreenshotSchema}. */
 export type FeedbackScreenshot = z.infer<typeof FeedbackScreenshotSchema>;
 
+/**
+ * Longest CSS selector a pointed-at element may carry (see
+ * {@link FeedbackElementSchema}). The client stops building a selector past this
+ * length, because past it the selector has stopped being something a person can
+ * read. Mirrored by hand as `MAX_ELEMENT_SELECTOR_LEN` in the site's intake route.
+ */
+export const MAX_FEEDBACK_ELEMENT_SELECTOR_LEN = 240;
+
+/**
+ * Longest `data-slot` or `data-testid` value a pointed-at element may carry. The
+ * names the codebase writes are a few words long; a value past this is not one
+ * of them, and the client leaves it out rather than cutting it. Mirrored by hand
+ * as `MAX_ELEMENT_NAME_LEN` in the site's intake route.
+ */
+export const MAX_FEEDBACK_ELEMENT_NAME_LEN = 128;
+
+/**
+ * Longest accessible name a pointed-at element may carry: the words a person
+ * sees on it ("Set up a daily run"). The client trims to about 40 characters;
+ * this is the wire's bound. Mirrored by hand as `MAX_ELEMENT_LABEL_LEN` in the
+ * site's intake route.
+ */
+export const MAX_FEEDBACK_ELEMENT_LABEL_LEN = 80;
+
+/**
+ * The one element a person pointed at while writing the report (DOR-2232).
+ *
+ * Its own field rather than lines written into `message`: the message is the
+ * person's words, and the Linear title is built from its first line. When the
+ * element rode in the message, a report with no words at all could be sent, and
+ * five of six such reports were titled `Element: [data-testid="message-list"]`.
+ * The site renders this under the message in the issue body, never in the title.
+ *
+ * `selector` is a CSS selector short enough to paste into a devtools console;
+ * `slot` and `testId` are the nearest `data-slot` / `data-testid` at or above the
+ * element, when it has them; `label` is its accessible name, the words a person
+ * sees on it (DOR-2232 review: a chip named only by its ancestor's slot read as
+ * "App shell"). All four come from the rendered DOM only, and `label` is never a
+ * form field's value.
+ */
+export const FeedbackElementSchema = z
+  .object({
+    selector: z.string().min(1).max(MAX_FEEDBACK_ELEMENT_SELECTOR_LEN),
+    slot: z.string().min(1).max(MAX_FEEDBACK_ELEMENT_NAME_LEN).optional(),
+    testId: z.string().min(1).max(MAX_FEEDBACK_ELEMENT_NAME_LEN).optional(),
+    label: z.string().min(1).max(MAX_FEEDBACK_ELEMENT_LABEL_LEN).optional(),
+  })
+  .strict();
+
+/** A pointed-at element, per {@link FeedbackElementSchema}. */
+export type FeedbackElement = z.infer<typeof FeedbackElementSchema>;
+
+/**
+ * The client→server feedback submission payload: what a cockpit form hands to
+ * {@link import('./transport.js').Transport.sendFeedback} (and what the server
+ * `POST /api/feedback` route validates). The server fills the rest — `surface`,
+ * `distinctId`, `timestamp`, `dorkosVersion`, and (when a session is verified)
+ * the reporter's identity — so a producer only ever describes *what the person
+ * wrote and observed*.
+ *
+ * `kind` here includes `idea` (which maps to a `feature_requested` event); the
+ * two non-idea kinds map to `feedback_submitted`. The fields beyond
+ * `kind`/`message`/`contact`/`route` are new plumbing (feedback-pipeline spec
+ * Part 1): `sessionId` names the session a transcript excerpt would come from;
+ * `element` names the one element the person pointed at (see
+ * {@link FeedbackElementSchema}, DOR-2232);
+ * `diagnostics` is the bounded client/server diagnostics bundle; `transcriptExcerpt`
+ * and `screenshot` are opt-in attachments the dialog lets the user
+ * preview and remove before sending; `includeServerLogs` is how the client asks
+ * the server to gather and attach a scrubbed log excerpt (see
+ * {@link FeedbackDiagnosticsSchema.serverLogExcerpt}) — the client never reads
+ * the log file itself; `includeTranscript` is the parallel opt-in that asks the
+ * server to gather and attach a bounded, scrubbed `transcriptExcerpt` from
+ * `sessionId` (gathered server-side, mirroring `serverLogExcerpt` — the client
+ * never truncates or scrubs the transcript itself); `anonymous` is the dialog's
+ * "Send anonymously" flag — when `true`, the route skips the server-side
+ * identity lookup even for a verified session, so no `reporterEmail`/
+ * `reporterName` is attached (the pseudonymous `instanceId` still rides along).
+ */
 export const FeedbackSubmissionSchema = z
   .object({
     kind: z.enum(['feedback', 'bug', 'idea']),
@@ -543,6 +597,7 @@ export const FeedbackSubmissionSchema = z
     diagnostics: FeedbackDiagnosticsSchema.optional(),
     transcriptExcerpt: z.string().max(MAX_TRANSCRIPT_LEN).optional(),
     screenshot: FeedbackScreenshotSchema.optional(),
+    element: FeedbackElementSchema.optional(),
     includeServerLogs: z.boolean().optional(),
     includeTranscript: z.boolean().optional(),
     anonymous: z.boolean().optional(),
@@ -639,7 +694,7 @@ export interface FeedbackEventContext {
  *
  * Only `message`/`contact`/`route`/`dorkosVersion`/`reporterEmail`/`reporterName`
  * ride the built event — `sessionId`, `diagnostics`, `transcriptExcerpt`,
- * `screenshot`, `includeServerLogs`, `includeTranscript`, and `anonymous`
+ * `screenshot`, `element`, `includeServerLogs`, `includeTranscript`, and `anonymous`
  * are NOT part of the PostHog wire shape (they have no property slot on
  * {@link FeedbackSubmittedProperties} /
  * {@link FeatureRequestedProperties}); this stays the narrow metrics event, not

@@ -12,7 +12,8 @@ import { useCurrentUser } from '@/layers/features/auth';
  * lives in a shared store (`useFeedbackDialogStore`) and this host renders the
  * one dialog from it. Living in the widget layer lets it bridge two features the
  * dialog's own layer must not import from each other: the auth feature (for the
- * "Sending as…" identity line — display only; the server is the authority) and
+ * "Replying to…" identity line, or the email field when nobody is signed in —
+ * display only; the server is the authority) and
  * the feedback feature (the dialog itself).
  *
  * It also completes the app-crash handoff: the crash boundary renders after this

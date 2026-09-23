@@ -77,6 +77,16 @@ const MAX_URL_LEN = 2048;
  * submission the cockpit considered valid.
  */
 const MAX_SCREENSHOT_DATA_URL_LEN = 850_000;
+/**
+ * Caps on the pointed-at element (DOR-2232). Mirror
+ * `MAX_FEEDBACK_ELEMENT_SELECTOR_LEN` (240) and `MAX_FEEDBACK_ELEMENT_NAME_LEN`
+ * (128) in `@dorkos/shared`'s `telemetry-events` exactly, for the same reason as
+ * the screenshot cap above.
+ */
+const MAX_ELEMENT_SELECTOR_LEN = 240;
+const MAX_ELEMENT_NAME_LEN = 128;
+/** Mirrors `MAX_FEEDBACK_ELEMENT_LABEL_LEN` (80) in `@dorkos/shared`. */
+const MAX_ELEMENT_LABEL_LEN = 80;
 
 // Whole-body size cap. An opt-in screenshot now travels INLINE with the
 // submission as a `data:` URL rather than through a separate upload path
@@ -116,6 +126,18 @@ const FeedbackIntakeSchema = z
           .string()
           .regex(/^data:image\/(webp|png|jpeg);base64,/)
           .max(MAX_SCREENSHOT_DATA_URL_LEN),
+      })
+      .strict()
+      .optional(),
+    // The one element the reporter pointed at, when they did. Rendered into the
+    // Linear description under the message and never into the title; not
+    // persisted to Neon, which has no use for it once the issue exists.
+    element: z
+      .object({
+        selector: z.string().min(1).max(MAX_ELEMENT_SELECTOR_LEN),
+        slot: z.string().min(1).max(MAX_ELEMENT_NAME_LEN).optional(),
+        testId: z.string().min(1).max(MAX_ELEMENT_NAME_LEN).optional(),
+        label: z.string().min(1).max(MAX_ELEMENT_LABEL_LEN).optional(),
       })
       .strict()
       .optional(),
@@ -261,6 +283,7 @@ export async function POST(request: Request): Promise<Response> {
       transcriptExcerpt: submission.transcriptExcerpt,
       attachmentUrls: submission.attachmentUrls,
       screenshot: submission.screenshot,
+      element: submission.element,
     });
     if (issue) {
       await markTriaged(insertedId, issue);

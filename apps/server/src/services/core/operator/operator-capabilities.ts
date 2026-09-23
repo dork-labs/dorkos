@@ -311,19 +311,21 @@ export const operatorDomain: CapabilityDomain = {
         // it was "not allowed to run the dorkos command" when no such rule exists.
         // So the last sentence says the opposite in as many words.
         //
-        // The menu path is exact, and it was wrong here first (DOR-2056 review).
-        // "Report a bug" directly under Help and feedback opens the IN-APP form
-        // that goes to the DorkOS team; the GitHub page this tool links to is one
-        // level deeper, under "Report on GitHub…". Both are real and they are not
-        // the same thing, so naming the wrong one sends somebody to a form they
-        // did not ask for (`HelpMenuItems.tsx`).
+        // The path is exact, and it was wrong here first (DOR-2056 review).
+        // "Send feedback" under Help and feedback opens the IN-APP form that goes
+        // to the DorkOS team; the GitHub page this tool links to is the "Open one
+        // instead" link at the bottom of that form (DOR-2232 moved it there from
+        // its own sub-menu). Both are real and they are not the same thing, so
+        // naming the wrong one sends somebody to a form they did not ask for
+        // (`HelpMenuItems.tsx`, `FeedbackDialog.tsx`).
         'You get back the url, the kind, filledFields naming the parts already written in, ' +
         'and truncated. When truncated is true the body was too long for a web address and ' +
         'the link carries a shortened copy; fullBody then holds the whole text, so give them ' +
         'that too rather than letting the end of their own report go missing. ' +
-        'If they would rather do it themselves: Send feedback in the app goes straight to the ' +
-        'DorkOS team, Help and feedback > Report on GitHub opens this same page, and ' +
-        '`dorkos feedback` does it from a terminal. Nothing stops you running that command either.',
+        'If they would rather do it themselves: Help and feedback > Send feedback in the app ' +
+        'goes straight to the DorkOS team, the Open one instead link at the bottom of that form ' +
+        'opens this same page, and `dorkos feedback` does it from a terminal. Nothing stops you ' +
+        'running that command either.',
       tier: 'observe',
       input: z.object({
         kind: z

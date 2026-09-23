@@ -174,3 +174,9 @@ describe('route map key parity (drift guard)', () => {
     expect(stale, `ROUTE_ICONS has a stale entry: ${stale.join(', ') || '(none)'}`).toEqual([]);
   });
 });
+
+describe('the reports page label (DOR-2232)', () => {
+  it('names the tab for what the help menu calls it: the person’s own reports', () => {
+    expect(ROUTE_LABELS['/feedback-requests']).toBe('Your reports');
+  });
+});

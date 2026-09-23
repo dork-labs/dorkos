@@ -3,10 +3,12 @@
  * than "the button" (feedback-attachments decision 9).
  *
  * A cropped screenshot shows what was wrong; it does not say what the element is
- * called in the code. These few lines do — a CSS selector short enough to paste
- * into a devtools console, plus whichever of `data-slot` and `data-testid` the
- * element already carries, which are the two names the codebase itself uses to
- * talk about a component's parts.
+ * called in the code. This does — a CSS selector short enough to paste into a
+ * devtools console, plus whichever of `data-slot` and `data-testid` the element
+ * already carries, which are the two names the codebase itself uses to talk
+ * about a component's parts. It travels as the submission's own `element` field,
+ * never as lines in the message (DOR-2232), and {@link nameElement} gives the
+ * plain name the form shows.
  *
  * **The DOM is the only input.** No React fiber walking: the internal fiber
  * fields are private, differ between development and production builds, and are
@@ -16,7 +18,12 @@
  *
  * @module features/feedback/lib/element-identity
  */
-import { MAX_FEEDBACK_MESSAGE_LEN } from '@dorkos/shared/telemetry-events';
+import {
+  MAX_FEEDBACK_ELEMENT_LABEL_LEN,
+  MAX_FEEDBACK_ELEMENT_NAME_LEN,
+  MAX_FEEDBACK_ELEMENT_SELECTOR_LEN,
+  type FeedbackElement,
+} from '@dorkos/shared/telemetry-events';
 
 /**
  * Longest selector this will build before it gives up on being precise.
@@ -24,9 +31,10 @@ import { MAX_FEEDBACK_MESSAGE_LEN } from '@dorkos/shared/telemetry-events';
  * A selector is only useful if a person can read it. Past roughly this length
  * the nth-of-type chain has stopped identifying anything a human recognises and
  * has become noise in the middle of a bug report, so the walk stops and hands
- * back the best it had.
+ * back the best it had. It is also the wire's own cap on the field, so a
+ * selector built here is never one the submission schema refuses.
  */
-export const MAX_SELECTOR_LEN = 240;
+export const MAX_SELECTOR_LEN = MAX_FEEDBACK_ELEMENT_SELECTOR_LEN;
 
 /**
  * Where the walk up the tree stops.
@@ -37,15 +45,13 @@ export const MAX_SELECTOR_LEN = 240;
  */
 const APP_ROOT_ID = 'root';
 
-/** What we can say about the element a person pointed at. */
-export interface ElementIdentity {
-  /** A CSS selector for the element — as short as it can be while still matching only it. */
-  selector: string;
-  /** The nearest `data-slot` name, when the element or an ancestor carries one. */
-  slot?: string;
-  /** The nearest `data-testid`, when the element or an ancestor carries one. */
-  testId?: string;
-}
+/**
+ * What we can say about the element a person pointed at: a CSS selector as short
+ * as it can be while still matching only it, and the nearest `data-slot` and
+ * `data-testid` at or above it. The same shape the submission carries as its
+ * `element` field, so it goes on the wire as it is.
+ */
+export type ElementIdentity = FeedbackElement;
 
 /**
  * Escape a string for use inside a CSS selector.
@@ -141,7 +147,11 @@ function segmentFor(element: Element): string {
  */
 export function buildSelector(element: Element): string {
   for (const candidate of [idSelector(element), attributeSelector(element, 'data-testid')]) {
-    if (candidate && matchesOnly(candidate, element)) return candidate;
+    // A unique name is still no use if it is a wall of text, and the wire
+    // refuses one past the cap. The walk below keeps to the cap on its own.
+    if (candidate && candidate.length <= MAX_SELECTOR_LEN && matchesOnly(candidate, element)) {
+      return candidate;
+    }
   }
 
   const parts: string[] = [];
@@ -176,7 +186,12 @@ export function buildSelector(element: Element): string {
  * @param attribute - The attribute to find.
  */
 function nearestAttribute(element: Element, attribute: string): string | undefined {
-  return element.closest(`[${attribute}]`)?.getAttribute(attribute) ?? undefined;
+  const value = element.closest(`[${attribute}]`)?.getAttribute(attribute);
+  // The names the codebase writes are a few words long. A value past the wire's
+  // cap is not one of them, and cutting it would report a name nobody wrote, so
+  // it is left out and the selector still says which element it was.
+  if (!value || value.length > MAX_FEEDBACK_ELEMENT_NAME_LEN) return undefined;
+  return value;
 }
 
 /**
@@ -188,97 +203,215 @@ function nearestAttribute(element: Element, attribute: string): string | undefin
 export function describeElement(element: Element): ElementIdentity {
   const slot = nearestAttribute(element, 'data-slot');
   const testId = nearestAttribute(element, 'data-testid');
+  const label = accessibleLabel(element);
   return {
     selector: buildSelector(element),
     ...(slot ? { slot } : {}),
     ...(testId ? { testId } : {}),
+    ...(label ? { label } : {}),
   };
 }
 
 /**
- * The identity as the block of lines that rides along in a bug report.
- *
- * Only the lines that resolved: a bug report with `Slot: undefined` in it is
- * worse than one without the line, because a reader has to work out whether the
- * word is the answer or the absence of one.
- *
- * @param identity - What {@link describeElement} found.
- * @returns One line per name, newest-style plain labels, no trailing newline.
+ * The longest label shown for an element before it is cut at a word. A name is
+ * for recognising the thing, and a chip's words fit well inside this; a card's
+ * whole paragraph does not, and is not what anyone would call it.
  */
-export function formatElementIdentity(identity: ElementIdentity): string {
-  return [
-    `Element: ${identity.selector}`,
-    identity.slot ? `Slot: ${identity.slot}` : null,
-    identity.testId ? `Testid: ${identity.testId}` : null,
-  ]
-    .filter((line): line is string => line !== null)
-    .join('\n');
+export const MAX_LABEL_LEN = 40;
+
+/**
+ * What counts as a control: the thing a click on its icon or its inner text was
+ * really aimed at, and whose words are its name.
+ */
+const CONTROL_SELECTOR = [
+  'button',
+  'a[href]',
+  'summary',
+  'input',
+  'select',
+  'textarea',
+  '[role="button"]',
+  '[role="link"]',
+  '[role="menuitem"]',
+  '[role="tab"]',
+  '[role="option"]',
+  '[role="checkbox"]',
+  '[role="switch"]',
+].join(', ');
+
+/** Fields whose content is what a person typed, never a name to send. */
+const FIELD_TAGS = new Set(['INPUT', 'SELECT', 'TEXTAREA']);
+
+/**
+ * Surfaces whose text is what a person typed or what was said, not a name: a
+ * rich-text editor (the composer draws a draft as `<p><span data-lexical-text>`,
+ * CodeMirror as its own lines) and anything announcing itself as a text box.
+ * An element in one of these is named by its host's `aria-label` or nothing —
+ * never by its words, which could be a half-written message.
+ */
+const EDITABLE_SELECTOR = [
+  '[contenteditable]:not([contenteditable="false"])',
+  '[role="textbox"]',
+  '[role="searchbox"]',
+  '[role="combobox"]',
+].join(', ');
+
+/**
+ * Elements whose own text IS a name, outside any control: headings, labels, a
+ * table's header cells, a definition's term. Everything else's text is content
+ * — a line of a sent message is as short as any name, and still not one.
+ */
+const NAME_TEXT_SELECTOR = [
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  '[role="heading"]',
+  'label',
+  'legend',
+  'th',
+  'dt',
+].join(', ');
+
+/**
+ * Split text into what a reader sees as characters, so a cut never lands inside
+ * an emoji or between a surrogate pair. Code points where `Intl.Segmenter` is
+ * missing, which still never leaves a lone surrogate.
+ */
+function characters(text: string): string[] {
+  if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    return Array.from(segmenter.segment(text), (part) => part.segment);
+  }
+  return Array.from(text);
+}
+
+/** Collapse whitespace and cut at a word near {@link MAX_LABEL_LEN}, or `undefined` when empty. */
+function shorten(raw: string | null | undefined): string | undefined {
+  const text = (raw ?? '').replace(/\s+/g, ' ').trim();
+  if (!text) return undefined;
+  const chars = characters(text);
+  if (chars.length <= MAX_LABEL_LEN) return text;
+  const cut = chars.slice(0, MAX_LABEL_LEN - 1);
+  const atWord = cut.lastIndexOf(' ');
+  const kept = atWord > MAX_LABEL_LEN / 2 ? cut.slice(0, atWord) : cut;
+  return `${kept.join('').trimEnd()}…`;
+}
+
+/** The text of the elements an `aria-labelledby` points at. */
+function labelledByText(element: Element): string | undefined {
+  const ids = element.getAttribute('aria-labelledby')?.split(/\s+/).filter(Boolean) ?? [];
+  const text = ids
+    .map((id) => element.ownerDocument.getElementById(id)?.textContent ?? '')
+    .join(' ');
+  return shorten(text);
+}
+
+/** An element's own name: `aria-label`, then `aria-labelledby`. */
+function ariaName(element: Element): string | undefined {
+  return shorten(element.getAttribute('aria-label')) ?? labelledByText(element);
 }
 
 /**
- * A trailing identity block, exactly as {@link formatElementIdentity} writes one.
+ * The words a person sees on the element: its accessible name, trimmed.
  *
- * Anchored to the END of the string, and the two optional lines are in the order
- * they are emitted, so this can only match a block this module produced and left
- * where it produced it. A block a person has typed past is no longer trailing and
- * is therefore left alone — see {@link appendElementIdentity}.
+ * In order:
+ * - Inside an editable surface (a draft in the composer, a code editor, any
+ *   text box), only the host's `aria-label`/`aria-labelledby`. Never its text:
+ *   that is what somebody typed.
+ * - Inside a control (the button around a clicked icon), the control's
+ *   `aria-label`, `aria-labelledby`, then its text. A form field is named only
+ *   by its label, never by its value.
+ * - Otherwise its own `aria-label`/`aria-labelledby`, or the text of the
+ *   heading, label, legend, table header or term it sits in. Plain text is
+ *   content — a short line of a sent message is not a name.
+ *
+ * @param element - The element under the pointer.
+ * @returns The name, at most about {@link MAX_LABEL_LEN} characters, or `undefined`.
  */
-const TRAILING_IDENTITY_BLOCK = /\n*Element: [^\n]*(\nSlot: [^\n]*)?(\nTestid: [^\n]*)?$/;
+export function accessibleLabel(element: Element): string | undefined {
+  const label = findLabel(element);
+  return label && label.length <= MAX_FEEDBACK_ELEMENT_LABEL_LEN ? label : undefined;
+}
 
-/** What {@link appendElementIdentity} produced, and whether it fitted. */
-export interface MessageWithIdentity {
-  /** The message to put back in the field, never longer than the cap. */
-  message: string;
+/** The unbounded search behind {@link accessibleLabel}. */
+function findLabel(element: Element): string | undefined {
+  const editable = element.closest(EDITABLE_SELECTOR);
+  if (editable) return ariaName(editable);
+
+  const control = element.closest(CONTROL_SELECTOR);
+  if (control) {
+    if (FIELD_TAGS.has(control.tagName)) {
+      const field = control as HTMLInputElement;
+      return ariaName(control) ?? shorten(field.labels?.[0]?.textContent);
+    }
+    return ariaName(control) ?? shorten(control.textContent);
+  }
+
+  const own = ariaName(element);
+  if (own) return own;
+  const named = element.closest(NAME_TEXT_SELECTOR);
+  return named ? shorten(named.textContent) : undefined;
+}
+
+/**
+ * Turn a code name into words: split on dashes, underscores and camel case, and
+ * give it a capital. `message-list` and `messageList` both read "Message list".
+ *
+ * @param raw - A `data-testid` or `data-slot` value.
+ * @returns The words, or `null` when there are none.
+ */
+export function humanizeName(raw: string): string | null {
+  const words = raw
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((word) => word.toLowerCase());
+  if (words.length === 0) return null;
+  const sentence = words.join(' ');
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+}
+
+/**
+ * A plain name for the element, for a person to read: the thumbnail's caption
+ * and the question the message box asks ("What's wrong with Set up a daily
+ * run?").
+ *
+ * Closest-first, because the nearest name is the most specific one:
+ * 1. its accessible name — the words on it (see {@link accessibleLabel});
+ * 2. its OWN `data-testid`, then its own `data-slot`;
+ * 3. the nearest ancestor's, testid before slot on the same element.
+ *
+ * Reading the nearest `data-slot` first is what once named a starter chip "App
+ * shell": the chip had no slot of its own, and the shell around everything did.
+ *
+ * @param element - The element under the pointer, read at the moment it was clicked.
+ * @returns The name, or `null` when nothing names it. The caller picks its own
+ *   words for that case, because "this part" reads differently in a caption
+ *   than in a question.
+ */
+export function nameElement(element: Element): ElementName | null {
+  const label = accessibleLabel(element);
+  if (label) return { text: label, onScreen: true };
+  const own = element.getAttribute('data-testid') ?? element.getAttribute('data-slot');
+  const ownName = own ? humanizeName(own) : null;
+  if (ownName) return { text: ownName, onScreen: false };
+  const holder = element.parentElement?.closest('[data-testid], [data-slot]');
+  const inherited = holder?.getAttribute('data-testid') ?? holder?.getAttribute('data-slot');
+  const inheritedName = inherited ? humanizeName(inherited) : null;
+  return inheritedName ? { text: inheritedName, onScreen: false } : null;
+}
+
+/** What {@link nameElement} found, and where the words came from. */
+export interface ElementName {
+  /** The name, ready to show. */
+  text: string;
   /**
-   * True when the block would have pushed the message over the cap and was left
-   * out entirely. The caller owes the person a word about it: silently dropping
-   * the one fact the gesture exists to gather is the failure this flag exists to
-   * make impossible.
+   * Whether these are words printed on the element ("Set up a daily run"),
+   * which read as a quote, rather than a code name turned into words ("Message
+   * list"), which reads as a noun.
    */
-  identityDropped: boolean;
-}
-
-/**
- * Fold the identity block into the message the person is writing.
- *
- * Appended to the MESSAGE rather than hidden in diagnostics, and that is a
- * deliberate pair of choices. Diagnostics is a checkbox someone can turn off,
- * which would silently drop the one fact this whole gesture exists to collect;
- * and the message is the field they can read and edit before pressing Send,
- * which is what "you see exactly what you are sending" means here.
- *
- * **One picture, one name.** A second pointing REPLACES a block still sitting at
- * the end of the message rather than adding to it, because the second pointing
- * also replaced the screenshot — there is one image, it shows one element, and a
- * report carrying two "Element:" blocks beside one picture is a report that
- * misleads whoever reads it. A block the person has since typed past is not
- * trailing any more, and is left where they left it: at that point it is their
- * text, not ours to edit.
- *
- * **It cannot push the message over the cap.** The field's own `maxLength` stops
- * a person typing past {@link MAX_FEEDBACK_MESSAGE_LEN}, but nothing stops code
- * writing past it — and the wire schema refuses the submission at exactly that
- * bound, so the overflow would surface as a failed send and a toast pointing at
- * GitHub, which is not what went wrong. When the block will not fit it is left
- * out and said so.
- *
- * @param message - What the person has typed so far, possibly empty.
- * @param identity - What {@link describeElement} found.
- * @param maxLength - The cap to stay within. Defaults to {@link MAX_FEEDBACK_MESSAGE_LEN}.
- * @returns The new message, and whether the block had to be dropped to fit.
- */
-export function appendElementIdentity(
-  message: string,
-  identity: ElementIdentity,
-  maxLength: number = MAX_FEEDBACK_MESSAGE_LEN
-): MessageWithIdentity {
-  const block = formatElementIdentity(identity);
-  const existing = message.replace(TRAILING_IDENTITY_BLOCK, '').trimEnd();
-  const next = existing ? `${existing}\n\n${block}` : block;
-  if (next.length <= maxLength) return { message: next, identityDropped: false };
-  // Room for the block would have to come out of what the person wrote, and
-  // their words are worth more than our labels. Hand the message back as it
-  // stands — with any stale block still stripped, since that one described a
-  // screenshot this pointing has already replaced.
-  return { message: existing.slice(0, maxLength), identityDropped: true };
+  onScreen: boolean;
 }

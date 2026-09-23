@@ -279,7 +279,7 @@ export type MarketplaceSearch = z.infer<typeof marketplaceRouteSearchSchema>;
 const ConnectionsBar = () => <TitleBar title="Connections" />;
 const MarketplaceBar = () => <TitleBar title="Marketplace" />;
 const MarketplaceSourcesBar = () => <TitleBar title="Marketplace sources" />;
-const FeedbackRequestsBar = () => <TitleBar title="Product feedback" />;
+const FeedbackRequestsBar = () => <TitleBar title="Your reports" />;
 
 // ── Pathless layout route (home surface) ────────────────────
 // Uses `id` not `path` — no URL segment added, so `/`, `/activity`, `/tasks`
@@ -616,7 +616,7 @@ const activityRoute = createRoute({
   component: ActivityPage,
 });
 
-// ── Product feedback at /feedback-requests ────────────────
+// ── Your reports at /feedback-requests ────────────────
 const feedbackRequestsRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/feedback-requests',

@@ -49,6 +49,7 @@ import {
   buildFeedbackEvent,
   FeedbackEventSchema,
   type FeedbackDiagnostics,
+  type FeedbackElement,
   type FeedbackEventContext,
   type FeedbackListItem,
   type FeedbackSubmission,
@@ -231,6 +232,7 @@ interface DurableFeedbackPayload {
   diagnostics?: string;
   transcriptExcerpt?: string;
   screenshot?: { dataUrl: string };
+  element?: FeedbackElement;
   hasScreenshot?: boolean;
   hasTranscript?: boolean;
 }
@@ -509,7 +511,51 @@ function buildDurablePayload(
     ...(submission.screenshot
       ? { screenshot: { dataUrl: submission.screenshot.dataUrl }, hasScreenshot: true }
       : {}),
+    // Forwarded as-is: the shared schema already bounded it with the same caps
+    // the site's route checks (`MAX_FEEDBACK_ELEMENT_*`).
+    ...(submission.element ? { element: submission.element } : {}),
   };
+}
+
+/**
+ * What a site's 400 refused about the pointed-at element, read off the Zod
+ * issues its route returns:
+ * - `'label'` — only the element's `label`, as an unknown key inside `element`
+ *   (a site that knows `element` but predates its label);
+ * - `'element'` — the element itself (an unknown top-level key, or a value it
+ *   will not take);
+ * - `null` — nothing about the element, or a body that cannot be read, so an
+ *   unrelated refusal is never retried on the element's account.
+ *
+ * @param res - The site's 400 response. Cloned, so the caller can still read it.
+ */
+async function elementRefusal(res: Response): Promise<'label' | 'element' | null> {
+  try {
+    const body = (await res.clone().json()) as { issues?: unknown };
+    if (!Array.isArray(body.issues)) return null;
+    const about = body.issues
+      .filter((issue): issue is { code?: unknown; keys?: unknown; path?: unknown } =>
+        Boolean(issue && typeof issue === 'object')
+      )
+      .filter(({ code, keys, path }) => {
+        if (Array.isArray(path) && path[0] === 'element') return true;
+        return code === 'unrecognized_keys' && Array.isArray(keys) && keys.includes('element');
+      });
+    if (about.length === 0) return null;
+    const onlyLabel = about.every(
+      ({ code, keys, path }) =>
+        code === 'unrecognized_keys' &&
+        Array.isArray(path) &&
+        path.length === 1 &&
+        path[0] === 'element' &&
+        Array.isArray(keys) &&
+        keys.length > 0 &&
+        keys.every((key) => key === 'label')
+    );
+    return onlyLabel ? 'label' : 'element';
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -523,6 +569,13 @@ function buildDurablePayload(
  * 900,000 bytes. Without the retry that is a 413 and the entire report is
  * lost, which is exactly the outcome the screenshot degradation elsewhere in
  * this pipeline exists to prevent. Losing the picture is the acceptable half.
+ *
+ * On a `400` whose issues name `element` it retries with the element dropped. The site's
+ * schema is strict, and an installed app outlives the site version it was built
+ * against in both directions: the site deploys on merge, apps update at
+ * release, and `DORKOS_CLOUD_URL` can point at any deployment at all. A site
+ * that predates the field refuses the whole body over it, and a refusal loses
+ * the report. Losing the element's name is the acceptable half, same as above.
  */
 async function postDurableFeedback(args: {
   submission: FeedbackSubmission;
@@ -533,35 +586,64 @@ async function postDurableFeedback(args: {
   endpoint: string;
   fetchImpl: typeof fetch;
 }): Promise<boolean> {
-  const send = (payload: DurableFeedbackPayload): Promise<Response> =>
+  const send = (body: DurableFeedbackPayload): Promise<Response> =>
     args.fetchImpl(args.endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(FEEDBACK_TIMEOUT_MS),
     });
 
   try {
-    const payload = buildDurablePayload(
+    let payload = buildDurablePayload(
       args.submission,
       args.instanceId,
       args.identity,
       args.serverVersion
     );
-    const res = await send(payload);
-    if (res.ok) return true;
-    if (res.status !== 413 || !payload.screenshot) return false;
+    // One ordered fallback: each step sheds exactly one field and only for the
+    // refusal that names it, so the loop ends after at most three sends. A site
+    // that predates `element` and also meets a byte-heavy report answers 413
+    // first (its size check runs before its schema), then 400 — both are shed.
+    for (;;) {
+      const res = await send(payload);
+      if (res.ok) return true;
 
-    logger.warn(
-      '[Feedback] Submission too large with its screenshot; retrying without it so the report survives'
-    );
-    // `hasScreenshot` goes with it: after the drop this submission genuinely
-    // does not carry one, and the flag is what the tracking view shows the
-    // reporter. Claiming a screenshot that was never delivered is the one
-    // dishonest option here.
-    const { screenshot: _dropped, hasScreenshot: _hint, ...withoutScreenshot } = payload;
-    const retry = await send(withoutScreenshot);
-    return retry.ok;
+      const refused = res.status === 400 && payload.element ? await elementRefusal(res) : null;
+      if (refused === 'label' && payload.element?.label) {
+        // The site knows the element but not its label: keep the selector and
+        // names, which are what a triager reaches for first.
+        logger.warn(
+          "[Feedback] The site does not accept the element's label yet; retrying without it so the report survives"
+        );
+        const { label: _dropped, ...elementWithoutLabel } = payload.element;
+        payload = { ...payload, element: elementWithoutLabel };
+        continue;
+      }
+      if (refused && payload.element) {
+        logger.warn(
+          '[Feedback] The site does not accept the pointed-at element yet; retrying without it so the report survives'
+        );
+        const { element: _dropped, ...withoutElement } = payload;
+        payload = withoutElement;
+        continue;
+      }
+
+      if (res.status === 413 && payload.screenshot) {
+        logger.warn(
+          '[Feedback] Submission too large with its screenshot; retrying without it so the report survives'
+        );
+        // `hasScreenshot` goes with it: after the drop this submission genuinely
+        // does not carry one, and the flag is what the tracking view shows the
+        // reporter. Claiming a screenshot that was never delivered is the one
+        // dishonest option here.
+        const { screenshot: _dropped, hasScreenshot: _hint, ...withoutScreenshot } = payload;
+        payload = withoutScreenshot;
+        continue;
+      }
+
+      return false;
+    }
   } catch (err) {
     logger.warn('[Feedback] Failed to forward feedback to the durable site route', logError(err));
     return false;
@@ -625,7 +707,7 @@ export interface ListMyFeedbackOptions {
 }
 
 /**
- * List this install's own feedback submissions for the "Product feedback"
+ * List this install's own feedback submissions for the "Your reports"
  * tracking view (feedback-pipeline Part 4, decision 260803-205035).
  *
  * A thin, read-only forward to the site's `GET /api/feedback/mine`,
