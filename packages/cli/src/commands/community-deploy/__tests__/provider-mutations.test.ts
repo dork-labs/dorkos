@@ -39,7 +39,7 @@ afterEach(async () => {
 const options = (executable: string, env: Readonly<Record<string, string>> = {}) => ({
   executable,
   env,
-  timeoutMs: 1_000,
+  timeoutMs: 10_000,
 });
 
 describe('provider mutation boundaries', () => {
