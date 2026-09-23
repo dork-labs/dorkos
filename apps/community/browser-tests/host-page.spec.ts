@@ -13,12 +13,12 @@ import { parseConfig } from '../src/config.js';
 import { migrate } from '../src/migrate.js';
 import { hashSecret } from '../src/security.js';
 
-// COMMUNITY_HOST_KEY_SCREENSHOTS optionally names a directory for reviewable screenshots.
-const { COMMUNITY_TEST_DATABASE_URL: adminUrl, COMMUNITY_HOST_KEY_SCREENSHOTS: shots } =
+// COMMUNITY_HOST_PAGE_SCREENSHOTS optionally names a directory for reviewable screenshots.
+const { COMMUNITY_TEST_DATABASE_URL: adminUrl, COMMUNITY_HOST_PAGE_SCREENSHOTS: shots } =
   process.env;
 if (!adminUrl)
   throw new Error('COMMUNITY_TEST_DATABASE_URL is required for community browser tests');
-const dbName = `community_browser_keys_${randomUUID().replaceAll('-', '')}`;
+const dbName = `community_browser_host_${randomUUID().replaceAll('-', '')}`;
 const dbUrl = new URL(adminUrl);
 dbUrl.pathname = `/${dbName}`;
 const admin = new Pool({ connectionString: adminUrl });
@@ -55,7 +55,7 @@ test.beforeAll(async () => {
   await admin.query(`CREATE DATABASE ${dbName}`);
   await migrate(dbUrl.toString());
   pool = new Pool({ connectionString: dbUrl.toString() });
-  blobDir = await mkdtemp(join(tmpdir(), 'community-browser-keys-'));
+  blobDir = await mkdtemp(join(tmpdir(), 'community-browser-host-'));
   const port = await freePort();
   baseUrl = `http://127.0.0.1:${port}`;
   const config = parseConfig({
@@ -69,7 +69,7 @@ test.beforeAll(async () => {
   const app = createCommunityApp({ config, pool });
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
   app.use('/assets/*', serveStatic({ root: staticRoot }));
-  for (const path of ['/', '/host'])
+  for (const path of ['/', '/host', '/c/:communityId', '/c/:communityId/join'])
     app.get(
       path,
       serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
@@ -191,5 +191,85 @@ test('a host operator creates a key, sees it once, replaces it, and revokes it',
     ).toBe(1);
   } finally {
     await context.close();
+  }
+});
+
+test('a host operator sets a community limit beside its current use, on a phone', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    await page.goto(`${baseUrl}/host`);
+    const record = page.getByRole('article', { name: 'First Place community' });
+    await record.getByText('Limits', { exact: true }).click();
+    const form = record.getByRole('form', { name: 'First Place limits' });
+    await expect(form).toContainText('1 now');
+    await expect(form.getByLabel('Most members')).toHaveValue('');
+    await form.getByLabel('Most members').fill('1');
+    await form.getByLabel('Most file space (MiB)').fill('5');
+    await form.getByRole('button', { name: 'Save limits' }).click();
+    await expect(form).toContainText('Limits saved.');
+    const stored = await pool.query(
+      'SELECT max_active_members,max_storage_bytes::int AS bytes FROM community_limits'
+    );
+    expect(stored.rows).toEqual([{ max_active_members: 1, bytes: 5 * 1024 * 1024 }]);
+    await shot(page, 'host-community-limits');
+    // Empty means no limit again.
+    await form.getByLabel('Most members').fill('');
+    await form.getByLabel('Most file space (MiB)').fill('');
+    await form.getByRole('button', { name: 'Save limits' }).click();
+    await expect
+      .poll(async () => (await pool.query('SELECT max_active_members FROM community_limits')).rows)
+      .toEqual([{ max_active_members: null }]);
+  } finally {
+    await context.close();
+  }
+});
+
+test('an invitation to a full community says so before sign-up, and that the link still works', async ({
+  browser,
+}) => {
+  const communityId = (await pool.query<{ id: string }>('SELECT id FROM communities')).rows[0].id;
+  const ownerContext = await browser.newContext();
+  const guest = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  try {
+    const signedIn = await ownerContext.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    const invite = await ownerContext.request.post(
+      `${baseUrl}/api/v1/communities/${communityId}/invites`,
+      { headers: { origin: baseUrl }, data: { seats: 1 } }
+    );
+    expect(invite.status()).toBe(201);
+    const { token } = (await invite.json()) as { token: string };
+    await pool.query(
+      `INSERT INTO community_limits(community_id,max_active_members) VALUES($1,1)
+       ON CONFLICT(community_id) DO UPDATE SET max_active_members=1`,
+      [communityId]
+    );
+
+    const page = await guest.newPage();
+    await page.goto(`${baseUrl}/c/${communityId}/join#invite=${encodeURIComponent(token)}`);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    const alert = page.getByRole('alert');
+    await expect(alert).toContainText('This community is full. Ask its owner to make room.');
+    await expect(alert).toContainText(
+      'Your invitation still works. Open it again once the owner has made room.'
+    );
+    await expect(alert).not.toContainText('new invitation link');
+    await expect(page.getByLabel('Password')).toHaveCount(0);
+    await shot(page, 'join-full-community');
+  } finally {
+    await pool.query('DELETE FROM community_limits');
+    await ownerContext.close();
+    await guest.close();
   }
 });

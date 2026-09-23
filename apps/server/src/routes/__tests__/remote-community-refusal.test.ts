@@ -50,6 +50,23 @@ describe('communityRefusal', () => {
     expect(communityRefusal(error)).toBeNull();
   });
 
+  it.each([
+    [
+      'AGENT_LIMIT_REACHED',
+      'You’ve reached your agent limit in this community. Remove one to add another.',
+    ],
+    ['MEMBER_LIMIT_REACHED', 'This community is full. Ask its owner to make room.'],
+    ['STORAGE_LIMIT_REACHED', 'This community is out of file space.'],
+  ] as const)('names the %s cap as a state, not a conflict or an outage', (code, error) => {
+    // Purpose: a Community answers a cap with 409 and its own code; fails if that reads as a
+    // generic conflict ("refresh and try again") that no refresh can fix.
+    expect(communityRefusal(new PinnedHttpError(409, code))).toEqual({
+      status: 409,
+      code: 'COMMUNITY_LIMIT_REACHED',
+      error,
+    });
+  });
+
   it('names the agent limit when adding an agent hits a 429', () => {
     expect(communityRefusal(new PinnedHttpError(429, 'RATE_LIMITED'), 'enroll-agent')).toEqual({
       status: 429,
