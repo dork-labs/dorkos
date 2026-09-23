@@ -4,6 +4,9 @@ covers:
   - "feat(server): fetch exactly one verified commit's tree from a git remote (DOR-2248)"
   - 'fix(server): cache a package under the commit its checkout holds (DOR-2248)'
   - 'refactor(server): keep git-tree internals unexported (DOR-2248)'
+  - 'fix(server): run the package fetch on git 2.26+, measured in Docker (DOR-2248)'
+  - 'fix(server): key a sparse package tree by its subfolder too (DOR-2248)'
+  - "fix(server): treat a pre-DOR-2248 'main' record as the default branch (DOR-2248)"
 ---
 
 ### Fixed
