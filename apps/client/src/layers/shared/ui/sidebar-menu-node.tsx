@@ -542,6 +542,11 @@ export interface SidebarMenuNodesProps {
   nodes: SidebarMenuNode[];
   /** Which Radix menu family to render into. */
   variant: SidebarMenuVariant;
+  /**
+   * Put the sheet away after a `sheet` row runs. Needed only by a caller that
+   * owns its own drawer; {@link SidebarMenuSurface} supplies it for its sheet.
+   */
+  onSheetClose?: () => void;
 }
 
 /**
@@ -551,8 +556,10 @@ export interface SidebarMenuNodesProps {
  * a palette). Anything that wants the standard right-click + "⋮" pair should
  * use {@link SidebarMenuSurface} instead, which renders both from one list.
  */
-export function SidebarMenuNodes({ nodes, variant }: SidebarMenuNodesProps) {
-  return <>{renderNodes(nodes, VARIANT_SLOTS[variant])}</>;
+export function SidebarMenuNodes({ nodes, variant, onSheetClose }: SidebarMenuNodesProps) {
+  const rendered = <>{renderNodes(nodes, VARIANT_SLOTS[variant])}</>;
+  if (variant !== 'sheet' || onSheetClose === undefined) return rendered;
+  return <SheetCloseContext.Provider value={onSheetClose}>{rendered}</SheetCloseContext.Provider>;
 }
 
 export interface SidebarMenuSurfaceProps {

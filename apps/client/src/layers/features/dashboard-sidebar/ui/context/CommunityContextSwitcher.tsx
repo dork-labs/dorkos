@@ -3,8 +3,6 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp, ChevronDown, HardDrive, Plus, UsersRound } from 'lucide-react';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import { CommunityInstallationDestinationSchema } from '@dorkos/shared/config-schema';
-import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
-import type { SidebarMenuNode } from '@/layers/shared/ui';
 import {
   getCommunityRouteEpoch,
   useIsMobile,
@@ -24,32 +22,19 @@ import {
   Input,
   SidebarMenuNodes,
   Skeleton,
+  useGuardedMenuNodes,
 } from '@/layers/shared/ui';
 import {
   useCommunityConnections,
   useCommunityNavigation,
   useMoveCommunityNavigation,
 } from '@/layers/entities/community';
-import { useTeamRoster } from '@/layers/entities/team';
+import { useHeaderBlockMenu } from './use-header-block-menu';
 
 /** Props for the route-owned Community context trigger. */
 export interface CommunityContextSwitcherProps {
-  /** The local installation label shown when no Community route is selected. */
-  installationLabel: string;
-  /** Whether the installation label is still resolving. */
-  installationLabelPending: boolean;
-  /** Existing account and installation actions shown below the destinations. */
-  footerNodes: SidebarMenuNode[];
-  /** Preserve focus when a footer action opens a dialog. */
-  onCloseAutoFocus: (event: Event) => void;
   /** Extra trigger classes supplied by its persistent chrome. */
   triggerClassName?: string;
-}
-
-function installationNameFor(displayName: string | null): string {
-  const trimmed = displayName?.trim() ?? '';
-  if (trimmed.length === 0 || trimmed === OPERATOR_FALLBACK_DISPLAY_NAME) return 'Your team';
-  return trimmed.endsWith('s') ? `${trimmed}’ team` : `${trimmed}’s team`;
 }
 
 function orderedConnections(
@@ -111,14 +96,17 @@ function focusPageHeading() {
  * The route stays on the old context until the target destination has been
  * reauthorized. A failed request therefore leaves both the old label and old
  * content intact rather than painting a target the app could not enter.
+ *
+ * The switcher builds and guards its own account rows rather than taking them
+ * as props, so no caller can mount it without them or without the DOR-329
+ * close-focus guard (Workspace settings and Account both open a dialog that
+ * Radix's focus restore would otherwise blur).
  */
-export function CommunityContextSwitcher({
-  installationLabel,
-  installationLabelPending,
-  footerNodes,
-  onCloseAutoFocus,
-  triggerClassName,
-}: CommunityContextSwitcherProps) {
+export function CommunityContextSwitcher({ triggerClassName }: CommunityContextSwitcherProps) {
+  const menu = useHeaderBlockMenu();
+  const guarded = useGuardedMenuNodes(menu.nodes);
+  const installationLabel = menu.teamName;
+  const installationLabelPending = menu.nameUnknown;
   const transport = useTransport();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -270,15 +258,14 @@ export function CommunityContextSwitcher({
     if (connection) void selectCommunity(connection);
   }
 
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (next) requestAnimationFrame(() => selectedItem.current?.focus());
+    else setFilter('');
+  }
+
   return (
-    <ResponsiveDropdownMenu
-      open={open}
-      onOpenChange={(open) => {
-        setOpen(open);
-        if (open) requestAnimationFrame(() => selectedItem.current?.focus());
-        else setFilter('');
-      }}
-    >
+    <ResponsiveDropdownMenu open={open} onOpenChange={handleOpenChange}>
       <ResponsiveDropdownMenuTrigger asChild>
         <button
           type="button"
@@ -302,7 +289,7 @@ export function CommunityContextSwitcher({
       <ResponsiveDropdownMenuContent
         align="start"
         className="w-64"
-        onCloseAutoFocus={onCloseAutoFocus}
+        onCloseAutoFocus={guarded.onCloseAutoFocus}
       >
         <ResponsiveDropdownMenuLabel>Switch context</ResponsiveDropdownMenuLabel>
         {isMobile && destinations.length >= 8 && (
@@ -403,10 +390,14 @@ export function CommunityContextSwitcher({
         <ResponsiveDropdownMenuItem icon={Plus} onSelect={() => openConnections('accounts')}>
           Add community…
         </ResponsiveDropdownMenuItem>
-        {footerNodes.length > 0 && (
+        {guarded.nodes.length > 0 && (
           <>
             <ResponsiveDropdownMenuSeparator />
-            <SidebarMenuNodes variant="dropdown" nodes={footerNodes} />
+            <SidebarMenuNodes
+              variant={isMobile ? 'sheet' : 'dropdown'}
+              nodes={guarded.nodes}
+              onSheetClose={() => handleOpenChange(false)}
+            />
           </>
         )}
       </ResponsiveDropdownMenuContent>
@@ -416,15 +407,7 @@ export function CommunityContextSwitcher({
 
 /** Persistent phone trigger for the same route-owned context model. */
 export function MobileCommunityContextSwitcher() {
-  const roster = useTeamRoster();
-  const self = roster.data?.members.find((member) => member.isSelf) ?? null;
   return (
-    <CommunityContextSwitcher
-      installationLabel={installationNameFor(self?.displayName ?? null)}
-      installationLabelPending={roster.isPending}
-      footerNodes={[]}
-      onCloseAutoFocus={() => {}}
-      triggerClassName="hover:bg-accent focus-visible:ring-ring flex min-w-0 max-w-40 items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm font-semibold outline-hidden focus-visible:ring-2"
-    />
+    <CommunityContextSwitcher triggerClassName="hover:bg-accent focus-visible:ring-ring flex min-w-0 max-w-40 items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm font-semibold outline-hidden focus-visible:ring-2" />
   );
 }

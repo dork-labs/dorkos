@@ -227,12 +227,12 @@ describe('DOR-329 — a menu that opens something does not blur it on the way ou
   const OWN_MENU_CONTENT = ['ui/NewMenu.tsx'];
 
   /**
-   * The header's menu lives in the context switcher, which renders a node list
-   * it is handed rather than one it builds. The guard is armed where the nodes
-   * are built — the header — so the check follows the hand-off across both
-   * files instead of expecting one file to hold all of it.
+   * The header's menu lives in the context switcher, which builds AND guards
+   * its own account rows. Callers hand it nothing but a class name, so the
+   * phone's top-bar trigger cannot mount it with an empty list or a no-op
+   * close handler — the shape that shipped once and dropped Workspace
+   * settings, Account and the version line from phones.
    */
-  const HEADER = 'ui/SidebarHeaderBlock.tsx';
   const SWITCHER = 'ui/context/CommunityContextSwitcher.tsx';
 
   /**
@@ -270,22 +270,48 @@ describe('DOR-329 — a menu that opens something does not blur it on the way ou
     expect(text).toMatch(/useGuardedMenuNodes/);
   });
 
-  it('hands the context switcher only the guarded list and its close handler', () => {
-    const header = SOURCE.get(HEADER) ?? '';
+  it('arms the guard inside the context switcher, so no caller can bypass it', () => {
     const switcher = SOURCE.get(SWITCHER) ?? '';
-    // The header builds the nodes, guards them, and passes both halves down.
-    expect(header).toMatch(/useGuardedMenuNodes/);
-    const handoffs = count(header, /<CommunityContextSwitcher\b/);
-    expect(handoffs).toBeGreaterThan(0);
-    expect(count(header, /footerNodes=\{guarded\.nodes\}/)).toBe(handoffs);
-    expect(count(header, /onCloseAutoFocus=\{guarded\.onCloseAutoFocus\}/)).toBe(handoffs);
-    // The switcher renders exactly what it was handed, into content that
-    // restores focus through the handler it was handed.
+    // The switcher builds the real rows itself and guards them.
+    expect(count(switcher, /useHeaderBlockMenu\(\)/)).toBe(1);
+    expect(count(switcher, /useGuardedMenuNodes\(menu\.nodes\)/)).toBe(1);
+    // Every content it renders restores focus through the guard and draws the
+    // guarded list, never a raw one.
     const contents = count(switcher, /<ResponsiveDropdownMenuContent\b/);
     expect(contents).toBeGreaterThan(0);
-    expect(count(switcher, /onCloseAutoFocus=\{onCloseAutoFocus\}/)).toBe(contents);
+    expect(count(switcher, /onCloseAutoFocus=\{guarded\.onCloseAutoFocus\}/)).toBe(contents);
     expect(count(switcher, /<SidebarMenuNodes\b/)).toBe(contents);
-    expect(count(switcher, /nodes=\{footerNodes\}/)).toBe(contents);
+    expect(count(switcher, /nodes=\{guarded\.nodes\}/)).toBe(contents);
+    // Its props take no rows and no close handler, so a caller has nothing to
+    // pass that could replace them.
+    const props = /export interface CommunityContextSwitcherProps \{([\s\S]*?)\n\}/.exec(switcher);
+    expect(props).not.toBeNull();
+    expect(props![1]).not.toMatch(/SidebarMenuNode|onCloseAutoFocus|Nodes/);
+  });
+
+  it('mounts every context switcher, desktop and phone, with nothing but a class name', () => {
+    // Every call site in the client, not just the header: the phone's trigger
+    // is mounted from AppShell through the feature's barrel.
+    const clientSrc = join(__dirname, '..', '..', '..', '..');
+    const callSites = sourceFiles(clientSrc)
+      .map((file) => [file, readFileSync(join(clientSrc, file), 'utf8')] as const)
+      .flatMap(([file, text]) =>
+        [...text.matchAll(/<(Mobile)?CommunityContextSwitcher\b([^>]*)\/>/g)].map(
+          (match) => [file, match[2]!] as const
+        )
+      );
+    // Positive half: the header's desktop trigger, the phone wrapper's inner
+    // mount, and AppShell's phone mount are all found.
+    expect(callSites.map(([file]) => file).sort()).toEqual(
+      [
+        'AppShell.tsx',
+        'layers/features/dashboard-sidebar/ui/SidebarHeaderBlock.tsx',
+        'layers/features/dashboard-sidebar/ui/context/CommunityContextSwitcher.tsx',
+      ].sort()
+    );
+    for (const [, attributes] of callSites) {
+      expect(attributes).not.toMatch(/footerNodes|onCloseAutoFocus|nodes=/);
+    }
   });
 
   it('finds no unguarded node list anywhere else in the feature', () => {

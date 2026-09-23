@@ -1,5 +1,5 @@
 /**
- * The sidebar's header block: whose cockpit this is, one New button, one ⌘K
+ * The sidebar's header block: whose installation this is, one New button, one ⌘K
  * pill (BC-43 → BC-46).
  *
  * **Persistent chrome.** `AppShell` mounts this OUTSIDE the `sidebar.body` swap
@@ -7,121 +7,32 @@
  * — the panel's identity and the way to make things do not belong to whichever
  * route is on screen (spec R2, P2 AC-8).
  *
- * **A switcher in waiting.** The block is a button from day one, named after
- * the operator ("Dorian's team"), opening a menu with Workspace settings,
- * Account and a quiet version line. When communities ship they become
- * additional rows in this same menu: single-player → multi-player is "the menu
- * gets longer", with zero relayout of anything outside it. It is not a
- * workspace manager and it adds no workspace surface (§16 Non-Goals).
+ * **The switcher.** The block is a button named after the operator ("Dorian's
+ * team"), opening a menu with Workspace settings, Account and a quiet version
+ * line. Connected communities are additional rows in this same menu
+ * (`CommunityContextSwitcher`): single-player → multi-player is "the menu gets
+ * longer", with zero relayout of anything outside it. It is not a workspace
+ * manager and it adds no workspace surface (§16 Non-Goals).
  *
  * @module features/dashboard-sidebar/ui/SidebarHeaderBlock
  */
-import { useCallback } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
-import { isNewer } from '@/layers/shared/lib';
-import { cn } from '@/layers/shared/lib';
-import {
-  useIsMobile,
-  useProfileDeepLink,
-  useSettingsDeepLink,
-  useTransport,
-} from '@/layers/shared/model';
-import { SidebarHeader, TOUCH_TARGET_MIN_H, useGuardedMenuNodes } from '@/layers/shared/ui';
-import { useTeamRoster } from '@/layers/entities/team';
-import { buildHeaderBlockMenuNodes } from './header-block-menu';
+import { useIsMobile } from '@/layers/shared/model';
+import { SidebarHeader } from '@/layers/shared/ui';
 import { NewMenu } from './NewMenu';
 import { SidebarSearchPill } from './SidebarSearchPill';
-import { configKeys, CONFIG_STALE_TIME_MS } from '@/layers/entities/config';
 import { CommunityContextSwitcher } from './context/CommunityContextSwitcher';
 
+export { teamNameFor } from './context/use-header-block-menu';
+
 /**
- * What this cockpit is called.
+ * The header block.
  *
- * Named after the operator, because on a single-player install the team IS the
- * operator plus their agents. "Your team" is the honest fallback in three
- * cases, and the third is the one a browser found: the roster has not landed
- * yet, the roster is empty (the Obsidian embed, by construction), or the person
- * has not told DorkOS their name — in which case the roster answers with the
- * literal `'You'`, and possessing that reads "You's team". Settings › Profile
- * already recognises the same literal for the same reason (DOR-979).
- *
- * @param displayName - The operator's own profile display name, if known.
+ * On a phone the context switcher lives in the persistent top bar instead
+ * (`MobileCommunityContextSwitcher`), with the same menu, so this block
+ * renders only New and search there rather than a second trigger.
  */
-export function teamNameFor(displayName: string | null): string {
-  const trimmed = displayName?.trim() ?? '';
-  if (trimmed.length === 0 || trimmed === OPERATOR_FALLBACK_DISPLAY_NAME) return 'Your team';
-  return trimmed.endsWith('s') ? `${trimmed}’ team` : `${trimmed}’s team`;
-}
-
-/** The header block. */
 export function SidebarHeaderBlock() {
-  // **Measured, not assumed.** At 390×844 this header's three controls came in
-  // at 28px, 27px and 33px — all fine in a 272px panel beside a pointer, all
-  // under the 40px bar under a thumb, and none of them visible as a problem in
-  // the source (P4 AC-4).
   const isMobile = useIsMobile();
-  const roster = useTeamRoster();
-  const transport = useTransport();
-  const queryClient = useQueryClient();
-  const { open: openSettings } = useSettingsDeepLink();
-  const { open: openProfile } = useProfileDeepLink();
-
-  const self = roster.data?.members.find((member) => member.isSelf) ?? null;
-  const teamName = teamNameFor(self?.displayName ?? null);
-  // **A returning operator is never told their team is "Your team"** (spec D6).
-  // The fallback is the honest answer for an install that has no name to give;
-  // it is the WRONG answer for the second before the roster lands, where the
-  // name is known and simply has not arrived. So the space is reserved until
-  // the roster has answered, and a warm boot paints the cached name in the
-  // first frame.
-  //
-  // **Keyed on the roster alone, not on the boot phase.** Pairing the two put
-  // the placeholder back on the one path that most needs it: the 1500 ms
-  // ceiling opens the gate, the phase leaves `cold`, and a roster still in
-  // flight would then be greeted with "Your team" before the operator's own
-  // name replaced it — a flash on exactly the slow installs the ceiling exists
-  // for.
-  const nameUnknown = roster.isPending;
-
-  // The same cache entry the rest of the cockpit reads, so asking here costs
-  // nothing extra.
-  const { data: serverConfig, refetch } = useQuery({
-    queryKey: configKeys.current(),
-    queryFn: () => transport.getConfig(),
-    staleTime: CONFIG_STALE_TIME_MS,
-  });
-
-  const handleCheckForUpdates = useCallback(async () => {
-    // The server recomputes `latestVersion` when it answers, so a refetch IS
-    // the check — there is no second endpoint to call and no spinner to invent.
-    await queryClient.invalidateQueries({ queryKey: configKeys.all });
-    const fresh = await refetch();
-    const current = fresh.data?.version;
-    const latest = fresh.data?.latestVersion ?? null;
-    if (current === undefined) {
-      toast.error('Couldn’t check for updates');
-      return;
-    }
-    if (latest !== null && isNewer(latest, current)) {
-      toast.success(`Version ${latest} is available`);
-      return;
-    }
-    toast.success('You’re up to date');
-  }, [queryClient, refetch]);
-
-  const nodes = buildHeaderBlockMenuNodes({
-    onOpenSettings: () => openSettings(),
-    onOpenAccount: self === null ? null : () => openProfile(self.id),
-    version: serverConfig?.version ?? null,
-    isDevMode: serverConfig?.isDevMode ?? false,
-    onCheckForUpdates: () => void handleCheckForUpdates(),
-  });
-
-  // Workspace settings and Account both open a dialog, so both need the
-  // close-focus guard for the reason DOR-329 records.
-  const guarded = useGuardedMenuNodes(nodes);
 
   return (
     // No hairline under the header. Separation in this panel is tint and a
@@ -130,16 +41,7 @@ export function SidebarHeaderBlock() {
     <SidebarHeader className="gap-2 px-2 py-3">
       <div className="flex items-center gap-1">
         {!isMobile && (
-          <CommunityContextSwitcher
-            installationLabel={teamName}
-            installationLabelPending={nameUnknown}
-            footerNodes={guarded.nodes}
-            onCloseAutoFocus={guarded.onCloseAutoFocus}
-            triggerClassName={cn(
-              'text-sidebar-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] font-semibold outline-hidden transition-colors duration-150 focus-visible:ring-2',
-              isMobile && TOUCH_TARGET_MIN_H
-            )}
-          />
+          <CommunityContextSwitcher triggerClassName="text-sidebar-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] font-semibold outline-hidden transition-colors duration-150 focus-visible:ring-2" />
         )}
         <NewMenu />
       </div>

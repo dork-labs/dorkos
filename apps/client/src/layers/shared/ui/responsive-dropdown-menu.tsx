@@ -117,8 +117,11 @@ function ResponsiveDropdownMenuContent({
       </DropdownMenuContent>
     );
   }
+  // Only the close-focus handler crosses over: the drawer has no anchor for the
+  // menu's placement props, but a row that opens a dialog still needs the
+  // DOR-329 guard to stop the drawer's focus restore from blurring it.
   return (
-    <DrawerContent>
+    <DrawerContent onCloseAutoFocus={props.onCloseAutoFocus}>
       <div className="pb-6">{children}</div>
     </DrawerContent>
   );

@@ -316,6 +316,20 @@ describe('SidebarHeaderBlock', () => {
     expect(screen.getByRole('button', { name: /Add community/ })).toBeInTheDocument();
   });
 
+  it('keeps Workspace settings, Account and the version line on phones', async () => {
+    // This menu is the version number's one home in the chrome (BC-44), and
+    // the footer menu deliberately does not repeat these rows, so a phone that
+    // lost them here would have no way to reach them at all.
+    renderMobileSwitcher();
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    const sheet = await screen.findByRole('dialog');
+    expect(await screen.findByRole('menuitem', { name: /v0\.58\.0 beta/ })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Account/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: /Workspace settings/ }));
+    expect(mockOpenSettings).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(sheet).not.toBeInTheDocument());
+  });
+
   it('adds phone search at eight communities and exposes keyboard-safe reorder actions', async () => {
     mockSearch = { community: 'community-4' };
     mockConnections = Array.from({ length: 8 }, (_, index) => ({

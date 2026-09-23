@@ -86,3 +86,26 @@ describe('ResponsiveDropdownMenuRadioGroup — aria-describedby', () => {
     expect(groupElement()).toHaveAccessibleDescription('This session only.');
   });
 });
+
+describe('ResponsiveDropdownMenuContent — onCloseAutoFocus', () => {
+  /** A controlled menu, so the test can close it the way a chosen row does. */
+  function Closable({ open, onCloseAutoFocus }: { open: boolean; onCloseAutoFocus: () => void }) {
+    return (
+      <ResponsiveDropdownMenu open={open}>
+        <ResponsiveDropdownMenuTrigger>open</ResponsiveDropdownMenuTrigger>
+        <ResponsiveDropdownMenuContent onCloseAutoFocus={onCloseAutoFocus}>
+          <button type="button">Workspace settings</button>
+        </ResponsiveDropdownMenuContent>
+      </ResponsiveDropdownMenu>
+    );
+  }
+
+  it('reaches the drawer on mobile, so a row that opens a dialog keeps the DOR-329 guard', async () => {
+    mockUseIsMobile.mockReturnValue(true);
+    const onCloseAutoFocus = vi.fn();
+    const { rerender } = render(<Closable open onCloseAutoFocus={onCloseAutoFocus} />);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    rerender(<Closable open={false} onCloseAutoFocus={onCloseAutoFocus} />);
+    await vi.waitFor(() => expect(onCloseAutoFocus).toHaveBeenCalled());
+  });
+});
