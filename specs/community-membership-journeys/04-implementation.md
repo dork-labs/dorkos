@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 7 / 10 (1.1–1.3 and 2.1–2.4)
+**Tasks Completed:** 8 / 10 (1.1–1.4 and 2.1–2.4)
 
 ## Tasks Completed
 
@@ -70,6 +70,8 @@
 - Signing out also forgets this browser's remembered community. The remembered-community helpers moved to `src/browser/remembered-community.ts` so the chooser and the sign-out control share them without an import cycle.
 - A refused password on disconnect-all or leave now says the password was wrong and that nothing changed, next to the field, instead of "Reauthentication failed."
 - DorkOS's own Disconnect already revokes its grant (#2019, 907a533e8), so no DorkOS-side change was needed here.
+- Review follow-up: a wrong password on leave or disconnect-all is now its own code, `403 REAUTH_FAILED`, so the page says "That password is not right." only then and shows the server's own reason for every other refusal ("Transfer ownership before leaving.", "Your membership has ended."). Those two routes also limit wrong passwords (`src/password-confirmation.ts`): `auth.api.verifyPassword` is a server-side call that Better Auth's HTTP limiter never sees. Wrong guesses count per host account and per caller address (`COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`, default 5, maximum 20); once either is spent, both routes answer `429` before checking the password, even a correct one, until the minute passes. Proof: `account-controls.integration.test.ts` › "answers a wrong password with REAUTH_FAILED and every other refusal with its own reason" and "refuses the fourth wrong guess, and even the right one, until the minute passes"; `password-confirmation.test.ts` separates the account and address budgets. Owner transfer, owner export and host-key issue/rotate still confirm passwords without this limit.
+- Re-audited 1.4 against #2019 and closed it (evidence in `03-tasks.md`).
 
 ## Files Modified/Created
 
@@ -107,6 +109,5 @@
 
 ## Remaining Work
 
-- **1.4 Disconnect revokes the grant (DOR-2180).** The fix merged in #2019 (907a533e8), with `install-disconnect.integration.test.ts`. Its checkbox stays open until someone re-audits 1.4 against that merge; Session 7 did not.
 - **3.1 cross-device proof (DOR-2182).** Covered by the two-Desktop acceptance run on main 30df6cdc2 (20/20 steps). It closes when the durable driver, PR #2016, merges.
-- **3.2 exact-scope proof (DOR-2182).** Blocked on the 1.4 Disconnect fix, and on Community refusals being passed through rather than reported as 502 "Community unavailable." (`apps/server/src/routes/remote-communities.ts` `fail`). Both were found by PR #2016's extended run. Accessibility and Cloud-unavailable proof across the whole journey set is still to be written.
+- **3.2 exact-scope proof (DOR-2182).** Both blockers PR #2016's extended run found (Disconnect leaving the grant live, and Community refusals reported as 502 "Community unavailable.") were fixed in #2019; the extended run has not been repeated since. Accessibility and Cloud-unavailable proof across the whole journey set is still to be written.
