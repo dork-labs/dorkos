@@ -1,155 +1,142 @@
 /**
- * Startup janitor for crash-left marketplace install backups.
+ * The sweep that settles interrupted marketplace installs across whole scopes.
  *
- * The transaction engine (`./transaction.ts`) moves an existing install
- * target aside to a sibling `<target>.dorkos-bak-<timestamp>-<uuid>` backup
- * before activation, and removes it on both the success and the failure
- * path (ADR-0304). A hard crash between the move-aside and either cleanup
- * path skips both, leaving the backup on disk forever. Worse, until DOR-175
- * the mesh unified scanner had no exclusion for `*.dorkos-bak-*` paths, so a
- * crash-left agent backup could resurface as a phantom duplicate agent (the
- * scanner-side half of that fix lives in
- * `packages/mesh/src/discovery/unified-scanner.ts`).
+ * Every install transaction leaves a record beside its target while it runs
+ * (`./install-recovery.ts` has the grammar and the rules), and settles any
+ * record an earlier, interrupted transaction left before it starts. That
+ * covers a target someone touches again. This sweep covers the rest: a crash
+ * that left a package missing or half-written, which nobody reinstalls
+ * because it simply looks gone or broken.
  *
- * {@link sweepStaleInstallBackups} runs once at server startup (mirroring
- * the `ActivityService.prune()` call in `index.ts`) and removes only
- * backups whose *name-embedded* timestamp is older than `maxAgeMs`. The
- * timestamp is parsed from the directory name — never the directory's `fs`
- * mtime — because `moveTargetAside` renames a pre-existing target onto the
- * backup path, and a rename does not update a directory's mtime (it reflects
- * whenever the target's *contents* last changed, which predates the backup
- * event and could be arbitrarily old even for a backup created moments ago
- * by a transaction that is still running). The name-embedded `Date.now()`
- * is the only trustworthy "when was this backup created" signal, and it is
- * exactly the liveness guard this sweep needs: `runTransaction` holds a
- * backup only for the duration of `activate` (milliseconds to low seconds),
- * so any backup whose embedded timestamp is older than the (generous,
- * default 24h) threshold cannot belong to an in-flight transaction — it can
- * only be crash residue.
+ * It runs at server startup for the global scope (`dorkHome`), before the app
+ * serves anything, and again for every registered agent's project once Mesh
+ * has reconciled — project installs live under `<projectPath>/.dork/`, which
+ * only the registry can enumerate. Any caller can run it for any scope root.
+ *
+ * It is one sweep over one grammar: each install root is read once (install
+ * targets and their records are direct siblings, so there is nothing to walk),
+ * every record found names its target, and each target is settled under that
+ * target's install lock by {@link recoverInterruptedInstall}. What happens to
+ * a record is decided by its kind's row in the recovery policy table, never
+ * here, so a new kind of record needs no change to this file.
+ *
+ * Until DOR-2273 this module deleted any backup older than a day. A backup
+ * that old is exactly the one a crash left when the live directory was missing
+ * or half-written, so the old sweep destroyed the only good copy of the
+ * install.
  *
  * @module services/marketplace/backup-janitor
  */
-import { readdir, rm } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
-import { INSTALL_ROOT_DIRS } from './lib/install-roots.js';
-import { BACKUP_SUFFIX } from './transaction.js';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
+import { installRootsUnder } from './lib/install-roots.js';
+import { parseInstallRecordName, recoverInterruptedInstall } from './install-recovery.js';
+import { withInstallTargetLock } from './transaction.js';
 
-/** Default staleness threshold: backups older than this are swept. */
-const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-
-/*
- * The swept roots are every global install root from the shared type → root
- * mapping ({@link INSTALL_ROOT_DIRS}: `plugins/`, `agents/`, `shapes/`) —
- * every install flow computes its global target under one of them, and a
- * crash-left backup is always a direct sibling of its target, so a single
- * non-recursive `readdir` of each root is sufficient — no need to walk the
- * tree.
- *
- * Project-local installs (`--project <path>`) place their target under
- * `<projectPath>/.dork/plugins/<name>` or, for agents, `<projectPath>`
- * itself — locations that vary per project and are not enumerable here.
- * Those backups are not swept by this janitor, but they can never surface
- * as phantom agents/packages either, because the scanner-side exclusion in
- * `packages/mesh/src/discovery/unified-scanner.ts` is unconditional and
- * location-agnostic.
- */
-
-/**
- * Sweep stale `*.dorkos-bak-*` install backups under every global install
- * root (`<dorkHome>/plugins/`, `<dorkHome>/agents/`, `<dorkHome>/shapes/`).
- *
- * Best-effort throughout: a missing root (fresh `dorkHome`, nothing
- * installed yet), an unreadable directory, an unparseable backup name, or a
- * failed removal are all logged and skipped rather than thrown, so one bad
- * entry never aborts the sweep and a sweep failure never blocks server
- * startup.
- *
- * @param dorkHome - Resolved DorkOS data directory (see `lib/dork-home.ts`).
- * @param logger - Logger for diagnostic output.
- * @param opts - `maxAgeMs` overrides the default 24h staleness threshold
- *   (test hook; production callers should rely on the default).
- * @returns The number of backup directories removed.
- */
-export async function sweepStaleInstallBackups(
-  dorkHome: string,
-  logger: Logger,
-  opts?: { maxAgeMs?: number }
-): Promise<number> {
-  const maxAgeMs = opts?.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
-  const cutoff = Date.now() - maxAgeMs;
-  let removed = 0;
-
-  for (const scope of INSTALL_ROOT_DIRS) {
-    const root = path.join(dorkHome, scope);
-    removed += await sweepRoot(root, cutoff, logger);
-  }
-
-  return removed;
+/** What one sweep did, summed over every target it settled. */
+export interface InstallSweepSummary {
+  /** Interrupted transactions undone: a previous install restored, or a half-written one removed. */
+  rolledBack: number;
+  /** Leftovers of finished installs deleted. */
+  discarded: number;
+  /** Targets left alone because another live process may be mid-install on them. */
+  inFlight: number;
 }
 
 /**
- * Sweep one global-scope root (non-recursive). Returns the number of
- * backups removed from this root.
+ * Settle every interrupted install under the given scope roots.
+ *
+ * Best-effort throughout: a missing root (nothing installed yet), an
+ * unreadable directory, or a target whose rollback fails is logged and
+ * skipped, so one bad entry never aborts the sweep and a sweep failure never
+ * blocks server startup. A target that could not be settled keeps its records
+ * and is retried by the next sweep or the next install of it.
+ *
+ * @param scopeRoots - Scope roots to sweep: `dorkHome`, or a project's
+ *   `<projectPath>/.dork` (see `projectScopeRoot`). Each one's install roots
+ *   (`plugins/`, `agents/`, `shapes/`) are read.
+ * @param logger - Logger for what was done and what was skipped.
+ * @returns Totals across every target settled.
+ */
+export async function recoverInterruptedInstalls(
+  scopeRoots: readonly string[],
+  logger: Logger
+): Promise<InstallSweepSummary> {
+  const summary: InstallSweepSummary = { rolledBack: 0, discarded: 0, inFlight: 0 };
+  for (const scopeRoot of new Set(scopeRoots)) {
+    for (const { dir } of installRootsUnder(scopeRoot)) {
+      await sweepInstallRoot(dir, summary, logger);
+    }
+  }
+  return summary;
+}
+
+/**
+ * Settle every target in one install root that has records beside it.
  *
  * @internal
  */
-async function sweepRoot(root: string, cutoff: number, logger: Logger): Promise<number> {
-  let entries: import('node:fs').Dirent<string>[];
+async function sweepInstallRoot(
+  root: string,
+  summary: InstallSweepSummary,
+  logger: Logger
+): Promise<void> {
+  let names: string[];
   try {
-    entries = await _internal.readEntries(root);
-  } catch (err: unknown) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code !== 'ENOENT') {
+    names = await _internal.readNames(root);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       logger.warn(`[marketplace/backup-janitor] failed to read ${root}: ${errMessage(err)}`);
     }
-    return 0;
+    return;
   }
 
-  let removed = 0;
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !entry.name.includes(BACKUP_SUFFIX)) continue;
-
-    const timestamp = parseBackupTimestamp(entry.name);
-    if (timestamp === undefined) {
-      // Unrecognized shape of an otherwise-matching name — leave it alone
-      // rather than guess at its age. Demonstrable staleness is the bar.
-      logger.warn(`[marketplace/backup-janitor] skipping unparseable backup name: ${entry.name}`);
+  const targets = new Set<string>();
+  for (const name of names) {
+    if (!isInstallSiblingName(name)) continue;
+    const parsed = parseInstallRecordName(name);
+    if (!parsed) {
+      // Carries a marker but not the full grammar: not provably ours, so it
+      // is hidden from readers and never touched.
+      logger.warn(`[marketplace/backup-janitor] leaving unrecognised entry alone: ${name}`);
       continue;
     }
-    if (timestamp >= cutoff) continue; // Not stale — may be a live transaction.
+    targets.add(parsed.targetName);
+  }
 
-    const backupPath = path.join(root, entry.name);
+  for (const targetName of targets) {
+    const target = path.join(root, targetName);
     try {
-      await _internal.removeBackup(backupPath);
-      removed++;
-      logger.info(`[marketplace/backup-janitor] removed stale install backup: ${backupPath}`);
+      const report = await withInstallTargetLock(target, () => recoverInterruptedInstall(target));
+      if (report.inFlight.length > 0) {
+        summary.inFlight++;
+        logger.info(
+          `[marketplace/backup-janitor] left ${target} alone: another DorkOS app may be installing it right now`
+        );
+        continue;
+      }
+      for (const record of report.rolledBack) {
+        summary.rolledBack++;
+        logger.info(
+          record.kind === 'backup'
+            ? `[marketplace/backup-janitor] restored ${target} from an interrupted install (${record.path})`
+            : `[marketplace/backup-janitor] removed the half-finished install at ${target}`
+        );
+      }
+      summary.discarded += report.discarded.length;
+      for (const { record, error } of report.discardFailures) {
+        logger.warn(
+          `[marketplace/backup-janitor] failed to remove finished install leftovers ${record.path}: ${errMessage(error)}`
+        );
+      }
     } catch (err) {
       logger.warn(
-        `[marketplace/backup-janitor] failed to remove stale backup ${backupPath}: ${errMessage(err)}`
+        `[marketplace/backup-janitor] could not settle the interrupted install at ${target}; it will be retried: ${errMessage(err)}`
       );
     }
   }
-  return removed;
-}
-
-/**
- * Parse the `Date.now()` embedded in a backup directory name
- * (`<target-basename>.dorkos-bak-<timestamp>-<uuid>`, written by
- * `transaction.ts`'s `moveTargetAside`). Returns `undefined` when the name
- * contains {@link BACKUP_SUFFIX} but the segment that follows does not start
- * with the expected `<digits>-` shape.
- *
- * @internal
- */
-function parseBackupTimestamp(entryName: string): number | undefined {
-  const idx = entryName.lastIndexOf(BACKUP_SUFFIX);
-  if (idx === -1) return undefined;
-  const rest = entryName.slice(idx + BACKUP_SUFFIX.length);
-  const match = /^(\d+)-/.exec(rest);
-  if (!match) return undefined;
-  const timestamp = Number(match[1]);
-  return Number.isFinite(timestamp) ? timestamp : undefined;
 }
 
 /**
@@ -162,31 +149,21 @@ function errMessage(err: unknown): string {
 }
 
 /**
- * List a directory's entries with file-type info attached.
+ * List a directory's entry names.
  *
  * @internal
  */
-async function readEntries(dir: string): Promise<import('node:fs').Dirent<string>[]> {
-  return (await readdir(dir, { withFileTypes: true })) as import('node:fs').Dirent<string>[];
-}
-
-/**
- * Recursively remove a backup directory.
- *
- * @internal
- */
-async function removeBackup(backupPath: string): Promise<void> {
-  await rm(backupPath, { recursive: true, force: true });
+async function readNames(dir: string): Promise<string[]> {
+  return readdir(dir);
 }
 
 /**
  * @internal Test-only export. The supported API is
- * {@link sweepStaleInstallBackups}; these helpers are exposed only so tests
- * can stub filesystem interactions with `vi.spyOn` — mirrors the
- * `_internal` pattern in `./transaction.ts`, which sidesteps the "cannot
- * spy on a `node:fs/promises` named export" ESM limitation.
+ * {@link recoverInterruptedInstalls}; this is exposed only so tests can fail a
+ * directory read with `vi.spyOn` — mirrors the `_internal` pattern in
+ * `./transaction.ts`, which sidesteps the "cannot spy on a `node:fs/promises`
+ * named export" ESM limitation.
  */
 export const _internal = {
-  readEntries,
-  removeBackup,
+  readNames,
 };

@@ -280,7 +280,11 @@ import {
 import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
 import { ActivityService } from './services/activity/activity-service.js';
 import { createPluginReloadActivityWriter } from './services/activity/plugin-reload-activity.js';
-import { sweepStaleInstallBackups } from './services/marketplace/backup-janitor.js';
+import {
+  recoverInterruptedInstalls,
+  type InstallSweepSummary,
+} from './services/marketplace/backup-janitor.js';
+import { projectScopeRoot } from './services/marketplace/lib/install-roots.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
@@ -550,6 +554,20 @@ function registeredAgentRoots(
     const projectPath = meshCore.getProjectPath(agent.id);
     return projectPath ? [{ agentId: agent.id, projectPath }] : [];
   });
+}
+
+/**
+ * Log what an install-recovery sweep did, when it did anything.
+ *
+ * @param scope - Which installs were swept, for the log line.
+ * @param summary - The sweep's totals.
+ */
+function logInstallSweep(scope: string, summary: InstallSweepSummary): void {
+  const { rolledBack, discarded, inFlight } = summary;
+  if (rolledBack + discarded + inFlight === 0) return;
+  logger.info(
+    `[Marketplace] Settled interrupted ${scope}: ${rolledBack} undone, ${discarded} leftovers removed, ${inFlight} left to another running DorkOS`
+  );
 }
 
 let taskFileWatcher: TaskFileWatcher | undefined;
@@ -932,21 +950,16 @@ async function start() {
   // "While you were away" — composed once the day's first activity arrives.
   watchShiftReport(notificationStore);
 
-  // Sweep crash-left marketplace install backups (`<target>.dorkos-bak-<ts>-<uuid>`,
-  // see transaction.ts + ADR-0304). A hard crash mid-install can leave one of
-  // these behind forever; before DOR-175 a crash-left agent backup could also
-  // resurface as a phantom duplicate agent via mesh discovery. Only backups
-  // whose embedded timestamp is >24h old are removed — see backup-janitor.ts
-  // for why that guard can never race a live install.
+  // Settle marketplace installs a crash interrupted (DOR-2273): restore the
+  // previous version of a package whose reinstall never finished, remove a
+  // half-written fresh install, and delete leftovers of finished ones. Runs
+  // before the app serves anything, so nothing lists a half-written package.
+  // Project installs are swept once Mesh knows the projects (below); see
+  // services/marketplace/install-recovery.ts for the rules.
   try {
-    const sweptBackups = await sweepStaleInstallBackups(dorkHome, logger);
-    if (sweptBackups > 0) {
-      logger.info(
-        `[Marketplace] Swept ${sweptBackups} stale install backup${sweptBackups === 1 ? '' : 's'}`
-      );
-    }
+    logInstallSweep('global installs', await recoverInterruptedInstalls([dorkHome], logger));
   } catch (err) {
-    logger.warn('[Marketplace] Startup backup sweep failed', logError(err));
+    logger.warn('[Marketplace] Startup install recovery failed', logError(err));
   }
 
   // Initialize directory boundary (must happen before app creation)
@@ -1873,6 +1886,26 @@ async function start() {
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();
       remoteCommunitySubscriptions?.start();
+    }
+
+    // Settle marketplace installs a crash interrupted inside registered
+    // projects (`<projectPath>/.dork/`), which only the registry can list —
+    // the global ones were settled before the app started (DOR-2273). This
+    // writes into a person's repository only to finish undoing a change DorkOS
+    // itself was making there, and only to entries whose names prove they are
+    // DorkOS's own records. Fire-and-forget: each target is settled under its
+    // install lock, so an install that races it simply waits.
+    try {
+      const projectScopes = meshCore
+        .listWithPaths()
+        .map((agent) => projectScopeRoot(agent.projectPath));
+      recoverInterruptedInstalls(projectScopes, logger)
+        .then((summary) => logInstallSweep('project installs', summary))
+        .catch((err: unknown) => {
+          logger.warn('[Marketplace] Project install recovery failed', logError(err));
+        });
+    } catch (err) {
+      logger.warn('[Marketplace] Project install recovery failed', logError(err));
     }
 
     // Bring every agent workspace DorkOS owns up to the current Operating DorkOS

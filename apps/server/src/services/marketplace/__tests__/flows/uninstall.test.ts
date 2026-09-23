@@ -27,6 +27,8 @@ import {
   type UninstallShapeScheduleTeardown,
 } from '../../flows/uninstall.js';
 import { InvalidPackageNameError } from '../../lib/package-paths.js';
+import { currentRecordOwner, formatRecordOwner } from '../../lib/record-owner.js';
+import { randomUUID } from 'node:crypto';
 
 /** Construct a no-op logger that satisfies the {@link Logger} interface. */
 function buildLogger(): Logger {
@@ -214,6 +216,57 @@ describe('UninstallFlow', () => {
     expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-a');
     expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-b');
     expect(deps.adapterManager.removeAdapter).not.toHaveBeenCalled();
+  });
+
+  it('settles an interrupted reinstall first, so it removes the whole install and leaves no backup (DOR-2273)', async () => {
+    // A crash mid-reinstall left v2 half-written with v1 moved aside. Removing
+    // only the half-written v2 would leave v1's backup for a later recovery to
+    // put back: the package would come back after being uninstalled.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const pluginsRoot = path.join(deps.dorkHome, 'plugins');
+    const installRoot = path.join(pluginsRoot, 'plugin-a');
+    await mkdir(installRoot, { recursive: true });
+    await writeFile(path.join(installRoot, 'half-written.txt'), 'v2', 'utf-8');
+    await stageInstalledPackage({
+      installRoot: path.join(
+        pluginsRoot,
+        `plugin-a.dorkos-bak-${Date.now()}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}`
+      ),
+      manifest: buildPluginManifest({ name: 'plugin-a', extensions: ['ext-a'] }),
+      extensions: [{ id: 'ext-a', manifest: { id: 'ext-a' } }],
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await new UninstallFlow(deps).uninstall({ name: 'plugin-a' });
+
+    expect(result.ok).toBe(true);
+    expect(await readdir(pluginsRoot)).toEqual([]);
+    // The side effects ran against the restored v1, read after settling.
+    expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-a');
+  });
+
+  it('reports not installed when settling removes a half-written fresh install (DOR-2273)', async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const pluginsRoot = path.join(deps.dorkHome, 'plugins');
+    await stageInstalledPackage({
+      installRoot: path.join(pluginsRoot, 'plugin-a'),
+      manifest: buildPluginManifest({ name: 'plugin-a' }),
+    });
+    await writeFile(
+      path.join(
+        pluginsRoot,
+        `plugin-a.dorkos-bak-${Date.now()}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}.absent`
+      ),
+      ''
+    );
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(new UninstallFlow(deps).uninstall({ name: 'plugin-a' })).rejects.toBeInstanceOf(
+      PackageNotInstalledError
+    );
+    expect(await readdir(pluginsRoot)).toEqual([]);
   });
 
   /**

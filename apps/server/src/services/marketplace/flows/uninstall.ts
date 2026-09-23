@@ -38,7 +38,7 @@ import type { MarketplacePackageManifest, PackageType } from '@dorkos/marketplac
 import { installRootCandidates, type InstallRootCandidate } from '../lib/locate-install.js';
 import { assertPackageName } from '../lib/package-paths.js';
 import { readInstallMetadata } from '../installed-metadata.js';
-import { withInstallTargetLock } from '../transaction.js';
+import { settleInterruptedInstall, withInstallTargetLock } from '../transaction.js';
 
 /** Staging directory prefix used by the uninstall flow. */
 const STAGING_DIR_PREFIX = 'dorkos-uninstall-';
@@ -190,9 +190,10 @@ export class UninstallFlow {
    * uninstall restores it.
    *
    * {@link UninstallFlow.locate} stays OUTSIDE the lock, because the path to
-   * lock is not known until it has run. The residue is narrow — a package
-   * removed between the probe and the lock leaves this flow's `atomicMove`
-   * throwing `ENOENT`, which is a loud failure, not a destructive one.
+   * lock is not known until it has run. The residue is narrow, and loud rather
+   * than destructive: inside the lock the root is settled and read again
+   * ({@link UninstallFlow.settleAndReread}), so a package removed between the
+   * probe and the lock is reported as not installed.
    *
    * @param req - Uninstall request — name, optional purge flag, optional project path.
    * @returns The uninstall result, including any data paths preserved on disk.
@@ -218,8 +219,9 @@ export class UninstallFlow {
    */
   private async removeLocated(
     req: UninstallRequest,
-    located: LocatedPackage
+    probed: LocatedPackage
   ): Promise<UninstallResult> {
+    const located = await this.settleAndReread(req, probed);
     const stagingDir = await mkdtemp(path.join(tmpdir(), `${STAGING_DIR_PREFIX}${req.name}-`));
     const stagingPath = path.join(stagingDir, 'pkg');
 
@@ -242,6 +244,30 @@ export class UninstallFlow {
       await this.rollbackFromStaging(stagingPath, located.installRoot, stagingDir);
       throw err;
     }
+  }
+
+  /**
+   * Settle an install a crash interrupted at the located root, then read what
+   * stands there now (DOR-2273). Uninstall must remove the last committed
+   * install, never a half-written one, and must not leave that install's
+   * backup behind for a later recovery to put back. Settling can restore an
+   * older version or remove a half-written fresh install, so the manifest read
+   * before the lock is stale.
+   *
+   * @internal
+   */
+  private async settleAndReread(
+    req: UninstallRequest,
+    probed: LocatedPackage
+  ): Promise<LocatedPackage> {
+    await settleInterruptedInstall(probed.installRoot);
+    if (!(await pathExists(probed.installRoot))) throw new PackageNotInstalledError(req.name);
+    const manifest = await readManifestIfPresent(probed.installRoot);
+    return {
+      installRoot: probed.installRoot,
+      manifest,
+      inferredType: manifest?.type ?? probed.inferredType,
+    };
   }
 
   /**

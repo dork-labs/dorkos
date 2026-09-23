@@ -15,7 +15,8 @@ import { fileURLToPath } from 'node:url';
 import { initBoundary } from '../../../lib/boundary.js';
 import { atomicMove } from '../lib/atomic-move.js';
 import { UninstallFlow } from '../flows/uninstall.js';
-import { BACKUP_SUFFIX, runTransaction } from '../transaction.js';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
+import { runTransaction } from '../transaction.js';
 import type { InstallResult } from '../types.js';
 import { buildInstallerForTests } from './installer-harness.js';
 
@@ -163,7 +164,7 @@ describe('runTransaction (concurrent, same target)', () => {
 
     // And neither transaction left a backup behind for the janitor to sweep.
     const siblings = await readdir(installRoot);
-    expect(siblings.filter((name) => name.includes(BACKUP_SUFFIX))).toEqual([]);
+    expect(siblings.filter(isInstallSiblingName)).toEqual([]);
   });
 
   it('locks on the canonical directory, not on the spelling the caller used', async () => {
@@ -194,7 +195,7 @@ describe('runTransaction (concurrent, same target)', () => {
     expect(await readFile(path.join(realTarget, 'version.txt'), 'utf8')).toBe('v-winner');
 
     const siblings = await readdir(installRoot);
-    expect(siblings.filter((name) => name.includes(BACKUP_SUFFIX))).toEqual([]);
+    expect(siblings.filter(isInstallSiblingName)).toEqual([]);
   });
 
   it('serialises two transactions against the same target', async () => {
