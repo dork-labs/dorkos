@@ -342,6 +342,8 @@ export { DirectoryPicker } from './DirectoryPicker';
 export type { DirectoryPickerProps } from './DirectoryPicker';
 export { PageContainer, pageContainerVariants } from './page-container';
 export type { PageContainerProps } from './page-container';
+export { PageHeading, focusPageHeading } from './page-heading';
+export type { PageHeadingProps } from './page-heading';
 export { PathInput } from './path-input';
 export type { PathInputProps } from './path-input';
 export { Skeleton } from './skeleton';

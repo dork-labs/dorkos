@@ -1,7 +1,7 @@
 import { lazy, Suspense, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useSearch, useNavigate } from '@tanstack/react-router';
-import { Drawer, DrawerContent, QueryErrorState, Spinner } from '@/layers/shared/ui';
+import { Drawer, DrawerContent, PageHeading, QueryErrorState, Spinner } from '@/layers/shared/ui';
 import { useIsMobile } from '@/layers/shared/model';
 import { useProfileStore } from '@/layers/features/profile';
 import { useOpenConnections } from '@/layers/shared/model';
@@ -42,6 +42,16 @@ const FADE = {
  * They are reached from this page's view switch instead of a separate concept.
  */
 export function TeamRoute() {
+  return (
+    <>
+      <PageHeading>Team</PageHeading>
+      <TeamRouteBody />
+    </>
+  );
+}
+
+/** Every state of the `/team` page below its heading. */
+function TeamRouteBody() {
   const search = useSearch({ from: '/_shell/team' });
   const navigate = useNavigate();
   const isMobile = useIsMobile();

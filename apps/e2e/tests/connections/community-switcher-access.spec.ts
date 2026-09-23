@@ -232,6 +232,57 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
     await expect(page.getByText(secret('Beta'), { exact: true })).toBeVisible();
   });
 
+  test('phone: choosing a context puts focus on the new page’s heading', async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await mockCommunities(page, [ALPHA, BETA]);
+    await page.goto('/tasks');
+    await new BasePage(page).waitForAppReady();
+    const trigger = page.getByTestId('sidebar-header-block');
+
+    // Into a Community: the heading names the Community and then the channel,
+    // and it is where focus is once the channel has opened (DOR-2240).
+    await trigger.click();
+    await page.getByRole('dialog').getByRole('radio', { name: /^Beta/ }).click();
+    await expect(page).toHaveURL(new RegExp(`community=beta&id=${ROOM}`));
+    await expect(page.getByText(secret('Beta'), { exact: true })).toBeVisible();
+    const heading = page.getByRole('main').getByRole('heading', { level: 1 });
+    await expect(heading).toHaveAccessibleName('Beta · General');
+    await expect(heading).toBeFocused();
+    // Not drawn: the bar above already names the channel.
+    expect((await heading.boundingBox())?.width ?? 0).toBeLessThanOrEqual(1);
+    const shot = testInfo.outputPath('switcher-heading-focus-390.png');
+    await page.screenshot({ path: shot, animations: 'disabled' });
+    await testInfo.attach('switcher-heading-focus-390.png', {
+      path: shot,
+      contentType: 'image/png',
+    });
+    // Scoped to the heading: the page around it has findings of its own that
+    // predate it (two nested `main` landmarks among them).
+    const axe = await runAxe(page, 'h1[data-page-heading]');
+    expect(axe.violations.map(describeViolation)).toEqual([]);
+    // It stays put once the channel has fully drawn (its message box named):
+    // nothing on the page takes it back.
+    await expect(page.getByPlaceholder(/Message General/)).toBeVisible();
+    await expect(heading).toBeFocused();
+
+    // Back to this DorkOS: its page's heading takes focus the same way.
+    await trigger.click();
+    await page.getByRole('dialog').getByRole('radio', { name: /team/ }).click();
+    await expect(page).not.toHaveURL(/community=/);
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.matches('h1[data-page-heading]')))
+      .toBe(true);
+
+    // Opening and closing without choosing still returns focus to the trigger.
+    await trigger.click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
+
   test('at 200% zoom every destination stays reachable without sideways scrolling', async ({
     page,
   }, testInfo) => {

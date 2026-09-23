@@ -4,6 +4,7 @@ import { useSessionCanvas } from '@/layers/features/canvas';
 import { useRightPanelLayoutPersistence } from '@/layers/features/right-panel';
 import { useSessionId, useSessionRekeyTarget, useSessionSearch } from '@/layers/entities/session';
 import { useInPlaceNavigate } from '@/layers/shared/model';
+import { PageHeading } from '@/layers/shared/ui';
 import { useMessageLanding } from '../model/use-message-landing';
 
 /**
@@ -69,14 +70,17 @@ export function SessionPage() {
   }, [inPlaceNavigate]);
 
   return (
-    <ChatPanel
-      sessionId={activeSessionId}
-      launchRuntime={runtime}
-      launchPrompt={prompt}
-      launchSend={send === '1'}
-      launchSeed={seed}
-      onLaunchConsumed={handleLaunchConsumed}
-      {...(landOnRow === undefined ? {} : { landOnRow })}
-    />
+    <>
+      <PageHeading>Session</PageHeading>
+      <ChatPanel
+        sessionId={activeSessionId}
+        launchRuntime={runtime}
+        launchPrompt={prompt}
+        launchSend={send === '1'}
+        launchSeed={seed}
+        onLaunchConsumed={handleLaunchConsumed}
+        {...(landOnRow === undefined ? {} : { landOnRow })}
+      />
+    </>
   );
 }

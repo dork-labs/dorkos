@@ -123,8 +123,10 @@ describe('SessionPage', () => {
 
   it('does not render a PanelGroup wrapper', () => {
     const { container } = render(<SessionPage />);
-    // SessionPage now renders only ChatPanel — no wrapping panel group divs
-    expect(container.firstChild).toHaveAttribute('data-testid', 'chat-panel');
+    // SessionPage renders its undrawn heading and ChatPanel — no wrapping panel group divs
+    expect([...container.children].map((child) => child.tagName)).toEqual(['H1', 'DIV']);
+    expect(container.lastChild).toHaveAttribute('data-testid', 'chat-panel');
+    expect(screen.getByRole('heading', { level: 1, name: 'Session' })).toHaveClass('sr-only');
   });
 
   it('forwards the ?runtime= launch param to ChatPanel', () => {

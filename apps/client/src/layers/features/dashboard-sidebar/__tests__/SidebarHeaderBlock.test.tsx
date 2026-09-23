@@ -26,7 +26,7 @@ import { toast } from 'sonner';
 import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
 import { confirmCommunityAuthority, invalidateCommunityAuthority } from '@/layers/shared/lib';
 import { commitCommunityRouteEpoch } from '@/layers/shared/model';
-import type { SidebarMenuNode } from '@/layers/shared/ui';
+import { PageHeading, type SidebarMenuNode } from '@/layers/shared/ui';
 import { buildHeaderBlockMenuNodes } from '../ui/header-block-menu';
 import { SidebarHeaderBlock, teamNameFor } from '../ui/SidebarHeaderBlock';
 import { MobileCommunityContextSwitcher } from '../ui/context/CommunityContextSwitcher';
@@ -1349,5 +1349,176 @@ describe('the context switcher’s lifecycle actions', () => {
     const settings = await screen.findByRole('menuitem', { name: /Community settings/ });
     fireEvent.keyDown(settings, { key: 'Enter' });
     expect(mockOpenExternalLink).toHaveBeenCalledWith('https://a.example.com/c/remote-a/settings');
+  });
+});
+
+/**
+ * "Selecting closes the sheet, commits navigation, and moves focus to the new
+ * page heading" (spec, Phone and narrow widths; DOR-2240). The page under the
+ * switcher is a stand-in `main` with the heading the real page draws; the
+ * switcher is real, sheet and all.
+ */
+describe('focus after a phone choice', () => {
+  function renderOnPage({ mobile }: { mobile: boolean }) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mockIsMobile = mobile;
+    return render(
+      <QueryClientProvider client={client}>
+        {mobile ? <MobileCommunityContextSwitcher /> : <SidebarHeaderBlock />}
+        <main>
+          <PageHeading>Alpha · General</PageHeading>
+          <button type="button">Message box</button>
+        </main>
+      </QueryClientProvider>
+    );
+  }
+
+  const heading = () => screen.getByRole('heading', { level: 1, name: 'Alpha · General' });
+  const trigger = () => screen.getByTestId('sidebar-header-block');
+  const idle = () => waitFor(() => expect(trigger()).not.toHaveAttribute('aria-busy'));
+  /** Let the sheet finish closing and every queued frame run. */
+  const settle = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
+
+  beforeEach(() => {
+    mockConnections = [alpha()];
+    mockResolveCommunityNavigation.mockResolvedValue({
+      ref: 'a',
+      roomId: 'general',
+      threadId: null,
+      scrollAnchorEntryId: null,
+    });
+  });
+
+  it('lands on the new page’s heading once the switch has committed', async () => {
+    renderOnPage({ mobile: true });
+    fireEvent.click(trigger());
+    fireEvent.click(await screen.findByRole('radio', { name: /Alpha/ }));
+    await idle();
+    await settle();
+    expect(mockNavigate).toHaveBeenLastCalledWith({
+      to: '/channels',
+      search: { community: 'a', id: 'general' },
+    });
+    expect(heading()).toHaveFocus();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('lands on the heading after choosing this DorkOS, too', async () => {
+    mockSearch = { community: 'a' };
+    renderOnPage({ mobile: true });
+    fireEvent.click(trigger());
+    fireEvent.click(await screen.findByRole('radio', { name: /Dorian’s team/ }));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ to: '/', search: {} }));
+    await settle();
+    expect(heading()).toHaveFocus();
+  });
+
+  it('stays off the heading when the switch fails, and returns to the trigger', async () => {
+    mockResolveCommunityNavigation.mockRejectedValue(new Error('offline'));
+    renderOnPage({ mobile: true });
+    fireEvent.click(trigger());
+    fireEvent.click(await screen.findByRole('radio', { name: /Alpha/ }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    await idle();
+    await settle();
+    expect(heading()).not.toHaveFocus();
+    expect(trigger()).toHaveFocus();
+  });
+
+  it('gives focus back to the trigger when a slow switch fails after the sheet has gone', async () => {
+    let rejectRemembered!: (error: Error) => void;
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectRemembered = reject;
+        })
+    );
+    renderOnPage({ mobile: true });
+    fireEvent.click(trigger());
+    fireEvent.click(await screen.findByRole('radio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+    // The sheet is closed and held its focus for the heading; nothing has it.
+    await settle();
+    expect(document.activeElement).toBe(document.body);
+    rejectRemembered(new Error('offline'));
+    await idle();
+    await settle();
+    expect(trigger()).toHaveFocus();
+  });
+
+  it('stays off the heading when a newer route overtakes the switch', async () => {
+    let resolveRemembered!: (value: null) => void;
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRemembered = resolve;
+        })
+    );
+    renderOnPage({ mobile: true });
+    fireEvent.click(trigger());
+    fireEvent.click(await screen.findByRole('radio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+    commitCommunityRouteEpoch('test:newer-choice');
+    resolveRemembered(null);
+    await idle();
+    await settle();
+    expect(heading()).not.toHaveFocus();
+  });
+
+  it('never takes focus back from something the person focused while it loaded', async () => {
+    let resolveRemembered!: (value: null) => void;
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRemembered = resolve;
+        })
+    );
+    mockListRemoteCommunityRooms.mockResolvedValue({ community: 'a', rooms: [], stale: false });
+    renderOnPage({ mobile: true });
+    fireEvent.click(trigger());
+    fireEvent.click(await screen.findByRole('radio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+    await settle();
+    const box = screen.getByRole('button', { name: 'Message box' });
+    fireEvent.pointerDown(box);
+    box.focus();
+    resolveRemembered(null);
+    await idle();
+    await settle();
+    expect(box).toHaveFocus();
+  });
+
+  it('wins over focus the app moved by itself while it loaded, like a composer on mount', async () => {
+    let resolveRemembered!: (value: null) => void;
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRemembered = resolve;
+        })
+    );
+    mockListRemoteCommunityRooms.mockResolvedValue({ community: 'a', rooms: [], stale: false });
+    renderOnPage({ mobile: true });
+    fireEvent.click(trigger());
+    fireEvent.click(await screen.findByRole('radio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+    await settle();
+    screen.getByRole('button', { name: 'Message box' }).focus();
+    resolveRemembered(null);
+    await idle();
+    await settle();
+    expect(heading()).toHaveFocus();
+  });
+
+  it('leaves desktop to the popover’s own focus return', async () => {
+    renderOnPage({ mobile: false });
+    fireEvent.pointerDown(trigger());
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(2));
+    await idle();
+    await settle();
+    expect(heading()).not.toHaveFocus();
   });
 });
