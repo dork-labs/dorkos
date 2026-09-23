@@ -39,7 +39,10 @@ import {
   type UninstallFlow,
 } from '../services/marketplace/flows/uninstall.js';
 import { UnsupportedSourceUrlError } from '../services/marketplace/source-url-policy.js';
-import type { UpdateFlow } from '../services/marketplace/flows/update.js';
+import {
+  PackageNotInstalledForUpdateError,
+  type UpdateFlow,
+} from '../services/marketplace/flows/update.js';
 import {
   assertPackageName,
   MarketplacePathError,
@@ -212,6 +215,9 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
     return { status: 409, body: { error: err.message, conflicts: err.conflicts } };
   }
   if (err instanceof PackageNotInstalledError) {
+    return { status: 404, body: { error: err.message } };
+  }
+  if (err instanceof PackageNotInstalledForUpdateError) {
     return { status: 404, body: { error: err.message } };
   }
   if (err instanceof PackageNotFoundError) {
@@ -528,6 +534,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       }
 
       const marketplace = await fetcher.fetchMarketplaceJson(source);
+      // "I just pushed; check again": the update check shares commit lookups
+      // for a minute, and a refresh is how the operator asks it to look now.
+      updateFlow.clearMemos();
       return res.json({ marketplace, fetchedAt: new Date().toISOString() });
     } catch (err) {
       logger.error(`[Marketplace] Failed to refresh source ${req.params.name}`, err);
@@ -866,6 +875,16 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
           ...(parsed.data.projectPath !== undefined && { projectPath: parsed.data.projectPath }),
         });
         if (decision.outcome !== 'allowed') return gateResponse(res, decision);
+      }
+      // The flow walks only this request's scope, so it cannot tell "installed
+      // in another scope" (a scoped `unknown` result) from "installed nowhere".
+      // The route can see every scope, so it answers the second as a 404.
+      const everywhere = await scanInstallationsAcrossScopes(dorkHome, listAgentScopes?.() ?? []);
+      const inProject = confined.projectPath
+        ? await scanInstalledPackages(dorkHome, confined.projectPath)
+        : [];
+      if (![...everywhere, ...inProject].some((p) => p.name === req.params.name)) {
+        throw new PackageNotInstalledForUpdateError(req.params.name);
       }
       const result = await updateFlow.run({
         name: req.params.name,

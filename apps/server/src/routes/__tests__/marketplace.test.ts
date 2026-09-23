@@ -127,13 +127,14 @@ function createFakeUninstallFlow(): FakeUninstallFlow {
   return { uninstall: vi.fn() };
 }
 
-/** Minimal UpdateFlow stub — only the `run` method is mocked. */
+/** Minimal UpdateFlow stub — `run` and the memo reset the refresh route calls. */
 interface FakeUpdateFlow {
   run: ReturnType<typeof vi.fn>;
+  clearMemos: ReturnType<typeof vi.fn>;
 }
 
 function createFakeUpdateFlow(): FakeUpdateFlow {
-  return { run: vi.fn() };
+  return { run: vi.fn(), clearMemos: vi.fn() };
 }
 
 function buildSamplePluginManifest(): PluginPackageManifest {
@@ -348,6 +349,18 @@ describe('Marketplace Routes', () => {
     it('returns 404 when the source does not exist', async () => {
       const res = await request(fixtureServer).post('/api/marketplace/sources/missing/refresh');
       expect(res.status).toBe(404);
+    });
+
+    it('clears the update check memos, so "I just pushed; check again" is answered fresh', async () => {
+      // Purpose: the update flow shares commit lookups for a minute; a refresh
+      // is the operator's way to say "look again now".
+      await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'refreshable', source: 'https://example.com/refresh' });
+
+      await request(fixtureServer).post('/api/marketplace/sources/refreshable/refresh');
+
+      expect(updateFlow.clearMemos).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1501,6 +1514,77 @@ describe('Marketplace Routes', () => {
   });
 
   describe('POST /packages/:name/update', () => {
+    // The route answers 404 for a name installed in no scope before the flow
+    // runs, so the package these cases update has to exist on disk.
+    beforeEach(() => {
+      writePackageManifest(join(dorkHome, 'plugins', 'sample-plugin'), {
+        ...buildSamplePluginManifest(),
+      });
+    });
+
+    it('returns 404 for a name installed in no scope at all, without running the check', async () => {
+      // Purpose: the error used to fall through to a 500; a missing package
+      // is a not-found, and the flow cannot tell that from "another scope".
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/ghost-plugin/update')
+        .send({});
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Package not installed: ghost-plugin');
+      expect(updateFlow.run).not.toHaveBeenCalled();
+    });
+
+    it("runs the check for a name installed only in another scope, so it can answer 'not in this scope'", async () => {
+      // Purpose: a package installed under an agent exists; asking about it
+      // from a different project is a scoped unknown, not a 404.
+      const agentDir = join(dorkHome, 'agent-project');
+      writePackageManifest(join(agentDir, '.dork', 'plugins', 'agent-only'), {
+        ...buildSamplePluginManifest(),
+        name: 'agent-only',
+      });
+      agentScopes = [{ projectPath: agentDir, id: 'a1', name: 'Agent' }];
+      const unknown = {
+        packageName: 'agent-only',
+        installedVersion: '',
+        latestVersion: '',
+        hasUpdate: false,
+        marketplace: '',
+        status: 'unknown',
+        note: 'not installed in this scope',
+      };
+      updateFlow.run.mockResolvedValue({ checks: [unknown], applied: [] });
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/agent-only/update')
+        .send({ projectPath: '/some/other/project' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.checks).toEqual([unknown]);
+      expect(updateFlow.run).toHaveBeenCalledTimes(1);
+    });
+
+    it('still authorizes an apply as marketplace.install, and never an advisory check', async () => {
+      // Purpose: advisory is a read, apply reinstalls (ADR-0233); the new
+      // 404 check must not reorder or open a way around the gate. With no
+      // capability registry the gate fails closed, so an apply that consults
+      // it is refused, while an advisory read that never consults it runs.
+      gateRegistry = undefined as unknown as CapabilityRegistry;
+      updateFlow.run.mockResolvedValue({ checks: [], applied: [] });
+
+      const applied = await request(fixtureServer)
+        .post('/api/marketplace/packages/sample-plugin/update')
+        .send({ apply: true });
+      expect(applied.status).toBe(403);
+      expect(applied.body.capabilityId).toBe('marketplace.install');
+      expect(updateFlow.run).not.toHaveBeenCalled();
+
+      const advisory = await request(fixtureServer)
+        .post('/api/marketplace/packages/sample-plugin/update')
+        .send({});
+      expect(advisory.status).toBe(200);
+      expect(updateFlow.run).toHaveBeenCalledTimes(1);
+    });
+
     it('returns the advisory check result when apply is omitted', async () => {
       updateFlow.run.mockResolvedValue({
         checks: [
