@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): keep the invitation on reload and name every membership state'
+  - 'fix(community): scope the join-attempt read before revealing anything'
 ---
 
 ### Added
