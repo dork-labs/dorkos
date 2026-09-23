@@ -170,7 +170,16 @@ import type {
   TeamRosterResponse,
 } from './team-schemas.js';
 import type {
+  CloudCommunityClaimLinkResponse,
+  CloudCommunityKeepResponse,
+  CloudCommunityMovePollResponse,
+  CloudCommunityMoveResponse,
+  CloudCommunityMoveStartInput,
+  CloudCommunityNameCheckResponse,
+  CloudCommunityRestoreResponse,
+  CloudCommunityStartResponse,
   CloudCreditsStatus,
+  CloudHostedCommunitiesResponse,
   CloudLinkStatus,
   CloudLinkSummary,
   CloudMembersResponse,
@@ -2777,6 +2786,90 @@ export interface Transport
    * it answers the same report either way rather than an error.
    */
   selectCloudCredits(): Promise<CloudCreditsStatus>;
+
+  // --- Hosted communities (community-host-operator-api P5) ---
+  //
+  // Every call goes through the local server, which holds this instance's
+  // cloud credential. Reads answer `{ available: false }` and writes a plain
+  // refusal when this instance is not linked, with no request leaving the
+  // machine; callers check the link first and do not call these at all.
+
+  /** Read this account's hosted communities, its recent moves, and its allowance. */
+  listHostedCommunities(): Promise<CloudHostedCommunitiesResponse>;
+  /**
+   * Ask whether a web address is free right now. Advisory: starting checks again.
+   *
+   * @param name - The short name, already lower case.
+   */
+  checkHostedCommunityName(name: string): Promise<CloudCommunityNameCheckResponse>;
+  /**
+   * Start a hosted community. Idempotent on `idempotencyKey`.
+   *
+   * @param input - The key, the name and the optional web address.
+   */
+  startHostedCommunity(input: {
+    idempotencyKey: string;
+    name: string;
+    shortName?: string;
+  }): Promise<CloudCommunityStartResponse>;
+  /**
+   * Get the owner-claim link for a community waiting for its owner, to open at
+   * once in the person's browser. Never keep the answer: it is a one-time
+   * credential, and asking again replaces it.
+   *
+   * @param communityId - The community's permanent identifier.
+   */
+  getHostedCommunityClaimLink(communityId: string): Promise<CloudCommunityClaimLinkResponse>;
+  /**
+   * Keep one community open, confirming which others that puts on hold.
+   *
+   * @param communityId - The community to keep.
+   * @param expectedHeldCommunityIds - The `actions.keep.wouldHold` preview the person confirmed.
+   */
+  keepHostedCommunity(
+    communityId: string,
+    expectedHeldCommunityIds: string[]
+  ): Promise<CloudCommunityKeepResponse>;
+  /**
+   * Reopen a held community.
+   *
+   * @param communityId - The community to reopen.
+   */
+  restoreHostedCommunity(communityId: string): Promise<CloudCommunityRestoreResponse>;
+  /**
+   * Start moving a community in from an owner export. The file goes to the
+   * local server, which sends it on to the new community's server itself.
+   *
+   * @param file - The owner export (`.zip`), sent as it is from disk.
+   * @param input - The key, the name and the optional web address.
+   * @param onProgress - Called as the file reaches the local server.
+   * @param signal - Stops sending the file.
+   */
+  startHostedCommunityMove(
+    file: Blob,
+    input: CloudCommunityMoveStartInput,
+    onProgress?: (progress: { loaded: number; total: number }) => void,
+    signal?: AbortSignal
+  ): Promise<CloudCommunityMoveResponse>;
+  /**
+   * Read one move, fresh from the service, with how its upload is going here.
+   *
+   * @param moveId - The move's identifier.
+   */
+  getHostedCommunityMove(moveId: string): Promise<CloudCommunityMovePollResponse>;
+  /**
+   * Cancel a move that is not ready yet. Removes the new community and its files.
+   *
+   * @param moveId - The move's identifier.
+   */
+  cancelHostedCommunityMove(moveId: string): Promise<CloudCommunityMoveResponse>;
+  /**
+   * Send a move's export again after its upload was refused or interrupted,
+   * from the copy the local server still holds.
+   *
+   * @param moveId - The move's identifier.
+   */
+  retryHostedCommunityMoveUpload(moveId: string): Promise<CloudCommunityMoveResponse>;
 
   // --- Feedback (user-volunteered; DOR-317, ADR 260713-143958 Phase 5) ---
 

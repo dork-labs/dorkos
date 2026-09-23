@@ -444,6 +444,77 @@ function desktopOpenExternal(): ((url: string) => Promise<boolean>) | undefined 
   return typeof window === 'undefined' ? undefined : window.electronAPI?.openExternal;
 }
 
+/**
+ * A link as a log line may show it: its scheme and host, never its path, query
+ * or fragment. Some links carry a one-time credential there (an owner-claim
+ * link, an invitation), and a console line ends up in bug reports.
+ *
+ * @param href - The link, exactly as given.
+ */
+export function redactForLog(href: string): string {
+  try {
+    const url = new URL(href);
+    const rest = url.pathname.length > 1 || url.search || url.hash ? '/…' : '';
+    return url.origin === 'null' ? `${url.protocol}…` : `${url.origin}${rest}`;
+  } catch {
+    return '[unparsable link]';
+  }
+}
+
+/** A browser window opened before its address is known. */
+export interface PendingExternalWindow {
+  /**
+   * Send the waiting window to `href`.
+   *
+   * @returns `false` when the link was refused (the window is closed and the
+   *   person told why).
+   */
+  go: (href: string) => boolean;
+  /** Close the waiting window: the address never came. */
+  close: () => void;
+}
+
+/**
+ * Open a window now, in the click, and give it its address later.
+ *
+ * For a link that has to be fetched first. A browser only lets a page open a
+ * window during the click itself, and Safari counts a round trip as outside
+ * it, so `openExternalLink` after an `await` is quietly blocked there, and
+ * with `noopener` the page cannot even tell. So on the web this opens a blank
+ * window at once (without `noopener`, so the handle comes back and a block is
+ * detectable), cuts its `opener` by hand, and points it at the link when the
+ * link arrives. The desktop app has no pop-up blocker in the way; there the
+ * link simply goes through {@link openExternalLink} when it arrives.
+ *
+ * @returns A handle, or `null` when the browser refused to open a window.
+ */
+export function openExternalWindowLater(): PendingExternalWindow | null {
+  if (desktopOpenExternal()) {
+    return { go: (href) => openExternalLink(href), close: () => {} };
+  }
+  const win = window.open('about:blank', '_blank');
+  if (!win) return null;
+  try {
+    win.opener = null;
+  } catch {
+    // Some browsers make `opener` read-only on a new window; it is then
+    // already severed, which is what this line wanted.
+  }
+  return {
+    go: (href) => {
+      const link = classifyLink(href);
+      if (link.kind !== 'external' || !isWebUrl(link.url)) {
+        win.close();
+        reportRefusal(href, link.kind === 'blocked' ? link.reason : 'unsupported-scheme');
+        return false;
+      }
+      win.location.replace(link.url);
+      return true;
+    },
+    close: () => win.close(),
+  };
+}
+
 /** Why a link will not open, beyond the scheme allowlist's own verdicts. */
 export type LinkRefusal = BlockedLinkReason | 'desktop-shell';
 
@@ -541,7 +612,7 @@ export function describeRefusal(
  * @param reason - Why it was refused, from {@link linkRefusalHere}.
  */
 function reportRefusal(href: string, reason: LinkRefusal): void {
-  console.warn(`[dorkos:link] refused to open ${reason} link:`, href);
+  console.warn(`[dorkos:link] refused to open ${reason} link:`, redactForLog(href));
   const { title, detail } = describeRefusal(reason, href);
   toast.error(title, { id: REFUSAL_TOAST_ID, description: detail });
 }
@@ -599,7 +670,7 @@ function openInBrowser(url: string): boolean {
         // caller has already been told `true`, so the only honest thing left is
         // to say so where a bug report can find it, rather than let it surface
         // as an unhandled rejection with no context.
-        console.error('[dorkos:link] the desktop shell could not open', url, err);
+        console.error('[dorkos:link] the desktop shell could not open', redactForLog(url), err);
       });
     return true;
   }

@@ -54,8 +54,12 @@ import {
   primeCreditsInference,
 } from '../services/core/cloud/credits-inference.js';
 import { logger, logError } from '../lib/logger.js';
+import { createCloudCommunitiesRouter } from './cloud-communities.js';
 
 const router = Router();
+
+/** Hosted communities: "Start a community" and "Move a community here". */
+router.use('/communities', createCloudCommunitiesRouter());
 
 /** POST /api/cloud/link/start — begin the device flow; returns codes to display. */
 router.post('/link/start', async (_req, res) => {

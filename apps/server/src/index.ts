@@ -35,6 +35,7 @@ import {
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from './services/core/config/tunnel-settings.js';
 import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/cloud-link.js';
+import { initMoveStaging } from './services/core/cloud/community-move-upload.js';
 import {
   initConfigManager,
   configManager,
@@ -685,6 +686,15 @@ async function start() {
   // boot must not fail over a cleanup.
   await reapOrphanedWarmProcesses().catch((error: unknown) => {
     logger.warn('[DorkOS] could not sweep leftover agent processes', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+
+  // Empty the hosted-community move staging directory. A copy a previous run
+  // left behind can never be sent: its upload token died with that process.
+  // After the instance lock for the same reason as the sweep above.
+  await initMoveStaging(dorkHome).catch((error: unknown) => {
+    logger.warn('[DorkOS] could not set up community move staging', {
       error: error instanceof Error ? error.message : String(error),
     });
   });

@@ -12,7 +12,16 @@
  * @module shared/lib/transport/cloud-methods
  */
 import type {
+  CloudCommunityClaimLinkResponse,
+  CloudCommunityKeepResponse,
+  CloudCommunityMovePollResponse,
+  CloudCommunityMoveResponse,
+  CloudCommunityMoveStartInput,
+  CloudCommunityNameCheckResponse,
+  CloudCommunityRestoreResponse,
+  CloudCommunityStartResponse,
   CloudCreditsStatus,
+  CloudHostedCommunitiesResponse,
   CloudLinkStatus,
   CloudLinkSummary,
   CloudMembersResponse,
@@ -25,6 +34,7 @@ import type {
   StartLinkResult,
 } from '@dorkos/shared/cloud-schemas';
 import { fetchJSON } from './http-client';
+import { startHostedCommunityMoveOverHttp } from './community-move-methods';
 
 /**
  * Create the cloud-account-link methods bound to a base URL.
@@ -104,6 +114,87 @@ export function createCloudMethods(baseUrl: string) {
 
     selectCloudCredits(): Promise<CloudCreditsStatus> {
       return fetchJSON<CloudCreditsStatus>(baseUrl, '/cloud/credits/select', { method: 'POST' });
+    },
+
+    listHostedCommunities(): Promise<CloudHostedCommunitiesResponse> {
+      return fetchJSON<CloudHostedCommunitiesResponse>(baseUrl, '/cloud/communities');
+    },
+
+    checkHostedCommunityName(name: string): Promise<CloudCommunityNameCheckResponse> {
+      return fetchJSON<CloudCommunityNameCheckResponse>(
+        baseUrl,
+        `/cloud/communities/name-check?name=${encodeURIComponent(name)}`
+      );
+    },
+
+    startHostedCommunity(input: {
+      idempotencyKey: string;
+      name: string;
+      shortName?: string;
+    }): Promise<CloudCommunityStartResponse> {
+      return fetchJSON<CloudCommunityStartResponse>(baseUrl, '/cloud/communities', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      });
+    },
+
+    getHostedCommunityClaimLink(communityId: string): Promise<CloudCommunityClaimLinkResponse> {
+      return fetchJSON<CloudCommunityClaimLinkResponse>(
+        baseUrl,
+        `/cloud/communities/${encodeURIComponent(communityId)}/claim-link`,
+        { method: 'POST', cache: 'no-store' }
+      );
+    },
+
+    keepHostedCommunity(
+      communityId: string,
+      expectedHeldCommunityIds: string[]
+    ): Promise<CloudCommunityKeepResponse> {
+      return fetchJSON<CloudCommunityKeepResponse>(
+        baseUrl,
+        `/cloud/communities/${encodeURIComponent(communityId)}/keep`,
+        { method: 'POST', body: JSON.stringify({ expectedHeldCommunityIds }) }
+      );
+    },
+
+    restoreHostedCommunity(communityId: string): Promise<CloudCommunityRestoreResponse> {
+      return fetchJSON<CloudCommunityRestoreResponse>(
+        baseUrl,
+        `/cloud/communities/${encodeURIComponent(communityId)}/restore`,
+        { method: 'POST' }
+      );
+    },
+
+    startHostedCommunityMove(
+      file: Blob,
+      input: CloudCommunityMoveStartInput,
+      onProgress?: (progress: { loaded: number; total: number }) => void,
+      signal?: AbortSignal
+    ): Promise<CloudCommunityMoveResponse> {
+      return startHostedCommunityMoveOverHttp(baseUrl, file, input, onProgress, signal);
+    },
+
+    getHostedCommunityMove(moveId: string): Promise<CloudCommunityMovePollResponse> {
+      return fetchJSON<CloudCommunityMovePollResponse>(
+        baseUrl,
+        `/cloud/communities/moves/${encodeURIComponent(moveId)}`
+      );
+    },
+
+    cancelHostedCommunityMove(moveId: string): Promise<CloudCommunityMoveResponse> {
+      return fetchJSON<CloudCommunityMoveResponse>(
+        baseUrl,
+        `/cloud/communities/moves/${encodeURIComponent(moveId)}/cancel`,
+        { method: 'POST' }
+      );
+    },
+
+    retryHostedCommunityMoveUpload(moveId: string): Promise<CloudCommunityMoveResponse> {
+      return fetchJSON<CloudCommunityMoveResponse>(
+        baseUrl,
+        `/cloud/communities/moves/${encodeURIComponent(moveId)}/upload`,
+        { method: 'POST' }
+      );
     },
   };
 }

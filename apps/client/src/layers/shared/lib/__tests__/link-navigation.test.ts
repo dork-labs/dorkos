@@ -10,7 +10,9 @@ import {
   internalRoutePath,
   isWebUrl,
   openExternalLink,
+  openExternalWindowLater,
   openLink,
+  redactForLog,
   registerLinkNavigator,
   registerTabOpener,
   supportsNewTab,
@@ -899,5 +901,69 @@ describe('link dispatch', () => {
 
       clearLatest();
     });
+  });
+});
+
+describe('openExternalWindowLater', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete window.electronAPI;
+  });
+
+  // Purpose: a window opened after a round trip is a blocked pop-up in Safari;
+  // this opens it in the press, without `noopener`, so a block is visible.
+  // Fails if the window is opened late, with `noopener`, or keeps its opener.
+  it('opens a blank window at once, severs its opener, and sends it on later', () => {
+    const replace = vi.fn();
+    const fake = { opener: {} as unknown, location: { replace }, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(fake as unknown as Window);
+    const pending = openExternalWindowLater();
+    expect(open).toHaveBeenCalledWith('about:blank', '_blank');
+    expect(fake.opener).toBeNull();
+    expect(pending!.go('https://community.example.invalid/claim/secret')).toBe(true);
+    expect(replace).toHaveBeenCalledWith('https://community.example.invalid/claim/secret');
+  });
+
+  it('answers null when the browser blocks the window', () => {
+    vi.spyOn(window, 'open').mockReturnValue(null);
+    expect(openExternalWindowLater()).toBeNull();
+  });
+
+  it('closes the window rather than send it to a link it would refuse', () => {
+    const fake = { opener: null, location: { replace: vi.fn() }, close: vi.fn() };
+    vi.spyOn(window, 'open').mockReturnValue(fake as unknown as Window);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const pending = openExternalWindowLater();
+    expect(pending!.go('javascript:alert(1)')).toBe(false);
+    expect(fake.close).toHaveBeenCalled();
+    expect(fake.location.replace).not.toHaveBeenCalled();
+  });
+
+  it('hands the link to the desktop shell when there is one', () => {
+    const openExternal = vi.fn(() => Promise.resolve(true));
+    window.electronAPI = { openExternal } as unknown as ElectronAPI;
+    const open = vi.spyOn(window, 'open');
+    const pending = openExternalWindowLater();
+    expect(open).not.toHaveBeenCalled();
+    pending!.go('https://community.example.invalid/claim/secret');
+    expect(openExternal).toHaveBeenCalledWith('https://community.example.invalid/claim/secret');
+  });
+});
+
+describe('redactForLog', () => {
+  // Purpose: a refused link can carry a one-time credential in its path or
+  // query; a console line must never repeat it.
+  it('keeps the scheme and host only', () => {
+    expect(redactForLog('https://c.example/claim/ct_secret?x=1#t')).toBe('https://c.example/…');
+    expect(redactForLog('https://c.example')).toBe('https://c.example');
+    expect(redactForLog('mailto:someone@example.com')).toBe('mailto:…');
+    expect(redactForLog('not a link')).toBe('[unparsable link]');
+  });
+
+  it('is what a refusal logs', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    openExternalLink('irc://irc.example.com/secret-room?key=abc');
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('secret-room');
+    warn.mockRestore();
   });
 });

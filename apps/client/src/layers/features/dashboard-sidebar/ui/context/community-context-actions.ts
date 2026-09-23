@@ -13,6 +13,10 @@
  * - **Joining** opens the invitation link the person was sent; **running your
  *   own server** opens the guide. Neither pairs this installation, and neither
  *   creates a Community on a host someone else runs.
+ * - **Starting or moving a hosted community** asks the person's DorkOS
+ *   account, through this DorkOS's own server. Those rows exist only while
+ *   this DorkOS is linked to an account; unlinked, they are not drawn at all
+ *   (community-host-operator-api P5).
  *
  * A hidden action is a courtesy, never the check: each destination rechecks.
  *
@@ -22,6 +26,9 @@ import {
   ArrowDown,
   ArrowUp,
   BookOpen,
+  Building2,
+  PackageOpen,
+  Sparkles,
   Link2,
   LogOut,
   Plus,
@@ -100,6 +107,16 @@ export interface CommunityContextActionsModel {
   onJoin: () => void;
   /** Open the guide to running a community server. */
   onDeploy: () => void;
+  /**
+   * The hosted-community entry points, or `null` when this DorkOS is not linked
+   * to a DorkOS account (then none of their rows is drawn).
+   */
+  hosting: {
+    onStart: () => void;
+    onMove: () => void;
+    /** Open the account's hosted-community list; `null` when it has nothing to show. */
+    onOpenHosted: (() => void) | null;
+  } | null;
 }
 
 function hostName(origin: string): string {
@@ -108,6 +125,44 @@ function hostName(origin: string): string {
   } catch {
     return origin;
   }
+}
+
+/**
+ * The hosted-community rows, or none when this DorkOS is not linked.
+ *
+ * @param hosting - The entry points' handlers, or `null` while unlinked.
+ */
+function hostingNodes(hosting: CommunityContextActionsModel['hosting']): SidebarMenuNode[] {
+  if (hosting === null) return [];
+  const nodes: SidebarMenuNode[] = [
+    {
+      kind: 'action',
+      id: 'add-community-start',
+      label: 'Start a community',
+      icon: Sparkles,
+      opensInput: true,
+      run: hosting.onStart,
+    },
+    {
+      kind: 'action',
+      id: 'add-community-move',
+      label: 'Move a community here',
+      icon: PackageOpen,
+      opensInput: true,
+      run: hosting.onMove,
+    },
+  ];
+  if (hosting.onOpenHosted) {
+    nodes.push({
+      kind: 'action',
+      id: 'add-community-hosted',
+      label: 'Hosted communities',
+      icon: Building2,
+      guardsFocus: true,
+      run: hosting.onOpenHosted,
+    });
+  }
+  return nodes;
 }
 
 /**
@@ -211,6 +266,7 @@ export function buildCommunityContextNodes(model: CommunityContextActionsModel):
         opensInput: true,
         run: model.onJoin,
       },
+      ...hostingNodes(model.hosting),
       {
         kind: 'action',
         id: 'add-community-deploy',
