@@ -70,5 +70,16 @@ across legs. For this gate that means the suite step against `globalTimeout`
 `260921-040000` (hygiene, measurement only) and `260920-184120` (the canary,
 which the `@merge_group` qualifier excludes).
 
+**The reorder surfaced an order-dependent spec, as any rebalance can.** The
+first queue run (35847511684) failed one test out of 454. The `/` 768px case in
+`responsive/no-horizontal-scroll.spec.ts` measures Home's bar, and the bar
+carries #team's head count. #team holds every agent that earlier specs on the
+same server created. The new order ran the case after 37 of them, and the bar
+spilled 12px against a 5px allowance (DOR-1816 F1). The spec now pins the
+roster it reads to the fresh-install two members, using the same route rewrite
+as `room-follow.spec.ts`. That makes the result the same whatever ran first. It
+does not fix the bar, which is tracked separately. Shard times on that run:
+17.4 / 22.5 / 23.8 min (shard 3 includes the failing test's retry).
+
 **Revert if** any test runs twice or never (the fan-in names it), or if the
 slowest shard's step p95 does not drop by at least 1.5 min over 14 days.
