@@ -55,10 +55,14 @@
 
 ### Session 2 - 2026-09-23 (review round 1)
 
-All nine findings adopted, TDD; see the spec's Review log. The git floor was measured in Docker with `scripts/git-floor-probe.sh` (new): 2.26–2.49 pass, 2.24 fails, and the token header needs 2.31. New files: `scripts/git-floor-probe.sh`. Also changed: `lib/source-provenance.ts` (`matchesRecordedKey` replaces `sameSourceKey`; `resolvedFromSourceKey` reads a legacy `main` as `HEAD`), `lib/git-safety.ts` and `package-resolver.ts` (stale comments).
+All nine findings adopted, TDD; see the spec's Review log. The git floor was measured in Docker with `scripts/git-floor-probe.sh` (new): 2.26–2.49 pass and 2.24 fails. New files: `scripts/git-floor-probe.sh`. Also changed: `lib/source-provenance.ts` (`matchesRecordedKey` replaces `sameSourceKey`; `resolvedFromSourceKey` reads a legacy `main` as `HEAD`), `lib/git-safety.ts` and `package-resolver.ts` (stale comments).
+
+### Session 3 - 2026-09-23 (delta review)
+
+Closed the git 2.26–2.30 private-repository regression: `gitAuth` reads `git --version` once per process (`parseGitVersion` tolerates Apple and Windows suffixes); from 2.31 the environment header, before (or unreadable) the URL rewrite `withGitHubToken`, re-extracted from `execGitClone`. Tested with a stubbed version; measured with `scripts/git-floor-probe.sh` against a private repository on 2.26.2, 2.30.0 (URL) and 2.49.1 (header), including that the token is in `.git/config` on the URL path and gone once `.git` is removed.
 
 ## Known limits
 
 - The exact-name filter on `ls-remote` output is defence in depth: the qualified patterns (`refs/heads/<ref>`, …) are what keep `x/main` out, and a mutation of the filter alone survives the suite. The pattern mutation does not.
-- On git 2.26–2.30, `GIT_CONFIG_COUNT` is ignored, so the GitHub token is not sent: public repositories install, and a private GitHub repository fails to authenticate with git's own message.
+- On git older than 2.31 the token is on the fetch's argv while it runs (URL form, as `execGitClone` has always done); from 2.31 it is not.
 - Sidecars written before this change keep `ref: 'main'` forever (a check never rewrites them); `matchesRecordedKey` treats that as `HEAD`, so they short-circuit like any other install.

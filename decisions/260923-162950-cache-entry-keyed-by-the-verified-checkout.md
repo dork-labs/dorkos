@@ -34,5 +34,6 @@ One git primitive fetches every git source form. It resolves a ref to an exact r
 
 - Every package is fetched again once after upgrading.
 - On a server that refuses unadvertised commits, a pinned commit costs a blob-filtered fetch of every branch and tag.
-- Git older than 2.26 cannot install from a git source, and git older than 2.31 cannot send the GitHub token for a private repository.
+- Git older than 2.26 cannot install from a git source.
+- The GitHub token travels two ways: as an environment-borne header on git 2.31 and later, and embedded in the remote URL (as `execGitClone` does) on older git, which cannot read config from the environment. On old git the token is visible in the fetch's argv while it runs.
 - Sidecars that recorded `ref: 'main'` need a tolerant comparison (`HEAD` now against `main` then), because an update check never rewrites them.

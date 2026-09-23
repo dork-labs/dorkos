@@ -51,7 +51,7 @@ The pin exists to answer "which code is running here?" (DOR-2197), and `resolveL
 
 ## Technical Dependencies
 
-- git ≥ 2.26 on the host, **measured in Docker** with `scripts/git-floor-probe.sh` against the exact command sequence: 2.26.2, 2.30.0, 2.34.2, 2.36.3, 2.40.1, 2.43.0 (alpine and Ubuntu 24.04), 2.45.2 and 2.49.1 pass; 2.24.1 has no `sparse-checkout`; 2.25 was not available to measure. Sending the GitHub token needs git ≥ 2.31 (`GIT_CONFIG_COUNT`); on 2.26–2.30 public repositories work and a private GitHub repository fails to authenticate. No new packages.
+- git ≥ 2.26 on the host, **measured in Docker** with `scripts/git-floor-probe.sh` against the exact command sequence: 2.26.2, 2.30.0, 2.34.2, 2.36.3, 2.40.1, 2.43.0 (alpine and Ubuntu 24.04), 2.45.2 and 2.49.1 pass; 2.24.1 has no `sparse-checkout`; 2.25 was not available to measure. The GitHub token reaches private repositories on every version in that range: by environment header from 2.31, by URL before (§4), measured against a private repository on 2.26.2, 2.30.0 and 2.49.1. No new packages.
 - Server capabilities, measured: protocol v2 (default since git 2.26; GitHub, GitLab) serves a reachable commit by SHA. Protocol v0 without `uploadpack.allowReachableSHA1InWant` answers `Server does not allow request for unadvertised object <sha>`; v2 answers `not our ref <sha>` for a commit it will not serve. A server without `uploadpack.allowFilter` warns `filtering not recognized by server, ignoring` and serves the fetch anyway.
 
 ## Detailed Design
@@ -118,7 +118,7 @@ One private path, `fetchGitTree({ packageName, cloneUrl, ref, subpath, force })`
 
 ### 4. The GitHub token
 
-`gitHubAuthConfig(url, auth)` in `template-downloader.ts` returns `http.<origin>/.extraHeader` = `Authorization: Basic base64(x-access-token:<token>)`, or nothing when `url` is not a GitHub host (`isGitHubCredentialHost`, the same gate `execGitClone`'s URL rewrite asks). The marketplace fetch and lookup append it to git's environment config (`GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>`, after any entries the environment already has), so the token is in no argv (`ps` shows every process's argv), in no `.git/config`, and sent to that origin only, redirects included. The token is resolved only for a GitHub host and reused for 60 s (`AUTH_TTL_MS`), because `resolveGitAuth` may run `gh auth token` synchronously. `git-subdir` sources on GitHub gain the token, under the same rule every other clone already follows. `GIT_CONFIG_COUNT` needs git 2.31.
+`gitHubAuthConfig(url, auth)` in `template-downloader.ts` returns `http.<origin>/.extraHeader` = `Authorization: Basic base64(x-access-token:<token>)`, or nothing when `url` is not a GitHub host (`isGitHubCredentialHost`, the same gate `execGitClone`'s URL rewrite asks). The marketplace fetch and lookup append it to git's environment config (`GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>`, after any entries the environment already has), so the token is in no argv (`ps` shows every process's argv), in no `.git/config`, and sent to that origin only, redirects included. The token is resolved only for a GitHub host and reused for 60 s (`AUTH_TTL_MS`), because `resolveGitAuth` may run `gh auth token` synchronously. `git-subdir` sources on GitHub gain the token, under the same rule every other clone already follows. `GIT_CONFIG_COUNT` needs git 2.31. On git older than 2.31, which cannot read config from the environment, the token is embedded in the remote URL instead, exactly as `execGitClone` does (`withGitHubToken`); the installed git's version is read once per process (`git --version`, vendor suffixes such as Apple Git's tolerated), and an unreadable version takes the URL form, which works on every git. That URL lives only in the temporary repository's `.git`, which is removed before the tree is cached, with the temp directory on failure, and by the startup sweep after a crash; git's messages are redacted. `git-tree-guards.test.ts` stubs the version to cover both branches.
 
 ### 5. The resolvers
 
@@ -197,7 +197,7 @@ Every test states its purpose, and the critical lines are mutation-checked: the 
 ## Security Considerations
 
 - Unchanged: `assertSafeGitRemote` before any git process (now at one door, `fetchGitTree`, plus `lookupCommitSha`); `hardenedGitEnv` on every spawn; `--end-of-options` before every author-supplied value; argv arrays, no shell.
-- The GitHub token goes only to a GitHub origin, as an environment-borne header (§4): not in argv, not in `.git/config`, not in a URL git could echo. `git-subdir` and `ls-remote` gain it for GitHub hosts. Error messages are still redacted. A temp fetch a crash left behind is swept at startup.
+- The GitHub token goes only to a GitHub origin. On git 2.31+ it is an environment-borne header (§4): not in argv, not in `.git/config`, not in a URL git could echo. On older git it is embedded in the remote URL, as `execGitClone` has always done, and lives only in the temporary `.git`, which is removed before caching, on failure, or by the startup sweep. `git-subdir` and `ls-remote` gain it for GitHub hosts. Error messages are still redacted. A temp fetch a crash left behind is swept at startup.
 - The cache refuses a key that is not a full commit id, so a malicious remote cannot name a directory (`assertContainedIn` still guards the path).
 
 ## Documentation
@@ -231,6 +231,8 @@ None. All decisions are in the ideation's table.
 - A surviving mutant (the refname fallback fetching the bare name) is killed by a protocol-v0 test where a branch and a tag share a name.
 - Legacy `main` records no longer restage on every check (`matchesRecordedKey`).
 - Crashed temp fetches are swept at startup; the token moved from argv to the environment and is resolved once a minute; stale comments fixed; an empty repository says "has no commits yet".
+
+**Round 2 (delta review).** Private GitHub repositories on git 2.26–2.30 were a regression: the header path is invisible to git before 2.31, and the old clone's URL rewrite worked there. Closed: the installed git's version is read once per process, and before 2.31 (or when unreadable) the token is embedded in the remote URL as `execGitClone` does. Both branches are tested with a stubbed version, and both were measured in Docker against a private repository.
 
 ## References
 
