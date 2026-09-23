@@ -192,9 +192,30 @@ jobs:
           # passing API error would otherwise red it. A real breakage (a lost
           # permission, a schema change) fails both attempts and still does.
           # Only a failed read waits, so a healthy tick costs nothing extra.
-          # MERGE_TAIL_RETRY_DELAY exists for the local harness; CI leaves it
-          # unset.
+          #
+          # The pauses are capped. Once 3 PRs in a row are still unreadable
+          # after their retry, GitHub is down or this workflow is broken, and
+          # waiting on every remaining PR would only push the `::error::` exit
+          # toward `timeout-minutes` (100 PRs x 3 reads x 5 s is 25 minutes).
+          # From then on a failed read counts at once; the streak resets on the
+          # next PR that reads cleanly.
+          #
+          # MERGE_TAIL_RETRY_DELAY overrides the pause in whole seconds; CI
+          # leaves it unset. Anything else falls back to 5 rather than
+          # letting `sleep` fail the step.
           retry_delay=${MERGE_TAIL_RETRY_DELAY:-5}
+          [[ "$retry_delay" =~ ^[0-9]+$ ]] || retry_delay=5
+          dead_streak=0
+          # True (after the pause) when a failed read may be retried.
+          retry_pause() {
+            [[ "$dead_streak" -lt 3 ]] || return 1
+            sleep "$retry_delay"
+          }
+          read_meta() {
+            gh pr view "$1" --repo "$REPO" \
+              --json number,state,isDraft,mergeStateStatus,autoMergeRequest,reviewDecision,labels,headRefOid \
+              > "$work/meta.json" 2>"$work/err.txt"
+          }
 
           # Checks, judged by the body, never by the exit code. A list on stdout
           # is the answer, whatever gh exited with; so is "no checks reported"
@@ -266,10 +287,11 @@ jobs:
             # slip past the refusal that exists for it. The retry block fetches
             # a complete, paginated list instead, and only for the handful of
             # PRs that reach it.
-            if ! gh pr view "$pr" --repo "$REPO" \
-                 --json number,state,isDraft,mergeStateStatus,autoMergeRequest,reviewDecision,labels,headRefOid \
-                 > "$work/meta.json" 2>"$work/err.txt"; then
-              echo "PR #$pr -> SKIP could-not-read-pr ($(tr '\n' ' ' < "$work/err.txt" | cut -c1-120))"
+            # Retried once like the other two reads: with a single PR open,
+            # one 502 here would otherwise red the tick.
+            if ! read_meta "$pr" && ! { retry_pause && read_meta "$pr"; }; then
+              echo "PR #$pr -> SKIP could-not-read-pr ($(tr '\n' ' ' < "$work/err.txt" | sed 's/ *$//' | cut -c1-120))"
+              dead_streak=$(( dead_streak + 1 ))
               unreadable=$(( unreadable + 1 )); skipped=$(( skipped + 1 )); continue
             fi
 
@@ -279,8 +301,7 @@ jobs:
             # `[]` either way, and before that a non-zero exit here stopped the
             # whole tick under `bash -e`.
             read_checks "$pr"
-            if ! checks_answered; then
-              sleep "$retry_delay"
+            if ! checks_answered && retry_pause; then
               read_checks "$pr"
             fi
             if ! jq -e 'type == "array"' "$work/checks.json" >/dev/null 2>&1; then
@@ -515,14 +536,16 @@ jobs:
               reason=$(head -n 1 "$work/payload.json" 2>/dev/null) || reason=
               case "$reason" in
                 "SKIP could-not-read-checks"* | "SKIP could-not-read-pr") : ;;
-                *) sleep "$retry_delay"; read_graphql "$pr"; build_payload || : ;;
+                *) if retry_pause; then read_graphql "$pr"; build_payload || :; fi ;;
               esac
             fi
             if ! jq -e 'type == "object"' "$work/payload.json" >/dev/null 2>&1; then
               reason=$(head -n 1 "$work/payload.json" 2>/dev/null) || reason=
               echo "PR #$pr -> ${reason:-SKIP could-not-build-payload}"
+              dead_streak=$(( dead_streak + 1 ))
               unreadable=$(( unreadable + 1 )); skipped=$(( skipped + 1 )); continue
             fi
+            dead_streak=0
 
             # The gate exits 2 on an unreadable payload by design; under
             # `bash -e` that must stay this PR's SKIP, not end the tick.

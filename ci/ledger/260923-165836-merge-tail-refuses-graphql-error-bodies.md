@@ -31,8 +31,10 @@ and refuses, with one `SKIP <reason>` line carrying GitHub's own message, any an
 really one: not JSON, any reported GraphQL error (a partial answer nulls the failed field, and
 `mergeQueueEntry` and a removal's check suites fail toward permission when nulled), no pull request
 object, no `mergeQueueEntry` field, no review-thread list, or a check list that is not a list.
-A failed GraphQL or checks read is retried once after 5 seconds before it counts (only failed
-reads wait, so a healthy tick costs nothing extra). If it fails again, the PR waits one tick and the
+A failed metadata, GraphQL or checks read is retried once after 5 seconds before it counts (only
+failed reads wait, so a healthy tick costs nothing extra). After 3 PRs in a row stay unreadable the
+pauses stop and failed reads count at once, so an inert tick reaches its error in about 30 seconds
+at most, even with 100 PRs open. If it fails again, the PR waits one tick and the
 tick carries on, with a counted warning. A tick in which EVERY
 examined pull request was unreadable fails (`::error::`, exit 1), like a refused arm: a lost
 permission or a broken query refuses them all, and a warning alone would stay green for as long as
