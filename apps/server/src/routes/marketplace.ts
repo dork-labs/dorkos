@@ -61,6 +61,7 @@ import {
   type AgentScopeRef,
   type InstalledPackage,
 } from '../services/marketplace/installed-scanner.js';
+import { updateNameOf } from '../services/marketplace/lib/install-roots.js';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import {
   APPROVAL_TOKEN_HEADER,
@@ -883,7 +884,11 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       const inProject = confined.projectPath
         ? await scanInstalledPackages(dorkHome, confined.projectPath)
         : [];
-      if (![...everywhere, ...inProject].some((p) => p.name === req.params.name)) {
+      // Named exactly as the flow names each install (`updateNameOf`).
+      const installedAnywhere = [...everywhere, ...inProject].some(
+        (p) => updateNameOf(p.name, p.installPath) === req.params.name
+      );
+      if (!installedAnywhere) {
         throw new PackageNotInstalledForUpdateError(req.params.name);
       }
       const result = await updateFlow.run({

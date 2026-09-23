@@ -27,7 +27,6 @@ import type { Dirent } from 'node:fs';
 import path from 'node:path';
 import { gt as semverGt, valid as semverValid } from 'semver';
 import {
-  PackageNameSchema,
   isRealCommitSha,
   resolvePackageVersion,
   type MarketplaceJson,
@@ -37,7 +36,12 @@ import {
 } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
-import { installKey, installRootsUnder, projectScopeRoot } from '../lib/install-roots.js';
+import {
+  installKey,
+  installRootsUnder,
+  projectScopeRoot,
+  updateNameOf,
+} from '../lib/install-roots.js';
 import type {
   InstallRequest,
   InstallResult,
@@ -324,14 +328,7 @@ export class UpdateFlow {
         const installPath = path.join(root.dir, entry.name);
         const identity = await readInstalledIdentity(installPath);
         if (!identity) continue;
-        // A name read off disk with no schema in front of it, one layer above
-        // a name that reaches `installer.update()` — which uninstalls by name,
-        // joining it into dorkHome. The directory entry is the honest
-        // fallback: it is a real directory this walk just enumerated, so it
-        // cannot climb anywhere.
-        const name = PackageNameSchema.safeParse(identity.name).success
-          ? identity.name
-          : entry.name;
+        const name = updateNameOf(identity.name, installPath);
         const key = installKey(root.kind, name);
         if (byRootAndName.has(key)) continue;
         byRootAndName.set(key, {
@@ -406,6 +403,9 @@ export class UpdateFlow {
   private async findTarget(pkg: InstalledPackage): Promise<UpdateTarget> {
     const recorded = pkg.metadata;
     if (!recorded?.installedFrom && recorded?.sourceRepo) {
+      // No "apply reinstalls from the default branch" note: both direct forms
+      // (`name@url`, `github:`) resolve to a ref-less url source, so a recorded
+      // key is always `ref: 'main'`, `subpath: ''` and apply matches it.
       return recorded.sourceKey
         ? { kind: 'direct', source: recorded.sourceKey.cloneUrl }
         : { kind: 'direct', source: recorded.sourceRepo, note: DEFAULT_BRANCH_NOTE };

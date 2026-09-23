@@ -112,8 +112,9 @@ export function parseUpdateArgs(rawArgs: string[]): UpdateArgs {
  *
  * @param args - Parsed update arguments.
  * @returns The intended process exit code: `0` on success, `1` when the
- *   server was unreachable or any requested apply failed. Packages that could
- *   not be checked do not change it on their own.
+ *   server was unreachable, a named package is installed nowhere, or any
+ *   requested apply failed. Packages that could not be checked do not change
+ *   it on their own.
  */
 export async function runUpdate(args: UpdateArgs): Promise<number> {
   try {
@@ -129,6 +130,7 @@ export async function runUpdate(args: UpdateArgs): Promise<number> {
     const allChecks: UpdateCheckResult[] = [];
     const allApplied: AppliedUpdate[] = [];
     let failedTargets = 0;
+    let namedNotInstalled = false;
 
     for (const target of targets) {
       const body: Record<string, unknown> = { apply: Boolean(args.apply) };
@@ -147,6 +149,9 @@ export async function runUpdate(args: UpdateArgs): Promise<number> {
         // all) ends the run below; an error for ONE package does not.
         if (!(err instanceof ApiError)) throw err;
         failedTargets += 1;
+        // The route answers 404 for a name installed in no scope: a named
+        // run asked about a package that is not there (often a typo).
+        if (args.name && err.status === 404) namedNotInstalled = true;
         allChecks.push(couldNotCheck(target.name, err.message));
       }
     }
@@ -162,7 +167,7 @@ export async function runUpdate(args: UpdateArgs): Promise<number> {
     }
 
     // With --apply, a target the server refused is an apply that did not land.
-    return args.apply && failedTargets > 0 ? 1 : 0;
+    return namedNotInstalled || (args.apply && failedTargets > 0) ? 1 : 0;
   } catch (err) {
     console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
     return 1;

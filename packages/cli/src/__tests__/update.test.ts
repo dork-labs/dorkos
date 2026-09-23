@@ -193,6 +193,20 @@ describe('runUpdate', () => {
     expect(out).toContain('2 updates available, 1 could not be checked.');
   });
 
+  it('exits 1 when a named package is installed nowhere', async () => {
+    // Purpose: `dorkos update <typo>` must fail loudly for a script, as it did
+    // before the per-target isolation turned the 404 into a printed line.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(mockResponse(404, { error: 'Package not installed: flwo' }))
+    );
+
+    const code = await runUpdate({ name: 'flwo' });
+
+    expect(code).toBe(1);
+    expect(printed(logSpy)).toContain('flwo  could not check: Package not installed: flwo');
+  });
+
   it('exits 1 when a requested apply fails', async () => {
     // Purpose: a script running `--apply` must be able to tell that an
     // update did not land.

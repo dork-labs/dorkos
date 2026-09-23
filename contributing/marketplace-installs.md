@@ -195,7 +195,7 @@ The question it answers is "what would installing this package right now give me
 
 - The SHA-keyed cache can hold a different tree than its key names: `git-subdir` clones the default branch shallowly and then checks out the ref, `github`/`url` sources ignore the ref, and a push between the lookup and the clone lands under the looked-up key. `resolveLatest` inherits this exactly as install does; it is filed as DOR-2248.
 - The package cache has no automatic pruning owner (DOR-2249). Each check that observes a new marketplace commit adds one cache entry per installed package from that repository.
-- Applying an update to a direct install goes through `name@url`, which cannot carry a ref or subpath, so a direct install from a non-default ref reinstalls from the default branch. A direct install recorded before `sourceKey` existed is checked against the default branch, and its check says so in `note`.
+- A direct install (`name@url`, `github:`) is always fetched from the default branch today: neither form can carry a ref or subpath, so its recorded `sourceKey` is always `ref: 'main'`, `subpath: ''`, and applying an update reinstalls from the same place. If install requests gain a structured source, apply must carry the recorded key too. A direct install recorded before `sourceKey` existed is checked against the default branch, and its check says so in `note`.
 
 The update flow never touches disk on its own. Anything that mutates state lives inside the installer's transaction.
 

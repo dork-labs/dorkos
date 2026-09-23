@@ -1534,6 +1534,46 @@ describe('Marketplace Routes', () => {
       expect(updateFlow.run).not.toHaveBeenCalled();
     });
 
+    it('runs the check for a name installed only in the requested project', async () => {
+      // Purpose: the project half of the 404 decision. A package installed only
+      // in a plain project (not a registered agent) is found by nothing but the
+      // project scan, and must reach the flow rather than 404.
+      const projectDir = join(dorkHome, 'plain-project');
+      writePackageManifest(join(projectDir, '.dork', 'plugins', 'project-only'), {
+        ...buildSamplePluginManifest(),
+        name: 'project-only',
+      });
+      vi.mocked(validateBoundary).mockResolvedValueOnce(projectDir);
+      updateFlow.run.mockResolvedValue({ checks: [], applied: [] });
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/project-only/update')
+        .send({ projectPath: projectDir });
+
+      expect(res.status).toBe(200);
+      expect(updateFlow.run).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'project-only', projectPath: projectDir })
+      );
+    });
+
+    it('finds an install whose manifest name is not a package name by its directory, as the flow does', async () => {
+      // Purpose: the update flow names such an install after its directory; the
+      // route's "installed anywhere?" scan must use the same rule, or it would
+      // 404 a package the flow can check.
+      writePackageManifest(join(dorkHome, 'plugins', 'honest-plugin'), {
+        ...buildSamplePluginManifest(),
+        name: '../../../../etc/cron.d',
+      });
+      updateFlow.run.mockResolvedValue({ checks: [], applied: [] });
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/honest-plugin/update')
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(updateFlow.run).toHaveBeenCalledTimes(1);
+    });
+
     it("runs the check for a name installed only in another scope, so it can answer 'not in this scope'", async () => {
       // Purpose: a package installed under an agent exists; asking about it
       // from a different project is a scoped unknown, not a 404.
