@@ -1046,6 +1046,89 @@ describe('MarketplaceInstaller', () => {
       expect(writtenMetadata.sourceRepo).toBe('https://example.com/git-plugin.git');
     });
 
+    it('records the sourceKey and entry version of a same-repo package from a remote marketplace', async () => {
+      // Purpose: the update check compares its fresh lookup against exactly
+      // these two recorded values. The key must be the git-subdir place the
+      // package was actually cloned from, with the default ref spelled out.
+      const { deps, resolver, fetcher, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'code-reviewer' });
+      wireRelativePathResolution(resolver, fetcher, 'code-reviewer', 'dorkos-community');
+      const resolved = await resolver.resolve('');
+      resolver.resolve.mockResolvedValue({ ...resolved, entryVersion: '1.0.0' });
+      mockedValidatePackage.mockResolvedValue({
+        ok: true,
+        issues: [],
+        manifest,
+        declaredVersion: '1.0.0',
+      });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      await new MarketplaceInstaller(deps).install({ name: 'code-reviewer' });
+
+      const [, written] = mockedWriteInstallMetadata.mock.calls[0]!;
+      expect(written.sourceKey).toEqual({
+        cloneUrl: 'https://github.com/dork-labs/marketplace',
+        subpath: 'plugins/code-reviewer',
+        ref: 'main',
+      });
+      expect(written.entryVersion).toBe('1.0.0');
+    });
+
+    it("records a Claude-Code-only package's declared version, not the synthesized 0.0.0", async () => {
+      // Purpose: the synthesized manifest says 0.0.0 for every package without
+      // a .dork/manifest.json; the sidecar must carry what plugin.json states.
+      const { deps, resolver, fetcher, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'cc-only', version: '0.0.0' });
+      wireRelativePathResolution(resolver, fetcher, 'cc-only', 'dorkos-community');
+      mockedValidatePackage.mockResolvedValue({
+        ok: true,
+        issues: [],
+        manifest,
+        declaredVersion: '1.2.0',
+      });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      await new MarketplaceInstaller(deps).install({ name: 'cc-only' });
+
+      expect(mockedWriteInstallMetadata.mock.calls[0]![1].version).toBe('1.2.0');
+    });
+
+    it("records the entry's version when the package declares none", async () => {
+      // Purpose: Claude Code's step 2 — the entry's version is the package's
+      // version when plugin.json states none.
+      const { deps, resolver, fetcher, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'cc-only', version: '0.0.0' });
+      wireRelativePathResolution(resolver, fetcher, 'cc-only', 'dorkos-community');
+      const resolved = await resolver.resolve('');
+      resolver.resolve.mockResolvedValue({ ...resolved, entryVersion: '3.0.0' });
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      await new MarketplaceInstaller(deps).install({ name: 'cc-only' });
+
+      expect(mockedWriteInstallMetadata.mock.calls[0]![1].version).toBe('3.0.0');
+    });
+
+    it('records no sourceKey for a local-directory install', async () => {
+      // Purpose: a local install has no git place; inventing a key would let a
+      // later check short-circuit against nothing.
+      const { deps, resolver, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'local-plugin' });
+      wireLocalResolution(resolver, 'local-plugin', '/tmp/local-plugin');
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      await new MarketplaceInstaller(deps).install({ name: 'local-plugin' });
+
+      const [, written] = mockedWriteInstallMetadata.mock.calls[0]!;
+      expect(written.sourceKey).toBeUndefined();
+      expect(written.entryVersion).toBeUndefined();
+    });
+
     it('does not fail the install when writeInstallMetadata rejects (best-effort)', async () => {
       const { deps, resolver, pluginFlow, previewBuilder, logger } = buildDeps();
       const manifest = buildPluginManifest({ name: 'metadata-fails' });

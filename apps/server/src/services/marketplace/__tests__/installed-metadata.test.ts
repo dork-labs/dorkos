@@ -129,6 +129,55 @@ describe('install-metadata sidecar', () => {
     expect(read?.commitSha).toBeUndefined();
   });
 
+  it('round-trips entryVersion and sourceKey', async () => {
+    // Purpose: the update check's short-circuit compares against exactly these
+    // two recorded values; losing either on read would force a clone every time.
+    const metadata: InstallMetadata = {
+      name: 'flow',
+      version: '0.7.2',
+      type: 'plugin',
+      installedFrom: 'dorkos-community',
+      installedAt: '2026-09-23T00:00:00.000Z',
+      commitSha: 'a'.repeat(40),
+      entryVersion: '0.7.2',
+      sourceKey: {
+        cloneUrl: 'https://github.com/dork-labs/marketplace',
+        subpath: 'plugins/flow',
+        ref: 'main',
+      },
+    };
+
+    await writeInstallMetadata(installRoot, metadata);
+
+    expect(await readInstallMetadata(installRoot)).toEqual(metadata);
+  });
+
+  it('reads a malformed sourceKey back as undefined', async () => {
+    // Purpose: a half-formed key must never short-circuit a check; dropping it
+    // makes the check stage and compare instead.
+    for (const sourceKey of [
+      { cloneUrl: 'https://example.com/r.git', subpath: '' },
+      { cloneUrl: 42, subpath: '', ref: 'main' },
+      'https://example.com/r.git',
+    ]) {
+      await mkdir(path.join(installRoot, '.dork'), { recursive: true });
+      await writeFile(
+        path.join(installRoot, INSTALL_METADATA_PATH),
+        JSON.stringify({
+          name: 'x',
+          version: '1.0.0',
+          type: 'plugin',
+          installedAt: '2026-09-23T00:00:00.000Z',
+          entryVersion: 7,
+          sourceKey,
+        })
+      );
+      const read = await readInstallMetadata(installRoot);
+      expect(read?.sourceKey).toBeUndefined();
+      expect(read?.entryVersion).toBeUndefined();
+    }
+  });
+
   it('returns null when the sidecar is missing entirely (pre-sidecar-format installs)', async () => {
     const read = await readInstallMetadata(installRoot);
     expect(read).toBeNull();
