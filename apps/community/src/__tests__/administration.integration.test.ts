@@ -1056,6 +1056,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     'POST /channels': 'creates a new channel; references nothing',
     'GET /attention': "the caller's own unread counts",
     'GET /invites': 'lists the URL community',
+    'GET /invites/pending': "reads the caller's own join attempt from its cookie; takes no id",
     'GET /agents': "lists the caller's own agents",
     'POST /pairings/start': 'creates a new pairing; references nothing',
   };

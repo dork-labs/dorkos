@@ -1,13 +1,13 @@
 # Implementation Summary: Community Membership Journeys
 
 **Created:** 2026-09-21
-**Last Updated:** 2026-09-21
+**Last Updated:** 2026-09-23
 **Spec:** specs/community-membership-journeys/02-specification.md
 
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 4 / 10
+**Tasks Completed:** 6 / 10 (1.1–1.3, 2.1, 2.2, and 2.4 as audited in PR #2017, which reopens 1.4)
 
 ## Tasks Completed
 
@@ -47,6 +47,14 @@
 - Composed the reviewed administration recovery changes: lifecycle-conflict errors stay in their active dialog, deletion recovery resolves actual owner membership from the host before revealing controls, and a retry refreshes lifecycle authority so it uses the current version.
 - Admission now pauses after a successful invitation so people can choose “Open community” or follow the separate installation connection path in DorkOS. Host administration distinguishes creating a community on this host from deploying a separate host and links to deployment help.
 
+### Session 6 - 2026-09-23
+
+**Branch:** `feat/community-membership-states`
+
+- Closed DOR-2181 Task 2.1. The chooser is a labelled list that takes focus on its heading; suspended and unavailable memberships stay focusable (`aria-disabled`) and carry their reason as a description; a remembered choice the account can no longer see is forgotten. Every community route the account cannot enter, including an unknown ID that used to fall through to first-host setup, returns to the chooser with one notice that reads the same in every case. Zero memberships explain how to join and, only for a host operator, link to host administration.
+- Closed DOR-2181 Task 2.2. A new read, `GET /api/v1/invites/pending`, returns the live join attempt's community, inviter, channel, expiry and (when signed in) whether the account's membership is new, active or inactive, from the HttpOnly admission cookie alone; it applies bind's liveness checks and never writes. The join page resumes from it after a reload or sign-in return, shows reactivation scope before an inactive member rejoins, and reports every failure as "Membership was not added." (or "Your account was created, but membership was not added.") with one recovery: try again, open the link again, or ask for a new invitation. Each step moves focus to its heading; errors are alerts.
+- Removed the chooser's dead `communityPendingInvite` session-storage read (nothing wrote it) and the join-path bind/redeem retries the pending read replaces.
+
 ## Files Modified/Created
 
 **Source files:**
@@ -83,6 +91,6 @@
 
 ## Remaining Work
 
-- DOR-2181 owns the broader entry experience: later-community creation/claim, invitation entry UI, and the separate host-deployment choice remain open. Task 2.1 remains open until its remaining sign-in, zero-membership, and unavailable-state proof converges with those paths.
+- DOR-2181 Tasks 2.1 and 2.2 closed in Session 6. PR #2017 audits the rest of DOR-2181: 2.3 stays open for the sign-out and disconnect-all controls.
 - DOR-2182 owns packaged Desktop and cross-device journey proof.
 - DOR-2181 Task 2.3 remains partial until the wider membership/account controls and entry journey review converge.

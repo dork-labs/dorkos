@@ -44,6 +44,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   invitePreflight: '/api/v1/invites/preflight',
   inviteBind: '/api/v1/invites/bind',
   inviteRedeem: '/api/v1/invites/redeem',
+  invitePending: '/api/v1/invites/pending',
   pairingStart: '/api/v1/pairings/start',
   pairingApprove: '/api/v1/pairings/approve',
   pairingDecline: '/api/v1/pairings/decline',
@@ -410,6 +411,20 @@ export const CommunityWireInvitePreviewResponseSchema = z.strictObject({
   inviterName: z.string().min(1),
   channelName: z.string().nullable(),
 });
+/**
+ * A reload reads its still-live pending admission back from the HttpOnly cookie, so the review
+ * survives without the raw invitation. `account` is present only for a signed-in browser and
+ * says whether joining would create, keep, or reactivate that account's membership.
+ */
+export const CommunityWireInvitePendingResponseSchema = z.strictObject({
+  expiresAt: timestamp,
+  communityName: z.string().min(1),
+  inviterName: z.string().min(1),
+  channelName: z.string().nullable(),
+  account: z.strictObject({ membership: z.enum(['none', 'active', 'inactive']) }).nullable(),
+});
+/** The pending admission a clean join URL resumes after a reload or sign-in callback. */
+export type CommunityWireInvitePending = z.infer<typeof CommunityWireInvitePendingResponseSchema>;
 /** Binding attaches a pending admission to exactly one signed-in account. */
 export const CommunityWireInviteBindResponseSchema = z.strictObject({ bound: z.literal(true) });
 /** Redemption needs no reusable invite value after preflight. */

@@ -7,6 +7,7 @@ import {
   CommunityWireInviteCreateResponseSchema,
   CommunityWireInviteBindResponseSchema,
   CommunityWireInviteListResponseSchema,
+  CommunityWireInvitePendingResponseSchema,
   CommunityWireInvitePreflightResponseSchema,
   CommunityWireInvitePreviewResponseSchema,
   CommunityWireInviteRedeemResponseSchema,
@@ -303,6 +304,53 @@ export function registerInviteRoutes(
       granted: true,
       expiresAt: expiresAt.toISOString(),
       ...preview,
+    });
+  });
+
+  // A reload or sign-in callback lands on the clean join URL with only the HttpOnly admission
+  // cookie. Reading it back keeps the review on screen without ever returning the invitation.
+  // It applies the same liveness conditions as bind, so a revoked invitation or a departed
+  // issuer ends the review here too, and it never writes.
+  app.get('/invites/pending', async (c) => {
+    const pending = admissionCookie(c, config);
+    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    const tenant = await resolveCommunityContext(c, pool);
+    await assertAdmissionOpen(pool, tenant.communityId, false);
+    const result = await pool.query<{
+      expires_at: Date;
+      community_name: string;
+      inviter_name: string;
+      channel_name: string | null;
+    }>(
+      `SELECT p.expires_at,community.name AS community_name,issuer.display_name AS inviter_name,
+              channel.name AS channel_name
+       FROM pending_admissions p
+       JOIN communities community ON community.id=p.community_id
+       JOIN invites i ON i.id=p.invite_id AND i.community_id=p.community_id
+       JOIN members issuer ON issuer.id=i.issuer_member_id AND issuer.community_id=i.community_id
+       LEFT JOIN channels channel ON channel.id=i.channel_id AND channel.community_id=i.community_id
+       WHERE p.community_id=$1 AND p.token_hash=$2 AND p.expires_at>now() AND p.consumed_at IS NULL
+         AND community.lifecycle='active' AND i.expires_at>now() AND i.revoked_at IS NULL
+         AND issuer.active AND issuer.role IN ('owner','admin')`,
+      [tenant.communityId, hashSecret(pending)]
+    );
+    const row = result.rows[0];
+    if (!row) throw new ApiError(403, 'FORBIDDEN', 'This join attempt has expired.');
+    let account: { membership: 'none' | 'active' | 'inactive' } | null = null;
+    if (session) {
+      const member = await pool.query<{ active: boolean }>(
+        'SELECT active FROM members WHERE community_id=$1 AND user_id=$2',
+        [tenant.communityId, session.user.id]
+      );
+      const found = member.rows[0];
+      account = { membership: !found ? 'none' : found.active ? 'active' : 'inactive' };
+    }
+    return json(c, CommunityWireInvitePendingResponseSchema, {
+      expiresAt: row.expires_at.toISOString(),
+      communityName: row.community_name,
+      inviterName: row.inviter_name,
+      channelName: row.channel_name,
+      account,
     });
   });
 

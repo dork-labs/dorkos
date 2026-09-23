@@ -1287,6 +1287,20 @@ const actions: Action<unknown>[] = [
     },
     call: ({ cookie }) => ({ method: 'POST', path: scoped('/invites/bind'), body: {}, cookie }),
   }),
+  define<{ cookie: string }>({
+    rule: 'Resume a surviving join attempt while closed: refused for everyone',
+    route: 'GET /invites/pending',
+    variant: 'closed community',
+    allowed: [],
+    status: 200,
+    refused: { ...closedToEveryone, signedOut: 409, agent: 409 },
+    prepare: async () => {
+      const cookie = await startJoining(await createInvite());
+      await closeLeavingInvitations();
+      return { cookie };
+    },
+    call: ({ cookie }) => ({ method: 'GET', path: scoped('/invites/pending'), cookie }),
+  }),
   define<{ cookie: string; userId: string }>({
     rule: 'Redeem a surviving, bound join attempt while closed: refused, and no one is admitted',
     route: 'POST /invites/redeem',

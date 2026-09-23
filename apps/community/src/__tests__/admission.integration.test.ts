@@ -25,6 +25,9 @@ const config = parseConfig({
   COMMUNITY_POSTS_PER_TEN_MINUTES: 3,
   COMMUNITY_SIGNUP_ATTEMPTS_PER_MINUTE: 100,
   COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE: 100,
+  // Every fixture preflights from the same loopback peer inside one minute; the ceiling itself
+  // is proven by its own test on a separately limited server.
+  COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE: 100,
 });
 let server: ReturnType<typeof serve>;
 let pool: Pool;
@@ -363,6 +366,50 @@ describe('signed admission over real HTTP and Postgres', () => {
     ).toEqual({ use_count: 1 });
   });
 
+  it('reads a live pending admission back from its cookie without the invitation', async () => {
+    expect((await call('/api/v1/invites/pending', 'GET')).status).toBe(403);
+    const issued = await call('/api/v1/invites', 'POST', { seats: 2 }, ownerCookie);
+    const { token, invite } = await issued.json();
+    const preflight = await call('/api/v1/invites/preflight', 'POST', { token });
+    expect(preflight.status).toBe(200);
+    const admission = cookieOf(preflight);
+    const signedOut = await call('/api/v1/invites/pending', 'GET', undefined, admission);
+    expect(signedOut.status).toBe(200);
+    const body = await signedOut.text();
+    expect(body).not.toContain(token);
+    expect(body).not.toContain(admission.split('=')[1]);
+    expect(JSON.parse(body)).toEqual({
+      expiresAt: expect.any(String),
+      communityName: 'Admission test',
+      inviterName: expect.any(String),
+      channelName: null,
+      account: null,
+    });
+    // Reading is side-effect free: no seat, no binding.
+    expect(
+      (await pool.query('SELECT use_count FROM invites WHERE id=$1', [invite.id])).rows[0]
+    ).toEqual({ use_count: 0 });
+    const memberAdmission = withAdmission(admittedCookie, preflight);
+    const signedIn = await call('/api/v1/invites/pending', 'GET', undefined, memberAdmission);
+    expect((await signedIn.json()).account).toEqual({ membership: 'active' });
+    expect(
+      (
+        await pool.query('SELECT account_id FROM pending_admissions WHERE invite_id=$1', [
+          invite.id,
+        ])
+      ).rows[0]
+    ).toEqual({ account_id: null });
+    const newcomer = await signup('Pending reader', 'pending-reader@admission.test', admission);
+    expect(
+      (await (await call('/api/v1/invites/pending', 'GET', undefined, newcomer)).json()).account
+    ).toEqual({ membership: 'none' });
+    // A revoked invitation ends the review, exactly as it ends binding.
+    expect(
+      (await call(`/api/v1/invites/${invite.id}`, 'DELETE', undefined, ownerCookie)).status
+    ).toBe(204);
+    expect((await call('/api/v1/invites/pending', 'GET', undefined, newcomer)).status).toBe(403);
+  });
+
   it('invalidates old receipts on removal and reactivates only through a new scoped invite', async () => {
     const issued = await call('/api/v1/invites', 'POST', { seats: 1 }, ownerCookie);
     const { token, invite } = await issued.json();
@@ -423,9 +470,18 @@ describe('signed admission over real HTTP and Postgres', () => {
       token: reactivationToken,
     });
     const reactivationCookie = withAdmission(cookie, reactivationPreflight);
+    // The removed account learns, before joining again, that this is a reactivation.
+    expect(
+      (await (await call('/api/v1/invites/pending', 'GET', undefined, reactivationCookie)).json())
+        .account
+    ).toEqual({ membership: 'inactive' });
     expect((await call('/api/v1/invites/bind', 'POST', {}, reactivationCookie)).status).toBe(200);
     const reactivated = await call('/api/v1/invites/redeem', 'POST', {}, reactivationCookie);
     expect(await reactivated.json()).toEqual({ memberId });
+    // A used join attempt is no longer resumable; a reload enters from membership instead.
+    expect(
+      (await call('/api/v1/invites/pending', 'GET', undefined, reactivationCookie)).status
+    ).toBe(403);
     expect((await call('/api/v1/invites/redeem', 'POST', {}, cookie)).status).toBe(403);
     expect(
       (
