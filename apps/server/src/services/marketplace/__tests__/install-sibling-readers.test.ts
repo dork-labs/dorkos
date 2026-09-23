@@ -28,12 +28,15 @@ const SOURCE_TREES = [
   ...readdirSync(path.join(REPO_ROOT, 'packages')).map((pkg) => `packages/${pkg}/src`),
 ];
 
-/** Lists a directory. */
-const LISTS_A_DIRECTORY = /\breaddir(Sync)?\(/;
+/**
+ * Reads a directory's entries: lists it, or watches it (a watcher's events
+ * reach a handler without passing through any scanner).
+ */
+const LISTS_A_DIRECTORY = /\breaddir(Sync)?\(|\bchokidar\.watch\(|\bfs\.watch\(/;
 
-/** Names an install root or a skills root. */
+/** Names an install root or a skills root (a task root is a skills root). */
 const NAMES_AN_INSTALL_OR_SKILLS_ROOT =
-  /['"](plugins|agents|shapes|skills)['"]|INSTALL_ROOT|installRootsUnder|projectScopeRoot|AGENTS_SKILLS_DIR|GLOBAL_SKILLS_DIR|SkillsRoot\(/;
+  /['"](plugins|agents|shapes|skills)['"]|INSTALL_ROOT|installRootsUnder|projectScopeRoot|AGENTS_SKILLS_DIR|GLOBAL_SKILLS_DIR|SkillsRoot\(|\bTaskRoot\b|SKILL_FILENAME/;
 
 /** Central skills readers that name no root themselves but read every skills root. */
 const CENTRAL_READERS = ['packages/skills/src/scanner.ts', 'packages/harness/src/scan/scanner.ts'];

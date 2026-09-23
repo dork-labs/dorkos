@@ -47,6 +47,7 @@ import { agentSkillsRoot, globalSkillsRoot } from '../tasks/skills-roots.js';
 import { installRootsUnder, projectScopeRoot } from './lib/install-roots.js';
 import {
   IN_FLIGHT_FLOOR_MS,
+  keptReason,
   parseInstallRecordName,
   recoverInterruptedInstall,
 } from './install-recovery.js';
@@ -56,7 +57,7 @@ import { withInstallTargetLock } from './transaction.js';
 export interface InstallSweepSummary {
   /** Interrupted transactions settled: a previous install restored, or a half-written one removed. */
   settled: number;
-  /** Records kept beside an existing target because nothing proves which copy is whole. */
+  /** Records kept, with their target, because settling them could destroy something. */
   kept: number;
   /** Leftovers of finished installs deleted. */
   discarded: number;
@@ -228,7 +229,7 @@ async function settleTargets(
       for (const record of report.kept) {
         summary.kept++;
         logger.warn(
-          `[marketplace/backup-janitor] kept ${record.path} beside ${target}: it predates commit records, so nothing proves which copy is whole; the next install or uninstall of it removes it`
+          `[marketplace/backup-janitor] kept ${record.path} and ${target} as they are: ${keptReason(record)}; the next install or uninstall of it removes the record`
         );
       }
       summary.discarded += report.discarded.length;

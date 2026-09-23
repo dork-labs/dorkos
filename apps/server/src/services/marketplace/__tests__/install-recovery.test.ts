@@ -266,6 +266,70 @@ describe('recoverInterruptedInstall', () => {
     expect(await readdir(root)).toEqual([]);
   });
 
+  describe('a target made after its record could still have been live', () => {
+    // Someone put something of their own at the path long after the
+    // interrupted install died. Undoing that install must not delete or
+    // overwrite it.
+    const longAgo = () => Date.now() - 3 * IN_FLIGHT_FLOOR_MS;
+
+    it('keeps it, and the backup, instead of restoring over it', async () => {
+      await writePackage(target, 'theirs');
+      const backup = path.join(root, recordName('flow', { createdAt: longAgo() }));
+      await writePackage(backup, 'v1');
+
+      const report = await recoverInterruptedInstall(target);
+
+      expect(await versionAt(target)).toBe('theirs');
+      expect(await versionAt(backup)).toBe('v1');
+      expect(report.kept.map((r) => r.kind)).toEqual(['backup']);
+    });
+
+    it('keeps it, and the marker, instead of removing it as a half-written fresh install', async () => {
+      await writePackage(target, 'theirs');
+      const marker = path.join(
+        root,
+        recordName('flow', { suffix: '.absent', createdAt: longAgo() })
+      );
+      await writeFile(marker, '');
+
+      const report = await recoverInterruptedInstall(target);
+
+      expect(await versionAt(target)).toBe('theirs');
+      expect(await exists(marker)).toBe(true);
+      expect(report.kept.map((r) => r.kind)).toEqual(['absent']);
+    });
+
+    it('still rolls back a target the interrupted install itself made', async () => {
+      // The same old record, with a target no newer than the install could
+      // have written it: that is the crash case, and it is undone.
+      const createdAt = longAgo();
+      await writePackage(target, 'v2-half');
+      const made = createdAt + 1_000;
+      vi.spyOn(_internal, 'statTarget').mockResolvedValue({
+        birthtimeMs: made,
+        ctimeMs: made,
+      } as Awaited<ReturnType<typeof _internal.statTarget>>);
+      await writePackage(path.join(root, recordName('flow', { createdAt })), 'v1');
+
+      await recoverInterruptedInstall(target);
+
+      expect(await versionAt(target)).toBe('v1');
+    });
+
+    it('falls back to the status-change time where no creation time is recorded', async () => {
+      await writePackage(target, 'theirs');
+      vi.spyOn(_internal, 'statTarget').mockResolvedValue({
+        birthtimeMs: 0,
+        ctimeMs: Date.now(),
+      } as Awaited<ReturnType<typeof _internal.statTarget>>);
+      await writePackage(path.join(root, recordName('flow', { createdAt: longAgo() })), 'v1');
+
+      await recoverInterruptedInstall(target);
+
+      expect(await versionAt(target)).toBe('theirs');
+    });
+  });
+
   describe('a backup from before commit records existed', () => {
     const old = () => Date.now() - IN_FLIGHT_FLOOR_MS - 1_000;
 

@@ -202,7 +202,8 @@ export class UninstallFlow {
    * back. Inside the lock the root is settled and read again
    * ({@link UninstallFlow.settleAndReread}); when settling leaves nothing
    * there (a half-written fresh install removed, or a package removed between
-   * the probe and the lock), the search moves on to the next candidate.
+   * the probe and the lock), the search moves on to the next candidate and
+   * never offers that one again.
    *
    * The crash window of `MarketplaceInstaller.update()` — between this
    * uninstall moving the package to the system temp directory and the
@@ -217,16 +218,20 @@ export class UninstallFlow {
    */
   async uninstall(req: UninstallRequest): Promise<UninstallResult> {
     assertPackageName(req.name);
-    // Each pass either removes the package or settles one candidate down to
-    // nothing (after which `locate` no longer offers it), so this ends.
-    for (let pass = 0; pass <= this.candidatePaths(req).length; pass++) {
-      const located = await this.locate(req);
+    // Each pass either removes the package or finds its candidate empty once
+    // settled. An empty candidate is never offered again — a record settling
+    // could not delete (a stuck `.committed`) would otherwise keep offering
+    // it every pass, and a later candidate holding the package would never
+    // be reached — so this ends after at most one pass per candidate.
+    const triedEmpty = new Set<string>();
+    for (;;) {
+      const located = await this.locate(req, triedEmpty);
       const result = await withInstallTargetLock(located.installRoot, () =>
         this.removeLocated(req, located)
       );
       if (result) return result;
+      triedEmpty.add(located.installRoot);
     }
-    throw new PackageNotInstalledError(req.name);
   }
 
   /**
@@ -316,11 +321,19 @@ export class UninstallFlow {
    * by the conflict detector's package-name rule, so the ambiguity is visible
    * before it is ever created.
    *
+   * @param req - The uninstall request.
+   * @param skip - Roots already settled and found empty in this uninstall.
+   * @throws {PackageNotInstalledError} When no candidate outside `skip` holds
+   *   the package or records of it.
    * @internal
    */
-  private async locate(req: UninstallRequest): Promise<LocatedPackage> {
+  private async locate(
+    req: UninstallRequest,
+    skip: ReadonlySet<string> = new Set()
+  ): Promise<LocatedPackage> {
     const candidates = this.candidatePaths(req);
     for (const candidate of candidates) {
+      if (skip.has(candidate.installRoot)) continue;
       const present =
         (await pathExists(candidate.installRoot)) ||
         (await hasInstallRecords(candidate.installRoot));

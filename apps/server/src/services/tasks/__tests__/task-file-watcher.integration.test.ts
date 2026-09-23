@@ -117,6 +117,33 @@ describe('TaskFileWatcher (real chokidar)', () => {
     expect(store.getTasks().map((t) => t.filePath)).toEqual([realTask]);
   });
 
+  it('never arms a schedule from a marketplace install sibling (DOR-2273)', async () => {
+    // A crash-left backup of a schedule skill is a full copy. A live event for
+    // it never passes the shared scanner, so the watcher itself must refuse it,
+    // or the same schedule runs twice with no reconciler to retire the copy.
+    watcher.watch(skillsRoot(skillsDir, 'global'));
+    await mkdir(path.join(skillsDir, 'probe'), { recursive: true });
+    const probe = path.join(skillsDir, 'probe', 'SKILL.md');
+    await writeFile(probe, skillFile('probe'), 'utf-8');
+    await waitUntil(() => store.getByFilePath(probe) !== null, 'the watch to be live');
+
+    // The sibling arrives as a live event, then a normal task as the barrier.
+    const siblingDir = path.join(
+      skillsDir,
+      `real-task.dorkos-bak-${Date.now()}-9f1c2d3e-0000-4000-8000-000000000000`
+    );
+    await mkdir(siblingDir, { recursive: true });
+    const sibling = path.join(siblingDir, 'SKILL.md');
+    await writeFile(sibling, skillFile('real-task'), 'utf-8');
+    await mkdir(path.join(skillsDir, 'real-task'), { recursive: true });
+    const realTask = path.join(skillsDir, 'real-task', 'SKILL.md');
+    await writeFile(realTask, skillFile('real-task'), 'utf-8');
+
+    await waitUntil(() => store.getByFilePath(realTask) !== null, 'real-task to sync');
+    await holdsFor(() => store.getByFilePath(sibling) === null, 'sibling to stay unsynced');
+    expect(store.getByFilePath(sibling)).toBeNull();
+  });
+
   // DOR-1908, hole 1. Measured on this machine against chokidar 5 before the
   // fix: pointed at an absent directory, chokidar watches the nearest existing
   // ancestor, `getWatched()` still holds no entry for the directory ten seconds

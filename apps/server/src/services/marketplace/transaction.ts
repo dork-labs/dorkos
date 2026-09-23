@@ -146,6 +146,7 @@ import {
   commitInstallRecord,
   discardCommittedRecord,
   discardSupersededRecords,
+  keptReason,
   recoverInterruptedInstall,
   rollBackInstallRecord,
   settleableBy,
@@ -448,7 +449,7 @@ export async function settleInterruptedInstall(target: string): Promise<SettledI
   }
   for (const record of report.kept) {
     console.warn(
-      `[marketplace/transaction] kept ${record.path} beside ${target}: it predates commit records, so nothing proves which copy is whole`
+      `[marketplace/transaction] kept ${record.path} and ${target} as they are: ${keptReason(record)}`
     );
   }
   for (const { record, error } of report.discardFailures) {

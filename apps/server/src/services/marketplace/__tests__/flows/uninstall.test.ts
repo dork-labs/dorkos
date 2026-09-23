@@ -28,6 +28,7 @@ import {
 } from '../../flows/uninstall.js';
 import { InvalidPackageNameError } from '../../lib/package-paths.js';
 import { currentRecordOwner, formatRecordOwner } from '../../lib/record-owner.js';
+import { _internal as recoveryInternal } from '../../install-recovery.js';
 import { randomUUID } from 'node:crypto';
 
 /** Construct a no-op logger that satisfies the {@link Logger} interface. */
@@ -321,6 +322,41 @@ describe('UninstallFlow', () => {
 
     expect(result.ok).toBe(true);
     expect(await readdir(projectPlugins)).toEqual([]);
+    expect(await pathExists(globalRoot)).toBe(false);
+  });
+
+  it('does not keep offering a candidate that settled to nothing (DOR-2273)', async () => {
+    // A `.committed` leftover that cannot be deleted sits beside a missing
+    // project target. Offered again every pass, it would hide the global
+    // install the person asked to remove.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const project = await mkdtemp(path.join(tmpdir(), 'uninstall-project-'));
+    cleanupDirs.push(project);
+    const projectPlugins = path.join(project, '.dork', 'plugins');
+    const stuck = path.join(
+      projectPlugins,
+      `plugin-a.dorkos-bak-${Date.now()}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}.committed`
+    );
+    await mkdir(stuck, { recursive: true });
+    const realRemove = recoveryInternal.removePath;
+    vi.spyOn(recoveryInternal, 'removePath').mockImplementation(async (p) => {
+      if (p === stuck) throw new Error('EBUSY');
+      return realRemove(p);
+    });
+    const globalRoot = path.join(deps.dorkHome, 'plugins', 'plugin-a');
+    await stageInstalledPackage({
+      installRoot: globalRoot,
+      manifest: buildPluginManifest({ name: 'plugin-a' }),
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await new UninstallFlow(deps).uninstall({
+      name: 'plugin-a',
+      projectPath: project,
+    });
+
+    expect(result.ok).toBe(true);
     expect(await pathExists(globalRoot)).toBe(false);
   });
 

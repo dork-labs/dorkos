@@ -583,6 +583,66 @@ describe('runTransaction crash windows (DOR-2273)', () => {
     }
   });
 
+  it('keeps a kept pre-commit-records backup when the install fails', async () => {
+    // Only a finished change supersedes it; a failed install proves nothing.
+    const target = path.join(scratch, 'flow');
+    await installV1(target);
+    const legacy = path.join(
+      scratch,
+      `flow.dorkos-bak-${Date.now() - 11 * 60_000}-${randomUUID()}`
+    );
+    await installV1(legacy);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      runTransaction({
+        name: 'fails',
+        target,
+        stage: async (staging) => {
+          parked.push(staging.path);
+        },
+        activate: async () => {
+          throw new Error('activate failed');
+        },
+      })
+    ).rejects.toThrow('activate failed');
+
+    expect(await versionAt(target)).toBe('v1');
+    expect(await versionAt(legacy)).toBe('v1');
+  });
+
+  it('keeps a kept pre-commit-records backup when the commit itself fails', async () => {
+    // Activation finished but the commit did not, so the install is rolled
+    // back: nothing was superseded.
+    const target = path.join(scratch, 'flow');
+    await installV1(target);
+    const legacy = path.join(
+      scratch,
+      `flow.dorkos-bak-${Date.now() - 11 * 60_000}-${randomUUID()}`
+    );
+    await installV1(legacy);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(_internal, 'commitRecord').mockRejectedValueOnce(new Error('rename refused'));
+
+    await expect(
+      runTransaction({
+        name: 'commit-fails',
+        target,
+        stage: async (staging) => {
+          parked.push(staging.path);
+          await writeFile(path.join(staging.path, 'version.txt'), 'v2', 'utf8');
+        },
+        activate: async (staging) => {
+          const { atomicMove } = await import('../lib/atomic-move.js');
+          await atomicMove(staging.path, target);
+        },
+      })
+    ).rejects.toThrow('rename refused');
+
+    expect(await versionAt(target)).toBe('v1');
+    expect(await versionAt(legacy)).toBe('v1');
+  });
+
   it('removes a kept pre-commit-records backup once its own install commits', async () => {
     // Kept because nothing proved which copy was whole; a committed install
     // settles that, and left behind it would be restored if the package were

@@ -37,6 +37,12 @@
  *   target; more than one can only come from a server older than this module,
  *   or from two servers sharing a project (the residual named in
  *   `./transaction.ts`).
+ * - **Nothing made after a transaction died is undone with it.** A target
+ *   created more than {@link IN_FLIGHT_FLOOR_MS} after its record was
+ *   written cannot be that transaction's work — it is someone's own, put
+ *   where a long-dead install once was — so a `backup` or `absent` record
+ *   beside it is kept, with the target, rather than restored over it or
+ *   removed with it.
  * - **Nothing that does not match the record grammar exactly is touched.** The
  *   uuid is checked in full, so a directory a person happened to name with the
  *   marker in it is left alone.
@@ -148,9 +154,12 @@ export interface InstallRecoveryReport {
   /** Unfinished records settled, newest first, with what settling did. */
   settled: { record: InstallRecord; outcome: Exclude<RecordOutcome, 'kept'> }[];
   /**
-   * Unfinished records left in place because nothing proves which side is
-   * whole (a `legacy-backup` beside an existing target). The next change that
-   * finishes on this target supersedes them: see {@link discardSupersededRecords}.
+   * Unfinished records left in place, with their target, because settling
+   * them could destroy something: a `legacy-backup` beside an existing target
+   * (nothing proves which copy is whole), or a record whose target was made
+   * after its transaction could still have been running (someone else's
+   * work). The next change that finishes on this target supersedes them: see
+   * {@link discardSupersededRecords}.
    */
   kept: InstallRecord[];
   /** Leftovers of finished transactions deleted. */
@@ -205,12 +214,13 @@ interface InstallRecordPolicy {
    * across a target's records) and says how, and must leave the record on
    * disk until the target is settled, so a crash part-way is retried.
    * `finished`: the record is leftovers of a transaction that completed, and
-   * is deleted.
+   * is deleted. A `kept` outcome leaves both the record and the target as
+   * they are (see {@link InstallRecoveryReport.kept}).
    */
   recovery:
     | {
         phase: 'unfinished';
-        recover: (target: string, recordPath: string) => Promise<RecordOutcome>;
+        recover: (target: string, record: InstallRecord) => Promise<RecordOutcome>;
       }
     | { phase: 'finished' };
 }
@@ -225,10 +235,12 @@ const INSTALL_RECORD_POLICIES: readonly InstallRecordPolicy[] = [
     recovery: {
       phase: 'unfinished',
       // Whatever stands at the target is the uncommitted install; the backup
-      // is the last committed one.
-      recover: async (target, recordPath) => {
+      // is the last committed one — unless the target was made after the
+      // transaction could still have been running, by someone else.
+      recover: async (target, record) => {
+        if (await madeAfterRecord(target, record)) return 'kept';
         await _internal.removePath(target);
-        await _internal.move(recordPath, target);
+        await _internal.move(record.path, target);
         return 'rolled-back';
       },
     },
@@ -241,11 +253,13 @@ const INSTALL_RECORD_POLICIES: readonly InstallRecordPolicy[] = [
     recovery: {
       phase: 'unfinished',
       // There was nothing here before, so whatever stands at the target is
-      // the uncommitted install. The target goes first: the marker is what
-      // says it has to.
-      recover: async (target, recordPath) => {
+      // the uncommitted install — unless it was made after the transaction
+      // could still have been running, by someone else. The target goes
+      // first: the marker is what says it has to.
+      recover: async (target, record) => {
+        if (await madeAfterRecord(target, record)) return 'kept';
         await _internal.removePath(target);
-        await _internal.removePath(recordPath);
+        await _internal.removePath(record.path);
         return 'rolled-back';
       },
     },
@@ -268,9 +282,9 @@ const INSTALL_RECORD_POLICIES: readonly InstallRecordPolicy[] = [
       // left one behind whenever deleting it after a SUCCESSFUL install failed
       // part-way — so it may be the partial copy, and the target the whole
       // one. It is restored only where it is certainly the only copy.
-      recover: async (target, recordPath) => {
+      recover: async (target, record) => {
         if (await pathExists(target)) return 'kept';
-        await _internal.move(recordPath, target);
+        await _internal.move(record.path, target);
         return 'rolled-back';
       },
     },
@@ -489,6 +503,17 @@ export async function recoverInterruptedInstall(target: string): Promise<Install
 }
 
 /**
+ * Why recovery kept `record`, in words for a log line.
+ *
+ * @param record - A record from {@link InstallRecoveryReport.kept}.
+ */
+export function keptReason(record: InstallRecord): string {
+  return record.kind === 'legacy-backup'
+    ? 'the record predates commit records, so nothing proves which copy is whole'
+    : 'the target was made after the interrupted install, so it is not the install to undo';
+}
+
+/**
  * Whether any transaction record sits beside `target`. For a caller that
  * must not conclude "not installed" from a missing target alone: a crash can
  * leave the target missing with its previous install in a record beside it.
@@ -539,7 +564,34 @@ async function recoverRecord(target: string, record: InstallRecord): Promise<Rec
       `A ${record.kind} install record is finished and has nothing to recover: ${record.path}`
     );
   }
-  return recovery.recover(target, record.path);
+  return recovery.recover(target, record);
+}
+
+/**
+ * Whether what stands at `target` was made after `record`'s transaction
+ * could still have been running — by the person, most likely, putting
+ * something of their own where a long-dead install once was. Recovery leaves
+ * such a target alone (and keeps the record), because undoing a transaction
+ * must never delete or overwrite work that came after it.
+ *
+ * Uses the target's creation time, or its status-change time where the
+ * filesystem records no creation time. Either is at or after the moment the
+ * transaction's own writes landed, and a transaction's writes land within
+ * {@link IN_FLIGHT_FLOOR_MS} of its record, so a target the transaction made
+ * never passes this. A missing target is not "made after" anything.
+ *
+ * @internal
+ */
+async function madeAfterRecord(target: string, record: InstallRecord): Promise<boolean> {
+  let made: number;
+  try {
+    const stats = await _internal.statTarget(target);
+    made = stats.birthtimeMs > 0 ? stats.birthtimeMs : stats.ctimeMs;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw err;
+  }
+  return made > record.createdAt + IN_FLIGHT_FLOOR_MS;
 }
 
 /**
@@ -615,4 +667,5 @@ async function removePath(target: string): Promise<void> {
 export const _internal = {
   removePath,
   move: atomicMove,
+  statTarget: lstat,
 };
