@@ -417,6 +417,12 @@ A direct call to a Blocked action (an agent that knows the name, or reached it t
 
 DOR-2093 ("no approval path past the ceiling") is absorbed here: every refusal an agent can meet now has a way to ask.
 
+> **Note, 2026-09-24 (phase 2, as built).** Three places where the build differs from the text above, each on purpose:
+>
+> - **A second request while one waits is refused, not echoed.** It returns `status: 'denied'`, `reason: 'request_pending'`, `approvable: false` and the first request's `approvalId`, not the first request's `awaiting_decision` payload. That payload carries the token, and tokens are stored hashed, so DorkOS cannot send the first one again. The message says how to go on instead: do not ask again, wait (in a DorkOS session the answer is delivered to the conversation), and on a yes call `request_permission` again with the same action and arguments plus the token the first request returned.
+> - **The limits are checked in the gate, not the handler.** They run where a card would be minted, so every path that could mint one meets them.
+> - **"The actions this surface can run" means the capabilities the calling MCP server lists.** On the in-session server (Claude Code, and the Codex and OpenCode listener) and on the external `/mcp` server, `request_access` reaches only capabilities that server advertises, so a surface-less capability (the principal-bound connector tools, for example) is never reachable through it. Over HTTP (`dorkos call`), which already reaches any capability by id, it may name any. Hand-registered tools are not reachable through it yet: none has an area until phase 3, so none can be Blocked.
+
 ### D9. Agent-facing permission tools
 
 - **`permissions.list`** (`observe`, no area): the calling agent's resolved state per area and per action it can see, with source. Lets an agent explain a refusal instead of guessing, and pick Ask-state actions knowing a card will follow.

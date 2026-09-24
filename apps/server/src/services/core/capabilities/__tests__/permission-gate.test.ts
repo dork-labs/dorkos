@@ -209,7 +209,7 @@ describe('the permission decision at the tier gate', () => {
 
       expect(await viaRegistry('rooms.create')).toMatchObject({
         reason: 'permission_blocked',
-        approvable: false,
+        approvable: true,
       });
       expect(await viaRegistry('rooms.merge')).toBe('ran');
     });
@@ -225,8 +225,12 @@ describe('the permission decision at the tier gate', () => {
       expect(await viaRegistry('rooms.create')).toMatchObject({
         status: 'denied',
         reason: 'permission_blocked',
-        approvable: false,
-        message: 'Managing rooms is blocked for this agent. Ask the person if you need it.',
+        // A person COULD say yes, through the request tool; a direct call still
+        // raises no card (spec `agent-permissions` D8).
+        approvable: true,
+        message:
+          'Rooms is blocked for this agent. You can ask the person with the tool ending in ' +
+          '`request_permission`: name the action, pass the exact arguments, and say why.',
       });
       const authorized = await viaAuthorize('rooms.create');
       expect(authorized).toMatchObject({
@@ -234,6 +238,51 @@ describe('the permission decision at the tier gate', () => {
         payload: { reason: 'permission_blocked' },
       });
       expect(await viaToolGate()).toMatchObject({ reason: 'permission_blocked' });
+      expect(ran).toEqual([]);
+      expect(pendingCount()).toBe(0);
+    });
+
+    /** A direct call presenting a token, returning the refusal payload or 'ran'. */
+    async function withToken(id: string, approvalToken: string) {
+      try {
+        await registry.invoke(id, INPUT, {
+          identity: dorkbot(),
+          approvalToken,
+          retryChannel: 'mcp-argument',
+        });
+        return 'ran' as const;
+      } catch (err) {
+        return (err as { decision: { payload: Record<string, unknown> } }).decision.payload;
+      }
+    }
+
+    it('refuses a direct call that presents a made-up token, and mints nothing', async () => {
+      // A token is not a way past Blocked: only `request_permission` is. Were a
+      // token enough to reach the card path, an agent could mint a card that
+      // skips the blocked-request limits by inventing one.
+      expect(await withToken('rooms.create', 'a'.repeat(64))).toMatchObject({
+        status: 'denied',
+        reason: 'permission_blocked',
+      });
+      expect(ran).toEqual([]);
+      expect(pendingCount()).toBe(0);
+    });
+
+    it("refuses a direct call that presents another action's valid token", async () => {
+      // One action in the area is set to Ask, so the agent can hold a real,
+      // granted token, for that action.
+      agent = { areas: { rooms: 'blocked' }, actions: { 'rooms.merge': 'ask' } };
+      const asked = (await viaRegistry('rooms.merge')) as {
+        approvalId: string;
+        approvalToken: string;
+      };
+      approvals.grant(asked.approvalId);
+      expect(pendingCount()).toBe(0);
+
+      expect(await withToken('rooms.create', asked.approvalToken)).toMatchObject({
+        status: 'denied',
+        reason: 'permission_blocked',
+      });
       expect(ran).toEqual([]);
       expect(pendingCount()).toBe(0);
     });
@@ -291,9 +340,18 @@ describe('the permission decision at the tier gate', () => {
       expect(ran).toEqual(['rooms.create']);
     });
 
-    it('never offers to make an act card standing', async () => {
+    it('records who asked and the area, so the card can offer Always allow', async () => {
       const payload = (await viaRegistry('rooms.create')) as { approvalId: string };
-      expect(approvals.standingPermissionScope(payload.approvalId)?.agentPath).toBeNull();
+      expect(approvals.answerScope(payload.approvalId)).toMatchObject({
+        agentPath: DORKBOT_PATH,
+        area: 'rooms',
+        alwaysOffered: true,
+        blockedRequest: false,
+      });
+      expect(approvals.getPending(payload.approvalId)).toMatchObject({
+        area: 'rooms',
+        alwaysOffered: true,
+      });
     });
   });
 

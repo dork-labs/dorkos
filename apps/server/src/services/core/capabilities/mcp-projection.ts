@@ -84,6 +84,12 @@ export interface InSessionSurface {
   signal?: AbortSignal;
   /** Override the hold cap (tests). */
   capMs?: number;
+  /**
+   * Whether nobody can answer a card inside the current turn, read per call
+   * (spec `agent-permissions` D6). A hold whose turn is unattended does not
+   * hold; see `awaitCapabilityApproval`.
+   */
+  unattended?: () => boolean;
 }
 
 /**
@@ -413,6 +419,7 @@ export async function invokeCapabilityAsMcpResult(
           session: surface.session,
           ...(surface.signal ? { signal: surface.signal } : {}),
           ...(surface.capMs !== undefined ? { capMs: surface.capMs } : {}),
+          ...(surface.unattended ? { unattended: surface.unattended } : {}),
         };
         return holdAndResume(registry, id, input, context, decision.payload, hold);
       }
@@ -463,6 +470,7 @@ function invokeThroughRegistry(
     ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
     ...(context?.cwd ? { cwd: context.cwd } : {}),
     ...(context?.serverPrincipal ? { serverPrincipal: context.serverPrincipal } : {}),
+    ...(context?.mcpServer ? { mcpServer: context.mcpServer } : {}),
     ...((signal ?? context?.signal) ? { signal: signal ?? context?.signal } : {}),
     ...(approvalToken ? { approvalToken } : {}),
     retryChannel: 'mcp-argument',

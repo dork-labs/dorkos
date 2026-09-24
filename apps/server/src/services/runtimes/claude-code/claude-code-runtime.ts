@@ -563,6 +563,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           })
         : undefined;
     session.connectorTurn = connectorTurn;
+    // Unconditionally, `false` included: a warm session a person later talks
+    // to must hold for their answer again (spec `agent-permissions` D6).
+    session.unattendedApprovals = opts?.unattendedApprovals === true;
     const accessContext =
       connectorTurn &&
       this.connectorRuntimeTools &&

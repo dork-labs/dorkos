@@ -132,6 +132,13 @@ export interface CapabilityApprovalHold {
   signal?: AbortSignal;
   /** Override the hold cap (tests). Defaults to {@link CAPABILITY_APPROVAL_HOLD_CAP_MS}. */
   capMs?: number;
+  /**
+   * Whether nobody can answer a card inside the current turn: a scheduled run,
+   * a chat binding, a connector event (spec `agent-permissions` D6). Read at
+   * CALL time, because one warm session serves turns of both kinds. When it
+   * says so the call does not hold: see {@link awaitCapabilityApproval}.
+   */
+  unattended?: () => boolean;
 }
 
 /**
@@ -278,6 +285,12 @@ export async function awaitCapabilityApproval(
   hold: CapabilityApprovalHold,
   payload: ApprovalRequiredPayload
 ): Promise<ApprovalDecisionOutcome> {
+  // An unattended turn does not hold (spec `agent-permissions` D6). It ends at
+  // once with the no-decision outcome, which hands the caller the ordinary
+  // `approval_required` payload. No inline card (nobody is looking at this
+  // stream) and no delivery claim: the approval recorded this session, so the
+  // out-of-band deliverer wakes it when a person answers from the inbox.
+  if (hold.unattended?.() === true) return 'timeout';
   const capMs = hold.capMs ?? CAPABILITY_APPROVAL_HOLD_CAP_MS;
   const startedAt = Date.now();
   const emitted = pushHoldCard(hold.session, payload, hold.approvals, startedAt, capMs);

@@ -120,6 +120,23 @@ export type PermissionPatch = {
   actions?: Record<string, PermissionState | null>;
 };
 
+/**
+ * The patch with every action key dropped whose stored value is no longer the
+ * expected one (see `setAgent`'s `expectActions`).
+ */
+function unchanged(
+  stored: AgentPermissions,
+  patch: PermissionPatch,
+  expected: Record<string, PermissionState | null>
+): PermissionPatch {
+  const actions: Record<string, PermissionState | null> = {};
+  for (const [key, value] of Object.entries(patch.actions ?? {})) {
+    const current = (stored.actions as Record<string, unknown> | undefined)?.[key] ?? null;
+    if (!(key in expected) || current === expected[key]) actions[key] = value;
+  }
+  return { ...(patch.areas ? { areas: patch.areas } : {}), actions };
+}
+
 /** How far back the agent page looks for a change made outside DorkOS. */
 const OUTSIDE_HISTORY_DEPTH = 50;
 
@@ -453,28 +470,57 @@ export class PermissionService {
    * Change one agent's own settings; `null` puts a key back to the default.
    *
    * @param agentId - The agent.
-   * @param input - The patch and where it came from.
+   * @param input - The patch, where it came from, the approval it answered
+   *   (an Always allow on a request card), and, for a compare-and-set, the
+   *   value each action key must still hold for its change to be written.
    * @param writer - Who is making the change.
    * @returns Every change the write made.
    */
   async setAgent(
     agentId: string,
-    input: PermissionPatch & { surface: PermissionSurface },
+    input: PermissionPatch & {
+      surface: PermissionSurface;
+      approvalId?: string;
+      /**
+       * Per action key, the value the agent's own setting must still hold
+       * (`null` = not set); a key whose stored value differs is left alone.
+       * How a reversal avoids undoing a write it did not make.
+       */
+      expectActions?: Record<string, PermissionState | null>;
+    },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
     const actions = this.actionIndex();
     this.validate(input, actions);
     const [agent] = this.agentsById([agentId]);
     const stored = (await this.deps.agents.readPermissions(agent!.projectPath)) ?? {};
-    const { next, changes } = this.applyPatch(stored, input, this.agentTarget(agent!), actions);
+    const patch = input.expectActions ? unchanged(stored, input, input.expectActions) : input;
+    const { next, changes } = this.applyPatch(stored, patch, this.agentTarget(agent!), actions);
     if (changes.length > 0) {
       await this.deps.agents.writePermissions(
         agentId,
         compact({ ...stored, areas: next.areas, actions: next.actions })
       );
     }
-    await this.record({ changes, surface: input.surface, writer }, this.titleFor(actions));
+    await this.record(
+      {
+        changes,
+        surface: input.surface,
+        writer,
+        ...(input.approvalId ? { approvalId: input.approvalId } : {}),
+      },
+      this.titleFor(actions)
+    );
     return changes;
+  }
+
+  /**
+   * The registered agent whose project directory this is, when there is one.
+   *
+   * @param agentPath - The agent's project directory.
+   */
+  agentByPath(agentPath: string): PermissionAgentRef | undefined {
+    return this.deps.agents.list().find((agent) => agent.projectPath === agentPath);
   }
 
   /** Resolve at the default layer: no agent. */

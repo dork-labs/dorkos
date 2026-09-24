@@ -162,6 +162,8 @@ describe('initSessionStreamBinding', () => {
         tier: 'destructive',
         summary: 'Prober wants to run "Add an MCP server"',
         hasAgentPath: true,
+        area: null,
+        alwaysOffered: false,
         requestedAt: '2026-08-06T00:00:00.000Z',
         expiresAt: '2026-08-06T02:00:00.000Z',
       },

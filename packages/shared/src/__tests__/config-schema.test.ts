@@ -228,7 +228,6 @@ describe('UserConfigSchema', () => {
         },
       },
       auth: { enabled: false },
-      approvals: { standingGrants: false, trustWindowMinutes: 480, standingGrantsVoidBefore: null },
       permissions: {
         preset: null,
         defaults: { areas: {}, actions: {} },
@@ -425,34 +424,6 @@ describe('SENSITIVE_CONFIG_KEYS', () => {
   });
 });
 
-describe('approvals.standingGrantsVoidBefore', () => {
-  // The posture floor (DOR-520). The grant store treats a FALSY floor as "no
-  // floor", so the empty string is the one value that would silently disable the
-  // filter instead of tightening it. Every other malformed value already fails
-  // closed — it sorts above every real timestamp, so every permission is voided —
-  // which is why this asserts the direction, not just "invalid is rejected".
-  /** Parse a config carrying one candidate floor value. */
-  function parseFloor(value: unknown) {
-    return UserConfigSchema.safeParse({
-      version: 1,
-      approvals: { standingGrantsVoidBefore: value },
-    });
-  }
-
-  it('accepts a real timestamp and the absence of one', () => {
-    expect(parseFloor('2026-07-26T10:00:00.000Z').success).toBe(true);
-    expect(parseFloor(null).success).toBe(true);
-  });
-
-  it('rejects the empty string, which would disable the filter rather than tighten it', () => {
-    expect(parseFloor('').success).toBe(false);
-  });
-
-  it('rejects a string that is not a timestamp at all', () => {
-    expect(parseFloor('not-a-date').success).toBe(false);
-  });
-});
-
 describe('USER_CONFIG_DEFAULTS', () => {
   it('matches schema defaults', () => {
     expect(USER_CONFIG_DEFAULTS).toEqual({
@@ -626,7 +597,6 @@ describe('USER_CONFIG_DEFAULTS', () => {
         },
       },
       auth: { enabled: false },
-      approvals: { standingGrants: false, trustWindowMinutes: 480, standingGrantsVoidBefore: null },
       permissions: {
         preset: null,
         defaults: { areas: {}, actions: {} },
@@ -877,7 +847,6 @@ describe('per-field and section-literal defaults agree', () => {
     expect(fromFactory.runtimes.codex.defaultTrustStop).toBeNull();
     expect(fromFactory.runtimes.opencode.defaultTrustStop).toBeNull();
     expect(fromFactory.ui.autonomyAcknowledgedAt).toBeNull();
-    expect(fromFactory.approvals.standingGrants).toBe(false);
     expect(fromFactory.mesh.scanRoots).toEqual([]);
   });
 });

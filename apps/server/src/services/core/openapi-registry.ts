@@ -196,9 +196,6 @@ import {
   DenyApprovalBodySchema,
   GrantApprovalBodySchema,
   ApprovalDecisionResponseSchema,
-  RevokeStandingPermissionResponseSchema,
-  StandingPermissionNotRecordedResponseSchema,
-  StandingPermissionsResponseSchema,
 } from '@dorkos/shared/approval-schemas';
 import {
   DeletePushSubscriptionResponseSchema,
@@ -3848,15 +3845,14 @@ registry.registerPath({
     'every posture, and when local login is enabled an authenticated user is required. With login ' +
     'disabled DorkOS cannot tell the app apart from a local script, so every decision is ' +
     'recorded in the Activity feed with the posture it was made under.\n\n' +
-    'The body accepts a `standing` flag, which also stops DorkOS asking about this agent doing ' +
-    'this thing for as long as `approvals.trustWindowMinutes` says. Opening one needs a person ' +
-    'signed in to the DorkOS app, so it needs Require login to be on: with login off there is no ' +
-    'session cookie and DorkOS cannot tell the operator from an agent running as the same user. ' +
-    'It is refused rather than quietly downgraded to a plain one-time yes, and the refusal comes ' +
-    'before anything is granted, so a caller that asked for two things and can only have one gets ' +
-    'neither and is told which part failed. On success the response carries the permission that ' +
-    'was opened. Re-answering the same question replaces the live permission and starts a fresh ' +
-    'window; using a permission never extends it.',
+    "`answer: 'always'` also sets this action to Allowed for the agent that asked, written " +
+    'through the same permission service Settings uses, before the agent is told the answer, so ' +
+    'the resumed call and the new setting agree. It records its own `permission.changed` event ' +
+    'beside the `permission.answered` event every answer records. It is refused (409 ' +
+    '`ALWAYS_NOT_OFFERED`) when DorkOS does not know which agent asked, the action has no ' +
+    'permission area, or the area is one that is never Allowed (Safety limits, Permissions, Reach ' +
+    '& secrets). The pending card says so in advance as `alwaysOffered`. A refusal comes before ' +
+    'anything is granted.',
   request: {
     params: z.object({ id: z.string() }),
     body: { content: { 'application/json': { schema: GrantApprovalBodySchema } } },
@@ -3869,9 +3865,8 @@ registry.registerPath({
     403: {
       description:
         'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
-        'holding the approval token (`REQUESTER_CANNOT_DECIDE`). For `standing: true`, also when ' +
-        'login is off (`standing_grants_require_login`) or the caller has no session cookie ' +
-        '(`operator_cookie_required`)',
+        'holding the approval token (`REQUESTER_CANNOT_DECIDE`). With login on, only a person ' +
+        'signed in to the DorkOS app can decide (`operator_cookie_required`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     401: {
@@ -3884,25 +3879,13 @@ registry.registerPath({
     },
     409: {
       description:
-        'Already decided; or `standing: true` was asked for while standing permissions are ' +
-        'switched off (`STANDING_GRANTS_DISABLED`), or for an approval that recorded no agent ' +
-        'path, so there is no agent to stop asking about (`APPROVAL_HAS_NO_AGENT`). Nothing is ' +
-        'granted in the last two cases',
+        "Already decided; or `answer: 'always'` on an approval that does not offer it " +
+        '(`ALWAYS_NOT_OFFERED`). Nothing is granted in that case',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     410: {
       description: 'Expired before it was decided',
       content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    500: {
-      description:
-        'The one-time yes was recorded but the permission was not ' +
-        '(`STANDING_PERMISSION_NOT_RECORDED`). The two are separate writes; this answer carries ' +
-        '`approvalId` and `outcome` so a caller can tell it apart from "nothing happened" — ' +
-        'retrying the whole call would answer 409, which reads like the permission exists',
-      content: {
-        'application/json': { schema: StandingPermissionNotRecordedResponseSchema },
-      },
     },
   },
 });
@@ -4108,77 +4091,6 @@ registry.registerPath({
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     ...PERMISSION_WRITE_REFUSALS,
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/approvals/grants',
-  tags: ['Approvals'],
-  summary: 'List live standing permissions',
-  description:
-    'The standing permissions that are live right now: which agent, which action, and when each ' +
-    'one runs out. A permission nobody can find is a dark pattern, so this is the list the ' +
-    'DorkOS app shows in both places it offers to end one. Expiry is applied here rather than ' +
-    'left to a sweep, so a permission whose window has closed is already gone from this list.\n\n' +
-    'Authorized like deciding an approval, NOT like reading the pending list, and the difference ' +
-    'is deliberate. A pending card is meant to be agent-readable. This list is prospective: it ' +
-    'says which irreversible action will go through silently right now and the minute the window ' +
-    "shuts, and it names other agents' pairings. So a caller presenting an agent identity or an " +
-    'approval token is refused.\n\n' +
-    'It carries what the DorkOS app renders and nothing more. Who opened each permission, when, ' +
-    'under which posture, and which card it came from are recorded in the ' +
-    '`approval.grant_created` Activity event instead, which is where an audit question belongs.',
-  responses: {
-    200: {
-      description: 'Live standing permissions, soonest to expire first',
-      content: { 'application/json': { schema: StandingPermissionsResponseSchema } },
-    },
-    403: {
-      description:
-        'Refused: an agent cannot read this (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
-        'holding the approval token (`REQUESTER_CANNOT_DECIDE`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    401: {
-      description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'delete',
-  path: '/api/approvals/grants/{id}',
-  tags: ['Approvals'],
-  summary: 'End one standing permission',
-  description:
-    'Ends a standing permission, so DorkOS asks again before the next time that agent runs that ' +
-    'action. It does not undo anything that already ran.\n\n' +
-    'Ending one NARROWS what an agent may do, so it needs no session cookie — unlike opening one. ' +
-    'It still needs proof of a person in the same sense deciding an approval does: a caller ' +
-    'presenting an agent identity or an approval token is refused in every posture. A second ' +
-    'click answers 404, so the moment a permission ended cannot be rewritten.',
-  request: { params: z.object({ id: z.string() }) },
-  responses: {
-    200: {
-      description: 'The permission was ended',
-      content: { 'application/json': { schema: RevokeStandingPermissionResponseSchema } },
-    },
-    403: {
-      description:
-        'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
-        'holding the approval token (`REQUESTER_CANNOT_DECIDE`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    401: {
-      description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No permission is live under that id (`UNKNOWN_STANDING_PERMISSION`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
   },
 });
 

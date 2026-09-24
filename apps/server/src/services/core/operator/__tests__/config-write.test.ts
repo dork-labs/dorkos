@@ -174,27 +174,6 @@ describe('applyGuardedConfigWrite', () => {
       expect(storedStop()).toBe('autonomy');
     });
 
-    it('still lets the person turn standing permissions off with login off', async () => {
-      // `approvals.standingGrants` needs login ON over HTTP, because a caller
-      // there could pre-arm it. At the terminal that rule would refuse the
-      // person the PROTECTIVE direction — switching it off — on the one surface
-      // `standing-grant-posture.ts` says has to work with no server running.
-      configManager.set('approvals', {
-        ...configManager.get('approvals'),
-        standingGrants: true,
-      });
-
-      const result = applyGuardedConfigWrite({
-        patch: { approvals: { standingGrants: false } },
-        authority: LOCAL_OPERATOR_AUTHORITY,
-        source: 'dorkos config set',
-        writer: { kind: 'unattributed' },
-      });
-
-      expect(result.ok).toBe(true);
-      expect(configManager.get('approvals').standingGrants).toBe(false);
-    });
-
     it('refuses a value the schema will not take, instead of storing it', async () => {
       const result = applyGuardedConfigWrite({
         patch: { server: { port: 'notanumber' } },

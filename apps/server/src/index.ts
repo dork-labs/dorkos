@@ -210,9 +210,13 @@ import {
   observedPermissionReader,
   permissionActions,
   readAgentPermissionsFromManifest,
+  captureLiveStandingGrants,
+  readStandingGrantLicence,
   readRawManifestFile,
+  recordEndedStandingGrants,
   runPermissionUpgradeSweep,
 } from './services/core/permissions/index.js';
+import { titleForMcpTool } from './services/core/mcp-tool-tiers.js';
 import { createTeamRouter } from './routes/team.js';
 import { createProfileRouter } from './routes/profile.js';
 import { createSearchRouter } from './routes/search.js';
@@ -316,15 +320,7 @@ import {
   createCapabilityGateAuditObserver,
   createAgentIdentityUnregisterCascade,
 } from './services/core/agent-identity/index.js';
-import {
-  ApprovalGrantService,
-  ApprovalService,
-  initStandingGrantPosture,
-  readStandingGrantPosture,
-  readStandingGrantSettings,
-  revokeStandingGrantsIfPostureForbids,
-  resolveApprovalTtlMs,
-} from './services/core/approvals/index.js';
+import { ApprovalService, resolveApprovalTtlMs } from './services/core/approvals/index.js';
 import { createApprovalsRouter } from './routes/approvals.js';
 import type { DeepHealthDeps } from './services/observability/deep-health/index.js';
 import type { DebugDeps } from './routes/debug.js';
@@ -740,6 +736,10 @@ async function start() {
     });
   });
 
+  // The retired standing-permission settings, which the capture below needs to
+  // tell a live standing permission from a void one (`ended-standing-grants.ts`).
+  // Nothing removes them until that capture is done.
+  const standingGrantLicence = readStandingGrantLicence(dorkHome);
   try {
     initConfigManager(dorkHome);
   } catch (error) {
@@ -818,7 +818,19 @@ async function start() {
   if (preMigrationSnapshot) {
     logger.info(`[DB] Snapshot taken before migrating: ${preMigrationSnapshot}`);
   }
+  // Standing permissions are retired and their table is dropped by the next
+  // migration; the live ones are recorded first, so the permission sweep can
+  // write one history line for each once the Activity log exists.
+  captureLiveStandingGrants(db, dorkHome, logger, standingGrantLicence);
   runMigrations(db);
+  // Only now may the settings the capture read go: see `retireStandingGrantSettings`.
+  try {
+    configManager.retireStandingGrantSettings();
+  } catch (error) {
+    logger.warn('[Permissions] could not remove the retired standing-permission settings', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   logger.info(`[DB] Consolidated database ready at ${dbPath}`);
 
   // Construct canonical connector identity and attachment services before Mesh
@@ -1983,6 +1995,27 @@ async function start() {
     } catch (err) {
       logger.warn('[Permissions] Upgrade sweep failed', logError(err));
     }
+    // Standing permissions this upgrade ended, one history line each. Runs
+    // whenever the capture file exists, not once per version: the file is the
+    // record that the lines are still owed.
+    try {
+      const mesh = meshCore;
+      await recordEndedStandingGrants({
+        dorkHome,
+        agents: () =>
+          mesh.listWithPaths().map((a) => ({
+            id: a.id,
+            name: a.name,
+            ...(a.displayName ? { displayName: a.displayName } : {}),
+            projectPath: a.projectPath,
+          })),
+        actionTitle: (id) => capabilityRegistry?.get(id)?.title ?? titleForMcpTool(id) ?? id,
+        activity: activityService,
+        logger,
+      });
+    } catch (err) {
+      logger.warn('[Permissions] Could not record the ended standing permissions', logError(err));
+    }
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();
       remoteCommunitySubscriptions?.start();
@@ -2486,6 +2519,10 @@ async function start() {
   const approvalTtlMs = resolveApprovalTtlMs(env.DORKOS_APPROVAL_TTL_MS);
   const approvalService = new ApprovalService(db, {
     ...(approvalTtlMs !== undefined ? { ttlMs: approvalTtlMs } : {}),
+    // A request a room's own turn raised is shown in that room (spec
+    // `agent-permissions` D7). The binding follows a session's rekey, which is
+    // why it is resolved when a card is read rather than stored.
+    roomForSession: (sessionId) => roomStore.sessionLedger.bindingForSession(sessionId)?.roomId,
     describeCapability: (capabilityId) => {
       const capability = capabilityRegistry?.get(capabilityId);
       if (capability) return { title: capability.title, tier: capability.tier };
@@ -2564,46 +2601,6 @@ async function start() {
     getEscalationService()?.rearmFromStandingState(stillPending);
   } catch (err) {
     logger.warn('[Escalation] Could not re-arm from pending approvals', logError(err));
-  }
-  // Standing permissions: the operator's "stop asking about this agent doing
-  // this thing", bounded by a clock. The store is injected into the approvals
-  // router and registered with the posture seam, which ends every live
-  // permission when login or the master switch is turned off.
-  const approvalGrantService = new ApprovalGrantService(db);
-  initStandingGrantPosture(approvalGrantService);
-  try {
-    const purgedGrants = approvalGrantService.purgeExpired();
-    if (purgedGrants > 0) {
-      logger.info(`[Approvals] Purged ${purgedGrants} long-expired standing permissions`);
-    }
-  } catch (err) {
-    logger.warn('[Approvals] Failed to purge expired standing permissions (non-fatal)', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-  // No permission may be live unless BOTH settings license one. The posture seam
-  // above catches a setting being turned off through `PATCH /api/config`, but
-  // `dorkos config set` writes the file directly and out of process, so it reaches
-  // no seam at all. This is the floor under both: a restart always starts from a
-  // state that matches the settings, rather than waking permissions the operator
-  // switched the feature — or login — off with.
-  try {
-    revokeStandingGrantsIfPostureForbids(readStandingGrantPosture());
-    // …and end the ones an out-of-process settings round trip already voided
-    // (DOR-520). The sweep above cannot see those: by the time the server starts,
-    // the switch is back on and the posture looks fine. The store refuses them on
-    // every read regardless of this call; running it here is what makes the stored
-    // rows say so too, instead of reading as permissions that quietly expired.
-    const voided = approvalGrantService.revokeVoidedByPosture();
-    if (voided > 0) {
-      logger.info(
-        `[Approvals] Ended ${voided} standing permission(s) that a settings change had voided`
-      );
-    }
-  } catch (err) {
-    logger.warn('[Approvals] Failed to reconcile standing permissions with the setting', {
-      error: err instanceof Error ? err.message : String(err),
-    });
   }
   const managedExecutionContexts = new ManagedConnectorExecutionContextStore();
   const managedCloudProviderInstanceId = legacyDefaultProviderInstanceId(
@@ -3838,16 +3835,19 @@ async function start() {
   // may do. Mounted at `/api` BEFORE the agents router so
   // `/api/agents/:id/permissions` reaches it first. The registry is read lazily:
   // it is composed after the routes are mounted.
+  // The one owner of every permission write (spec `agent-permissions` D10):
+  // the permissions pages and the request card's Always allow both write here.
+  const permissionService = createPermissionService({
+    config: configManager,
+    mesh: () => meshCore,
+    registry: () => capabilityRegistry,
+    activity: activityService,
+    observer: permissionObserver,
+  });
   app.use(
     '/api',
     createPermissionsRouter({
-      permissions: createPermissionService({
-        config: configManager,
-        mesh: () => meshCore,
-        registry: () => capabilityRegistry,
-        activity: activityService,
-        observer: permissionObserver,
-      }),
+      permissions: permissionService,
       activity: activityService,
     })
   );
@@ -3946,13 +3946,18 @@ async function start() {
 
   // Approvals — always available. The cockpit lists what is waiting on a person
   // and records their decision (spec `agent-trust` §3.3).
+  // The test-only seam that seeds a request card reads it from here; production
+  // mounts no test router, so nothing else does.
+  app.locals.approvalService = approvalService;
   app.use(
     '/api/approvals',
-    createApprovalsRouter(approvalService, approvalGrantService, {
+    createApprovalsRouter(approvalService, {
       activity: activityService,
-      // The permissions list names the action the way the approval card does, from
-      // the registry rather than from whoever asked. Read lazily for the same
-      // reason `approvalService` reads it lazily: the registry is composed later.
+      // An "Always allow" writes through the one permission write owner, like
+      // Settings does (spec `agent-permissions` D7).
+      permissions: permissionService,
+      // Names the action for the answer's audit line. Read lazily: the registry
+      // is composed later in boot.
       describeCapability: (capabilityId) => capabilityRegistry?.get(capabilityId),
     })
   );
@@ -4486,14 +4491,6 @@ async function start() {
   initCapabilityTierGate({
     approvals: approvalService,
     onAttempt: createCapabilityGateAuditObserver(activityService),
-    // Standing permissions (spec `agent-approval-settings` §3.3). Both halves are
-    // read per gated call rather than captured here: the master switch can be
-    // turned off between two invocations and a permission runs out on a clock, so
-    // the guarantee "the very next call asks again" has to come from a fresh read.
-    standingGrants: {
-      enabled: () => readStandingGrantSettings().enabled,
-      findLive: (agentPath, capabilityId) => approvalGrantService.findLive(agentPath, capabilityId),
-    },
   });
   // Wire the permission half of the same gate (spec `agent-permissions` D6):
   // the live `permissions` config section, read per call like everything else

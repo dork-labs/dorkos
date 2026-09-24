@@ -53,7 +53,7 @@ let applyClaudeAccountChange: (() => void) | undefined;
  * Wiring it instead means the fact "am I the process that can re-derive this?"
  * is answered by construction rather than guessed at, and the CLI logs what is
  * actually true (see {@link applyConfigPatch}). Same shape and same reasoning as
- * `initStandingGrantPosture` and `initCapabilityTierGate`.
+ * `initCapabilityTierGate`.
  *
  * @param apply - The re-derivation to run after an account change lands.
  */
@@ -61,7 +61,7 @@ export function initClaudeAccountApplier(apply: () => void): void {
   applyClaudeAccountChange = apply;
 }
 
-/** Drop the wired applier. Test-only seam, mirroring `resetStandingGrantPosture`. */
+/** Drop the wired applier. Test-only seam, mirroring `resetCapabilityTierGate`. */
 export function resetClaudeAccountApplier(): void {
   applyClaudeAccountChange = undefined;
 }

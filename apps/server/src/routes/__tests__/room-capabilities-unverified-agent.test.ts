@@ -615,10 +615,12 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
         status: 'denied',
         capabilityId: 'grantprobe.run',
         reason: 'permission_blocked',
-        // No approval can ever unlock this, so the model must not loop asking.
-        approvable: false,
+        // A person could say yes, but only if the agent asks on purpose: the
+        // direct call raises no card and names the request tool instead.
+        approvable: true,
       });
-      expect(String(payload.message)).toContain('Managing rooms is blocked');
+      expect(String(payload.message)).toContain('Rooms is blocked');
+      expect(String(payload.message)).toContain('request_permission');
       expect(probeRan).toBe(false);
     });
 
@@ -729,7 +731,7 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
         status: 'denied',
         capabilityId: 'grantprobe.run',
         reason: 'permission_blocked',
-        approvable: false,
+        approvable: true,
       });
       expect(probeRan).toBe(false);
     });
@@ -764,7 +766,7 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
       return server;
     }
 
-    it('answers 403 — refused, and no retry will change that', async () => {
+    it('answers 403 — refused, with no card minted', async () => {
       grantIs(undefined);
       const token = await anaToken();
 
@@ -773,11 +775,11 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
         .set('X-DorkOS-Agent', token)
         .send({});
 
-      // 403, not 202: a 202 would tell the caller to come back after a person
-      // decided something, and there is nothing here for a person to decide.
+      // 403, not 202: a direct call raises no card, so there is nothing to come
+      // back for. The agent may ask on purpose, with the request tool.
       expect(res.status).toBe(403);
       expect(res.body.reason).toBe('permission_blocked');
-      expect(res.body.approvable).toBe(false);
+      expect(res.body.approvable).toBe(true);
       expect(probeRan).toBe(false);
     });
 

@@ -214,3 +214,43 @@ export type PermissionChangedMetadata = z.infer<typeof PermissionChangedMetadata
 
 /** The Activity event type every permission write lands as. */
 export const PERMISSION_CHANGED_EVENT = 'permission.changed';
+
+// === Audit (`permission.answered`) ===
+
+/** The three answers a request card takes (spec `agent-permissions` D7). */
+export const PERMISSION_ANSWERS = ['once', 'always', 'deny'] as const;
+
+/** One of {@link PERMISSION_ANSWERS}. */
+export type PermissionAnswer = (typeof PERMISSION_ANSWERS)[number];
+
+/**
+ * The metadata every `permission.answered` Activity event carries: one event per
+ * answer on a request card, replacing the decide route's older
+ * `approval.granted` / `approval.denied` lines (spec `agent-permissions` D14).
+ * An Always allow ALSO records the `permission.changed` event for the setting it
+ * created; this one records the answer itself.
+ */
+export const PermissionAnsweredMetadataSchema = z.object({
+  /** The agent that asked, when DorkOS knows it. */
+  agentId: z.string().optional(),
+  /** The agent's project directory, when the gate recorded one. */
+  agentPath: z.string().optional(),
+  /** The capability id or hand-registered tool name that was asked about. */
+  action: z.string(),
+  /** The action's permission area, or `null` for an action with no area. */
+  area: PermissionAreaIdSchema.nullable(),
+  /** What the person answered. */
+  answer: z.enum(PERMISSION_ANSWERS),
+  /** The approval that was answered. */
+  approvalId: z.string(),
+  /** Whether the agent asked past a Blocked permission with `request_permission`. */
+  blockedRequest: z.boolean(),
+  /** The decision posture the person bars reported: login on or off. */
+  posture: z.enum(['signed-in-operator', 'local-trust']),
+});
+
+/** The metadata of a `permission.answered` Activity event. */
+export type PermissionAnsweredMetadata = z.infer<typeof PermissionAnsweredMetadataSchema>;
+
+/** The Activity event type every request-card answer lands as. */
+export const PERMISSION_ANSWERED_EVENT = 'permission.answered';

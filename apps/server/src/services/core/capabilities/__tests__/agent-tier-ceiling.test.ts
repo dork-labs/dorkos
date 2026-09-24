@@ -347,52 +347,49 @@ describe('a token that has aged out cannot spend what the live agent was granted
     identityDb.update(agentIdentityTokens).set({ createdAt: longAgo, lastUsedAt: longAgo }).run();
   }
 
-  it('refuses to resolve a standing permission for an expired identity', async () => {
-    // Found by the DOR-486 sweep rather than by review. A standing permission is
-    // keyed on `agentPath`, and an expired token used to arrive as `undefined` —
-    // no identity, no grant. It now arrives NAMED and keeps its recorded ceiling,
-    // so without the `inactive` test in `resolveStandingGrant` a dead token could
-    // spend a permission a person granted the LIVE agent and skip the card.
-    initCapabilityTierGate({
-      approvals: new ApprovalService(createTestDb()),
-      standingGrants: {
-        enabled: () => true,
-        findLive: () => ({ id: 'grant-1' }) as never,
-      },
+  it('refuses to let an expired identity spend an Always allow', async () => {
+    // Found by the DOR-486 sweep rather than by review, and carried over from
+    // standing permissions: an Always allow is keyed on `agentPath`, and an
+    // expired token now arrives NAMED, so without the `inactive` rule a dead
+    // token could spend a setting a person gave the LIVE agent.
+    initCapabilityTierGate({ approvals: new ApprovalService(createTestDb()) });
+    initPermissionGate({
+      readConfig: () => ({ preset: 'full', defaults: { areas: {}, actions: {} } }),
+      readAgentPermissions: async () => ({ actions: { [MANAGE_ROOMS.id]: 'allowed' } }),
     });
     const env = await resolveAgentTokenEnv(agentPath, 'Warden');
     expireEveryToken();
     const identity = await service.resolve(env[AGENT_TOKEN_ENV_VAR]!);
     expect(identity?.inactive).toBe('expired');
 
+    const permission = await resolveCallPermission({ action: MANAGE_ROOMS, identity });
     const decision = enforceCapabilityTier({
-      permission: null,
-      action: UNINSTALL,
+      permission,
+      action: MANAGE_ROOMS,
       identity,
-      input: { name: 'sentry-monitor' },
+      input: {},
       retryChannel: 'mcp-argument',
     });
 
-    // A person is asked, exactly as if no permission existed.
-    expect(decision.outcome).toBe('approval_required');
+    expect(decision.outcome).toBe('denied');
+    if (decision.outcome === 'denied') expect(decision.payload.approvable).toBe(false);
   });
 
-  it('still resolves it for the live agent, which is the control', async () => {
-    initCapabilityTierGate({
-      approvals: new ApprovalService(createTestDb()),
-      standingGrants: {
-        enabled: () => true,
-        findLive: () => ({ id: 'grant-1' }) as never,
-      },
+  it('still honors it for the live agent, which is the control', async () => {
+    initCapabilityTierGate({ approvals: new ApprovalService(createTestDb()) });
+    initPermissionGate({
+      readConfig: () => ({ preset: 'full', defaults: { areas: {}, actions: {} } }),
+      readAgentPermissions: async () => ({ actions: { [MANAGE_ROOMS.id]: 'allowed' } }),
     });
     const env = await resolveAgentTokenEnv(agentPath, 'Warden');
     const identity = await service.resolve(env[AGENT_TOKEN_ENV_VAR]!);
 
+    const permission = await resolveCallPermission({ action: MANAGE_ROOMS, identity });
     const decision = enforceCapabilityTier({
-      permission: null,
-      action: UNINSTALL,
+      permission,
+      action: MANAGE_ROOMS,
       identity,
-      input: { name: 'sentry-monitor' },
+      input: {},
       retryChannel: 'mcp-argument',
     });
 

@@ -1690,8 +1690,10 @@ describe('the rooms MANAGEMENT verbs', () => {
         ['rooms.leave', { roomId: channel.id }],
         ['rooms.archive', { roomId: channel.id }],
       ] as const) {
+        // Approvable, because the agent may ask on purpose with the request
+        // tool; a direct call still raises no card (spec `agent-permissions` D8).
         await expect(call(id, input), id).rejects.toMatchObject({
-          decision: { payload: { reason: 'permission_blocked', approvable: false } },
+          decision: { payload: { reason: 'permission_blocked', approvable: true } },
         });
       }
       // Nothing ran: the room is exactly as it was.

@@ -184,6 +184,50 @@ describe('capability approval hold (DOR-939)', () => {
     });
   });
 
+  describe('an unattended turn (spec agent-permissions D6)', () => {
+    it('does not hold: the ask comes back at once, with no card and no delivery claim', async () => {
+      // No fake timers needed: were the hold to wait, this call would sit for the
+      // whole ten-minute cap and the test would time out.
+      const result = await invokeCapabilityAsMcpResult(
+        registry,
+        'gated.destroy',
+        { name: 'production' },
+        { identity: AGENT, sessionId: 'scheduled-run-1' },
+        hold({ unattended: () => true })
+      );
+
+      const payload = payloadOf(result);
+      expect(payload.status).toBe('approval_required');
+      // Nobody is watching this stream, so nothing was drawn on it.
+      expect(session.eventQueue).toEqual([]);
+      expect(ran).toEqual([]);
+      // The approval knows where to deliver the answer, and nothing holds the
+      // claim, so the out-of-band deliverer can wake the session when a person
+      // answers from the inbox.
+      const approvalId = payload.approvalId as string;
+      expect(approvals.claimVerdictDelivery(approvalId)).toBe(true);
+      approvals.releaseVerdictDelivery(approvalId);
+      approvals.grant(approvalId);
+      expect(approvals.verdictDelivery(approvalId)).toMatchObject({
+        sessionId: 'scheduled-run-1',
+        verdict: { outcome: 'granted' },
+      });
+    });
+
+    it('still holds a turn a person is watching', async () => {
+      const resultP = invokeCapabilityAsMcpResult(
+        registry,
+        'gated.destroy',
+        { name: 'production' },
+        { identity: AGENT },
+        hold({ unattended: () => false })
+      );
+      await vi.waitFor(() => expect(cardData()).toBeDefined());
+      approvals.grant(cardData()!.approval.approvalId);
+      expect(payloadOf(await resultP)).toEqual({ deleted: 'production' });
+    });
+  });
+
   it('resumes on a DENY as denied, and never runs the handler', async () => {
     const resultP = invokeCapabilityAsMcpResult(
       registry,

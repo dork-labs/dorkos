@@ -294,7 +294,8 @@ function withToolExposure(tools: SdkMcpTool[], alwaysLoaded: ReadonlySet<string>
  */
 export function createDorkOsToolServer(
   deps: McpToolDeps,
-  session?: McpToolSession & Pick<import('../agent-types.js').AgentSession, 'connectorTurn'>,
+  session?: McpToolSession &
+    Pick<import('../agent-types.js').AgentSession, 'connectorTurn' | 'unattendedApprovals'>,
   sessionId?: string,
   marketplaceDeps?: MarketplaceMcpDeps,
   registry?: CapabilityRegistry,
@@ -337,7 +338,18 @@ export function createDorkOsToolServer(
   // queue to render the inline card into) and the approval primitive can a fresh
   // destructive call hold inline and resume. Absent either — the introspection
   // stub, a hermetic test — capabilities keep the token/poll flow untouched.
-  const hold = session && deps.approvals ? { session, approvals: deps.approvals } : undefined;
+  //
+  // An unattended turn (a scheduled run, a chat binding, a connector event)
+  // keeps the seam but never holds: `unattended` is read per call, because one
+  // warm session serves turns of both kinds (spec `agent-permissions` D6).
+  const hold =
+    session && deps.approvals
+      ? {
+          session,
+          approvals: deps.approvals,
+          unattended: () => session.unattendedApprovals === true,
+        }
+      : undefined;
   const server = createSdkMcpServer({
     // Not a label: Claude Code qualifies every tool on this server as
     // `mcp__<name>__<tool>`, so this string is half of what the model must type

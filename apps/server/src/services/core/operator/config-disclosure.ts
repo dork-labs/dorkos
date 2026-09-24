@@ -418,20 +418,8 @@ export const CONFIG_DISCLOSURE = {
 
   'auth.enabled': 'expose',
 
-  // A posture, not a roster. These two say whether standing permissions may
-  // exist here and for how long one lasts; WHICH agents are trusted lives in
-  // SQLite and never passes through config at all, so there is nothing here for
-  // an agent to learn about anyone's trust but its own instance's settings.
-  'approvals.standingGrants': 'expose',
-  'approvals.trustWindowMinutes': 'expose',
-  // Same reasoning one step further: a timestamp saying when this install last
-  // switched standing permissions off names no agent and no person. Exposing it
-  // also lets an agent understand why a permission it used to have stopped
-  // working, which is better than silently finding out.
-  'approvals.standingGrantsVoidBefore': 'expose',
-
-  // What agents may do here (spec `agent-permissions`). A posture, like the
-  // approvals above: the preset and the changes on top of it name no person and
+  // What agents may do here (spec `agent-permissions`). A posture, not a
+  // roster: the preset and the changes on top of it name no person and
   // no secret, and an agent that can read them can explain a refusal instead of
   // guessing. Per-agent differences live in each agent's own manifest.
   'permissions.preset': 'expose',

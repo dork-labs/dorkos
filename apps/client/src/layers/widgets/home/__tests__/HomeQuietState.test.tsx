@@ -122,6 +122,8 @@ function buildApproval(): PendingApproval {
     tier: 'destructive',
     summary: 'Uninstall "sentry-monitor"',
     hasAgentPath: true,
+    area: null,
+    alwaysOffered: false,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 8 * 60_000).toISOString(),
   };

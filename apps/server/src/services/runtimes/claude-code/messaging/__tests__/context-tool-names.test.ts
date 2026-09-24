@@ -454,7 +454,12 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     //
     // 104 -> 105 for `archive_room` (spec `agent-permissions` D12), on the same
     // terms: deferred and unprefixed.
-    expect(advertised.size).toBe(105);
+    //
+    // 105 -> 107 for `request_permission` and `list_my_permissions` (spec
+    // `agent-permissions` D8, D9). No claude-code prompt block names either bare:
+    // the Blocked-area line names the request tool by its ENDING, the form that
+    // survives every runtime's prefix.
+    expect(advertised.size).toBe(107);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [

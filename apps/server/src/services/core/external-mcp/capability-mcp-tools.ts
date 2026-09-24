@@ -66,7 +66,7 @@ export function registerCapabilitiesAsMcpTools(
           registry,
           capability.id,
           args,
-          context,
+          { ...context, mcpServer: transport },
           undefined,
           abortSignalOf(extra)
         )

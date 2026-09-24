@@ -248,8 +248,16 @@ export interface OperatingSkill {
  *   feedback form now, and `answering-dorkos-questions` said to look for a menu
  *   entry that no longer exists. An agent seeded at 22 would keep sending people
  *   to it.
+ * - 24: permissions (spec `agent-permissions`, phase 2). An `act` call can now wait
+ *   for a person (its area set to Ask), any tier can be refused as Blocked, and a
+ *   Blocked agent asks with `request_permission` under three limits that answer
+ *   `request_pending`, `recently_denied` and `request_limit`. `operating-dorkos`
+ *   said `act` always runs and knew none of those reasons, so an agent seeded at
+ *   23 would read a refusal it could ask past as final, or ask again into a limit
+ *   with no idea why it was held back. Paid for by folding the tier list and
+ *   dropping the rule that restated it.
  */
-export const OPERATING_SKILLS_VERSION = 23;
+export const OPERATING_SKILLS_VERSION = 24;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

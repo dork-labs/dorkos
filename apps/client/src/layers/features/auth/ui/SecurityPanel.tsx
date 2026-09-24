@@ -13,10 +13,7 @@ import {
   Switch,
 } from '@/layers/shared/ui';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
-import {
-  AutonomyAcknowledgementRow,
-  StandingPermissionsSettings,
-} from '@/layers/features/approvals';
+import { AutonomyAcknowledgementRow } from '@/layers/features/approvals';
 import { OwnerSetupScreen } from './OwnerSetupScreen';
 import { ApiKeysSection } from './ApiKeysSection';
 import { useCurrentUser, useSignOut } from '../model/use-auth-session';
@@ -97,20 +94,10 @@ export function SecurityPanel() {
         </FieldCardContent>
       </FieldCard>
 
-      {/* Standing permissions live directly under Require login, and not behind
-          it. The control needs login on, so the fix has to be the thing directly
-          above it — hiding it until login is on would leave somebody looking for
-          a feature they read about with nothing to find, and no way to learn what
-          turning login on would buy them. */}
-      <FieldCard>
-        <FieldCardContent>
-          <StandingPermissionsSettings />
-          {/* The other standing answer a person can give about being asked —
-              in the same card, because "what am I no longer being asked about"
-              is one question. Draws nothing until there is something on file. */}
-          <AutonomyAcknowledgementRow />
-        </FieldCardContent>
-      </FieldCard>
+      {/* The standing answer a person can give about being asked: what they
+          are no longer asked about. Draws nothing until there is something on
+          file. */}
+      <AutonomyAcknowledgementRow />
 
       {/* Keys outlive the login flag, so this card must too (DOR-1885). Turning
           "Require login" off deletes no key, ends no session and stops nothing

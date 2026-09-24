@@ -18,10 +18,11 @@
  * Activity record and never two. For a REGISTRY capability the attribution
  * observer next door writes that record.
  *
- * ## The one exception: a call a standing permission let through
+ * ## The one exception: a call an Allowed permission let through
  *
- * A destructive call allowed by a standing permission IS recorded here, as
- * `capability.auto_approved` (spec `agent-approval-settings` §3.6). It is the one
+ * A destructive call allowed by an action-level Allowed permission (an Always
+ * allow, spec `agent-permissions` D6) IS recorded here, as
+ * `capability.auto_approved`. It is the one
  * allowed decision the gate reports, and it is not a duplicate of anything: the
  * attribution observer knows that the call ran, but only the gate knows that
  * nobody was asked. On a registry-borne surface both lines appear, and they say
@@ -42,7 +43,7 @@
  *   (`routes/marketplace.ts`), so an approved uninstall through the cockpit route
  *   leaves the same silence. Closing it needs the same observer on that seam.
  *
- * Both matter more now that a standing permission can allow a call: an
+ * Both matter more now that an Always allow can let a call through: an
  * auto-approved uninstall on either path yields one line saying nobody was asked
  * and nothing saying it ran.
  *
@@ -84,30 +85,17 @@ export function createCapabilityGateAuditObserver(
     const actor = activityActorForIdentity(identity);
     const label = actor.actorLabel;
 
-    // The one allowed decision the gate reports: a destructive call a standing
-    // permission let through with no card. Recording it is what keeps a window in
-    // which DorkOS stops asking from also being a window in which it stops
-    // telling — the operator's answer to "what did my agent do while I was not
-    // being asked". `identity` is always present here, because a permission keys on
-    // agent path and an anonymous caller can never match one — `resolveStandingGrant`
-    // in `../capabilities/tier-enforcement.ts` returns `undefined` on `!identity`
-    // before any grant is looked up, so `outcome: 'allowed'` cannot reach here
-    // unnamed.
+    // The one allowed decision the gate reports: a destructive call an
+    // ACTION-level Allowed permission let through with no card (spec
+    // `agent-permissions` D6). A person named this exact action as allowed (an
+    // Always allow, or a setting on the permissions page), so there was no card,
+    // and the line says which layer allowed it. Recording it is what keeps a
+    // stretch in which DorkOS stops asking from also being one in which it stops
+    // telling: the operator's answer to "what did my agent do while I was not
+    // being asked".
     //
-    // That is the one place the DOR-1801 extraction is not byte-for-byte
-    // behavior-preserving, and it is worth stating rather than leaving for the
-    // next reader to re-derive. This branch used to assert `actorType: 'agent'`
-    // unconditionally while taking its label from a formula that answers
-    // `'Unidentified caller'` for a missing identity — so had the unreachable case
-    // ever become reachable, it would have written an agent-typed row labelled
-    // "Unidentified caller" with no `actorId`. Deriving the whole actor together
-    // removes that latent mismatch: the type, the id and the label now cannot
-    // disagree about who acted.
-    //
-    // The second way here is a destructive call an ACTION-level Allowed
-    // permission let through (spec `agent-permissions` D6): a person named this
-    // exact action as allowed, so there was no card, and the line says which
-    // layer allowed it.
+    // The actor is derived whole (DOR-1801), so type, id and label cannot
+    // disagree about who acted, whether or not an identity is present.
     if (decision.outcome === 'allowed') {
       const approval = decision.approval;
       void activityService.emit({
@@ -117,16 +105,12 @@ export function createCapabilityGateAuditObserver(
         resourceType: 'capability',
         resourceId: action.id,
         resourceLabel: action.title,
-        summary:
-          approval.via === 'permission'
-            ? `${label} ran ${action.title} because its permission is set to Allowed`
-            : `${label} ran ${action.title} under a standing permission you granted`,
+        summary: `${label} ran ${action.title} because its permission is set to Allowed`,
         metadata: {
           capabilityId: action.id,
           tier: action.tier,
-          ...(approval.via === 'permission'
-            ? { via: 'permission', source: approval.source }
-            : { grantId: approval.grantId }),
+          via: 'permission',
+          source: approval.source,
           ...(permission ? { permission } : {}),
         },
       });

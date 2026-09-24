@@ -285,8 +285,8 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
             // this suite's steady state, so without this every spec is ambushed by
             // it the way telemetry once ambushed them. Settle a real "supervised"
             // decision: it records that the question was answered WITHOUT flipping
-            // any consent-gated value (no autonomy stop, no standing grants, no open
-            // mesh), so the suite runs at the same safe defaults it always has. The
+            // any consent-gated value (no autonomy stop, no open mesh), so the suite
+            // runs at the same safe defaults it always has. The
             // opt-in `full-power-door.spec.ts` re-opens the door on its own serial
             // run; nothing else should see it.
             ui: {

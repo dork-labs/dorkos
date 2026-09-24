@@ -21,8 +21,6 @@ import {
   CONFIG_WRITE_POLICY,
   OPERATOR_ONLY_CONFIG_PATHS,
   OPERATOR_ONLY_STAKES,
-  REQUIRES_LOGIN_CONFIG_PATHS,
-  findLoginRequiredPaths,
   findOperatorOnlyPaths,
   describeOperatorOnlyRefusal,
 } from '../config-write-policy.js';
@@ -62,9 +60,6 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'agentContext.relayTools',
       'agentContext.tasksTools',
       'agents.defaultDirectory',
-      'approvals.standingGrants',
-      'approvals.standingGrantsVoidBefore',
-      'approvals.trustWindowMinutes',
       'auth.enabled',
       'cloud.instanceName',
       'cloud.instanceToken',
@@ -274,72 +269,6 @@ describe('the wipe floor: the write policy is at least as protective as recovery
     for (const { path } of PROTECTIVE_CARRYOVERS) {
       expect(findOperatorOnlyPaths(patchForPath(path)), `unguarded: ${path}`).toContain(path);
     }
-  });
-});
-
-describe('REQUIRES_LOGIN_CONFIG_PATHS drift guard', () => {
-  it('covers every leaf of the approvals subtree', () => {
-    // A third `approvals.*` setting added later must not get the weaker bar just
-    // by existing. `operator-only` alone does not cover it: on `PATCH /api/config`
-    // that check allows any caller while login is off, which would leave the new
-    // setting pre-armable by an agent for the day the person turns login on.
-    const approvalsLeaves = configSchemaLeafPaths().filter(
-      (p) => p === 'approvals' || p.startsWith('approvals.')
-    );
-    expect(approvalsLeaves.length).toBeGreaterThan(0);
-    expect(approvalsLeaves.filter((p) => !REQUIRES_LOGIN_CONFIG_PATHS.includes(p))).toEqual([]);
-  });
-
-  it('lists nothing that is not a leaf of UserConfigSchema', () => {
-    const schemaLeaves = new Set(configSchemaLeafPaths());
-    expect(REQUIRES_LOGIN_CONFIG_PATHS.filter((p) => !schemaLeaves.has(p))).toEqual([]);
-  });
-
-  it('requires the stricter bar only on top of the operator-only one', () => {
-    // The login requirement is an ADDITION, never a substitution. A path that
-    // needed login but was agent-writable would be reachable from the capability
-    // surface with no bar at all.
-    for (const dotPath of REQUIRES_LOGIN_CONFIG_PATHS) {
-      expect(CONFIG_WRITE_POLICY[dotPath as keyof typeof CONFIG_WRITE_POLICY]).toBe(
-        'operator-only'
-      );
-    }
-  });
-});
-
-describe('findLoginRequiredPaths', () => {
-  it('catches the exact leaf', () => {
-    expect(findLoginRequiredPaths({ approvals: { standingGrants: true } })).toEqual([
-      'approvals.standingGrants',
-    ]);
-  });
-
-  it('catches a patch that stops SHORT of the guarded leaf', () => {
-    // `{ approvals: true }` never reaches a leaf as a dot-path, so a plain
-    // equality check would wave it through to the merge.
-    expect(findLoginRequiredPaths({ approvals: true })).toEqual([
-      'approvals.standingGrants',
-      'approvals.standingGrantsVoidBefore',
-      'approvals.trustWindowMinutes',
-    ]);
-    expect(findLoginRequiredPaths({ approvals: {} })).toEqual([
-      'approvals.standingGrants',
-      'approvals.standingGrantsVoidBefore',
-      'approvals.trustWindowMinutes',
-    ]);
-  });
-
-  it('catches the window as well as the switch', () => {
-    // Lengthening the window widens the same hole the switch opens.
-    expect(findLoginRequiredPaths({ approvals: { trustWindowMinutes: 1440 } })).toEqual([
-      'approvals.trustWindowMinutes',
-    ]);
-  });
-
-  it('leaves every other setting to the ordinary bar', () => {
-    expect(findLoginRequiredPaths({ auth: { enabled: false }, ui: { theme: 'dark' } })).toEqual([]);
-    expect(findLoginRequiredPaths(undefined)).toEqual([]);
-    expect(findLoginRequiredPaths([{ approvals: { standingGrants: true } }])).toEqual([]);
   });
 });
 
@@ -661,19 +590,6 @@ describe('the array descent changes no other verdict (DOR-1113)', () => {
         expect(findOperatorOnlyPaths(patch), `${dotPath}: ${JSON.stringify(patch)}`).toEqual(
           legacyFindOperatorOnlyPaths(patch)
         );
-      }
-    }
-  });
-
-  it('agrees with the pre-fix matcher on the login bar too', () => {
-    // `findLoginRequiredPaths` shares the matcher and guards no `[]` path, so it
-    // must come out of this change completely unmoved.
-    for (const dotPath of plainPaths) {
-      for (const patch of patchesFor(dotPath)) {
-        const legacy = legacyFindOperatorOnlyPaths(patch).filter((path) =>
-          REQUIRES_LOGIN_CONFIG_PATHS.includes(path)
-        );
-        expect(findLoginRequiredPaths(patch), `${dotPath}`).toEqual(legacy);
       }
     }
   });

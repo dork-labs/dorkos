@@ -14,8 +14,8 @@
  * keeps only the words it says when refusing.
  *
  * The record they write is `extensions.approvedToRun` in `~/.dork/config.json`,
- * classified `operator-only`. Why that home and not a project file, why not a
- * standing permission, and what the gate buys in each posture: see
+ * classified `operator-only`. Why that home and not a project file or an
+ * approval, and what the gate buys in each posture: see
  * `services/extensions/extension-load-policy.ts`.
  *
  * There is deliberately no MCP tool twin for these. Every other extension

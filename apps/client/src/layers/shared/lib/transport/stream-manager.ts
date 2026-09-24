@@ -255,7 +255,6 @@ export const GENERIC_EVENTS = [
   'mesh_liveness_changed',
   'approval_pending',
   'approval_resolved',
-  'approval_grant_changed',
   // A blocking condition began or stopped standing (DOR-1570). A standing kind
   // stores no row while it stands, so these are the only live news that a
   // schedule was proposed or an approval is waiting — which is what the desktop

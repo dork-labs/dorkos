@@ -47,8 +47,8 @@ export interface RequestUser {
    *
    * Required, not optional, and that is the point. A few writes are reserved for
    * a person sitting in the cockpit rather than for anything holding a valid
-   * credential — creating a standing permission, and changing the settings that
-   * govern them (spec `agent-approval-settings` §3.0). A per-user API key
+   * credential — answering an approval, and changing an `operator-only` setting
+   * or a permission. A per-user API key
    * satisfies this gate exactly as a browser session does (DOR-474), so those
    * writes have to be able to tell the two apart, and `undefined` reading as
    * "not a cookie" would be correct by accident rather than by type. Every site

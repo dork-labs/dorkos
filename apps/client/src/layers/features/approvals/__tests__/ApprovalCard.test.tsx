@@ -36,6 +36,8 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
     summary: 'Uninstall "sentry-monitor"',
     requestedBy: '/Users/dev/agents/dorkbot',
     hasAgentPath: true,
+    area: null,
+    alwaysOffered: false,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 90 * 60_000).toISOString(),
     ...overrides,
@@ -102,7 +104,7 @@ describe('ApprovalCard', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
 
     expect(grantApproval).toHaveBeenCalledWith('01JZ0000000000000000000001', undefined);
-    expect(screen.getByText('Allowed')).toBeInTheDocument();
+    expect(screen.getByText('Allowed once')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
     settle();
   });
@@ -112,7 +114,7 @@ describe('ApprovalCard', () => {
       denyApproval: vi.fn().mockResolvedValue({ ok: true, outcome: 'denied' }),
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Don’t allow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Deny' }));
 
     expect(await screen.findByText('Not allowed')).toBeInTheDocument();
   });
@@ -139,13 +141,13 @@ describe('ApprovalCard', () => {
     });
 
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
-    expect(screen.getByText('Allowed')).toBeInTheDocument();
+    expect(screen.getByText('Allowed once')).toBeInTheDocument();
 
     refuse();
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Allow' })).toBeInTheDocument());
-    expect(screen.queryByText('Allowed')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Don’t allow' })).toBeInTheDocument();
+    expect(screen.queryByText('Allowed once')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Deny' })).toBeInTheDocument();
   });
 
   it('draws the receipt on a card that did not itself answer', async () => {
@@ -158,7 +160,7 @@ describe('ApprovalCard', () => {
 
     act(() => holdDecidedApproval(buildApproval(), 'granted'));
 
-    expect(screen.getByText('Allowed')).toBeInTheDocument();
+    expect(screen.getByText('Allowed once')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
   });
 
@@ -166,12 +168,11 @@ describe('ApprovalCard', () => {
     // The bug this design closes (DOR-1411 review). The hold is a 0.6s window
     // on the LIST; a card can outlive it — the transcript's copy is drawn from
     // the message part, so the refetch never unmounts it. When the answer
-    // expired with the hold, that card flashed "Allowed" and then went back to
-    // offering Allow, Don't allow and a standing grant on a request that was
-    // already decided. The event that would have corrected it
+    // expired with the hold, that card flashed its receipt and then went back
+    // to offering its answers on a request that was already decided. The event that would have corrected it
     // (`capability_approval_resolved`) is documented as droppable, so the
     // revert could be permanent.
-    renderCard(buildApproval());
+    renderCard(buildApproval({ area: 'rooms', alwaysOffered: true }));
 
     // Fake time is installed BEFORE the hold, not after: `setTimeout` is
     // captured at call time, so a hold armed under real timers is a real timer
@@ -190,12 +191,86 @@ describe('ApprovalCard', () => {
 
     expect(screen.getByText('Not allowed')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Don’t allow' })).not.toBeInTheDocument();
-    // The standing-grant offer is the loudest of the three and the easiest to
-    // leave behind: it is gated on `!decision`, not on the buttons above it.
-    expect(
-      screen.queryByRole('button', { name: /stop asking about this/i })
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Deny' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Always allow' })).not.toBeInTheDocument();
+  });
+
+  describe('the three answers (spec agent-permissions D7)', () => {
+    /** A Rooms request DorkBot made, on which Always allow is offered. */
+    const ROOMS = buildApproval({
+      capabilityId: 'rooms.create',
+      capabilityTitle: 'Open a room',
+      tier: 'act',
+      requestedBy: 'DorkBot',
+      area: 'rooms',
+      alwaysOffered: true,
+    });
+
+    it('offers Allow, Always allow and Deny, in that order', () => {
+      renderCard(ROOMS);
+      const names = screen.getAllByRole('button').map((b) => b.textContent);
+      expect(names).toEqual(['Allow', 'Always allow', 'Deny']);
+    });
+
+    it('sends each answer as what it is', async () => {
+      const grantApproval = vi.fn().mockResolvedValue({ ok: true, outcome: 'granted' });
+      const denyApproval = vi.fn().mockResolvedValue({ ok: true, outcome: 'denied' });
+
+      renderCard(ROOMS, { grantApproval });
+      await userEvent.click(screen.getByRole('button', { name: 'Always allow' }));
+      expect(grantApproval).toHaveBeenCalledWith(ROOMS.approvalId, { answer: 'always' });
+      expect(await screen.findByText('Always allowed for DorkBot: Open a room')).toBeVisible();
+      cleanup();
+      discardSettlingApprovals();
+
+      renderCard(ROOMS, { grantApproval });
+      await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+      expect(grantApproval).toHaveBeenLastCalledWith(ROOMS.approvalId, undefined);
+      expect(await screen.findByText('Allowed once')).toBeVisible();
+      cleanup();
+      discardSettlingApprovals();
+
+      renderCard(ROOMS, { denyApproval });
+      await userEvent.click(screen.getByRole('button', { name: 'Deny' }));
+      expect(denyApproval).toHaveBeenCalledWith(ROOMS.approvalId, undefined);
+      expect(await screen.findByText('Not allowed')).toBeVisible();
+    });
+
+    it('hides Always allow when the server does not offer it', () => {
+      renderCard(buildApproval({ area: 'rooms', alwaysOffered: false, hasAgentPath: false }));
+      expect(screen.queryByRole('button', { name: 'Always allow' })).not.toBeInTheDocument();
+      // No setting would help here, so nothing explains a missing button.
+      expect(screen.queryByText(/Always allow isn.t offered/)).not.toBeInTheDocument();
+    });
+
+    it('says why on a floor area, and shows only Allow and Deny', () => {
+      renderCard(buildApproval({ area: 'reach', alwaysOffered: false }));
+      expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Allow', 'Deny']);
+      expect(
+        screen.getByText(
+          "Always allow isn't offered here. Changing this needs your yes every time."
+        )
+      ).toBeInTheDocument();
+    });
+
+    it('says a request past Blocked is one, and quotes the reason the agent gave', () => {
+      renderCard({
+        ...ROOMS,
+        blockedRequest: true,
+        requestReason: 'You asked me to set up the lunar room.',
+      });
+      const line = document.querySelector('[data-slot="approval-blocked-request"]');
+      expect(line).toHaveTextContent(
+        'DorkBot is blocked from Rooms and is asking to be allowed. It says: You asked me to set up the lunar room.'
+      );
+      // Quoted, never presented as DorkOS's own claim.
+      expect(line?.querySelector('q')).toHaveTextContent('You asked me to set up the lunar room.');
+    });
+
+    it('draws no blocked line on an ordinary request', () => {
+      renderCard(ROOMS);
+      expect(document.querySelector('[data-slot="approval-blocked-request"]')).toBeNull();
+    });
   });
 
   describe('the argument a person has to read in full (DOR-1698)', () => {
