@@ -1,7 +1,7 @@
 ---
 id: 260923-193906
 title: The marketplace package cache keeps what installs need and sweeps itself on write
-status: draft
+status: accepted
 created: 2026-09-23
 spec: marketplace-cache-retention
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: marketplace-cache-retention)
+Accepted.
 
 ## Context
 

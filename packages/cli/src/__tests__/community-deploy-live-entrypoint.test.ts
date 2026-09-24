@@ -91,4 +91,29 @@ describe('credentialed live gate entrypoint', () => {
       /action\.type === 'refuse'\) \{[^}]*reject\(new CommunityLiveGateError\(action\.step\)\);\s*terminal\.kill\(\);/u
     );
   });
+
+  // The decisions are unit-tested beside their modules; a real run costs money, so this pins
+  // where main makes them. A failure after cleanup must not print a recovery command for resources
+  // already deleted, and a resumed launcher that exits cleanly must not hold the run for the whole
+  // twelve-minute capture timeout.
+  it('marks cleanup finished before its last reads, and bounds the second secret by the launcher', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    const cleanup = main.indexOf('await cleanupCommunityLiveGate(');
+    const cleanedUp = main.indexOf('cleanedUp = true;');
+    const afterRead = main.indexOf('const after = {');
+    expect(cleanup).toBeGreaterThan(0);
+    expect(cleanedUp).toBeGreaterThan(cleanup);
+    expect(cleanedUp).toBeLessThan(afterRead);
+    expect(main).toMatch(
+      /catch \(error\) \{\s*throw await explainCommunityLiveGateFailure\(error, \{ cleanedUp, recoveryCommand \}/u
+    );
+    expect(source).toMatch(/process\.stderr\.write\(describeCommunityLiveGateFailure\(error\)\)/u);
+    expect(main).toMatch(
+      /bootstrap = await whileLauncherRuns\(resumed, capture\.next\(TIMEOUT_MS\), \{\s*ms: DELIVERED_CAPTURE_MS,\s*step: 'bootstrap-capture-after-launcher-exit',\s*\}\)/u
+    );
+  });
 });

@@ -11,7 +11,8 @@
  *   - `apps/server/src/services/marketplace/types.ts` — PermissionPreview, InstallResult,
  *     InstallRequest, MarketplaceSource, ConflictReport
  *   - `apps/server/src/services/marketplace/flows/uninstall.ts` — UninstallResult
- *   - `apps/server/src/services/marketplace/flows/update.ts` — UpdateResult, UpdateCheckResult
+ *   - `apps/server/src/services/marketplace/flows/update.ts` — UpdateResult, UpdateCheckResult,
+ *     InstallationUpdateCheck, InstallationUpdatesResult
  *   - `apps/server/src/services/shapes/apply-shape.ts` — ApplyShapeResult, AppliedShape,
  *     OfferedAgent, ShapeLayout (DOR-355 §5/§9)
  *   - `apps/server/src/services/shapes/shape-services.ts` — InstalledShapeSummary
@@ -562,6 +563,43 @@ export interface UpdateResult {
   checks: UpdateCheckResult[];
   /** Populated only when `apply: true`; one entry per successful reinstall. */
   applied: InstallResult[];
+}
+
+/**
+ * One installation's update check, returned by `GET /api/marketplace/updates`
+ * and `POST /api/marketplace/updates`: the check, the installation's identity in
+ * the installed list's own field names (`installPath` joins the two), and after
+ * an apply, what happened to it.
+ *
+ * Mirrors `InstallationUpdateCheck` in `apps/server/src/services/marketplace/flows/update.ts`.
+ */
+export interface InstallationUpdateCheck extends UpdateCheckResult {
+  /** Absolute path to the installation; unique per installation, unlike the name. */
+  installPath: string;
+  /** The installed package's type. */
+  type: MarketplacePackageType;
+  /** `global`, or `agent-local` / `override` for a project or agent install. */
+  scope: PackageScope;
+  /** The project directory holding a non-global installation. */
+  agentPath?: string;
+  /** Registered agent id owning `agentPath`, when known. */
+  agentId?: string;
+  /** Registered agent display name owning `agentPath`, when known. */
+  agentName?: string;
+  /** Set when an apply reinstalled this installation: what is installed now. */
+  applied?: InstallResult;
+  /** Set when an apply tried to reinstall this installation and failed: why. */
+  applyError?: string;
+}
+
+/**
+ * The all-packages update result: one check per installation in view, in scan
+ * order (global installations first, then each agent's).
+ *
+ * Mirrors `InstallationUpdatesResult` in `apps/server/src/services/marketplace/flows/update.ts`.
+ */
+export interface InstallationUpdatesResult {
+  checks: InstallationUpdateCheck[];
 }
 
 // ---------------------------------------------------------------------------

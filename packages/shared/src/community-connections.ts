@@ -17,7 +17,11 @@ import { CommunityConnectionAccessSchema } from './community-wire.js';
 
 /**
  * Activity state for one owner-scoped Community connection. A number is only
- * present when it came from a current authorized Community response.
+ * present when it came from an authorized Community response: `verified`
+ * counts answered this read, `stale` counts are the last ones the Community
+ * confirmed (at `verifiedAt`) when it did not answer in time this read, and
+ * `unavailable` means it has not confirmed any since the connection was last
+ * readable.
  */
 export const CommunityConnectionAttentionSchema = z.discriminatedUnion('state', [
   z.strictObject({
@@ -48,8 +52,25 @@ export const CommunityConnectionDescriptorSchema = z
     expiresAt: z.iso.datetime().nullable(),
     access: CommunityConnectionAccessSchema.nullable(),
     attention: CommunityConnectionAttentionSchema.nullable(),
+    /**
+     * `true` when the host just confirmed that the account behind this
+     * connection runs the host, so the app may offer the host's own "create a
+     * community" page. Absent means no: the host did not say, is too old to
+     * say, or could not be reached. It opens a page and grants nothing; that
+     * page checks host authority again.
+     */
+    hostOperator: z.boolean().optional(),
   })
   .superRefine((connection, context) => {
+    if (
+      connection.hostOperator &&
+      (connection.status !== 'connected' || connection.access?.state !== 'verified')
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Only a verified connection can report host authority.',
+      });
+    }
     if (connection.status === 'pending' && connection.access !== null) {
       context.addIssue({ code: 'custom', message: 'Pending connections cannot have access.' });
     }

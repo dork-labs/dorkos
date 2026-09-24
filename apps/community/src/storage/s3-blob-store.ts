@@ -10,8 +10,20 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import type { BlobRead, BlobStore, PutBlobInput, StoredBlob } from './blob-store.js';
-import { assertNotAborted, BlobStoreError, stageBlob, validateBlobKey } from './blob-store.js';
+import type {
+  BlobGetOptions,
+  BlobRead,
+  BlobStore,
+  PutBlobInput,
+  StoredBlob,
+} from './blob-store.js';
+import {
+  assertNotAborted,
+  BlobStoreError,
+  stageBlob,
+  validateBlobKey,
+  validateBlobRange,
+} from './blob-store.js';
 
 /** Settings for a private S3-compatible bucket; credentials may come from the SDK chain. */
 export interface S3BlobStoreOptions {
@@ -75,17 +87,44 @@ export class S3BlobStore implements BlobStore {
     }
   }
 
-  /** Open an SDK response stream; callers must consume or destroy it to release the socket. */
-  async get(key: string, options: { signal?: AbortSignal } = {}): Promise<BlobRead> {
+  /**
+   * Open an SDK response stream, or an inclusive range of the object with a `Range` request whose
+   * `Content-Range` answer must match it exactly. Callers must consume or destroy the stream to
+   * release the socket.
+   */
+  async get(key: string, options: BlobGetOptions = {}): Promise<BlobRead> {
     validateBlobKey(key);
+    const { range } = options;
+    if (range) validateBlobRange(range);
     assertNotAborted(options.signal);
     try {
       const result = await this.client.send(
-        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          ...(range ? { Range: `bytes=${range.start}-${range.end}` } : {}),
+        }),
         { abortSignal: options.signal }
       );
       if (!(result.Body instanceof Readable)) throw new Error('S3 returned no readable body');
       const body = result.Body;
+      if (range) {
+        const expected = range.end - range.start + 1;
+        const answered = /^bytes (\d+)-(\d+)\/(?:\d+|\*)$/.exec(result.ContentRange ?? '');
+        if (
+          !answered ||
+          Number(answered[1]) !== range.start ||
+          Number(answered[2]) !== range.end ||
+          (result.ContentLength !== undefined && result.ContentLength !== expected)
+        ) {
+          // S3 shortens a range that runs past the end instead of refusing it.
+          body.destroy();
+          throw new BlobStoreError(
+            'BLOB_RANGE_NOT_SATISFIABLE',
+            'Range is past the end of the blob'
+          );
+        }
+      }
       if (options.signal) {
         const abort = () =>
           body.destroy(new BlobStoreError('BLOB_ABORTED', 'Blob operation cancelled'));
@@ -93,11 +132,17 @@ export class S3BlobStore implements BlobStore {
         body.once('close', () => options.signal?.removeEventListener('abort', abort));
         if (options.signal.aborted) abort();
       }
-      return { body, byteSize: result.ContentLength ?? 0 };
+      return {
+        body,
+        byteSize: range ? range.end - range.start + 1 : (result.ContentLength ?? 0),
+      };
     } catch (error) {
       if (options.signal?.aborted)
         throw new BlobStoreError('BLOB_ABORTED', 'Blob operation cancelled');
       if (isMissing(error)) throw new BlobStoreError('BLOB_NOT_FOUND', 'Blob not found');
+      if (isRangeNotSatisfiable(error)) {
+        throw new BlobStoreError('BLOB_RANGE_NOT_SATISFIABLE', 'Range is past the end of the blob');
+      }
       throw error;
     }
   }
@@ -152,6 +197,12 @@ export class S3BlobStore implements BlobStore {
     }
     return { keys: [...keys].sort(), temporaryKeys: [], unexpectedEntries };
   }
+}
+
+function isRangeNotSatisfiable(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+  return error.name === 'InvalidRange' || status === 416;
 }
 
 function isMissing(error: unknown): boolean {

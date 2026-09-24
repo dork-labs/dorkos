@@ -6,8 +6,8 @@
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 8 / 10 (1.1–1.4 and 2.1–2.4)
+**Status:** Implemented
+**Tasks Completed:** 10 / 10
 
 ## Tasks Completed
 
@@ -56,7 +56,7 @@
 
 ### Session 6 - 2026-09-23
 
-**Branch:** `feat/community-membership-states`
+**PR:** #2021 (`119af0bec`, merged from `feat/community-membership-states`)
 
 - Closed DOR-2181 Task 2.1. The chooser is a labelled list that takes focus on its heading; suspended and unavailable memberships stay focusable (`aria-disabled`) and carry their reason as a description; a remembered choice the account can no longer see is forgotten. Every community route the account cannot enter, including an unknown ID that used to fall through to first-host setup, returns to the chooser with one notice that reads the same in every case. Zero memberships explain how to join and, only for a host operator, link to host administration.
 - Closed DOR-2181 Task 2.2. A new read, `GET /api/v1/invites/pending`, returns the live join attempt's community, inviter, channel, expiry and (when signed in) whether the account's membership is new, active or inactive, from the HttpOnly admission cookie alone; it applies bind's liveness checks and never writes, is sent `no-store`, looks up the tenant-scoped attempt before revealing that a community is closed, and reports when the attempt is bound to a different account. The join page resumes from it after a reload or sign-in return, shows reactivation scope before an inactive member rejoins, and reports every failure as "Membership was not added." (or "Your account was created, but membership was not added.") with one recovery: try again, open the link again, or ask for a new invitation. Each step moves focus to its heading; errors are alerts.
@@ -83,6 +83,18 @@
 - Not fixed, recorded in the e2e report instead: the shared `--destructive` token misses 4.5:1 app-wide, as white text on the destructive button fill (3.76:1 light) and as `text-destructive` error text (3.6:1 light, 4.09:1 dark). It is a design-system token decision, not a membership defect.
 - Phone drawers (vaul, `autoFocus` off by design) do not move focus in on open; the first Tab enters them once the switcher sheet has finished closing. The join dialog's phone test asserts exactly that.
 - Cloud unavailable (`apps/server/src/services/communities/remote/__tests__/cloud-unavailable.test.ts`): the spec asks that "the full journey works with DorkOS Cloud egress blocked". The Community server's half is `tenancy-egress.integration.test.ts`; this file proves the DorkOS half. Every non-loopback TCP connect, DNS lookup, direct DNS query (`dns.resolve*` and `Resolver`, callback and promise) and UDP send or connect in the process is refused and recorded; a control test first shows each kind is refused, including a real `fetch` to dorkos.ai. The journey steps it covers, through the real routes and services against a loopback Community with nothing refused: starting pairing, polling through approval to connected, listing the connection with its attention counts, reading channels and a channel's history, and disconnecting with grant revocation. It does not cover posting, attachments, the live event stream, or agent enrollment. Mutation: a `fetch` to Cloud added to `RemoteCommunityPairingService.start` or to `RemoteCommunityAdapter.attention` turns it red.
+
+### Session 9 - 2026-09-23 (final acceptance run)
+
+**Branch:** `verify/two-desktop-final`
+
+- Closed DOR-2182 Task 3.1. Its last open part was the durable two-Desktop driver, which merged in #2016 (c9b97b0be).
+- Closed DOR-2182 Task 3.2. The two-Desktop acceptance run (`DORKOS_TWO_DESKTOP_ACCEPTANCE=1 pnpm --filter @dorkos/e2e community-two-desktop -- --build`, throwaway Postgres) ran all 30 steps (1–29 plus 15b) on main b29ba8b9b, which has #2019, #2021, #2030, #2033, #2038, #2040 and #2042. Outcome `PASS-WITH-FINDINGS`, exit 0, no product-contract failure. Run `run-1790203094803`; the evidence is kept locally, not in the repo.
+- Exact scope, as the run saw it. Disconnect (step 25) removed only Desktop B's grant on the Community (`["Desktop B"]` before, `[]` after); B stayed a member, A kept posting, and B paired again. Leaving (26) and removal (28) cut B's app off: its local server knew in 20 ms and 13 ms, and the open window moved off the Community in 32 ms and 62 ms (the limit is 10 s). The owner could not leave before handing over ownership (24), an expired invitation admitted no one (27), and rejoining listed what comes back and what stays removed, then needed a fresh pairing (28).
+- Findings, none of them a product-contract failure:
+  - After a burst of new messages, reaching the newest one took three "Scroll to bottom" presses instead of one (step 15b).
+  - In steps 25 and 28, A posted on a freshly opened #general and the post took about 20 s to come into view. The server accepted it at once (`POST …/entries 201`). This slowed both steps to about 25 s, but not the disconnect, leave or removal timings above. It is probably the same behaviour as the "Scroll to bottom" finding.
+  - The screenshots for 25b (disconnect dialog), 26b and 28c ("This DorkOS can no longer reach Desktop Proof.") were taken while the dialog or toast was still fading in. Only the screenshots are affected.
 
 ## Files Modified/Created
 
@@ -120,5 +132,4 @@
 
 ## Remaining Work
 
-- **3.1 cross-device proof (DOR-2182).** Covered by the two-Desktop acceptance run on main 30df6cdc2 (20/20 steps). It closes when the durable driver, PR #2016, merges.
-- **3.2 exact-scope proof (DOR-2182).** Both blockers PR #2016's extended run found (Disconnect leaving the grant live, and Community refusals reported as 502 "Community unavailable.") were fixed in #2019; the extended run has not been repeated since. The accessibility and Cloud-unavailable legs are written (Session 8); the exact-scope leg closes when the extended run passes again on a main with #2019 and #2033. One design-system follow-up came out of the accessibility pass: the `--destructive` token misses 4.5:1 for both its button fill and its error text.
+None for this spec. Follow-ups outside it: the `--destructive` contrast token (fixed in #2042), and the two scroll findings from Session 9.

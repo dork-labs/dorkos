@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/test-utils": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@playwright/test": "1.62.1",
     "@types/better-sqlite3": "^7.6.13",

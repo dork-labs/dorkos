@@ -1,7 +1,7 @@
 {
   "name": "@dorkos/monorepo",
   "private": true,
-  "version": "0.81.0",
+  "version": "0.82.0",
   "type": "module",
   "packageManager": "pnpm@10.28.2",
   "scripts": {
@@ -34,6 +34,7 @@
     "check:boundary": "tsx scripts/check-boundary.ts",
     "check:dead-doc-paths": "bash scripts/check-dead-doc-paths.sh",
     "check:vocab-gate": "tsx scripts/check-vocab-gate.ts",
+    "check:one-shot-routes": "tsx scripts/check-one-shot-routes.ts",
     "check:copy-spec-drift": "tsx scripts/check-copy-spec-drift.ts",
     "ci:census": "node packages/ci-steward/src/cli.ts census",
     "ci:ledger-check": "node packages/ci-steward/src/cli.ts ledger-check",

@@ -10,6 +10,7 @@ import {
   COMMUNITY_API_V1_ROUTES,
   CommunityWireConnectionAccessResponseSchema,
   CommunityWireCommunitySchema,
+  CommunityWireHostAccessResponseSchema,
   CommunityWirePairingStartResponseSchema,
   type CommunityConnectionAccess,
 } from '@dorkos/shared/community-wire';
@@ -80,9 +81,75 @@ export class RemoteCommunityUpgradeRequiredError extends Error {
   }
 }
 
+/**
+ * Ask a Community whether the account behind this installation's grant runs
+ * its host, which decides only whether the app offers "Create a community".
+ *
+ * Every failure reads as "no": a host built before this read answers 404, and
+ * an offer the app cannot confirm is an offer it does not make. The answer
+ * grants nothing either way: the host's creation page signs the person in and
+ * checks host authority again.
+ */
+async function readHostOperator(
+  origin: URL,
+  remoteCommunityId: string,
+  authorization: string
+): Promise<boolean> {
+  try {
+    return CommunityWireHostAccessResponseSchema.parse(
+      await pinnedJson(
+        origin,
+        communityApiPath(remoteCommunityId, COMMUNITY_API_V1_ROUTES.hostAccess),
+        undefined,
+        undefined,
+        { authorization }
+      )
+    ).hostOperator;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * How long one list read waits for a Community to re-check its access. Every
+ * Community is asked in parallel, so this bounds the access step of the whole
+ * list, not each row.
+ */
+export const COMMUNITY_ACCESS_BUDGET_MS = 750;
+
+/**
+ * Decides only what a list read reports for a Community that missed
+ * {@link COMMUNITY_ACCESS_BUDGET_MS}: its stored state when some re-check
+ * finished within this window, offline otherwise. It is not a revocation
+ * window. Stored access is at most one re-check old, and a re-check is always
+ * running or recently finished (bounded by its request timeouts, about 15 s),
+ * so a refusal is stored within that time whatever this value is. The 90 s only
+ * matters while no re-check has finished: longer than the client's 30-second
+ * poll, so a Community that is merely slow keeps the answer it gave last poll
+ * instead of flickering offline on every read.
+ */
+export const COMMUNITY_ACCESS_FRESH_MS = 90_000;
+
+/** Timing for the list read's access re-check. Overridden only by tests. */
+export interface RemoteAccessTiming {
+  /** How long the list waits for one Community's access re-check. */
+  budgetMs: number;
+  /** How long a completed re-check stands in for one that did not answer in time. */
+  freshMs: number;
+  /** The clock, in milliseconds. */
+  now: () => number;
+}
+
+const NO_CAPABILITIES = { read: false, post: false, enrollAgent: false, stream: false };
+
 /** Pairing orchestration scoped to the local owner's verified author ID. */
 export class RemoteCommunityPairingService {
   private readonly busy = new Set<CommunityRef>();
+  /** The one access re-check in flight per owner and connection. */
+  private readonly checking = new Map<string, Promise<RemoteConnectionDescriptor>>();
+  /** When each owner's connection last finished an access re-check, whatever it found. */
+  private readonly checkedAt = new Map<string, number>();
+  private readonly timing: RemoteAccessTiming;
 
   private enter(ref: CommunityRef): void {
     if (this.busy.has(ref)) throw new RemotePairingBusyError();
@@ -103,8 +170,16 @@ export class RemoteCommunityPairingService {
     private readonly onAccessAuthorityChanged?: (
       communityRef: CommunityRef,
       ownerKey: string
-    ) => void
-  ) {}
+    ) => void,
+    timing: Partial<RemoteAccessTiming> = {}
+  ) {
+    this.timing = {
+      budgetMs: COMMUNITY_ACCESS_BUDGET_MS,
+      freshMs: COMMUNITY_ACCESS_FRESH_MS,
+      now: Date.now,
+      ...timing,
+    };
+  }
 
   private notifyAccessAuthorityChanged(
     ref: CommunityRef,
@@ -136,28 +211,116 @@ export class RemoteCommunityPairingService {
       throw new AggregateError(failures, 'Failed to revoke the rejected community connection');
   }
 
-  /** Read only the caller's non-secret connection status. */
+  /**
+   * Read only the caller's non-secret connection status, without letting one
+   * slow Community hold up the rest.
+   *
+   * Each connected Community re-checks its access in parallel, within
+   * {@link COMMUNITY_ACCESS_BUDGET_MS}. One that does not answer in time is
+   * reported from what this server already knows: its stored state when a
+   * re-check finished within {@link COMMUNITY_ACCESS_FRESH_MS}, otherwise as
+   * offline (`unverified`, its last known access kept, nothing live allowed).
+   * A slow answer is never read as a refusal, so it can never turn into
+   * reconnect-required. The re-check keeps running, stores its outcome exactly
+   * as before (a real refusal still requires reconnecting) and the next read
+   * uses it. Nothing is announced on the live stream: the announcement would
+   * make every window read again, and that read would start the next re-check.
+   */
   async list(ownerKey: string): Promise<RemoteConnectionDescriptor[]> {
     await this.store.sweepExpired(ownerKey, this.busy);
     const connections = await this.store.list(ownerKey);
-    return Promise.all(connections.map((connection) => this.verify(connection.ref, ownerKey)));
+    return Promise.all(
+      connections.map((connection) => this.verifyWithinBudget(connection.ref, ownerKey))
+    );
   }
 
-  /** Read one descriptor without exposing another local owner's connection. */
+  /**
+   * Read one descriptor without exposing another local owner's connection.
+   * This waits for the Community's full answer, joining a re-check the list
+   * already started, because lifecycle callers act on the result.
+   */
   async status(ref: CommunityRef, ownerKey: string): Promise<RemoteConnectionDescriptor> {
     await this.store.sweepExpired(ownerKey, this.busy);
-    return this.verify(ref, ownerKey);
+    return this.sharedVerify(ref, ownerKey);
+  }
+
+  /** Start, or join, the one access re-check for this owner's connection. */
+  private sharedVerify(ref: CommunityRef, ownerKey: string): Promise<RemoteConnectionDescriptor> {
+    const key = `${ownerKey}\0${ref}`;
+    const inFlight = this.checking.get(key);
+    if (inFlight) return inFlight;
+    const pending = this.verify(ref, ownerKey)
+      .then((descriptor) => {
+        this.checkedAt.set(key, this.timing.now());
+        return descriptor;
+      })
+      .finally(() => {
+        if (this.checking.get(key) === pending) this.checking.delete(key);
+      });
+    // The re-check may outlive every reader that waited on it.
+    pending.catch(() => undefined);
+    this.checking.set(key, pending);
+    return pending;
+  }
+
+  private async verifyWithinBudget(
+    ref: CommunityRef,
+    ownerKey: string
+  ): Promise<RemoteConnectionDescriptor> {
+    const pending = this.sharedVerify(ref, ownerKey);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      pending.then(
+        (descriptor) => ({ descriptor }),
+        (error: unknown) => ({ error })
+      ),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), this.timing.budgetMs);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (settled) {
+      if ('error' in settled) throw settled.error;
+      return settled.descriptor;
+    }
+    const record = await this.store.get(ref, ownerKey);
+    const checkedAt = this.checkedAt.get(`${ownerKey}\0${ref}`);
+    if (
+      record.status !== 'connected' ||
+      (checkedAt !== undefined && this.timing.now() - checkedAt <= this.timing.freshMs)
+    )
+      return this.store.project(record);
+    // Only reported, never stored: the re-check still running records the truth.
+    return {
+      ...this.store.project(record),
+      access: {
+        state: 'unverified',
+        effective: NO_CAPABILITIES,
+        lastKnown: record.access?.lastKnown ?? null,
+      },
+    };
+  }
+
+  /** Forget re-check timing for a connection this owner no longer has. */
+  private forgetChecks(ref: CommunityRef, ownerKey: string): void {
+    const key = `${ownerKey}\0${ref}`;
+    this.checking.delete(key);
+    this.checkedAt.delete(key);
   }
 
   private async verify(ref: CommunityRef, ownerKey: string): Promise<RemoteConnectionDescriptor> {
     const record = await this.store.get(ref, ownerKey);
     if (record.status !== 'connected') return this.store.project(record);
     const authorization = await this.store.personalToken(ref, ownerKey);
+    const origin = parseCommunityOrigin(record.pinnedOrigin);
+    // Asked beside the access check, not after it, so a list costs no extra
+    // round trip; it never throws, so it cannot fail the access check.
+    const hostOperator = readHostOperator(origin, record.remoteCommunityId, authorization);
     let access: CommunityConnectionAccess;
     try {
       access = CommunityWireConnectionAccessResponseSchema.parse(
         await pinnedJson(
-          parseCommunityOrigin(record.pinnedOrigin),
+          origin,
           communityApiPath(record.remoteCommunityId, COMMUNITY_API_V1_ROUTES.connectionAccess),
           undefined,
           undefined,
@@ -177,7 +340,7 @@ export class RemoteCommunityPairingService {
       this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, unavailable.access!);
       return unavailable;
     }
-    const verified = await this.store.updateAccess(ref, ownerKey, access);
+    const verified = await this.store.updateAccess(ref, ownerKey, access, await hostOperator);
     this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, verified.access!);
     return verified;
   }
@@ -382,6 +545,7 @@ export class RemoteCommunityPairingService {
       await this.store.disconnect(ref, ownerKey);
       return { remoteRevoked };
     } finally {
+      this.forgetChecks(ref, ownerKey);
       this.busy.delete(ref);
     }
   }

@@ -1,7 +1,7 @@
 ---
 id: 260923-122615
 title: A marketplace package's latest version is what an install would resolve, by Claude Code's chain
-status: draft
+status: accepted
 created: 2026-09-23
 spec: marketplace-version-truth
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: marketplace-version-truth)
+Accepted.
 
 ## Context
 

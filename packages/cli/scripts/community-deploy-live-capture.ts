@@ -20,12 +20,14 @@ export class CommunityLiveGateError extends Error {
    *
    * @param step - Stable, non-secret name of the failed step.
    * @param recoveryCommand - The command that reconciles retained resources, when known.
+   * @param detail - A fixed, non-secret sentence saying what the failure left behind.
    */
   constructor(
     readonly step: string,
-    readonly recoveryCommand: string | null = null
+    readonly recoveryCommand: string | null = null,
+    detail?: string
   ) {
-    super(`Community live gate failed (${step})`);
+    super(`Community live gate failed (${step})${detail ? `: ${detail}` : ''}`);
     this.name = 'CommunityLiveGateError';
   }
 }
@@ -144,17 +146,44 @@ export async function receiveClipboard(socketPath: string): Promise<ClipboardCap
   };
 }
 
+/** How long a wait may outlive a launcher that exited cleanly, and the step it then fails as. */
+export interface LauncherExitGrace {
+  /** Milliseconds the wait may continue after the launcher's clean exit. */
+  ms: number;
+  /** Stable, non-secret step name the wait fails as when the grace runs out. */
+  step: string;
+}
+
 /**
  * Await `work` while a launcher runs beside it, failing as soon as the launcher does.
  *
  * The launcher is observed from the moment this is called, so its rejection is never unhandled —
- * not while `work` is pending, and not after `work` has settled either. A launcher that exits
- * cleanly does not end the wait; only a failure does. Any launcher failure surfaces as a
- * {@link CommunityLiveGateError}, so the caller's catch can attach the recovery command.
+ * not while `work` is pending, and not after `work` has settled either. Any launcher failure
+ * surfaces as a {@link CommunityLiveGateError}, so the caller's catch can attach the recovery
+ * command.
+ *
+ * A launcher that exits cleanly does not end the wait on its own. Without `exitGrace` the wait runs
+ * to `work`'s own timeout. With it, a wait that depends on the launcher (a secret only the launcher
+ * can send) gets `exitGrace.ms` more to finish and then fails as `exitGrace.step`, instead of
+ * holding the run, and whatever it created, for the rest of a twelve-minute timeout.
  */
-export function whileLauncherRuns<T>(launcher: Promise<unknown>, work: Promise<T>): Promise<T> {
+export function whileLauncherRuns<T>(
+  launcher: Promise<unknown>,
+  work: Promise<T>,
+  exitGrace?: LauncherExitGrace
+): Promise<T> {
+  let settled = false;
+  let graceTimer: ReturnType<typeof setTimeout> | undefined;
   const launcherFailed = launcher.then(
-    () => new Promise<never>(() => undefined),
+    () =>
+      new Promise<never>((_resolve, reject) => {
+        // A wait that already finished must not keep the process alive for a grace nobody reads.
+        if (!exitGrace || settled) return;
+        graceTimer = setTimeout(
+          () => reject(new CommunityLiveGateError(exitGrace.step)),
+          exitGrace.ms
+        );
+      }),
     (error: unknown) => {
       throw error instanceof CommunityLiveGateError
         ? error
@@ -162,5 +191,8 @@ export function whileLauncherRuns<T>(launcher: Promise<unknown>, work: Promise<T
     }
   );
   // `race` subscribes to both inputs, so the failure branch stays handled even when `work` wins.
-  return Promise.race([work, launcherFailed]);
+  return Promise.race([work, launcherFailed]).finally(() => {
+    settled = true;
+    clearTimeout(graceTimer);
+  });
 }

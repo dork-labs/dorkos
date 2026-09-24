@@ -412,6 +412,35 @@ const LocalUpdateResultSchema = z.object({
 });
 
 /**
+ * Simplified documentation mirror of the update flow's `InstallationUpdateCheck`:
+ * one installation's check, its identity in the installed list's own field names,
+ * and after an apply, its outcome. Keep in sync with
+ * `apps/server/src/services/marketplace/flows/update.ts`.
+ */
+const LocalInstallationUpdateCheckSchema = LocalUpdateCheckResultSchema.extend({
+  installPath: z.string(),
+  type: PackageTypeSchema,
+  scope: z.enum(['global', 'agent-local', 'override']),
+  agentPath: z.string().optional(),
+  agentId: z.string().optional(),
+  agentName: z.string().optional(),
+  applied: LocalInstallResultSchema.optional(),
+  applyError: z.string().optional(),
+});
+
+/** The 404 body when an update names packages or installations not in view. */
+const NotInstalledForUpdateSchema = z.object({
+  error: z.string(),
+  packageNames: z.array(z.string()),
+  installPaths: z.array(z.string()),
+});
+
+/** Simplified documentation mirror of the update flow's `InstallationUpdatesResult`. */
+const LocalInstallationUpdatesResultSchema = z.object({
+  checks: z.array(LocalInstallationUpdateCheckSchema),
+});
+
+/**
  * Simplified documentation mirror of {@link import('../marketplace/flows/uninstall.js').UninstallResult}.
  * Keep in sync with `apps/server/src/services/marketplace/flows/uninstall.ts`.
  */
@@ -2402,7 +2431,8 @@ registry.registerPath({
   description:
     'Without projectPath: one entry per installation across all scopes (global roots plus ' +
     "every registered agent's local installs), each tagged with scope and agent identity. " +
-    'With projectPath: the merged view for that single project — one entry per package name.',
+    'With projectPath: the merged view for that single project — one entry per install root ' +
+    'and name — scanned at the canonical path, so its install paths match `GET /updates`.',
   request: {
     query: z.object({ projectPath: z.string().optional() }),
   },
@@ -2414,6 +2444,14 @@ registry.registerPath({
           schema: z.object({ packages: z.array(InstalledPackageSchema) }),
         },
       },
+    },
+    400: {
+      description: 'projectPath given more than once',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'projectPath outside the directory boundary',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
@@ -2685,6 +2723,92 @@ registry.registerPath({
     },
     404: {
       description: 'Package not installed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description: "The package's git remote could not be reached, or its fetch failed",
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/marketplace/updates',
+  tags: ['Marketplace'],
+  summary: 'Check every installed package for updates',
+  description:
+    'Advisory: one check per installation in view. No installed package changes, though a ' +
+    'check may stage a newer version into the package cache. Without ' +
+    '`projectPath`, every installation in every scope (global, then each registered ' +
+    "agent's project); with it, that project's merged view. Each check carries the " +
+    "installation's identity; `installPath` matches the installed list's.",
+  request: {
+    query: z.object({ projectPath: z.string().optional() }),
+  },
+  responses: {
+    200: {
+      description: 'One check per installation, in scan order',
+      content: { 'application/json': { schema: LocalInstallationUpdatesResultSchema } },
+    },
+    400: {
+      description: 'projectPath given more than once',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'projectPath outside the directory boundary',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/updates',
+  tags: ['Marketplace'],
+  summary: 'Update every stale installed package, or the named ones',
+  description:
+    'Reinstalls every installation in view whose check is `update-available`, each in the ' +
+    'scope it was found in, one at a time. A failed reinstall is reported on its ' +
+    'installation as `applyError` and the rest carry on. Each reinstall is authorized as ' +
+    '`marketplace.install` before anything runs. A batch that would need a person to ' +
+    'approve each install is refused (`batch_update_needs_approval`); use the one-package ' +
+    'route instead. `names` selects every installation of those packages; `installPaths` ' +
+    'selects exactly the installations a check reported. The response is the record of ' +
+    'what changed.',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            apply: z.literal(true),
+            names: z.array(z.string().min(1)).min(1).optional(),
+            installPaths: z.array(z.string().min(1)).min(1).optional(),
+            projectPath: z.string().optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'One check per installation, with `applied` or `applyError` where one ran',
+      content: { 'application/json': { schema: LocalInstallationUpdatesResultSchema } },
+    },
+    400: {
+      description: 'Validation error (including a body without `apply: true`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Refused by the permission check, or projectPath outside the boundary',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'A named package or install path is not installed in view',
+      content: { 'application/json': { schema: NotInstalledForUpdateSchema } },
+    },
+    502: {
+      description: "The package's git remote could not be reached, or its fetch failed",
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

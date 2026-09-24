@@ -155,6 +155,14 @@ export interface InstallRequest {
    * could set would be a value an HTTP caller could set to `null`.
    */
   approvedDisclosure?: DisclosedEffects | null;
+  /**
+   * `update()` only: the exact install root to replace — the installation an
+   * update check resolved. Without it, `update()` finds its target by name,
+   * first root wins, so a plugin and an agent of one name would resolve to the
+   * plugin whichever the check was about. Server-internal, like
+   * `approvedDisclosure`: no HTTP body schema carries it.
+   */
+  installRoot?: string;
 }
 
 /**

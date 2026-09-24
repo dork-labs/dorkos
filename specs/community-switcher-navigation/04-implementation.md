@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 5 / 11 (1.1, 1.2, 1.4, 2.2 and 3.2; 1.4 closed by DOR-2241 on 2026-09-23)
+**Tasks Completed:** 6 / 11 (1.1, 1.2, 1.4, 2.2, 3.1 and 3.2; 1.4 closed by DOR-2241 and 3.1 by DOR-2242 on 2026-09-23)
 
 ## Tasks Completed
 
@@ -94,7 +94,7 @@
   authoritative; unverified (offline) access changes nothing.
 - The Community app honours the settings deep link and falls back to a role-allowed section.
 
-Decisions to confirm: Create community is hidden because the local descriptor carries no
+Decisions to confirm: Create community is hidden (resolved in Session 5) because the local descriptor carries no
 host-operator signal; Community sign-out stays on the Community's site; Invite visibility uses
 lifecycle + reachability because the descriptor carries no role, and the Community page rechecks.
 
@@ -173,6 +173,38 @@ lifecycle + reachability because the descriptor carries no role, and the Communi
   or the owner from the key, the erase on connection end, or the erase on owner change each turns a
   test red.
 
+### Session 6 - 2026-09-23 (DOR-2242, branch `feat/community-switcher-create`)
+
+**Task 3.1:** Offer Create a community to the person who runs the host.
+
+- The Community gains `GET /api/v1/communities/:id/me/host-access`, authenticated by the
+  installation's own grant (`requireConnectionGrant`, read scope). It answers
+  `{ hostOperator }` for the account behind that exact grant from `host_operators`, with
+  `Cache-Control: no-store`. A browser session, a revoked grant, or another community's grant gets
+  401; a member or another community's owner reads `false`.
+- A separate read, not a field on `/me/connection-access`: that response is a strict object, so a
+  DorkOS built before the field would reject the whole access check and show a working
+  connection as offline.
+- The local server asks it beside the access check in `verify()`. Any failure (404 from an older
+  host, a 5xx, a malformed or extra-field answer) reads as `false` and never costs the connection
+  its verified access. The answer is stored on the connection record (`hostOperator`, optional so
+  older records read as `false`) and projected onto the descriptor only while the connection is
+  `connected` and `verified`; the shared schema refuses `hostOperator: true` anywhere else.
+- The switcher's Add submenu lists Create a community between Join and Run your own community, once
+  per distinct pinned origin whose connection says `hostOperator`. It opens
+  `<pinnedOrigin>/host` (`COMMUNITY_HOST_ADMIN_PATH`) with the external mark and "opens on
+  <host>" in its accessible name; with more than one host each row names its host.
+- Mutation-checked: an always-true answer on the Community (3 pg tests red), a dropped
+  `revoked_at` filter (1 red), a projection that ignores verification or the answer (1 red each),
+  failure read as yes (1 red), and a client gate that ignores `hostOperator` (3 unit tests red, and
+  the e2e Join journey red).
+
+Decisions to confirm: Create lists one row per host the person runs rather than following the
+selected Community, because the Add submenu is not tied to the selection and a host operator may
+have no Community selected; the flag is withheld while a host is offline (the page could not
+open); host authority is host-wide, so it reads the same through any of that account's grants on
+the host.
+
 ## Files Modified/Created
 
 **Source files:**
@@ -216,7 +248,7 @@ lifecycle + reachability because the descriptor carries no role, and the Communi
 
 ## Remaining Work
 
-- **DOR-2242 (Task 3.1):** Create community should be in the switcher for a host operator. The local connection descriptor carries no host-operator signal, so this needs a small contract addition first.
+- None beyond the open tasks in `03-tasks.md`.
 
 ## Page headings and phone focus (DOR-2240)
 

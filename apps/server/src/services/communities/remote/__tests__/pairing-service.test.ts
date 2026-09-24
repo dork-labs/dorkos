@@ -15,6 +15,7 @@ import {
   RemoteCommunitySelectionRequiredError,
   RemoteCommunityUpgradeRequiredError,
   RemotePairingBusyError,
+  COMMUNITY_ACCESS_BUDGET_MS,
 } from '../pairing-service.js';
 import {
   RemoteCommunityAdapter,
@@ -48,6 +49,8 @@ let waitForExchange: (() => Promise<void>) | undefined;
 let rejectedAuthorization: string | undefined;
 let rejectedStatus = 403;
 let rejectedPath: string | undefined;
+/** What the host says to `/me/host-access`; `undefined` models a host built before it (404). */
+let hostAccessAnswer: { status: number; body: unknown } | undefined;
 const token = 'private-pairing-bearer-should-never-appear-in-dto';
 const remoteCommunityId = randomUUID();
 const secondRemoteCommunityId = randomUUID();
@@ -61,6 +64,10 @@ const requests: Array<{ path: string; body: Record<string, string> }> = [];
 const revocations: Array<{ path: string; authorization: string | undefined }> = [];
 /** How the fake Community answers a self-revocation: a status, or drop the socket. */
 let revocationAnswer: number | 'hang-up' = 204;
+/** When set, the fake Community holds every access re-check until this settles. */
+let accessGate: Promise<void> | undefined;
+/** How many access re-checks reached the fake Community. */
+let accessRequests = 0;
 
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'community-pairing-'));
@@ -72,6 +79,10 @@ beforeAll(async () => {
         ? JSON.parse(Buffer.concat(chunks).toString())
         : {};
     requests.push({ path: req.url ?? '', body });
+    if (req.url === `${qualified}/me/connection-access`) {
+      accessRequests += 1;
+      if (accessGate) await accessGate;
+    }
     res.setHeader('content-type', 'application/json');
     const send = (value: unknown, status = 200) => {
       res.statusCode = status;
@@ -179,6 +190,12 @@ beforeAll(async () => {
           },
         },
       });
+    } else if (req.url === `${qualified}/me/host-access` && hostAccessAnswer) {
+      if (req.headers.authorization !== `Bearer ${token}`) {
+        send({ error: 'Unauthorized' }, 401);
+        return;
+      }
+      send(hostAccessAnswer.body, hostAccessAnswer.status);
     } else if (req.url === `${qualified}/attention`) {
       if (req.headers.authorization !== `Bearer ${token}`) {
         send({ error: 'Unauthorized' }, 401);
@@ -569,6 +586,212 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       rejectedStatus = 403;
     }
   });
+  it('carries the host’s operator answer only while the connection is verified', async () => {
+    approved = true;
+    const owner = 'host-operator-owner';
+    const store = new RemoteConnectionStore(directory);
+    const service = new RemoteCommunityPairingService(
+      store,
+      vi.fn(async () => undefined)
+    );
+    const started = await service.start(owner, `${origin}/c/${remoteCommunityId}`, 'Host test');
+    const { ref } = started.connection;
+    await service.poll(ref, owner);
+    const hostRequests = () =>
+      requests.filter((request) => request.path === `${qualified}/me/host-access`).length;
+
+    try {
+      // A host built before the read exists answers 404: still a working
+      // connection, just no offer.
+      hostAccessAnswer = undefined;
+      const before = hostRequests();
+      const older = await service.status(ref, owner);
+      expect(older.access).toMatchObject({ state: 'verified' });
+      expect(older).not.toHaveProperty('hostOperator');
+      expect(hostRequests()).toBe(before + 1);
+
+      hostAccessAnswer = { status: 200, body: { hostOperator: true } };
+      expect(await service.status(ref, owner)).toMatchObject({ hostOperator: true });
+      expect(await service.list(owner)).toEqual([
+        expect.objectContaining({ ref, hostOperator: true }),
+      ]);
+
+      hostAccessAnswer = { status: 200, body: { hostOperator: false } };
+      expect(await service.status(ref, owner)).not.toHaveProperty('hostOperator');
+
+      // Anything the app cannot read as a clear yes is a no, and never costs
+      // the connection its verified access.
+      for (const answer of [
+        { status: 200, body: { hostOperator: 'yes' } },
+        { status: 200, body: { hostOperator: true, extra: true } },
+        { status: 500, body: { hostOperator: true } },
+      ]) {
+        hostAccessAnswer = answer;
+        const read = await service.status(ref, owner);
+        expect(read.access).toMatchObject({ state: 'verified' });
+        expect(read).not.toHaveProperty('hostOperator');
+      }
+
+      // An offline host keeps the last answer on disk but offers nothing.
+      hostAccessAnswer = { status: 200, body: { hostOperator: true } };
+      expect(await service.status(ref, owner)).toMatchObject({ hostOperator: true });
+      rejectedAuthorization = `Bearer ${token}`;
+      rejectedPath = `${qualified}/me/connection-access`;
+      rejectedStatus = 503;
+      const offline = await service.status(ref, owner);
+      expect(offline.access).toMatchObject({ state: 'unverified' });
+      expect(offline).not.toHaveProperty('hostOperator');
+
+      // A rejected grant ends the offer with the connection.
+      rejectedStatus = 401;
+      const rejected = await service.status(ref, owner);
+      expect(rejected.status).toBe('reconnect-required');
+      expect(rejected).not.toHaveProperty('hostOperator');
+    } finally {
+      await service.disconnect(ref, owner);
+      hostAccessAnswer = undefined;
+      rejectedAuthorization = undefined;
+      rejectedPath = undefined;
+      rejectedStatus = 403;
+    }
+  });
+
+  describe('list re-checks access within a budget', () => {
+    let release: () => void = () => undefined;
+    function holdAccess(): void {
+      accessGate = new Promise<void>((resolve) => (release = resolve));
+    }
+    async function connect(
+      owner: string,
+      timing: ConstructorParameters<typeof RemoteCommunityPairingService>[3] = { budgetMs: 100 }
+    ) {
+      approved = true;
+      const accessAuthorityChanged = vi.fn();
+      const service = new RemoteCommunityPairingService(
+        new RemoteConnectionStore(directory),
+        undefined,
+        accessAuthorityChanged,
+        timing
+      );
+      const started = await service.start(owner, `${origin}/c/${remoteCommunityId}`, 'Budget');
+      const connected = await service.poll(started.connection.ref, owner);
+      expect(connected.connection?.access?.state).toBe('verified');
+      accessAuthorityChanged.mockClear();
+      return {
+        service,
+        ref: started.connection.ref,
+        lastKnown: connected.connection!.access!.lastKnown,
+        accessAuthorityChanged,
+      };
+    }
+    afterEach(() => {
+      release();
+      accessGate = undefined;
+      rejectedAuthorization = undefined;
+      rejectedPath = undefined;
+      rejectedStatus = 403;
+      approved = false;
+      pollCount = 0;
+    });
+
+    it('reports a hanging Community as offline within the real budget, never as revoked', async () => {
+      const { service, ref, lastKnown, accessAuthorityChanged } = await connect('budget-real', {});
+      try {
+        holdAccess();
+        const started = performance.now();
+        const [listed] = await service.list('budget-real');
+        const elapsed = performance.now() - started;
+        expect(elapsed).toBeLessThan(COMMUNITY_ACCESS_BUDGET_MS + 500);
+        expect(listed).toMatchObject({
+          ref,
+          status: 'connected',
+          access: {
+            state: 'unverified',
+            effective: { read: false, post: false, enrollAgent: false, stream: false },
+            lastKnown,
+          },
+        });
+        // Only reported: nothing stored, nothing told to reconcile authority.
+        expect(accessAuthorityChanged).not.toHaveBeenCalled();
+      } finally {
+        release();
+        await service.disconnect(ref, 'budget-real');
+      }
+    });
+
+    it('never downgrades to reconnect-required on a timeout, but a late refusal still does', async () => {
+      const { service, ref } = await connect('budget-refused');
+      try {
+        holdAccess();
+        rejectedAuthorization = `Bearer ${token}`;
+        rejectedPath = `${qualified}/me/connection-access`;
+        rejectedStatus = 401;
+        const [waiting] = await service.list('budget-refused');
+        expect(waiting).toMatchObject({ status: 'connected', access: { state: 'unverified' } });
+        release();
+        // status() joins the re-check the list left running.
+        await expect(service.status(ref, 'budget-refused')).resolves.toMatchObject({
+          status: 'reconnect-required',
+        });
+        const [after] = await service.list('budget-refused');
+        expect(after).toMatchObject({
+          status: 'reconnect-required',
+          access: { state: 'reconnect-required' },
+        });
+      } finally {
+        release();
+        await service.disconnect(ref, 'budget-refused');
+      }
+    });
+
+    it('shares one re-check between concurrent reads and serves its late answer next', async () => {
+      let clock = 1_000_000;
+      const { service, ref, accessAuthorityChanged } = await connect('budget-shared', {
+        budgetMs: 100,
+        freshMs: 90_000,
+        now: () => clock,
+      });
+      try {
+        holdAccess();
+        const before = accessRequests;
+        const reads = await Promise.all([
+          service.list('budget-shared'),
+          service.list('budget-shared'),
+          service.list('budget-shared'),
+        ]);
+        for (const [item] of reads) expect(item?.access?.state).toBe('unverified');
+        expect(accessRequests - before).toBe(1);
+
+        release();
+        await expect(service.status(ref, 'budget-shared')).resolves.toMatchObject({
+          access: { state: 'verified' },
+        });
+        expect(accessRequests - before).toBe(1);
+
+        // The Community is slow again, but it answered moments ago: the next
+        // read keeps that answer instead of flickering offline.
+        holdAccess();
+        const [picked] = await service.list('budget-shared');
+        expect(picked?.access).toMatchObject({
+          state: 'verified',
+          effective: { read: true, post: true, enrollAgent: true, stream: true },
+        });
+        release();
+        await service.status(ref, 'budget-shared');
+
+        // Once that answer is old, a Community that stops answering is offline.
+        clock += 90_001;
+        holdAccess();
+        const [aged] = await service.list('budget-shared');
+        expect(aged?.access?.state).toBe('unverified');
+        expect(accessAuthorityChanged).not.toHaveBeenCalled();
+      } finally {
+        release();
+        await service.disconnect(ref, 'budget-shared');
+      }
+    });
+  });
+
   it('persists a reconnect-required state when the remote rejects the personal grant', async () => {
     approved = true;
     const store = new RemoteConnectionStore(directory);

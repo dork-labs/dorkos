@@ -10,12 +10,16 @@
  * `<dorkHome>/agents/<name>`. Every project walk below used to hardcode
  * `plugins/`, which made every project-scoped agent invisible here (DOR-994).
  *
- * Used by both the HTTP route (`GET /api/marketplace/installed`) and the
- * `marketplace_list_installed` MCP tool so the scan logic lives in one place.
+ * Used by the HTTP routes (`GET /api/marketplace/installed`, the update
+ * doors), the `marketplace_list_installed` MCP tool and the update flow, so the
+ * scan logic lives in one place. One walk yields {@link InstallationRecord}s —
+ * the listing's view of each installation plus the declared version and the
+ * install sidecar the update check compares — and every list here is a view
+ * over those records, so a list and an update check never walk twice.
  *
  * @module services/marketplace/installed-scanner
  */
-import { readdir, readFile } from 'node:fs/promises';
+import { lstat, readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { PackageType } from '@dorkos/marketplace';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
@@ -24,7 +28,7 @@ import type { PackageProvides } from '@dorkos/shared/marketplace-schemas';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { InstallRootDir } from './lib/install-roots.js';
 import { installKey, installRootsUnder, projectScopeRoot } from './lib/install-roots.js';
-import { readInstallMetadata } from './installed-metadata.js';
+import { readInstallMetadata, type InstallMetadata } from './installed-metadata.js';
 import { logger } from '../../lib/logger.js';
 
 /**
@@ -117,45 +121,170 @@ export async function listEnabledPluginNames(dorkHome: string): Promise<string[]
     .map((pkg) => pkg.name);
 }
 
+/** One installation as one scan found it: the listing's view plus what the update check needs. */
+export interface InstallationRecord {
+  /** Exactly what `GET /api/marketplace/installed` returns for this installation. */
+  package: InstalledPackage;
+  /**
+   * The install root it was found in. The scope-relative root name, never the
+   * manifest's `type`, so a manifest that disagrees with the directory it sits
+   * in cannot move an install into another root's namespace ({@link installKey}).
+   */
+  kind: InstallRootDir;
+  /** From `readDeclaredVersion`: plugin.json's version, else the manifest's; undefined when neither states one. */
+  declaredVersion?: string;
+  /** The `.dork/install-metadata.json` sidecar, or `null` when there is none. */
+  metadata: InstallMetadata | null;
+  /**
+   * The install folder is a symbolic link — a developer's working copy linked
+   * into place, not a checkout DorkOS fetched. It is listed and checked like any
+   * other, but never reinstalled: a reinstall would replace the link, and the
+   * working copy behind it, with a fresh fetch.
+   */
+  linked: boolean;
+}
+
+/**
+ * Which installations a scan covers.
+ *
+ * - `{ agents }` — every scope: the global roots, then each listed agent's
+ *   project, one record per installation. `{ agents: [] }` is global-only.
+ * - `{ projectPath }` — one project's merged view: the global roots with that
+ *   project's installs merged over them, one record per install root and name.
+ */
+export type InstallationView = { projectPath: string } | { agents: AgentScopeRef[] };
+
 /**
  * Walk every install root under a single scope root ({@link installRootsUnder}:
- * `plugins/`, `agents/`, `shapes/`), read each `.dork/manifest.json`, merge in
- * any `.dork/install-metadata.json` sidecar, and return each find tagged with
- * the root it came from. Directories without a readable manifest are skipped
- * silently — partial installs and unrelated sibling files never poison the
- * result — as are roots the scope does not have at all.
- *
- * The `kind` tag is what the callers below shadow and dedupe on
- * ({@link installKey}); it is deliberately the scope-relative root name rather
- * than the manifest's `type`, so a manifest that disagrees with the directory
- * it sits in cannot move an install into another root's namespace.
+ * `plugins/`, `agents/`, `shapes/`) and read each installation once. Directories
+ * without a readable identity are skipped silently — partial installs and
+ * unrelated sibling files never poison the result — as are roots the scope does
+ * not have at all. The records come back untagged; the callers below set
+ * `scope` and any agent identity.
  *
  * @param scopeRoot - `dorkHome`, or a project's {@link projectScopeRoot}.
  */
-async function scanScopeRoot(
-  scopeRoot: string
-): Promise<{ kind: InstallRootDir; pkg: InstalledPackage }[]> {
-  const found: { kind: InstallRootDir; pkg: InstalledPackage }[] = [];
+async function scanScopeRoot(scopeRoot: string): Promise<InstallationRecord[]> {
+  const found: InstallationRecord[] = [];
   for (const { kind, dir } of installRootsUnder(scopeRoot)) {
     for (const entry of await listPackageDirEntries(dir)) {
-      const installed = await readInstalledPackage(join(dir, entry));
-      if (installed) found.push({ kind, pkg: installed });
+      const record = await readInstallationRecord(
+        join(dir, entry),
+        kind,
+        await isSymlink(join(dir, entry))
+      );
+      if (record) found.push(record);
     }
   }
   return found;
 }
 
 /**
+ * Scan the installations in a view once, keeping everything both the installed
+ * list and the update check need. See {@link InstallationView} for the two views;
+ * the list helpers below are `.map((r) => r.package)` over this.
+ *
+ * @param dorkHome - Resolved DorkOS data directory
+ *   (see `.claude/rules/dork-home.md`).
+ * @param view - One project's merged view, or every scope.
+ * @returns One record per installation in view, tagged with its scope.
+ */
+export async function scanInstallationRecords(
+  dorkHome: string,
+  view: InstallationView
+): Promise<InstallationRecord[]> {
+  return 'projectPath' in view
+    ? scanProjectView(dorkHome, view.projectPath)
+    : scanEveryScope(dorkHome, view.agents);
+}
+
+/** Tag a record with scope fields, leaving the rest as the walk read it. */
+function withScope(
+  record: InstallationRecord,
+  fields: Partial<InstalledPackage>
+): InstallationRecord {
+  return { ...record, package: { ...record.package, ...fields } };
+}
+
+/**
+ * One project's merged view. A project install shadows a global one of the same
+ * name only when both sit in the SAME install root ({@link installKey}); it is
+ * then tagged `override`, otherwise `agent-local`. A project's `agents/flow` and
+ * a global `plugins/flow` are different packages the {@link ConflictDetector}
+ * allows to coexist, so both survive as their own entries. Order: global scan
+ * order, with an override taking the place of the global entry it shadows, then
+ * project-only installs.
+ */
+async function scanProjectView(
+  dorkHome: string,
+  projectPath: string
+): Promise<InstallationRecord[]> {
+  const merged = new Map<string, InstallationRecord>();
+  for (const record of await scanScopeRoot(dorkHome)) {
+    merged.set(
+      installKey(record.kind, record.package.name),
+      withScope(record, { scope: 'global' })
+    );
+  }
+  for (const record of await scanScopeRoot(projectScopeRoot(projectPath))) {
+    const key = installKey(record.kind, record.package.name);
+    const scope: PackageScope = merged.has(key) ? 'override' : 'agent-local';
+    merged.set(key, withScope(record, { scope, agentPath: projectPath }));
+  }
+  return [...merged.values()];
+}
+
+/**
+ * Every scope, one record PER INSTALLATION. Agent entries are tagged
+ * `agent-local`, or `override` when the same package name is installed globally
+ * in the same install root. Global entries come first (scan order), then agent
+ * entries sorted by agent name. Agents sharing a project path are deduped;
+ * unreadable agent directories are skipped silently.
+ */
+async function scanEveryScope(
+  dorkHome: string,
+  agents: AgentScopeRef[]
+): Promise<InstallationRecord[]> {
+  const globalRecords = (await scanScopeRoot(dorkHome)).map((record) =>
+    withScope(record, { scope: 'global' })
+  );
+  const globalKeys = new Set(globalRecords.map((r) => installKey(r.kind, r.package.name)));
+
+  const seenPaths = new Set<string>();
+  const agentRecords: InstallationRecord[] = [];
+  for (const agent of agents) {
+    if (seenPaths.has(agent.projectPath)) continue;
+    seenPaths.add(agent.projectPath);
+
+    for (const record of await scanScopeRoot(projectScopeRoot(agent.projectPath))) {
+      agentRecords.push(
+        withScope(record, {
+          scope: globalKeys.has(installKey(record.kind, record.package.name))
+            ? 'override'
+            : 'agent-local',
+          agentPath: agent.projectPath,
+          ...(agent.id !== undefined && { agentId: agent.id }),
+          ...(agent.name !== undefined && { agentName: agent.name }),
+        })
+      );
+    }
+  }
+
+  agentRecords.sort((a, b) =>
+    (a.package.agentName ?? a.package.agentPath ?? '').localeCompare(
+      b.package.agentName ?? b.package.agentPath ?? ''
+    )
+  );
+  return [...globalRecords, ...agentRecords];
+}
+
+/**
  * Scan the global install roots under `dorkHome` and, when `projectPath` is
  * supplied, merge that project's own installs over them — one entry per
  * package, which is what the install dialog needs for scope-accurate reinstall
- * detection.
- *
- * A project install shadows a global one of the same name only when both sit in
- * the SAME install root ({@link installKey}); it is then tagged `override`,
- * otherwise `agent-local`. A project's `agents/flow` and a global
- * `plugins/flow` are different packages the {@link ConflictDetector} allows to
- * coexist, so both survive as their own entries.
+ * detection. Without a project every result is tagged `global`, so the UI can
+ * show "Installed globally" without a projectPath round-trip. The shadowing
+ * rule is {@link scanInstallationRecords}' `{ projectPath }` view.
  *
  * @param dorkHome - Resolved DorkOS data directory
  *   (see `.claude/rules/dork-home.md`)
@@ -167,28 +296,11 @@ export async function scanInstalledPackages(
   dorkHome: string,
   projectPath?: string
 ): Promise<InstalledPackage[]> {
-  const globalResults = await scanScopeRoot(dorkHome);
-
-  if (!projectPath) {
-    // Global-only listing: tag every result so the UI can show "Installed
-    // globally" without a projectPath round-trip. (The merged path below tags
-    // its own results as global/agent-local/override.)
-    return globalResults.map(({ pkg }) => ({ ...pkg, scope: 'global' as PackageScope }));
-  }
-
-  const merged = new Map<string, InstalledPackage>();
-
-  for (const { kind, pkg } of globalResults) {
-    merged.set(installKey(kind, pkg.name), { ...pkg, scope: 'global' as PackageScope });
-  }
-
-  for (const { kind, pkg } of await scanScopeRoot(projectScopeRoot(projectPath))) {
-    const key = installKey(kind, pkg.name);
-    const scope: PackageScope = merged.has(key) ? 'override' : 'agent-local';
-    merged.set(key, { ...pkg, scope, agentPath: projectPath });
-  }
-
-  return Array.from(merged.values());
+  const records = await scanInstallationRecords(
+    dorkHome,
+    projectPath ? { projectPath } : { agents: [] }
+  );
+  return records.map((r) => r.package);
 }
 
 /**
@@ -219,35 +331,8 @@ export async function scanInstallationsAcrossScopes(
   dorkHome: string,
   agents: AgentScopeRef[]
 ): Promise<InstalledPackage[]> {
-  const globalScoped = await scanScopeRoot(dorkHome);
-  const globalKeys = new Set(globalScoped.map(({ kind, pkg }) => installKey(kind, pkg.name)));
-  const globalEntries = globalScoped.map(({ pkg }) => ({
-    ...pkg,
-    scope: 'global' as PackageScope,
-  }));
-
-  const seenPaths = new Set<string>();
-  const agentEntries: InstalledPackage[] = [];
-
-  for (const agent of agents) {
-    if (seenPaths.has(agent.projectPath)) continue;
-    seenPaths.add(agent.projectPath);
-
-    for (const { kind, pkg } of await scanScopeRoot(projectScopeRoot(agent.projectPath))) {
-      agentEntries.push({
-        ...pkg,
-        scope: globalKeys.has(installKey(kind, pkg.name)) ? 'override' : 'agent-local',
-        agentPath: agent.projectPath,
-        ...(agent.id !== undefined && { agentId: agent.id }),
-        ...(agent.name !== undefined && { agentName: agent.name }),
-      });
-    }
-  }
-
-  agentEntries.sort((a, b) =>
-    (a.agentName ?? a.agentPath ?? '').localeCompare(b.agentName ?? b.agentPath ?? '')
-  );
-  return [...globalEntries, ...agentEntries];
+  const records = await scanInstallationRecords(dorkHome, { agents });
+  return records.map((r) => r.package);
 }
 
 /**
@@ -265,7 +350,7 @@ export async function scanInstallationsAcrossScopes(
  */
 export async function scanAgentLocalInstalls(projectPath: string): Promise<InstalledPackage[]> {
   const found = await scanScopeRoot(projectScopeRoot(projectPath));
-  return found.map(({ pkg }) => ({
+  return found.map(({ package: pkg }) => ({
     ...pkg,
     scope: 'agent-local' as PackageScope,
     agentPath: projectPath,
@@ -326,31 +411,40 @@ async function hasEntries(dir: string): Promise<boolean> {
 }
 
 /**
- * Read a single installed package's identity and translate it into an
- * {@link InstalledPackage} summary. Returns `null` when no identity can be
- * read so the walker can skip silently.
+ * Read a single installation's identity and sidecar, once, into an
+ * {@link InstallationRecord}. Returns `null` when no identity can be read so the
+ * walker can skip silently.
  *
- * Provenance fields (`installedFrom`, `installedAt`) come from the
- * `.dork/install-metadata.json` sidecar via {@link readInstallMetadata}; they
- * are omitted entirely when the sidecar is absent rather than coerced to a
- * placeholder string.
+ * Provenance fields on the listing (`installedFrom`, `installedAt`,
+ * `dependencyWarnings`) come from the `.dork/install-metadata.json` sidecar via
+ * {@link readInstallMetadata}; they are omitted entirely when the sidecar is
+ * absent rather than coerced to a placeholder string. The whole sidecar rides
+ * along on the record for the update check.
  */
-async function readInstalledPackage(packagePath: string): Promise<InstalledPackage | null> {
+async function readInstallationRecord(
+  packagePath: string,
+  kind: InstallRootDir,
+  linked: boolean
+): Promise<InstallationRecord | null> {
   const identity = await readInstalledIdentity(packagePath);
   if (!identity) return null;
-  // `declaredVersion` is the update check's concern; the listing already
-  // shows it as `version`.
-  const { declaredVersion: _declaredVersion, ...base } = identity;
+  const { declaredVersion, ...base } = identity;
 
   const metadata = await readInstallMetadata(packagePath);
   return {
-    ...base,
-    ...(metadata?.installedFrom !== undefined && { installedFrom: metadata.installedFrom }),
-    ...(metadata?.installedAt !== undefined && { installedAt: metadata.installedAt }),
-    ...(metadata?.dependencyWarnings !== undefined &&
-      metadata.dependencyWarnings.length > 0 && {
-        dependencyWarnings: metadata.dependencyWarnings,
-      }),
+    kind,
+    declaredVersion,
+    metadata,
+    linked,
+    package: {
+      ...base,
+      ...(metadata?.installedFrom !== undefined && { installedFrom: metadata.installedFrom }),
+      ...(metadata?.installedAt !== undefined && { installedAt: metadata.installedAt }),
+      ...(metadata?.dependencyWarnings !== undefined &&
+        metadata.dependencyWarnings.length > 0 && {
+          dependencyWarnings: metadata.dependencyWarnings,
+        }),
+    },
   };
 }
 
@@ -492,6 +586,15 @@ async function validatedSummary(
     }),
     installPath: packagePath,
   };
+}
+
+/** Whether `target` is itself a symbolic link (false when it cannot be read). */
+async function isSymlink(target: string): Promise<boolean> {
+  try {
+    return (await lstat(target)).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 /** `fs.readdir` that swallows ENOENT so callers can walk optional trees. */
