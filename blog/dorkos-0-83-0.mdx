@@ -1,0 +1,113 @@
+---
+title: DorkOS 0.83.0
+description: Decide what your agents may do on their own, keep your settings when a marketplace package updates, and trust that a package only runs what you approved.
+date: 2026-09-24
+author: DorkOS Team
+category: release
+tags: [release, permissions, marketplace, security]
+---
+
+DorkOS 0.83.0 lets you decide what your agents may do on their own. Marketplace updates now keep your settings, and a package runs only what you approved. This release also closes several ways a package could harm your computer.
+
+## Highlights
+
+### Decide what your agents may do
+
+Open Settings → Permissions and set each kind of work to Allowed, Ask or Blocked. Rooms is the first area, and you can set any one agent differently on its own Permissions page.
+
+### Three answers on every approval card
+
+When an agent needs your yes, pick **Allow** for this once, **Always allow** for this agent from now on, or **Deny**. Every answer is kept in a history you can read later.
+
+### Updates keep what you changed
+
+Updating a marketplace package no longer wipes your settings or your agent's memory. If you edited one of the package's own files, your copy is saved next to the new one.
+
+### Updates run only what you approved
+
+Before a package updates, DorkOS shows every command and program the new version runs. A package installed for all your projects loads only after you approve that exact copy.
+
+### Safer package reading
+
+A package file can no longer run code, freeze DorkOS, or reach files outside the package when DorkOS reads it. This includes the preview you see before you install.
+
+## All Changes
+
+> DorkOS 0.83.0 lets you decide what your agents may do on their own, and marketplace updates now keep your settings and run only what you approved. It also closes several ways a package could harm your computer. Communities are still early.
+
+### Added
+
+- If you run a community host, the switcher now takes you to where you create a new community on it. Open **Add community**, then **Create a community**, and your host's own page opens in the browser. It only appears when that host has just confirmed that the account you connected with runs it, and the host's page still asks you to sign in before anything is created. If you run more than one host, each gets its own row (DOR-2242).
+- A Community server can now erase a person when they ask. A person can erase their messages from one community, or delete their account and be erased from every community on the host. Each request waits 72 hours, and they can cancel it until then. After that, their messages stay in their place in conversations as "This message was erased.", and their name, handle, files, and agents are removed, and their DorkOS installations are disconnected. Mentions of them in other people's messages become `@[erased]`. The host who runs the server cannot start, speed up, or see an erasure. (DOR-2265)
+- Hosts can keep a record of finished erasures outside their backups with `COMMUNITY_ERASURE_JOURNAL`, and run `erasure:reapply` after restoring a backup, so nobody who was erased comes back. (DOR-2265)
+- Erase your messages from a community, or delete your account, from the Community page. Under **Manage**, then **Account**, choose **Erase your messages here**. Communities you left and **Delete your account** are on the page that lists your communities. Each waits 72 hours, and a banner lets you cancel until then. Every form says plainly what erasure can't reach: copies on other people's computers and the host's backups. (DOR-2265)
+- If you run a Community server, you can now put a community **on hold** instead of suspending it. Members can still read everything and the owner can still download an export, but no one can post, join, or change settings. Every channel shows a banner that says so. Releasing the hold puts the community back as it was (DOR-2255).
+- A host can publish a deletion notice for a held community, at least two weeks away by default and never less than one. Members see the date on every channel. After it passes, the host can schedule the community's deletion, which waits the usual seven days and which only the host can cancel. An owner can still delete their own community during a hold, and cancelling that returns it to the hold (DOR-2255).
+- See how many replies a thread has in a community channel. The count sits under the message that started the thread, the same way it does in your own channels, and it goes up as new replies arrive. Click it to open the thread. A community running an older version of its server shows no count until it updates. (DOR-2229)
+- See what you have installed from the terminal with `dorkos marketplace installed`. Each row says where the package lives (everywhere, or which agent), and marks a package that points at a working copy on your computer. (DOR-2193)
+- See which packages are behind with `dorkos marketplace outdated`. It only prints what has an update, plus anything it couldn't check, and changes nothing. Its exit code tells a script or a scheduled job what it found: `0` all up to date, `1` something has an update, `2` it couldn't tell. A package linked to a working copy is listed on its own and doesn't change the answer. (DOR-2193)
+- Your agents can now find out which of your installed packages have a newer version, and update them. Ask an agent "is anything out of date?" and it can check every package you have installed, in every place it is installed, without opening the app. When you want the updates, the agent asks first: an approval card lists every package it would update, where it is, the old and new version, and every command, scheduled job and MCP server the new version would run. Nothing changes until you say yes, and if a package changes after you approve it, that package is not updated and you are asked again. A package you linked from your own working copy is never replaced. Agents can also ask for an out-of-date flag on the list of installed packages they already read, and that list stays as fast as before when they don't ask (DOR-2195).
+- Before you install a plugin, DorkOS now shows every program it would start on its own: MCP servers, language servers, background monitors, and the commands it adds for your agents to run, each with exactly what it runs. It also reads hooks a plugin declares in its manifest or in its skills, not only in its hooks file, shows the tools each skill may use without asking you, and says so when a plugin declares something it can't read. The app, `dorkos install`, and agent approvals all list these, hidden characters that could disguise a command are shown, and an approval no longer covers a package that adds or changes one after you said yes (DOR-2195).
+- You can now change when a schedule that came with an installed package runs. Edit it on the Schedules tab and pick a new time or timezone; DorkOS keeps your timing, so the package's files stay as they shipped and your choice survives its updates. The row says "Your timing" and shows the timezone it runs in, and "Reset to the package's default" puts the package's own timing back. If an agent changes when one of these schedules runs, it stops and waits for you to approve it again (DOR-2302)
+- Decide what your agents may do on their own. Settings → Permissions sets each kind of work to Allowed, Ask or Blocked for every agent, and an agent's own Permissions page lets you set one agent differently. Rooms is the first area: making rooms, adding or removing people, renaming, leaving and archiving.
+- Agents can now archive a room they are in when the work is done. The room and everything said in it are kept, and you can bring it back from the room's settings. (DOR-2094)
+- Every permission change is kept in a history that says what changed, who changed it and when. It is never cleared.
+- If an agent's settings file is edited directly instead of through DorkOS (by you, or by an agent that can edit files), the change still takes effect, and the history records it as **Changed outside DorkOS**, with what it was before and after. The agent's Permissions page marks that row.
+- When an agent needs your yes, the card now has three answers: **Allow** (this once), **Always allow** (this agent, this action, from now on) and **Deny**. Always allow is saved as that agent's own permission, so you can see it and reset it on the agent's Permissions page.
+- The card also shows up inside a room when that room's conversation caused it, so you can answer where the work is happening.
+- An agent that is blocked from something can now ask you for it, and say why. You get a card with its reason. To keep this from turning into nagging, an agent can ask about one thing per area at a time, cannot ask again for a day after you say no, and can ask at most five times an hour.
+- An agent can look up its own permissions, so it can tell you why something was refused instead of guessing.
+- A Community host can now link its own terms, privacy notice, and a way to report abuse. Terms and Privacy show under the sign-in form, all three show in Settings under Account, and each message gets a **Report** link. Report opens the host's page with only the community and message IDs added, never the message text or anyone's name. A host that sets none of them shows nothing new.
+- You can now make schedules for an agent you installed from the marketplace, the same way as for any other agent, and they are kept when the package updates. Until now DorkOS turned every one of them down. Two cases are still refused, each with a note saying why: a name the package already uses for one of its own schedules, and any schedule for an agent whose package was installed by an older version of DorkOS, which works after that package's next update. If no update comes out for that package, there is not yet a button to prepare it by hand; that is coming (DOR-2272)
+- A schedule that came with a package now says so as soon as you open it. You can still switch it on or off and change when it runs; its name, instructions and settings are shown but can't be changed there, because the package's next update would put them back. **Make my own copy** opens a new schedule for the same agent with everything filled in and a name that isn't taken yet. By default, creating the copy also switches the package's schedule off, so the same work doesn't run twice (DOR-2272)
+
+### Changed
+
+- A community owner can ask to delete a community while the host has it suspended. Cancelling that deletion puts the community back in its suspension. (DOR-2265)
+- An owner export keeps erased members as "Erased member", with no email address. (DOR-2265)
+- Use consistent fields, buttons and error messages when signing in to the DorkOS app or a Community.
+- All marketplace commands now live under `dorkos marketplace`: `install`, `update` and `uninstall` join `installed`, `outdated` and the source commands. `dorkos install`, `dorkos update` and `dorkos uninstall` still work as shorter names for the same commands. (DOR-2193)
+- The Marketplace's **Installed** tab now tells you which packages have a newer version before you click anything. Each package says "Update available: v1.2.0 → v1.3.0", "Up to date", or why it couldn't be checked, for example when a package is linked to a folder on your computer. The tab shows how many updates are waiting, even from Browse. **Update all** lists every package it will update, where it is installed and which version it moves to, and only updates those after you confirm. A package that is already up to date no longer has an Update button (DOR-2196).
+- If you chose Full power when you set up DorkOS, your agents can now make and arrange rooms without asking. If you chose to keep being asked, they ask first, and that now includes merging a room's work into the main branch, which they used to do without asking. If you never chose, nothing changes until you do.
+- A Blocked action no longer shows up in an agent's list of tools. The agent is told once that the area is blocked and to ask you if it needs it.
+- Uninstalling a marketplace agent now removes it from your team, and the confirmation says what that takes away: its rooms, schedules, sign-ins and access. Reinstalling brings back its identity but not those (DOR-2245)
+- Package authors can't mark files that decide what a package runs (hooks, servers, commands, skills, subagents, extensions) as yours to edit, so an update always runs exactly what you approved (DOR-2245)
+- Plugins written for Claude Code can keep their own state with `${CLAUDE_PLUGIN_DATA}`, which DorkOS points at a folder inside each install (DOR-2245)
+- Every answer you give on a card is recorded in your permission history, with who answered. With login off it says "Someone on this computer", because DorkOS cannot tell who pressed it.
+- A scheduled run, a chat connection or another agent's message no longer holds its turn open for ten minutes waiting on a card nobody is watching. The card goes to your inbox, and when you answer, DorkOS tells the agent so it can carry on.
+- `dorkos update --apply` prints what each new version runs and asks before it installs. Add `--yes` to skip the question. `dorkos update <name>` without `--apply` still only checks. An older `dorkos` CLI is told to update itself instead of updating anything (DOR-2306)
+
+### Removed
+
+- The per-agent **Manage rooms** switch. Your old choice carries over: an agent you had switched it on for keeps rooms, and one you had switched it off for has Rooms blocked.
+- Standing permissions, the "stop asking about this for 8 hours" button, and the **Standing permissions** switches in Settings and the Control Center. Always allow replaces them. Any that were still running when you upgraded were ended, not made permanent, and your permission history has a line for each.
+
+### Fixed
+
+- Reach the newest message with one press of Scroll to bottom, even right after a lot of messages arrive at once. Before, it could stop partway and take two to four presses. (DOR-2268)
+- See your own message in a community channel as soon as you send it. Every half minute the channel used to quietly reload itself, and a message sent at that moment could take around twenty seconds to show up. (DOR-2268)
+- `--project .` on `install`, `update` and `uninstall` now means the folder you're in, even when DorkOS was started somewhere else. Before, DorkOS could pick the wrong project or refuse the path. (DOR-2193)
+- `dorkos update` now says to restart DorkOS when the running copy is older than the command, instead of a bare "Not found". (DOR-2193)
+- You can now save edits to a schedule that came with an installed package. Saving one used to fail every time, even when you had only changed when it runs (DOR-2302)
+- Updating or reinstalling a marketplace package keeps the settings and files you and your agents added to it. Before, an update reset everything except two folders, and a reinstall kept nothing (DOR-2245)
+- If you changed one of a package's own files, an update saves your copy next to the new one (as `.dork-old`) and tells you, instead of losing it. A package can mark a file as yours to edit, such as a settings file, and then your copy stays and the new default is saved next to it (as `.dork-new`) (DOR-2245)
+- A marketplace agent keeps its identity, persona and memory when its package updates. Before, every update gave it a new identity and reset its notes (DOR-2245)
+- Uninstalling a package keeps the files you and your agents added or changed, and lists them; reinstalling picks them up. `--purge` still removes everything (DOR-2245)
+- An update that the new version could never finish, such as one with a schedule in an unknown time zone, is refused before anything is removed, so the version you had stays installed (DOR-2245)
+- A skill or command file whose header starts with `---JSON` or `---Json` now reads the same as one starting with `---json`. Before, DorkOS said it couldn't read the file. (DOR-2317)
+- A package schedule you had switched off no longer switches itself back on when the package stops including it, including a schedule you set up before this update. DorkOS now keeps your choice and writes it into the schedule's file, which is yours from then on. If the file can't be written right away, DorkOS keeps the schedule off and tries again (DOR-2272)
+
+### Security
+
+- A package's files can no longer run code when DorkOS reads them. Before, a skill or command file whose header started with `---js` instead of `---` had that header run as code the moment DorkOS opened it, including when you only looked at a package before installing it. DorkOS now refuses to read those files. Headers written the normal way read the same as before, with one small correction: a number written with a leading zero, like `0123`, now reads as 123. Before, it could come out as a different number (83). (DOR-2308)
+- If an agent changes only the timezone of a schedule you approved, the schedule now stops and waits for you to approve it again, the same as when an agent changes when it runs. The same time in another timezone can land up to a day earlier or later. Schedules you already approved stay approved, in the timezone they run in now, and a timezone change you make yourself keeps the schedule running (DOR-2307)
+- An agent editing a schedule at the same moment DorkOS noticed the change could switch it back on without your approval. Now only your own edits do that (DOR-2307)
+- Before you update a package, DorkOS shows what the new version runs on its own: each command and when it runs, and each server or program and whether it starts in every session. What is new since the version you have comes first. The update installs only that version, with those files. If the package changes before the install, nothing is updated and DorkOS asks you to look again (DOR-2306)
+- When an agent asks to update a package, or to install one for all your projects that runs commands or replaces one you have, you get an approval card first. It lists what the package runs, its version, where it comes from and which agent asked. Nothing changes until you allow it (DOR-2306)
+- A package installed for all your projects loads into every session. If it runs commands or programs of its own, it now loads only after you approve the exact copy that was installed, down to its files. Installing or updating it yourself counts. If a different copy arrives another way, such as an agent installing it, DorkOS holds it back from the next message on and asks you. When a package is held back or removed, any open conversation that had it loaded restarts before your next message, so it stops running right away. After this update, expect one card for each such package you already have, noted "installed before approvals were recorded" (DOR-2306)
+- This protects what arrives through installs and updates. It does not re-check files on your computer after they land, since a program already running as you can change your files and settings anyway. A package you linked in from a folder is approved by that folder and runs whatever is in it, and its row says so (DOR-2306)
+- DorkOS refuses to install a package that ships its own settings, secrets or install record, because it never checks those files (DOR-2306)
+- A package that is held back says so on its row in **Installed**, with a **Review** button. `dorkos marketplace held-back` lists them in the terminal and lets you allow or turn one down, and `dorkos` lists them when it starts. With sign-in on, only a person signed in to the app can decide, so the terminal points you to **Review** (DOR-2306)
+- When an update changes something a package runs, the confirm step shows what runs now beside what will run after the update (DOR-2306)
+- A small skill or command file can no longer make DorkOS run out of memory or freeze when you look at a package. YAML lets a file repeat a value by name, and a few hundred bytes of those repeats can grow into billions of values. A long run of blank or comment lines in a header could also keep DorkOS busy for minutes. DorkOS now reads headers with its own reader and stops at one that is too long, repeats values too many times, grows too large, or nests too deep, and reports the file as unreadable instead. Real skill and command headers are far below the limit. (DOR-2311)
+- A marketplace or package can no longer make DorkOS load an enormous file, wait forever, or read files outside the package. DorkOS now stops reading a marketplace catalog past 5 MB, and each file it reads to check a package past 1 MB, and says which one was too large. While checking a package, it no longer follows a shortcut (a symbolic link) inside the package, and it skips anything that isn't an ordinary file, so a package can't point DorkOS at your own files or leave it waiting on a device. When a package includes shortcuts, such as a skill folder that is a shortcut to somewhere else, the install preview now lists each one and says it won't be installed, instead of the skill quietly going missing. Reading a marketplace's extra DorkOS catalog file (`dorkos.json`) now gives up after the same wait as its main catalog. Real catalogs and package files are far smaller than these limits. (DOR-2319)
