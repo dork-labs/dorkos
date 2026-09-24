@@ -306,6 +306,11 @@ app, the same reason shows on the source's row, with a **Try again** button besi
 A refresh always checks the source again. If DorkOS can't reach it but has an earlier copy of its
 listing, it says so and tells you when that copy is from, rather than calling it refreshed.
 
+DorkOS remembers how each source's last check went, whether it came from adding the source, a
+refresh or browsing. `dorkos marketplace list` shows how many packages each source has, or that
+they didn't load and why. The sources page in the app shows the same, even after you reload it or
+open it in another window.
+
 A source's name can use letters, numbers, dots, dashes and underscores, and starts with a letter or
 number.
 

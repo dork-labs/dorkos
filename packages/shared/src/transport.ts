@@ -162,9 +162,9 @@ import type {
   ApplyUpdatesOptions,
   InstallationUpdatesResult,
   InstalledPackage,
-  MarketplaceSource,
   AddSourceInput,
   AddedMarketplaceSource,
+  ListedMarketplaceSource,
   RefreshedMarketplaceSource,
   InstalledShapeSummary,
   ApplyShapeResult,
@@ -2380,8 +2380,8 @@ export interface Transport
    */
   listPackageInstallations(name: string): Promise<InstalledPackage[]>;
 
-  /** List all configured marketplace sources. */
-  listMarketplaceSources(): Promise<MarketplaceSource[]>;
+  /** List all configured marketplace sources, with how each one's last listing fetch went. */
+  listMarketplaceSources(): Promise<ListedMarketplaceSource[]>;
 
   /**
    * Add a new marketplace source. The server fetches the new source's listing

@@ -2318,6 +2318,35 @@ const SourceListingOutcomeSchema = z
       'a source added with `enabled: false`, which is not fetched), and a refresh tries again.'
   );
 
+/**
+ * How the most recent fetch of a source's listing went (DOR-2324). Hand-mirrors
+ * `SourceLastFetch` in `@dorkos/shared/marketplace-schemas`, which is
+ * interfaces-only by design.
+ */
+const SourceLastFetchSchema = z
+  .discriminatedUnion('state', [
+    z.object({ state: z.literal('never') }),
+    z.object({
+      state: z.literal('fetched'),
+      checkedAt: z.string(),
+      packageCount: z.number().int().nonnegative(),
+    }),
+    z.object({ state: z.literal('failed'), checkedAt: z.string(), reason: z.string() }),
+    z.object({
+      state: z.literal('stale'),
+      checkedAt: z.string(),
+      reason: z.string(),
+      copyFetchedAt: z.string(),
+      packageCount: z.number().int().nonnegative(),
+    }),
+  ])
+  .describe(
+    'How the most recent attempt to fetch the listing went, from adding, refreshing, browsing ' +
+      'or an update check. `stale`: it failed and an older copy, fetched at `copyFetchedAt`, ' +
+      'is still listed. `failed`: it failed with no copy. Kept by the server, so it survives ' +
+      'a reload.'
+  );
+
 const AddedMarketplaceSourceSchema = MarketplaceSourceSchema.extend({
   listing: SourceListingOutcomeSchema,
 });
@@ -2432,7 +2461,9 @@ registry.registerPath({
       description: 'Configured marketplace sources',
       content: {
         'application/json': {
-          schema: z.object({ sources: z.array(MarketplaceSourceSchema) }),
+          schema: z.object({
+            sources: z.array(MarketplaceSourceSchema.extend({ lastFetch: SourceLastFetchSchema })),
+          }),
         },
       },
     },

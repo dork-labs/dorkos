@@ -79,6 +79,7 @@ import {
 } from '../services/marketplace/flows/uninstall.js';
 import { UnsupportedSourceUrlError } from '../services/marketplace/source-url-policy.js';
 import {
+  describeLastFetch,
   fetchNewSourceListing,
   refreshSourceListing,
 } from '../services/marketplace/source-listing.js';
@@ -745,7 +746,15 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   router.get('/sources', async (_req, res) => {
     try {
       const sources = await sourceManager.list();
-      res.json({ sources });
+      // How each source's last fetch went, from the record the fetcher keeps
+      // (DOR-2324), so a failed listing is still shown after a reload.
+      const listed = await Promise.all(
+        sources.map(async (source) => ({
+          ...source,
+          lastFetch: await describeLastFetch(cache, source.name),
+        }))
+      );
+      res.json({ sources: listed });
     } catch (err) {
       logger.error('[Marketplace] Failed to list sources', err);
       res.status(500).json({ error: 'Failed to list marketplace sources' });
