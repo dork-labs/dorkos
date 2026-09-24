@@ -2,6 +2,7 @@
 covers:
   - 'feat(community): give each community a short web address'
   - 'fix(community): address review of short web addresses (DOR-2256)'
+  - 'fix(community): keep /setup from being taken as a short web address (DOR-2256)'
 ---
 
 ### Added
