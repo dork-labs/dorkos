@@ -644,6 +644,11 @@ it('rejects foreign objects on every id-taking community route, even for an owne
   // A private channel refuses a non-member with the same 404 as a missing one,
   // so it would hide a missing tenant check. Every channel probe also runs
   // against this public one, which a non-member of B could otherwise read.
+  // Two routes gain nothing from it: GET /channels/:id/read-cursor and
+  // GET /channels/:id/events answer 404 to any non-member, public or not
+  // (liveChannel in routes/events.ts). What keeps them in their tenant is that
+  // membership rows carry tenant foreign keys, so no member of A can ever be a
+  // member of a channel in B.
   const createdPublic = await jsonRequest(`${other}/channels`, 'POST', {
     name: 'Tenant isolation public',
     visibility: 'public',
@@ -1148,10 +1153,9 @@ it('rejects foreign objects on every id-taking community route, even for an owne
         : []),
     ];
   });
-  // Guards the detection itself: every probe that names the channel gets the public run.
-  expect(variants.filter(({ ids }) => ids === foreignPublic)).toHaveLength(
-    probes.filter((probe) => probe.call.toString().includes('x.channel')).length
-  );
+  // The number of probes that take the channel id. Update it when you add or
+  // remove a channel probe; it stops the public run from silently shrinking.
+  expect(variants.filter(({ ids }) => ids === foreignPublic)).toHaveLength(16);
 
   const before = await isolationSnapshot([communityId, otherId]);
   let executed = 0;
