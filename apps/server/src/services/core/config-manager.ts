@@ -3357,7 +3357,15 @@ export function seedPermissionPresetFromDoor(store: {
  * writes it again: this body is the whole removal. Anything else a newer build
  * put under `approvals` is kept, on the version-skew rule.
  *
- * @param store - The conf migration store.
+ * Deliberately NOT a config migration. A migration runs whenever the config
+ * store opens, and the CLI opens it before the server has migrated the
+ * database, so a migration would erase the settings the capture of live
+ * standing permissions needs (the master switch and the void floor) before it
+ * ran. The server calls this once the capture is done, through
+ * {@link ConfigManager.retireStandingGrantSettings}; until then the section is an
+ * unknown key, carried across writes like any other.
+ *
+ * @param store - The config store.
  */
 export function retireStandingGrantSettings(store: {
   get: (key: string) => unknown;
@@ -4123,18 +4131,11 @@ export const CONFIG_MIGRATIONS = {
   // here: it writes one leaf of the new top-level `permissions` section, which
   // nothing above touches, and only READS `ui.fullPowerChoice`, which `'0.67.0'`
   // seeded.
-  //
-  // Extended, not superseded, by phase 2 of the same programme: 0.83.0 has not
-  // shipped yet, and a key above the release version never runs for upgraders.
-  // The second body deletes the `approvals` section `'0.57.0'` seeded, which no
-  // other key touches.
   '0.83.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
-    delete: (key: string) => void;
   }) => {
     seedPermissionPresetFromDoor(store);
-    retireStandingGrantSettings(store);
   },
 } as const;
 
@@ -5001,6 +5002,16 @@ export class ConfigManager {
     // applied something once get to apply it again.
     const sections = key ? [key] : Object.keys(this.store.store);
     this.emitChange(sections, sections);
+  }
+
+  /**
+   * Remove the retired standing-permission settings, once boot has captured the
+   * grants they licensed. See {@link retireStandingGrantSettings}.
+   */
+  retireStandingGrantSettings(): void {
+    retireStandingGrantSettings(
+      this.store as unknown as Parameters<typeof retireStandingGrantSettings>[0]
+    );
   }
 
   /**

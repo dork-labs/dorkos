@@ -24,11 +24,73 @@
  * all about the irreversible thing that ran. An unidentified caller completing
  * something irreversible is the single most important line in this feed.
  *
+ * ## A request is not a failure
+ *
+ * The request tool (`request_permission`, a capability that forwards an
+ * approval) hands on the gate's refusal for the action it asked about: that is
+ * how a card, or a request held back by its limits, reaches the agent. Neither
+ * is a failure, so each is recorded as what happened: `capability.asked` when a
+ * card went to a person, and `capability.request_refused` when DorkOS turned the
+ * request down itself, naming why. Only a real error is `capability.failed`.
+ *
  * @module services/core/agent-identity/capability-attribution
  */
 import type { ActivityService } from '../../activity/activity-service.js';
 import { activityActorForIdentity } from '../../activity/activity-actor.js';
-import type { CapabilityInvocationObserver } from '../capabilities/index.js';
+import {
+  CapabilityGateRefusal,
+  type CapabilityDefinition,
+  type CapabilityInvocationObserver,
+} from '../capabilities/index.js';
+
+/** Why DorkOS turned a request down itself, as the feed says it. */
+const REQUEST_REFUSED_BECAUSE: Record<string, string> = {
+  request_pending: 'it already has a request waiting in that area',
+  recently_denied: 'the answer to the same request was no less than a day ago',
+  request_limit: 'it has already asked five times this hour',
+};
+
+/** What an invocation came to, for the feed. */
+interface AttributedOutcome {
+  eventType: string;
+  summary: string;
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * Read a gate refusal the request tool passed on, or `undefined` for anything
+ * else (see "A request is not a failure" in the module TSDoc).
+ *
+ * @param capability - The capability that threw.
+ * @param error - What it threw.
+ * @param label - Who asked, as the feed names them.
+ */
+function requestOutcome(
+  capability: CapabilityDefinition,
+  error: unknown,
+  label: string
+): AttributedOutcome | undefined {
+  if (!capability.forwardsApproval || !(error instanceof CapabilityGateRefusal)) return undefined;
+  const { decision } = error;
+  const payload = decision.payload;
+  const target = payload.capabilityTitle;
+  const facts = { requestedCapabilityId: payload.capabilityId, reason: payload.reason };
+  if (decision.outcome === 'approval_required') {
+    return {
+      eventType: 'capability.asked',
+      summary: `${label} asked to be allowed to run ${target}`,
+      metadata: { ...facts, approvalId: decision.payload.approvalId },
+    };
+  }
+  const because = REQUEST_REFUSED_BECAUSE[payload.reason];
+  return {
+    eventType: 'capability.request_refused',
+    summary: because
+      ? `${label} asked to be allowed to run ${target}, and was not asked again because ${because}`
+      : `${label} asked to be allowed to run ${target}, and DorkOS refused: ${payload.message}`,
+    metadata: facts,
+  };
+}
 
 /**
  * Build the {@link CapabilityInvocationObserver} that records agent-attributed
@@ -43,7 +105,7 @@ import type { CapabilityInvocationObserver } from '../capabilities/index.js';
 export function createCapabilityAttributionObserver(
   activityService: ActivityService
 ): CapabilityInvocationObserver {
-  return ({ capability, context, ok }) => {
+  return ({ capability, context, ok, error }) => {
     const identity = context.identity;
     // Anonymous reads and ordinary changes stay silent; an anonymous irreversible
     // action does not (see the module TSDoc).
@@ -55,20 +117,24 @@ export function createCapabilityAttributionObserver(
     // DorkOS knows who acted when it does not.
     const actor = activityActorForIdentity(identity);
     const label = actor.actorLabel;
+    const request = ok ? undefined : requestOutcome(capability, error, label);
 
     void activityService.emit({
       ...actor,
       category: 'agent',
-      eventType: ok ? 'capability.invoked' : 'capability.failed',
+      eventType: request?.eventType ?? (ok ? 'capability.invoked' : 'capability.failed'),
       resourceType: 'capability',
       resourceId: capability.id,
       resourceLabel: capability.title,
-      summary: ok
-        ? `${label} ran ${capability.title}`
-        : `${label} tried to run ${capability.title} and it failed`,
+      summary:
+        request?.summary ??
+        (ok
+          ? `${label} ran ${capability.title}`
+          : `${label} tried to run ${capability.title} and it failed`),
       metadata: {
         capabilityId: capability.id,
         tier: capability.tier,
+        ...request?.metadata,
         // Which of the two proofs of consent allowed the call, never just "there
         // was one". A person deciding this exact action and a setting they made
         // earlier are different facts, and a feed that flattened them could not

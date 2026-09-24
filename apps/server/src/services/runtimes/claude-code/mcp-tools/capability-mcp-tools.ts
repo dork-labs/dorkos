@@ -115,7 +115,9 @@ export function capabilityMcpTools(
           registry,
           capability.id,
           args,
-          await resolveContext?.(capability.id, signal),
+          // The server this tool list belongs to rides along, so the request
+          // tool reaches only what this surface lists (spec D8).
+          { ...(await resolveContext?.(capability.id, signal)), mcpServer: transport },
           perCall
         );
       },

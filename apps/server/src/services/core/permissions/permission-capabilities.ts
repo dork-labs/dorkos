@@ -49,6 +49,7 @@ import {
   type PermissionAreaId,
 } from '@dorkos/shared/permissions';
 import { APPROVAL_REQUEST_REASON_MAX_LENGTH } from '@dorkos/shared/approval-schemas';
+import type { McpServerId } from '@dorkos/shared/capabilities';
 
 import {
   CapabilityToolError,
@@ -87,19 +88,48 @@ function refuse(code: string, message: string): never {
 
 /**
  * Find the action an agent named, by capability id or by the MCP tool name it
- * saw (with or without a runtime's `mcp__server__` prefix).
+ * saw (with or without a runtime's `mcp__server__` prefix), among the actions
+ * the CALLING surface lists (spec `agent-permissions` D8).
+ *
+ * On an MCP server that is the capabilities that server advertises: a request
+ * is a way to ask for something the agent could otherwise call there, never a
+ * door to an action no tool list offers it. The principal-bound connector
+ * tools and other surface-less capabilities are reached only through their
+ * own dedicated servers, so they are out of reach here even though the call
+ * carries a server principal. A call over HTTP or the CLI (`dorkos call`)
+ * already reaches any capability by id, so it may name any.
  *
  * @param registry - The composed registry.
  * @param named - What the agent passed as `action`.
+ * @param surface - The MCP server the request arrived on, or `null` for HTTP
+ *   and the CLI.
  */
 export function findRequestedAction(
   registry: CapabilityRegistry,
-  named: string
+  named: string,
+  surface: McpServerId | null
 ): CapabilityDefinition | undefined {
+  const reachable = (capability: CapabilityDefinition) =>
+    surface === null || capability.surfaces.mcp?.servers.includes(surface) === true;
   const byId = registry.get(named);
-  if (byId) return byId;
+  if (byId) return reachable(byId) ? byId : undefined;
   const bare = bareToolName(named);
-  return registry.capabilities.find((capability) => capability.surfaces.mcp?.toolName === bare);
+  return registry.capabilities.find(
+    (capability) => capability.surfaces.mcp?.toolName === bare && reachable(capability)
+  );
+}
+
+/**
+ * The surface a request arrived on. A server principal only ever arrives
+ * through an MCP listener, so a principal without a named server is read as the
+ * in-session one, failing toward the narrower list rather than the whole
+ * registry.
+ *
+ * @param context - The request tool's own handler context.
+ */
+function callingSurface(context: CapabilityHandlerContext): McpServerId | null {
+  if (context.mcpServer) return context.mcpServer;
+  return context.serverPrincipal ? 'in-session' : null;
 }
 
 /**
@@ -255,7 +285,7 @@ async function requestAccess(
     );
   }
   const registry = requireRegistry(deps);
-  const target = findRequestedAction(registry, input.action);
+  const target = findRequestedAction(registry, input.action, callingSurface(context));
   if (!target) {
     if (titleForMcpTool(bareToolName(input.action)) !== undefined) {
       refuse(

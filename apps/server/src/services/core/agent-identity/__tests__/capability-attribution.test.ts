@@ -9,6 +9,7 @@ import {
   initCapabilityTierGate,
   resetCapabilityTierGate,
   trustedCaller,
+  CapabilityGateRefusal,
 } from '../../capabilities/index.js';
 import { ApprovalService, hashApprovalInput } from '../../approvals/index.js';
 import type { CapabilityDeps, CapabilityRegistry } from '../../capabilities/index.js';
@@ -292,5 +293,117 @@ describe('capability attribution', () => {
     await expect(exploding.invoke('demo.read', {}, { identity: IDENTITY })).resolves.toEqual({
       ok: true,
     });
+  });
+});
+
+describe('a request passed on by the request tool (spec agent-permissions D8)', () => {
+  let db: Db;
+
+  /** What the gate hands back for the asked-about action, per case. */
+  const ASKED = new CapabilityGateRefusal({
+    outcome: 'approval_required',
+    payload: {
+      status: 'approval_required',
+      capabilityId: 'rooms.create',
+      capabilityTitle: 'Open a room',
+      tier: 'act',
+      reason: 'no_approval',
+      approvalId: 'approval-1',
+      approvalToken: 'token-1',
+      retryWith: { channel: 'mcp-argument', field: 'approvalToken' },
+      expiresAt: new Date().toISOString(),
+      message: 'Asked.',
+    },
+  } as unknown as ConstructorParameters<typeof CapabilityGateRefusal>[0]);
+  const refusedFor = (reason: string) =>
+    new CapabilityGateRefusal({
+      outcome: 'denied',
+      payload: {
+        status: 'denied',
+        capabilityId: 'rooms.create',
+        capabilityTitle: 'Open a room',
+        tier: 'act',
+        reason,
+        approvable: false,
+        message: 'Held back.',
+      },
+    } as unknown as ConstructorParameters<typeof CapabilityGateRefusal>[0]);
+
+  /** One forwarding capability and one ordinary one, both throwing `thrown`. */
+  function registryThrowing(thrown: unknown) {
+    const capability = (id: `${string}.${string}`, forwardsApproval: boolean) =>
+      defineCapability({
+        id,
+        title: 'Ask for permission',
+        description: 'Throws what it is told.',
+        tier: 'act',
+        area: null,
+        ...(forwardsApproval ? { forwardsApproval: true as const } : {}),
+        input: z.object({}),
+        output: z.unknown(),
+        surfaces: {},
+        invoke: async () => {
+          throw thrown;
+        },
+      });
+    return composeRegistry(
+      [
+        {
+          name: 'demo',
+          capabilities: [capability('demo.request', true), capability('demo.plain', false)],
+        },
+      ],
+      { logger: noopLogger },
+      createCapabilityAttributionObserver(new ActivityService(db))
+    );
+  }
+
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+  async function recorded(thrown: unknown, id = 'demo.request') {
+    await registryThrowing(thrown)
+      .invoke(id, {}, { identity: IDENTITY })
+      .catch(() => {});
+    await flush();
+    return db.select().from(activityEvents).all();
+  }
+
+  beforeEach(() => {
+    db = createTestDb();
+  });
+
+  it('records a card sent to a person as asked, not failed', async () => {
+    const [row] = await recorded(ASKED);
+    expect(row).toMatchObject({
+      eventType: 'capability.asked',
+      summary: 'Researcher asked to be allowed to run Open a room',
+    });
+    expect(JSON.parse(row!.metadata!)).toMatchObject({
+      requestedCapabilityId: 'rooms.create',
+      approvalId: 'approval-1',
+    });
+  });
+
+  it.each([
+    ['request_pending', 'it already has a request waiting in that area'],
+    ['recently_denied', 'the answer to the same request was no less than a day ago'],
+    ['request_limit', 'it has already asked five times this hour'],
+  ])('records a request held back by its limit (%s), saying why', async (reason, because) => {
+    const [row] = await recorded(refusedFor(reason));
+    expect(row).toMatchObject({
+      eventType: 'capability.request_refused',
+      summary: `Researcher asked to be allowed to run Open a room, and was not asked again because ${because}`,
+    });
+    expect(JSON.parse(row!.metadata!)).toMatchObject({ reason });
+  });
+
+  it('still records a real error from the request tool as failed', async () => {
+    const [row] = await recorded(new Error('boom'));
+    expect(row).toMatchObject({ eventType: 'capability.failed' });
+  });
+
+  it('records a gate refusal from any other capability as failed, as before', async () => {
+    const [row] = await recorded(ASKED, 'demo.plain');
+    expect(row).toMatchObject({ eventType: 'capability.failed' });
   });
 });

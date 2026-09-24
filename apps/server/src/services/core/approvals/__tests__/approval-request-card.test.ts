@@ -50,6 +50,32 @@ describe('the request card an approval projects', () => {
     });
   });
 
+  it('never offers Always allow on a card bound to a connector authority, whatever its area', () => {
+    // Not resting on connector actions having no area: even a connector card
+    // recorded in a non-floor area with a named agent keeps Always allow off,
+    // because a standing yes would outlive the one connection, operation and
+    // session the approval is bound to.
+    const approvals = new ApprovalService(db);
+    const ticket = approvals.request({
+      ...BASE,
+      capabilityId: 'connectors.execute_destructive',
+      requestedByPath: '/a',
+      area: 'rooms',
+      connectorAuthority: {
+        digest: 'digest-1',
+        ownerKind: 'local_install',
+        ownerId: 'install-a',
+        agentId: 'agent-a',
+        sessionId: 'session-a',
+        connectionId: 'conn-1',
+        operationRevisionId: 'rev-1',
+      },
+    });
+
+    expect(approvals.getPending(ticket.approvalId)?.alwaysOffered).toBe(false);
+    expect(approvals.answerScope(ticket.approvalId)?.alwaysOffered).toBe(false);
+  });
+
   it('carries a blocked request and its reason, swept for secrets and capped', () => {
     const approvals = new ApprovalService(db);
     const ticket = approvals.request({

@@ -601,6 +601,71 @@ describe('approvals routes', () => {
       expect(emitted).toEqual([]);
     });
 
+    describe('when another answer wins the card while the setting is saved', () => {
+      /** Let the real write land, then have a Deny arrive before the grant. */
+      function denyDuringWrite(ticketId: string, failUndo = false) {
+        const setAgent = world.service.setAgent.bind(world.service);
+        vi.spyOn(world.service, 'setAgent').mockImplementation(async (...args) => {
+          if (args[1].surface === 'undo' && failUndo) throw new Error('disk full');
+          const changes = await setAgent(...args);
+          if (args[1].surface === 'request-card') approvals.deny(ticketId);
+          return changes;
+        });
+      }
+
+      it('puts the setting back, records both writes, and records no yes', async () => {
+        const ticket = requestRoom();
+        denyDuringWrite(ticket.approvalId);
+
+        const res = await request(app)
+          .post(`/api/approvals/${ticket.approvalId}/grant`)
+          .send({ answer: 'always' });
+
+        expect(res.status).toBe(409);
+        expect(world.agents.get('agent-dorkbot')?.permissions?.actions?.['rooms.create']).toBe(
+          undefined
+        );
+        const changed = world.events.filter((e) => e.eventType === 'permission.changed');
+        expect(changed.map((e) => e.metadata)).toMatchObject([
+          { surface: 'request-card', approvalId: ticket.approvalId },
+          {
+            surface: 'undo',
+            approvalId: ticket.approvalId,
+            changes: [{ before: 'allowed', after: null }],
+          },
+        ]);
+        // The yes did not happen, so no answer says it did.
+        expect(emitted).toEqual([]);
+      });
+
+      it('restores the value the action had before, not the default', async () => {
+        world.agents.get('agent-dorkbot')!.permissions = { actions: { 'rooms.create': 'ask' } };
+        const ticket = requestRoom();
+        denyDuringWrite(ticket.approvalId);
+
+        await request(app)
+          .post(`/api/approvals/${ticket.approvalId}/grant`)
+          .send({ answer: 'always' });
+
+        expect(world.agents.get('agent-dorkbot')?.permissions).toEqual({
+          actions: { 'rooms.create': 'ask' },
+        });
+      });
+
+      it('says so plainly when the setting could not be put back', async () => {
+        const ticket = requestRoom();
+        denyDuringWrite(ticket.approvalId, true);
+
+        const res = await request(app)
+          .post(`/api/approvals/${ticket.approvalId}/grant`)
+          .send({ answer: 'always' });
+
+        expect(res.status).toBe(500);
+        expect(res.body.code).toBe('ALWAYS_ALLOW_NOT_UNDONE');
+        expect(emitted).toEqual([]);
+      });
+    });
+
     it('writes no setting for a card that was already answered', async () => {
       const ticket = requestRoom();
       approvals.deny(ticket.approvalId);

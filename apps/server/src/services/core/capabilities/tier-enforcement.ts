@@ -904,9 +904,16 @@ function areaLabel(area: PermissionAreaId): string {
 function blockedLimitMessage(limit: BlockedRequestLimit, area: PermissionAreaId): string {
   switch (limit.limit) {
     case 'pending':
+      // Not the first request's `awaiting_decision` payload, which spec D8
+      // describes: tokens are stored hashed, so the first token cannot be sent
+      // again. The approval id names the request instead, and the message says
+      // how the answer arrives (see the spec's D8 note of 2026-09-24).
       return (
-        `You already asked the person about ${areaLabel(area)} and they have not answered yet. ` +
-        'Wait for that answer; do not ask again.'
+        `You already asked the person about ${areaLabel(area)} (request ${limit.approvalId}) ` +
+        'and they have not answered yet. Do not ask again: wait for their answer. In a DorkOS ' +
+        'session, DorkOS tells you here when they decide. If they say yes, call ' +
+        '`request_permission` again with the same action and arguments, plus the approvalToken ' +
+        'your first request returned, and the action runs.'
       );
     case 'recently_denied':
       return (

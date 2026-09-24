@@ -211,6 +211,7 @@ import {
   permissionActions,
   readAgentPermissionsFromManifest,
   captureLiveStandingGrants,
+  readStandingGrantLicence,
   readRawManifestFile,
   recordEndedStandingGrants,
   runPermissionUpgradeSweep,
@@ -735,6 +736,10 @@ async function start() {
     });
   });
 
+  // The retired standing-permission settings, which the capture below needs to
+  // tell a live standing permission from a void one (`ended-standing-grants.ts`).
+  // Nothing removes them until that capture is done.
+  const standingGrantLicence = readStandingGrantLicence(dorkHome);
   try {
     initConfigManager(dorkHome);
   } catch (error) {
@@ -816,8 +821,16 @@ async function start() {
   // Standing permissions are retired and their table is dropped by the next
   // migration; the live ones are recorded first, so the permission sweep can
   // write one history line for each once the Activity log exists.
-  captureLiveStandingGrants(db, dorkHome, logger);
+  captureLiveStandingGrants(db, dorkHome, logger, standingGrantLicence);
   runMigrations(db);
+  // Only now may the settings the capture read go: see `retireStandingGrantSettings`.
+  try {
+    configManager.retireStandingGrantSettings();
+  } catch (error) {
+    logger.warn('[Permissions] could not remove the retired standing-permission settings', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   logger.info(`[DB] Consolidated database ready at ${dbPath}`);
 
   // Construct canonical connector identity and attachment services before Mesh

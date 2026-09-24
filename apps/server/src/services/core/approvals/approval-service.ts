@@ -472,17 +472,31 @@ type ApprovalRow = typeof approvals.$inferSelect;
 
 /**
  * Whether a card may offer "Always allow" (spec `agent-permissions` D7): DorkOS
- * knows which agent asked, the action has an area, and that area is not a floor
- * area. The grant route refuses `answer: 'always'` by the same three rules, from
- * the same row, so what a card offers and what the route accepts cannot drift.
+ * knows which agent asked, the action has an area, that area is not a floor
+ * area, and the approval is not bound to a connector's live authority. The
+ * grant route refuses `answer: 'always'` by the same rules, from the same row,
+ * so what a card offers and what the route accepts cannot drift.
+ *
+ * The last rule does not rest on connector actions having no area today. A
+ * connector approval is bound to one connection, one operation revision and
+ * one session (`connectorAuthority`); a standing yes would outlive every one of
+ * them, which is what the old standing grants refused for connector preflight
+ * too. So a card carrying that binding never offers it, whatever area a future
+ * connector action is given.
  *
  * @param row - The stored approval.
  */
 export function isAlwaysOffered(row: {
   requestedByPath: string | null;
   area: string | null;
+  authorityBindingDigest: string | null;
 }): boolean {
-  return row.requestedByPath !== null && row.area !== null && !isFloorArea(row.area);
+  return (
+    row.requestedByPath !== null &&
+    row.area !== null &&
+    !isFloorArea(row.area) &&
+    row.authorityBindingDigest === null
+  );
 }
 
 /** The recorded area, read defensively: a hand-edited row never breaks a card. */

@@ -26,6 +26,11 @@ import { ApprovalService, BLOCKED_REQUEST_DENY_COOLDOWN_MS } from '../../approva
 import { eventFanOut } from '../../event-fan-out.js';
 import type { AgentIdentity } from '../../agent-identity/agent-identity-service.js';
 import { permissionsDomain } from '../permission-capabilities.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { registerCapabilitiesAsMcpTools } from '../../external-mcp/capability-mcp-tools.js';
+import { capabilityMcpTools } from '../../../runtimes/claude-code/mcp-tools/capability-mcp-tools.js';
 
 const DORKBOT_PATH = '/agents/dorkbot';
 
@@ -70,8 +75,42 @@ const DOMAINS = [
     ],
   },
   { name: 'tasks', capabilities: [probe('tasks.create', 'tasks', 'create_task')] },
+  {
+    name: 'reach',
+    capabilities: [
+      // One action per kind of surface, all in the Blocked Rooms area: one only
+      // the in-session server lists, one only the external server lists, and
+      // one no MCP server lists (a connector-shaped, principal-bound action).
+      reachProbe('reach.in_session', 'in_session_only', ['in-session']),
+      reachProbe('reach.external', 'external_only', ['external']),
+      reachProbe('reach.unlisted', null, []),
+    ],
+  },
   permissionsDomain,
 ];
+
+/** A Rooms-area capability listed on exactly the given MCP servers. */
+function reachProbe(
+  id: `${string}.${string}`,
+  toolName: string | null,
+  servers: ('in-session' | 'external')[]
+) {
+  return defineCapability({
+    id,
+    title: `Probe ${id}`,
+    description: 'A probe capability.',
+    tier: 'act',
+    area: 'rooms',
+    approvalDisplayFields: ['title'],
+    input: z.object({ title: z.string() }),
+    output: z.unknown(),
+    surfaces: toolName ? { mcp: { toolName, servers } } : {},
+    invoke: async (_deps, input) => {
+      ran.push({ id, input });
+      return { created: input.title };
+    },
+  });
+}
 
 /** Read the plain JSON payload out of an MCP text result. */
 function payloadOf(result: {
@@ -250,6 +289,16 @@ describe('permissions.request_access and permissions.list', () => {
         approvable: false,
         approvalId: first.approvalId,
       });
+      // No token comes back (it is stored hashed), so the words say exactly how
+      // to go on: wait, be told, and retry with the first request's token.
+      expect(second.message).toBe(
+        `You already asked the person about Rooms (request ${first.approvalId as string}) and ` +
+          'they have not answered yet. Do not ask again: wait for their answer. In a DorkOS ' +
+          'session, DorkOS tells you here when they decide. If they say yes, call ' +
+          '`request_permission` again with the same action and arguments, plus the ' +
+          'approvalToken your first request returned, and the action runs.'
+      );
+      expect(second).not.toHaveProperty('approvalToken');
       expect(approvals.listPending()).toHaveLength(1);
     });
 
@@ -324,6 +373,69 @@ describe('permissions.request_access and permissions.list', () => {
     expect(
       payloadOf(await ask({ ...REQUEST, action: 'request_permission', arguments: REQUEST })).code
     ).toBe('UNKNOWN_ACTION');
+  });
+
+  describe('only what the calling surface lists (spec D8)', () => {
+    /** Ask for an action over a named MCP server, or over HTTP when `null`. */
+    async function askOn(surface: 'in-session' | 'external' | null, action: string) {
+      const result = await invokeCapabilityAsMcpResult(
+        registry,
+        'permissions.request_access',
+        { ...REQUEST, action },
+        { identity: dorkbot(), sessionId: 'session-1', ...(surface ? { mcpServer: surface } : {}) }
+      );
+      const payload = payloadOf(result);
+      return (payload.code as string | undefined) ?? (payload.capabilityId as string);
+    }
+
+    it('on the in-session server, reaches in-session actions only', async () => {
+      expect(await askOn('in-session', 'reach.unlisted')).toBe('UNKNOWN_ACTION');
+      expect(await askOn('in-session', 'reach.external')).toBe('UNKNOWN_ACTION');
+      expect(await askOn('in-session', 'external_only')).toBe('UNKNOWN_ACTION');
+      expect(await askOn('in-session', 'in_session_only')).toBe('reach.in_session');
+    });
+
+    it('on the external server, reaches external actions only', async () => {
+      expect(await askOn('external', 'reach.unlisted')).toBe('UNKNOWN_ACTION');
+      expect(await askOn('external', 'reach.in_session')).toBe('UNKNOWN_ACTION');
+      expect(await askOn('external', 'reach.external')).toBe('reach.external');
+    });
+
+    it('over HTTP, where any action is callable by id, reaches any', async () => {
+      expect(await askOn(null, 'reach.unlisted')).toBe('reach.unlisted');
+    });
+
+    it('is told its surface by the external /mcp projection', async () => {
+      const server = new McpServer({ name: 'dorkos', version: '0.0.0' });
+      registerCapabilitiesAsMcpTools(server, registry, 'external', { identity: dorkbot() });
+      const client = new Client({ name: 'test', version: '0.0.0' });
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      await Promise.all([client.connect(a), server.connect(b)]);
+
+      const result = await client.callTool({
+        name: 'request_permission',
+        arguments: { ...REQUEST, action: 'in_session_only' },
+      });
+      expect(payloadOf(result as never)).toMatchObject({ code: 'UNKNOWN_ACTION' });
+    });
+
+    it('is told its surface by the Claude Code in-session projection', async () => {
+      const tools = capabilityMcpTools(registry, 'in-session', async () => ({
+        identity: dorkbot(),
+        sessionId: 'session-1',
+      }));
+      const tool = tools.find((t) => t.name === 'request_permission') as unknown as {
+        handler: (args: unknown, extra: unknown) => Promise<Parameters<typeof payloadOf>[0]>;
+      };
+      const result = await tool.handler({ ...REQUEST, action: 'external_only' }, {});
+      expect(payloadOf(result)).toMatchObject({ code: 'UNKNOWN_ACTION' });
+    });
+
+    it('never runs an action the surface does not list', async () => {
+      await askOn('in-session', 'reach.unlisted');
+      expect(ran).toEqual([]);
+      expect(approvals.listPending()).toEqual([]);
+    });
   });
 
   it('accepts a runtime-prefixed tool name', async () => {

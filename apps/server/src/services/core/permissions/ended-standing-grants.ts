@@ -26,6 +26,27 @@
  *    whenever the file exists, independent of the sweep's per-version marker,
  *    because the file is itself the "still owed" marker.
  *
+ * ## Only the grants that were really live
+ *
+ * A row that is unrevoked and unexpired was not necessarily honored. The old
+ * gate also required the master switch (`approvals.standingGrants`), voided
+ * every grant made at or before `approvals.standingGrantsVoidBefore` (stamped by
+ * `dorkos config set`, which has no database to revoke rows in), and ended them
+ * all at boot whenever login was off. Reporting such a row as "ended" would tell
+ * the person a window was open that was not, so the capture applies the same
+ * three rules, read by {@link readStandingGrantLicence}.
+ *
+ * This build no longer declares those settings, so they are read straight off
+ * `config.json`, where they stay (an unknown key, carried across every write)
+ * until the server removes them just after its capture
+ * (`ConfigManager.retireStandingGrantSettings`). They are deliberately not
+ * removed by a config migration: the CLI opens the config store before the
+ * server migrates the database, so a migration would erase them first. Every
+ * entry point that migrates the real database (the server, and the CLI's
+ * `dorkos auth`, which can run before the server ever has) captures before
+ * migrating; `__tests__/ended-standing-grants-callers.test.ts` holds every
+ * `runMigrations` caller to that.
+ *
  * Capturing is best-effort and never blocks a boot: the grants are dead either
  * way (no code reads them any more), so a failure costs the history lines, not
  * safety, and is logged.
@@ -58,6 +79,44 @@ export interface EndedStandingGrant {
   expiresAt: string;
 }
 
+/** What the retired settings said about which standing permissions were honored. */
+export interface StandingGrantLicence {
+  /** Whether the master switch was on and login was on, so any grant counted. */
+  honored: boolean;
+  /** Every grant made at or before this instant was void. ISO 8601 UTC. */
+  voidBefore: string | null;
+}
+
+/** Honors nothing: what an install that never switched the feature on had. */
+const NO_LICENCE: StandingGrantLicence = { honored: false, voidBefore: null };
+
+/**
+ * Read the retired standing-permission settings straight off `config.json`,
+ * before anything removes them (see the module TSDoc).
+ *
+ * A missing, unreadable or unparseable file, or one without the settings,
+ * honors nothing: the feature was off by default, and failing toward "nothing
+ * was open" never tells a person a window was open that was not.
+ *
+ * @param dorkHome - The data directory holding `config.json`.
+ * @returns Whether any grant counted, and the void floor.
+ */
+export function readStandingGrantLicence(dorkHome: string): StandingGrantLicence {
+  let config: unknown;
+  try {
+    config = JSON.parse(readFileSync(path.join(dorkHome, 'config.json'), 'utf-8'));
+  } catch {
+    return NO_LICENCE;
+  }
+  if (!isObject(config) || !isObject(config.approvals)) return NO_LICENCE;
+  const loginOn = isObject(config.auth) && config.auth.enabled === true;
+  const voidBefore = config.approvals.standingGrantsVoidBefore;
+  return {
+    honored: config.approvals.standingGrants === true && loginOn,
+    voidBefore: typeof voidBefore === 'string' && voidBefore !== '' ? voidBefore : null,
+  };
+}
+
 /** True for a plain JSON object. */
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -82,12 +141,13 @@ function toGrant(value: unknown): EndedStandingGrant | undefined {
  * Before the Drizzle migrations drop `approval_grants`, write the grants that
  * are still live to a one-shot file under the data directory.
  *
- * Does nothing when the table is already gone (every boot after the first) or
- * holds no live grant. Never throws.
+ * Does nothing when the table is already gone (every boot after the first),
+ * when the settings honored no grant, or when none is live. Never throws.
  *
  * @param db - The database, before `runMigrations`.
  * @param dorkHome - The data directory the file is written into.
  * @param logger - Where a failure is reported.
+ * @param licence - The retired settings, from {@link readStandingGrantLicence}.
  * @param now - The current time, for which grants are still live.
  * @returns How many grants were captured.
  */
@@ -95,13 +155,18 @@ export function captureLiveStandingGrants(
   db: Db,
   dorkHome: string,
   logger: Pick<Logger, 'warn'>,
+  licence: StandingGrantLicence,
   now: Date = new Date()
 ): number {
   try {
+    if (!licence.honored) return 0;
     const table = db.get<{ name: string } | undefined>(
       sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'approval_grants'`
     );
     if (!table) return 0;
+    // Timestamps are fixed-width UTC ISO strings, so text order is time order;
+    // a grant counted only when made strictly after the floor.
+    const floor = licence.voidBefore ?? '';
     const rows = db.all<{
       id: string;
       agent_path: string;
@@ -109,7 +174,8 @@ export function captureLiveStandingGrants(
       expires_at: string;
     }>(
       sql`SELECT id, agent_path, capability_id, expires_at FROM approval_grants
-          WHERE revoked_at IS NULL AND expires_at > ${now.toISOString()}`
+          WHERE revoked_at IS NULL AND expires_at > ${now.toISOString()}
+            AND granted_at > ${floor}`
     );
     if (rows.length === 0) return 0;
     const grants: EndedStandingGrant[] = rows.map((row) => ({

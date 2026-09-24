@@ -174,7 +174,7 @@ async function declineTelemetry(): Promise<void> {
  * the telemetry modal does. The same reasoning as {@link declineTelemetry}: seed
  * a real, settled answer rather than let a first-run prompt sit on top of the
  * product, and "supervised" is the choice that records the answer WITHOUT
- * flipping full autonomy, standing grants or the open mesh on a demo instance.
+ * flipping full autonomy or the open mesh on a demo instance.
  */
 async function settleFullPowerDoor(): Promise<void> {
   await patchJson(`${API_URL}/api/config`, {

@@ -27,8 +27,10 @@ export {
 export { readRawManifestFile, runPermissionUpgradeSweep } from './permission-upgrade-sweep.js';
 export {
   captureLiveStandingGrants,
+  readStandingGrantLicence,
   recordEndedStandingGrants,
   ENDED_STANDING_GRANTS_FILE,
+  type StandingGrantLicence,
 } from './ended-standing-grants.js';
 export { PermissionObserver } from './permission-observer.js';
 export { readAgentPermissionsFromManifest } from '../capabilities/permission-enforcement.js';

@@ -76,11 +76,16 @@
  * off it is "Someone on this computer", never "You". An Always allow also writes
  * the `permission.changed` event for the setting it created.
  *
- * One residual, stated: the setting is written, then the approval is granted,
- * as two steps. The route checks the approval is still open before writing, so
- * only a second person answering the same card in the gap between the two can
- * leave the setting in place with this call's yes refused. That setting is still
- * a person's explicit Always allow, recorded like any other.
+ * The setting is written, then the approval is granted, as two steps. The
+ * route checks the approval is still open before writing, so only a second
+ * answer to the same card (a Deny, or the window closing) landing in the gap
+ * between the two can refuse this call's yes after the setting is saved. When
+ * that happens the route puts the setting back as it was, through the same
+ * service with `surface: 'undo'` and the approval's id, so the history shows
+ * both the write and its reversal and no Always allow outlives a card that was
+ * not answered yes. Only a failure of that reversal itself can leave the
+ * setting behind; it is logged, and the person is told to check the agent's
+ * Permissions page.
  *
  * @module routes/approvals
  */
@@ -91,6 +96,8 @@ import {
   PERMISSION_ANSWERED_EVENT,
   type PermissionAnswer,
   type PermissionAnsweredMetadata,
+  type PermissionChange,
+  type PermissionState,
 } from '@dorkos/shared/permissions';
 import type {
   ApprovalAnswerScope,
@@ -112,6 +119,7 @@ import {
   PermissionError,
   type PermissionAgentRef,
   type PermissionService,
+  type PermissionWriter,
 } from '../services/core/permissions/index.js';
 import { titleForMcpTool } from '../services/core/mcp-tool-tiers.js';
 import { writerForPosture } from './permissions.js';
@@ -342,6 +350,37 @@ export function createApprovalsRouter(
     return authority;
   };
 
+  /**
+   * Put back what an Always allow wrote, after the yes it came with was refused.
+   * Each key goes back to its value from before the write; a key the write did
+   * not change is left alone.
+   *
+   * @returns Whether the setting is back as it was.
+   */
+  const undoAlwaysAllow = async (
+    permissions: NonNullable<ApprovalsRouterOptions['permissions']>,
+    write: { agentId: string; changes: PermissionChange[] },
+    approvalId: string,
+    writer: PermissionWriter
+  ): Promise<boolean> => {
+    const actions: Record<string, PermissionState | null> = {};
+    for (const change of write.changes) {
+      if (change.key.kind !== 'action') continue;
+      actions[change.key.action] = change.before as PermissionState | null;
+    }
+    if (Object.keys(actions).length === 0) return true;
+    try {
+      await permissions.setAgent(write.agentId, { actions, surface: 'undo', approvalId }, writer);
+      return true;
+    } catch (err) {
+      logger.error('[Approvals] Always allow was saved but its yes was refused, and undo failed', {
+        approvalId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+  };
+
   // GET /pending -- approvals still waiting on a person
   router.get('/pending', (_req, res) => {
     res.json({ approvals: approvals.listPending() });
@@ -370,6 +409,8 @@ export function createApprovalsRouter(
       return res.status(mapped.status).json(mapped.body);
     }
 
+    /** What an Always allow wrote, so a refused yes can put it back. */
+    let alwaysWrite: { agentId: string; changes: PermissionChange[] } | undefined;
     if (answer === 'always') {
       // Every Always-allow refusal comes BEFORE anything is granted: a caller
       // that asked for two things and can only have one gets neither, and is
@@ -388,7 +429,7 @@ export function createApprovalsRouter(
       // The setting first, then the yes: granting is what wakes a held call, so
       // the resumed call and the new setting agree (see the module TSDoc).
       try {
-        await options.permissions.setAgent(
+        const changes = await options.permissions.setAgent(
           agent.id,
           {
             actions: { [scope.capabilityId]: 'allowed' },
@@ -397,6 +438,7 @@ export function createApprovalsRouter(
           },
           writerForPosture(authority.posture, res)
         );
+        alwaysWrite = { agentId: agent.id, changes };
       } catch (err) {
         if (err instanceof PermissionError) {
           return res.status(409).json({ error: err.message, code: err.code });
@@ -414,6 +456,24 @@ export function createApprovalsRouter(
 
     const failure = approvals.grant(req.params.id);
     if (failure) {
+      // Another answer won the card while the setting was being saved: the yes
+      // did not happen, so neither may the setting it came with.
+      if (alwaysWrite && options.permissions) {
+        const undone = await undoAlwaysAllow(
+          options.permissions,
+          alwaysWrite,
+          req.params.id,
+          writerForPosture(authority.posture, res)
+        );
+        if (!undone) {
+          return res.status(500).json({
+            error:
+              'Someone else answered this request first, and DorkOS could not take back the ' +
+              "Always allow it had just saved. Check the agent's Permissions page.",
+            code: 'ALWAYS_ALLOW_NOT_UNDONE',
+          });
+        }
+      }
       const mapped = decisionFailureResponse(failure);
       return res.status(mapped.status).json(mapped.body);
     }

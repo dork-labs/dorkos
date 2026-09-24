@@ -17,13 +17,17 @@ import { sql, type Db } from '@dorkos/db';
 import {
   ENDED_STANDING_GRANTS_FILE,
   captureLiveStandingGrants,
+  readStandingGrantLicence,
   recordEndedStandingGrants,
+  type StandingGrantLicence,
 } from '../ended-standing-grants.js';
 import { STANDING_GRANT_ENDED_EVENT, listPermissionHistory } from '../permission-history.js';
 import { createPermissionWorld } from './permission-fixtures.js';
 
 const NOW = new Date('2026-09-23T12:00:00.000Z');
 const quiet = { warn: () => {} };
+/** The switch and login both on, and no void floor: every live row counted. */
+const ON: StandingGrantLicence = { honored: true, voidBefore: null };
 
 /** Recreate the retired table, as it stood before this build. */
 function withGrantsTable(db: Db): void {
@@ -49,11 +53,13 @@ function grant(
     capabilityId: string;
     expiresAt: string;
     revokedAt?: string;
+    grantedAt?: string;
   }
 ): void {
   db.run(sql`INSERT INTO approval_grants
     (id, agent_path, capability_id, granted_at, expires_at, granted_by, posture, revoked_at)
-    VALUES (${row.id}, ${row.agentPath}, ${row.capabilityId}, ${'2026-09-23T08:00:00.000Z'},
+    VALUES (${row.id}, ${row.agentPath}, ${row.capabilityId},
+      ${row.grantedAt ?? '2026-09-23T08:00:00.000Z'},
       ${row.expiresAt}, ${'user_owner'}, ${'signed-in-operator'}, ${row.revokedAt ?? null})`);
 }
 
@@ -71,7 +77,7 @@ describe('ended standing permissions', () => {
   });
 
   it('captures nothing, and writes no file, once the table is gone', () => {
-    expect(captureLiveStandingGrants(db, dorkHome, quiet, NOW)).toBe(0);
+    expect(captureLiveStandingGrants(db, dorkHome, quiet, ON, NOW)).toBe(0);
     expect(fs.existsSync(path.join(dorkHome, ENDED_STANDING_GRANTS_FILE))).toBe(false);
   });
 
@@ -97,11 +103,72 @@ describe('ended standing permissions', () => {
       revokedAt: '2026-09-23T10:00:00.000Z',
     });
 
-    expect(captureLiveStandingGrants(db, dorkHome, quiet, NOW)).toBe(1);
+    expect(captureLiveStandingGrants(db, dorkHome, quiet, ON, NOW)).toBe(1);
     const written = JSON.parse(
       fs.readFileSync(path.join(dorkHome, ENDED_STANDING_GRANTS_FILE), 'utf-8')
     ) as { id: string }[];
     expect(written.map((g) => g.id)).toEqual(['g-live']);
+  });
+
+  describe('only what the retired settings really honored', () => {
+    beforeEach(() => {
+      withGrantsTable(db);
+      grant(db, {
+        id: 'g-before-floor',
+        agentPath: '/agents/dorkbot',
+        capabilityId: 'tasks_delete',
+        expiresAt: '2026-09-23T16:00:00.000Z',
+        grantedAt: '2026-09-23T08:00:00.000Z',
+      });
+      grant(db, {
+        id: 'g-after-floor',
+        agentPath: '/agents/dorkbot',
+        capabilityId: 'marketplace.uninstall',
+        expiresAt: '2026-09-23T16:00:00.000Z',
+        grantedAt: '2026-09-23T10:00:00.000Z',
+      });
+    });
+
+    const captured = () =>
+      (
+        JSON.parse(fs.readFileSync(path.join(dorkHome, ENDED_STANDING_GRANTS_FILE), 'utf-8')) as {
+          id: string;
+        }[]
+      ).map((g) => g.id);
+
+    it('reports none when the master switch or login was off', () => {
+      const off = { honored: false, voidBefore: null };
+      expect(captureLiveStandingGrants(db, dorkHome, quiet, off, NOW)).toBe(0);
+      expect(fs.existsSync(path.join(dorkHome, ENDED_STANDING_GRANTS_FILE))).toBe(false);
+    });
+
+    it('leaves out a grant made at or before the void floor', () => {
+      const licence = { honored: true, voidBefore: '2026-09-23T08:00:00.000Z' };
+      expect(captureLiveStandingGrants(db, dorkHome, quiet, licence, NOW)).toBe(1);
+      expect(captured()).toEqual(['g-after-floor']);
+    });
+
+    it('reads the licence straight off config.json', () => {
+      const write = (config: unknown) =>
+        fs.writeFileSync(path.join(dorkHome, 'config.json'), JSON.stringify(config));
+
+      expect(readStandingGrantLicence(dorkHome)).toEqual({ honored: false, voidBefore: null });
+      write({
+        auth: { enabled: true },
+        approvals: { standingGrants: true, standingGrantsVoidBefore: '2026-09-01T00:00:00.000Z' },
+      });
+      expect(readStandingGrantLicence(dorkHome)).toEqual({
+        honored: true,
+        voidBefore: '2026-09-01T00:00:00.000Z',
+      });
+      // The old gate ended every grant at boot when login was off.
+      write({ auth: { enabled: false }, approvals: { standingGrants: true } });
+      expect(readStandingGrantLicence(dorkHome).honored).toBe(false);
+      write({ auth: { enabled: true }, approvals: { standingGrants: false } });
+      expect(readStandingGrantLicence(dorkHome).honored).toBe(false);
+      fs.writeFileSync(path.join(dorkHome, 'config.json'), '{ not json');
+      expect(readStandingGrantLicence(dorkHome).honored).toBe(false);
+    });
   });
 
   it('writes one upgrade line per grant, naming the agent and the action, then forgets them', async () => {
@@ -118,7 +185,7 @@ describe('ended standing permissions', () => {
       capabilityId: 'tasks_delete',
       expiresAt: '2026-09-23T16:00:00.000Z',
     });
-    captureLiveStandingGrants(db, dorkHome, quiet, NOW);
+    captureLiveStandingGrants(db, dorkHome, quiet, ON, NOW);
     const world = createPermissionWorld({
       agents: [
         {
@@ -176,7 +243,7 @@ describe('ended standing permissions', () => {
       capabilityId: 'marketplace.uninstall',
       expiresAt: '2026-09-23T16:00:00.000Z',
     });
-    captureLiveStandingGrants(db, dorkHome, quiet, NOW);
+    captureLiveStandingGrants(db, dorkHome, quiet, ON, NOW);
     db.run(sql`DELETE FROM approval_grants`);
     grant(db, {
       id: 'g-2',
@@ -184,7 +251,7 @@ describe('ended standing permissions', () => {
       capabilityId: 'tasks_delete',
       expiresAt: '2026-09-23T16:00:00.000Z',
     });
-    captureLiveStandingGrants(db, dorkHome, quiet, NOW);
+    captureLiveStandingGrants(db, dorkHome, quiet, ON, NOW);
 
     const written = JSON.parse(
       fs.readFileSync(path.join(dorkHome, ENDED_STANDING_GRANTS_FILE), 'utf-8')

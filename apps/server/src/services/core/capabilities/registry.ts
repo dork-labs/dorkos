@@ -16,6 +16,7 @@ import { z } from 'zod';
 import {
   stableStringify,
   type CapabilityCatalog,
+  type McpServerId,
   type SerializedCapability,
 } from '@dorkos/shared/capabilities';
 
@@ -154,6 +155,13 @@ export interface CapabilityInvocationContext {
    */
   cwd?: string;
   /** Process-authenticated caller resolved by a server-owned boundary. */
+  /**
+   * Which MCP server's tool list this call arrived through, set by the MCP
+   * projections; absent on HTTP and the CLI. Informational: it decides no
+   * tier. The request tool uses it to reach only actions this same surface
+   * lists (spec `agent-permissions` D8).
+   */
+  mcpServer?: McpServerId;
   serverPrincipal?: ServerPrincipalProof;
   /** Abort only this capability call; never reused as a turn-lifetime signal. */
   signal?: AbortSignal;
@@ -241,6 +249,8 @@ export interface CapabilityHandlerContext {
    */
   cwd?: string;
   /** Process-authenticated caller resolved by the server boundary. */
+  /** See {@link CapabilityInvocationContext.mcpServer}. */
+  mcpServer?: McpServerId;
   serverPrincipal?: ServerPrincipalProof;
   /** Abort only this capability call. */
   signal?: AbortSignal;
@@ -268,6 +278,12 @@ export type CapabilityInvocationObserver = (event: {
   context: CapabilityHandlerContext;
   /** Whether the handler completed without throwing. */
   ok: boolean;
+  /**
+   * What the handler threw, when it did. Lets the observer tell a refusal the
+   * request tool passed on (a card raised, a request held back by its limits)
+   * from a real failure.
+   */
+  error?: unknown;
 }) => void;
 
 /**
@@ -359,10 +375,11 @@ function notify(
   observer: CapabilityInvocationObserver,
   capability: CapabilityDefinition,
   context: CapabilityInvocationContext,
-  ok: boolean
+  ok: boolean,
+  error?: unknown
 ): void {
   try {
-    observer({ capability, context, ok });
+    observer({ capability, context, ok, ...(ok ? {} : { error }) });
   } catch {
     // Deliberately ignored — see the TSDoc above.
   }
@@ -542,6 +559,7 @@ export function composeRegistry(
         ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
         ...(supplied.cwd ? { cwd: supplied.cwd } : {}),
         ...(supplied.serverPrincipal ? { serverPrincipal: supplied.serverPrincipal } : {}),
+        ...(supplied.mcpServer ? { mcpServer: supplied.mcpServer } : {}),
         ...(supplied.signal ? { signal: supplied.signal } : {}),
         ...(supplied.connectorAgentId ? { connectorAgentId: supplied.connectorAgentId } : {}),
         ...(supplied.connectorSurface ? { connectorSurface: supplied.connectorSurface } : {}),
@@ -634,7 +652,7 @@ export function composeRegistry(
         notify(onInvocation, capability, invocationContext, true);
         return result;
       } catch (err) {
-        notify(onInvocation, capability, invocationContext, false);
+        notify(onInvocation, capability, invocationContext, false, err);
         throw err;
       }
     },

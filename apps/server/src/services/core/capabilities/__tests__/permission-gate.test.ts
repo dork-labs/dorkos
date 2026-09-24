@@ -242,6 +242,51 @@ describe('the permission decision at the tier gate', () => {
       expect(pendingCount()).toBe(0);
     });
 
+    /** A direct call presenting a token, returning the refusal payload or 'ran'. */
+    async function withToken(id: string, approvalToken: string) {
+      try {
+        await registry.invoke(id, INPUT, {
+          identity: dorkbot(),
+          approvalToken,
+          retryChannel: 'mcp-argument',
+        });
+        return 'ran' as const;
+      } catch (err) {
+        return (err as { decision: { payload: Record<string, unknown> } }).decision.payload;
+      }
+    }
+
+    it('refuses a direct call that presents a made-up token, and mints nothing', async () => {
+      // A token is not a way past Blocked: only `request_permission` is. Were a
+      // token enough to reach the card path, an agent could mint a card that
+      // skips the blocked-request limits by inventing one.
+      expect(await withToken('rooms.create', 'a'.repeat(64))).toMatchObject({
+        status: 'denied',
+        reason: 'permission_blocked',
+      });
+      expect(ran).toEqual([]);
+      expect(pendingCount()).toBe(0);
+    });
+
+    it("refuses a direct call that presents another action's valid token", async () => {
+      // One action in the area is set to Ask, so the agent can hold a real,
+      // granted token, for that action.
+      agent = { areas: { rooms: 'blocked' }, actions: { 'rooms.merge': 'ask' } };
+      const asked = (await viaRegistry('rooms.merge')) as {
+        approvalId: string;
+        approvalToken: string;
+      };
+      approvals.grant(asked.approvalId);
+      expect(pendingCount()).toBe(0);
+
+      expect(await withToken('rooms.create', asked.approvalToken)).toMatchObject({
+        status: 'denied',
+        reason: 'permission_blocked',
+      });
+      expect(ran).toEqual([]);
+      expect(pendingCount()).toBe(0);
+    });
+
     it('refuses reads in the area too', async () => {
       expect(await viaRegistry('probe.read')).toMatchObject({ reason: 'permission_blocked' });
     });

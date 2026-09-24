@@ -1,8 +1,9 @@
 /**
  * The `0.83.0` migration (spec `agent-permissions` D13) across the real
  * `conf`/Ajv seam: the first-run power choice becomes the permission preset
- * (phase 1), and the retired standing-permission settings are deleted (phase 2,
- * which extended this same unreleased key).
+ * (phase 1). The retired standing-permission settings are NOT removed by it:
+ * the capture of live standing permissions reads them after the config store
+ * has opened, so boot removes them afterwards (phase 2).
  *
  * A file of its own for the reason `config-full-power-defaults-migration.test.ts`
  * gives: `conf` runs a key only when it is `<= projectVersion`, and the version
@@ -110,16 +111,23 @@ describe('the 0.83.0 migration on an upgrade boot (real conf + Ajv)', () => {
   });
 });
 
-describe('the 0.83.0 migration retires standing permissions (phase 2)', () => {
-  it('deletes all three settings, and the section once it is empty', () => {
-    const dir = seedUpgradeBoot('full', {
-      approvals: {
-        standingGrants: true,
-        trustWindowMinutes: 60,
-        standingGrantsVoidBefore: '2026-09-01T00:00:00.000Z',
-      },
-    });
-    new ConfigManager(dir);
+describe('retiring the standing-permission settings (phase 2)', () => {
+  const SETTINGS = {
+    standingGrants: true,
+    trustWindowMinutes: 60,
+    standingGrantsVoidBefore: '2026-09-01T00:00:00.000Z',
+  };
+
+  it('leaves them on disk through the migration and a write, for the capture to read', () => {
+    const dir = seedUpgradeBoot('full', { approvals: SETTINGS });
+    const manager = new ConfigManager(dir);
+    manager.setDot('ui.theme', 'dark');
+    expect(readDisk(dir).approvals).toEqual(SETTINGS);
+  });
+
+  it('deletes all three once boot asks, and the section once it is empty', () => {
+    const dir = seedUpgradeBoot('full', { approvals: SETTINGS });
+    new ConfigManager(dir).retireStandingGrantSettings();
     expect(readDisk(dir)).not.toHaveProperty('approvals');
   });
 
@@ -127,13 +135,13 @@ describe('the 0.83.0 migration retires standing permissions (phase 2)', () => {
     const dir = seedUpgradeBoot(null, {
       approvals: { standingGrants: false, trustWindowMinutes: 480, somethingNewer: true },
     });
-    new ConfigManager(dir);
+    new ConfigManager(dir).retireStandingGrantSettings();
     expect(readDisk(dir).approvals).toEqual({ somethingNewer: true });
   });
 
   it('does nothing to an install that never had the section', () => {
     const dir = seedUpgradeBoot('supervised');
-    new ConfigManager(dir);
+    new ConfigManager(dir).retireStandingGrantSettings();
     expect(readDisk(dir)).not.toHaveProperty('approvals');
     expect(readDisk(dir).permissions?.preset).toBe('careful');
   });
