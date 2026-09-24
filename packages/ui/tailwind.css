@@ -1,5 +1,6 @@
 /* Import once after tailwindcss in a Tailwind 4 consumer. */
 @import './tokens.css';
+@import 'tw-animate-css';
 
 @custom-variant dui-dark {
   &:where(.dark, .dark *):not(:where(.light, .light *)) {

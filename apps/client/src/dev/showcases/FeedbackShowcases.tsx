@@ -1,23 +1,13 @@
 import { useState } from 'react';
-import { Check, ChevronsUpDown, Copy, Crosshair, X } from 'lucide-react';
+import { Check, Copy, Crosshair, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import {
   Skeleton,
-  Separator,
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
   Button,
   CopyButton,
-  HoverCard,
-  HoverCardTrigger,
-  HoverCardContent,
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
   PermissionModeScopeNote,
   UnverifiedCatalogNotice,
 } from '@/layers/shared/ui';
@@ -194,9 +184,8 @@ function PointAtElementStill() {
   );
 }
 
-/** Feedback component showcases: Skeleton, Separator, Tooltip, HoverCard, Collapsible, Toaster, PermissionModeScopeNote, UnverifiedCatalogNotice. */
+/** Application feedback, loading and notification examples. */
 export function FeedbackShowcases() {
-  const [collapsibleOpen, setCollapsibleOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackBugOpen, setFeedbackBugOpen] = useState(false);
   const [feedbackShotOpen, setFeedbackShotOpen] = useState(false);
@@ -267,94 +256,6 @@ export function FeedbackShowcases() {
               <Skeleton className="h-4 w-32" />
             </div>
           </div>
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection title="Separator" description="Horizontal and vertical dividers.">
-        <ShowcaseLabel>Horizontal</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="space-y-3">
-            <p className="text-foreground text-sm">Content above</p>
-            <Separator />
-            <p className="text-foreground text-sm">Content below</p>
-          </div>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Vertical</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex h-6 items-center gap-3">
-            <span className="text-foreground text-sm">Left</span>
-            <Separator orientation="vertical" />
-            <span className="text-foreground text-sm">Right</span>
-          </div>
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection title="Tooltip" description="Hover to reveal contextual information.">
-        <ShowcaseDemo>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline">Hover me</Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>This is a tooltip</p>
-            </TooltipContent>
-          </Tooltip>
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection
-        title="HoverCard"
-        description="Content card revealed on hover over a trigger."
-      >
-        <ShowcaseDemo>
-          <HoverCard>
-            <HoverCardTrigger asChild>
-              <Button variant="link">@claude-code</Button>
-            </HoverCardTrigger>
-            <HoverCardContent className="w-72">
-              <div className="space-y-1">
-                <h4 className="text-sm font-semibold">Claude Code Runtime</h4>
-                <p className="text-muted-foreground text-xs">
-                  Primary agent runtime backed by the Claude Agent SDK. Supports streaming, tool
-                  approval, and extended thinking.
-                </p>
-                <div className="text-muted-foreground flex items-center gap-2 pt-1 text-xs">
-                  <span>v2.1.0</span>
-                  <Separator orientation="vertical" className="h-3" />
-                  <span>42 sessions active</span>
-                </div>
-              </div>
-            </HoverCardContent>
-          </HoverCard>
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection
-        title="Collapsible"
-        description="Expand/collapse toggle for supplementary content."
-      >
-        <ShowcaseDemo>
-          <Collapsible
-            open={collapsibleOpen}
-            onOpenChange={setCollapsibleOpen}
-            className="space-y-2"
-          >
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-semibold">Agent Configuration</h4>
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                  <ChevronsUpDown className="size-4" />
-                  <span className="sr-only">Toggle</span>
-                </Button>
-              </CollapsibleTrigger>
-            </div>
-            <div className="rounded-md border px-3 py-2 text-sm">Runtime: Claude Code</div>
-            <CollapsibleContent className="space-y-2">
-              <div className="rounded-md border px-3 py-2 text-sm">Max tokens: 8192</div>
-              <div className="rounded-md border px-3 py-2 text-sm">Temperature: 0.7</div>
-            </CollapsibleContent>
-          </Collapsible>
         </ShowcaseDemo>
       </PlaygroundSection>
 

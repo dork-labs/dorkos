@@ -21,6 +21,11 @@ test.describe('shared UI catalog @smoke', () => {
     await page.getByText('Email address', { exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Email address' })).toBeFocused();
     await expect(page.getByRole('region', { name: 'Notices' }).getByRole('alert')).toBeVisible();
+    await page.getByRole('textbox', { name: 'Email address' }).fill('kai@example.test');
+    await expect(page.getByText('Enter a valid email address.')).toHaveCount(0);
+    await expect(page.getByRole('textbox', { name: 'Email address' })).not.toHaveAttribute(
+      'aria-invalid'
+    );
     expect(errors).toEqual([]);
   });
 

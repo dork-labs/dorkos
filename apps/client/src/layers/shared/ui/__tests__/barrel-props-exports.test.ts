@@ -18,8 +18,9 @@
  * list would go stale the next time somebody adds a component.
  */
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { join, dirname, relative } from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -35,6 +36,24 @@ function sourceFiles(dir: string): string[] {
     if (entry === 'index.ts' || !/\.tsx?$/.test(entry)) return [];
     return [path];
   });
+}
+
+/** Follow package leaf facades so an ownership move cannot hide an export gap. */
+function ownedSources(): string[] {
+  const local = sourceFiles(UI_DIR);
+  const packageRoot = dirname(createRequire(import.meta.url).resolve('@dork-labs/ui/package.json'));
+  const sources = new Set(local);
+  for (const file of local) {
+    for (const match of readFileSync(file, 'utf8').matchAll(
+      /from ['"]@dork-labs\/ui\/([^'"]+)['"]/g
+    )) {
+      const base = join(packageRoot, 'src', match[1]);
+      const target = existsSync(`${base}.tsx`) ? `${base}.tsx` : `${base}.ts`;
+      expect(existsSync(target), `missing source for ${match[0]}`).toBe(true);
+      sources.add(target);
+    }
+  }
+  return [...sources];
 }
 
 /**
@@ -79,14 +98,14 @@ describe('shared/ui barrel', () => {
     const missing: string[] = [];
     let subjects = 0;
 
-    for (const file of sourceFiles(UI_DIR)) {
+    for (const file of ownedSources()) {
       const src = readFileSync(file, 'utf8');
       for (const match of src.matchAll(/^(?:export\s+)?(?:interface|type)\s+(\w+)Props\b/gm)) {
         const component = match[1];
         if (!values.has(component)) continue;
         subjects++;
         if (types.has(`${component}Props`)) continue;
-        missing.push(`${component}Props (declared in ${file.slice(UI_DIR.length + 1)})`);
+        missing.push(`${component}Props (declared in ${relative(UI_DIR, file)})`);
       }
     }
 
@@ -109,19 +128,18 @@ describe('shared/ui variant tables', () => {
     const missing: string[] = [];
     let subjects = 0;
 
-    for (const file of sourceFiles(UI_DIR)) {
+    for (const file of ownedSources()) {
       const src = readFileSync(file, 'utf8');
       for (const match of src.matchAll(/^\s*(?:export\s+)?const\s+(\w+Variants)\s*=/gm)) {
         const name = match[1];
         subjects++;
         if (values.has(name)) continue;
-        missing.push(`${name} (declared in ${file.slice(UI_DIR.length + 1)})`);
+        missing.push(`${name} (declared in ${relative(UI_DIR, file)})`);
       }
     }
 
-    // Button's and Field's variant tables now live in @dork-labs/ui and reach
-    // this barrel through leaf re-exports. Keep a floor for local tables so
-    // the source walk cannot pass vacuously.
+    // Shared tables stay in the audit through their real leaf facades. Keep
+    // the coverage floor so the source walk cannot pass vacuously.
     expect(subjects).toBeGreaterThanOrEqual(12);
     expect(missing).toEqual([]);
   });

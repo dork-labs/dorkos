@@ -23,14 +23,18 @@
   --dui-brand: 24 90% 44%;
   --dui-brand-foreground: 0 0% 100%;
   --dui-success: 152 69% 24%;
+  --dui-size-icon-xs: 0.75rem;
   --dui-size-icon-sm: 1rem;
+  --dui-size-icon-md: 1.25rem;
 }
 
 @media (max-width: 767px) {
   :root,
   .light,
   .dark {
+    --dui-size-icon-xs: 0.9375rem;
     --dui-size-icon-sm: 1.25rem;
+    --dui-size-icon-md: 1.5625rem;
   }
 }
 

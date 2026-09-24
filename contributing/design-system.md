@@ -39,7 +39,7 @@ We follow three principles inherited from Dieter Rams and Jony Ive:
 
 We avoid pure extremes. Pure white on screens produces glare; pure black creates harsh contrast. Instead, we use **off-white** and **near-black** — colors that feel natural and reduce eye strain.
 
-Portable palette values live in `packages/ui/tokens.css` as namespaced HSL channels. The client bridges its existing semantic names in `apps/client/src/index.css`; sidebar, feature colors, fonts and geometry remain local. Use semantic classes, not raw hex values. See [shared UI ownership and release](shared-ui.md) for the package contract.
+Portable palette values live in `packages/ui/tokens.css` as namespaced HSL channels. The client bridges its existing semantic names in `apps/client/src/index.css`; sidebar, feature colors, fonts and geometry remain local. Use semantic classes, not raw hex values. Portable controls, overlays and menus retain their customized Radix behavior in `packages/ui`; application wrappers remain local. See [shared UI ownership and release](shared-ui.md) for the ownership matrix and portal theme contract.
 
 ### Light Mode
 

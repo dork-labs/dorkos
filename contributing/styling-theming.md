@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project uses Tailwind CSS v4 (CSS-first configuration) with Shadcn UI components following the "Calm Tech" design language. Portable palette tokens live in `packages/ui/tokens.css`; the client bridges its existing names in `apps/client/src/index.css`, which still owns app-specific tokens and font scaling. See [Shared UI Package](shared-ui.md) for ownership, imports, distribution checks and release.
+This project uses Tailwind CSS v4 (CSS-first configuration) with Shadcn UI components following the "Calm Tech" design language. Portable palette tokens live in `packages/ui/tokens.css`; the client bridges its existing names in `apps/client/src/index.css`, which still owns app-specific tokens and font scaling. The shared package also owns primitive animations, icon-size defaults and reduced-motion guards. Client font scaling remains a host bridge. See [Shared UI Package](shared-ui.md) for ownership, portal theme containers, imports, distribution checks and release.
 
 ## Key Files
 

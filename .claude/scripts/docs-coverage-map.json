@@ -68,7 +68,7 @@
     },
     {
       "guide": "shared-ui.md",
-      "description": "Shared primitive ownership, CSS imports, catalog, packed proof and release",
+      "description": "Shared primitive ownership, portal themes, CSS imports, catalog, packed proof, release and upgrades",
       "patterns": [
         "packages/ui/",
         "apps/design-system/",

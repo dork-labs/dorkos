@@ -12,8 +12,6 @@ import {
   LinkifiedText,
   FeatureDisabledState,
   IdentityAvatar,
-  ScrollArea,
-  ScrollBar,
   Switch,
   Label,
   Input,
@@ -271,41 +269,6 @@ export function DataDisplayShowcases() {
             command="dorkos --tasks"
             commandHint="Start DorkOS from your terminal like this:"
           />
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection
-        title="ScrollArea"
-        description="Custom scrollbar container for overflowing content."
-      >
-        <ShowcaseLabel>Vertical</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ScrollArea className="h-48 w-full rounded-md border">
-            <div className="p-4">
-              {Array.from({ length: 20 }, (_, i) => (
-                <div key={i} className="border-b py-2 text-sm">
-                  Session {i + 1} — agent-{String(i + 1).padStart(3, '0')}
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Horizontal</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ScrollArea className="w-full rounded-md border whitespace-nowrap">
-            <div className="flex gap-4 p-4">
-              {Array.from({ length: 12 }, (_, i) => (
-                <div
-                  key={i}
-                  className="bg-muted flex h-20 w-36 shrink-0 items-center justify-center rounded-md border text-sm"
-                >
-                  Agent {i + 1}
-                </div>
-              ))}
-            </div>
-            <ScrollBar orientation="horizontal" />
-          </ScrollArea>
         </ShowcaseDemo>
       </PlaygroundSection>
 

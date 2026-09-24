@@ -1,0 +1,290 @@
+/**
+ * The menu that drops out of a button you clicked.
+ *
+ * Use it wherever there is an anchor to hang the menu off; use `ContextMenu`
+ * when the menu belongs to a right-click on a region instead. For a menu that
+ * should become a bottom sheet on a phone, an application wrapper can choose
+ * between this menu and its own sheet.
+ *
+ * DorkOS's items are `text-xs` rather than upstream's `text-sm`, and every
+ * surface here grows out of the control that opened it rather than out of its
+ * own middle.
+ *
+ * @module @dork-labs/ui/dropdown-menu
+ */
+import * as React from 'react';
+import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
+import { Check, ChevronRight } from 'lucide-react';
+
+import { cn } from './cn.js';
+import { usePortalContainer } from './ui-provider.js';
+
+/** The menu itself — wraps a trigger and its content, and owns open/closed. */
+function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
+  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
+}
+
+/** The control the menu drops out of. Pass `asChild` to use your own button. */
+function DropdownMenuTrigger({
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>) {
+  return <DropdownMenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />;
+}
+
+/** A run of related items, so keyboard navigation and labels stay together. */
+function DropdownMenuGroup({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Group>) {
+  return <DropdownMenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />;
+}
+
+/**
+ * A nested menu — pair a {@link DropdownMenuSubTrigger} with a
+ * {@link DropdownMenuSubContent} inside it.
+ */
+function DropdownMenuSub({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Sub>) {
+  return <DropdownMenuPrimitive.Sub data-slot="dropdown-menu-sub" {...props} />;
+}
+
+/** A set of {@link DropdownMenuRadioItem}s where exactly one is chosen. */
+function DropdownMenuRadioGroup({
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioGroup>) {
+  return <DropdownMenuPrimitive.RadioGroup data-slot="dropdown-menu-radio-group" {...props} />;
+}
+
+/** The menu panel itself, portalled into the provider host or document body. */
+function DropdownMenuContent({
+  className,
+  sideOffset = 4,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  const portalContainer = usePortalContainer();
+  return (
+    <DropdownMenuPrimitive.Portal container={portalContainer}>
+      <DropdownMenuPrimitive.Content
+        data-slot="dropdown-menu-content"
+        sideOffset={sideOffset}
+        className={cn(
+          'bg-dui-popover text-dui-popover-foreground border-dui-border z-50 min-w-[8rem] overflow-hidden rounded-md border p-1 shadow-md',
+          // The menu grows out of the control you clicked, not out of its own
+          // middle — Radix publishes the trigger-relative origin, and every other
+          // overlay in the app already reads it.
+          'origin-(--radix-dropdown-menu-content-transform-origin)',
+          // OPENS WITH AN ANIMATION, CLOSES AT ONCE — and the second half is
+          // load-bearing rather than a taste (DOR-1834). Radix keeps a menu
+          // mounted for as long as it has a closing animation to play, and the
+          // part of it that listens for "somebody pressed outside me" is kept
+          // with it. So for the ~150ms a fade lasted, a press on the menu's own
+          // button was answered twice: the button reopened the menu, and the
+          // copy still finishing its fade read the same press as a press
+          // outside and closed what had just opened. Two presses were needed;
+          // the first did nothing at all.
+          //
+          // Restoring the fade needs Radix to be able to reopen a menu it is
+          // still closing, and it cannot: the reopened menu is the SAME element
+          // rather than a new one, so nothing puts the keyboard back inside it
+          // and the arrow keys reach nothing. Leaving at once is what makes the
+          // next press a clean start.
+          'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 motion-reduce:animate-none!',
+          // All four sides: Radix flips a menu near a viewport edge to `left` or
+          // `right`, and those two used to slide from nowhere.
+          'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2',
+          'data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2',
+          className
+        )}
+        {...props}
+      />
+    </DropdownMenuPrimitive.Portal>
+  );
+}
+
+/** A non-clickable heading over a group of items. */
+function DropdownMenuLabel({
+  className,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Label>) {
+  return (
+    <DropdownMenuPrimitive.Label
+      data-slot="dropdown-menu-label"
+      className={cn('text-dui-muted-foreground px-2 py-1.5 text-xs font-semibold', className)}
+      {...props}
+    />
+  );
+}
+
+/** A hairline between two groups of items. */
+function DropdownMenuSeparator({
+  className,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Separator>) {
+  return (
+    <DropdownMenuPrimitive.Separator
+      data-slot="dropdown-menu-separator"
+      className={cn('bg-dui-muted -mx-1 my-1 h-px', className)}
+      {...props}
+    />
+  );
+}
+
+/**
+ * One action in the menu.
+ *
+ * `variant="destructive"` turns it red — for deletes and anything else that
+ * cannot be taken back. `inset` indents it to line up with checkable items.
+ */
+function DropdownMenuItem({
+  className,
+  inset,
+  variant = 'default',
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
+  inset?: boolean;
+  variant?: 'default' | 'destructive';
+}) {
+  return (
+    <DropdownMenuPrimitive.Item
+      data-slot="dropdown-menu-item"
+      data-variant={variant}
+      className={cn(
+        'relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none select-none',
+        'focus:bg-dui-accent focus:text-dui-accent-foreground transition-colors motion-reduce:transition-none!',
+        'data-[variant=destructive]:text-dui-destructive data-[variant=destructive]:focus:bg-dui-destructive/10 data-[variant=destructive]:focus:text-dui-destructive dui-dark:data-[variant=destructive]:focus:bg-dui-destructive/20',
+        'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+        inset && 'pl-8',
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
+/** An item that carries an on/off state, shown as a tick in the left gutter. */
+function DropdownMenuCheckboxItem({
+  className,
+  children,
+  checked,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>) {
+  return (
+    <DropdownMenuPrimitive.CheckboxItem
+      data-slot="dropdown-menu-checkbox-item"
+      checked={checked}
+      className={cn(
+        'relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-xs outline-none select-none',
+        'focus:bg-dui-accent focus:text-dui-accent-foreground transition-colors motion-reduce:transition-none!',
+        'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+        className
+      )}
+      {...props}
+    >
+      <span className="absolute left-2 flex size-(--dui-size-icon-sm) items-center justify-center">
+        <DropdownMenuPrimitive.ItemIndicator>
+          <Check className="size-(--dui-size-icon-xs)" />
+        </DropdownMenuPrimitive.ItemIndicator>
+      </span>
+      {children}
+    </DropdownMenuPrimitive.CheckboxItem>
+  );
+}
+
+/**
+ * The item that opens a nested menu, with the chevron drawn for you.
+ *
+ * `inset` indents it to line up with items that carry a tick.
+ */
+function DropdownMenuSubTrigger({
+  className,
+  inset,
+  children,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.SubTrigger> & { inset?: boolean }) {
+  return (
+    <DropdownMenuPrimitive.SubTrigger
+      data-slot="dropdown-menu-sub-trigger"
+      className={cn(
+        'relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none select-none',
+        'focus:bg-dui-accent focus:text-dui-accent-foreground data-[state=open]:bg-dui-accent data-[state=open]:text-dui-accent-foreground transition-colors motion-reduce:transition-none!',
+        inset && 'pl-8',
+        className
+      )}
+      {...props}
+    >
+      {children}
+      <ChevronRight className="ml-auto size-(--dui-size-icon-xs)" />
+    </DropdownMenuPrimitive.SubTrigger>
+  );
+}
+
+/** The panel a nested menu opens into. */
+function DropdownMenuSubContent({
+  className,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+  const portalContainer = usePortalContainer();
+  return (
+    <DropdownMenuPrimitive.Portal container={portalContainer}>
+      <DropdownMenuPrimitive.SubContent
+        data-slot="dropdown-menu-sub-content"
+        className={cn(
+          'bg-dui-popover text-dui-popover-foreground border-dui-border z-50 min-w-[8rem] overflow-hidden rounded-md border p-1 shadow-md',
+          // Same trigger-relative origin as the top-level menu: a submenu grows
+          // out of the item that opened it.
+          'origin-(--radix-dropdown-menu-content-transform-origin)',
+          // And it leaves at once too — for consistency with its parent rather
+          // than for its parent's reason. A submenu dismisses nothing on an
+          // outside press (Radix gives it no `onDismiss` and leaves outside
+          // pointer events alone), so it never ate anybody's click; it is that a
+          // submenu lingering after the menu it belongs to has gone is a ghost,
+          // not a fade (DOR-1834).
+          'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 motion-reduce:animate-none!',
+          'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2',
+          'data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2',
+          className
+        )}
+        {...props}
+      />
+    </DropdownMenuPrimitive.Portal>
+  );
+}
+
+/** One option inside a {@link DropdownMenuRadioGroup}, ticked when chosen. */
+function DropdownMenuRadioItem({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
+  return (
+    <DropdownMenuPrimitive.RadioItem
+      data-slot="dropdown-menu-radio-item"
+      className={cn(
+        'relative flex cursor-default items-center rounded-sm py-1.5 pr-2 pl-8 text-xs outline-none select-none',
+        'focus:bg-dui-accent focus:text-dui-accent-foreground transition-colors motion-reduce:transition-none!',
+        'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+        className
+      )}
+      {...props}
+    >
+      <span className="absolute left-2 flex size-(--dui-size-icon-sm) items-center justify-center">
+        <DropdownMenuPrimitive.ItemIndicator>
+          <Check className="size-(--dui-size-icon-xs)" />
+        </DropdownMenuPrimitive.ItemIndicator>
+      </span>
+      {children}
+    </DropdownMenuPrimitive.RadioItem>
+  );
+}
+
+export {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuGroup,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+};

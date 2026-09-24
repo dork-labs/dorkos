@@ -44,7 +44,28 @@ describe('playground-registry', () => {
     // These anchors moved with the package-owned primitives; a second local
     // gallery would let the client and catalog drift independently again.
     const titles = new Set(PLAYGROUND_REGISTRY.map((section) => section.title));
-    for (const moved of ['Semantic Colors', 'Button', 'Input', 'Label']) {
+    for (const moved of [
+      'Semantic Colors',
+      'Button',
+      'Input',
+      'Label',
+      'Textarea',
+      'Switch',
+      'Select',
+      'Tabs',
+      'Checkbox',
+      'RadioGroup',
+      'Dialog',
+      'AlertDialog',
+      'Sheet',
+      'Popover',
+      'DropdownMenu',
+      'Tooltip',
+      'HoverCard',
+      'Collapsible',
+      'ScrollArea',
+      'Separator',
+    ]) {
       expect(titles.has(moved), `${moved} still has a client-owned pilot gallery`).toBe(false);
     }
   });
