@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(security): limit how large a package DorkOS installs (DOR-2321)'
+  - 'fix(security): bound a git download while it runs, and its tree before checkout (DOR-2321)'
 ---
 
 ### Security
