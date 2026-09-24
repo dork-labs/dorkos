@@ -84,6 +84,12 @@ export interface InstalledPackage {
    * but incomplete, and name the command that finishes the job.
    */
   dependencyWarnings?: string[];
+  /**
+   * The install folder is a symbolic link to a developer's working copy
+   * ({@link InstallationRecord.linked}). Present, and `true`, only then, so a
+   * listing can say why such an install is never updated in place.
+   */
+  linked?: true;
 }
 
 /** A registered agent whose project directory the cross-scope scan should walk. */
@@ -444,6 +450,7 @@ async function readInstallationRecord(
         metadata.dependencyWarnings.length > 0 && {
           dependencyWarnings: metadata.dependencyWarnings,
         }),
+      ...(linked && { linked: true as const }),
     },
   };
 }

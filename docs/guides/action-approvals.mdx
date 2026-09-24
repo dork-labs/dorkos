@@ -29,7 +29,7 @@ Either way you get the same card, and it holds everything you need to decide:
 - **How big the change is**: a label that reads "Cannot be undone", "Changes things", or "Read only"
 - **Who asked**: the agent's name, or a note that the request came in without an agent identity
 - **How long you have** before the request runs out
-- **Two buttons**: Allow and Don't allow
+- **Three answers**: Allow, Always allow, and Deny
 
 <Steps>
   <Step>
@@ -46,12 +46,18 @@ Either way you get the same card, and it holds everything you need to decide:
     conversation as a reminder and the agent tries again once you say yes.
   </Step>
   <Step>
-    **Or click Don't allow.** The agent is told you said no, and it should stop rather than look for
+    **Or click Always allow.** It lets this one through too, and from then on that agent does that
+    one action without asking. See [Always allow](#always-allow).
+  </Step>
+  <Step>
+    **Or click Deny.** The agent is told you said no, and it should stop rather than look for
     another way in.
   </Step>
 </Steps>
 
-Nothing is pre-selected, and neither button is styled as the safe choice. Saying no is a normal answer.
+Nothing is pre-selected. Allow is the filled button because a one-time yes is the easy answer to give; Always allow is quieter because it lasts. Saying no is a normal answer.
+
+When one of an agent's rooms caused the request, the card also shows up inside that room, just above the line that says who is working, so you can answer it where the conversation is.
 
 ## What needs your OK, and what doesn't
 
@@ -67,9 +73,11 @@ Two more wait for you because they bring new code onto your machine:
 - **Installing a package**
 - **Creating a new package** in your personal marketplace
 
+Your [permissions](/docs/guides/permissions) can add more. Any area you set to **Ask**, like Rooms, puts a card in front of you before an agent makes a change there, even one you could take back. An area set to **Blocked** is off for that agent: see [When something is blocked](#when-something-is-blocked).
+
 Almost everything else an agent asks DorkOS for runs straight away. Reading your activity, listing your agents, editing an agent, changing a preference: those go through, and the ones that change something land in your activity feed so you can see them after the fact.
 
-The rule is about the action, not about which agent asked. The one way to change it is to grant a standing permission, which is a decision you make yourself, for one agent and one action, on a clock. See [Telling DorkOS to stop asking about one thing](#telling-dorkos-to-stop-asking-about-one-thing).
+The rule is about the action, not about which agent asked. The one way to stop being asked is **Always allow**, which is a decision you make yourself, for one agent and one action. See [Always allow](#always-allow).
 
 One set of settings is neither of those things. Agents are refused them outright, with no card and no way to say yes. See [Settings your agents cannot change](#settings-your-agents-cannot-change).
 
@@ -107,7 +115,7 @@ Most settings are preferences, and an agent can change one on your word. A few a
 - The folder DorkOS is allowed to touch, and the programs it is allowed to start
 - Which extensions may run their code inside DorkOS, and which outside tool servers your agents may attach to
 - Your privacy choices
-- Whether you get asked before an agent does something, and how long a yes lasts
+- Whether you get asked before an agent does something
 
 The two below are about something else. They are not protecting anything; they decide how often your agents speak without being asked, and every one of those turns costs you model usage. They are yours to set for that reason:
 
@@ -212,34 +220,45 @@ creating tasks. So give out API keys the way you would give out your password.
 
 Either way, every yes and every no lands in your activity feed. With login required, it says which account answered. Without it, the feed says the answer came from this machine and that DorkOS could not check who gave it, so an approval you never clicked is something you can find.
 
-## Telling DorkOS to stop asking about one thing
+## Always allow
 
-Answering the same question five times a day is not safety, it is noise. So you can answer it once, for one agent and one action, for a set stretch of time.
+Answering the same question five times a day is not safety, it is noise. So you can answer it once, for one agent and one action.
 
-Turn it on in Settings, under Access. After that, an approval card carries a third button that names exactly what it does: **Allow, and stop asking about this for 8 hours**. Press it and that one agent does that one thing without stopping, until the time runs out.
+Press **Always allow** on a card and two things happen: this request goes ahead, and that agent is set to **Allowed** for that one action from then on. It is an ordinary permission setting, so you find it and change it where every other one lives, on the agent's Permissions page, and your permission history records who set it and from which card.
 
 Some things about it are worth knowing before you use it:
 
-- **It covers one agent doing one action.** The same agent doing something else still asks, and so does a different agent doing the same thing. There is no "trust this agent with everything" button, on purpose.
-- **The clock does not reset.** Eight hours means eight hours from when you pressed the button, no matter how often the agent uses it.
-- **A day is the longest you can pick.** "Forever" is not on the list.
-- **You can find it and end it in two places.** Settings under Access lists everything that is live, and the Inbox in the top right shows it too. Either one has a **Stop trusting** button next to it.
-- **Every use is still recorded.** Your activity feed says so each time the agent goes ahead without asking. Ending a permission stops the next action; it does not undo one that already ran.
-- **Turning the feature off ends everything that is live.** Nothing sits dormant waiting to wake up later.
+- **It covers one agent doing one action.** The same agent doing something else still asks, and so does a different agent doing the same thing. There is no "trust this agent with everything" button on a card, on purpose.
+- **It lasts until you change it.** Set the action back to Ask or Blocked on the agent's Permissions page and the next request asks again. It does not undo anything that already ran.
+- **Every use is still recorded.** For an action that cannot be undone, your activity feed says each time the agent went ahead without asking.
+- **Some requests never offer it.** Changing safety limits, changing permissions, and anything that opens this computer to the internet or touches keys and sign-ins always need your yes, every time. Those cards show Allow and Deny, with a line saying so. A request DorkOS cannot tie to a named agent does not offer it either, because there would be no agent to remember it for.
 
 <Callout type="warn">
-  **This needs Require login on, and there is no lighter version.** Opening a permission means
-  DorkOS has to know it is you asking and not an agent on the same computer. With no login, there is
-  no password anywhere and nothing to tell the two apart, so the control is shown but switched off,
-  with Require login sitting right above it. Any weaker check would be one an agent could pass
-  exactly as easily as you, which would be worse than not offering it.
+  **With Require login off, DorkOS cannot tell who pressed it.** Always allow works either way, but
+  with login off your history says "Someone on this computer" set it, not "you", because a program
+  running as you on the same computer looks exactly the same to DorkOS. Turning on **Require login**
+  means only a person signed in to DorkOS can answer a card at all.
 </Callout>
 
-<Callout type="warn">
-  **A standing permission really does lower the gate.** That is what it is for. It is a trade you
-  make on purpose, bounded by one agent, one action, and a clock. If you would not be comfortable
-  coming back to find that action had run three times while you were at lunch, do not grant it.
-</Callout>
+Standing permissions, the old "Allow, and stop asking about this for 8 hours" button, are gone. Always allow replaced them. Any that were still running when you upgraded were ended rather than turned into something permanent, and your permission history has a line for each.
+
+## When something is blocked
+
+An area set to **Blocked** for an agent is off for it: its tools are left out of what the agent is shown, and the agent is told the area is blocked. If it tries the action anyway, DorkOS refuses and no card appears.
+
+When an agent really needs something that is blocked, it can ask you on purpose with a tool called `request_permission`. It names the action, the exact details it would use, and why. You get a card that says the agent is blocked and quotes its reason. Allow lets that one request through with exactly those details. Always allow does the same and sets that one action to Allowed for the agent, which brings its tool back. Deny says no.
+
+So that asking never turns into nagging, DorkOS limits it:
+
+- **One question at a time per area.** While a request in one area is waiting on you, the agent cannot ask for anything else in that area.
+- **No means no for a day.** After you deny something, the same agent cannot ask for the same action again for 24 hours.
+- **Five an hour.** An agent can ask past a block at most five times an hour, across every area.
+
+These limits are kept in DorkOS's own records, so restarting does not reset them.
+
+## When nobody is watching
+
+A scheduled run, a message from a chat connection, or a message from another agent starts a turn with nobody watching it in DorkOS. When one of those needs your yes, the agent does not sit there waiting. The card goes to your inbox, the agent says it is waiting, and when you answer, DorkOS tells the agent so it can carry on. A conversation you are in waits for your answer in place, the way it always has.
 
 ## Approvals are used once, and they expire
 

@@ -14,9 +14,14 @@ extendZodWithOpenApiOnce();
 
 // === Enums ===
 
-/** Event category for filtering activity events by subsystem. */
+/**
+ * Event category for filtering activity events by subsystem. `permissions` holds
+ * every change to what agents may do (spec `agent-permissions` D14), and is kept
+ * past the 30-day prune: a permission history that forgets cannot answer "who
+ * allowed this".
+ */
 export const ActivityCategorySchema = z
-  .enum(['tasks', 'relay', 'agent', 'config', 'system'])
+  .enum(['tasks', 'relay', 'agent', 'config', 'system', 'permissions'])
   .openapi('ActivityCategory');
 
 export type ActivityCategory = z.infer<typeof ActivityCategorySchema>;
@@ -67,6 +72,8 @@ export const ListActivityQuerySchema = z
     categories: z.string().optional(),
     actorType: ActorTypeSchema.optional(),
     actorId: z.string().optional(),
+    /** Only events about this resource (an agent id, a schedule id, …). */
+    resourceId: z.string().min(1).optional(),
     /** ISO 8601 timestamp lower bound — only events after this time. */
     since: z.string().datetime({ offset: true }).optional(),
   })

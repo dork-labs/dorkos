@@ -10,13 +10,10 @@ import { test, expect } from '../fixtures';
  *      config gains `runtimes.defaultTrustStop: 'autonomy'` WITH a recorded
  *      `ui.autonomyAcknowledgedAt` (the ack the 428 gate demands, in the same
  *      write) and `ui.fullPowerChoice: 'full'`, and the mesh opens
- *      (`openMesh: true`). With Require login off — this leg's default — standing
- *      grants stay off, because the server refuses that login-gated path; the
- *      door omits it rather than 403 the whole write. The door does not return on
- *      reload.
+ *      (`openMesh: true`). The door does not return on reload.
  *   2. DECLINE ("Keep asking me first") records `ui.fullPowerChoice: 'supervised'`
- *      and touches NOTHING consent-gated: no autonomy stop, no ack, no standing
- *      grants, no open mesh. It does not return on reload.
+ *      and touches NOTHING consent-gated: no autonomy stop, no ack, no open mesh.
+ *      It does not return on reload.
  *
  * ## It RUNS in CI (no skip gate), and why it is `serial` + warm-boot
  *
@@ -61,7 +58,6 @@ interface PowerConfigView {
   autonomyAcknowledgedAt: string | null;
   fullPowerDecidedAt: string | null;
   fullPowerChoice: string | null;
-  standingGrants: boolean;
 }
 
 /**
@@ -84,14 +80,12 @@ async function readPowerConfig(request: APIRequestContext): Promise<PowerConfigV
       fullPowerChoice?: string | null;
     };
     executionDefaults?: { trustStop?: string | null };
-    approvals?: { standingGrants?: boolean };
   };
   return {
     defaultTrustStop: config.executionDefaults?.trustStop ?? null,
     autonomyAcknowledgedAt: config.ui?.autonomyAcknowledgedAt ?? null,
     fullPowerDecidedAt: config.ui?.fullPowerDecidedAt ?? null,
     fullPowerChoice: config.ui?.fullPowerChoice ?? null,
-    standingGrants: config.approvals?.standingGrants ?? false,
   };
 }
 
@@ -176,10 +170,10 @@ test.describe('Full-power consent door @full-power', () => {
     expect(config.defaultTrustStop).toBe('autonomy');
     expect(config.autonomyAcknowledgedAt).not.toBeNull();
     expect(config.fullPowerChoice).toBe('full');
-    // Login off on this leg → standing grants (a login-gated path) is omitted,
-    // never a 403 of the whole atomic write.
-    expect(config.standingGrants).toBe(false);
     expect(await readMeshOpen(request)).toBe(true);
+    // The door also chooses the permission preset, so what agents may do
+    // follows the answer (spec `agent-permissions` D5).
+    expect((await (await request.get('/api/permissions')).json()).preset).toBe('full');
 
     // A plain reload (boot cache warm, config fresh) must NOT reopen it: the
     // decision is recorded, so the moment is ineligible.
@@ -204,8 +198,8 @@ test.describe('Full-power consent door @full-power', () => {
     expect(config.fullPowerDecidedAt).not.toBeNull();
     expect(config.defaultTrustStop).toBeNull();
     expect(config.autonomyAcknowledgedAt).toBeNull();
-    expect(config.standingGrants).toBe(false);
     expect(await readMeshOpen(request)).toBe(false);
+    expect((await (await request.get('/api/permissions')).json()).preset).toBe('careful');
 
     await basePage.goto();
     await basePage.waitForAppReady();

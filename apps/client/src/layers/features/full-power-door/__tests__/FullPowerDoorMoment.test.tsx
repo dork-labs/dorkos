@@ -25,6 +25,11 @@ vi.mock('@/layers/entities/config', async (importOriginal) => {
   return { ...actual, useConfig: vi.fn(), useUpdateConfig: vi.fn() };
 });
 vi.mock('@/layers/entities/mesh', () => ({ useSetOpenMesh: vi.fn() }));
+// The door also chooses the permission preset (spec `agent-permissions` D5).
+const presetMutateAsync = vi.fn().mockResolvedValue(undefined);
+vi.mock('@/layers/entities/permissions', () => ({
+  useSetPermission: () => ({ mutateAsync: presetMutateAsync, isPending: false }),
+}));
 
 const configMutateAsync = vi.fn();
 const onClose = vi.fn();

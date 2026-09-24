@@ -25,6 +25,7 @@ import { useRestoreThreadFocus } from '../model/use-restore-thread-focus';
 import { useThreadUrlSync, type ThreadRoute } from '../model/use-thread-url-sync';
 import { ChannelComposer } from './ChannelComposer';
 import { RoomFlow, RoomHistorySkeleton } from './RoomFlow';
+import { RoomApprovalCards } from './RoomApprovalCards';
 import { RoomLiveLane } from './RoomLiveLane';
 import { RoomThreadPanel } from './RoomThreadPanel';
 
@@ -396,6 +397,9 @@ export function RoomSurface({
           Scoped to everything OUTSIDE the open thread, so an agent working on a
           thread reply is announced in the panel instead of here — one claim, one
           line, in the place the work is happening. */}
+      {/* A request this room's own turn raised, at the live end of the room
+          where that turn is (spec `agent-permissions` D7). */}
+      <RoomApprovalCards roomId={room.id} />
       <RoomLiveLane
         room={room}
         entries={entries}

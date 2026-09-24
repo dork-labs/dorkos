@@ -83,7 +83,7 @@ Packages of every type except `agent` also need a `.claude-plugin/plugin.json`, 
 }
 ```
 
-Keep the name, version, and description in sync with `.dork/manifest.json`. If your package also defines Claude Code commands, hooks, or MCP servers, add those fields following Claude Code's own plugin manifest format.
+Keep the name, version, and description in sync with `.dork/manifest.json`. The version must match exactly: if the two files disagree, or `plugin.json` has no version, validation fails and DorkOS won't install the package. Raise the version in both files whenever you change the package. People who already have it are only offered an update when the version goes up. If your package also defines Claude Code commands, hooks, or MCP servers, add those fields following Claude Code's own plugin manifest format.
 
 Any skills you write live in a directory-based `SKILL.md` file, with frontmatter naming the skill and describing what it does:
 

@@ -1,7 +1,7 @@
 ---
 id: 260920-192429
 title: Scope host accounts through immutable community memberships
-status: proposed
+status: accepted
 created: 2026-09-20
 spec: community-tenancy-contract
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted.
 
 ## Context
 

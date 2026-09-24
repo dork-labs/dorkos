@@ -3,6 +3,7 @@ import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-con
 import {
   buildCommunityContextNodes,
   communityActionAvailability,
+  communityCreationOrigins,
 } from '../ui/context/community-context-actions';
 
 const all = { read: true, post: true, enrollAgent: true, stream: true };
@@ -65,6 +66,8 @@ describe('buildCommunityContextNodes', () => {
     onDisconnect: () => {},
     onConnect: () => {},
     onJoin: () => {},
+    creationOrigins: [] as string[],
+    onCreate: () => {},
     onDeploy: () => {},
     hosting: null,
   };
@@ -81,6 +84,37 @@ describe('buildCommunityContextNodes', () => {
       'add-community-join',
       'add-community-deploy',
     ]);
+  });
+
+  it('offers creation between joining and running a server, one row per host', () => {
+    const [one] = buildCommunityContextNodes({
+      ...handlers,
+      selected: null,
+      creationOrigins: ['https://a.example.com'],
+    });
+    expect(one!.kind === 'submenu' && one!.items.map((node) => node.id)).toEqual([
+      'add-community-connect',
+      'add-community-join',
+      'add-community-create',
+      'add-community-deploy',
+    ]);
+    const create = one!.kind === 'submenu' ? one!.items[2]! : null;
+    expect(create).toMatchObject({
+      label: 'Create a community',
+      opensInput: true,
+      external: { host: 'a.example.com' },
+    });
+    const [two] = buildCommunityContextNodes({
+      ...handlers,
+      selected: null,
+      creationOrigins: ['https://a.example.com', 'https://b.example.com:8443'],
+    });
+    expect(
+      two!.kind === 'submenu' &&
+        two!.items
+          .filter((node) => node.id.startsWith('add-community-create'))
+          .map((node) => (node.kind === 'action' ? node.label : null))
+    ).toEqual(['Create a community on a.example.com', 'Create a community on b.example.com:8443']);
   });
 
   // Purpose: the hosted entry points exist only while linked (spec P5). Fails
@@ -141,5 +175,29 @@ describe('buildCommunityContextNodes', () => {
       'community-settings',
       'community-leave',
     ]);
+  });
+});
+
+describe('communityCreationOrigins', () => {
+  const at = (
+    origin: string,
+    hostOperator: boolean | undefined
+  ): CommunityConnectionDescriptor => ({
+    ...descriptor('connected', 'verified'),
+    pinnedOrigin: origin,
+    ...(hostOperator === undefined ? {} : { hostOperator }),
+  });
+
+  it('keeps each host the person runs once, in switcher order, and nothing else', () => {
+    expect(
+      communityCreationOrigins([
+        at('https://b.example.com', true),
+        at('https://a.example.com', undefined),
+        at('https://c.example.com', false),
+        at('https://b.example.com', true),
+        at('https://a.example.com', true),
+      ])
+    ).toEqual(['https://b.example.com', 'https://a.example.com']);
+    expect(communityCreationOrigins([])).toEqual([]);
   });
 });

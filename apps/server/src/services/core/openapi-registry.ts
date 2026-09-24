@@ -196,9 +196,6 @@ import {
   DenyApprovalBodySchema,
   GrantApprovalBodySchema,
   ApprovalDecisionResponseSchema,
-  RevokeStandingPermissionResponseSchema,
-  StandingPermissionNotRecordedResponseSchema,
-  StandingPermissionsResponseSchema,
 } from '@dorkos/shared/approval-schemas';
 import {
   DeletePushSubscriptionResponseSchema,
@@ -242,6 +239,15 @@ import {
   ConnectorSessionConnectionsSchema,
 } from '@dorkos/shared/connector-resource-schemas';
 import { PackageTypeSchema } from '@dorkos/marketplace';
+import {
+  AgentPermissionsResponseSchema,
+  PatchAgentPermissionsBodySchema,
+  PatchPermissionDefaultsBodySchema,
+  PermissionHistoryQuerySchema,
+  PermissionHistoryResponseSchema,
+  PermissionsResponseSchema,
+  SetPermissionPresetBodySchema,
+} from '@dorkos/shared/permissions';
 import { z } from 'zod';
 
 /**
@@ -424,6 +430,12 @@ const LocalInstallationUpdateCheckSchema = LocalUpdateCheckResultSchema.extend({
   agentPath: z.string().optional(),
   agentId: z.string().optional(),
   agentName: z.string().optional(),
+  linked: z
+    .literal(true)
+    .optional()
+    .describe(
+      "Present only for an install linked to a developer's working copy: always unknown, never reinstalled."
+    ),
   applied: LocalInstallResultSchema.optional(),
   applyError: z.string().optional(),
 });
@@ -2267,6 +2279,12 @@ const InstalledPackageSchema = z.object({
   agentPath: z.string().optional(),
   agentId: z.string().optional(),
   agentName: z.string().optional(),
+  linked: z
+    .literal(true)
+    .optional()
+    .describe(
+      "Present only when the install folder is a symbolic link to a developer's working copy, which is never updated in place."
+    ),
 });
 
 /**
@@ -3827,15 +3845,14 @@ registry.registerPath({
     'every posture, and when local login is enabled an authenticated user is required. With login ' +
     'disabled DorkOS cannot tell the app apart from a local script, so every decision is ' +
     'recorded in the Activity feed with the posture it was made under.\n\n' +
-    'The body accepts a `standing` flag, which also stops DorkOS asking about this agent doing ' +
-    'this thing for as long as `approvals.trustWindowMinutes` says. Opening one needs a person ' +
-    'signed in to the DorkOS app, so it needs Require login to be on: with login off there is no ' +
-    'session cookie and DorkOS cannot tell the operator from an agent running as the same user. ' +
-    'It is refused rather than quietly downgraded to a plain one-time yes, and the refusal comes ' +
-    'before anything is granted, so a caller that asked for two things and can only have one gets ' +
-    'neither and is told which part failed. On success the response carries the permission that ' +
-    'was opened. Re-answering the same question replaces the live permission and starts a fresh ' +
-    'window; using a permission never extends it.',
+    "`answer: 'always'` also sets this action to Allowed for the agent that asked, written " +
+    'through the same permission service Settings uses, before the agent is told the answer, so ' +
+    'the resumed call and the new setting agree. It records its own `permission.changed` event ' +
+    'beside the `permission.answered` event every answer records. It is refused (409 ' +
+    '`ALWAYS_NOT_OFFERED`) when DorkOS does not know which agent asked, the action has no ' +
+    'permission area, or the area is one that is never Allowed (Safety limits, Permissions, Reach ' +
+    '& secrets). The pending card says so in advance as `alwaysOffered`. A refusal comes before ' +
+    'anything is granted.',
   request: {
     params: z.object({ id: z.string() }),
     body: { content: { 'application/json': { schema: GrantApprovalBodySchema } } },
@@ -3848,9 +3865,8 @@ registry.registerPath({
     403: {
       description:
         'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
-        'holding the approval token (`REQUESTER_CANNOT_DECIDE`). For `standing: true`, also when ' +
-        'login is off (`standing_grants_require_login`) or the caller has no session cookie ' +
-        '(`operator_cookie_required`)',
+        'holding the approval token (`REQUESTER_CANNOT_DECIDE`). With login on, only a person ' +
+        'signed in to the DorkOS app can decide (`operator_cookie_required`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     401: {
@@ -3863,25 +3879,13 @@ registry.registerPath({
     },
     409: {
       description:
-        'Already decided; or `standing: true` was asked for while standing permissions are ' +
-        'switched off (`STANDING_GRANTS_DISABLED`), or for an approval that recorded no agent ' +
-        'path, so there is no agent to stop asking about (`APPROVAL_HAS_NO_AGENT`). Nothing is ' +
-        'granted in the last two cases',
+        "Already decided; or `answer: 'always'` on an approval that does not offer it " +
+        '(`ALWAYS_NOT_OFFERED`). Nothing is granted in that case',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     410: {
       description: 'Expired before it was decided',
       content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    500: {
-      description:
-        'The one-time yes was recorded but the permission was not ' +
-        '(`STANDING_PERMISSION_NOT_RECORDED`). The two are separate writes; this answer carries ' +
-        '`approvalId` and `outcome` so a caller can tell it apart from "nothing happened" — ' +
-        'retrying the whole call would answer 409, which reads like the permission exists',
-      content: {
-        'application/json': { schema: StandingPermissionNotRecordedResponseSchema },
-      },
     },
   },
 });
@@ -3933,74 +3937,160 @@ registry.registerPath({
   },
 });
 
+// === Permissions (spec `agent-permissions` D10) ===
+
+/** What every permission write answers with: the changes and the fresh view. */
+const PermissionWriteResponseSchema = (view: z.ZodTypeAny) =>
+  z.object({
+    changes: z.array(z.record(z.string(), z.unknown())),
+    permissions: view,
+  });
+
+/** The refusals every mutating permission route shares. */
+const PERMISSION_WRITE_REFUSALS = {
+  400: {
+    description:
+      'Refused: an unknown area or action (`UNKNOWN_AREA`, `UNKNOWN_ACTION`), an action with no ' +
+      'area (`ACTION_HAS_NO_AREA`), or Allowed on a floor area (`FLOOR_NEVER_ALLOWED`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  401: {
+    description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  403: {
+    description:
+      'Refused: only a person can change permissions. A caller presenting an agent identity ' +
+      '(`AGENT_CANNOT_DECIDE`) or an approval token (`REQUESTER_CANNOT_DECIDE`) is refused in ' +
+      'every posture, and with login on a per-user API key is refused (`operator_cookie_required`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+} as const;
+
 registry.registerPath({
   method: 'get',
-  path: '/api/approvals/grants',
-  tags: ['Approvals'],
-  summary: 'List live standing permissions',
+  path: '/api/permissions',
+  tags: ['Permissions'],
+  summary: 'Read what agents may do by default',
   description:
-    'The standing permissions that are live right now: which agent, which action, and when each ' +
-    'one runs out. A permission nobody can find is a dark pattern, so this is the list the ' +
-    'DorkOS app shows in both places it offers to end one. Expiry is applied here rather than ' +
-    'left to a sweep, so a permission whose window has closed is already gone from this list.\n\n' +
-    'Authorized like deciding an approval, NOT like reading the pending list, and the difference ' +
-    'is deliberate. A pending card is meant to be agent-readable. This list is prospective: it ' +
-    'says which irreversible action will go through silently right now and the minute the window ' +
-    "shuts, and it names other agents' pairings. So a caller presenting an agent identity or an " +
-    'approval token is refused.\n\n' +
-    'It carries what the DorkOS app renders and nothing more. Who opened each permission, when, ' +
-    'under which posture, and which card it came from are recorded in the ' +
-    '`approval.grant_created` Activity event instead, which is where an audit question belongs.',
+    'The preset, the changes a person made on top of it, every area with its actions and the ' +
+    'state each resolves to for everyone, and the agents that are set differently.',
   responses: {
     200: {
-      description: 'Live standing permissions, soonest to expire first',
-      content: { 'application/json': { schema: StandingPermissionsResponseSchema } },
+      description: 'The default layer',
+      content: { 'application/json': { schema: PermissionsResponseSchema } },
     },
-    403: {
-      description:
-        'Refused: an agent cannot read this (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
-        'holding the approval token (`REQUESTER_CANNOT_DECIDE`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/permissions/preset',
+  tags: ['Permissions'],
+  summary: 'Choose a preset',
+  description:
+    'Sets the preset every area starts from and clears the changes on top of the old one. ' +
+    "`applyToAgents` also clears those agents' own settings, so they follow the new preset. " +
+    'Records one `permission.changed` Activity event.',
+  request: { body: { content: { 'application/json': { schema: SetPermissionPresetBodySchema } } } },
+  responses: {
+    200: {
+      description: 'The preset changed',
+      content: {
+        'application/json': { schema: PermissionWriteResponseSchema(PermissionsResponseSchema) },
+      },
     },
-    401: {
-      description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
+    ...PERMISSION_WRITE_REFUSALS,
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/permissions/defaults',
+  tags: ['Permissions'],
+  summary: 'Change what agents may do by default',
+  description:
+    'Sets areas and single actions to Blocked, Ask or Allowed for everyone; `null` removes a ' +
+    "change. `applyToAgents` removes those agents' own settings for the same keys in the same " +
+    'write. Records one `permission.changed` Activity event naming every agent touched.',
+  request: {
+    body: { content: { 'application/json': { schema: PatchPermissionDefaultsBodySchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The defaults changed',
+      content: {
+        'application/json': { schema: PermissionWriteResponseSchema(PermissionsResponseSchema) },
+      },
+    },
+    ...PERMISSION_WRITE_REFUSALS,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/permissions/history',
+  tags: ['Permissions'],
+  summary: 'Read the permission history',
+  description:
+    'Every permission change, newest first, with who made it. With `agentId`, the changes ' +
+    'that touched that agent, bulk changes included.',
+  request: { query: PermissionHistoryQuerySchema },
+  responses: {
+    200: {
+      description: 'Permission changes',
+      content: { 'application/json': { schema: PermissionHistoryResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/agents/{id}/permissions',
+  tags: ['Permissions'],
+  summary: "Read one agent's permissions",
+  description:
+    "The agent's resolved state per area and per action, where each came from, and what it " +
+    "would be without the agent's own settings.",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: "The agent's permissions",
+      content: { 'application/json': { schema: AgentPermissionsResponseSchema } },
+    },
+    404: {
+      description: 'No such agent (`UNKNOWN_AGENT`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
 
 registry.registerPath({
-  method: 'delete',
-  path: '/api/approvals/grants/{id}',
-  tags: ['Approvals'],
-  summary: 'End one standing permission',
+  method: 'patch',
+  path: '/api/agents/{id}/permissions',
+  tags: ['Permissions'],
+  summary: "Change one agent's permissions",
   description:
-    'Ends a standing permission, so DorkOS asks again before the next time that agent runs that ' +
-    'action. It does not undo anything that already ran.\n\n' +
-    'Ending one NARROWS what an agent may do, so it needs no session cookie — unlike opening one. ' +
-    'It still needs proof of a person in the same sense deciding an approval does: a caller ' +
-    'presenting an agent identity or an approval token is refused in every posture. A second ' +
-    'click answers 404, so the moment a permission ended cannot be rewritten.',
-  request: { params: z.object({ id: z.string() }) },
+    "Sets this agent's own areas and actions; `null` puts one back to the default. Records one " +
+    '`permission.changed` Activity event.',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { 'application/json': { schema: PatchAgentPermissionsBodySchema } } },
+  },
   responses: {
     200: {
-      description: 'The permission was ended',
-      content: { 'application/json': { schema: RevokeStandingPermissionResponseSchema } },
-    },
-    403: {
-      description:
-        'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
-        'holding the approval token (`REQUESTER_CANNOT_DECIDE`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    401: {
-      description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
+      description: "The agent's permissions changed",
+      content: {
+        'application/json': {
+          schema: PermissionWriteResponseSchema(AgentPermissionsResponseSchema),
+        },
+      },
     },
     404: {
-      description: 'No permission is live under that id (`UNKNOWN_STANDING_PERMISSION`)',
+      description: 'No such agent (`UNKNOWN_AGENT`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+    ...PERMISSION_WRITE_REFUSALS,
   },
 });
 

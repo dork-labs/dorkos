@@ -1,4 +1,4 @@
-import { Button, SettingRow } from '@/layers/shared/ui';
+import { Button, FieldCard, FieldCardContent, SettingRow } from '@/layers/shared/ui';
 import { useAutonomyAcknowledgement } from '@/layers/entities/config';
 
 /**
@@ -35,20 +35,25 @@ export function AutonomyAcknowledgementRow() {
 
   if (!acknowledgedAt) return null;
 
+  // In a card of its own, so a person with nothing on file sees no empty box.
   return (
-    <SettingRow
-      label="Full autonomy"
-      description={`You acknowledged what this means on ${formatAcknowledgedAt(acknowledgedAt)}, and asked not to be shown it again. Resetting also turns off any Full-autonomy default for new sessions.`}
-    >
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={isPending}
-        onClick={clear}
-        data-testid="autonomy-ack-reset"
-      >
-        Reset
-      </Button>
-    </SettingRow>
+    <FieldCard>
+      <FieldCardContent>
+        <SettingRow
+          label="Full autonomy"
+          description={`You acknowledged what this means on ${formatAcknowledgedAt(acknowledgedAt)}, and asked not to be shown it again. Resetting also turns off any Full-autonomy default for new sessions.`}
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isPending}
+            onClick={clear}
+            data-testid="autonomy-ack-reset"
+          >
+            Reset
+          </Button>
+        </SettingRow>
+      </FieldCardContent>
+    </FieldCard>
   );
 }

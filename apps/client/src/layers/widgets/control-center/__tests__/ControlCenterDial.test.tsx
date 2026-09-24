@@ -90,16 +90,16 @@ describe('ControlCenterDial — what Full autonomy does not cover', () => {
     expect(scopeNote()).toHaveTextContent(/DorkOS’s own risky actions still stop for you/);
   });
 
-  it('points at the switch below, not at Settings', async () => {
-    // `ControlCenterBody` renders `ControlCenterSwitches` — which owns the live
-    // Standing permissions switch — directly under this section. Sending the
-    // person to Settings would walk them past the control the sentence is about.
+  it('points at the two places that stop the asking', async () => {
+    // The Standing permissions switch that used to sit below this dial is gone
+    // (spec `agent-permissions` phase 2), so the note names the card and the
+    // Permissions page, like every other pick site.
     await renderDial('autonomy');
     await waitFor(() => expect(scopeNote()).toBeInTheDocument());
     expect(scopeNote()).toHaveTextContent(
-      'The setting for that is the Standing permissions switch below.'
+      'To stop being asked about one, choose Always allow on its card, or change it in Settings under Permissions.'
     );
-    expect(scopeNote()).not.toHaveTextContent(/in Settings under Access/);
+    expect(scopeNote()).not.toHaveTextContent(/Standing permissions/);
   });
 
   it('says nothing at a stop that still asks', async () => {

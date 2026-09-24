@@ -23,21 +23,6 @@ export interface PermissionModeScopeNoteProps {
    * mode DOES; without one it falls back to the mode's name.
    */
   descriptor?: PermissionModeDescriptor;
-  /**
-   * Where this surface should point for Standing permissions.
-   *
-   * `'settings'` (the default) names the place in Settings. `'below'` is for a
-   * surface that renders the Standing permissions control ITSELF further down
-   * the same panel — the Control Center, whose switches sit directly under its
-   * dial. Sending that person to Settings walks them past the very switch the
-   * sentence is about.
-   *
-   * A location, never a policy. The sentence names where the setting lives and
-   * stops there: this component is in `shared` and cannot read config, so it
-   * does not know whether the setting is already on, and "turn it on" would be
-   * wrong for everyone who already has.
-   */
-  standingPermissionsAt?: 'settings' | 'below';
   /** Extra classes for the surrounding paragraph. */
   className?: string;
 }
@@ -71,22 +56,16 @@ export interface PermissionModeScopeNoteProps {
  *    schedule and removing an agent are what the destructive tier actually
  *    parks, so those are what it names.
  * 3. **"Change that in Settings, under Security" named neither the thing nor
- *    the place.** The control is called Standing permissions, and since DOR-1758
- *    merged two tabs it lives under **Access**, not under a Security tab, which
- *    no longer exists. A pointer to a tab that is not there is worse than no
- *    pointer.
+ *    the place.** A pointer to a tab that is not there is worse than no
+ *    pointer; the clause now names the card and the Permissions page.
  *
- * ## The last clause names a PLACE, never an instruction
+ * ## The last clause names the two ways to stop being asked
  *
- * It says "the setting for that is Standing permissions" and not "turn on
- * Standing permissions" (DOR-2102 review). An imperative would be wrong three
- * ways at once, and this component can rule out none of them: it lives in
- * `shared` and reads no config, so it does not know that the setting may
- * already be on, that on a login-less install the switch is disabled and the
- * real first step is Require login, or that the reader may be standing in front
- * of the switch already. Naming the place is true in all three. The one surface
- * that HAS read the config and knows the feature is off — the approval card —
- * is where the imperative belongs, and that is where it lives.
+ * Standing permissions were retired for per-agent, per-action "Always allow"
+ * (spec `agent-permissions` D7), so the pointer names both places that set one:
+ * the card itself, when it asks, and Settings under Permissions. It names them
+ * and stops there: this component lives in `shared` and reads no config, so it
+ * cannot know whether an action is already allowed.
  *
  * The sentence appears at the moment of the choice, in every place a permission
  * mode or a trust stop is actually picked. One component and one condition, so
@@ -133,7 +112,6 @@ export interface PermissionModeScopeNoteProps {
 export function PermissionModeScopeNote({
   mode,
   descriptor,
-  standingPermissionsAt = 'settings',
   className,
 }: PermissionModeScopeNoteProps) {
   const covers = descriptor ? needsConsentRitual(descriptor) : isBypassPermissionMode(mode);
@@ -145,10 +123,8 @@ export function PermissionModeScopeNote({
     >
       This covers what an agent does in a session: editing files, running commands, and working
       outside this project. DorkOS’s own risky actions still stop for you, like deleting a schedule
-      or removing an agent.{' '}
-      {standingPermissionsAt === 'below'
-        ? 'The setting for that is the Standing permissions switch below.'
-        : 'The setting for that is Standing permissions, in Settings under Access.'}
+      or removing an agent. To stop being asked about one, choose Always allow on its card, or
+      change it in Settings under Permissions.
     </p>
   );
 }

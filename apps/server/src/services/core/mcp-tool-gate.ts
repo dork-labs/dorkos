@@ -111,6 +111,8 @@ import { resolveApprovalSubject, type ApprovalRequestingSession } from './approv
 import {
   approvalNoLongerValid,
   awaitCapabilityApproval,
+  canRaiseApproval,
+  resolveCallPermission,
   type CapabilityApprovalHold,
 } from './capabilities/index.js';
 import { approvalTokenArgument } from './capabilities/mcp-projection.js';
@@ -210,13 +212,12 @@ type GateOutcome =
  */
 async function runGate(run: GateRun): Promise<GateOutcome> {
   const { action, args, identity, interactive, origin, requestingSession } = run;
-  // Only a destructive tool advertises `approvalToken`, so only a destructive call
-  // has one to lift off. Anything else passes its arguments through untouched
-  // rather than silently losing a field that happens to share the name.
-  const split =
-    action.tier === 'destructive'
-      ? splitApprovalToken(args)
-      : { approvalToken: undefined, input: args };
+  // Only a tool that can raise a card advertises `approvalToken`, so only such a
+  // call has one to lift off. Anything else passes its arguments through
+  // untouched rather than silently losing a field that happens to share the name.
+  const split = canRaiseApproval(action)
+    ? splitApprovalToken(args)
+    : { approvalToken: undefined, input: args };
   const input = split.input;
   // A token supplied out-of-band wins over one carried in the arguments. That is
   // the resume path (below), and carrying it beside the input rather than
@@ -228,10 +229,13 @@ async function runGate(run: GateRun): Promise<GateOutcome> {
   // an id is async and `enforceCapabilityTier` is not (DOR-1929). This is the
   // same reason, and the same shape, as awaiting the identity above.
   const subject = await resolveApprovalSubject(action.approvalSubject, input);
+  // The permission, resolved fresh for this call (spec `agent-permissions` D6).
+  const permission = await resolveCallPermission({ action, ...(identity ? { identity } : {}) });
 
   const decision = enforceCapabilityTier({
     action,
     input,
+    permission,
     ...(identity ? { identity } : {}),
     ...(approvalToken ? { approvalToken } : {}),
     ...(subject ? { subject } : {}),
@@ -377,7 +381,7 @@ async function runGatedInSession(call: GateRun, run: HandlerRun): Promise<CallTo
  * fails if one ever does.
  */
 function gatedInputSchema(action: GatedAction, schema: z.ZodRawShape): z.ZodRawShape {
-  return action.tier === 'destructive' ? { ...schema, ...approvalTokenArgument() } : schema;
+  return canRaiseApproval(action) ? { ...schema, ...approvalTokenArgument() } : schema;
 }
 
 /**

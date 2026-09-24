@@ -10,9 +10,9 @@
  *
  * ## The money rule
  *
- * This is the FOURTH path in the repo that can spend real money, and it has the
- * same shape as the other three (`AGENTS.md`, "Four paths in the repo spend real
- * money"): the flag `DORKOS_HARNESS_SMOKE=1` is the decision, a per-harness key
+ * This is one of the paths in the repo that can spend real money, and it has the
+ * same shape as every other one (the paid-paths table in `AGENTS.md`, under
+ * Commands): the flag `DORKOS_HARNESS_SMOKE=1` is the decision, a per-harness key
  * is the instrument, a key alone arms nothing, and an ambient sign-in is never
  * an instrument. `./gate.ts` is where that is enforced and why. Everything below
  * runs only after the gate said yes.

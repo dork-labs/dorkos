@@ -235,33 +235,7 @@ The `auth` section controls the local login gate (Better Auth):
 
 When `auth.enabled` is `false` (the default), no auth gate runs and DorkOS shows no user concept anywhere. The Better Auth handler is always mounted at `/api/auth/*`, so the enable-login flow can create the owner account before flipping this flag to `true`. Registration is owner-only: the first registered user becomes the owner, and further sign-ups are rejected until a future invites spec reopens registration. Session cookies are signed by Better Auth; production deployments should set `BETTER_AUTH_SECRET` so sessions survive restarts. See the accounts-and-auth spec.
 
-The `approvals` section holds the policy for standing permissions: an operator's "stop asking about this agent doing this thing" (DOR-501). It is the policy only: the permissions themselves are rows in the `approval_grants` SQLite table, so nothing about which agents are trusted can ever leave through `config_get`.
-
-These settings are enforced. The tier gate reads both on every gated call (`readStandingGrantSettings`), so turning the master switch off stops the very next call rather than the next restart.
-
-| Key                                  | Type                    | Default | Description                                                                                                                                |
-| ------------------------------------ | ----------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `approvals.standingGrants`           | boolean                 | `false` | Whether standing permissions may exist at all                                                                                              |
-| `approvals.trustWindowMinutes`       | integer (5--1440)       | `480`   | How long a new standing permission lasts, counted from the moment it is granted                                                            |
-| `approvals.standingGrantsVoidBefore` | ISO 8601 string \| null | `null`  | **Machine-managed.** The moment the settings last stopped licensing standing permissions. Every permission granted at or before it is void |
-
-Both leaves are `operator-only`, so under login-on they need a session cookie like every other operator-only setting (see [Who may write which setting](#who-may-write-which-setting)). On top of that, they **cannot be written at all while login is off** — that extra bar is `REQUIRES_LOGIN_CONFIG_PATHS` in `config-write-policy.ts`. The consequence is that **standing permissions require `auth.enabled`**.
-
-That bar is not redundant with the general cookie rule, which allows any caller while login is off. It was written as a forward-looking guard, before anything enforced a permission, and it is now load-bearing: with the gate reading the switch, a caller that could write it while login is off would be pre-arming real behavior rather than an inert flag. Do not fold it into the general rule.
-
-The window is bounded in the schema in both directions. The maximum of one day is what makes "forever" unrepresentable; the minimum of 5 minutes keeps the window from becoming a deny-all that looks like a broken feature. Expiry is absolute from the moment of the grant and never slides on use, so an agent cannot extend its own trust by acting. Turning either `auth.enabled` or `approvals.standingGrants` off ends every live permission immediately.
-
-### The posture floor (DOR-520)
-
-`approvals.standingGrantsVoidBefore` is written by DorkOS, never by hand. Whenever a write takes either `auth.enabled` or `approvals.standingGrants` away, `ConfigManager` stamps the current moment there, and `ApprovalGrantService` then refuses every permission granted at or before it — on `findLive` and on `list`, evaluated on read the same way expiry is.
-
-It exists because `PATCH /api/config` is not the only write path. `dorkos config set approvals.standingGrants false` and `dorkos config reset` write the same file from another process, with no database and no routes, so they reach none of the revocation seams. Without the floor, switching the setting off and back on again inside one server lifetime left every permission alive and woke it up — nobody had decided that.
-
-The marker lives in the config file rather than beside the permissions in SQLite for exactly that reason: the config file is the only thing every writer of these settings touches. It is also durable, so it still holds when the whole round trip happens while the server is down — the case a config-file watcher cannot see, and the case the boot sweep misses too, because by then the settings look fine again.
-
-The floor is **monotonic**: after any write it equals what it was before, except on a narrowing where it becomes `max(previous, now)`. It is stated that way — as an invariant on the stored value rather than as a reaction to a transition — because the first version stamped only on the licensed → unlicensed transition, and any write performed while _already_ narrowed then put the leaf back to its default and erased the marker. `dorkos config reset` did exactly that, and a batched `PATCH /api/config` did it too (`applyConfigPatch` writes each top-level section from one pre-write snapshot, so a section written after `auth` narrowed carried a stale `null` back over the stamp). `max` rather than `now` also keeps a backwards clock from lowering a floor that has already voided permissions.
-
-**What it does not cover.** The floor rests on every writer going through `ConfigManager`, so config content DorkOS did not write gets around it. Editing `~/.dork/config.json` in a text editor — including via `dorkos config edit`, which hands you the raw file — narrows the posture without stamping anything. Restoring the config file from a backup carries whatever floor that snapshot held, which may be older than the one it replaces or absent entirely; `config-write-policy.ts` already names the same class of problem for the settings themselves. In both cases an off-then-on round trip can still wake permissions inside one server lifetime, and a restart re-establishes the invariant only if the settings are still narrowed when it happens.
+The `approvals` section (standing permissions, DOR-501/DOR-520) is **retired** (spec `agent-permissions` phase 2). "Always allow" on a request card replaced it: an action-level Allowed in the agent's own `permissions`, written by the approval grant route through the permission service. The three leaves are deleted by the server at boot (`ConfigManager.retireStandingGrantSettings`), deliberately NOT by a config migration: the CLI opens the config store before the server migrates the database, and the capture of live grants needs the master switch and the void floor, so a migration would have erased them first. Until that boot step runs, `approvals` is an unknown key and is carried across writes like any other. The shipped `'0.57.0'` body that seeded them stays frozen, as shipped bodies do. Live grants that the settings really honored were ended at upgrade, one history line each (`services/core/permissions/ended-standing-grants.ts`), and the `approval_grants` table is dropped.
 
 The `cloud` section holds the device-link binding between this instance and a DorkOS account (accounts-and-auth P2). It is managed by the `dorkos cloud` CLI commands and the `/api/cloud/*` routes — not edited by hand — and is independent of `auth.enabled`:
 
@@ -615,7 +589,7 @@ The conversion runs on the first READ rather than at boot on purpose. At boot it
 
 **Which modes need it is a semantic rule, not the autonomy stop alone** (DOR-816): `needsConsentRitual` in `@dorkos/shared/permission-semantics` answers yes for a mode at the `autonomy` stop, and for any mode declaring `asks: 'never'` with a `reach` other than `'read'` — Codex files exactly such a mode at the middle stop. One record covers the whole door whichever mode opened it. The `defaultTrustStop` leaves are unaffected: they store one of the dial's three stops, where only `autonomy` can mean "does not ask".
 
-**It is a consent ritual, not a security boundary.** Any caller that can reach the route can send `acknowledgedAutonomy: true` itself; what the door buys is that a person cannot arrive in a mode that never asks without having been told what that means. The boundary against agent callers is separate work (`agent-approval-settings`, DOR-501). **Two surfaces are outside the door entirely, on purpose:** a session BORN at a runtime's declared default never PATCHes and so is never gated (what keeps that honest is the separate invariant that no production runtime defaults to a stop that stops asking), and Obsidian's `DirectTransport` calls `runtime.updateSession` in-process without crossing the route at all. Obsidian also cannot store the standing record — its `updateConfig` is a no-op and its `getConfig` returns no `ui` block — so the cockpit withholds the "don't show this again" checkbox there rather than offering a tick that saves nothing (`useAutonomyAcknowledgement().canRemember`). It lives under `ui` rather than `approvals` because every `approvals.*` leaf requires login to write, and requiring login to dismiss a dialog would make the feature unreachable on the default login-off install; it is still `operator-only`, so an agent cannot forge the record. Unattended surfaces — bindings, tasks, rooms — never pass through this route and keep their own, stricter gates.
+**It is a consent ritual, not a security boundary.** Any caller that can reach the route can send `acknowledgedAutonomy: true` itself; what the door buys is that a person cannot arrive in a mode that never asks without having been told what that means. The boundary against agent callers is separate work (`agent-approval-settings`, DOR-501). **Two surfaces are outside the door entirely, on purpose:** a session BORN at a runtime's declared default never PATCHes and so is never gated (what keeps that honest is the separate invariant that no production runtime defaults to a stop that stops asking), and Obsidian's `DirectTransport` calls `runtime.updateSession` in-process without crossing the route at all. Obsidian also cannot store the standing record — its `updateConfig` is a no-op and its `getConfig` returns no `ui` block — so the cockpit withholds the "don't show this again" checkbox there rather than offering a tick that saves nothing (`useAutonomyAcknowledgement().canRemember`). It lives under `ui` because requiring login to dismiss a dialog would make the feature unreachable on the default login-off install; it is still `operator-only`, so an agent cannot forge the record. Unattended surfaces — bindings, tasks, rooms — never pass through this route and keep their own, stricter gates.
 
 This field briefly held ten visibility booleans instead (`cwd`, `git`, … each `true` = shown), between DOR-431 and DOR-452 and never in a tagged release. Pins replaced them because the semantics inverted — subtractive "hide this" became additive "always show this" — and there is no faithful mapping between the two: translating visible→pinned would hand anyone still on the defaults ten pins and erase the quiet line. `migrateStatusBarToPins` therefore drops the old booleans rather than converting them, a deliberate one-time reset.
 
@@ -630,6 +604,16 @@ One body landed with the notification system (spec `notification-system`, DOR-13
 It seeds a **top-level** section, unlike every `ui.*` body in the table above, so there is nothing on disk to merge into. An install that predates it has no `notifications` key at any depth, and conf merges top-level defaults shallowly. It reads the shared defaults constant rather than a literal, so the seed cannot drift from the schema it is seeding, and it skips a section already present, so re-running can never overwrite a choice somebody made.
 
 **The per-browser chime it replaces is not migrated here.** `dorkos-enable-notification-sound` lives in a browser's `localStorage`, which the server cannot read, so the cockpit imports it on first read instead. See [notifications](#notifications) above.
+
+### Shipped migrations: permissions
+
+One body landed with agent permissions (spec `agent-permissions`):
+
+| Version  | Body                           | Effect                                                                                                                                                                                                                                                                                                                 |
+| -------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0.83.0` | `seedPermissionPresetFromDoor` | Reads the Full-power door's answer (`ui.fullPowerChoice`) and writes the matching preset: `full` becomes `full`, `supervised` becomes `careful`. An install that never answered keeps `preset: null`, which resolves every action exactly as before permissions existed. A preset already chosen is never overwritten. |
+
+The per-agent half of the upgrade is not a config migration, because it lives in each agent's `.dork/agent.json`: the boot-time sweep (`services/core/permissions/permission-upgrade-sweep.ts`) folds the retired `enabledToolGroups.roomsManage` into `permissions.areas.rooms`, records one Activity event per agent it changed, and stamps `permissions.upgradeSweptVersion` so it runs once per server version.
 
 ### Interaction with `/system:release`
 
@@ -1069,6 +1053,18 @@ These can be configured globally in Settings > Tools tab, or per-agent via the a
 dorkos config set agentContext.relayTools false
 dorkos config set agentContext.tasksTools false
 ```
+
+### permissions
+
+What agents may do: each action is Blocked, Ask or Allowed. The schema and the resolver live in `@dorkos/shared/permissions`; the user guide is `docs/guides/permissions.mdx`.
+
+| Key                               | Type                                        | Default | Description                                                                                                      |
+| --------------------------------- | ------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------- |
+| `permissions.preset`              | `'careful' \| 'balanced' \| 'full' \| null` | `null`  | The starting point for every area. `null` means not chosen yet: every action keeps its pre-permissions behavior. |
+| `permissions.defaults`            | `{ areas, actions }`                        | empty   | The person's own defaults over the preset, by area or by single action.                                          |
+| `permissions.upgradeSweptVersion` | `string \| null`                            | `null`  | The server version whose upgrade sweep has run. Bookkeeping only.                                                |
+
+**None of these is written through `PATCH /api/config` or `dorkos config set`.** The generic config writers refuse `permissions.*` with `USE_PERMISSIONS_API`, because every permission change has to record who made it. Use Settings → Permissions, or `PUT /api/permissions/preset` and `PATCH /api/permissions/defaults`. Per-agent settings live in the agent's `.dork/agent.json` under `permissions` and are written only through `PATCH /api/agents/:id/permissions`.
 
 ### runtimes
 
@@ -1651,7 +1647,7 @@ The endpoint deep-merges the patch into the current config, validates the merged
 
 ### Who may write which setting
 
-Every general-purpose door — `PATCH /api/config`, `dorkos config set`, and the `config_patch` operator tool — runs the same step, `applyGuardedConfigWrite` in `services/core/operator/config-write.ts`. It is one sequence: the login bar, the operator bar, the Full-autonomy consent door, the write, the audit line. What differs per door is only WHO is asking, handed in as a `ConfigWriteAuthority` — a pair of callbacks that answer "may this caller write these login-gated paths" and "…these operator-only paths".
+Every general-purpose door — `PATCH /api/config`, `dorkos config set`, and the `config_patch` operator tool — runs the same step, `applyGuardedConfigWrite` in `services/core/operator/config-write.ts`. It is one sequence: the `permissions` refusal, the operator bar, the Full-autonomy consent door, the write, the audit line. What differs per door is only WHO is asking, handed in as a `ConfigWriteAuthority` — a callback that answers "may this caller write these operator-only paths".
 
 Before DOR-1247 the sequence was copied into the route and half-copied into the tool, and the CLI ran none of it. That is exactly how `dorkos config set runtimes.claudeCode.defaultTrustStop autonomy` came to be a legal, silent, unacknowledged write.
 
@@ -1682,7 +1678,7 @@ Two kinds of writer, and the difference decides what each one owes you.
 | `dorkos config set`            | `LOCAL_OPERATOR_AUTHORITY` | no — the caller is the person at their own terminal                | `[Config] Patched by dorkos config set: …`     |
 | `config_patch` (operator tool) | `OPERATOR_TOOL_AUTHORITY`  | always, with no approval that could unlock it                      | `[Config] Patched by the config_patch tool: …` |
 
-**Why the CLI clears both bars.** It runs under the person's own shell, on the data directory they own — the same trust the cockpit has in the default login-off posture, where the server admits it cannot tell the cockpit from any other local process. Refusing the terminal what the browser is allowed would add no guarantee; it would move the person to `dorkos config edit`, which hands them the raw file with no policy, no consent door and no log. The login bar is allowed for a sharper reason: applying it would refuse `dorkos config set approvals.standingGrants false`, the PROTECTIVE direction, on the surface `standing-grant-posture.ts` names as the one that has to work with no server running.
+**Why the CLI clears the operator bar.** It runs under the person's own shell, on the data directory they own — the same trust the cockpit has in the default login-off posture, where the server admits it cannot tell the cockpit from any other local process. Refusing the terminal what the browser is allowed would add no guarantee; it would move the person to `dorkos config edit`, which hands them the raw file with no policy, no consent door and no log.
 
 **What the CLI does NOT clear** is the Full-autonomy consent door, because that is not an authority question — it asks whether the person has been told what Full autonomy means, and the answer is the same whoever is typing. `dorkos config set runtimes.claudeCode.defaultTrustStop autonomy` prints the cockpit's own sentence and writes nothing until `ui.autonomyAcknowledgedAt` exists. The terminal's way to satisfy it is `dorkos config acknowledge-autonomy`, which prints what is being agreed to and asks once (no by default, and it refuses outright with no TTY rather than offering a `--yes` that would sign the form for you). The refusal names that command, because a sentence with no next step is a dead end in a shell.
 
@@ -1703,7 +1699,7 @@ Two kinds of writer, and the difference decides what each one owes you.
 | `services/extensions/extension-manager.ts`    | `extensions` | the extensions manager / approving an extension to run / withdrawing an extension run approval |
 | `services/harness/hook-approval.ts`           | `harness`    | approving a package hook                                                                       |
 
-The section is passed explicitly because a purpose-built writer only ever moves its own, and the diff is scoped to it. One bound follows: `ConfigManager.set` stamps `approvals.standingGrantsVoidBefore` when a write narrows the standing-permission posture, and a section-scoped diff cannot see that. Nothing on this list writes `auth` or `approvals`, so it does not bite today; a writer that needs to should use the guarded step, which diffs the whole config.
+The section is passed explicitly because a purpose-built writer only ever moves its own, and the diff is scoped to it.
 
 **A purpose-built writer owes TWO things, and only one of them is the log line.** The other is its own gate, and it is the half that goes missing — nothing about `logConfigWrite` asks whether a caller was allowed. DOR-1507 was exactly that: the extensions manager writes `extensions.enabled` / `.disabled`, both `operator-only`, and logged every one, while `POST /api/extensions/:id/enable` and `/disable` ran no bar at all — so an agent could turn extension code on through a friendly route that `PATCH /api/config` would have refused it. The tunnel route (DOR-1738) had the same shape.
 
@@ -1711,7 +1707,7 @@ Since DOR-1507 the list above is **pinned by a test**: `configManager.set(` is a
 
 #### What still writes without a line, and why that is a decision
 
-- **`dorkos config reset`, `dorkos config edit`, `dorkos init`, `dorkos auth`, `dorkos telemetry`, `dorkos cloud`.** Every one is a verb a person typed, naming the thing it changes; none can be pointed at an arbitrary path. `config reset` additionally cannot produce a permissive value — it moves settings TO the shipped defaults, which are the protective side by rule (ADR 260727-181825), and a whole-config reset keeps the protections a person moved (`safe-defaults/protected-state.ts`). `config edit` hands over the raw file, so nothing here can see it at all; `standing-grant-posture.ts` names it as the hand-edit case.
+- **`dorkos config reset`, `dorkos config edit`, `dorkos init`, `dorkos auth`, `dorkos telemetry`, `dorkos cloud`.** Every one is a verb a person typed, naming the thing it changes; none can be pointed at an arbitrary path. `config reset` additionally cannot produce a permissive value — it moves settings TO the shipped defaults, which are the protective side by rule (ADR 260727-181825), and a whole-config reset keeps the protections a person moved (`safe-defaults/protected-state.ts`). `config edit` hands over the raw file, so nothing here can see it at all.
 
   **These are not small settings, so do not round the list up in user-facing copy.** `dorkos telemetry enable` moves six `operator-only` leaves; `dorkos auth enable` moves `auth.enabled`; `dorkos cloud link` moves the account token and name. All silent. Any sentence promising that "your log names what changed a setting" has to say `dorkos config set`, not "the command line" — reproduced during review, and the changelog and `docs/guides/action-approvals.mdx` were both narrowed for it.
 
@@ -1725,10 +1721,9 @@ DOR-1247 looked at closing this and did not, deliberately. **The cockpit is itse
 
 So the answer stays the one DOR-505 gave: **turning on Require login is what closes it**, and it is documented for users under "Settings your agents cannot change" in `docs/guides/action-approvals.mdx`. Do not describe this route as "operator-only enforced" without that qualifier. This one _is_ logged, being the same route.
 
-Two consequences worth knowing when you touch this code:
+One consequence worth knowing when you touch this code:
 
 - **The enable-login flow is unaffected on purpose.** `OwnerSetupHost.tsx` writes `auth.enabled: true` while login is still off, so the cookie bar does not apply to it. A guard that read the POST-patch state instead of the current state would make login impossible to turn on.
-- **`approvals.*` has a login bar in front of both bars** on the HTTP route, `REQUIRES_LOGIN_CONFIG_PATHS`, which refuses those writes outright while login is off. See [the `approvals` section](#settings-reference).
 
 **So still never read a silent log as proof a setting did not change** — but the silence is now much narrower: the three doors and the ten writers above all speak.
 

@@ -20,7 +20,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectionState, Task } from '@dorkos/shared/types';
-import type { PendingApproval, StandingPermission } from '@dorkos/shared/approval-schemas';
+import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 
@@ -62,7 +62,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
 import { usePendingApprovals } from '@/layers/entities/attention';
 import { useNotifications } from '@/layers/entities/notifications';
-import { useStandingPermissions } from '@/layers/features/approvals';
 import { useConfig } from '@/layers/entities/config';
 import { clearInboxRequest, requestInbox } from '@/layers/entities/notifications';
 import {
@@ -85,12 +84,11 @@ import { InboxBell } from '../ui/InboxBell';
 function SettledProbe() {
   const { data: config } = useConfig();
   const { approvals, isLoading } = usePendingApprovals();
-  const { permissions } = useStandingPermissions();
   const { isLoading: inboxLoading } = useNotifications();
   return (
     <>
       <span data-testid="settled">
-        {`${config ? 'cfg' : 'nocfg'}:${isLoading ? 'loading' : 'loaded'}:${permissions.length}:${
+        {`${config ? 'cfg' : 'nocfg'}:${isLoading ? 'loading' : 'loaded'}:${
           inboxLoading ? 'inbox-loading' : 'inbox-loaded'
         }`}
       </span>
@@ -113,6 +111,8 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
     summary: 'Uninstall "sentry-monitor"',
     requestedBy: '/Users/dev/agents/dorkbot',
     hasAgentPath: true,
+    area: null,
+    alwaysOffered: false,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 90 * 60_000).toISOString(),
     ...overrides,
@@ -153,48 +153,6 @@ function parkedSchedule(overrides: Partial<Task> = {}): Task {
     nextRuns: [],
     ...overrides,
   };
-}
-
-/** Build a live standing permission. */
-function buildPermission(overrides: Partial<StandingPermission> = {}): StandingPermission {
-  return {
-    grantId: '01JZ00000000000000000000G1',
-    agentPath: '/Users/dev/agents/dorkbot',
-    agentLabel: 'dorkbot',
-    capabilityId: 'marketplace.uninstall',
-    capabilityTitle: 'Uninstall a marketplace package',
-    expiresAt: new Date(Date.now() + 120 * 60_000).toISOString(),
-    ...overrides,
-  };
-}
-
-/**
- * A config with both standing-permission settings on.
- *
- * The list is only read when they are, so a test about live permissions that
- * forgot this would assert against an empty list and pass for the wrong reason.
- */
-function configWithStandingGrants() {
-  return vi.fn().mockResolvedValue({
-    version: '1.0.0',
-    port: 4242,
-    uptime: 0,
-    workingDirectory: '/test',
-    nodeVersion: 'v20.0.0',
-    platform: 'linux-x64',
-    runtimes: ['claude-code'],
-    claudeCliPath: null,
-    tunnel: {
-      enabled: false,
-      connected: false,
-      url: null,
-      authEnabled: false,
-      tokenConfigured: false,
-    },
-    tasks: { enabled: true },
-    auth: { enabled: true },
-    approvals: { standingGrants: true, trustWindowMinutes: 480 },
-  });
 }
 
 /** Render the marker over a mock transport. */
@@ -271,7 +229,7 @@ describe('InboxBell', () => {
     // Wait for both reads to land FIRST. `waitFor` around the absence alone
     // resolves on its first synchronous check, before either query settles, so it
     // would pass against a component that always renders the marker.
-    await screen.findByText(/^cfg:loaded:0:inbox-loaded$/);
+    await screen.findByText(/^cfg:loaded:inbox-loaded$/);
     expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
   });
 
@@ -376,7 +334,7 @@ describe('InboxBell', () => {
     // The decision itself is here, not a route away.
     expect(await screen.findByText('Uninstall a marketplace package')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Allow' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Don’t allow' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Deny' })).toBeInTheDocument();
   });
 
   it('says so when the list cannot be read, rather than looking like silence', async () => {
@@ -400,104 +358,6 @@ describe('InboxBell', () => {
     renderIndicator({ listPendingApprovals: vi.fn().mockRejectedValue(new Error('offline')) });
 
     await waitFor(() => expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument());
-  });
-
-  it('shows a quiet marker, not the amber one, when only standing permissions are live', async () => {
-    // Nobody is blocked and nothing needs answering. The amber pill means exactly
-    // one thing — an agent is waiting on you — and spending it on news that is not
-    // urgent is how a marker stops being read.
-    renderIndicator({
-      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
-      getConfig: configWithStandingGrants(),
-      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
-    });
-
-    const marker = await screen.findByTestId('inbox-bell');
-    expect(marker).toHaveAccessibleName('1 standing permission is live. Open to see it or end it.');
-    expect(marker.className).not.toContain('bg-status-warning-bg');
-    // The check-mark shield belongs to this state and only this one: live trust
-    // that was actually verified, not a read that failed.
-    expect(marker.querySelector('.lucide-shield-check')).toBeInTheDocument();
-    expect(marker.querySelector('.lucide-shield-alert')).not.toBeInTheDocument();
-  });
-
-  it('opens onto the permissions, with the button that ends one', async () => {
-    // A permission a person cannot find is a dark pattern, and this is the surface
-    // they are most likely looking at when they wonder why nothing asked them.
-    renderIndicator({
-      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
-      getConfig: configWithStandingGrants(),
-      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
-    });
-
-    await userEvent.click(await screen.findByTestId('inbox-bell'));
-
-    expect(await screen.findByText('Uninstall a marketplace package')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Stop trusting dorkbot/ })).toBeInTheDocument();
-  });
-
-  it('reports the pending queue when both are true, and puts the permissions under the cards', async () => {
-    renderIndicator({
-      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
-      getConfig: configWithStandingGrants(),
-      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
-    });
-
-    const marker = await screen.findByTestId('inbox-bell');
-    expect(marker).toHaveAccessibleName('1 request needs your approval. Open to answer it.');
-
-    await userEvent.click(marker);
-    await screen.findByRole('button', { name: 'Allow' });
-    const card = document.querySelector('[data-slot="approval-card"]');
-    const permission = document.querySelector('[data-slot="standing-permission"]');
-    expect(card).not.toBeNull();
-    expect(permission).not.toBeNull();
-    // Something waiting on a person outranks something already decided.
-    expect(
-      (card as Node).compareDocumentPosition(permission as Node) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy();
-  });
-
-  it('stays silent about permissions the settings do not allow to exist', async () => {
-    // Standing permissions off means there is nothing to find, and the server
-    // would refuse the read anyway. A marker here would be pure noise.
-    renderIndicator({
-      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
-      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
-    });
-
-    // The probe proves the config landed and the permission list resolved to
-    // nothing, which is what makes the marker's absence mean something.
-    await screen.findByText(/^cfg:loaded:0:inbox-loaded$/);
-    expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
-  });
-
-  it('says so when the permission list cannot be read, rather than looking untrusted', async () => {
-    // An empty list here reads as "nothing is trusted", which is the most
-    // reassuring thing this surface can say. A failed read must not borrow it: the
-    // gate may still be auto-approving under a permission nobody can now see.
-    renderIndicator({
-      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
-      getConfig: configWithStandingGrants(),
-      listStandingPermissions: vi.fn().mockRejectedValue(new Error('offline')),
-    });
-
-    const marker = await screen.findByTestId('inbox-bell');
-    expect(marker).toHaveAccessibleName(
-      'DorkOS could not check which standing permissions are live. Open for details.'
-    );
-    // Not the check-mark shield: that icon says "verified", the opposite of what
-    // a failed read means. A person reads this pill by silhouette far more often
-    // than by the accessible name a screen reader gets.
-    expect(marker.querySelector('.lucide-shield-alert')).toBeInTheDocument();
-    expect(marker.querySelector('.lucide-shield-check')).not.toBeInTheDocument();
-
-    await userEvent.click(marker);
-    // Scoped to the panel: the live region announcing the same fact is not the
-    // thing being asserted here.
-    const panel = await screen.findByTestId('standing-permissions-error');
-    expect(panel).toHaveTextContent(/could not check which standing permissions are live/i);
-    expect(within(panel).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 
   it('still shows requests it already knows about when the link drops', async () => {
@@ -678,12 +538,12 @@ describe('InboxBell', () => {
     await screen.findByText('pending:0');
 
     // Still saying what happened, inside a section that has not collapsed.
-    expect(screen.getByText('Allowed')).toBeInTheDocument();
+    expect(screen.getByText('Allowed once')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Needs You' })).toBeInTheDocument();
 
     // And it does let go: a hold that never released would pin a decided card
     // to the panel forever.
-    await waitFor(() => expect(screen.queryByText('Allowed')).not.toBeInTheDocument(), {
+    await waitFor(() => expect(screen.queryByText('Allowed once')).not.toBeInTheDocument(), {
       timeout: 4_000,
     });
   });
@@ -776,7 +636,7 @@ describe('InboxBell — history and read state', () => {
 
     // Both legs settled first: an absence assertion that fires before the reads
     // land would pass against a component that always renders the pill.
-    await screen.findByText(/^cfg:loaded:0:inbox-loaded$/);
+    await screen.findByText(/^cfg:loaded:inbox-loaded$/);
     expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
   });
 
@@ -871,11 +731,12 @@ describe('InboxBell — history and read state', () => {
         nextCursor: null,
         unreadCount: 0,
       }),
-      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
-      getConfig: configWithStandingGrants(),
     });
 
-    await userEvent.click(await screen.findByTestId('inbox-bell'));
+    // Nothing is waiting or unread, so the bell draws nothing until somebody
+    // asks for the Inbox — which is how a person reaches read history.
+    await screen.findByText(/^cfg:loaded:inbox-loaded$/);
+    act(() => requestInbox());
     await screen.findByText('meeting-notes finished');
     expect(screen.queryByRole('button', { name: 'Mark all read' })).not.toBeInTheDocument();
   });
@@ -912,7 +773,7 @@ describe('InboxBell — history and read state', () => {
         .fn()
         .mockResolvedValue({ notifications: [], nextCursor: null, unreadCount: 0 }),
     });
-    await screen.findByText(/^cfg:loaded:0:inbox-loaded$/);
+    await screen.findByText(/^cfg:loaded:inbox-loaded$/);
     expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
 
     act(() =>
@@ -994,7 +855,7 @@ describe('InboxBell — opening a bell that has nothing to say', () => {
     vi.clearAllMocks();
   });
 
-  /** Nothing waiting, nothing unread, nothing trusted — the pill draws nothing. */
+  /** Nothing waiting and nothing unread — the pill draws nothing. */
   const FULLY_QUIET = {
     listPendingApprovals: () => Promise.resolve({ approvals: [] }),
     listNotifications: () =>
@@ -1009,13 +870,13 @@ describe('InboxBell — opening a bell that has nothing to say', () => {
     // this finds no bell at all.
     renderIndicator(FULLY_QUIET);
 
-    await screen.findByText(/^cfg:loaded:0:inbox-loaded$/);
+    await screen.findByText(/^cfg:loaded:inbox-loaded$/);
     expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
 
     act(() => requestInbox({ sessionId: 'ses-42' }));
 
     const bell = await screen.findByTestId('inbox-bell');
-    // Neutral, and no number: "0 trusted" is a sentence about nothing.
+    // Neutral, and no number: "0 unread" is a sentence about nothing.
     expect(bell).toHaveAttribute('data-tone', 'neutral');
     expect(bell).toHaveAccessibleName('Your Inbox. Nothing is waiting and nothing is unread.');
     expect(bell).not.toHaveTextContent(/\d/);
@@ -1028,7 +889,7 @@ describe('InboxBell — opening a bell that has nothing to say', () => {
     // `open`, which is the only thing keeping the popover mounted here.
     renderIndicator(FULLY_QUIET);
 
-    await screen.findByText(/^cfg:loaded:0:inbox-loaded$/);
+    await screen.findByText(/^cfg:loaded:inbox-loaded$/);
     expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
 
     await userEvent.keyboard('{Meta>}{Shift>}y{/Shift}{/Meta}');
@@ -1041,7 +902,7 @@ describe('InboxBell — opening a bell that has nothing to say', () => {
   it('goes back to drawing nothing once the panel is closed', async () => {
     renderIndicator(FULLY_QUIET);
 
-    await screen.findByText(/^cfg:loaded:0:inbox-loaded$/);
+    await screen.findByText(/^cfg:loaded:inbox-loaded$/);
     act(() => requestInbox());
     await screen.findByTestId('inbox-bell');
 
@@ -1157,15 +1018,11 @@ describe('InboxBell — what the panel says', () => {
     expect(screen.queryByText(/0 requests/)).not.toBeInTheDocument();
   });
 
-  it('keeps saying "answered" over "trusted" while a receipt is still up', async () => {
+  it('keeps saying "answered" over "unread" while a receipt is still up', async () => {
     // Ordering inside the pill: a receipt is about the thing just finished and
-    // outranks a standing permission, which is a state that has been true all
-    // along. Seeded defect: move the trusted branch above the settling one and
-    // the pill flips to "2 trusted" in the frame the answer lands.
+    // outranks unread history, which has been true all along.
     renderIndicator({
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
-      getConfig: configWithStandingGrants(),
-      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
       listPendingInteractions: vi.fn().mockResolvedValue({
         interactions: [
           {
@@ -1198,7 +1055,7 @@ describe('InboxBell — what the panel says', () => {
 
     await waitFor(() => expect(bell).toHaveTextContent('answered'));
     expect(bell).toHaveAttribute('data-tone', 'waiting');
-    expect(bell).not.toHaveTextContent('trusted');
+    expect(bell).not.toHaveTextContent('unread');
   });
 
   it('names schedules as schedules, never as "requests", when they are all that is waiting', async () => {
@@ -1292,7 +1149,7 @@ describe('InboxBell — what the panel says', () => {
   });
 
   it('keeps every section heading in the accessible tree below the desktop breakpoint', async () => {
-    // The four section headings used `hidden md:block`, which sets `display:
+    // The section headings used `hidden md:block`, which sets `display:
     // none` below `md` — removing the heading from the ACCESSIBILITY TREE, not
     // just off screen, and leaving a phone screen reader with one heading for
     // the entire popover. jsdom never loads the app's compiled stylesheet, so
@@ -1303,13 +1160,11 @@ describe('InboxBell — what the panel says', () => {
     // `md:not-sr-only` restoring the exact desktop look at `md`. Rendered under
     // the Drawer (mobile/bottom-sheet) branch, which is where a phone user
     // actually meets these headings. Seeded defect: put `hidden md:block` back
-    // on any of the four and this goes red.
+    // on any of them and this goes red.
     mockIsMobile = true;
     renderIndicator({
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
       listTasks: vi.fn().mockResolvedValue([parkedSchedule()]),
-      getConfig: configWithStandingGrants(),
-      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
       listNotifications: vi.fn().mockResolvedValue({
         notifications: [buildNotification()],
         nextCursor: null,
@@ -1319,7 +1174,7 @@ describe('InboxBell — what the panel says', () => {
 
     await userEvent.click(await screen.findByTestId('inbox-bell'));
 
-    for (const name of ['Needs You', 'Scheduled Runs', 'Activity', 'Standing Permissions']) {
+    for (const name of ['Needs You', 'Scheduled Runs', 'Activity']) {
       const heading = await screen.findByRole('heading', { name });
       expect(heading).toBeInTheDocument();
       expect(heading.className).toContain('sr-only');

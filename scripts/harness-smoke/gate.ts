@@ -1,6 +1,7 @@
 /**
- * The money gate on the real-harness smoke — the fourth path in this repo that
- * can spend real money, and it has the same shape as the other three.
+ * The money gate on the real-harness smoke — one of the paths in this repo that
+ * can spend real money, and it has the same shape as every other one (the
+ * paid-paths table in `AGENTS.md`, under Commands).
  *
  * `AGENTS.md`'s rule, restated because this file is where it is enforced: **the
  * flag is the decision, the key is the instrument, and a key alone arms

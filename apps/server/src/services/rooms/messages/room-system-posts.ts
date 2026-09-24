@@ -346,6 +346,42 @@ export class RoomSystemPosts {
   }
 
   /**
+   * Write the notice that says a room was archived: the one entry an archived
+   * room gains. It is written after the archive lands, so it never claims an
+   * archive that failed, and it refuses a room that is not archived, so it
+   * cannot be used to slip any other entry past {@link postNotice}'s rule.
+   *
+   * @param roomId - The room that was just archived.
+   * @param body - From `buildRoomArchivedNotice`.
+   * @returns The committed entry.
+   * @throws {Error} When the room is still live — a caller bug, never a
+   *   request's fault, so it has no room error code.
+   */
+  postArchivedNotice(roomId: string, body: RoomEntryBody): RoomEntry {
+    const room = this.visibility.requireRoom(roomId);
+    if (!room.archived) {
+      throw new Error('postArchivedNotice: the room is not archived');
+    }
+    const id = ulid();
+    const entry = this.store.appendEntry({
+      roomId,
+      id,
+      authorId: this.authors.system().id,
+      kind: 'notice',
+      body,
+      mentions: [],
+      mentionSpans: [],
+      sessionId: null,
+      ...threadPointers(this.store, roomId, undefined),
+      cascadeRoot: id,
+      cascadeDepth: 0,
+      createdAt: new Date().toISOString(),
+    });
+    this.publisher.publishEntry(entry);
+    return entry;
+  }
+
+  /**
    * Write a `notice` — the room speaking in its own voice, authored by the
    * system author. A refused trigger lands one of these; a silently dropped
    * trigger is indistinguishable from a broken agent.

@@ -53,7 +53,9 @@ describe('parseUpdateArgs', () => {
   });
 
   it('throws on unknown option', () => {
-    expect(() => parseUpdateArgs(['--nope'])).toThrow(/Unknown option for 'update': --nope/);
+    expect(() => parseUpdateArgs(['--nope'])).toThrow(
+      /Unknown option for 'marketplace update': --nope/
+    );
   });
 });
 
@@ -286,6 +288,27 @@ describe('runUpdate', () => {
         `/api/marketplace/updates?projectPath=${encodeURIComponent('/work/my app')}`
       );
     });
+
+    it.each([false, true])(
+      'says the running DorkOS is older than the CLI when it has no updates door (apply: %s)',
+      async (apply) => {
+        // Purpose: a server started before this CLI answers the router's bare
+        // "Not found"; a person needs to hear "restart DorkOS" instead.
+        vi.stubGlobal(
+          'fetch',
+          vi
+            .fn()
+            .mockResolvedValueOnce(mockResponse(404, { error: 'Not found', code: 'API_NOT_FOUND' }))
+        );
+
+        const code = await runUpdate({ apply });
+
+        expect(code).toBe(1);
+        expect(errSpy.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(
+          /older than this CLI.*Restart DorkOS/s
+        );
+      }
+    );
 
     it('says so when nothing is installed', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(mockResponse(200, { checks: [] })));

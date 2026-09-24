@@ -1,7 +1,7 @@
 ---
 id: 260923-162950
 title: A marketplace cache entry is keyed by the commit its checkout verifiably holds
-status: draft
+status: accepted
 created: 2026-09-23
 spec: marketplace-fetch-integrity
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: marketplace-fetch-integrity)
+Accepted.
 
 ## Context
 

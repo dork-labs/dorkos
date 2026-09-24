@@ -512,16 +512,6 @@ export interface UninstallResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Options for `POST /api/marketplace/packages/:name/update`.
- */
-export interface UpdateOptions {
-  /** Apply the update (default: advisory check only). */
-  apply?: boolean;
-  /** Project path for project-local updates. */
-  projectPath?: string;
-}
-
-/**
  * Where a package's version came from, in Claude Code's order: the version
  * the package declares, its marketplace entry's, or the commit it was fetched
  * at. Declared here as a literal union because this package does not depend
@@ -586,10 +576,44 @@ export interface InstallationUpdateCheck extends UpdateCheckResult {
   agentId?: string;
   /** Registered agent display name owning `agentPath`, when known. */
   agentName?: string;
+  /**
+   * The installation is a symbolic link to a developer's working copy. Present,
+   * and `true`, only then: its check is always `unknown` and it is never
+   * reinstalled, so this tells "not checked, by design" from "the check failed".
+   */
+  linked?: true;
   /** Set when an apply reinstalled this installation: what is installed now. */
   applied?: InstallResult;
   /** Set when an apply tried to reinstall this installation and failed: why. */
   applyError?: string;
+}
+
+/**
+ * One installation an apply is asked to update, as a check reported it.
+ *
+ * An object rather than a bare path so a later binding can travel with its
+ * installation (DOR-2306 will bind each apply to the disclosure a person saw
+ * for that installation's new version).
+ */
+export interface ApplyUpdateTarget {
+  /** The installation, exactly as a check reported it. */
+  installPath: string;
+}
+
+/**
+ * Options for `POST /api/marketplace/updates`, which always applies: the
+ * transport sends `apply: true` itself.
+ *
+ * `targets` is required and non-empty, so a client can only ever apply the
+ * installations a check reported and a person confirmed, never an unnamed
+ * "update everything". The route's `names` filter is left out on purpose: no
+ * client surface selects by name.
+ */
+export interface ApplyUpdatesOptions {
+  /** The installations to update. */
+  targets: [ApplyUpdateTarget, ...ApplyUpdateTarget[]];
+  /** The project whose view the targets came from; omit for the every-scope view. */
+  projectPath?: string;
 }
 
 /**
@@ -664,6 +688,12 @@ export interface InstalledPackage {
    * package is on disk but incomplete, and name the command that fixes it.
    */
   dependencyWarnings?: string[];
+  /**
+   * The install folder is a symbolic link to a developer's working copy.
+   * Present, and `true`, only then. Such an install is never updated in place:
+   * its update check is `unknown` and says to update the source instead.
+   */
+  linked?: true;
 }
 
 // ---------------------------------------------------------------------------

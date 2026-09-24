@@ -55,7 +55,7 @@ describe('applyInstalledUpdates', () => {
     // Purpose: permission is per reinstall. Stopping at the first ALLOWED one
     // would let the rest run without ever being asked.
     const asked: ReinstallGateInput[] = [];
-    const outcome = await applyInstalledUpdates(deps, {}, (input) => {
+    const outcome = await applyInstalledUpdates(deps, {}, async (input) => {
       asked.push(input);
       return input.name === 'beta' ? 'no' : undefined;
     });
@@ -78,7 +78,7 @@ describe('applyInstalledUpdates', () => {
     });
     const asked: ReinstallGateInput[] = [];
 
-    const outcome = await applyInstalledUpdates(deps, {}, (input) => {
+    const outcome = await applyInstalledUpdates(deps, {}, async (input) => {
       asked.push(input);
       return undefined;
     });

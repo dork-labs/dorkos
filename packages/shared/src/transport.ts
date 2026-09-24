@@ -120,11 +120,27 @@ import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
 import type { ListActivityQuery, ListActivityResponse } from './activity-schemas.js';
 import type {
+  ApprovalAnswer,
   ApprovalDecisionResponse,
   PendingApprovalsResponse,
-  RevokeStandingPermissionResponse,
-  StandingPermissionsResponse,
 } from './approval-schemas.js';
+import type {
+  AgentPermissionsResponse,
+  PatchAgentPermissionsBody,
+  PatchPermissionDefaultsBody,
+  PermissionChange,
+  PermissionHistoryResponse,
+  PermissionsResponse,
+  SetPermissionPresetBody,
+} from './permissions/index.js';
+
+/** What every permission write answers with: the changes and the fresh view. */
+export interface PermissionWriteResult<T> {
+  /** Every change the write made (empty when nothing moved). */
+  changes: PermissionChange[];
+  /** The permissions as they stand after the write. */
+  permissions: T;
+}
 import type {
   DeletePushSubscriptionResponse,
   ListNotificationsQuery,
@@ -143,8 +159,8 @@ import type {
   InstallResult,
   UninstallOptions,
   UninstallResult,
-  UpdateOptions,
-  UpdateResult,
+  ApplyUpdatesOptions,
+  InstallationUpdatesResult,
   InstalledPackage,
   MarketplaceSource,
   AddSourceInput,
@@ -1549,28 +1565,24 @@ export interface Transport
   /**
    * Read the Capability Registry's self-description catalog.
    *
-   * The one place the cockpit can learn what a capability DECLARES — including
-   * the per-agent `toolGroup` a grant-bearing capability carries (DOR-1611). The
-   * Tools tabs read the tool names behind a grant from here rather than from a
-   * hand-kept list, because three hand-kept copies of that same fact all drifted
-   * once already (DOR-499) and a fourth would have no better odds.
+   * The one place a client can learn what a capability DECLARES, including the
+   * permission `area` each one belongs to (spec `agent-permissions` D2).
    *
    * **Narrow it, always, when you know what you are after.** The catalog is
-   * paginated and served COMPACT by default — no surfaces and no `toolGroup` —
-   * so an unfiltered read is both large and missing the field this exists for.
-   * `toolGroup` is the filter the cockpit uses: a handful of matches come back
-   * in full, in one page, with the tool names on them.
+   * paginated and served COMPACT by default — no surfaces and no `area` — so an
+   * unfiltered read is both large and missing the fields this exists for.
+   * `area` is the filter: a handful of matches come back in full, in one page.
    *
    * Deliberately NOT the per-runtime capability matrix next door
    * ({@link Transport.getCapabilities}), which answers a different question — what
    * a RUNTIME can do — and shares only a word.
    *
-   * @param opts.toolGroup - Return only the capabilities behind this per-agent
-   *   grant. Omit for the whole catalog.
+   * @param opts.area - Return only the capabilities in this permission area.
+   *   Omit for the whole catalog.
    * @returns The catalog: the matching capabilities, with a stable
    *   `catalogVersion` content hash safe to cache on.
    */
-  getCapabilityCatalog(opts?: { toolGroup?: string }): Promise<CapabilityCatalog>;
+  getCapabilityCatalog(opts?: { area?: string }): Promise<CapabilityCatalog>;
   /**
    * Get capabilities for all registered runtimes.
    *
@@ -2311,14 +2323,26 @@ export interface Transport
   uninstallMarketplacePackage(name: string, opts?: UninstallOptions): Promise<UninstallResult>;
 
   /**
-   * Check for (and optionally apply) updates to a marketplace package.
+   * Check every installation in view for a newer version, in one request.
    *
-   * Advisory by default — pass `{ apply: true }` to reinstall in place.
+   * Advisory: nothing installed changes. One check per installation, keyed by
+   * `installPath` (the same key `listInstalledPackages` rows carry); a check
+   * that could not answer is `unknown` with its reason, never dropped.
    *
-   * @param name - Package name. Will be URL-encoded.
-   * @param opts - Update options (apply, projectPath).
+   * @param projectPath - Omit for every scope (the Installed view's listing);
+   *   pass a project for that project's merged view.
    */
-  updateMarketplacePackage(name: string, opts?: UpdateOptions): Promise<UpdateResult>;
+  checkMarketplaceUpdates(projectPath?: string): Promise<InstallationUpdatesResult>;
+
+  /**
+   * Reinstall exactly the named installations at their newest version, each in
+   * the scope it is installed in. An installation that is already current is
+   * left alone; one that fails carries `applyError` while the rest continue.
+   *
+   * @param opts - The installations to update (at least one target), and the
+   *   project whose view they came from, if any.
+   */
+  applyMarketplaceUpdates(opts: ApplyUpdatesOptions): Promise<InstallationUpdatesResult>;
 
   /**
    * List installed marketplace packages.
@@ -2416,19 +2440,18 @@ export interface Transport
    * Allow a pending approval, letting the requester spend its token once on
    * exactly the action it was granted for.
    *
-   * With `standing: true` it also opens a standing permission, so DorkOS stops
-   * asking about that agent doing that thing until the window closes. The two
-   * travel together on purpose: a caller that asked for both and can only have
-   * one is refused outright rather than quietly given the one-time yes, because
-   * a silent fallback would leave a person believing they created a permission
-   * that does not exist (spec `agent-approval-settings` §3.5).
+   * With `answer: 'always'` it also sets that action to Allowed for the agent
+   * that asked (spec `agent-permissions` D7), written through the permission
+   * service before the agent is told, so the resumed call and the new setting
+   * agree. Refused outright (409 `ALWAYS_NOT_OFFERED`) where the card's
+   * `alwaysOffered` is false, rather than quietly downgraded to a one-time yes.
    *
    * @param approvalId - The approval's id, from {@link listPendingApprovals}.
-   * @param options - Set `standing` to also stop being asked about this pair.
+   * @param options - `answer`: `'once'` (default) or `'always'`.
    */
   grantApproval(
     approvalId: string,
-    options?: { standing?: boolean }
+    options?: { answer?: ApprovalAnswer }
   ): Promise<ApprovalDecisionResponse>;
 
   /**
@@ -2439,23 +2462,65 @@ export interface Transport
    */
   denyApproval(approvalId: string, reason?: string): Promise<ApprovalDecisionResponse>;
 
-  /**
-   * The standing permissions that are live right now, soonest to expire first.
-   *
-   * A permission a person cannot find is a dark pattern, so this is what both
-   * places that list one read (spec `agent-approval-settings` §3.7).
-   */
-  listStandingPermissions(): Promise<StandingPermissionsResponse>;
+  // --- Permissions (spec `agent-permissions`) ---
 
   /**
-   * End one standing permission, so DorkOS asks again next time.
-   *
-   * Ending one stops the next action; it does not reverse anything that already
-   * ran.
-   *
-   * @param grantId - The permission's id, from {@link listStandingPermissions}.
+   * What agents may do by default: the preset, the changes on top of it, every
+   * area with its actions, and the agents that are set differently.
    */
-  revokeStandingPermission(grantId: string): Promise<RevokeStandingPermissionResponse>;
+  getPermissions(): Promise<PermissionsResponse>;
+
+  /**
+   * One agent's permissions: its resolved state per area and action, where each
+   * came from, and what it would inherit without its own settings.
+   *
+   * @param agentId - The agent's id.
+   */
+  getAgentPermissions(agentId: string): Promise<AgentPermissionsResponse>;
+
+  /**
+   * Choose a preset. Clears the changes on top of the old one; `applyToAgents`
+   * also clears those agents' own settings. Only a person can call this.
+   *
+   * @param body - The preset, the agents to bring along, and where it came from.
+   */
+  setPermissionPreset(
+    body: SetPermissionPresetBody
+  ): Promise<PermissionWriteResult<PermissionsResponse>>;
+
+  /**
+   * Change the defaults; `null` removes a change. `applyToAgents` removes those
+   * agents' own settings for the same keys. Only a person can call this.
+   *
+   * @param body - The changes, the agents to bring along, and where it came from.
+   */
+  patchPermissionDefaults(
+    body: PatchPermissionDefaultsBody
+  ): Promise<PermissionWriteResult<PermissionsResponse>>;
+
+  /**
+   * Change one agent's own settings; `null` puts one back to the default. Only a
+   * person can call this.
+   *
+   * @param agentId - The agent's id.
+   * @param body - The changes and where they came from.
+   */
+  patchAgentPermissions(
+    agentId: string,
+    body: PatchAgentPermissionsBody
+  ): Promise<PermissionWriteResult<AgentPermissionsResponse>>;
+
+  /**
+   * The permission history, newest first; with `agentId`, the changes that
+   * touched that agent.
+   *
+   * @param query - Optional agent, cursor and page size.
+   */
+  getPermissionHistory(query?: {
+    agentId?: string;
+    before?: string;
+    limit?: number;
+  }): Promise<PermissionHistoryResponse>;
 
   // --- The Inbox (spec `notification-system`) ---
 

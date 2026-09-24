@@ -31,6 +31,13 @@ import { HARNESS_IDS } from './harness-ids.js';
 import { BUILTIN_MEMORY_PROVIDER_ID } from './memory-provider.js';
 import { ROOM_REPO_CAP_DEFAULTS } from './room-repo.js';
 import { RuntimeEnvironmentSchema } from './runtime-environment-schema.js';
+// Plain id lists, never the named schemas in `permissions/permission-schemas.ts`:
+// the same SRC-alias reason as `HARNESS_IDS` above.
+import {
+  PERMISSION_ACTION_ID_PATTERN,
+  PERMISSION_PRESETS,
+  PERMISSION_STATES,
+} from './permissions/permission-ids.js';
 export {
   RuntimeInheritedEnvNamesSchema,
   isReservedRuntimeEnvName,
@@ -132,29 +139,6 @@ export type CommunityInstallationDestination = z.infer<
 export type CommunityNavigationOwnerPrefs = z.infer<typeof CommunityNavigationOwnerPrefsSchema>;
 /** Versioned Community navigation preferences persisted in user config. */
 export type CommunityNavigationPrefs = z.infer<typeof CommunityNavigationPrefsSchema>;
-
-/**
- * How long a new standing permission lasts by default, in minutes (eight hours —
- * about one working day, which is the span the button on the approval card names).
- */
-export const DEFAULT_TRUST_WINDOW_MINUTES = 480;
-
-/**
- * Shortest standing permission a person can choose, in minutes.
- *
- * A floor keeps the window from becoming a deny-all that looks like a broken
- * feature, which is the reasoning already applied to the approval window in
- * `approval-service.ts`.
- */
-export const MIN_TRUST_WINDOW_MINUTES = 5;
-
-/**
- * Longest standing permission a person can choose, in minutes (one day).
- *
- * The ceiling is what makes "forever" unrepresentable. It is a schema bound rather
- * than a UI one, so no surface can offer a window the store would accept.
- */
-export const MAX_TRUST_WINDOW_MINUTES = 1440;
 
 /**
  * The bounds every room turn limit must satisfy, wherever it is set.
@@ -1514,6 +1498,9 @@ const LoggingConfigSchema = z.object({
   maxLogFiles: z.number().int().min(1).max(30).default(14),
 });
 
+/** A permission state as the config file stores it. */
+const PermissionConfigStateSchema = z.enum(PERMISSION_STATES);
+
 export const UserConfigSchema = z.object({
   version: z.literal(1),
   server: z
@@ -1624,10 +1611,8 @@ export const UserConfigSchema = z.object({
        * callers is a separate piece of work (`agent-approval-settings`, DOR-501)
        * and this field is not it. Do not describe it as one.
        *
-       * Lives under `ui` rather than `approvals` on purpose. `approvals.*` is
-       * security policy — every leaf there requires login to write, because those
-       * settings decide what the approval gate enforces. This one decides what a
-       * dialog does, and requiring login to dismiss a dialog would make the
+       * Lives under `ui` because it decides what a dialog does, not what any
+       * gate enforces: requiring login to dismiss a dialog would make the
        * feature unreachable on the default login-off install. It is still
        * `operator-only` to write, so an agent cannot forge a person's consent
        * record.
@@ -2724,73 +2709,40 @@ export const UserConfigSchema = z.object({
     })
     .default(() => ({ enabled: false })),
   /**
-   * Standing permissions: whether an operator may say "stop asking about this
-   * agent doing this thing", and for how long one of those answers lasts
-   * (spec `agent-approval-settings` §3.1).
+   * What agents may do, by area (spec `agent-permissions` D4). The preset every
+   * area starts from, plus the changes a person made on top of it; each agent's
+   * own differences live in its manifest, not here.
    *
-   * The policy lives here; the permissions themselves do not. A granted
-   * permission has a creation time, an expiry, and a revocation, which is
-   * operational state and belongs in SQLite (`approval_grants`), not in a file a
-   * person edits. Keeping them out also means nothing about WHICH agents are
-   * trusted can ever leave through `config_get`.
+   * `operator-only` and refused outright by the generic config write paths
+   * (`PATCH /api/config`, `dorkos config set`): only the permission routes may
+   * write it, so every change carries a person's yes and an audit event.
    *
-   * Both leaves are `operator-only`, writing either requires a session cookie
-   * like every other operator-only setting, and on top of that neither can be
-   * written at all while login is off — see `REQUIRES_LOGIN_CONFIG_PATHS`.
+   * Declared twice on purpose (per field AND in the object-literal default):
+   * one feeds fresh installs, the other upgrades, and they must agree.
    */
-  approvals: z
+  permissions: z
     .object({
+      /** The preset every area starts from. `null` = not chosen yet ("Unchanged"). */
+      preset: z.enum(PERMISSION_PRESETS).nullable().default(null),
+      /** The changes a person made on top of the preset ("Full power, 2 changes"). */
+      defaults: z
+        .object({
+          areas: z.record(z.string(), PermissionConfigStateSchema).default(() => ({})),
+          actions: z
+            .record(z.string().regex(PERMISSION_ACTION_ID_PATTERN), PermissionConfigStateSchema)
+            .default(() => ({})),
+        })
+        .default(() => ({ areas: {}, actions: {} })),
       /**
-       * Whether standing permissions may exist at all. Off by default: a safety
-       * feature does not get quietly relaxed by an upgrade, so nothing changes
-       * for an existing user until they ask for it.
+       * The server version the permission upgrade sweep last ran for; `null`
+       * means never. Machine-managed: the boot sweep stamps it.
        */
-      standingGrants: z.boolean().default(false),
-      /**
-       * How long a new standing permission lasts, in minutes, counted from the
-       * moment it is granted and never extended by use.
-       *
-       * Bounded in the schema, in both directions and on purpose. The maximum of
-       * 1440 (one day) is what makes "forever" unrepresentable. The minimum of 5
-       * keeps the window from becoming a deny-all that looks like a broken
-       * feature, which is the reasoning already applied to the approval window in
-       * `approval-service.ts`.
-       */
-      trustWindowMinutes: z
-        .number()
-        .int()
-        .min(MIN_TRUST_WINDOW_MINUTES)
-        .max(MAX_TRUST_WINDOW_MINUTES)
-        .default(DEFAULT_TRUST_WINDOW_MINUTES),
-      /**
-       * The moment the settings last stopped licensing standing permissions, as
-       * an ISO 8601 UTC string. Every permission granted at or before it is void
-       * and is never honored again (DOR-520). `null` until the posture has
-       * narrowed once.
-       *
-       * Machine-managed, like `onboarding` and `tours`: `ConfigManager` stamps it
-       * on any write that takes `auth.enabled` or `standingGrants` away, and
-       * nothing else should write it by hand.
-       *
-       * It lives in the config file rather than beside the permissions in SQLite
-       * for one reason, and it is the whole point of the field: `dorkos config
-       * set` runs in a process with no database, so the config file is the ONLY
-       * thing every writer of these settings touches. A marker anywhere else
-       * would be invisible to exactly the write that motivated it.
-       *
-       * Constrained to a real timestamp, not merely a string. The store treats a
-       * FALSY floor as "no floor", so a bare `z.string()` let the empty string
-       * through as a value that silently disables the filter — the one direction
-       * this field must never fail. Garbage that is not empty already fails
-       * closed (it sorts above every real timestamp, so everything is voided);
-       * `''` was the single value that failed open.
-       */
-      standingGrantsVoidBefore: z.string().datetime().nullable().default(null),
+      upgradeSweptVersion: z.string().nullable().default(null),
     })
     .default(() => ({
-      standingGrants: false,
-      trustWindowMinutes: DEFAULT_TRUST_WINDOW_MINUTES,
-      standingGrantsVoidBefore: null,
+      preset: null,
+      defaults: { areas: {}, actions: {} },
+      upgradeSweptVersion: null,
     })),
   cloud: z
     .object({

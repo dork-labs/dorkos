@@ -83,9 +83,8 @@
  *
  * ## The cookie bar, under login-on (DOR-1569)
  *
- * A cron task carrying `bypassPermissions` is a standing grant of the same
- * character as `approvals.standingGrants`: it keeps saying yes, on its own, for
- * as long as it is armed. So `clearsTheAgentBar` (in `routes/tasks.ts`) composes
+ * A cron task carrying `bypassPermissions` is a standing grant: it keeps saying
+ * yes, on its own, for as long as it is armed. So `clearsTheAgentBar` (in `routes/tasks.ts`) composes
  * `requireOperatorCookieUnderLogin` — the SAME second bar the approval, config,
  * and extension-approval routes run — before the agent bar. Under login-on that
  * refuses every credential but a session cookie, so a per-user API key no longer

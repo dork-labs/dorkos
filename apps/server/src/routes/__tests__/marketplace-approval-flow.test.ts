@@ -17,7 +17,7 @@ import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { ApprovalGrantService, ApprovalService } from '../../services/core/approvals/index.js';
+import { ApprovalService } from '../../services/core/approvals/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { TokenConfirmationProvider } from '../../services/marketplace-mcp/confirmation-provider.js';
 import { createInstallHandler } from '../../services/marketplace-mcp/tool-install.js';
@@ -47,7 +47,6 @@ function parsePayload<T>(result: { content: { text: string }[] }): T {
 describe('marketplace install → cockpit approval → retry', () => {
   const target = swappableServer();
   let approvals: ApprovalService;
-  let grants: ApprovalGrantService;
   let installer: InstallerLike;
   let handler: ReturnType<typeof createInstallHandler>;
   let app: express.Express;
@@ -56,7 +55,6 @@ describe('marketplace install → cockpit approval → retry', () => {
   beforeEach(() => {
     const db = createTestDb();
     approvals = new ApprovalService(db);
-    grants = new ApprovalGrantService(db);
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
 
     installer = {
@@ -79,10 +77,7 @@ describe('marketplace install → cockpit approval → retry', () => {
     app.use(express.json());
     // Local login off: the DEFAULT posture, and therefore the one this flow has to
     // work in. Who may decide is `resolveDecisionAuthority`; see its module TSDoc.
-    app.use(
-      '/api/approvals',
-      createApprovalsRouter(approvals, grants, { isLoginEnabled: () => false })
-    );
+    app.use('/api/approvals', createApprovalsRouter(approvals, { isLoginEnabled: () => false }));
     server = target.mount(app);
   });
 
@@ -179,7 +174,7 @@ describe('marketplace install → cockpit approval → retry', () => {
     });
     agentApp.use(
       '/api/approvals',
-      createApprovalsRouter(approvals, grants, { isLoginEnabled: () => false })
+      createApprovalsRouter(approvals, { isLoginEnabled: () => false })
     );
     const agentServer = target.mount(agentApp);
 

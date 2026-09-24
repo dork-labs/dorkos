@@ -802,6 +802,12 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
         ...(accountHint !== undefined ? { accountHint } : {}),
         ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
+        // A protected message is a connector's (an event, or an agent request's
+        // continuation), never a person typing, so nobody is watching this turn
+        // for an approval card and it must not hold for one (spec
+        // `agent-permissions` D6). The card still reaches the inbox, and the
+        // verdict wakes the session.
+        ...(opts.privateReceiptId !== undefined ? { unattendedApprovals: true } : {}),
         ...settings,
         // After `settings`, and it cannot collide with it: that type has no
         // permission key. See the field's docblock for why it is not in there.

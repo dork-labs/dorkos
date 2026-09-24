@@ -47,6 +47,7 @@ function buildRegistry(activityService: ActivityService): CapabilityRegistry {
             title: 'Patch a setting',
             description: 'Patches.',
             tier: 'act',
+            area: null,
             input: z.object({}),
             output: z.object({ ok: z.boolean() }),
             surfaces: { mcp: { toolName: 'demo_patch', servers: ['in-session'] } },

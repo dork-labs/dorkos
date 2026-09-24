@@ -1004,7 +1004,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     previewMarketplacePackage: vi.fn(),
     installMarketplacePackage: vi.fn(),
     uninstallMarketplacePackage: vi.fn(),
-    updateMarketplacePackage: vi.fn(),
+    checkMarketplaceUpdates: vi.fn().mockResolvedValue({ checks: [] }),
+    applyMarketplaceUpdates: vi.fn(),
     listInstalledPackages: vi.fn().mockResolvedValue([]),
     listPackageInstallations: vi.fn().mockResolvedValue([]),
     listMarketplaceSources: vi.fn().mockResolvedValue([]),
@@ -1068,11 +1069,24 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .mockImplementation((approvalId: string) =>
         Promise.resolve({ ok: true, approvalId, outcome: 'denied' })
       ),
-    // Standing permissions (spec `agent-approval-settings` §3.7)
-    listStandingPermissions: vi.fn().mockResolvedValue({ grants: [] }),
-    revokeStandingPermission: vi
+    // Permissions (spec `agent-permissions`)
+    getPermissions: vi.fn().mockResolvedValue({
+      preset: null,
+      defaults: { areas: {}, actions: {} },
+      changeCount: 0,
+      areas: [],
+      exceptions: [],
+      agentCount: 0,
+    }),
+    getAgentPermissions: vi
       .fn()
-      .mockImplementation((grantId: string) => Promise.resolve({ ok: true, grantId })),
+      .mockImplementation((agentId: string) =>
+        Promise.resolve({ agentId, agentName: agentId, overrides: {}, areas: [] })
+      ),
+    setPermissionPreset: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
+    patchPermissionDefaults: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
+    patchAgentPermissions: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
+    getPermissionHistory: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
     // Team roster (spec `identity-consistency` §W2.2). Honest-empty by default:
     // `warnings` is OMITTED on a clean read, never `[]`, so a test that does
     // not opt into degradation never renders the banner by accident.

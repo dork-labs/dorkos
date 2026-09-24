@@ -6,7 +6,7 @@
  * stopped an unrecognized KEY from condemning `~/.dork/config.json`; a
  * recognized key holding a VALUE a newer build allows still did. Seed
  * `ui.theme: 'midnight'` against a build with three themes and the whole file
- * was backed up and replaced with defaults — `mesh.scanRoots`, `approvals`,
+ * was backed up and replaced with defaults — `mesh.scanRoots`, `permissions`,
  * `runtimes`, every preference, over one word.
  *
  * Every test that matters here drives a REAL `ConfigManager` over a real file in
@@ -252,12 +252,12 @@ describe('saying which settings it could not read', () => {
     // `dorkos config validate` keeps its point for the hand-edit case without
     // telling somebody their settings are broken — which is what sends people to
     // delete the file this exists to keep.
-    const { dir } = seed({ version: 1, approvals: { trustWindowMinutes: '5m' } });
+    const { dir } = seed({ version: 1, uploads: { maxFiles: '5m' } });
 
     const result = new ConfigManager(dir, FAST_RETRIES).validate();
 
     expect(result.valid).toBe(true);
-    expect(result.warnings).toEqual(['approvals.trustWindowMinutes: "5m" (using 480)']);
+    expect(result.warnings).toEqual(['uploads.maxFiles: "5m" (using 10)']);
   });
 
   it('reports nothing from validate when every value is readable', () => {

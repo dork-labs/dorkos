@@ -20,7 +20,7 @@
       "id": "260920-192429",
       "slug": "scope-host-accounts-through-immutable-community-memberships",
       "title": "Scope host accounts through immutable community memberships",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-09-20",
       "extractedFrom": "community-tenancy-contract",
       "specSlug": "community-tenancy-contract",
@@ -35,7 +35,7 @@
       "id": "260916-210003",
       "slug": "remote-agent-output-uses-confirmed-outbox",
       "title": "Remote agent output uses a transactional local outbox and remote confirmation",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-09-16",
       "extractedFrom": "community-server",
       "specSlug": "community-server",
@@ -50,7 +50,7 @@
       "id": "260916-210002",
       "slug": "remote-community-is-authoritative-local-mirror",
       "title": "Remote community history is authoritative and local rooms are a dispatch cache",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-09-16",
       "extractedFrom": "community-server",
       "specSlug": "community-server",
@@ -61,7 +61,7 @@
       "id": "260916-210001",
       "slug": "community-is-independent-hono-node-service",
       "title": "A community is an independent Hono service on persistent Node",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-09-16",
       "extractedFrom": "community-server",
       "specSlug": "community-server",
@@ -5837,7 +5837,7 @@
       "id": "260920-201101",
       "slug": "separate-community-retention-from-permanent-tenant-deletion",
       "title": "Separate community retention from permanent tenant deletion",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-09-20",
       "extractedFrom": "spec",
       "specSlug": "community-administration-contract",
@@ -5889,7 +5889,7 @@
       "id": "260923-122615",
       "slug": "package-version-resolved-like-an-install",
       "title": "A marketplace package's latest version is what an install would resolve, by Claude Code's chain",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-09-23",
       "supersedes": null,
       "affects": [
@@ -5902,7 +5902,7 @@
       "id": "260923-122616",
       "slug": "package-version-files-must-agree",
       "title": "A package's version files must agree, and a mismatch fails validation",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-09-23",
       "supersedes": null,
       "affects": [
@@ -6030,7 +6030,7 @@
       "id": "260923-162950",
       "slug": "cache-entry-keyed-by-the-verified-checkout",
       "title": "A marketplace cache entry is keyed by the commit its checkout verifiably holds",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-09-23",
       "extractedFrom": "marketplace-fetch-integrity",
       "specSlug": "marketplace-fetch-integrity",
@@ -6047,7 +6047,7 @@
       "id": "260923-193906",
       "slug": "package-cache-sweeps-itself-on-write",
       "title": "The marketplace package cache keeps what installs need and sweeps itself on write",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-09-23",
       "extractedFrom": "marketplace-cache-retention",
       "specSlug": "marketplace-cache-retention",
@@ -6073,6 +6073,99 @@
         "apps/server/src/services/marketplace/installed-scanner.ts",
         "apps/server/src/routes/marketplace.ts",
         "packages/cli/src/commands/update.ts"
+      ]
+    },
+    {
+      "id": "260923-223904",
+      "slug": "one-permission-model-for-agent-actions",
+      "title": "One permission model for agent actions, areas with three states, a default and per-agent overrides",
+      "status": "draft",
+      "created": "2026-09-23",
+      "extractedFrom": "agent-permissions",
+      "specSlug": "agent-permissions",
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/permissions/**",
+        "apps/server/src/services/core/permissions/**",
+        "apps/server/src/routes/permissions.ts",
+        "packages/shared/src/mesh-schemas.ts",
+        "packages/shared/src/config-schema.ts"
+      ]
+    },
+    {
+      "id": "260923-223905",
+      "slug": "permission-decisions-ride-the-tier-gate",
+      "title": "Permission decisions ride the tier gate's three choke points and the existing approval machinery",
+      "status": "draft",
+      "created": "2026-09-23",
+      "extractedFrom": "agent-permissions",
+      "specSlug": "agent-permissions",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/core/capabilities/tier-enforcement.ts",
+        "apps/server/src/services/core/capabilities/permission-enforcement.ts",
+        "apps/server/src/services/core/capabilities/registry.ts",
+        "apps/server/src/services/core/mcp-tool-gate.ts"
+      ]
+    },
+    {
+      "id": "260923-223907",
+      "slug": "permission-area-lives-on-the-action",
+      "title": "An action's permission area is declared on the action, and the compiler is the census",
+      "status": "draft",
+      "created": "2026-09-23",
+      "extractedFrom": "agent-permissions",
+      "specSlug": "agent-permissions",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/core/capabilities/capability-definition.ts",
+        "apps/server/src/services/core/mcp-tool-tiers.ts",
+        "apps/server/src/services/core/capabilities/__tests__/permission-area-census.test.ts"
+      ]
+    },
+    {
+      "id": "260923-223908",
+      "slug": "always-allow-is-a-per-agent-per-action-setting",
+      "title": "Always allow is a per-agent, per-action permission setting, and standing grants are retired",
+      "status": "draft",
+      "created": "2026-09-23",
+      "extractedFrom": "agent-permissions",
+      "specSlug": "agent-permissions",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/routes/approvals.ts",
+        "apps/server/src/services/core/permissions-capabilities.ts",
+        "apps/client/src/layers/features/approvals/ui/ApprovalCard.tsx"
+      ]
+    },
+    {
+      "id": "260923-223909",
+      "slug": "login-off-permission-writes-are-labelled-unverified",
+      "title": "With login off, permission writes are labelled unverified, and a tokenless agent gets the default",
+      "status": "draft",
+      "created": "2026-09-23",
+      "extractedFrom": "agent-permissions",
+      "specSlug": "agent-permissions",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/routes/permissions.ts",
+        "apps/server/src/services/core/approvals/decision-authority.ts",
+        "packages/shared/src/permissions/resolve-permission.ts"
+      ]
+    },
+    {
+      "id": "260923-223910",
+      "slug": "destructive-actions-ask-and-three-areas-are-never-allowed",
+      "title": "Destructive actions ask unless allowed one by one, and three floor areas are never Allowed",
+      "status": "draft",
+      "created": "2026-09-23",
+      "extractedFrom": "agent-permissions",
+      "specSlug": "agent-permissions",
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/permissions/resolve-permission.ts",
+        "packages/shared/src/permissions/permission-areas.ts",
+        "apps/server/src/services/core/permissions/permission-service.ts"
       ]
     },
     {

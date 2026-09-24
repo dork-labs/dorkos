@@ -58,14 +58,9 @@ export function ControlCenterDial() {
           `descriptor` alone, with no `mode`: this dial's value is a dial STOP,
           and the note's name-based fallback reads runtime mode ids. Passing
           'autonomy' there would look like a safety net and be a branch that can
-          never fire (DOR-2102 review).
-
-          It points at the switch BELOW rather than at Settings, because
-          `ControlCenterBody` renders `ControlCenterSwitches` — which owns the
-          live Standing permissions switch — directly under this section. */}
+          never fire (DOR-2102 review). */}
       <PermissionModeScopeNote
         descriptor={CANONICAL_TRUST_STOPS.find((stop) => stop.id === globalStop)}
-        standingPermissionsAt="below"
         className="px-1"
       />
 

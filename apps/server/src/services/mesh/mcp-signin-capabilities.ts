@@ -13,7 +13,11 @@
  */
 import { z } from 'zod';
 
-import { defineCapability, type CapabilityDefinition } from '../core/capabilities/index.js';
+import {
+  AREA_PENDING_PHASE_3,
+  defineCapability,
+  type CapabilityDefinition,
+} from '../core/capabilities/index.js';
 import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
 import { mcpOAuthCustodyDisclosure } from './agent-mcp-oauth-service.js';
 import { McpSigninStartError } from './mcp-signin-failure.js';
@@ -65,6 +69,8 @@ export const mcpSigninCapabilities: CapabilityDefinition[] = [
     // only stores a token for a server that is already trusted — so it needs no
     // second approval.
     tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
     input: AgentServerInput,
     output: z.object({
       flowId: z
@@ -158,6 +164,8 @@ export const mcpSigninCapabilities: CapabilityDefinition[] = [
       'toolCount, tell the user what they just unlocked — "Connected — 12 tools." — and ' +
       'say plain "Connected." when no count came back (absent means uncounted, not zero).',
     tier: 'act',
+    area: null,
+    areaNote: 'only continues a sign-in mcp.signin already started',
     input: z.object({
       flowId: z.string().min(1).describe('The flow id from mcp_signin.'),
     }),
@@ -200,6 +208,8 @@ export const mcpSigninCapabilities: CapabilityDefinition[] = [
     // discards the stored sign-in, because that discard is what makes the new
     // credential honest and is recovered by signing in again.
     tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
     input: z.object({
       agentId: agentIdField,
       name: serverNameField,

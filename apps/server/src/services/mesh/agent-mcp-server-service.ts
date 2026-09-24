@@ -19,7 +19,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { readManifest, writeManifest, MANIFEST_DIR, MANIFEST_FILE } from '@dorkos/shared/manifest';
-import { AgentManifestSchema, McpServerTransportSchema } from '@dorkos/shared/mesh-schemas';
+import { AgentManifestFileSchema, McpServerTransportSchema } from '@dorkos/shared/mesh-schemas';
 import type {
   ManagedMcpServer,
   ManagedMcpServerView,
@@ -934,7 +934,7 @@ export class AgentMcpServerService {
       return empty;
     }
 
-    const result = AgentManifestSchema.safeParse(parsed);
+    const result = AgentManifestFileSchema.safeParse(parsed);
     if (!result.success) {
       this.logger.warn(
         `[agent-mcp] ${cwd} manifest failed validation for injection: ${JSON.stringify(

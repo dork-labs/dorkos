@@ -97,6 +97,10 @@ import {
 import { buildCodexOptions } from './codex-options.js';
 import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
+import {
+  renderBlockedAreaLines,
+  resolveToolVisibilityFor,
+} from '../shared/permission-tool-filter.js';
 import { resolveManagedMcpServers, type CodexManagedMcpServers } from './mcp-server-config.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
 import { CodexContextGate } from './context-gate.js';
@@ -696,8 +700,16 @@ export class CodexRuntime implements AgentRuntime {
       // Outside the context gate, and deliberately: whether this session HAS the
       // room tools is answered per turn, so a menu written in the wrong tense must
       // never survive into a turn where it is false.
+      //
+      // Beside it, one line per Blocked permission area (spec `agent-permissions`
+      // D15), resolved per turn like the menu: the runtime listener hides the
+      // same area's tools from this turn's list.
       const agentContext = dorkosTools
-        ? [neutralContextSelection.text, buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX)]
+        ? [
+            neutralContextSelection.text,
+            buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX),
+            renderBlockedAreaLines((await resolveToolVisibilityFor(cwd)).blockedAreas),
+          ]
             .filter(Boolean)
             .join('\n\n')
         : neutralContextSelection.text;

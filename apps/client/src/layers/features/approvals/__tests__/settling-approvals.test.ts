@@ -32,6 +32,8 @@ function request(id: string, overrides: Partial<PendingApproval> = {}): PendingA
     summary: 'Uninstall "sentry-monitor"',
     requestedBy: '/Users/dev/agents/dorkbot',
     hasAgentPath: true,
+    area: null,
+    alwaysOffered: false,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 90 * 60_000).toISOString(),
     ...overrides,

@@ -37,6 +37,7 @@ import { roomsDomain } from '../../rooms/room-capabilities.js';
 import { memoryDomain } from '../../memory/memory-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
+import { permissionsDomain } from '../permissions/permission-capabilities.js';
 
 /**
  * Compose the whole DorkOS capability registry from whichever domains `deps`
@@ -73,6 +74,10 @@ export function composeDorkOsCapabilityRegistry(
   // session has a window, and the canvas it reads is resolved per call.
   domains.push(uiDomain);
   domains.push(capabilitiesDomain);
+  // Unconditional too: every agent may read its own permissions and ask past a
+  // Blocked one (spec `agent-permissions` D8, D9). The request tool reaches the
+  // action it asks for through `deps.registry`, back-written below.
+  domains.push(permissionsDomain);
 
   const registry = composeRegistry(domains, deps, onInvocation);
   // Back-write the composed registry so `capabilities.list` can serialize it.
@@ -123,6 +128,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     memoryDomain,
     uiDomain,
     capabilitiesDomain,
+    permissionsDomain,
   ];
   const deps: CapabilityDeps = {
     logger: noopLogger,

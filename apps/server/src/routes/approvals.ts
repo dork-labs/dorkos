@@ -5,10 +5,8 @@
  * yes or no.
  *
  * - `GET /api/approvals/pending` — approvals still waiting on a person
- * - `POST /api/approvals/:id/grant` — allow the requested action
+ * - `POST /api/approvals/:id/grant` — allow the requested action, once or always
  * - `POST /api/approvals/:id/deny` — refuse it, with an optional reason
- * - `GET /api/approvals/grants` — the standing permissions that are live now
- * - `DELETE /api/approvals/grants/:id` — end one
  *
  * Decisions are made by approval id, never by token: the person deciding should
  * not have to hold the requester's secret, and no response here ever returns
@@ -47,10 +45,8 @@
  * symmetry**: an agent that can deny can suppress a person's decision and bury
  * the card that would have told them.
  *
- * Reading (`GET /pending`, `GET /grants`) and REVOKING (`DELETE /grants/:id`) are
- * deliberately left on the `resolveDecisionAuthority` bar alone. Neither one lets
- * anything happen that a person did not already allow: revoking only narrows what
- * an agent may do, and the reasoning for each already sits at its handler.
+ * Reading (`GET /pending`) is deliberately open: a pending card is meant to be
+ * agent-readable, and it carries no token material and no agent path.
  *
  * **Login off is unchanged, and that is deliberate rather than overlooked.**
  * `requireOperatorCookieUnderLogin` allows in that posture because there is no
@@ -63,56 +59,61 @@
  * path inherits it, so these routes need no gate of their own; the authority check
  * below is a second, independent one.
  *
- * ## Opening a standing permission clears TWO bars, and needs both
+ * ## Three answers, and each one is audited (spec `agent-permissions` D7, D14)
  *
- * `standing: true` on the grant body says "and stop asking about this agent doing
- * this thing" (spec `agent-approval-settings` §3.5). Creating one requires:
+ * The grant body is `{ answer: 'once' | 'always' }`. `once` allows this call.
+ * `always` also sets this action to Allowed for the agent that asked, through
+ * the same permission service Settings writes through, BEFORE the approval is
+ * granted: granting is what wakes the held call, so the resumed call and the
+ * new setting agree. `always` is refused (409 `ALWAYS_NOT_OFFERED`) on the same
+ * three rules the card's `alwaysOffered` is computed from — DorkOS does not know
+ * which agent asked, the action has no area, or its area is never Allowed — and
+ * the refusal comes before anything is granted. Hiding the button is not the
+ * check; this is.
  *
- * 1. The same authority as deciding the approval — `resolveDecisionAuthority`,
- *    which refuses any caller naming itself an agent and any caller holding the
- *    approval token, in every posture.
- * 2. A session cookie, checked by `requireOperatorCookie`. Bar 1 alone is not
- *    enough: under `local-trust` it is satisfied by omitting two headers, which is
- *    exactly the chain `__tests__/standing-grants-chain.test.ts` reproduces. Bar 2
- *    is what makes bar 1 mean something, and it is why standing permissions need
- *    Require login to be on.
+ * Every answer, deny included, writes exactly one `permission.answered` Activity
+ * event in the `permissions` category, labelled by the honesty rule: with login
+ * off it is "Someone on this computer", never "You". An Always allow also writes
+ * the `permission.changed` event for the setting it created.
  *
- * Every REFUSAL happens before anything is granted. A caller that asked for two
- * things and can only have one gets neither, and is told which part failed —
- * because a silent fallback to a plain one-time yes would leave a person believing
- * they had created a permission that does not exist.
- *
- * That is a claim about refusals, not about atomicity, and the two are not the
- * same. The one-time yes and the permission are separate writes: if the store
- * fails between them, the yes stands and the permission does not exist. The route
- * answers `STANDING_PERMISSION_NOT_RECORDED` and names both halves rather than
- * returning a bare 500, because retrying the whole call would then answer 409 and
- * read like success.
- *
- * Re-granting the same pair replaces the live permission rather than stacking a
- * second one, and the replacement starts a fresh window. That is a human decision
- * made again, which is the only thing allowed to move an expiry: using a permission
- * never extends it.
+ * The setting is written, then the approval is granted, as two steps. The
+ * route checks the approval is still open before writing, so only a second
+ * answer to the same card (a Deny, or the window closing) landing in the gap
+ * between the two can refuse this call's yes after the setting is saved. When
+ * that happens the route puts the setting back as it was, through the same
+ * service with `surface: 'undo'` and the approval's id, so the history shows
+ * both the write and its reversal and no Always allow outlives a card that was
+ * not answered yes. The reversal is a compare-and-set: a key goes back only
+ * while it still holds what this write put there, so it never undoes a change
+ * somebody made in the gap. And two Always allows for the same agent and
+ * action run one after the other rather than side by side, so they can never
+ * both read "not set", both write, and have the loser's reversal take back the
+ * winner's setting. Only a failure of the reversal itself can leave the
+ * setting behind; it is logged, and the person is told to check the agent's
+ * Permissions page.
  *
  * @module routes/approvals
  */
-import path from 'node:path';
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import {
   DenyApprovalBodySchema,
   GrantApprovalBodySchema,
-  type StandingPermission,
+  type ApprovalAnswer,
 } from '@dorkos/shared/approval-schemas';
+import {
+  PERMISSION_ANSWERED_EVENT,
+  type PermissionAnswer,
+  type PermissionAnsweredMetadata,
+  type PermissionChange,
+  type PermissionState,
+} from '@dorkos/shared/permissions';
 import type {
+  ApprovalAnswerScope,
   ApprovalDecisionFailure,
-  ApprovalGrantRow,
-  ApprovalGrantService,
   ApprovalService,
-  StandingGrantSettings,
 } from '../services/core/approvals/index.js';
 import {
-  readStandingGrantSettings,
   resolveDecisionAuthority,
   type DecisionAuthorityResult,
   type LoginEnabledLookup,
@@ -120,35 +121,42 @@ import {
 import type { ActivityService } from '../services/activity/activity-service.js';
 import {
   readCallerAuthority,
-  requireOperatorCookie,
   requireOperatorCookieUnderLogin,
   type OperatorCookieRefusal,
 } from '../lib/caller-authority.js';
+import {
+  PermissionError,
+  type PermissionAgentRef,
+  type PermissionService,
+  type PermissionWriter,
+} from '../services/core/permissions/index.js';
 import { titleForMcpTool } from '../services/core/mcp-tool-tiers.js';
+import { writerForPosture } from './permissions.js';
 import { logger } from '../lib/logger.js';
 
 /** Optional collaborators the boot wiring supplies; omitted in unit tests. */
 export interface ApprovalsRouterOptions {
   /**
-   * Activity feed writer. Every decision is recorded with its posture, which is
+   * Activity feed writer. Every answer is recorded with its posture, which is
    * the only mitigation available in the `local-trust` posture: DorkOS cannot
    * prove a person clicked, so it makes sure the click is visible.
    */
-  activity?: ActivityService;
+  activity?: Pick<ActivityService, 'emit'>;
+  /**
+   * The one permission write owner, which an Always allow writes through and
+   * which names the agent that asked. Omitted in boots without it, where
+   * `answer: 'always'` is refused rather than silently answered once.
+   */
+  permissions?: Pick<PermissionService, 'setAgent' | 'agentByPath'>;
   /**
    * Whether local login is on. Defaults to the live user config; injected in
    * tests so both postures are exercised against the real route.
    */
   isLoginEnabled?: LoginEnabledLookup;
   /**
-   * The two settings that shape a standing permission. Defaults to the live user
-   * config; injected in tests so a route can be driven without a config manager.
-   */
-  readStandingGrantSettings?: () => StandingGrantSettings;
-  /**
-   * Resolves a capability's human-facing title for the permissions list. Omitted
-   * in boots without a registry, where an unknown id falls back to its own id —
-   * the same fallback the approval card already uses.
+   * Resolves a capability's human-facing title for the answer's audit line.
+   * Omitted in boots without a registry, where an unknown id falls back to the
+   * hand-registered tool table and then to its own id.
    */
   describeCapability?: (capabilityId: string) => { title: string } | undefined;
 }
@@ -242,33 +250,27 @@ function decisionFailureResponse(failure: ApprovalDecisionFailure): {
   }
 }
 
+/** The sentence a refused `answer: 'always'` carries. */
+const ALWAYS_NOT_OFFERED_MESSAGE =
+  "Always allow isn't offered for this request. Answer it with Allow or Deny.";
+
 /**
  * Create the approvals router.
  *
  * @param approvals - The approval service that owns the token lifecycle.
- * @param grants - The store that owns standing permissions. Required rather than
- *   optional: an optional store would mean a branch answering "this build cannot
- *   do standing permissions", which is a state no boot produces and no test could
- *   keep honest.
  * @param options - Boot collaborators; see {@link ApprovalsRouterOptions}.
  * @returns The configured router, to mount at `/api/approvals`.
  */
 export function createApprovalsRouter(
   approvals: ApprovalService,
-  grants: ApprovalGrantService,
   options: ApprovalsRouterOptions = {}
 ): Router {
   const router = Router();
-  const readSettings = options.readStandingGrantSettings ?? readStandingGrantSettings;
 
   /**
-   * Name the action a permission covers, the way the approval card names it.
-   *
-   * Two id spaces, because two kinds of thing are grantable: registry capability
-   * ids like `marketplace.uninstall`, and hand-registered MCP tool names like
-   * `tasks_delete`. Only the first has a registry to ask. Missing the second left
-   * a raw id in a list §3.7 promises a person can recognize — and today the tools
-   * are the majority of what can actually be granted.
+   * Name the action an approval is about, the way the card names it: the
+   * registry title for a capability id, the tool table's title for a
+   * hand-registered tool, and the id itself when neither knows it.
    */
   const titleFor = (capabilityId: string): string =>
     options.describeCapability?.(capabilityId)?.title ??
@@ -276,99 +278,239 @@ export function createApprovalsRouter(
     capabilityId;
 
   /**
-   * Turn a stored permission into what the cockpit lists.
+   * Record one answer as exactly one `permission.answered` event (spec
+   * `agent-permissions` D14).
    *
-   * The folder name is the handle, and the full path is the stable key. This is
-   * NOT the same split the Activity observers use, and the difference is a real
-   * shortcoming rather than a style choice: those prefer
-   * `identity.displayName || basename` (`capability-attribution.ts`), and a
-   * permission row stores no display name to prefer. So an agent whose display name
-   * differs from its folder reads LESS legibly here than it does in the feed. Fixing
-   * it properly means the list resolving a display name, or rendering a scope hint
-   * ("dorkbot — acme-api") instead of a bare folder name; both are decisions for the
-   * surface that draws the list, not for this projection.
-   *
-   * Who opened it, when, and under which posture are recorded in the row and in the
-   * Activity event, and are deliberately not sent: nothing renders them, and the
-   * `grantedBy` label is the operator's account id.
-   */
-  const toStandingPermission = (row: ApprovalGrantRow): StandingPermission => ({
-    grantId: row.id,
-    agentPath: row.agentPath,
-    agentLabel: path.basename(row.agentPath),
-    capabilityId: row.capabilityId,
-    capabilityTitle: titleFor(row.capabilityId),
-    expiresAt: row.expiresAt,
-  });
-
-  /**
-   * Record a decision in the Activity feed, naming the posture it rests on.
-   *
-   * The `signed-in-operator` line says ACCOUNT, not person, and that word is
-   * load-bearing: `sessionGate` accepts a per-user API key as well as a session
-   * cookie (DOR-474), so an authenticated credential is not proof that a human
-   * clicked. This record must not assert more than the gate verified — an audit
-   * line that overstates is worse than no audit line, because it is believed.
+   * The actor follows the honesty rule: with login off it is "Someone on this
+   * computer", because DorkOS cannot tell the person from any program running
+   * as them, and the line says so rather than claiming a "you" nobody proved.
    *
    * `emit` is fire-and-forget and never throws, so this cannot turn a recorded
    * decision into a failed request.
    */
-  const auditDecision = (
+  const auditAnswer = (
     approvalId: string,
-    outcome: 'granted' | 'denied',
-    authority: Extract<DecisionAuthorityResult, { allowed: true }>
+    scope: ApprovalAnswerScope,
+    answer: PermissionAnswer,
+    authority: Extract<DecisionAuthorityResult, { allowed: true }>,
+    res: Response
   ): void => {
-    void options.activity?.emit({
-      actorType: 'user',
-      actorLabel: authority.decidedBy,
-      category: 'agent',
-      eventType: outcome === 'granted' ? 'approval.granted' : 'approval.denied',
-      resourceType: 'approval',
-      resourceId: approvalId,
-      summary:
-        authority.posture === 'signed-in-operator'
-          ? `A signed-in account (${authority.decidedBy}) ${outcome} an approval`
-          : `An approval was ${outcome} from this machine (login is off, so DorkOS cannot verify who)`,
-      metadata: { posture: authority.posture, outcome },
+    if (!options.activity) return;
+    const writer = writerForPosture(authority.posture, res);
+    const agent: PermissionAgentRef | undefined = scope.agentPath
+      ? options.permissions?.agentByPath(scope.agentPath)
+      : undefined;
+    const card = approvals.getPending(approvalId);
+    const who = writer.attribution === 'signed-in' ? 'You' : writer.actorLabel;
+    const agentName = agent
+      ? agent.displayName || agent.name
+      : (card?.requestedBy ?? 'an unidentified caller');
+    const what = `"${titleFor(scope.capabilityId)}"${card?.subject ? ` on ${card.subject.label}` : ''}`;
+    const summary =
+      answer === 'deny'
+        ? `${who} said no to ${agentName} running ${what}`
+        : `${who} allowed ${agentName} to run ${what} ${answer === 'always' ? 'from now on' : 'once'}`;
+    const metadata: PermissionAnsweredMetadata = {
+      ...(agent ? { agentId: agent.id } : {}),
+      ...(scope.agentPath ? { agentPath: scope.agentPath } : {}),
+      action: scope.capabilityId,
+      area: scope.area,
+      answer,
+      approvalId,
+      blockedRequest: scope.blockedRequest,
+      posture: authority.posture,
+    };
+    void options.activity.emit({
+      actorType: writer.actorType,
+      actorLabel: writer.actorLabel,
+      ...(writer.actorId ? { actorId: writer.actorId } : {}),
+      category: 'permissions',
+      eventType: PERMISSION_ANSWERED_EVENT,
+      resourceType: agent ? 'agent' : 'approval',
+      resourceId: agent?.id ?? approvalId,
+      resourceLabel: agentName,
+      summary,
+      linkPath: null,
+      metadata: metadata as unknown as Record<string, unknown>,
     });
   };
 
   /**
-   * Record the opening or ending of a standing permission in the Activity feed.
+   * Clear both person bars, answering the refusal when either fails.
    *
-   * A permission is a window in which DorkOS stops asking, so the moment it opens
-   * and the moment it closes are the two lines that make the window itself
-   * accountable. Both carry the posture, the agent, the action, and the expiry,
-   * because "who decided this, and on what basis" is the question a person asks
-   * when they find a permission they do not remember opening.
+   * @returns The authority, or `undefined` when a refusal was already sent.
    */
-  const auditGrantChange = (
-    row: ApprovalGrantRow,
-    outcome: 'created' | 'revoked',
-    authority: Extract<DecisionAuthorityResult, { allowed: true }>
-  ): void => {
-    const who = path.basename(row.agentPath);
-    const what = titleFor(row.capabilityId);
-    void options.activity?.emit({
-      actorType: 'user',
-      actorLabel: authority.decidedBy,
-      category: 'agent',
-      eventType: outcome === 'created' ? 'approval.grant_created' : 'approval.grant_revoked',
-      resourceType: 'approval',
-      resourceId: row.id,
-      resourceLabel: what,
-      summary:
-        outcome === 'created'
-          ? `DorkOS will stop asking before ${who} runs ${what}, until ${row.expiresAt}`
-          : `DorkOS will ask again before ${who} runs ${what}`,
-      metadata: {
-        posture: authority.posture,
-        agentPath: row.agentPath,
-        capabilityId: row.capabilityId,
-        expiresAt: row.expiresAt,
-        grantId: row.id,
-      },
+  const personOrRefuse = (
+    req: Request,
+    res: Response
+  ): Extract<DecisionAuthorityResult, { allowed: true }> | undefined => {
+    const authority = decisionAuthority(req, res, options.isLoginEnabled);
+    if (!authority.allowed) {
+      res.status(authority.status).json({ error: authority.error, code: authority.code });
+      return undefined;
+    }
+    // The second bar, before anything is read off the body: under login, an API
+    // key is not a person (DOR-474). See the module TSDoc.
+    const notAPerson = requirePersonToDecide(res, options.isLoginEnabled);
+    if (notAPerson) {
+      res.status(notAPerson.status).json({ error: notAPerson.error, code: notAPerson.code });
+      return undefined;
+    }
+    return authority;
+  };
+
+  /**
+   * Put back what an Always allow wrote, after the yes it came with was refused.
+   * Each key goes back to its value from before the write; a key the write did
+   * not change is left alone.
+   *
+   * @returns Whether the setting is back as it was, or was left alone because
+   *   something else changed it since.
+   */
+  const undoAlwaysAllow = async (
+    permissions: NonNullable<ApprovalsRouterOptions['permissions']>,
+    write: { agentId: string; changes: PermissionChange[] },
+    approvalId: string,
+    writer: PermissionWriter
+  ): Promise<boolean> => {
+    const actions: Record<string, PermissionState | null> = {};
+    const expectActions: Record<string, PermissionState | null> = {};
+    for (const change of write.changes) {
+      if (change.key.kind !== 'action') continue;
+      actions[change.key.action] = change.before as PermissionState | null;
+      expectActions[change.key.action] = change.after as PermissionState | null;
+    }
+    if (Object.keys(actions).length === 0) return true;
+    try {
+      // Compare-and-set: a key goes back only while it still holds what THIS
+      // write put there, so a later change by anyone else is never undone.
+      await permissions.setAgent(
+        write.agentId,
+        { actions, expectActions, surface: 'undo', approvalId },
+        writer
+      );
+      return true;
+    } catch (err) {
+      logger.error('[Approvals] Always allow was saved but its yes was refused, and undo failed', {
+        approvalId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+  };
+
+  /** The tail of each Always allow for one agent and action; see the grant route. */
+  const alwaysQueue = new Map<string, Promise<unknown>>();
+
+  /**
+   * Run `work` after every earlier Always allow for the same agent and action
+   * has finished, in arrival order.
+   *
+   * @param key - The agent and the action.
+   * @param work - The answer to run.
+   */
+  const serializedAlways = <T>(key: string, work: () => Promise<T>): Promise<T> => {
+    const previous = alwaysQueue.get(key) ?? Promise.resolve();
+    const run = previous.then(work, work);
+    const tail = run.catch(() => undefined);
+    alwaysQueue.set(key, tail);
+    void tail.then(() => {
+      if (alwaysQueue.get(key) === tail) alwaysQueue.delete(key);
     });
+    return run;
+  };
+
+  /**
+   * Answer yes to one card, once or always, reading the card afresh (a queued
+   * Always allow may find it already answered).
+   *
+   * @param approvalId - The card being answered.
+   * @param res - The response the answer is written to.
+   * @param authority - The person bars' verdict.
+   * @param answer - Once or always.
+   */
+  const grantAnswer = async (
+    approvalId: string,
+    res: Response,
+    authority: Extract<DecisionAuthorityResult, { allowed: true }>,
+    answer: ApprovalAnswer
+  ) => {
+    const scope = approvals.answerScope(approvalId);
+    if (!scope) {
+      const mapped = decisionFailureResponse('unknown');
+      return res.status(mapped.status).json(mapped.body);
+    }
+
+    /** What an Always allow wrote, so a refused yes can put it back. */
+    let alwaysWrite: { agentId: string; changes: PermissionChange[] } | undefined;
+    if (answer === 'always') {
+      // Every Always-allow refusal comes BEFORE anything is granted: a caller
+      // that asked for two things and can only have one gets neither, and is
+      // told which part failed.
+      const agent = scope.agentPath ? options.permissions?.agentByPath(scope.agentPath) : undefined;
+      if (!scope.alwaysOffered || !scope.area || !agent || !options.permissions) {
+        return res
+          .status(409)
+          .json({ error: ALWAYS_NOT_OFFERED_MESSAGE, code: 'ALWAYS_NOT_OFFERED' });
+      }
+      // A closed or already-answered card must not leave a setting behind.
+      if (scope.state !== 'pending' || scope.closed) {
+        const mapped = decisionFailureResponse(scope.closed ? 'expired' : 'not_pending');
+        return res.status(mapped.status).json(mapped.body);
+      }
+      // The setting first, then the yes: granting is what wakes a held call, so
+      // the resumed call and the new setting agree (see the module TSDoc).
+      try {
+        const changes = await options.permissions.setAgent(
+          agent.id,
+          {
+            actions: { [scope.capabilityId]: 'allowed' },
+            surface: 'request-card',
+            approvalId,
+          },
+          writerForPosture(authority.posture, res)
+        );
+        alwaysWrite = { agentId: agent.id, changes };
+      } catch (err) {
+        if (err instanceof PermissionError) {
+          return res.status(409).json({ error: err.message, code: err.code });
+        }
+        logger.error('[Approvals] Always allow could not be recorded; nothing was granted', {
+          approvalId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+        return res.status(500).json({
+          error: 'DorkOS could not save Always allow, so it allowed nothing. Try again.',
+          code: 'ALWAYS_ALLOW_NOT_RECORDED',
+        });
+      }
+    }
+
+    const failure = approvals.grant(approvalId);
+    if (failure) {
+      // Another answer won the card while the setting was being saved: the yes
+      // did not happen, so neither may the setting it came with.
+      if (alwaysWrite && options.permissions) {
+        const undone = await undoAlwaysAllow(
+          options.permissions,
+          alwaysWrite,
+          approvalId,
+          writerForPosture(authority.posture, res)
+        );
+        if (!undone) {
+          return res.status(500).json({
+            error:
+              'Someone else answered this request first, and DorkOS could not take back the ' +
+              "Always allow it had just saved. Check the agent's Permissions page.",
+            code: 'ALWAYS_ALLOW_NOT_UNDONE',
+          });
+        }
+      }
+      const mapped = decisionFailureResponse(failure);
+      return res.status(mapped.status).json(mapped.body);
+    }
+    auditAnswer(approvalId, scope, answer, authority, res);
+    return res.json({ ok: true, approvalId, outcome: 'granted', answer });
   };
 
   // GET /pending -- approvals still waiting on a person
@@ -376,76 +518,13 @@ export function createApprovalsRouter(
     res.json({ approvals: approvals.listPending() });
   });
 
-  // GET /grants -- the standing permissions that are live right now
-  router.get('/grants', (req, res) => {
-    // Authorized like the three routes below it, and NOT like `GET /pending`.
-    //
-    // The precedent does not carry, and the difference is the whole reason this
-    // check is here. A pending approval is deliberately agent-readable: it is a
-    // card, and `toPendingApproval` projects a capped, secret-swept LABEL rather
-    // than the `requestedByPath` column, which never leaves through that route. (The
-    // label is not path-free in every case — `agent-token-env.ts` falls back to the
-    // path when an agent set no display name — so the honest claim is about the
-    // column, not about the bytes.) This list is the other thing. `expiresAt` is
-    // PROSPECTIVE, which turns "try it and a person may refuse" into "this
-    // irreversible action goes through silently right now, and here is the minute
-    // the window shuts" — and, read the other way, tells an agent exactly when NOT
-    // to try, which is how it avoids the card that would have told you. It also
-    // names other agents' pairings, which composes with "a grant follows an agent
-    // path" into a target list.
-    //
-    // So the same bar as deciding: an agent naming itself is refused, and so is
-    // anything holding the approval token. Under `local-trust` a header-stripping
-    // caller still reads it, which is the residual §3.0 states plainly and does not
-    // pretend to close.
-    const authority = decisionAuthority(req, res, options.isLoginEnabled);
-    if (!authority.allowed) {
-      return res.status(authority.status).json({ error: authority.error, code: authority.code });
-    }
-    return res.json({ grants: grants.list().map(toStandingPermission) });
-  });
+  // POST /:id/grant -- allow the requested action, once or from now on
+  router.post('/:id/grant', async (req, res) => {
+    const authority = personOrRefuse(req, res);
+    if (!authority) return;
 
-  // DELETE /grants/:id -- end one standing permission
-  router.delete('/grants/:id', (req, res) => {
-    // Ending a permission narrows what an agent may do, so it needs no cookie: the
-    // asymmetry is deliberate. Opening one is the effect that needs proof of a
-    // person, and the same authority check that decides an approval is the right
-    // bar for taking one back — an agent still cannot reach this, because
-    // `resolveDecisionAuthority` refuses any caller naming itself.
-    const authority = decisionAuthority(req, res, options.isLoginEnabled);
-    if (!authority.allowed) {
-      return res.status(authority.status).json({ error: authority.error, code: authority.code });
-    }
-
-    // Read the row before revoking it, because the Activity line names the agent
-    // and the action, and afterwards the row is no longer live to look up.
-    const row = grants.list().find((candidate) => candidate.id === req.params.id);
-    if (!grants.revoke(req.params.id)) {
-      return res.status(404).json({
-        error: 'No standing permission is live under that id',
-        code: 'UNKNOWN_STANDING_PERMISSION',
-      });
-    }
-    if (row) auditGrantChange(row, 'revoked', authority);
-    return res.json({ ok: true, grantId: req.params.id });
-  });
-
-  // POST /:id/grant -- allow the requested action
-  router.post('/:id/grant', (req, res) => {
-    const authority = decisionAuthority(req, res, options.isLoginEnabled);
-    if (!authority.allowed) {
-      return res.status(authority.status).json({ error: authority.error, code: authority.code });
-    }
-
-    // The second bar, before anything is read off the body: under login, an API
-    // key is not a person (DOR-474). See the module TSDoc.
-    const notAPerson = requirePersonToDecide(res, options.isLoginEnabled);
-    if (notAPerson) {
-      return res.status(notAPerson.status).json({ error: notAPerson.error, code: notAPerson.code });
-    }
-
-    // Express 5 leaves `req.body` undefined on an empty POST, and `standing` is
-    // optional, so an absent body is a plain one-time yes.
+    // Express 5 leaves `req.body` undefined on an empty POST, and `answer`
+    // defaults to `once`, so an absent body is a plain one-time yes.
     const parsed = GrantApprovalBodySchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({
@@ -454,111 +533,26 @@ export function createApprovalsRouter(
         details: z.flattenError(parsed.error),
       });
     }
+    const { answer } = parsed.data;
 
-    // Every standing-specific refusal happens BEFORE the approval is granted, so a
-    // caller that asked for two things and can only have one gets neither and is
-    // told which part failed. A fallback to a plain yes would leave a person
-    // believing they had created a permission that does not exist.
-    let scope: { agentPath: string; capabilityId: string } | undefined;
-    if (parsed.data.standing === true) {
-      // The stricter bar, checked first. See `requireOperatorCookie`: clearing
-      // `resolveDecisionAuthority` above is not enough, because under `local-trust`
-      // omitting two headers clears it.
-      const refusal = requireOperatorCookie(res, options.isLoginEnabled);
-      if (refusal) {
-        return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
-      }
-
-      if (!readSettings().enabled) {
-        return res.status(409).json({
-          error:
-            'Standing permissions are switched off. Turn them on in Settings, under Access, first.',
-          code: 'STANDING_GRANTS_DISABLED',
-        });
-      }
-
-      const requested = approvals.standingPermissionScope(req.params.id);
-      if (!requested) {
-        const mapped = decisionFailureResponse('unknown');
-        return res.status(mapped.status).json(mapped.body);
-      }
-      // An anonymous request cannot become a permission: permissions key on the
-      // agent path, and DorkOS has no name to key this one on. Refused rather than
-      // keyed on the display label, which is caller-supplied text two agents can
-      // share.
-      if (!requested.agentPath) {
-        return res.status(409).json({
-          error:
-            'DorkOS does not know which agent asked for this, so it cannot stop asking about that agent. Answer this one on its own.',
-          code: 'APPROVAL_HAS_NO_AGENT',
-        });
-      }
-      scope = { agentPath: requested.agentPath, capabilityId: requested.capabilityId };
-    }
-
-    const failure = approvals.grant(req.params.id);
-    if (failure) {
-      const mapped = decisionFailureResponse(failure);
-      return res.status(mapped.status).json(mapped.body);
-    }
-    auditDecision(req.params.id, 'granted', authority);
-
-    // The permission is recorded only after the one-time yes is, so a failed
-    // decision can never leave a window open behind it.
-    //
-    // The two are NOT one transaction, and the residual is stated rather than
-    // implied: if the store fails while recording the permission, the one-time yes
-    // stands and the permission does not exist. That is the safe half to keep, but
-    // an opaque 500 would leave the caller unable to tell it apart from "nothing
-    // happened" — and retrying the whole call would answer 409, which reads like the
-    // permission was created. So the answer names both halves.
-    if (!scope) {
-      return res.json({ ok: true, approvalId: req.params.id, outcome: 'granted' });
-    }
-    let row: ApprovalGrantRow;
-    try {
-      row = grants.create({
-        ...scope,
-        grantedBy: authority.decidedBy,
-        posture: authority.posture,
-        windowMinutes: readSettings().windowMinutes,
-        sourceApprovalId: req.params.id,
-      });
-    } catch (err) {
-      logger.error('[Approvals] the one-time yes was recorded but the permission was not', {
-        approvalId: req.params.id,
-        err: err instanceof Error ? err.message : String(err),
-      });
-      return res.status(500).json({
-        error:
-          'DorkOS allowed this one action, but could not record the permission to stop asking. The agent will ask again next time.',
-        code: 'STANDING_PERMISSION_NOT_RECORDED',
-        approvalId: req.params.id,
-        outcome: 'granted',
-      });
-    }
-    auditGrantChange(row, 'created', authority);
-    return res.json({
-      ok: true,
-      approvalId: req.params.id,
-      outcome: 'granted',
-      standingPermission: toStandingPermission(row),
-    });
+    // Two Always allows for the same agent and action run one after the other:
+    // run side by side, both would read "not set" before either wrote, and the
+    // loser's undo would take back the winner's setting (see the module TSDoc).
+    const first = approvals.answerScope(req.params.id);
+    const key =
+      answer === 'always' && first?.agentPath
+        ? `${first.agentPath}\0${first.capabilityId}`
+        : undefined;
+    const answerIt = () => grantAnswer(req.params.id, res, authority, answer);
+    return key ? serializedAlways(key, answerIt) : answerIt();
   });
 
   // POST /:id/deny -- refuse the requested action
   router.post('/:id/deny', (req, res) => {
-    const authority = decisionAuthority(req, res, options.isLoginEnabled);
-    if (!authority.allowed) {
-      return res.status(authority.status).json({ error: authority.error, code: authority.code });
-    }
-
     // Guarded exactly like grant. Denying is not the safe direction to leave open:
     // an agent that can deny can bury the card a person would have answered.
-    const notAPerson = requirePersonToDecide(res, options.isLoginEnabled);
-    if (notAPerson) {
-      return res.status(notAPerson.status).json({ error: notAPerson.error, code: notAPerson.code });
-    }
+    const authority = personOrRefuse(req, res);
+    if (!authority) return;
 
     // Express 5 leaves `req.body` undefined on an empty POST, and a reason is
     // optional, so an absent body is a valid bare denial.
@@ -571,12 +565,13 @@ export function createApprovalsRouter(
       });
     }
 
+    const scope = approvals.answerScope(req.params.id);
     const failure = approvals.deny(req.params.id, parsed.data.reason);
     if (failure) {
       const mapped = decisionFailureResponse(failure);
       return res.status(mapped.status).json(mapped.body);
     }
-    auditDecision(req.params.id, 'denied', authority);
+    if (scope) auditAnswer(req.params.id, scope, 'deny', authority, res);
     return res.json({ ok: true, approvalId: req.params.id, outcome: 'denied' });
   });
 

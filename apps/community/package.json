@@ -34,6 +34,7 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@dorkos/db": "workspace:*",
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/test-utils": "workspace:*",
     "@playwright/test": "1.62.1",
@@ -42,12 +43,14 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/yauzl": "3.4.0",
     "@vitejs/plugin-react": "5.2.0",
     "axe-core": "^4.13.0",
+    "fast-check": "^4.10.1",
     "tsx": "4.23.13",
     "typescript": "^5.9.3",
     "vite": "^6.4.1",
     "vitest": "^4.1.11",
-    "@dorkos/db": "workspace:*"
+    "yauzl": "3.4.0"
   }
 }

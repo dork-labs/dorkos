@@ -392,8 +392,17 @@ jobs:
           if-no-files-found: ignore
 
   # The real packaged local-agent journey runs on the queue's combined tree,
-  # and on the main canary's scheduled run against `main` HEAD. PRs report an
-  # explicit pass-through, as the shared browser suite does.
+  # and on the main canary's scheduled run against `main` HEAD, always.
+  #
+  # ON A PULL REQUEST IT RUNS WHEN THE CHANGE CAN REACH IT (DOR-2220). It used
+  # to report green there having run nothing, so a change that broke the sealed
+  # driver was first seen in the queue, where a red is an ejection (#1987). It
+  # is about six runner-minutes, so a PR pays it only when its diff touches the
+  # community slice listed in scripts/community-packaged-scope.sh (the header
+  # there says what is in, what is out and why); every other PR gets a green
+  # that says it did not run. This is a REQUIRED context, so the scope lives in
+  # a step, never in `paths:` or a job-level `if:`: the job always runs and
+  # always reports.
   community-packaged:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -437,16 +446,70 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
-      - name: Packaged proof runs on the merge queue
-        if: github.event_name == 'pull_request'
-        run: echo "The merge queue and the main canary run the sealed packaged community proof."
+      # Depth 2 so a pull request's test-merge commit has its first parent (the
+      # base it was merged onto) locally, which is all the scope step diffs
+      # against. The queue and the canary only need the tree, and one extra
+      # commit of history costs them nothing.
       - uses: actions/checkout@v7
-        if: github.event_name != 'pull_request'
+        with:
+          fetch-depth: 2
+
+      # Decides whether the proof runs, from the one list in
+      # scripts/community-packaged-scope.sh. No `if:` of its own, so this
+      # required job never skips it; it writes `run=true|false` and the two
+      # steps below read that.
+      #
+      # merge_group and the canary events answer true without looking: the
+      # queue and `main` HEAD always get the proof, exactly as before DOR-2220.
+      # pull_request diffs the test-merge commit against its first parent, so
+      # it sees exactly the PR's change on top of the current base. That holds
+      # only while HEAD IS a merge, so the step also requires a second parent:
+      # a checkout that lands on a plain commit (a changed checkout ref, a
+      # fast-forward) would make HEAD^1 the PR's own previous commit and score
+      # only its last commit.
+      #
+      # Every failure on the PR path FAILS OPEN to running the proof, never to a
+      # green that tested nothing and never to a red: a base git cannot resolve,
+      # a HEAD that is not a merge, a diff that errors, or a tree that predates
+      # the scope script all run it. `core.quotePath=false` so a path with a
+      # non-ASCII byte comes out as itself rather than as a quoted octal escape
+      # that no anchored pattern matches.
+      # The diff is captured before it is matched, so a git failure is seen as a
+      # failure and never as an empty, out-of-scope diff. `--no-renames` for the
+      # reason scripts-test.yml gives: with rename detection on, moving a file
+      # out of scope reports only its destination.
+      - name: Decide whether this change can reach the packaged proof
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != 'pull_request' ]; then
+            echo "$EVENT run: the packaged community proof always runs here"
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          verdict=true
+          if [ ! -f scripts/community-packaged-scope.sh ]; then
+            echo "scripts/community-packaged-scope.sh is not in this tree; running the proof"
+          elif git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
+            base=$(git rev-parse --verify --quiet 'HEAD^1') &&
+            changed=$(git -c core.quotePath=false diff --no-renames --name-only "$base" HEAD); then
+            verdict=$(printf '%s\n' "$changed" | bash scripts/community-packaged-scope.sh) || verdict=true
+          else
+            echo "cannot diff this pull request against its base (no test-merge commit, or git failed); running the proof"
+          fi
+          if [ "$verdict" != false ]; then
+            verdict=true
+          else
+            echo "Nothing in this change can reach the packaged community proof, so it did not run here. The merge queue and the main canary run it on every change."
+          fi
+          echo "run=$verdict" >> "$GITHUB_OUTPUT"
       - name: Build and test without public network access
-        if: github.event_name != 'pull_request'
+        if: steps.scope.outputs.run == 'true'
         run: bash apps/community/acceptance/run.sh
       - name: Preserve packaged community reports
-        if: always() && github.event_name != 'pull_request'
+        if: always() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: community-packaged-evidence
@@ -549,6 +612,25 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      # The community archive cross-checks (apps/community/src/archive/__tests__/
+      # zip-cross-tools.test.ts) read our ZIP64 exports with Info-ZIP unzip, bsdtar and
+      # Python's zipfile, and FAIL under CI when one is missing, so a skip can never
+      # quietly drop them. The runner image ships unzip and python3; bsdtar comes from
+      # libarchive-tools. apt runs only for what is missing.
+      - name: Install the unzip tools the archive cross-checks read with
+        run: |
+          missing=""
+          command -v unzip >/dev/null || missing="$missing unzip"
+          command -v bsdtar >/dev/null || missing="$missing libarchive-tools"
+          command -v python3 >/dev/null || missing="$missing python3"
+          if [ -n "$missing" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends $missing
+          fi
+          unzip -v | head -1
+          bsdtar --version
+          python3 --version
 
       # --summarize writes a machine-readable record of the run to
       # .turbo/runs/<id>.json. The assert step is the only reason it is here.

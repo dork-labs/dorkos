@@ -77,6 +77,8 @@ export const connectorDomain: CapabilityDomain = {
         'query matches service names. A slug in toolkits is what a service request ' +
         'takes; a service offering only messages is set up by the person under Messaging.',
       tier: 'observe',
+      area: null,
+      areaNote: 'connected accounts have their own grant model',
       input: z
         .object({
           query: z.string().trim().max(200).optional(),
@@ -126,6 +128,8 @@ export const connectorDomain: CapabilityDomain = {
         'Recommend the best route for a service. Account setup and access changes ' +
         'remain owner actions in the DorkOS app.',
       tier: 'observe',
+      area: null,
+      areaNote: 'connected accounts have their own grant model',
       input: z.object({
         service: z.string().min(1).describe("Service slug, for example 'gmail' or 'slack'."),
       }),

@@ -555,6 +555,13 @@ jobs:
       - name: Harness scope-list fixtures
         run: bash scripts/test-scripts-test-scope.sh
 
+      # community-packaged-scope.sh decides whether a pull request runs the
+      # packaged Community proof (test.yml's required `community-packaged`), so
+      # a regex that stops matching an entry silently moves that proof's catches
+      # back to the merge queue, as ejections (DOR-2220). Hermetic, no pnpm.
+      - name: Packaged Community scope-list fixtures
+        run: bash scripts/test-community-packaged-scope.sh
+
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages
   # and covers none of it. Without this job the Q3 harness — its overlap and work

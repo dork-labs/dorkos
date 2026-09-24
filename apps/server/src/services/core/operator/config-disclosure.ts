@@ -418,17 +418,16 @@ export const CONFIG_DISCLOSURE = {
 
   'auth.enabled': 'expose',
 
-  // A posture, not a roster. These two say whether standing permissions may
-  // exist here and for how long one lasts; WHICH agents are trusted lives in
-  // SQLite and never passes through config at all, so there is nothing here for
-  // an agent to learn about anyone's trust but its own instance's settings.
-  'approvals.standingGrants': 'expose',
-  'approvals.trustWindowMinutes': 'expose',
-  // Same reasoning one step further: a timestamp saying when this install last
-  // switched standing permissions off names no agent and no person. Exposing it
-  // also lets an agent understand why a permission it used to have stopped
-  // working, which is better than silently finding out.
-  'approvals.standingGrantsVoidBefore': 'expose',
+  // What agents may do here (spec `agent-permissions`). A posture, not a
+  // roster: the preset and the changes on top of it name no person and
+  // no secret, and an agent that can read them can explain a refusal instead of
+  // guessing. Per-agent differences live in each agent's own manifest.
+  'permissions.preset': 'expose',
+  'permissions.defaults.areas': 'expose',
+  'permissions.defaults.actions': 'expose',
+  // Machine bookkeeping: which server version the permission upgrade sweep last
+  // ran for.
+  'permissions.upgradeSweptVersion': 'expose',
 
   'cloud.instanceToken': 'withhold',
   'cloud.instanceName': 'expose',
@@ -480,12 +479,16 @@ export const PRESENCE_FLAG_PATHS: readonly string[] = [
  * to Shape name, and file extension to viewer id. Both value types are closed and
  * non-secret; the agent paths already leave through three exposed scalar arrays
  * and the equally tokenless `GET /api/config`, and a file extension discloses
- * nothing. A record keyed by something a caller should not learn does not belong
+ * nothing. The two permission records map an area id or an action id to one of
+ * three states: both key spaces are DorkOS's own vocabulary, not anything a
+ * person typed about themselves (spec `agent-permissions`). A record keyed by something a caller should not learn does not belong
  * on this list even if its values are harmless.
  */
 export const EXPOSED_RECORD_PATHS: readonly string[] = [
   'ui.shapes.agentDefaults',
   'workbench.defaultViewers',
+  'permissions.defaults.areas',
+  'permissions.defaults.actions',
 ];
 
 /** Read the value at a dot-path, or `undefined` if any segment is missing. */

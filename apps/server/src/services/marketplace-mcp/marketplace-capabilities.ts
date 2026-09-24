@@ -29,7 +29,11 @@
  */
 import { z } from 'zod';
 
-import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
+import {
+  AREA_PENDING_PHASE_3,
+  defineCapability,
+  type CapabilityDomain,
+} from '../core/capabilities/index.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
 import { unwrapMcpEnvelope } from '../core/capabilities/mcp-envelope.js';
 import type { MarketplaceConfirmationContext } from './confirmation-provider.js';
@@ -112,6 +116,8 @@ export const marketplaceDomain: CapabilityDomain = {
         'Returns matching entries from every enabled marketplace source. ' +
         'Filters: type (agent/plugin/skill-pack/adapter), category, tags, marketplace, query (free-text).',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object(SearchInputSchema),
       output: z.unknown(),
       surfaces: {
@@ -131,6 +137,8 @@ export const marketplaceDomain: CapabilityDomain = {
       description:
         'Get full details for a marketplace package by name. Returns the package manifest, README, marketplace metadata, and any DorkOS-specific fields (type, category, tags).',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object(GetInputSchema),
       output: z.unknown(),
       surfaces: {
@@ -150,6 +158,8 @@ export const marketplaceDomain: CapabilityDomain = {
       description:
         'List configured marketplace sources. Each source includes name, source URL/path, enabled flag, and total package count.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({}),
       output: z.unknown(),
       surfaces: {
@@ -172,6 +182,8 @@ export const marketplaceDomain: CapabilityDomain = {
         '(global | agent-local | override) and, for agent installs, the owning agent id and name. ' +
         'Filter by type (agent/plugin/skill-pack/adapter). Includes install path, version, and provenance.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object(ListInstalledInputSchema),
       output: z.unknown(),
       surfaces: {
@@ -191,6 +203,8 @@ export const marketplaceDomain: CapabilityDomain = {
       description:
         'Recommend marketplace packages based on a context description (e.g., "I need to track errors in my Next.js app"). Uses keyword + tag matching. Returns top matches with relevance scores and reasons.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object(RecommendInputSchema),
       output: z.unknown(),
       surfaces: {
@@ -214,6 +228,8 @@ export const marketplaceDomain: CapabilityDomain = {
         'For external AI agents: the first call returns status:requires_confirmation with a token. ' +
         'After the user approves in DorkOS, re-call with confirmationToken to complete the install.',
       tier: 'act',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: z.object(InstallInputSchema),
       output: z.unknown(),
       surfaces: {
@@ -236,6 +252,8 @@ export const marketplaceDomain: CapabilityDomain = {
         'Uninstall a previously installed marketplace package. Requires user confirmation. ' +
         'By default, preserves .dork/data/ and .dork/secrets.json. Pass purge:true to remove them.',
       tier: 'destructive',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: z.object(UninstallInputSchema),
       output: z.unknown(),
       // What a person needs to decide, and nothing else. `confirmationToken` is a
@@ -263,6 +281,8 @@ export const marketplaceDomain: CapabilityDomain = {
         '~/.dork/personal-marketplace/packages/<name>/ and registers the package in personal marketplace.json. ' +
         'Requires user confirmation. Publishing to a public marketplace is a separate step.',
       tier: 'act',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: z.object(CreatePackageInputSchema),
       output: z.unknown(),
       surfaces: {

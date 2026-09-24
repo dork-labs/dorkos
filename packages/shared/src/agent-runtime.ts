@@ -862,6 +862,20 @@ export interface MessageOpts extends SessionSettings {
    * root and cannot be moved (ADR 260801-204127).
    */
   accountHint?: string;
+  /**
+   * True when nobody can answer a DorkOS approval card inside THIS turn: a
+   * scheduled run the timer fired, a turn a chat binding or another agent's
+   * message started, a connector event (spec `agent-permissions` D6). A
+   * capability call that needs a person then returns `approval_required` at
+   * once instead of holding the turn open for ten minutes nobody is watching;
+   * the card still reaches the inbox, and the verdict wakes the session when
+   * somebody answers.
+   *
+   * Per TURN, and a runtime that honours it assigns it on every send, so a
+   * warm session a person later talks to holds again. Advisory: a runtime with
+   * no in-session hold simply ignores it.
+   */
+  unattendedApprovals?: boolean;
 }
 
 /**

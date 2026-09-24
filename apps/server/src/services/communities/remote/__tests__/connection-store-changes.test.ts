@@ -168,6 +168,17 @@ describe('RemoteConnectionStore change announcements', () => {
     expect(changes).toEqual([]);
   });
 
+  it('does not announce a changed host-operator answer, which rides the same re-verification', async () => {
+    const ref = await connected('remote_a');
+    changes.length = 0;
+
+    await store.updateAccess(ref, OWNER, ACCESS, true);
+    await store.updateAccess(ref, OWNER, ACCESS, false);
+
+    expect(changes).toEqual([]);
+    expect((await store.list(OWNER))[0]).not.toHaveProperty('hostOperator');
+  });
+
   it('announces only after the change is readable', async () => {
     const ref = await connected('remote_a');
     const seen: string[] = [];

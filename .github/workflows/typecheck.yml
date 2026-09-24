@@ -245,6 +245,21 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm run check:vocab-gate
 
+      # Playwright's `{ times: n }` route option in the browser suites
+      # (DOR-2228). After such a route had run, the page's retry against the
+      # same URL could hang without reaching the server (PR #1999); every site
+      # was replaced by interceptNext from @dorkos/test-utils/playwright-routes.
+      # This keeps new ones out. It rides THIS job for the reason the vocab gate
+      # above does: its only other home would be scripts-test.yml's `harness`
+      # job, which is scoped by scripts/scripts-test-scope.sh (no apps/e2e or
+      # browser-test paths) and never runs in the queue, so the PRs the guard
+      # exists for would never run it. `typecheck` is unfiltered, required and
+      # reports on `merge_group`. The pin suite is
+      # scripts/__tests__/one-shot-routes.test.ts.
+      - name: One-shot browser routes gate (DOR-2228)
+        if: ${{ !cancelled() }}
+        run: pnpm run check:one-shot-routes
+
       # The public/private boundary (DOR-2024): a control-plane hostname, a
       # price or plan name, or anything else that belongs to the closed-source
       # side of DorkOS Cloud, reaching this repository's source or prose.

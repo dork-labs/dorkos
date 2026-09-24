@@ -311,7 +311,7 @@ const { createCapabilitiesInvokeRouter } =
   await import('../../../../routes/capabilities-invoke.js');
 const { createApprovalsRouter } = await import('../../../../routes/approvals.js');
 const { initCapabilityTierGate, APPROVAL_TOKEN_HEADER } = await import('../tier-enforcement.js');
-const { ApprovalGrantService, ApprovalService } = await import('../../approvals/index.js');
+const { ApprovalService } = await import('../../approvals/index.js');
 
 /** The agent every probe calls as: unrestricted ceiling, so only the tier gates it. */
 const PROBE_IDENTITY = {
@@ -334,7 +334,6 @@ const DESTRUCTIVE_INPUT = { name: 'nonexistent-conformance-pkg', purge: true };
 // boot does — so the probes exercise the real request/consume path, not a stub.
 const approvalDb = createTestDb();
 const approvalService = new ApprovalService(approvalDb);
-const approvalGrantService = new ApprovalGrantService(approvalDb);
 const requestTarget = swappableServer();
 initCapabilityTierGate({ approvals: approvalService });
 
@@ -447,7 +446,7 @@ const requesterDecideProbe = async () => {
   app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
   app.use(
     '/api/approvals',
-    createApprovalsRouter(approvalService, approvalGrantService, { isLoginEnabled: () => false })
+    createApprovalsRouter(approvalService, { isLoginEnabled: () => false })
   );
   requestTarget.mount(app);
 
@@ -522,6 +521,13 @@ capabilityConformance(registry, {
     // No identity in a conformance invocation, so the handler answers its own
     // `no-agent` refusal — wired and reachable, which is what this suite asks.
     'memory.write': { action: 'add', text: 'a conformance note' },
+    // Anonymous here, so the handler refuses with its own structured error
+    // (there is no agent to scope the request to), which is what "wired" means.
+    'permissions.request_access': {
+      action: 'capabilities.list',
+      arguments: {},
+      reason: 'a conformance probe',
+    },
     'mcp.list': { agentId: 'conformance-agent' },
     'mcp.add': {
       agentId: 'conformance-agent',
@@ -571,24 +577,20 @@ capabilityConformance(registry, {
     // invocation do the thing the suite is asking about, and exercises the sigil
     // that `normalizeRoomNameNeedle` strips on the way in.
     'rooms.find_room': { name: `#${CONFORMANCE_ROOM_SLUG}` },
-    // The five that ARRANGE rooms, and the first real subjects the tool-group
-    // check has ever had (DOR-1611, acceptance criterion 12). Until they landed
-    // that check ran over an empty set and could only ever be green.
+    // The verbs that ARRANGE rooms, in the Rooms permission area. Every one of
+    // these must PARSE and then be refused by the PERMISSION, not by a ZodError —
+    // the invoke check reads an unstructured throw as a wiring failure. So each
+    // fixture is a request that would really run if Rooms were Allowed, and each
+    // names the harness room the reads above use.
     //
-    // Every one of these must PARSE and then be refused by the GRANT, not by a
-    // ZodError — the check reads an unstructured throw as "the gate is not
-    // there", which is exactly what it should do. So each fixture is a request
-    // that would really run if the caller held the grant, and each names the
-    // harness room the reads above use.
-    //
-    // Nothing in this file wires a `ToolGroupGrantLookup`, and that is the
-    // point: an unwired gate holds no grant for anybody, which is the fail-closed
-    // state these five have to be refused from.
+    // Nothing in this file wires the permission config, and that is the point:
+    // unwired, no preset is chosen (Unchanged), where Rooms is Blocked.
     'rooms.create': { kind: 'channel', title: 'Conformance opened' },
     'rooms.add_members': { roomId: CONFORMANCE_ROOM_ID, members: ['@conformance'] },
     'rooms.remove_members': { roomId: CONFORMANCE_ROOM_ID, members: ['@conformance'] },
     'rooms.update': { roomId: CONFORMANCE_ROOM_ID, topic: 'what this room is for' },
     'rooms.leave': { roomId: CONFORMANCE_ROOM_ID },
+    'rooms.archive': { roomId: CONFORMANCE_ROOM_ID },
     // The canvas read (DOR-1999), against the same harness room. With no
     // `documentId` it LISTS what is on the table, which is the arm that needs no
     // document to exist — so the verb really runs and answers `{ documents: [] }`

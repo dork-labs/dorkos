@@ -1,6 +1,9 @@
 export { BlobStoreError, downloadHeaders } from './blob-store.js';
 export type {
+  BlobGetOptions,
+  BlobKind,
   BlobNamespaceSnapshot,
+  BlobRange,
   BlobRead,
   BlobStore,
   PutBlobInput,

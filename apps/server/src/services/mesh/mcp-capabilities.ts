@@ -35,7 +35,11 @@ import {
   ManagedMcpServerViewSchema,
 } from '@dorkos/shared/mesh-schemas';
 
-import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
+import {
+  AREA_PENDING_PHASE_3,
+  defineCapability,
+  type CapabilityDomain,
+} from '../core/capabilities/index.js';
 import {
   AgentServerInput,
   agentIdField,
@@ -92,6 +96,8 @@ export const mcpDomain: CapabilityDomain = {
         'for it (authStatus). A free read — use it before add/update/remove to see what is ' +
         'already configured.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({ agentId: agentIdField }),
       output: ManagedServerViewListOutput,
       surfaces: {
@@ -127,6 +133,8 @@ export const mcpDomain: CapabilityDomain = {
         'until they open the sign-in link. Its tools are live on the next turn once they ' +
         'finish.',
       tier: 'destructive',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: z.object({
         agentId: agentIdField,
         name: serverNameField,
@@ -167,6 +175,8 @@ export const mcpDomain: CapabilityDomain = {
         'agent’s environment. Rejects the reserved name "dorkos" and any name already managed; ' +
         'reports a clear error when no such discovered server can be resolved.',
       tier: 'destructive',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: z.object({ agentId: agentIdField, name: serverNameField }),
       output: ManagedServerListOutput,
       // The card names the AGENT and the discovered SERVER being promoted — not
@@ -206,6 +216,8 @@ export const mcpDomain: CapabilityDomain = {
         'introduces a new command/endpoint, so it is approved at a card showing the exact ' +
         'command/args/url, exactly like add.',
       tier: 'destructive',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: z.object({
         agentId: agentIdField,
         name: serverNameField,
@@ -245,6 +257,8 @@ export const mcpDomain: CapabilityDomain = {
         'Remove a managed server from an agent. Reversible by adding it again (which re-prompts ' +
         'for approval).',
       tier: 'act',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: AgentServerInput,
       output: ManagedServerListOutput,
       surfaces: {
@@ -268,6 +282,8 @@ export const mcpDomain: CapabilityDomain = {
         'restart, a server enabled mid-conversation is live on the next message. No new ' +
         'command is introduced (it was approved at add), so no approval is needed.',
       tier: 'act',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: AgentServerInput,
       output: ManagedServerListOutput,
       surfaces: {
@@ -294,6 +310,8 @@ export const mcpDomain: CapabilityDomain = {
         'Disable a managed server, removing its tools from the next turn’s injection while ' +
         'keeping its already-approved configuration on the manifest.',
       tier: 'act',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: AgentServerInput,
       output: ManagedServerListOutput,
       surfaces: {
@@ -322,6 +340,8 @@ export const mcpDomain: CapabilityDomain = {
         'arbitrary command and bypass add’s gate. A failure is reported in-band; an OAuth ' +
         'server that needs sign-in reports needsAuth so the caller can offer mcp.signin.',
       tier: 'act',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: AgentServerInput,
       output: z.object({
         ok: z.boolean().describe('Whether the server connected and listed its tools.'),

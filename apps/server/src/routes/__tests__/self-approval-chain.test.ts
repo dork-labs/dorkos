@@ -46,11 +46,7 @@ import { z } from 'zod';
 import { createDb, runMigrations, user, type Db } from '@dorkos/db';
 import { getAuth, initAuth, sessionGate, toNodeHandler } from '../../services/core/auth/index.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
-import {
-  ApprovalGrantService,
-  ApprovalService,
-  hashApprovalInput,
-} from '../../services/core/approvals/index.js';
+import { ApprovalService, hashApprovalInput } from '../../services/core/approvals/index.js';
 import {
   CapabilityGateRefusal,
   composeRegistry,
@@ -81,6 +77,7 @@ const UNINSTALL = defineCapability({
   title: 'Uninstall a package',
   description: 'A destructive capability standing in for marketplace.uninstall.',
   tier: 'destructive',
+  area: null,
   input: z.object({ name: z.string() }),
   output: z.unknown(),
   surfaces: { mcp: { toolName: 'demo_uninstall', servers: ['external'] } },
@@ -94,7 +91,6 @@ describe('an agent holding the API key cannot approve its own work', () => {
   let db: Db;
   let app: express.Express;
   let approvals: ApprovalService;
-  let grants: ApprovalGrantService;
   let registry: CapabilityRegistry;
   let cookies: string[];
   let apiKey: string;
@@ -145,7 +141,6 @@ describe('an agent holding the API key cannot approve its own work', () => {
     const auth = initAuth(db, tmpDir);
 
     approvals = new ApprovalService(db, { describeCapability: (id) => registry?.get(id) });
-    grants = new ApprovalGrantService(db);
     registry = composeRegistry([{ name: 'demo', capabilities: [UNINSTALL] }], {} as never);
     initCapabilityTierGate({ approvals });
 
@@ -157,7 +152,7 @@ describe('an agent holding the API key cannot approve its own work', () => {
     app.all('/api/auth/*splat', toNodeHandler(getAuth()!));
     app.use(express.json());
     app.use(sessionGate);
-    app.use('/api/approvals', createApprovalsRouter(approvals, grants));
+    app.use('/api/approvals', createApprovalsRouter(approvals));
 
     fixtureTarget.mount(app);
     const signUp = await request(fixtureServer)

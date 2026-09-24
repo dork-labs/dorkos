@@ -160,6 +160,8 @@ export const capabilitiesDomain: CapabilityDomain = {
         'description, and `limit` with `cursor` to page. When a page is capped it says how many were ' +
         'left out and how to narrow.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: listCapabilitiesInputSchema,
       output: listCapabilitiesResultSchema,
       surfaces: {

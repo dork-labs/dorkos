@@ -4,6 +4,7 @@ import { ChevronDown, HardDrive, UsersRound } from 'lucide-react';
 import { toast } from 'sonner';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import {
+  COMMUNITY_HOST_ADMIN_PATH,
   communitySettingsPath,
   type CommunitySettingsSection,
 } from '@dorkos/shared/community-wire';
@@ -51,6 +52,7 @@ import { useHeaderBlockMenu } from './use-header-block-menu';
 import {
   buildCommunityContextNodes,
   communityActionAvailability,
+  communityCreationOrigins,
   COMMUNITY_DEPLOY_GUIDE_URL,
 } from './community-context-actions';
 import { DisconnectCommunityDialog, JoinCommunityDialog } from './CommunityActionDialogs';
@@ -233,6 +235,9 @@ export function CommunityContextSwitcher({
     onDisconnect: () => setDisconnecting(selected),
     onConnect: () => openConnections('messaging'),
     onJoin: () => setJoinOpen(true),
+    creationOrigins: communityCreationOrigins(destinations),
+    // The pinned origin again: the only host these connections talked to.
+    onCreate: (origin) => openExternalLink(new URL(COMMUNITY_HOST_ADMIN_PATH, origin).toString()),
     onDeploy: () => openExternalLink(COMMUNITY_DEPLOY_GUIDE_URL),
     hosting: hosting
       ? {

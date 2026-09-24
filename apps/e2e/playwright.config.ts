@@ -763,6 +763,9 @@ export default defineConfig({
         '**/rooms/room-autonomy.spec.ts',
         '**/rooms/agent-reactions.spec.ts',
         '**/rooms/room-tool-only-replies.spec.ts',
+        // Agent permissions (DOR-2278) act as DorkBot with a minted token, which
+        // only the test-mode leg's `/api/test/agent-token` provides.
+        '**/permissions/*.spec.ts',
         // The room canvas (DOR-2000). One of its tests un-silences an agent so
         // a real room turn puts a real document on the table, which on this leg
         // would be a billable claude-code turn.
@@ -959,6 +962,8 @@ export default defineConfig({
         // An agent showing the room a file it made (spec `canvas-agent-seat`
         // §4), here for the same reason again.
         '**/rooms/attachments/agent-attachment.spec.ts',
+        // Agent permissions (DOR-2278): acts as DorkBot with a real minted token.
+        '**/permissions/*.spec.ts',
       ],
     },
     {

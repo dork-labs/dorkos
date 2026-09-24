@@ -146,6 +146,8 @@ function executionCapability(
       `Execute one exact ${classification} operation revision against one already granted ` +
       'connected account. Use only the account and revision ids listed for this agent.',
     tier,
+    area: null,
+    areaNote: 'connected accounts have their own grant model',
     input: ConnectorExecutionTargetSchema,
     output: ConnectorExecutionResponseSchema,
     ...(classification === 'destructive'
@@ -187,6 +189,8 @@ const listGrantedConnections = defineCapability({
   description:
     'List only the currently executable connections granted to this authenticated runtime turn.',
   tier: 'observe',
+  area: null,
+  areaNote: 'connected accounts have their own grant model',
   input: z.object({}).strict(),
   output: ConnectorAccessibleConnectionsResponseSchema,
   surfaces: {},
@@ -208,6 +212,8 @@ const listGrantedOperations = defineCapability({
   description:
     'List exact immutable operation revisions and input schemas granted for one listed connected account.',
   tier: 'observe',
+  area: null,
+  areaNote: 'connected accounts have their own grant model',
   input: ConnectorGrantedOperationsInputSchema,
   output: ConnectorAccessibleOperationsResponseSchema,
   surfaces: {},
@@ -235,6 +241,8 @@ const requestConnection = defineCapability({
     'the account and exact access; this call never lists accounts or grants access by itself. A ' +
     'command-line login in a shell does not grant access; only the owner connects services.',
   tier: 'observe',
+  area: null,
+  areaNote: 'connected accounts have their own grant model',
   input: ConnectorAgentConnectionRequestInputSchema,
   output: ConnectorAgentRequestStatusSchema,
   surfaces: {},
@@ -261,6 +269,8 @@ const getConnectionRequest = defineCapability({
     'Check one service request created by this exact agent session. It returns the request outcome ' +
     "without revealing the owner's account inventory.",
   tier: 'observe',
+  area: null,
+  areaNote: 'connected accounts have their own grant model',
   input: ConnectorRequestStatusInputSchema,
   output: ConnectorAgentRequestStatusSchema,
   surfaces: {},

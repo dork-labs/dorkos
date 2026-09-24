@@ -64,22 +64,20 @@ Do not inspect shell configuration, credentials, or generic MCP registries to in
 Some tools (agent, task, relay, mesh, binding, extension and UI) are outside the
 capability catalog. Use the injected tools; do not assume CLI parity or invent commands.
 
-## Permission tiers
+## Permission tiers and settings
 
-Every capability in the catalog carries a tier. Read it before you act:
+Every capability carries a tier; the person's permission settings can tighten it:
 
-- \`observe\` only reads. It always runs.
-- \`act\` changes something recoverable. It runs, and DorkOS records it in the
-  activity feed under your name.
-- \`destructive\` cannot be undone. It does NOT run until a person approves it.
-  \`marketplace.uninstall\` is the destructive capability in the catalog;
-  \`tasks_delete\` and \`mesh_unregister\` are the destructive tools outside it. A
-  destructive tool advertises an \`approvalToken\` argument, which is how you spot
-  one from its own schema.
+- \`observe\` only reads, and runs. \`act\` changes something recoverable and runs,
+  recorded under your name, unless it is set to Ask: then it waits for a person.
+- \`destructive\` cannot be undone and never runs until a person approves it
+  (\`marketplace.uninstall\`, \`tasks_delete\`, \`mesh_unregister\`). A call that may
+  wait for a person advertises an \`approvalToken\` argument.
+- Blocked refuses any tier. The tool ending in \`list_my_permissions\` shows yours.
 
 ## When a call comes back \`approval_required\`
 
-A \`destructive\` call returns this payload instead of doing the work:
+A call that needs a person (\`destructive\`, or \`act\` set to Ask) returns this instead:
 
     { "status": "approval_required", "capabilityId": "...", "capabilityTitle": "...",
       "tier": "destructive", "approvalId": "...", "approvalToken": "...",
@@ -109,6 +107,10 @@ ever help:
 - \`approvable: false\` (\`tier_ceiling\`, \`enforcement_unavailable\`): no approval can
   unlock this. Stop and report it; do not look for a workaround.
 - \`operator_denied\`: a person said no. Do not try again unless they ask you to.
+- \`permission_blocked\` with \`approvable: true\`: ask ONCE with \`request_permission\`
+  (\`action\` = the tool name, the exact \`arguments\`, a one-sentence \`reason\`), then wait.
+- \`request_pending\`, \`recently_denied\`, \`request_limit\`: your ask was held back.
+  Do not ask again; wait for the answer, or tell the person what you could not do.
 
 \`retry.instructions\` in the payload always spells out the exact retry for the
 surface you called from; follow it over anything you remember. Two marketplace
@@ -165,8 +167,6 @@ one section, where a patch of \`ui.sidebar.groups\` rewrites every section at on
 
 ## Rules of engagement
 
-- **Read the tier before you act.** \`observe\` freely; say what you are doing on
-  \`act\`; on \`destructive\`, expect to ask a person and wait.
 - **Read before you write.** Fetch current state, act, then report what changed.
 - **System agents are protected.** DorkBot and other system agents reject renames,
   deletion, and identity edits. Do not fight the guard.

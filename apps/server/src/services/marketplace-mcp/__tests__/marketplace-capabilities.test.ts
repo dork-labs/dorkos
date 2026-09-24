@@ -133,11 +133,11 @@ describe('callerContext turns a proof of consent into preApproved', () => {
     expect(result).toEqual({ asked: false, ran: true });
   });
 
-  it('does not ask again when a standing permission allowed the call', async () => {
-    // Spec §3.4: the gate resolves a permission and puts it on the context, where
-    // the same arm converts it. One lookup, two enforcement points — which is what
-    // stops "stop asking" meaning "stop asking at one of the two places that ask".
-    const result = await invokeWith({ approval: { via: 'standing-grant', grantId: 'grant_01' } });
+  it('does not ask again when an Allowed permission let the call through', async () => {
+    // The gate resolves the permission and puts it on the context, where the
+    // same arm converts it. One decision, two enforcement points — which is what
+    // stops "Always allow" meaning "allow at one of the two places that ask".
+    const result = await invokeWith({ approval: { via: 'permission', source: 'agent-action' } });
 
     expect(result).toEqual({ asked: false, ran: true });
   });

@@ -8,7 +8,7 @@
  * @module services/activity/activity-service
  */
 import { ulid } from 'ulidx';
-import { lt, gt, inArray } from 'drizzle-orm';
+import { lt, gt, inArray, ne } from 'drizzle-orm';
 import { desc, and, eq, activityEvents, type Db } from '@dorkos/db';
 import type {
   ActivityItem,
@@ -135,7 +135,7 @@ export class ActivityService {
    * @param query - Pagination and filter parameters
    */
   async list(query: ListActivityQuery): Promise<ListActivityResponse> {
-    const { limit, before, categories, actorType, actorId, since } = query;
+    const { limit, before, categories, actorType, actorId, resourceId, since } = query;
     const conditions: SQL[] = [];
 
     if (before) {
@@ -150,6 +150,9 @@ export class ActivityService {
     }
     if (actorId) {
       conditions.push(eq(activityEvents.actorId, actorId));
+    }
+    if (resourceId) {
+      conditions.push(eq(activityEvents.resourceId, resourceId));
     }
     if (since) {
       conditions.push(gt(activityEvents.occurredAt, since));
@@ -192,6 +195,10 @@ export class ActivityService {
    * Prune events older than the retention period.
    * Called at server startup and optionally by a Tasks schedule.
    *
+   * The `permissions` category is exempt (spec `agent-permissions` D14): it is
+   * low volume, and a permission history that forgets cannot answer "who
+   * allowed this".
+   *
    * @param retentionDays - Days to retain events (default 30)
    * @returns Number of deleted rows
    */
@@ -201,7 +208,12 @@ export class ActivityService {
 
     const result = await this.db
       .delete(activityEvents)
-      .where(lt(activityEvents.occurredAt, cutoff.toISOString()));
+      .where(
+        and(
+          lt(activityEvents.occurredAt, cutoff.toISOString()),
+          ne(activityEvents.category, 'permissions')
+        )
+      );
 
     return result.changes;
   }

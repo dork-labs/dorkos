@@ -113,7 +113,7 @@ import {
 import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import { logger, logError } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
-import { latestInstant, restoreProtectedState } from './safe-defaults/protected-state.js';
+import { restoreProtectedState } from './safe-defaults/protected-state.js';
 import { backupConfigFile } from './config/backups.js';
 import { preserveUnknownKeys, schemaNodeAt, tolerateUnknownKeys } from './config/version-skew.js';
 import {
@@ -3310,6 +3310,84 @@ export function seedCommunityNavigationPrefs(store: {
   });
 }
 
+/**
+ * Carry the first-run power choice into the permission preset (spec
+ * `agent-permissions` D13, phase 1): `ui.fullPowerChoice: 'full'` becomes
+ * `permissions.preset: 'full'`, `'supervised'` becomes `'careful'`, and an
+ * unanswered door leaves the preset `null` (Unchanged, today's behaviour).
+ *
+ * `permissions` is a new TOP-LEVEL section, so conf's shallow pre-migration
+ * defaults merge has already written it by the time this runs: there is no
+ * absence case to guard. It never replaces a preset that is already set, so a
+ * re-run, or a door answered through the permission routes first, is left
+ * alone. It does not touch any trust stop; that coupling is later work.
+ *
+ * Runs before the Activity service exists, so it records nothing; the boot-time
+ * permission upgrade sweep writes the audit event for its effect.
+ *
+ * @param store - The conf migration store.
+ */
+export function seedPermissionPresetFromDoor(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object' || Array.isArray(ui)) return;
+  const choice = (ui as Record<string, unknown>).fullPowerChoice;
+  const preset = choice === 'full' ? 'full' : choice === 'supervised' ? 'careful' : null;
+  if (preset === null) return;
+  const stored = store.get('permissions');
+  const section =
+    stored && typeof stored === 'object' && !Array.isArray(stored)
+      ? (stored as Record<string, unknown>)
+      : { preset: null, defaults: { areas: {}, actions: {} }, upgradeSweptVersion: null };
+  if (section.preset !== null && section.preset !== undefined) return;
+  store.set('permissions', { ...section, preset });
+}
+
+/**
+ * Retire the standing-permission settings (spec `agent-permissions` D13, phase
+ * 2): delete `approvals.standingGrants`, `approvals.trustWindowMinutes` and
+ * `approvals.standingGrantsVoidBefore`, and the `approvals` section itself once
+ * nothing else is in it. "Always allow" on a request card replaced standing
+ * permissions; the grants themselves were ended at upgrade, not converted (see
+ * `permissions/ended-standing-grants.ts`).
+ *
+ * A top-level section this build no longer declares, so nothing else ever
+ * writes it again: this body is the whole removal. Anything else a newer build
+ * put under `approvals` is kept, on the version-skew rule.
+ *
+ * Deliberately NOT a config migration. A migration runs whenever the config
+ * store opens, and the CLI opens it before the server has migrated the
+ * database, so a migration would erase the settings the capture of live
+ * standing permissions needs (the master switch and the void floor) before it
+ * ran. The server calls this once the capture is done, through
+ * {@link ConfigManager.retireStandingGrantSettings}; until then the section is an
+ * unknown key, carried across writes like any other.
+ *
+ * @param store - The config store.
+ */
+export function retireStandingGrantSettings(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+  delete: (key: string) => void;
+}): void {
+  const stored = store.get('approvals');
+  if (stored === undefined) return;
+  if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) {
+    store.delete('approvals');
+    return;
+  }
+  const {
+    standingGrants: _standingGrants,
+    trustWindowMinutes: _trustWindowMinutes,
+    standingGrantsVoidBefore: _standingGrantsVoidBefore,
+    ...rest
+  } = stored as Record<string, unknown>;
+  if (Object.keys(rest).length === 0) store.delete('approvals');
+  else store.set('approvals', rest);
+}
+
 export const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -4049,6 +4127,16 @@ export const CONFIG_MIGRATIONS = {
   }) => {
     seedCommunityNavigationPrefs(store);
   },
+  // 0.82.0 has merged, so 0.83.0 is the next key. Disjoint from every other key
+  // here: it writes one leaf of the new top-level `permissions` section, which
+  // nothing above touches, and only READS `ui.fullPowerChoice`, which `'0.67.0'`
+  // seeded.
+  '0.83.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    seedPermissionPresetFromDoor(store);
+  },
 } as const;
 
 /**
@@ -4676,8 +4764,7 @@ export class ConfigManager {
    *
    * Falling back to a default is the right behaviour and the wrong secret. The
    * relaxed set includes leaves that decide things: `auth.enabled`,
-   * `mcp.enabled`, `approvals.standingGrants`, `approvals.trustWindowMinutes`,
-   * `telemetry.usage`. Before this feature a file holding a value one of those
+   * `mcp.enabled`, `telemetry.usage`. Before this feature a file holding a value one of those
    * could not take was condemned LOUDLY — "could not be used", a rotated backup,
    * a line the operator saw. Tolerating it quietly would turn that into a login
    * gate silently off, or a bound somebody tightened silently back at its
@@ -4756,10 +4843,7 @@ export class ConfigManager {
 
   /** Set a top-level config section */
   set<K extends keyof UserConfig>(key: K, value: UserConfig[K]): void {
-    const licensedBefore = this.standingGrantsLicensed();
-    const floorBefore = this.standingGrantVoidFloor();
     this.write(key, value);
-    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
     this.emitChange([key as string], [key as string]);
   }
 
@@ -4863,10 +4947,7 @@ export class ConfigManager {
     if (SENSITIVE_CONFIG_KEYS.includes(key as (typeof SENSITIVE_CONFIG_KEYS)[number])) {
       result.warning = `'${key}' contains sensitive data. Consider using environment variables instead.`;
     }
-    const licensedBefore = this.standingGrantsLicensed();
-    const floorBefore = this.standingGrantVoidFloor();
     this.write(key, value);
-    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
     // Subscribers speak in top-level sections, so a dot-path reports the section
     // it wrote into: `runtimes.default` and `runtimes` are the same news.
     this.emitChange([key.split('.')[0]!], [key]);
@@ -4909,8 +4990,6 @@ export class ConfigManager {
    * @param key - The top-level section to reset, or omitted for all of them.
    */
   reset(key?: string): void {
-    const licensedBefore = this.standingGrantsLicensed();
-    const floorBefore = this.standingGrantVoidFloor();
     if (key) {
       this.store.reset(key as keyof UserConfig);
     } else {
@@ -4919,7 +4998,6 @@ export class ConfigManager {
       this.store.set(USER_CONFIG_DEFAULTS);
       restoreProtectedState(this.store, stored, 'Reset your config');
     }
-    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
     // A whole-config reset is news about every section, so subscribers that
     // applied something once get to apply it again.
     const sections = key ? [key] : Object.keys(this.store.store);
@@ -4927,92 +5005,13 @@ export class ConfigManager {
   }
 
   /**
-   * Whether the two settings, as stored RIGHT NOW, license a standing permission
-   * to exist: local login is on (a cookie is the only thing that tells the person
-   * in the cockpit from an agent on the same machine) and the master switch is on.
-   *
-   * Reads the store rather than taking a posture argument, because the callers are
-   * the write methods and the answer has to reflect the file on both sides of the
-   * write. Mirrors `readStandingGrantPosture` in
-   * `services/core/approvals/standing-grant-settings.ts`, which cannot be reused
-   * here: it reads the module singleton, and this may be any manager — including
-   * the one the CLI holds in another process, which is the whole point.
+   * Remove the retired standing-permission settings, once boot has captured the
+   * grants they licensed. See {@link retireStandingGrantSettings}.
    */
-  private standingGrantsLicensed(): boolean {
-    return (
-      this.store.get('auth')?.enabled === true &&
-      this.store.get('approvals')?.standingGrants === true
+  retireStandingGrantSettings(): void {
+    retireStandingGrantSettings(
+      this.store as unknown as Parameters<typeof retireStandingGrantSettings>[0]
     );
-  }
-
-  /** The posture floor as stored right now, or `null` when nothing has narrowed. */
-  private standingGrantVoidFloor(): string | null {
-    return this.store.get('approvals')?.standingGrantsVoidBefore ?? null;
-  }
-
-  /**
-   * Hold the posture floor at or above where it was before this write, and move
-   * it to now when this write is what took the license away (DOR-520).
-   *
-   * ## Why the marker lives in the config file, written here
-   *
-   * `revokeStandingGrantsIfPostureNarrowed` ends live permissions, but it only
-   * fires on a write the SERVER performs. `dorkos config set
-   * approvals.standingGrants false` and `dorkos config reset` are a different
-   * process holding its own manager, with no database and no route — so they end
-   * nothing, and switching the setting back on used to wake every surviving
-   * permission. This method is on the one seam BOTH processes travel: every write
-   * to `~/.dork/config.json` in DorkOS goes through a `ConfigManager`.
-   *
-   * The floor is durable, which the alternatives are not. It survives the server
-   * being down for the whole round trip — the case a config-file watcher cannot
-   * see at all, and the case the boot sweep misses too, because by the time the
-   * server starts the settings look fine again.
-   *
-   * ## The floor is MONOTONIC, and that is the whole guarantee
-   *
-   * The first version stamped on the licensed → unlicensed TRANSITION and nothing
-   * else. Review broke it in one line: any write performed while the posture was
-   * ALREADY narrowed is not a transition, so it did not stamp — while
-   * `dorkos config reset` had meanwhile rewritten the whole file from defaults and
-   * put the leaf back to `null`. Switch off, reset, switch on, and the permission
-   * was live again, through nothing but the verbs this feature claims to cover.
-   *
-   * The same shape reached `PATCH /api/config`: `applyConfigPatch` computes the
-   * merged value ONCE from the pre-write snapshot and then writes each top-level
-   * section in turn, so a batch carrying `auth` before `approvals` stamped the
-   * floor and then wrote the snapshot's stale `null` straight back over it.
-   *
-   * So the rule is stated as an invariant on the STORED value rather than as a
-   * reaction to a transition: after any write, the floor is `floorBefore`, except
-   * on a narrowing where it becomes `max(floorBefore, now)`. Never lower, on any
-   * path, whatever the write happened to contain.
-   *
-   * `max` rather than `now` is what makes it monotonic rather than merely current:
-   * a backwards clock (an NTP correction, a container with a bad RTC) would
-   * otherwise lower a floor that had already voided permissions.
-   *
-   * ## It still writes nothing when nothing narrowed
-   *
-   * Stating the rule as "stamp whenever the posture is unlicensed after the write"
-   * would also close the hole, and would move the floor on EVERY config write for
-   * the vast majority of installs, which never switch this feature on — doubling
-   * config write I/O to maintain a marker with nothing to void. Comparing against
-   * the stored value first keeps the common path free.
-   *
-   * @param licensedBefore - Whether the posture licensed a permission before the
-   *   write that just happened.
-   * @param floorBefore - The floor as it stood before the write, which this write
-   *   may raise but must never lower.
-   */
-  private stampStandingGrantVoidFloor(licensedBefore: boolean, floorBefore: string | null): void {
-    const narrowed = licensedBefore && !this.standingGrantsLicensed();
-    const required = narrowed ? latestInstant(floorBefore, new Date().toISOString()) : floorBefore;
-    if (required === null) return;
-
-    const approvals = this.store.get('approvals');
-    if (approvals?.standingGrantsVoidBefore === required) return;
-    this.store.set('approvals', { ...approvals, standingGrantsVoidBefore: required });
   }
 
   /**
