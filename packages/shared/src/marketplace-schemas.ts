@@ -797,6 +797,29 @@ export interface UninstallOptions {
   projectPath?: string;
 }
 
+/** Options for {@link Transport.prepareMarketplacePackage} (DOR-2320). */
+export interface PrepareOptions {
+  /** Project path, for an installation scoped to a project or an agent. */
+  projectPath?: string;
+  /** The one installation to prepare, as the installed list names it (`installPath`). */
+  installRoot?: string;
+}
+
+/**
+ * What preparing a package an older DorkOS installed did (DOR-2320): only
+ * `rebuilt` wrote anything, and `message` says the outcome in one sentence.
+ */
+export interface PrepareResult {
+  outcome: 'rebuilt' | 'not-needed' | 'no-source' | 'fetch-failed' | 'mismatch';
+  message: string;
+}
+
+/** Options for listing installed packages. */
+export interface ListInstalledOptions {
+  /** Add each installation's {@link InstallIntegrity}; reads every shipped file (DOR-2197). */
+  verify?: boolean;
+}
+
 /**
  * The outcome of a successful uninstall.
  *

@@ -102,6 +102,7 @@ import {
   MarketplacePathError,
   PathEscapeError,
 } from '../services/marketplace/lib/package-paths.js';
+import { locateInstallRoot } from '../services/marketplace/lib/locate-install.js';
 import {
   installCountsProvider,
   enrichWithInstallCounts,
@@ -132,6 +133,10 @@ import {
   type MarketplaceSourceAction,
 } from '../services/marketplace/source-write-policy.js';
 import { withIntegrity } from '../services/marketplace/lib/integrity/verify-install.js';
+import {
+  describeStrictRebuild,
+  rebuildRecordStrict,
+} from '../services/marketplace/lib/integrity/strict-record.js';
 
 /**
  * Re-export the canonical {@link InstalledPackage} type from this route module
@@ -243,6 +248,16 @@ const InstallRequestBodySchema = z.object({
 const UninstallRequestBodySchema = z.object({
   purge: z.boolean().optional(),
   projectPath: z.string().optional(),
+});
+
+/**
+ * Body schema for `POST /api/marketplace/packages/:name/prepare` (DOR-2320).
+ * `installRoot` narrows the lookup to one installation the caller already
+ * sees; it can never widen it past what the name and scope would find.
+ */
+const PrepareRequestBodySchema = z.object({
+  projectPath: z.string().optional(),
+  installRoot: z.string().optional(),
 });
 
 /**
@@ -1152,6 +1167,49 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   });
 
   // POST /packages/:name/uninstall -- remove an installed package
+  // POST /packages/:name/prepare -- give an install an older DorkOS made its
+  // installed-files record, from the exact commit it was installed at, or say
+  // why not (DOR-2320). Not tier-gated, on purpose: it writes only a record
+  // that must match the live files byte for byte, so it cannot change what
+  // runs or claim any file that is not the package's; like refreshing a
+  // source, it only brings DorkOS's own bookkeeping up to date.
+  router.post('/packages/:name/prepare', async (req, res) => {
+    const parsed = PrepareRequestBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+    }
+    try {
+      assertPackageName(req.params.name);
+    } catch (err) {
+      const mapped = mapErrorToStatus(err);
+      return res.status(mapped.status).json(mapped.body);
+    }
+    try {
+      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      if (confined.refused) return confined.refused;
+      const root = await locateInstallRoot({
+        dorkHome,
+        name: req.params.name,
+        ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
+        ...(parsed.data.installRoot !== undefined && { installRoot: parsed.data.installRoot }),
+      });
+      if (root === null) throw new PackageNotInstalledError(req.params.name);
+      const result = await rebuildRecordStrict(root, { fetcher, logger });
+      return res.json({
+        outcome: result.outcome,
+        message: describeStrictRebuild(req.params.name, result),
+      });
+    } catch (err) {
+      const mapped = mapErrorToStatus(err);
+      if (mapped.status >= 500) {
+        logger.error(`[Marketplace] Failed to prepare ${req.params.name}`, err);
+      }
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
   router.post('/packages/:name/uninstall', async (req, res) => {
     const parsed = UninstallRequestBodySchema.safeParse(req.body);
     if (!parsed.success) {

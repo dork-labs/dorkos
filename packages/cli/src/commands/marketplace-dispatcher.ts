@@ -47,6 +47,9 @@ Packages:
   update [<name>]             Check for updates; add --apply to install them
   uninstall <name>            Remove an installed package
   installed                   List what is installed, and where
+                                (--verify: whether files changed since)
+  prepare <name>              Record the files of a package an older
+                                DorkOS installed
   outdated                    List only the packages that have an update
                                 (exits 1 when any do, for scripts)
   held-back                   List global packages held back from sessions,
@@ -175,11 +178,30 @@ is installed. A package installed globally and for two agents is three rows.
 
 Options:
       --project <path>  List what this project sees (global installs plus its own)
+      --verify          Also say whether each package's files still match what was
+                        installed (a FILES column). Reads every installed file.
       --json            Print { "installed": [...] } instead of a table
 
 Examples:
   dorkos marketplace installed
   dorkos marketplace installed --project .
+  dorkos marketplace installed --verify
+`,
+  prepare: `
+Usage: dorkos marketplace prepare <name> [options]
+
+Record which files belong to a package an older DorkOS installed, so updates
+and uninstalls can tell its files from yours. DorkOS fetches the exact version
+the package was installed from and records it only when every installed file
+still matches it; otherwise it changes nothing and says why.
+
+Options:
+      --project <path>  The project the package is installed in
+      --json            Print the answer as JSON
+
+Examples:
+  dorkos marketplace prepare flow
+  dorkos marketplace prepare flow --project .
 `,
   outdated: `
 Usage: dorkos marketplace outdated [options]
@@ -210,7 +232,7 @@ Examples:
 
 /** Every subcommand, in the order the one-line usage names them. */
 const SUBCOMMANDS =
-  'install|update|uninstall|installed|outdated|held-back|add|remove|list|refresh|validate';
+  'install|update|uninstall|installed|outdated|held-back|prepare|add|remove|list|refresh|validate';
 
 /**
  * Dispatch a `dorkos marketplace <subcommand>` invocation.
@@ -269,6 +291,11 @@ export async function runMarketplaceDispatcher(
       const { runMarketplaceInstalled, parseMarketplaceInstalledArgs } =
         await import('./marketplace-installed.js');
       return await runMarketplaceInstalled(parseMarketplaceInstalledArgs(subArgs));
+    }
+    if (subcommand === 'prepare') {
+      const { runMarketplacePrepare, parseMarketplacePrepareArgs } =
+        await import('./marketplace-prepare.js');
+      return await runMarketplacePrepare(parseMarketplacePrepareArgs(subArgs));
     }
     if (subcommand === 'add') {
       const { runMarketplaceAdd, parseMarketplaceAddArgs } = await import('./marketplace-add.js');

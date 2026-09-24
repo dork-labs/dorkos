@@ -144,3 +144,25 @@ export async function rebuildRecordStrict(
     }
   });
 }
+
+/**
+ * One sentence a person reads about a strict rebuild of `name`'s record: the
+ * answer the "Prepare" action (DOR-2320) gives in the app and the CLI.
+ *
+ * @param name - The package name.
+ * @param result - What {@link rebuildRecordStrict} returned.
+ */
+export function describeStrictRebuild(name: string, result: StrictRebuildResult): string {
+  switch (result.outcome) {
+    case 'rebuilt':
+      return `DorkOS now knows which of ${name}'s files are yours.`;
+    case 'not-needed':
+      return `${name} doesn't need preparing.`;
+    case 'no-source':
+      return `${name} was installed from a folder on this computer, so DorkOS can't fetch the version it came from. Reinstall it to start tracking its files.`;
+    case 'fetch-failed':
+      return `Couldn't fetch the version ${name} was installed from (${result.message}). Try again when you're online.`;
+    case 'mismatch':
+      return `Some of ${name}'s files differ from the version it was installed from, so DorkOS can't tell yours from the package's. Its next update sorts this out, keeping your copies.`;
+  }
+}

@@ -2806,6 +2806,56 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
+  path: '/api/marketplace/packages/{name}/prepare',
+  tags: ['Marketplace'],
+  summary: 'Prepare a package an older DorkOS installed',
+  description:
+    "Give an install made before DorkOS recorded a package's files its installed-files record, " +
+    'from the exact commit it was installed at, only when that commit matches the installed ' +
+    'files byte for byte. Otherwise nothing is written and the answer says why (DOR-2320).',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            projectPath: z.string().optional(),
+            installRoot: z
+              .string()
+              .optional()
+              .describe(
+                'One installation the caller already sees; narrows, never widens, the lookup.'
+              ),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'What preparing did, and one sentence saying so',
+      content: {
+        'application/json': {
+          schema: z.object({
+            outcome: z.enum(['rebuilt', 'not-needed', 'no-source', 'fetch-failed', 'mismatch']),
+            message: z.string(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: 'Validation error or an invalid package name',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Package not installed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
   path: '/api/marketplace/packages/{name}/uninstall',
   tags: ['Marketplace'],
   summary: 'Uninstall a marketplace package',

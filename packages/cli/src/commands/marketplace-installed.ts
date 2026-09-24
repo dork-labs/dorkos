@@ -6,6 +6,8 @@
  * agents is three rows, each naming where it lives. Without `--project` that is
  * every scope; with it, the view one project sees (global installs plus its
  * own). `--json` prints `{ installed }`, the server's rows untouched.
+ * `--verify` also says whether each installation's files still match what
+ * was installed (DOR-2197), in a FILES column.
  *
  * @module commands/marketplace-installed
  */
@@ -23,6 +25,8 @@ export interface MarketplaceInstalledArgs {
   projectPath?: string;
   /** Print `{ installed }` as JSON instead of a table. */
   json: boolean;
+  /** Also check each installation's files against what was installed. */
+  verify: boolean;
 }
 
 /** Response shape for `GET /api/marketplace/installed`. */
@@ -37,7 +41,7 @@ export interface InstalledJson {
 }
 
 /** One-line usage string surfaced in error messages. */
-const USAGE_LINE = 'Usage: dorkos marketplace installed [--project <path>] [--json]';
+const USAGE_LINE = 'Usage: dorkos marketplace installed [--project <path>] [--verify] [--json]';
 
 /**
  * Parse the raw argv slice that follows `dorkos marketplace installed`.
@@ -53,6 +57,7 @@ export function parseMarketplaceInstalledArgs(rawArgs: string[]): MarketplaceIns
       options: {
         project: { type: 'string' },
         json: { type: 'boolean', default: false },
+        verify: { type: 'boolean', default: false },
       },
       allowPositionals: false,
       strict: true,
@@ -64,7 +69,22 @@ export function parseMarketplaceInstalledArgs(rawArgs: string[]): MarketplaceIns
   return {
     projectPath: resolveProjectFlag(values.project),
     json: Boolean(values.json),
+    verify: Boolean(values.verify),
   };
+}
+
+/** What the FILES column says about one installation, or `undefined` when it was not verified. */
+function filesOf(pkg: InstalledPackage): string | undefined {
+  const integrity = pkg.integrity;
+  if (!integrity) return undefined;
+  switch (integrity.status) {
+    case 'clean':
+      return 'as installed';
+    case 'modified':
+      return `changed (${integrity.changed.length + integrity.missing.length + integrity.added.length}${integrity.truncated ? '+' : ''})`;
+    case 'unknown':
+      return integrity.reason === 'linked' ? '-' : 'unknown';
+  }
 }
 
 /** The short notes a row carries, in a fixed order. */
@@ -86,12 +106,26 @@ function notesOf(pkg: InstalledPackage): string {
  * @returns The table: a header, a separator, and one row per installation.
  */
 export function renderInstalledTable(packages: InstalledPackage[]): string {
+  const withFiles = packages.some((pkg) => pkg.integrity !== undefined);
   const rows = packages.map((pkg) => ({
-    cells: [pkg.name, pkg.version || '-', pkg.type, placeOf(pkg) ?? 'global'],
+    cells: [
+      pkg.name,
+      pkg.version || '-',
+      pkg.type,
+      placeOf(pkg) ?? 'global',
+      ...(withFiles ? [filesOf(pkg) ?? '-'] : []),
+    ],
     notes: notesOf(pkg),
   }));
   const withNotes = rows.some((r) => r.notes !== '');
-  const headers = ['NAME', 'VERSION', 'TYPE', 'WHERE', ...(withNotes ? ['NOTES'] : [])];
+  const headers = [
+    'NAME',
+    'VERSION',
+    'TYPE',
+    'WHERE',
+    ...(withFiles ? ['FILES'] : []),
+    ...(withNotes ? ['NOTES'] : []),
+  ];
   const table = renderTable(
     headers,
     rows.map((r) => (withNotes ? [...r.cells, r.notes] : r.cells))
@@ -112,7 +146,11 @@ export function renderInstalledTable(packages: InstalledPackage[]): string {
 export async function runMarketplaceInstalled(args: MarketplaceInstalledArgs): Promise<number> {
   let packages: InstalledPackage[];
   try {
-    const query = args.projectPath ? `?projectPath=${encodeURIComponent(args.projectPath)}` : '';
+    const params = [
+      ...(args.projectPath ? [`projectPath=${encodeURIComponent(args.projectPath)}`] : []),
+      ...(args.verify ? ['verify=true'] : []),
+    ];
+    const query = params.length > 0 ? `?${params.join('&')}` : '';
     ({ packages } = await apiCall<InstalledResponseBody>(
       'GET',
       `/api/marketplace/installed${query}`
@@ -132,6 +170,16 @@ export async function runMarketplaceInstalled(args: MarketplaceInstalledArgs): P
   }
 
   console.log(renderInstalledTable(packages));
+  const older = packages.filter(
+    (p) => p.integrity?.status === 'unknown' && p.integrity.reason === 'no-record'
+  );
+  if (older.length > 0) {
+    console.log('');
+    console.log(
+      'unknown: installed by an older DorkOS, which did not record its files. ' +
+        `Run 'dorkos marketplace prepare ${older[0].name}' to record them.`
+    );
+  }
   if (packages.some((p) => p.linked)) {
     console.log('');
     console.log(
