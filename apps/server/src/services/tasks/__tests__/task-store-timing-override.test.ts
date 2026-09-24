@@ -19,6 +19,16 @@ import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../task-store.js';
 import { mapTaskRow } from '../task-row-mappers.js';
 import { scheduleContentKey } from '../schedule-permission-clamp.js';
+
+/** The fixture's settings, which are part of every approval key (DOR-2323). */
+const SETTINGS = {
+  name: 'flow-drain',
+  runtime: null,
+  model: null,
+  effort: null,
+  maxRuntime: null,
+  sticky: false,
+};
 import { AGENT_TIMING_CHANGE_REASON } from '../timing/effective-timing.js';
 
 const FILE_PATH = `/home/u/.dork/plugins/flow/skills/flow-drain/${SKILL_FILENAME}`;
@@ -77,7 +87,13 @@ describe('a person’s own timing on a package’s schedule', () => {
     store.updateTask(id, { cron }, { timingLandsOn: 'row' });
     store.settleApprovedWorkChange(
       id,
-      { prompt: before.prompt, cron: before.cron!, timezone: before.timezone!, status: 'active' },
+      {
+        ...SETTINGS,
+        prompt: before.prompt,
+        cron: before.cron!,
+        timezone: before.timezone!,
+        status: 'active',
+      },
       {
         trusted: true,
       }
@@ -143,7 +159,7 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       store.updateTask(id, { status: 'active' });
       expect(row(id).approvedContentKey).toBe(
-        scheduleContentKey({ prompt: PROMPT, cron: MY_CRON, timezone: 'UTC' })
+        scheduleContentKey({ ...SETTINGS, prompt: PROMPT, cron: MY_CRON, timezone: 'UTC' })
       );
 
       expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe('active');
@@ -238,7 +254,7 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       expect(outcome).toBe('rekeyed');
       expect(row(id).approvedContentKey).toBe(
-        scheduleContentKey({ prompt: PROMPT, cron: MY_CRON, timezone: 'UTC' })
+        scheduleContentKey({ ...SETTINGS, prompt: PROMPT, cron: MY_CRON, timezone: 'UTC' })
       );
     });
   });
@@ -309,14 +325,14 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       const outcome = store.settleApprovedWorkChange(
         id,
-        { prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
+        { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: true }
       );
 
       expect(outcome).toBe('rekeyed');
       expect(store.getTask(id)!.status).toBe('active');
       expect(row(id).approvedContentKey).toBe(
-        scheduleContentKey({ prompt: PROMPT, cron: MY_CRON, timezone: 'UTC' })
+        scheduleContentKey({ ...SETTINGS, prompt: PROMPT, cron: MY_CRON, timezone: 'UTC' })
       );
     });
 
@@ -329,7 +345,7 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       store.settleApprovedWorkChange(
         id,
-        { prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
+        { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         {
           trusted: true,
         }
@@ -345,7 +361,7 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       const outcome = store.settleApprovedWorkChange(
         id,
-        { prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
+        { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: true }
       );
 
@@ -361,7 +377,7 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       const outcome = store.settleApprovedWorkChange(
         id,
-        { prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
+        { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: false }
       );
 
@@ -383,7 +399,7 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       const outcome = store.settleApprovedWorkChange(
         id,
-        { prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'paused' },
+        { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'paused' },
         { trusted: false }
       );
 
@@ -399,7 +415,7 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       const outcome = store.settleApprovedWorkChange(
         id,
-        { prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
+        { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: false }
       );
 
@@ -415,7 +431,7 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       const outcome = store.settleApprovedWorkChange(
         id,
-        { prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
+        { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: false }
       );
 

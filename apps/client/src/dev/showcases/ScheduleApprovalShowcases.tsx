@@ -20,6 +20,44 @@ function minutesFromLoad(minutes: number): string {
   return new Date(LOADED_AT + minutes * 60_000).toISOString();
 }
 
+/** The offset of `zone` from UTC at `instant`, in minutes (e.g. -300 for GMT-5). */
+function zoneOffsetMinutes(instant: number, zone: string): number {
+  const name = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'shortOffset' })
+    .formatToParts(new Date(instant))
+    .find((part) => part.type === 'timeZoneName')?.value;
+  const match = /GMT([+-]\d+)(?::(\d+))?/.exec(name ?? '');
+  if (!match) return 0;
+  const hours = Number(match[1]);
+  return hours * 60 + Math.sign(hours) * Number(match[2] ?? 0);
+}
+
+/**
+ * The next `count` weekday runs at `hour`:00 in `zone` after page load, so the
+ * fixture's run times agree with its cron (`0 9 * * 1-5`, America/Chicago)
+ * rather than with the moment the page happened to open.
+ */
+function weekdayRuns(count: number, hour: number, zone: string): string[] {
+  const runs: string[] = [];
+  for (let day = 0; runs.length < count && day < 21; day++) {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: zone,
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        weekday: 'short',
+      })
+        .formatToParts(new Date(LOADED_AT + day * 86_400_000))
+        .map((part) => [part.type, part.value])
+    );
+    if (parts.weekday === 'Sat' || parts.weekday === 'Sun') continue;
+    const guess = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), hour);
+    const at = guess - zoneOffsetMinutes(guess, zone) * 60_000;
+    if (at > LOADED_AT) runs.push(new Date(at).toISOString());
+  }
+  return runs;
+}
+
 /**
  * A proposal carrying everything the server can send.
  *
@@ -41,6 +79,7 @@ function proposal(overrides: Partial<Task> = {}): Task {
     defaultTimezone: 'America/Chicago',
     timingOverridden: false,
     packageOwned: null,
+    approvalChanges: [],
     agentId: '/Users/dev/agents/dorkbot',
     enabled: false,
     sticky: false,
@@ -60,7 +99,7 @@ function proposal(overrides: Partial<Task> = {}): Task {
     proposedByName: 'DorkBot',
     origin: null,
     reasonSource: null,
-    nextRuns: [minutesFromLoad(180), minutesFromLoad(1620), minutesFromLoad(3060)],
+    nextRuns: weekdayRuns(3, 9, 'America/Chicago'),
     ...overrides,
   };
 }
@@ -193,6 +232,33 @@ export function ScheduleApprovalShowcases() {
               filePath: '/Users/dev/project/.agents/skills/broken-sweep/SKILL.md',
               reason:
                 'Its "cron" setting is not something DorkOS can read (String must contain at least 1 character(s)).',
+            })}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Waiting again after an agent changed how it runs — the card lists old → new (DOR-2323)
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg">
+          <ScheduleApprovalCard
+            task={proposal({
+              id: 'task-settings-changed',
+              proposedBySessionId: null,
+              proposedByAgentPath: null,
+              proposedByName: null,
+              reasonSource: 'dorkos',
+              reason:
+                'An agent changed how this schedule runs, so it is waiting for you again. Check what changed, then approve it or change it back.',
+              runtime: 'codex',
+              model: 'gpt-5',
+              maxRuntime: 7_200_000,
+              approvalChanges: [
+                { field: 'runtime', from: null, to: 'codex' },
+                { field: 'model', from: 'claude-sonnet-4', to: 'gpt-5' },
+                { field: 'maxRuntime', from: 600_000, to: 7_200_000 },
+              ],
             })}
           />
         </div>

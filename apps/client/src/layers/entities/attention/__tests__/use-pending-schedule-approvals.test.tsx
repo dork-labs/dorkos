@@ -25,6 +25,7 @@ function task(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     defaultTimezone: 'UTC',
     timingOverridden: false,
     packageOwned: null,
+    approvalChanges: [],
     agentId: null,
     // True by default: most fixtures here stand in for a schedule that IS
     // asking to run (an agent's proposal, or a package shipped switched on).

@@ -771,6 +771,13 @@
       "when": 1790269377450,
       "tag": "0109_aspiring_union_jack",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "6",
+      "when": 1790284376325,
+      "tag": "0110_ambiguous_wendigo",
+      "breakpoints": true
     }
   ]
 }

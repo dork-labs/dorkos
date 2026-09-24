@@ -50,7 +50,11 @@ import { resolveStanding } from '../services/notifications/notification-service.
 import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
-import { clampSchedulePermissionMode } from '../services/tasks/schedule-permission-clamp.js';
+import {
+  clampSchedulePermissionMode,
+  taskWorkOf,
+} from '../services/tasks/schedule-permission-clamp.js';
+import { changesApprovedWork } from '../services/tasks/task-file-update.js';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
 import { readAgentExecutionDefaults } from '../services/session/resolve-session-defaults.js';
 import {
@@ -450,22 +454,10 @@ export function createTasksRouter(
     // file and — `clampApplied` — the row. A package's row-only timing change
     // leaves it out: that change is parked for a person anyway, and the package's
     // permission level is not DorkOS's to write (DOR-2302).
+    // Every field of the approved work counts: the prompt, the timing (the
+    // timezone since DOR-2307), and the settings (DOR-2323).
     let clampTo: PermissionMode | undefined;
-    const promptChangesApprovedWork = data.prompt !== undefined && data.prompt !== existing.prompt;
-    const cronChangesApprovedWork =
-      data.cron !== undefined && (data.cron ?? '') !== (existing.cron ?? '');
-    // The same cron in another timezone runs at another time, so it is another
-    // piece of work (DOR-2307).
-    const timezoneChangesApprovedWork =
-      data.timezone !== undefined && (data.timezone ?? 'UTC') !== (existing.timezone ?? 'UTC');
-    const nameChangesApprovedWork = data.name !== undefined && data.name !== existing.name;
-    if (
-      !trusted &&
-      (promptChangesApprovedWork ||
-        cronChangesApprovedWork ||
-        timezoneChangesApprovedWork ||
-        nameChangesApprovedWork)
-    ) {
+    if (!trusted && changesApprovedWork(data, existing)) {
       const clamp = clampSchedulePermissionMode(existing.permissionMode);
       if (clamp.clamped) clampTo = clamp.mode;
     }
@@ -490,12 +482,7 @@ export function createTasksRouter(
     const { changesFile, timingLandsOn } = fileOutcome;
     // What would run before this write, as it RUNS, and the status it had: what
     // `settleApprovedWorkChange` below compares against.
-    const before = {
-      prompt: existing.prompt,
-      cron: existing.cron ?? '',
-      timezone: existing.timezone ?? 'UTC',
-      status: existing.status,
-    };
+    const before = { ...taskWorkOf(existing), status: existing.status };
 
     const rowData =
       fileOutcome.clampApplied && clampTo ? { ...data, permissionMode: clampTo } : data;

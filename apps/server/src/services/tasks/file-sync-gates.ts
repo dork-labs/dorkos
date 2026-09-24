@@ -19,15 +19,20 @@
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import type { TaskDefinition } from '@dorkos/skills/types';
 import type { pulseSchedules } from '@dorkos/db';
+import { parseDuration } from '@dorkos/skills/duration';
 import {
   CHANGED_REASON,
   resolveFileArmStatus,
   resolveFilePermissionMode,
   scheduleContentKey,
+  scheduleSettingsOf,
   type FileArmVerdict,
+  type IncomingTaskContent,
+  type ScheduleSettings,
 } from './schedule-permission-clamp.js';
 import {
   AGENT_CONTENT_CHANGE_REASON,
+  AGENT_SETTINGS_CHANGE_REASON,
   AGENT_TIMING_CHANGE_REASON,
   effectiveContentKey,
   effectiveTiming,
@@ -46,6 +51,7 @@ const KEPT_PARK_REASONS: ReadonlySet<string> = new Set([
   CHANGED_REASON,
   AGENT_TIMING_CHANGE_REASON,
   AGENT_CONTENT_CHANGE_REASON,
+  AGENT_SETTINGS_CHANGE_REASON,
 ]);
 import { logger } from '../../lib/logger.js';
 
@@ -99,6 +105,25 @@ export interface FileSyncVerdict {
 }
 
 /**
+ * The {@link ScheduleSettings} a SKILL.md declares, in the row's terms: the
+ * same values `TaskStore.upsertFromFile` writes into the row, so the key of
+ * what arrives and the key of the row it lands on can be compared.
+ *
+ * @param def - The parsed file.
+ */
+export function fileSettingsOf(def: TaskDefinition): ScheduleSettings {
+  const schedule = def.meta.schedule;
+  return {
+    name: def.name,
+    runtime: schedule.runtime ?? null,
+    model: schedule.model ?? null,
+    effort: schedule.effort ?? null,
+    maxRuntime: schedule['max-runtime'] ? parseDuration(schedule['max-runtime']) : null,
+    sticky: schedule.sticky,
+  };
+}
+
+/**
  * Asks the content gates, and remembers what it has already complained about.
  *
  * Stateful for exactly one reason: the refusal log needs to know what it said
@@ -138,14 +163,17 @@ export class FileSyncGates {
     // approve. A changed prompt still is. An override this sync drops runs no
     // longer, so it is not part of what arrives.
     const dropsTimingOverride = this.dropsTimingOverride(existing, options);
-    // The timezone is part of what runs, and of the approval, since DOR-2307.
+    // The timezone is part of what runs, and of the approval, since DOR-2307;
+    // the settings since DOR-2323 (`ScheduleSettings`).
     const incoming = {
+      ...fileSettingsOf(def),
       prompt: def.body,
       cron: (dropsTimingOverride ? null : existing?.cronOverride) ?? fileCron,
       timezone:
         (dropsTimingOverride ? null : existing?.timezoneOverride) ?? def.meta.schedule.timezone,
     };
     const approved = existing && {
+      ...scheduleSettingsOf(existing),
       permissionMode: existing.permissionMode as PermissionMode,
       status: existing.status,
       prompt: existing.prompt,
@@ -199,7 +227,7 @@ export class FileSyncGates {
   private keepsParkReason(
     verdict: FileArmVerdict,
     existing: typeof pulseSchedules.$inferSelect | undefined,
-    incoming: { prompt: string; cron: string; timezone: string },
+    incoming: IncomingTaskContent,
     options: FileSyncSource
   ): boolean {
     return (

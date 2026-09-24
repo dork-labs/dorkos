@@ -36,6 +36,7 @@ import { agentSkillsRoot } from '../skills-roots.js';
 import { skillsRoot } from './task-root-fixtures.js';
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
 import { carrySwitchIntoReleasedFile } from '../task-file-update.js';
+import { taskWorkOf } from '../schedule-permission-clamp.js';
 import { readTaskRootFile } from '../skills-root-discovery.js';
 import {
   computeInstalledFiles,
@@ -450,12 +451,7 @@ describe('a package schedule the record stops listing', () => {
     // release drops the agent's row-only timing, so what would run is new work;
     // it must stay parked, and nothing may switch it on.
     const approved = await approvedShipped();
-    const before = {
-      prompt: approved.prompt,
-      cron: approved.cron ?? '',
-      timezone: approved.timezone ?? 'UTC',
-      status: approved.status,
-    };
+    const before = { ...taskWorkOf(approved), status: approved.status };
     const outcome = await applyTaskFileUpdate({ dorkHome, meshCore } as never, {
       existing: approved,
       data: { cron: '*/5 * * * *' } as never,

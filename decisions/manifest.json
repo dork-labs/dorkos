@@ -6402,6 +6402,21 @@
         "apps/server/src/services/tasks/task-file-update.ts",
         "apps/server/src/services/tasks/lifecycle/create-task.ts"
       ]
+    },
+    {
+      "id": "260924-213416",
+      "slug": "schedule-settings-join-the-approval-key",
+      "title": "A schedule's name, runtime, model, effort, time limit and memory are part of what a person approves",
+      "status": "draft",
+      "created": "2026-09-24",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/tasks/schedule-permission-clamp.ts",
+        "apps/server/src/services/tasks/task-store.ts",
+        "apps/client/src/layers/features/schedule-approval/ui/ScheduleApprovalCard.tsx"
+      ]
     }
   ]
 }
