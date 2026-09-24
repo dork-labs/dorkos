@@ -1,6 +1,6 @@
 # Implementation log: marketplace-package-file-ownership (DOR-2245)
 
-The spec is `02-specification.md` (revision 6). This log records what shipped for each task, where the code differs from the spec and why, and the verification run.
+The spec is `02-specification.md` (revision 7). This log records what shipped for each task, where the code differs from the spec and why, and the verification run.
 
 ## Phase A: the contract and the standalone modules
 
@@ -16,6 +16,49 @@ This phase ran before DOR-2194 lands. None of it touches `marketplace-installer.
 | 2.1 record module + classifier         | `9517b972c` | **Deviation from TDD order:** the module was written before its tests. Every critical line was then mutation-checked: 18 mutations. The first run left 5 survivors, each of which became a new test or a code simplification (two redundant `throughSymlink` checks and a redundant exclusion were removed). One behaviour was refined while testing: a pending `.dork-new` that the person edited is theirs, and is saved rather than refreshed.                                                                                                                            |
 | 3.1 `${CLAUDE_PLUGIN_DATA}` in harness | `79448e427` | **Deviations:** the `export` prefix applies to the Claude Code settings merge only. The generated Codex/Cursor/Copilot hook file is shared, and Copilot also runs PowerShell. The prefix is also kept out of `projectedHooks`, so existing hook approvals still match. The adopt-refusal sentences (`adopt/refusals.ts` S7b / `bodyToken`) are unchanged: they are frozen copy about any `${CLAUDE_…}` token in authored skills, not about installed packages. Existing tests that compared exact settings command strings now strip the prefix through one helper per file. |
 
-## Phase B: waits for DOR-2194
+## Phase B: installer, uninstall, update and recovery
 
-Tasks 2.2–2.9 and 2.11. The orchestrator rebases this branch onto DOR-2194 first.
+Rebased onto `a875cc496` (DOR-2194 and DOR-2249 merged). The spec was reconciled first (`046584159`); DOR-2274 moved flow's settings to `<project>/.agents/flow/`, so the proof below uses a real flow install from before that move.
+
+| Task                                      | Commit      | Notes                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2.4 an identity decides what is installed | `ea4b6adfe` | `hasPackageIdentity` (a `.dork/manifest.json` or `.claude-plugin/plugin.json`) gates `locateInstallRoot`, the uninstall probe and the conflict detector, so a root holding only kept files reads as not installed.                                                                                                       |
+| 2.2 transaction ownership                 | `8c26e1ff4` | Staging moved to a same-filesystem sibling; the person's files are cloned from the live root before the backup move, then a late-write pass runs before commit. **Addition:** `recoverInterruptedInstall` gained an `ignore` option so a transaction's second settle does not treat its own staging dir as crash debris. |
+| 2.3 every install flow                    | `6167f6e6d` | One helper (`lib/flow-ownership.ts`) for all five flows; the transaction creates `.dork/data`.                                                                                                                                                                                                                           |
+| 2.5 in-place journaled uninstall          | `f8654eb99` | **Deviation:** the flow option is `replacing: true` (an update's uninstall half) and replaces `deactivateShape`, which only covered one of the things an update must skip (the agent's removal from the team is the other).                                                                                              |
+| 2.11 recovery rows                        | `58a95c0ae` | Stage dirs are deleted; uninstall siblings follow their journal (kept without one), and a rollback restores a parked `agent.json`. A committed backup beside an install missing a recorded file is kept.                                                                                                                 |
+| 2.6 update                                | `caccb738f` | The `os.tmpdir()` snapshot, copy-back and `findInstallRootFromPreservedPath` are deleted, not deprecated.                                                                                                                                                                                                                |
+| 2.7 agent adoption                        | `f219a8bcb` | `createAgentWorkspace(input, meshCore, { marketplace: true })`. Adoption announces `registered` only when the agent was not already on the team.                                                                                                                                                                         |
+| 2.8 legacy record                         | `a8a5d1a1b` | The reserved paths (`.dork/data`, secrets) are left out of the "kept" warning, which counts "item(s)".                                                                                                                                                                                                                   |
+| 2.9 copy                                  | `376f3993d` | Operating-skills pack bumped to v24.                                                                                                                                                                                                                                                                                     |
+| 4.1 docs                                  | `a897e460e` | One changelog fragment covers the whole item.                                                                                                                                                                                                                                                                            |
+
+### 4.2 proof
+
+Run through temporary vitest harnesses (deleted, never committed) against the real installer, the real fetcher and real child processes, on this Mac (APFS, the machine under heavy load from other agents: load ~20).
+
+**A real legacy flow install.** A copy of a working flow 0.7.3 install (commit `ee1c8eb`, settings in `config/`, no installed-files record) was reinstalled from a `git archive` of the current `plugins/flow` (0.10.0) through `installer.install`:
+
+- The legacy rebuild fetched exactly one commit, `ee1c8eb…` at `plugins/flow` under the install-time name `flow`, and the rebuilt record was trusted (not `inferred`): 145 files, neither `config/config.json` nor `config/config.local.json` listed.
+- Both settings files are byte-identical before and after (sha256 prefixes `90690cabefd6d67e`, `7cd8e21cfa5fdc44`).
+- No `.dork-old` or `.dork-new` copies, no file notices. One warning, as expected: the new version came from a local path, so the source changed.
+- 2103 ms end to end, including the fetch.
+
+**SIGKILL.** On a fresh copy of the same install (870 files, plus an extension so the uninstall has a side effect to stop in), a child process was killed with SIGKILL at three points, and `recoverInterruptedInstall` was run afterwards. Each time the root came back byte-identical to the snapshot and no sibling was left:
+
+| Killed                                                         | Left beside the root      | Recovery                 |
+| -------------------------------------------------------------- | ------------------------- | ------------------------ |
+| mid-uninstall, in the side effects (after the journaled moves) | `flow.dorkos-uninstall-…` | `uninstall: rolled-back` |
+| mid-install, after the new tree was moved in, before commit    | `flow.dorkos-bak-…`       | `backup: rolled-back`    |
+| mid-install, while staging                                     | `flow.dorkos-stage-…`     | stage dir deleted        |
+
+A first attempt spawned the child through `pnpm exec`; SIGKILL then hit pnpm while the real node process lived on, so recovery correctly reported the records as in flight and settled nothing. The proof kills the node process itself.
+
+**~1 GB.** 2000 person files of 512 KB (1,048,576,000 bytes) under the root of a flow install with a record:
+
+- Reinstall (clone the person's files into the staged tree, late-write pass, commit): **3235 ms**; all 2000 files present afterwards.
+- Uninstall (journaled move of the recorded files only): **263 ms**; the person's 2000 files stayed in place.
+
+### Verification
+
+See the report for the final targeted runs.
