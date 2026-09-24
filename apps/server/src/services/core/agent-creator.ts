@@ -12,7 +12,13 @@ import fs from 'fs/promises';
 import path from 'path';
 import { z } from 'zod';
 import { ulid } from 'ulidx';
-import { writeManifest, MANIFEST_DIR, MANIFEST_FILE } from '@dorkos/shared/manifest';
+import {
+  probeManifest,
+  readManifest,
+  writeManifest,
+  MANIFEST_DIR,
+  MANIFEST_FILE,
+} from '@dorkos/shared/manifest';
 import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
@@ -23,7 +29,7 @@ import {
   buildSoulContent,
   CONVENTION_FILES,
 } from '@dorkos/shared/convention-files';
-import { writeConventionFile } from '@dorkos/shared/convention-files-io';
+import { writeConventionFileIfAbsent } from '@dorkos/shared/convention-files-io';
 import { defaultMemoryTemplate } from '@dorkos/memory';
 import { renderTraits } from '@dorkos/shared/trait-renderer';
 import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
@@ -42,6 +48,27 @@ import type { SyncFromDiskResult } from '@dorkos/mesh';
 /** Minimal MeshCore interface for sync-on-write. */
 interface MeshCoreLike {
   syncFromDisk(projectPath: string): Promise<SyncFromDiskResult>;
+  /** The agent registered at a path; used by a marketplace adoption (DOR-2245). */
+  getByPath?(projectPath: string): { id: string } | undefined;
+  /** Denied directories; a marketplace install lifts its own folder's denial. */
+  listDenied?(): { path: string }[];
+  /** Lift a denial. */
+  undeny?(projectPath: string): Promise<void>;
+}
+
+/**
+ * Server-internal options for {@link createAgentWorkspace}, never part of the
+ * public `CreateAgentOptionsSchema` transport contract.
+ */
+export interface AgentWorkspaceInternalOptions {
+  /**
+   * A marketplace agent install (DOR-2245, ADR 260923-163516). The agent's
+   * identity files are its own: a readable `.dork/agent.json` is adopted (its
+   * id kept, nothing rewritten), a parked `.dork/uninstalled-agent.json` is
+   * restored first, and `SOUL.md` / `NOPE.md` / `MEMORY.md` are written only
+   * where absent. Requires `skipTemplateDownload`.
+   */
+  marketplace?: true;
 }
 
 /** Error thrown when agent creation fails due to a known condition. */
@@ -68,6 +95,12 @@ export interface AgentCreationResult {
   path: string;
   /** Present when a template was used. */
   meta?: AgentCreationMeta;
+  /** Marketplace mode: the existing `agent.json` was adopted, its id kept. */
+  adopted?: boolean;
+  /** Marketplace mode: the package's defaults differ from the adopted agent's own. */
+  defaultsDiffer?: boolean;
+  /** Marketplace mode: the folder was on Mesh's denied list and the install lifted that. */
+  denialLifted?: boolean;
 }
 
 /**
@@ -256,7 +289,8 @@ async function undoScaffold(
  */
 export async function createAgentWorkspace(
   input: unknown,
-  meshCore?: MeshCoreLike
+  meshCore?: MeshCoreLike,
+  internal: AgentWorkspaceInternalOptions = {}
 ): Promise<AgentCreationResult> {
   // Validate input
   const parseResult = CreateAgentOptionsSchema.safeParse(input);
@@ -270,6 +304,13 @@ export async function createAgentWorkspace(
   }
 
   const opts: CreateAgentOptions = parseResult.data;
+  if (internal.marketplace && !opts.skipTemplateDownload) {
+    throw new AgentCreationError(
+      'A marketplace agent install scaffolds over files already on disk',
+      'VALIDATION',
+      400
+    );
+  }
   // Everything this run creates inside a folder that already existed. Failure
   // cleanup removes these and only these.
   const ledger = new ScaffoldLedger();
@@ -379,6 +420,13 @@ export async function createAgentWorkspace(
       dorkosKnowledge: true,
     };
 
+    // A marketplace install adopts the agent this folder already is (DOR-2245):
+    // the id on disk wins and the manifest is not written over, the same rule
+    // registration follows (ADR 260903-023414).
+    const adoptedManifest = internal.marketplace
+      ? await adoptExistingManifest(resolvedPath)
+      : undefined;
+
     const id = ulid();
     // Every agent is born with a face (DOR-949): the one chosen in the naming
     // step (M3) or shipped by a marketplace package, and a deterministic pick from the
@@ -388,7 +436,7 @@ export async function createAgentWorkspace(
     // agent looks like instead of leaving every surface to guess.
     const face = seedAgentFace(id, { color: opts.color, icon: opts.icon });
 
-    const manifest: AgentManifest = {
+    const manifest: AgentManifest = adoptedManifest ?? {
       id,
       name: opts.name,
       displayName: opts.displayName,
@@ -420,8 +468,10 @@ export async function createAgentWorkspace(
       workspace: { mode: 'home' },
     };
 
-    await ledger.claimFile(path.join(dorkDir, MANIFEST_FILE));
-    await writeManifest(resolvedPath, manifest);
+    if (!adoptedManifest) {
+      await ledger.claimFile(path.join(dorkDir, MANIFEST_FILE));
+      await writeManifest(resolvedPath, manifest);
+    }
 
     // Scaffold SOUL.md. When a persona is seeded (e.g. a Shape's offered agent),
     // write it as the custom prose below the auto-generated trait block — the
@@ -431,20 +481,26 @@ export async function createAgentWorkspace(
     const soulContent = opts.persona
       ? buildSoulContent(traitBlock, opts.persona)
       : defaultSoulTemplate(manifest.displayName ?? manifest.name, traitBlock);
+    // Written only where absent (DOR-2245): a fresh workspace has none, and a
+    // marketplace agent's own persona and memory are never written over.
     await ledger.claimFile(path.join(dorkDir, 'SOUL.md'));
-    await writeConventionFile(resolvedPath, 'SOUL.md', soulContent);
+    await writeConventionFileIfAbsent(resolvedPath, 'SOUL.md', soulContent);
 
     // Scaffold NOPE.md
     const nopeContent = defaultNopeTemplate();
     await ledger.claimFile(path.join(dorkDir, 'NOPE.md'));
-    await writeConventionFile(resolvedPath, 'NOPE.md', nopeContent);
+    await writeConventionFileIfAbsent(resolvedPath, 'NOPE.md', nopeContent);
 
     // Scaffold MEMORY.md — the agent's own notes, empty but explained. It is
     // claimed on the ledger like the other two, so a creation that fails later
     // takes the file with it: without the claim, the file outlives the failure
     // and the next agent created at this path inherits a stranger's notes.
     await ledger.claimFile(path.join(dorkDir, CONVENTION_FILES.memory));
-    await writeConventionFile(resolvedPath, CONVENTION_FILES.memory, defaultMemoryTemplate());
+    await writeConventionFileIfAbsent(
+      resolvedPath,
+      CONVENTION_FILES.memory,
+      defaultMemoryTemplate()
+    );
 
     // Scaffold cross-harness instruction files (canonical AGENTS.md + per-harness
     // pointers) for every agent, not just DorkBot. Write-if-absent (ADR-0302), so a
@@ -489,6 +545,18 @@ export async function createAgentWorkspace(
       logger.warn('[agents] Failed to seed Operating DorkOS skill pack: %s', String(err));
     }
 
+    // A marketplace install is an explicit act by the person, like registering
+    // a folder, so it lifts a denial on its own folder (DOR-2245).
+    let denialLifted = false;
+    if (internal.marketplace && meshCore?.listDenied?.().some((d) => d.path === resolvedPath)) {
+      await meshCore.undeny?.(resolvedPath);
+      denialLifted = true;
+    }
+    // Whether the adopted agent is already on the team: during an update it
+    // never left, so its arrival is not announced again.
+    const alreadyRegistered =
+      adoptedManifest !== undefined && meshCore?.getByPath?.(resolvedPath)?.id === manifest.id;
+
     // ADR-0043: sync to Mesh DB cache (best-effort)
     try {
       await meshCore?.syncFromDisk(resolvedPath);
@@ -504,22 +572,37 @@ export async function createAgentWorkspace(
     // so downstream reactions — e.g. re-binding Shape schedules that were
     // waiting on this agent — fire here. Awaited deliberately (the creation
     // response reflects settled reactions) but never throws.
-    await notifyAgentCreated({
-      id: manifest.id,
-      name: manifest.name,
-      displayName: manifest.displayName,
-      path: resolvedPath,
-      // This function IS the creation pipeline — it scaffolded the workspace a
-      // few lines up, so the agent did not exist a moment ago.
-      origin: 'created',
-      // …and it projects that workspace itself, below, Claude-Code-only with
-      // package hooks denied. Said out loud so a reaction does not project it
-      // first from a manifest derived from the pointers scaffolded above
-      // (DOR-1901); this is the only place it is ever set.
-      workspaceProjectedByPipeline: true,
-    });
+    if (!alreadyRegistered)
+      await notifyAgentCreated({
+        id: manifest.id,
+        name: manifest.name,
+        displayName: manifest.displayName,
+        path: resolvedPath,
+        // This function IS the creation pipeline — it scaffolded the workspace a
+        // few lines up, so the agent did not exist a moment ago. An adopted one
+        // (a marketplace reinstall) did: DorkOS is registering a folder already
+        // on disk, which takes the #team seat but is not news.
+        origin: adoptedManifest ? 'registered' : 'created',
+        // …and it projects that workspace itself, below, Claude-Code-only with
+        // package hooks denied. Said out loud so a reaction does not project it
+        // first from a manifest derived from the pointers scaffolded above
+        // (DOR-1901); this is the only place it is ever set.
+        workspaceProjectedByPipeline: true,
+      });
 
-    result = { manifest, path: resolvedPath, meta };
+    result = {
+      manifest,
+      path: resolvedPath,
+      meta,
+      ...(adoptedManifest && {
+        adopted: true,
+        defaultsDiffer:
+          (opts.traits !== undefined &&
+            JSON.stringify(opts.traits) !== JSON.stringify(adoptedManifest.traits)) ||
+          (opts.icon !== undefined && opts.icon !== adoptedManifest.icon),
+      }),
+      ...(denialLifted && { denialLifted }),
+    };
   } catch (scaffoldErr) {
     if (scaffoldErr instanceof AgentCreationError) throw scaffoldErr;
 
@@ -542,4 +625,42 @@ export async function createAgentWorkspace(
   projectAgentWorkspace(resolvedPath);
 
   return result;
+}
+
+/**
+ * The agent a marketplace install's folder already is, if any (DOR-2245).
+ *
+ * A parked `.dork/uninstalled-agent.json` (an earlier uninstall of this same
+ * package) is restored as `agent.json` first when none is there; any parked
+ * copy left is then removed, so it can never go stale beside a manifest git
+ * kept in place. A readable manifest is adopted; an unreadable one throws,
+ * because it is the only copy of that agent's identity and must never be
+ * written over.
+ *
+ * @param resolvedPath - The agent's folder.
+ * @returns The manifest to adopt, or `undefined` when the folder has none.
+ */
+async function adoptExistingManifest(resolvedPath: string): Promise<AgentManifest | undefined> {
+  const dorkDir = path.join(resolvedPath, MANIFEST_DIR);
+  const manifestPath = path.join(dorkDir, MANIFEST_FILE);
+  const parkedPath = path.join(dorkDir, 'uninstalled-agent.json');
+  const probe = await probeManifest(resolvedPath);
+  if (probe.state === 'absent') {
+    try {
+      await fs.rename(parkedPath, manifestPath);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+  }
+  await fs.rm(parkedPath, { force: true });
+  const after = probe.state === 'absent' ? await probeManifest(resolvedPath) : probe;
+  if (after.state === 'absent') return undefined;
+  if (after.state === 'unreadable') {
+    throw new AgentCreationError(
+      `${manifestPath} is there but can't be read (${after.detail}), so DorkOS left it alone rather than write over this agent's identity`,
+      'SCAFFOLD',
+      500
+    );
+  }
+  return (await readManifest(resolvedPath)) ?? undefined;
 }

@@ -13,9 +13,13 @@
  *
  * @module services/marketplace/flows/install-agent
  */
-import { mkdir } from 'node:fs/promises';
+import { lstat, mkdir, rename } from 'node:fs/promises';
 import path from 'node:path';
-import type { AgentPackageManifest } from '@dorkos/marketplace';
+import {
+  AGENT_IDENTITY_FILES,
+  UNINSTALLED_AGENT_PATH,
+  type AgentPackageManifest,
+} from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { isSingleEmoji } from '@dorkos/shared/agent-face';
 import type { createAgentWorkspace } from '../../core/agent-creator.js';
@@ -24,6 +28,7 @@ import { installRootDirForType } from '../lib/install-roots.js';
 import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
 import { stagePackageContents } from '../lib/stage-package.js';
 import { flowOwnership } from '../lib/flow-ownership.js';
+import { readInstalledFiles, sameSource } from '../lib/installed-files.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -42,6 +47,12 @@ export interface AgentFlowDeps {
   dorkHome: string;
   /** Existing agent-creator service used to scaffold `.dork/agent.json`. */
   agentCreator: AgentCreatorLike;
+  /**
+   * The agent registry, read when the install runs (DOR-2245): an adopted
+   * agent already on the team is not announced again, and an install lifts a
+   * denial on its own folder. Absent when Mesh is off.
+   */
+  getMeshCore?: () => Parameters<typeof createAgentWorkspace>[1];
   /** Logger for diagnostic output. */
   logger: Logger;
 }
@@ -85,13 +96,22 @@ export class AgentInstallFlow {
     // transaction commits, so a rolled-back install reports nothing.
     const warnings: string[] = [];
     const { ownership, finish } = flowOwnership(manifest, opts);
+    // Who installed what is here now, read before the transaction replaces it:
+    // a different package that shares the name must not inherit this agent.
+    const previousSource = (await readInstalledFiles(targetDir))?.package.source;
+    const incomingSource = ownership.identity.source;
+    const differentPackage =
+      previousSource !== undefined &&
+      incomingSource !== undefined &&
+      !sameSource(previousSource, incomingSource);
 
     const transactionResult = await runTransaction({
       name: `install-agent-${manifest.name}`,
       target: targetDir,
       stage: (staging) =>
         stageAgentPackage(packagePath, staging.path, targetDir, warnings, this.deps.logger),
-      activate: (staging) => this.activate(staging.path, targetDir, manifest),
+      activate: (staging) =>
+        this.activate(staging.path, targetDir, manifest, differentPackage, warnings),
       ownership,
     });
 
@@ -120,28 +140,53 @@ export class AgentInstallFlow {
   private async activate(
     stagingDir: string,
     targetDir: string,
-    manifest: AgentPackageManifest
+    manifest: AgentPackageManifest,
+    differentPackage: boolean,
+    warnings: string[]
   ): Promise<{ installPath: string }> {
     await activateAgentPackage(stagingDir, targetDir);
+
+    // A different package that happens to share this name never inherits the
+    // earlier agent (DOR-2245): its identity files are set aside, and this one
+    // starts fresh.
+    if (differentPackage && (await setAsideIdentityFiles(targetDir))) {
+      warnings.push(
+        `An earlier agent named ${manifest.name} came from a different source, so its files were set aside (.dork-old) and this one starts fresh.`
+      );
+    }
 
     // The package contents are already on disk, so the creator must skip its
     // mkdir / template-download pre-steps and only run the scaffold pipeline.
     // The `skipTemplateDownload` flag is honored by the agent-creator service
     // (see its JSDoc); the marketplace install pipeline is the only caller
     // that sets it.
-    await this.deps.agentCreator.createAgentWorkspace({
-      directory: targetDir,
-      name: manifest.name,
-      description: manifest.description,
-      traits: manifest.agentDefaults?.traits,
-      // The package author's own face, when they shipped one. The manifest's
-      // `icon` is documented as "an emoji OR an icon identifier", so only an
-      // emoji can be worn — anything else (`"package"`, a file name) is not a
-      // face, and leaving the key off lets the creator seed one instead
-      // (DOR-949).
-      ...(manifest.icon && isSingleEmoji(manifest.icon) ? { icon: manifest.icon } : {}),
-      skipTemplateDownload: true,
-    });
+    const created = await this.deps.agentCreator.createAgentWorkspace(
+      {
+        directory: targetDir,
+        name: manifest.name,
+        description: manifest.description,
+        traits: manifest.agentDefaults?.traits,
+        // The package author's own face, when they shipped one. The manifest's
+        // `icon` is documented as "an emoji OR an icon identifier", so only an
+        // emoji can be worn — anything else (`"package"`, a file name) is not a
+        // face, and leaving the key off lets the creator seed one instead
+        // (DOR-949).
+        ...(manifest.icon && isSingleEmoji(manifest.icon) ? { icon: manifest.icon } : {}),
+        skipTemplateDownload: true,
+      },
+      this.deps.getMeshCore?.(),
+      // The agent's identity files are its own: adopt an existing agent.json,
+      // write SOUL/NOPE/MEMORY only where absent (ADR 260923-163516).
+      { marketplace: true }
+    );
+    if (created.defaultsDiffer) {
+      warnings.push(
+        "Kept this agent's own settings. The new version suggests different traits; change them in the agent's settings if you want them."
+      );
+    }
+    if (created.denialLifted) {
+      warnings.push("This agent's folder was blocked from your team; installing it lifted that.");
+    }
 
     return { installPath: targetDir };
   }
@@ -216,4 +261,27 @@ async function stageAgentPackage(
 async function activateAgentPackage(stagingPath: string, targetDir: string): Promise<void> {
   await mkdir(path.dirname(targetDir), { recursive: true });
   await atomicMove(stagingPath, targetDir);
+}
+
+/**
+ * Save an agent's identity files, and a parked uninstalled identity, under free
+ * `.dork-old` names, so a different package sharing the name starts fresh
+ * without deleting anything (DOR-2245).
+ *
+ * @param targetDir - The agent's folder.
+ * @returns Whether anything was set aside.
+ */
+async function setAsideIdentityFiles(targetDir: string): Promise<boolean> {
+  let moved = false;
+  for (const rel of [...AGENT_IDENTITY_FILES, UNINSTALLED_AGENT_PATH]) {
+    const abs = path.join(targetDir, ...rel.split('/'));
+    if ((await lstat(abs).catch(() => undefined)) === undefined) continue;
+    let saved = `${abs}.dork-old`;
+    for (let n = 2; (await lstat(saved).catch(() => undefined)) !== undefined; n++) {
+      saved = `${abs}.dork-old.${n}`;
+    }
+    await rename(abs, saved);
+    moved = true;
+  }
+  return moved;
 }

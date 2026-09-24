@@ -44,6 +44,10 @@ vi.mock('@dorkos/shared/convention-files', async (importOriginal) => ({
 vi.mock('@dorkos/shared/convention-files-io', () => ({
   readConventionFile: (...args: unknown[]) => mockReadConventionFile(...args),
   writeConventionFile: (...args: unknown[]) => mockWriteConventionFile(...args),
+  writeConventionFileIfAbsent: async (...args: unknown[]) => {
+    mockWriteConventionFile(...args);
+    return true;
+  },
 }));
 
 const mockRenderTraits = vi.fn();

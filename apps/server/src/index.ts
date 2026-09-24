@@ -4155,6 +4155,7 @@ async function start() {
     const marketplaceAgentFlow = new AgentInstallFlow({
       dorkHome,
       agentCreator: { createAgentWorkspace },
+      getMeshCore: () => meshCore,
       logger,
     });
     const marketplaceSkillPackFlow = new SkillPackInstallFlow({ dorkHome, logger });

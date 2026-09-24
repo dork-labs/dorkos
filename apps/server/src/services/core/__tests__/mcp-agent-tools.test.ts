@@ -22,6 +22,7 @@ vi.mock('@dorkos/shared/convention-files', async (importOriginal) => ({
 
 vi.mock('@dorkos/shared/convention-files-io', () => ({
   writeConventionFile: vi.fn(),
+  writeConventionFileIfAbsent: vi.fn(async () => true),
   readConventionFile: vi.fn(),
 }));
 

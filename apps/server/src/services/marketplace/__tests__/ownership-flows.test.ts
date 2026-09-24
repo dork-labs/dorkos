@@ -7,7 +7,7 @@
  * every package type rather than only flow's.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -135,5 +135,38 @@ describe('update (uninstall then install, DOR-2245 §6)', () => {
     await expect(harness.installer.update({ name })).rejects.toThrow('install half failed');
     expect(await readFile(path.join(root, 'config', 'mine.json'), 'utf8')).toBe('mine');
     expect((await readInstalledFiles(root))?.uninstalledAt).toBeDefined();
+  });
+});
+
+describe('agent identity across sources (DOR-2245 §8)', () => {
+  // Purpose (review N4): a same-named agent package from a different source
+  // never inherits the earlier agent; its identity files are set aside.
+  it('sets the identity files aside when the source changes, and keeps them when it does not', async () => {
+    const harness = buildInstallerForTests(dorkHome);
+    const first = await harness.installer.install({ name: path.join(FIXTURES_DIR, 'valid-agent') });
+    const root = first.installPath;
+    await put(root, '.dork/agent.json', '{"id":"01OLD"}');
+    await put(root, '.dork/MEMORY.md', 'old notes');
+
+    const same = await harness.installer.install({ name: path.join(FIXTURES_DIR, 'valid-agent') });
+    expect(await readFile(path.join(root, '.dork', 'agent.json'), 'utf8')).toBe('{"id":"01OLD"}');
+    expect(same.warnings.join(' ')).not.toMatch(/different source/);
+
+    // A copy of the package at another path: the same name, a different source.
+    const otherSource = path.join(dorkHome, 'elsewhere', 'valid-agent');
+    await cp(path.join(FIXTURES_DIR, 'valid-agent'), otherSource, { recursive: true });
+    await initBoundary(path.dirname(dorkHome));
+    try {
+      const other = await harness.installer.install({ name: otherSource });
+      expect(await readFile(path.join(root, '.dork', 'agent.json.dork-old'), 'utf8')).toBe(
+        '{"id":"01OLD"}'
+      );
+      expect(await readFile(path.join(root, '.dork', 'MEMORY.md.dork-old'), 'utf8')).toBe(
+        'old notes'
+      );
+      expect(other.warnings.join(' ')).toMatch(/came from a different source/);
+    } finally {
+      await initBoundary(FIXTURES_DIR);
+    }
   });
 });
