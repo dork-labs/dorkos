@@ -185,7 +185,7 @@ const marketplaceDeps = {
   // The sandbox has nothing installed, so an advisory `marketplace.update`
   // checks nothing; an apply would find nothing to reinstall either.
   updateFlow: {
-    checkInstallations: async () => ({ checks: [] }),
+    planInstallations: async () => ({ checks: [], steps: [] }),
   },
   confirmationProvider: {
     requestInstallConfirmation: async () => ({ status: 'pending' as const, token: 'conformance' }),

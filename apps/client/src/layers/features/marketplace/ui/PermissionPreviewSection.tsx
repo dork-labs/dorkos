@@ -19,6 +19,7 @@ import {
   Puzzle,
   Terminal,
 } from 'lucide-react';
+import * as React from 'react';
 import { useState, type ComponentType } from 'react';
 
 import { cn } from '@/layers/shared/lib';
@@ -111,12 +112,33 @@ function PermissionDetails({ items, label }: { items: PermissionDetailItem[]; la
 }
 
 /**
+ * A command or path with a line-break opportunity after every `/` and before
+ * every quote, so a long one wraps between its parts (`node` then
+ * `"…/hooks/` then `guard.mjs"`) rather than mid-word, and a quote stays with
+ * the word it opens. `overflow-wrap: anywhere` on the container stays as the
+ * last resort for a single part too long for the line.
+ *
+ * @param text - The verbatim command, arguments or path.
+ */
+export function withBreakPoints(text: string): React.ReactNode {
+  const parts = text.split(/(?<=\/)|(?=["'])/);
+  return parts.map((part, index) => (
+    <React.Fragment key={index}>
+      {part}
+      {index < parts.length - 1 && <wbr />}
+    </React.Fragment>
+  ));
+}
+
+/**
  * A single permission row with an icon, label, optional description, and an
- * optional inline disclosure holding its detail lines.
+ * optional inline disclosure holding its detail lines. Shared with the update
+ * confirm (`ConfirmUpdatesDialog`), so a command reads the same on every
+ * consent surface.
  *
  * @param item - The formatted permission row to display.
  */
-function PermissionItem({ item }: { item: FormattedPermission }) {
+export function PermissionItem({ item }: { item: FormattedPermission }) {
   const Icon = ICON_MAP[item.icon] ?? File;
   const colorClass = item.severity ? SEVERITY_CLASS[item.severity] : SEVERITY_CLASS.info;
 
@@ -125,8 +147,8 @@ function PermissionItem({ item }: { item: FormattedPermission }) {
       <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">
         {item.mono ? (
-          <code className="bg-muted text-foreground block rounded px-1.5 py-1 font-mono text-xs break-all">
-            {item.label}
+          <code className="bg-muted text-foreground block rounded px-1.5 py-1 font-mono text-xs [overflow-wrap:anywhere]">
+            {withBreakPoints(item.label)}
           </code>
         ) : (
           // `break-words`, not the default: several labels embed a filesystem

@@ -202,7 +202,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * (command wrappers, skill symlinks, `.claude/settings.local.json` hooks) via
    * `@dorkos/harness`, so external CLI and DorkOS sessions see the same thing
    * (ADR 260706-192819, amending ADR-0239). Global-scope projection is deferred
-   * (DOR-174), so global installs keep SDK injection for now.
+   * (DOR-174), so global installs keep SDK injection for now. A global package
+   * that runs anything on its own is in it only when a person approved exactly
+   * what it runs (`marketplace/global-plugin-consent.ts`, DOR-2306).
    */
   private activatedPlugins: Array<{ type: 'local'; path: string }> = [];
 
@@ -681,18 +683,28 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * broadcast fires unconditionally so a freshly-loaded palette (cold cache)
    * still re-fetches and the install's effect is visible.
    *
-   * Best-effort throughout — filesystem scan or reload failures leave the
-   * previous value in place so a single misbehaving plugin never blocks
-   * sessions.
+   * A reload can add a plugin but never take one away, so a warm process that
+   * loaded a plugin the new set drops is relaunched before its next turn
+   * instead (`sessions/launch-fingerprint.ts`, DOR-2306); for the same reason a
+   * reload after the set SHRANK is never held for what it costs the prompt
+   * cache.
+   *
+   * Fails closed: a scan that cannot say which global packages a person
+   * approved leaves every global plugin out. Reload failures are per session
+   * and never block the others.
    */
   async refreshActivatedPlugins(changedProjectPath?: string): Promise<void> {
+    const before = this.activatedPlugins.map((plugin) => plugin.path);
     try {
       const { resolveDorkHome } = await import('../../../lib/dork-home.js');
-      const { listEnabledPluginNames } = await import('../../marketplace/installed-scanner.js');
+      const { listConsentedPluginNames } =
+        await import('../../marketplace/global-plugin-consent.js');
       const { buildClaudeAgentSdkPluginsArray } = await import('./messaging/plugin-activation.js');
       const { logger } = await import('../../../lib/logger.js');
       const dorkHome = resolveDorkHome();
-      const enabledNames = await listEnabledPluginNames(dorkHome);
+      // Only packages a person approved (or that run nothing on their own):
+      // a global package's hooks and servers start in every session (DOR-2306).
+      const enabledNames = await listConsentedPluginNames(dorkHome);
       if (enabledNames.length === 0) {
         this.activatedPlugins = [];
       } else {
@@ -703,13 +715,19 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         });
       }
     } catch {
-      // Best-effort; leave the previous value in place.
+      // Fail closed (DOR-2306): a refresh that cannot say which global packages
+      // a person approved loads none of them, rather than keeping a list that
+      // may hold one nobody approves any more.
+      this.activatedPlugins = [];
     }
 
     // Hot-reload every live session so its cached command list reflects the
     // new plugin set instantly, then tell clients to re-fetch. Isolated from
     // the plugin-array swap above so a reload failure never reverts it.
-    await this.reloadCommandsForLiveSessions();
+    const kept = new Set(this.activatedPlugins.map((plugin) => plugin.path));
+    await this.reloadCommandsForLiveSessions({
+      mayHold: before.every((pluginPath) => kept.has(pluginPath)),
+    });
 
     // A PROJECT-scoped install/uninstall changes which commands that project's
     // sessions report, but only sessions launched after the change see the new
@@ -739,8 +757,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * each session's reload goes through the cost check rather than paying a
    * cache rebuild on all of them at the same moment. A reload the person
    * triggered by hand does not come through here; see {@link reloadPlugins}.
+   *
+   * @param options.mayHold - False when the new set dropped a plugin: nothing
+   *   waits on the cache then (the process itself is relaunched before its
+   *   next turn, since a reload cannot unload a plugin).
    */
-  private async reloadCommandsForLiveSessions(): Promise<void> {
+  private async reloadCommandsForLiveSessions({ mayHold }: { mayHold: boolean }): Promise<void> {
     const reloadable = this.sessionStore.getReloadableSessions();
     if (reloadable.length === 0) return;
     await Promise.all(
@@ -748,6 +770,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         const queryObj = session.activeQuery ?? session.lastQuery;
         if (!queryObj) return;
         const contextTokens = conversationTokens(session);
+        if (!mayHold) {
+          // A plugin was withdrawn: never wait on the cache for it.
+          try {
+            await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd);
+          } catch (err) {
+            logger.debug('[refreshActivatedPlugins] session hot-reload failed', {
+              sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          return;
+        }
         try {
           const asked = await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd, {
             holdOnCacheImpact: true,

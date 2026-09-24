@@ -2345,6 +2345,16 @@ export interface Transport
   applyMarketplaceUpdates(opts: ApplyUpdatesOptions): Promise<InstallationUpdatesResult>;
 
   /**
+   * Raise the approval card again for a global package held back from every
+   * session (`POST /api/marketplace/held-back/:name/review`, DOR-2306). The
+   * person decides on the card. Rejects with the reason when the package
+   * cannot be put on a card (it could not be read, or runs too much to show).
+   *
+   * @param name - The held-back package's name.
+   */
+  reviewHeldBackPackage(name: string): Promise<void>;
+
+  /**
    * List installed marketplace packages.
    *
    * Without `projectPath`: one entry per installation across ALL scopes — the

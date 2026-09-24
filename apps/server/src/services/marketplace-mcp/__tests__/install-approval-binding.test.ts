@@ -118,6 +118,7 @@ describe('a marketplace install approval binds the commands it disclosed', () =>
       installer,
       confirmationProvider: new TokenConfirmationProvider(approvals),
       onPluginsChanged: () => {},
+      consent: { settle: async () => {}, removed: () => {} },
     } as unknown as MarketplaceMcpDeps);
   });
 

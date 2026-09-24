@@ -25,6 +25,7 @@
  *
  * @module services/marketplace-mcp/tool-install
  */
+import { packageContentHash } from '../marketplace/lib/content-hash.js';
 import { z } from 'zod';
 
 import {
@@ -114,6 +115,7 @@ async function resolveConfirmation(
   deps: MarketplaceMcpDeps,
   args: InstallToolArgs,
   preview: PreviewResult,
+  contentHash: string,
   context?: MarketplaceConfirmationContext
 ): Promise<ConfirmationResult> {
   // A person already approved this exact invocation at the capability tier gate;
@@ -131,6 +133,11 @@ async function resolveConfirmation(
     operation: 'install' as const,
     ...(args.projectPath !== undefined && { projectPath: args.projectPath }),
     preview: preview.preview,
+    contentHash,
+    origin: {
+      version: preview.manifest.version,
+      ...(args.marketplace !== undefined && { source: args.marketplace }),
+    },
     ...(context?.requestedBy ? { requestedBy: context.requestedBy } : {}),
   };
   if (args.confirmationToken) {
@@ -195,11 +202,19 @@ export function createInstallHandler(deps: MarketplaceMcpDeps) {
     } catch (err) {
       return errorContent(err, 'INSTALL_FAILED');
     }
+    // The staged files the card is about: bound into the approval, and what
+    // the installed copy must hash the same as to be recorded (DOR-2306).
+    let contentHash: string;
+    try {
+      contentHash = await packageContentHash(preview.packagePath);
+    } catch (err) {
+      return errorContent(err, 'INSTALL_FAILED');
+    }
 
     // 2. Resolve confirmation. A supplied token comes from a previous
     //    `requires_confirmation` response — never issue a fresh request when
     //    the agent is resuming an out-of-band flow.
-    const confirmation = await resolveConfirmation(deps, args, preview, context);
+    const confirmation = await resolveConfirmation(deps, args, preview, contentHash, context);
 
     if (confirmation.status === 'pending') {
       return jsonContent({
@@ -253,6 +268,17 @@ export function createInstallHandler(deps: MarketplaceMcpDeps) {
       }
       return errorContent(err, 'INSTALL_FAILED');
     }
+
+    // After it landed: every earlier approval of this global package is
+    // forgotten, and a person's yes on the card (never `preApproved`, where
+    // nobody was shown anything) is recorded when the installed copy is what
+    // the card showed. Before the refresh below, which reads it (DOR-2306).
+    await deps.consent.settle(
+      { installPath: result.installPath, type: result.type, global: projectPath === undefined },
+      context?.preApproved
+        ? undefined
+        : { disclosed: disclosedEffectsOf(preview.preview), contentHash }
+    );
 
     // 4. Set the package up, exactly as the HTTP install route does: refresh the
     //    runtime's plugin list and project it to the project's harnesses

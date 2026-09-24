@@ -4,8 +4,9 @@
  * The update flow is advisory by default: it enumerates installed packages,
  * asks the installer what installing each one now would give
  * (`resolveLatest`), compares by Claude Code's version chain, and returns one
- * {@link UpdateCheckResult} per package with an honest status. Only when
- * `apply: true` does it reinstall.
+ * {@link UpdateCheckResult} per package with an honest status. Only
+ * `applyPlan`, handed the disclosures a person approved, reinstalls
+ * (`applyAsShown` plays that person).
  *
  * Each test stages a handcrafted installed package on disk under a temp
  * `dorkHome`, then drives `UpdateFlow.run()` with mocked installer, fetcher
@@ -18,6 +19,8 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
+import { applyAsShown } from '../apply-as-shown.js';
+import { packageContentHash } from '../../lib/content-hash.js';
 import type { MarketplaceJson, PluginPackageManifest, SourceKey } from '@dorkos/marketplace';
 import { UPDATE_CHECK_CONCURRENCY, UPDATE_MEMO_TTL_MS, UpdateFlow } from '../../flows/update.js';
 import {
@@ -30,7 +33,6 @@ import type {
   InstallerLike,
   UpdateCheckResult,
   UpdateFlowDeps,
-  UpdateResult,
 } from '../../flows/update-types.js';
 import type { InstallMetadata } from '../../installed-metadata.js';
 import { scanInstallationRecords } from '../../installed-scanner.js';
@@ -229,7 +231,9 @@ async function buildDeps(opts: {
     update: ReturnType<typeof vi.fn>;
     resolveLatest: ReturnType<typeof vi.fn<ResolveLatestImpl>>;
     preview: ReturnType<
-      typeof vi.fn<(req: InstallRequest) => Promise<{ preview: PermissionPreview }>>
+      typeof vi.fn<
+        (req: InstallRequest) => Promise<{ preview: PermissionPreview; packagePath: string }>
+      >
     >;
   };
   fetcher: {
@@ -248,7 +252,11 @@ async function buildDeps(opts: {
       buildInstallResult(req.name, '2.0.0', path.join(dorkHome, 'plugins', req.name))
     ),
     resolveLatest,
-    preview: vi.fn(async (_req: InstallRequest) => ({ preview: buildEmptyPreview() })),
+    // Staged into a real (empty) directory: a check hashes the staged files.
+    preview: vi.fn(async (_req: InstallRequest) => ({
+      preview: buildEmptyPreview(),
+      packagePath: dorkHome,
+    })),
   } satisfies InstallerLike;
   const sources = opts.sources ?? [buildSource()];
   const fetcher = {
@@ -309,28 +317,29 @@ function lookingUp(ref = 'main', answer: LatestResolution = { kind: 'unchanged' 
 
 /**
  * Check one package by name the way the per-package route does: scan the
- * request's scope, resolve the installation the name means, and run it.
+ * request's scope and check the installation the name means. With `apply`,
+ * that one installation is applied the only way the flow allows
+ * ({@link applyAsShown}), as a named `marketplace_update` would.
  */
 async function runNamed(
   flow: UpdateFlow,
   dorkHome: string,
   req: { name: string; apply?: boolean; projectPath?: string }
-): Promise<UpdateResult> {
+): Promise<{ checks: UpdateCheckResult[]; applied: InstallResult[] }> {
   const inScope = await scanInstallationRecords(
     dorkHome,
     req.projectPath ? { projectPath: req.projectPath } : { agents: [] }
   );
-  return flow.run({
-    name: req.name,
-    installation: pickInstallation(inScope, req.name),
-    apply: req.apply,
-  });
+  const installation = pickInstallation(inScope, req.name);
+  if (req.apply && installation) return applyAsShown(flow, [installation]);
+  const { checks } = await flow.run({ name: req.name, installation });
+  return { checks, applied: [] };
 }
 
 /**
  * Check every installation in view through the all-packages door, the way the
- * route does: one scan, handed to `checkInstallations`. Returns the applied
- * reinstalls alongside, so assertions read like the per-package result.
+ * route does: one scan, handed to `planInstallations`. With `apply`, every
+ * stale one is applied held to what its check disclosed ({@link applyAsShown}).
  */
 async function checkAll(
   flow: UpdateFlow,
@@ -341,8 +350,9 @@ async function checkAll(
     dorkHome,
     opts.projectPath ? { projectPath: opts.projectPath } : { agents: [] }
   );
-  const { checks } = await flow.checkInstallations({ installations, apply: opts.apply });
-  return { checks, applied: checks.flatMap((c) => (c.applied ? [c.applied] : [])) };
+  if (opts.apply) return applyAsShown(flow, installations);
+  const { checks } = await flow.planInstallations({ installations });
+  return { checks, applied: [] };
 }
 
 /** Every result keeps `hasUpdate` a pure function of `status`. */
@@ -802,6 +812,8 @@ describe('UpdateFlow', () => {
         source: sourceKey.cloneUrl,
         projectPath: undefined,
         installRoot,
+        // Held to what its check disclosed: the only way a reinstall runs.
+        approvedDisclosure: disclosedEffectsOf(buildEmptyPreview()),
       });
       expect(ctx.sourceManager.list).not.toHaveBeenCalled();
     });
@@ -858,6 +870,7 @@ describe('UpdateFlow', () => {
         marketplace: 'fixture-marketplace',
         projectPath: undefined,
         installRoot: upRoot,
+        approvedDisclosure: disclosedEffectsOf(buildEmptyPreview()),
       });
       expect(result.applied.map((a) => a.packageName)).toEqual(['up']);
     });
@@ -917,7 +930,7 @@ describe('UpdateFlow', () => {
     });
   });
 
-  describe('checkInstallations (the all-packages door)', () => {
+  describe('planInstallations and applyPlan (the all-packages door)', () => {
     /** A temp directory standing in for a registered agent's project. */
     async function makeAgentDir(): Promise<string> {
       const dir = await mkdtemp(path.join(tmpdir(), 'update-flow-agent-'));
@@ -951,7 +964,7 @@ describe('UpdateFlow', () => {
       });
       const { agentPath, globalRoot, agentRoot, installations } = await stageGlobalAndAgent(ctx);
 
-      const { checks } = await new UpdateFlow(ctx.deps).checkInstallations({ installations });
+      const { checks } = await new UpdateFlow(ctx.deps).planInstallations({ installations });
 
       expect(checks).toHaveLength(2);
       expect(checks[0]).toMatchObject({
@@ -983,7 +996,7 @@ describe('UpdateFlow', () => {
       });
       const { installations } = await stageGlobalAndAgent(ctx);
 
-      const { checks } = await new UpdateFlow(ctx.deps).checkInstallations({ installations });
+      const { checks } = await new UpdateFlow(ctx.deps).planInstallations({ installations });
 
       expect(checks.every((c) => c.status === 'update-available')).toBe(true);
       expect(ctx.installer.update).not.toHaveBeenCalled();
@@ -1000,10 +1013,7 @@ describe('UpdateFlow', () => {
       });
       const { agentPath, installations } = await stageGlobalAndAgent(ctx);
 
-      const { checks } = await new UpdateFlow(ctx.deps).checkInstallations({
-        installations,
-        apply: true,
-      });
+      const { checks } = await applyAsShown(new UpdateFlow(ctx.deps), installations);
 
       expect(ctx.installer.update.mock.calls.map(([req]) => req.projectPath)).toEqual([
         undefined,
@@ -1024,7 +1034,7 @@ describe('UpdateFlow', () => {
       ctx.installer.update.mockRejectedValueOnce(new Error('disk full'));
       const flow = new UpdateFlow(ctx.deps);
 
-      const { checks } = await flow.checkInstallations({ installations, apply: true });
+      const { checks } = await applyAsShown(flow, installations);
 
       expect(checks[0]).toMatchObject({ applyError: 'disk full' });
       expect(checks[0]).not.toHaveProperty('applied');
@@ -1032,7 +1042,7 @@ describe('UpdateFlow', () => {
       expect(checks[1]).not.toHaveProperty('applyError');
 
       expect(ctx.fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(1);
-      await flow.checkInstallations({ installations });
+      await flow.planInstallations({ installations });
       expect(ctx.fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(2);
     });
 
@@ -1060,7 +1070,7 @@ describe('UpdateFlow', () => {
       }
       const installations = await scanInstallationRecords(ctx.dorkHome, { agents: [] });
 
-      const { checks } = await new UpdateFlow(ctx.deps).checkInstallations({ installations });
+      const { checks } = await new UpdateFlow(ctx.deps).planInstallations({ installations });
 
       expect(peak).toBe(UPDATE_CHECK_CONCURRENCY);
       expect(checks.map((c) => c.installPath)).toEqual(
@@ -1084,7 +1094,7 @@ describe('UpdateFlow', () => {
           new Promise<string>((_, reject) => setTimeout(() => reject(new Error('timed out')), 5))
       );
 
-      const { checks } = await new UpdateFlow(ctx.deps).checkInstallations({ installations });
+      const { checks } = await new UpdateFlow(ctx.deps).planInstallations({ installations });
 
       expect(checks.map((c) => c.status)).toEqual(['unknown', 'unknown']);
       expect(ctx.fetcher.lookupCommitSha).toHaveBeenCalledTimes(1);
@@ -1108,6 +1118,40 @@ describe('UpdateFlow', () => {
 
     const HOOKED = buildEmptyPreview({ hooks: [{ event: 'Stop', command: 'echo new' }] });
 
+    it('hashes the staged new version and says what the installed one runs now (DOR-2306)', async () => {
+      // Purpose: an apply is refused when the staged files move, and a confirm
+      // step shows what is new against what is installed.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'alpha' }]),
+        latest: { alpha: '2.0.0' },
+      });
+      const staged = await mkdtemp(path.join(tmpdir(), 'update-flow-staged-'));
+      cleanupDirs.push(staged);
+      await writeFile(path.join(staged, 'fmt.sh'), 'echo new');
+      ctx.installer.preview.mockResolvedValue({ preview: HOOKED, packagePath: staged });
+      const alpha = await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'alpha', version: '1.0.0' }),
+      });
+      await mkdir(path.join(alpha, 'hooks'), { recursive: true });
+      await writeFile(
+        path.join(alpha, 'hooks', 'hooks.json'),
+        JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo old' }] }] } })
+      );
+
+      const plan = await new UpdateFlow(ctx.deps).planInstallations({
+        installations: await scanInstallationRecords(ctx.dorkHome, { agents: [] }),
+        disclose: true,
+      });
+
+      expect(plan.checks[0]).toMatchObject({
+        contentHash: await packageContentHash(staged),
+        installedDisclosed: expect.objectContaining({
+          hooks: [expect.objectContaining({ command: 'echo old' })],
+        }),
+      });
+    });
+
     it('says what each new version would run, and previews nothing that is current', async () => {
       // Purpose: the card for an apply must show what the new version runs,
       // read from the version that would be installed, in its own scope.
@@ -1115,7 +1159,7 @@ describe('UpdateFlow', () => {
         marketplaceJson: buildMarketplaceJson([{ name: 'alpha' }, { name: 'beta' }]),
         latest: { alpha: '2.0.0', beta: '1.0.0' },
       });
-      ctx.installer.preview.mockResolvedValue({ preview: HOOKED });
+      ctx.installer.preview.mockResolvedValue({ preview: HOOKED, packagePath: ctx.dorkHome });
       const { alpha, installations } = await stageTwo(ctx);
 
       const plan = await new UpdateFlow(ctx.deps).planInstallations({
@@ -1190,7 +1234,7 @@ describe('UpdateFlow', () => {
         marketplaceJson: buildMarketplaceJson([{ name: 'alpha' }, { name: 'beta' }]),
         latest: { alpha: '2.0.0', beta: '2.0.0' },
       });
-      ctx.installer.preview.mockResolvedValue({ preview: HOOKED });
+      ctx.installer.preview.mockResolvedValue({ preview: HOOKED, packagePath: ctx.dorkHome });
       const { alpha, installations } = await stageTwo(ctx);
       const flow = new UpdateFlow(ctx.deps);
 

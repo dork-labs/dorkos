@@ -951,6 +951,10 @@ export const marketplaceStubs = {
     throw new Error('Marketplace is not supported in embedded mode');
   },
 
+  async reviewHeldBackPackage(_name: string): Promise<void> {
+    throw new Error('Marketplace is not supported in embedded mode');
+  },
+
   async listInstalledPackages(_projectPath?: string): Promise<InstalledPackage[]> {
     return [];
   },

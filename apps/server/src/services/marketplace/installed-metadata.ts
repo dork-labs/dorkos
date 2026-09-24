@@ -121,6 +121,15 @@ export interface InstallMetadata {
    * field existed.
    */
   generatedSchedulePaths?: string[];
+  /**
+   * The landed package's content hash (`lib/content-hash.ts`
+   * `packageContentHash`), recorded at the install EVENT (DOR-2306). A
+   * person's approval of a global package binds this, so it covers exactly
+   * what arrived through the install or update channel. Absent for sidecars
+   * written before this field existed: such a package is held back until a
+   * person reviews it.
+   */
+  contentHash?: string;
 }
 
 /**
@@ -212,6 +221,10 @@ function parseInstallMetadata(raw: string): InstallMetadata | null {
       Array.isArray(obj.generatedSchedulePaths) &&
       obj.generatedSchedulePaths.every((p) => typeof p === 'string')
         ? (obj.generatedSchedulePaths as string[])
+        : undefined,
+    contentHash:
+      typeof obj.contentHash === 'string' && /^sha256:[0-9a-f]{64}$/.test(obj.contentHash)
+        ? obj.contentHash
         : undefined,
   };
 }

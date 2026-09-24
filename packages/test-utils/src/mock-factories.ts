@@ -1009,6 +1009,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     uninstallMarketplacePackage: vi.fn(),
     checkMarketplaceUpdates: vi.fn().mockResolvedValue({ checks: [] }),
     applyMarketplaceUpdates: vi.fn(),
+    reviewHeldBackPackage: vi.fn().mockResolvedValue(undefined),
     listInstalledPackages: vi.fn().mockResolvedValue([]),
     listPackageInstallations: vi.fn().mockResolvedValue([]),
     listMarketplaceSources: vi.fn().mockResolvedValue([]),

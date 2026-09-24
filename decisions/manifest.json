@@ -6371,6 +6371,23 @@
         "apps/server/src/services/core/agent-creator.ts",
         "packages/shared/src/convention-files-io.ts"
       ]
+    },
+    {
+      "id": "260924-114320",
+      "slug": "updates-and-global-plugins-run-only-what-was-approved",
+      "title": "Updates and global plugins run only what a person approved",
+      "status": "draft",
+      "created": "2026-09-24",
+      "extractedFrom": "marketplace-update-disclosure-binding",
+      "specSlug": "marketplace-update-disclosure-binding",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/routes/marketplace.ts",
+        "apps/server/src/services/marketplace/flows/update-installed.ts",
+        "apps/server/src/services/marketplace/global-plugin-consent.ts",
+        "apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts",
+        "apps/client/src/layers/features/marketplace/ui/ConfirmUpdatesDialog.tsx"
+      ]
     }
   ]
 }

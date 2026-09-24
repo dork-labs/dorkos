@@ -266,8 +266,12 @@ export interface OperatingSkill {
  *   agent package removes the agent from the team, which a reinstall does not
  *   restore. An agent seeded at 25 would tell a person their added files are
  *   deleted, and would not warn them before removing an agent.
+ * - 27: `dorkos update --apply` asks first (DOR-2306). From an agent's shell it
+ *   now prints what each new version runs and waits on an approval card, then
+ *   takes `--approval <token>`. An agent seeded at 26 would run the old command
+ *   and read the card as a failure.
  */
-export const OPERATING_SKILLS_VERSION = 26;
+export const OPERATING_SKILLS_VERSION = 27;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

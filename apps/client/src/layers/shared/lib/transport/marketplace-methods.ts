@@ -96,20 +96,42 @@ export function createMarketplaceMethods(baseUrl: string) {
       return fetchJSON<InstallationUpdatesResult>(baseUrl, `/marketplace/updates${qs}`);
     },
 
-    applyMarketplaceUpdates({
+    async applyMarketplaceUpdates({
       targets,
       projectPath,
     }: ApplyUpdatesOptions): Promise<InstallationUpdatesResult> {
       // `apply: true` is the route's literal switch: a POST without it is
       // refused, so an empty or mistyped body can never reinstall anything.
-      return fetchJSON<InstallationUpdatesResult>(baseUrl, '/marketplace/updates', {
-        method: 'POST',
-        body: JSON.stringify({
-          apply: true,
-          installPaths: targets.map((target) => target.installPath),
-          ...(projectPath !== undefined && { projectPath }),
-        }),
-      });
+      // Each target carries what the person was shown, sent back untouched.
+      const result = await fetchJSON<InstallationUpdatesResult | { status: string }>(
+        baseUrl,
+        '/marketplace/updates',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            apply: true,
+            targets,
+            ...(projectPath !== undefined && { projectPath }),
+          }),
+        }
+      );
+      // A 202 is the answer for an agent, whose update waits on an approval
+      // card. The app is the person, so it should never get one; if it does,
+      // say so rather than hand back a result with nothing in it.
+      if (!('checks' in result)) {
+        throw new Error(
+          'DorkOS is waiting for someone to approve these updates, so nothing was changed.'
+        );
+      }
+      return result;
+    },
+
+    async reviewHeldBackPackage(name: string): Promise<void> {
+      await fetchJSON<{ status: string }>(
+        baseUrl,
+        `/marketplace/held-back/${encodeURIComponent(name)}/review`,
+        { method: 'POST' }
+      );
     },
 
     // --- Installed packages ---

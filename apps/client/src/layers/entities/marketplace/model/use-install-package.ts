@@ -24,6 +24,14 @@ export function useInstallPackage() {
 
   return useMutation<InstallResult, Error, InstallPackageArgs>({
     mutationFn: ({ name, options }) => transport.installMarketplacePackage(name, options),
+    onError: (err) => {
+      // The package changed what it runs after the preview the person read, so
+      // the install refused it. Refresh the preview so the dialog shows what it
+      // runs now instead of the stale list (DOR-2306).
+      if ((err as { code?: unknown }).code === 'disclosure_changed') {
+        void queryClient.invalidateQueries({ queryKey: marketplaceKeys.preview() });
+      }
+    },
     onSuccess: (_result, { name, options }) => {
       void queryClient.invalidateQueries({ queryKey: marketplaceKeys.installed() });
       if (options?.projectPath) {

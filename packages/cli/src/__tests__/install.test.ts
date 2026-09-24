@@ -142,6 +142,60 @@ describe('runInstall', () => {
     expect(allLogs).toContain('Installed demo-pkg@1.2.3 to /home/user/.dork/plugins/demo-pkg');
   });
 
+  it('holds the install to what it printed, by sending the preview\u2019s disclosure back', async () => {
+    // Purpose: the person approves what the preview printed; the server
+    // installs only a package that still runs exactly that (DOR-2306).
+    const disclosed = {
+      hooks: [{ event: 'Stop', matcher: null, command: 'echo hi', source: null }],
+      schedules: [],
+      mcpServers: [],
+      lspServers: [],
+      monitors: [],
+      executables: [],
+      skillTools: [],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockResponse(200, { ...PREVIEW_BODY, disclosed }))
+      .mockResolvedValueOnce(mockResponse(200, INSTALL_BODY));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await runInstall({ name: 'demo-pkg', yes: true });
+
+    const [, installInit] = fetchMock.mock.calls[1];
+    expect(JSON.parse(installInit.body).approvedDisclosure).toEqual(disclosed);
+    // The preview request itself never carries one.
+    const [, previewInit] = fetchMock.mock.calls[0];
+    expect(JSON.parse(previewInit.body)).not.toHaveProperty('approvedDisclosure');
+  });
+
+  it('sends the preview\u2019s content hash, and prints how to retry when a person must approve', async () => {
+    // Purpose: an agent's global install that runs things waits on a card
+    // (DOR-2306); the CLI says so and names the retry instead of claiming success.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        mockResponse(200, { ...PREVIEW_BODY, disclosed: { hooks: [] }, contentHash: 'sha256:s' })
+      )
+      .mockResolvedValueOnce(
+        mockResponse(202, {
+          status: 'requires_confirmation',
+          confirmationToken: 'tok-7',
+          message: 'A person must approve this install in DorkOS first.',
+        })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const code = await runInstall({ name: 'demo-pkg', yes: true });
+
+    expect(code).toBe(1);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).approvedContentHash).toBe('sha256:s');
+    const errors = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(errors).toContain(
+      'Retry with: dorkos marketplace install demo-pkg --yes --approval tok-7'
+    );
+  });
+
   it('non-TTY without --yes treats the prompt as a decline and cancels', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(200, PREVIEW_BODY));
     vi.stubGlobal('fetch', fetchMock);

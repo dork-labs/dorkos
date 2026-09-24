@@ -187,8 +187,20 @@ export function InstallConfirmationDialog() {
   async function handleInstall() {
     if (!pkg) return;
     try {
-      const opts = selectedProjectPath ? { projectPath: selectedProjectPath } : undefined;
-      await install.mutateAsync({ name: pkg.name, options: opts });
+      // What the person was just shown the package runs, sent back untouched:
+      // the install refuses a package that now runs anything else, and a
+      // global plugin installed this way loads without a second card (DOR-2306).
+      const opts = {
+        ...(selectedProjectPath && { projectPath: selectedProjectPath }),
+        ...(detail?.disclosed && {
+          approvedDisclosure: detail.disclosed,
+          approvedContentHash: detail.contentHash,
+        }),
+      };
+      await install.mutateAsync({
+        name: pkg.name,
+        options: Object.keys(opts).length > 0 ? opts : undefined,
+      });
       close();
     } catch {
       // Error — toast already fired. Leave the dialog open so the user can retry.

@@ -12,7 +12,10 @@ import {
   describeProgramLine,
   PLUGIN_PROGRAMS_SCOPE_NOTE,
   revealHiddenCharacters,
+  type DisclosedEffects,
   type PermissionPreview,
+  type PreviewSchedule,
+  type SchedulePermissionMode,
 } from '@dorkos/shared/marketplace-schemas';
 import { describePreviewSchedule, runsUnattended } from '@/layers/entities/marketplace';
 
@@ -103,6 +106,19 @@ export interface FormattedPermissionGroups {
   /** Conflicts with already-installed packages. */
   conflicts: FormattedPermission[];
 }
+
+/** The parts of a preview that run on their own, and what of them could not be read. */
+type RunnableParts = Pick<
+  PermissionPreview,
+  | 'hooks'
+  | 'unreadableHooks'
+  | 'mcpServers'
+  | 'lspServers'
+  | 'monitors'
+  | 'executables'
+  | 'skillTools'
+  | 'unreadableDeclarations'
+>;
 
 // ---------------------------------------------------------------------------
 // Helpers — file paths
@@ -351,9 +367,13 @@ function formatEffects(
  * "declares no commands", and those are very different things to be told right
  * before you click Install.
  *
- * @param preview - Full permission preview from the server.
+ * @param preview - The runnable parts of a permission preview.
+ * @param scopeNote - When the plugin's own programs start, in one sentence.
  */
-function formatCommands(preview: PermissionPreview): FormattedPermission[] {
+function formatCommands(
+  preview: RunnableParts,
+  scopeNote: string = PLUGIN_PROGRAMS_SCOPE_NOTE
+): FormattedPermission[] {
   const rows: FormattedPermission[] = preview.hooks.map((hook) => ({
     icon: 'terminal',
     label: revealHiddenCharacters(hook.command),
@@ -380,7 +400,7 @@ function formatCommands(preview: PermissionPreview): FormattedPermission[] {
   const programRow = (label: string, name: string, local = true): FormattedPermission => ({
     icon: local ? 'terminal' : 'globe',
     label,
-    description: `${name}. ${PLUGIN_PROGRAMS_SCOPE_NOTE}`,
+    description: `${name}. ${scopeNote}`,
     mono: true,
   });
   for (const server of preview.mcpServers) {
@@ -452,9 +472,9 @@ function formatCommands(preview: PermissionPreview): FormattedPermission[] {
  * severity here, which is this dialog's own concern: the arrival confirm's
  * ledger has no severity column.
  *
- * @param preview - Full permission preview from the server.
+ * @param preview - The scheduled jobs of a permission preview.
  */
-function formatSchedules(preview: PermissionPreview): FormattedPermission[] {
+function formatSchedules(preview: Pick<PermissionPreview, 'schedules'>): FormattedPermission[] {
   return preview.schedules.map((schedule) => ({
     icon: 'clock',
     label: schedule.name,
@@ -594,4 +614,172 @@ export function formatPermissionPreview(
       severity: (conflict.level === 'error' ? 'error' : 'warning') satisfies PermissionSeverity,
     })),
   };
+}
+
+/** Where an update lands, which decides whether its own programs start at all. */
+export type DisclosureScope = 'global' | 'project';
+
+/**
+ * When a plugin's own programs start, for an update in a known place: a global
+ * package is loaded into every session; a project's copy is written as files
+ * for the project's agent tools, and its servers, monitors and `bin/` commands
+ * are not started from it.
+ */
+const PROGRAMS_START: Record<DisclosureScope, string> = {
+  global: 'Starts in every session.',
+  project: 'Declared, but not started for a project install.',
+};
+
+/**
+ * Rows for everything a disclosure says a new version runs: each command and
+ * when it runs, each program with where it starts, each skill's tools, and each
+ * scheduled job. The same rows, in the same words, as the install preview's
+ * commands and schedules groups, so a person reads one vocabulary on every
+ * consent surface. The update confirm shows these under each package, and the
+ * apply sends the same disclosure back, so what a person approves is what
+ * they read (DOR-2306).
+ *
+ * @param effects - What a new version runs, as the update check reported it.
+ * @param scope - Where the installation is, which decides when programs start.
+ * @returns One row per thing it runs; empty when it runs nothing on its own.
+ */
+export function formatDisclosedEffects(
+  effects: DisclosedEffects,
+  scope: DisclosureScope
+): FormattedPermission[] {
+  const parts: RunnableParts = {
+    hooks: effects.hooks.map((hook) => ({
+      event: hook.event,
+      ...(hook.matcher !== null && { matcher: hook.matcher }),
+      command: hook.command,
+      ...(hook.source !== null && { source: hook.source }),
+    })),
+    unreadableHooks: [],
+    mcpServers: effects.mcpServers.map((server) => ({
+      name: server.name,
+      transport: server.transport,
+      ...(server.command !== null && { command: server.command, args: server.args }),
+      ...(server.url !== null && { url: server.url }),
+    })),
+    lspServers: effects.lspServers.map(({ name, command, args }) => ({ name, command, args })),
+    monitors: effects.monitors.map(({ name, command, when }) => ({
+      name,
+      command,
+      ...(when !== null && { when }),
+    })),
+    executables: effects.executables,
+    skillTools: effects.skillTools,
+    unreadableDeclarations: [],
+  };
+  const schedules: PreviewSchedule[] = effects.schedules.map((job) => ({
+    name: job.name,
+    cron: job.cron,
+    // The server clamps a packaged job's mode before disclosing it, so it is
+    // always one of the known modes; the wire carries it as a plain string.
+    permissionMode: job.permissionMode as SchedulePermissionMode,
+    startsEnabled: job.startsEnabled,
+  }));
+  return [...formatCommands(parts, PROGRAMS_START[scope]), ...formatSchedules({ schedules })];
+}
+
+/** How one thing a new version runs compares with the version installed now. */
+export type DisclosureChange = 'new' | 'changed' | 'unchanged' | 'unknown';
+
+/** One row of what a new version runs, and how it compares with what is installed. */
+export interface DisclosureRow {
+  /** The row, formatted exactly as the install preview formats it. */
+  row: FormattedPermission;
+  /**
+   * `new` for something the installed version does not run, `changed` for a
+   * named server, monitor, skill or job it runs differently, `unchanged` for
+   * something it runs exactly so, `unknown` when what is installed could not
+   * be read.
+   */
+  change: DisclosureChange;
+  /**
+   * For a `changed` row: the same named item as the installed version runs
+   * it, formatted the same way, so the person sees the old value beside the
+   * new one rather than only being told it changed.
+   */
+  previous?: FormattedPermission;
+}
+
+/** A disclosure with nothing in it, to hold one item at a time. */
+const NOTHING_DISCLOSED: DisclosedEffects = {
+  hooks: [],
+  schedules: [],
+  mcpServers: [],
+  lspServers: [],
+  monitors: [],
+  executables: [],
+  skillTools: [],
+};
+
+/** The kinds of things a disclosure lists, in the order rows are shown. */
+const DISCLOSURE_KINDS = [
+  'hooks',
+  'mcpServers',
+  'lspServers',
+  'monitors',
+  'executables',
+  'skillTools',
+  'schedules',
+] as const;
+
+/** The name a named item goes by, so a changed one is told from a new one. */
+function nameOf(kind: (typeof DISCLOSURE_KINDS)[number], item: unknown): string | undefined {
+  if (kind === 'hooks' || kind === 'executables') return undefined;
+  if (kind === 'skillTools') return (item as { source: string }).source;
+  return (item as { name: string }).name;
+}
+
+/**
+ * Everything a new version runs, one row per thing, each marked against the
+ * version installed now, so a confirm step can lead with what is new and fold
+ * what is not. The rows are the same ones {@link formatDisclosedEffects} makes,
+ * so the list a person approves is unchanged: only its order and marks differ.
+ *
+ * @param next - What the new version runs.
+ * @param installed - What the installed version runs; `null` or absent when it
+ *   could not be read, which marks every row `unknown`.
+ * @param scope - Where the installation is, which decides when programs start.
+ * @returns One row per thing the new version runs, in the preview's order.
+ */
+export function formatDisclosureChanges(
+  next: DisclosedEffects,
+  installed: DisclosedEffects | null | undefined,
+  scope: DisclosureScope
+): DisclosureRow[] {
+  const rows: DisclosureRow[] = [];
+  const formatOne = (kind: (typeof DISCLOSURE_KINDS)[number], item: unknown) =>
+    formatDisclosedEffects({ ...NOTHING_DISCLOSED, [kind]: [item] } as DisclosedEffects, scope)[0];
+  for (const kind of DISCLOSURE_KINDS) {
+    for (const item of next[kind] as unknown[]) {
+      const row = formatOne(kind, item);
+      if (!row) continue;
+      const change = changeOf(kind, item, installed);
+      const before =
+        change === 'changed'
+          ? (installed![kind] as unknown[]).find((old) => nameOf(kind, old) === nameOf(kind, item))
+          : undefined;
+      const previous = before === undefined ? undefined : formatOne(kind, before);
+      rows.push({ row, change, ...(previous && { previous }) });
+    }
+  }
+  return rows;
+}
+
+/** How one item compares with what is installed. */
+function changeOf(
+  kind: (typeof DISCLOSURE_KINDS)[number],
+  item: unknown,
+  installed: DisclosedEffects | null | undefined
+): DisclosureChange {
+  if (!installed) return 'unknown';
+  const before = installed[kind] as unknown[];
+  const same = JSON.stringify(item);
+  if (before.some((old) => JSON.stringify(old) === same)) return 'unchanged';
+  const name = nameOf(kind, item);
+  if (name !== undefined && before.some((old) => nameOf(kind, old) === name)) return 'changed';
+  return 'new';
 }

@@ -11,6 +11,7 @@
  */
 import type {
   AggregatedPackage,
+  DisclosedEffects,
   InstallationUpdateCheck,
   InstalledPackage,
   MarketplaceSource,
@@ -353,6 +354,17 @@ export const MOCK_INSTALLED_FOR_UPDATES: InstalledPackage[] = [
     scope: 'global',
     installPath: '/Users/kai/.dork/plugins/obsidian-sync',
     installedAt: '2026-03-01T14:30:00Z',
+    linked: true,
+    // A linked install nobody approved yet: held back from every session, and
+    // its note says an approval covers whatever is in its folder (DOR-2306).
+    heldBack: {
+      reason: 'unasked',
+      reviewable: true,
+      linkedPath: '/Users/kai/src/obsidian-sync',
+      note:
+        'Held back: you have not approved it as it is now. Linked: it runs whatever is in ' +
+        '/Users/kai/src/obsidian-sync. Review it to decide.',
+    },
   },
   {
     name: 'python-skills',
@@ -364,6 +376,56 @@ export const MOCK_INSTALLED_FOR_UPDATES: InstalledPackage[] = [
     installedAt: '2026-04-11T08:15:00Z',
   },
 ];
+
+/** What a new version of the Flow plugin runs on its own, as a check discloses it. */
+const FLOW_NEXT_RUNS: DisclosedEffects = {
+  hooks: [
+    {
+      event: 'PreToolUse',
+      matcher: 'Bash',
+      command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/guard-git.mjs"',
+      source: null,
+    },
+    {
+      event: 'Stop',
+      matcher: null,
+      command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/tidy.mjs"',
+      source: null,
+    },
+  ],
+  schedules: [],
+  mcpServers: [
+    {
+      name: 'linear',
+      transport: 'stdio',
+      command: 'npx',
+      args: ['-y', '@linear/mcp-server'],
+      url: null,
+    },
+  ],
+  lspServers: [],
+  monitors: [],
+  executables: [],
+  skillTools: [{ source: 'skills/triage/SKILL.md', skill: 'triage', tools: ['Bash(gh:*)'] }],
+};
+
+/** What the Flow plugin installed now runs: one hook fewer, an older server. */
+const FLOW_NOW_RUNS: DisclosedEffects = {
+  ...FLOW_NEXT_RUNS,
+  hooks: [FLOW_NEXT_RUNS.hooks[1]!],
+  mcpServers: [{ ...FLOW_NEXT_RUNS.mcpServers[0]!, args: ['-y', '@linear/mcp-server@1'] }],
+};
+
+/** A new version that runs nothing on its own. */
+const RUNS_NOTHING: DisclosedEffects = {
+  hooks: [],
+  schedules: [],
+  mcpServers: [],
+  lspServers: [],
+  monitors: [],
+  executables: [],
+  skillTools: [],
+};
 
 /** One check per {@link MOCK_INSTALLED_FOR_UPDATES} row, in the server's shape. */
 export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
@@ -379,6 +441,9 @@ export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
     installPath: '/Users/kai/.dork/agents/code-reviewer',
     type: 'agent',
     scope: 'global',
+    disclosed: RUNS_NOTHING,
+    contentHash: 'sha256:reviewer-150',
+    installedDisclosed: RUNS_NOTHING,
   },
   {
     packageName: 'flow',
@@ -395,19 +460,25 @@ export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
     agentPath: '/Users/kai/work/release-bot',
     agentName: 'Release Bot',
     applyError: 'another install is already running in this folder',
+    disclosed: FLOW_NEXT_RUNS,
+    contentHash: 'sha256:flow-073',
+    installedDisclosed: FLOW_NOW_RUNS,
   },
   {
     packageName: 'flow',
     installedVersion: '0.7.3',
-    latestVersion: '0.7.3',
-    hasUpdate: false,
+    latestVersion: '0.8.0',
+    hasUpdate: true,
     marketplace: 'dorkos-community',
-    status: 'current',
+    status: 'update-available',
     installedVersionSource: 'package',
     latestVersionSource: 'package',
     installPath: '/Users/kai/.dork/plugins/flow',
     type: 'plugin',
     scope: 'global',
+    disclosed: FLOW_NEXT_RUNS,
+    contentHash: 'sha256:flow-080',
+    installedDisclosed: FLOW_NEXT_RUNS,
   },
   {
     packageName: 'obsidian-sync',
@@ -448,6 +519,9 @@ export const MOCK_UPDATE_CHECKS_ALL_CURRENT: InstallationUpdateCheck[] = MOCK_UP
     marketplace: check.marketplace,
     applyError: undefined,
     note: undefined,
+    disclosed: undefined,
+    contentHash: undefined,
+    installedDisclosed: undefined,
   })
 );
 

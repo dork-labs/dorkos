@@ -108,10 +108,11 @@ export interface AgentScopeRef {
  * `skill-pack`, and `adapter`). Agents are excluded because they run as
  * DorkOS-managed subprocesses, not as CC plugins.
  *
- * This is the data source for `plugin-activation.ts` — the returned list
- * of package names is passed to `buildClaudeAgentSdkPluginsArray` which
- * translates each name into a `{ type: 'local', path }` entry for the
- * SDK's `options.plugins` array.
+ * These are the CANDIDATES for activation. `global-plugin-consent.ts`
+ * partitions them, and only the ones that run nothing on their own, or that a
+ * person approved exactly, reach `buildClaudeAgentSdkPluginsArray`, which
+ * translates each name into a `{ type: 'local', path }` entry for the SDK's
+ * `options.plugins` array (DOR-2306).
  *
  * DorkOS does not currently model plugin enable/disable state; every
  * installed plugin is treated as enabled. If that changes, add the

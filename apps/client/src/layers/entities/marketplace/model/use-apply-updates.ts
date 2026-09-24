@@ -37,7 +37,10 @@ export function settleAppliedCheck(returned: InstallationUpdateCheck): Installat
 
 /**
  * Reinstall exactly the named installations at their newest version
- * (`POST /api/marketplace/updates`), each in the scope it is installed in.
+ * (`POST /api/marketplace/updates`), each in the scope it is installed in, and
+ * each held to the version and the disclosure the person was shown: a target
+ * whose new version moved is refused (`disclosure_changed`), and the check is
+ * refreshed so the next confirm shows what it runs now.
  *
  * Failures are not toasted here (`meta.suppressErrorToast`): the caller that
  * started the apply reports it. On success the cached update check is patched from the answer — each
@@ -58,6 +61,14 @@ export function useApplyUpdates() {
     // which settles whether or not the calling component is still mounted.
     // The shared `MutationCache` toast would report the same failure twice.
     meta: { suppressErrorToast: true },
+    onError: (err) => {
+      // A new version changed what it runs after the check the person read:
+      // nothing ran, and the check is stale. Ask again so the next confirm
+      // shows what it runs now (DOR-2306).
+      if ((err as { code?: unknown }).code === 'disclosure_changed') {
+        void queryClient.invalidateQueries({ queryKey: marketplaceKeys.updates() });
+      }
+    },
     onSuccess: async (result) => {
       const byPath = new Map(result.checks.map((c) => [c.installPath, settleAppliedCheck(c)]));
       queryClient.setQueriesData<InstallationUpdatesResult>(

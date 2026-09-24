@@ -115,7 +115,7 @@ export function ConfirmUpdatesDialogShowcase() {
   return (
     <PlaygroundSection
       title="ConfirmUpdatesDialog"
-      description="Confirm step before updating: every installation it will touch, where it lives, and its version change. Confirms any list, one included. A drawer on phones."
+      description="Confirm step before updating: every installation it will touch, where it lives, its version change, and everything its new version runs on its own. Confirms any list, one included; a row whose new version runs something opens it too. A drawer on phones."
     >
       <ShowcaseDemo>
         <div className="flex gap-3">
@@ -135,7 +135,7 @@ export function ConfirmUpdatesDialogShowcase() {
           </button>
         </div>
         <ConfirmUpdatesDialog
-          stale={open === 'all' ? stale : open === 'one' ? stale.slice(1, 2) : null}
+          stale={open === 'all' ? stale : open === 'one' ? stale.slice(-1) : null}
           onCancel={() => setOpen(null)}
           onConfirm={() => setOpen(null)}
         />

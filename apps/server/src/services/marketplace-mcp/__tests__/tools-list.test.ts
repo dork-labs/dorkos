@@ -97,13 +97,15 @@ function buildStubDeps(): MarketplaceMcpDeps {
       uninstall: vi.fn(explode('uninstallFlow.uninstall')),
     } as unknown as MarketplaceMcpDeps['uninstallFlow'],
     updateFlow: {
-      checkInstallations: vi.fn(explode('updateFlow.checkInstallations')),
+      planInstallations: vi.fn(explode('updateFlow.planInstallations')),
+      applyPlan: vi.fn(explode('updateFlow.applyPlan')),
     } as unknown as MarketplaceMcpDeps['updateFlow'],
     confirmationProvider: {
       requestInstallConfirmation: vi.fn(explode('confirmationProvider.requestInstallConfirmation')),
       resolve: vi.fn(explode('confirmationProvider.resolve')),
     } as unknown as MarketplaceMcpDeps['confirmationProvider'],
     onPluginsChanged: vi.fn(explode('onPluginsChanged')),
+    consent: { settle: vi.fn(async () => {}), removed: vi.fn() },
     logger: {
       info: vi.fn(),
       warn: vi.fn(),

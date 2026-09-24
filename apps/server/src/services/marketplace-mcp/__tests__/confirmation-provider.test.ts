@@ -293,6 +293,29 @@ describe('TokenConfirmationProvider', () => {
       expect(asApproved).toEqual({ status: 'approved' });
     });
 
+    it('refuses an install approval for other staged files, same package and programs (DOR-2306)', async () => {
+      // The review's C1 at the card: consent was for these bytes. A source that
+      // swaps a hook script after the card, keeping hooks.json, is not approved.
+      const issued = await provider.requestInstallConfirmation({
+        ...buildRequest(),
+        contentHash: 'sha256:seen',
+      });
+      if (issued.status !== 'pending') throw new Error('expected pending');
+      decidePending('granted');
+
+      const swapped = await provider.resolveToken(issued.token, {
+        ...buildRequest(),
+        contentHash: 'sha256:hostile',
+      });
+      expect(swapped.status).toBe('pending');
+
+      const asApproved = await provider.resolveToken(issued.token, {
+        ...buildRequest(),
+        contentHash: 'sha256:seen',
+      });
+      expect(asApproved).toEqual({ status: 'approved' });
+    });
+
     it('refuses an uninstall approval escalated to a purging uninstall', async () => {
       // The data-loss case: the card said "keeping its saved data", so the token
       // must not license the variant that deletes .dork/data/ and secrets.json.

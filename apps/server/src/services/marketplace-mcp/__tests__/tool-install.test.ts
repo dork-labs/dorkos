@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtempSync } from 'node:fs';
 import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -104,6 +105,9 @@ function manifest(overrides: { name: string; version?: string }): MarketplacePac
  * Build a canned `PreviewResult` (the tuple returned by
  * {@link InstallerLike.preview}) with sensible defaults.
  */
+/** An empty staged package directory every canned preview points at. */
+const STAGED_DIR = mkdtempSync(join(tmpdir(), 'tool-install-staged-'));
+
 function previewResult(overrides: {
   name: string;
   version?: string;
@@ -113,7 +117,8 @@ function previewResult(overrides: {
   return {
     preview: overrides.preview ?? permissionPreview(),
     manifest: manifest({ name: overrides.name, version: overrides.version }),
-    packagePath: overrides.packagePath ?? `/tmp/.dork-test/cache/${overrides.name}`,
+    // A real, empty directory: the install hashes the staged files it approves.
+    packagePath: overrides.packagePath ?? STAGED_DIR,
   };
 }
 
@@ -190,6 +195,7 @@ function createStubDeps(opts: {
     uninstallFlow: {} as MarketplaceMcpDeps['uninstallFlow'],
     confirmationProvider: opts.confirmationProvider,
     onPluginsChanged: opts.onPluginsChanged ?? vi.fn(),
+    consent: { settle: vi.fn(async () => {}), removed: vi.fn() },
     logger: {
       info: vi.fn(),
       warn: vi.fn(),
@@ -594,6 +600,88 @@ describe('createInstallHandler — error mapping', () => {
     expect(payload.error).toContain('package not found');
     expect(provider.requestInstallConfirmation).not.toHaveBeenCalled();
     expect(installer.install).not.toHaveBeenCalled();
+  });
+});
+
+// DOR-2306: a person who read the card and said yes has approved exactly what
+// the package runs, so a global install of it loads into sessions without a
+// second card. Nobody else's yes is recorded.
+describe('createInstallHandler — settling consent after the install (DOR-2306)', () => {
+  let confirmationProvider: FakeConfirmationProvider;
+
+  beforeEach(() => {
+    confirmationProvider = new FakeConfirmationProvider();
+  });
+
+  function stubs() {
+    const installer = createStubInstaller({
+      preview: previewResult({ name: 'flow' }),
+      install: installResult({ packageName: 'flow' }),
+    });
+    const onPluginsChanged = vi.fn();
+    const deps = createStubDeps({ confirmationProvider, installer, onPluginsChanged });
+    return { deps, onPluginsChanged, installer };
+  }
+
+  it('settles a granted global install with what the card showed, before the refresh', async () => {
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const { deps, onPluginsChanged } = stubs();
+
+    await createInstallHandler(deps)({ name: 'flow' });
+
+    const settle = vi.mocked(deps.consent.settle);
+    expect(settle).toHaveBeenCalledTimes(1);
+    expect(settle.mock.calls[0]?.[0]).toMatchObject({ global: true });
+    expect(settle.mock.calls[0]?.[1]).toEqual({
+      disclosed: expect.objectContaining({ hooks: [] }),
+      contentHash: expect.stringMatching(/^sha256:/),
+    });
+    expect(settle.mock.invocationCallOrder[0]).toBeLessThan(
+      onPluginsChanged.mock.invocationCallOrder[0] ?? 0
+    );
+  });
+
+  it('binds the card to the staged files it describes', async () => {
+    // Purpose: a card granted for one set of bytes must not cover another.
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const { deps } = stubs();
+
+    await createInstallHandler(deps)({ name: 'flow' });
+
+    expect(confirmationProvider.requestInstallConfirmation.mock.calls[0]?.[0]).toMatchObject({
+      contentHash: expect.stringMatching(/^sha256:/),
+      origin: { version: '1.0.0' },
+    });
+  });
+
+  it('says a project install is not global', async () => {
+    const projectPath = await boundedProjectPath();
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const { deps } = stubs();
+
+    await createInstallHandler(deps)({ name: 'flow', projectPath });
+
+    expect(vi.mocked(deps.consent.settle).mock.calls[0]?.[0]).toMatchObject({ global: false });
+  });
+
+  it('settles with no approval when the tier gate skipped the card: nobody was shown anything', async () => {
+    const { deps } = stubs();
+
+    await createInstallHandler(deps)({ name: 'flow' }, { preApproved: true });
+
+    expect(vi.mocked(deps.consent.settle).mock.calls[0]?.[1]).toBeUndefined();
+  });
+
+  it('settles nothing while the card waits', async () => {
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({
+      status: 'pending',
+      token: 'tok-1',
+    });
+    const { deps } = stubs();
+
+    await createInstallHandler(deps)({ name: 'flow' });
+
+    expect(deps.consent.settle).not.toHaveBeenCalled();
   });
 });
 

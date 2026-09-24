@@ -124,15 +124,22 @@ vi.mock('../../../core/event-fan-out.js', () => ({
 }));
 // Mock the dynamic imports refreshActivatedPlugins() pulls in so the plugin-set
 // swap is deterministic and never touches the real filesystem.
-const { _mockListEnabledPluginNames, _mockBuildPluginsArray } = vi.hoisted(() => ({
-  _mockListEnabledPluginNames: vi.fn().mockResolvedValue([]),
-  _mockBuildPluginsArray: vi.fn().mockResolvedValue([]),
-}));
+const { _mockListEnabledPluginNames, _mockListConsentedPluginNames, _mockBuildPluginsArray } =
+  vi.hoisted(() => ({
+    _mockListEnabledPluginNames: vi.fn().mockResolvedValue([]),
+    _mockListConsentedPluginNames: vi.fn().mockResolvedValue([]),
+    _mockBuildPluginsArray: vi.fn().mockResolvedValue([]),
+  }));
 vi.mock('../../../../lib/dork-home.js', () => ({
   resolveDorkHome: vi.fn().mockReturnValue('/tmp/dorkos-test'),
 }));
 vi.mock('../../../marketplace/installed-scanner.js', () => ({
   listEnabledPluginNames: _mockListEnabledPluginNames,
+}));
+// Which global packages a person approved is decided in the marketplace layer
+// (DOR-2306); the runtime must hand the SDK that list and nothing wider.
+vi.mock('../../../marketplace/global-plugin-consent.js', () => ({
+  listConsentedPluginNames: _mockListConsentedPluginNames,
 }));
 vi.mock('../messaging/plugin-activation.js', () => ({
   buildClaudeAgentSdkPluginsArray: _mockBuildPluginsArray,
@@ -1580,7 +1587,51 @@ describe('ClaudeCodeRuntime', () => {
     beforeEach(() => {
       _mockBroadcast.mockClear();
       _mockListEnabledPluginNames.mockResolvedValue([]);
+      _mockListConsentedPluginNames.mockResolvedValue([]);
       _mockBuildPluginsArray.mockResolvedValue([]);
+    });
+
+    it('hands the SDK only the global packages a person approved (DOR-2306)', async () => {
+      // Purpose: every installed global package is a candidate, but one whose
+      // programs nobody approved must never reach a session.
+      _mockListEnabledPluginNames.mockResolvedValue(['approved', 'held-back']);
+      _mockListConsentedPluginNames.mockResolvedValue(['approved']);
+
+      await agentManager.refreshActivatedPlugins();
+
+      expect(_mockBuildPluginsArray).toHaveBeenCalledWith(
+        expect.objectContaining({ enabledPluginNames: ['approved'] })
+      );
+    });
+
+    it('drops every global plugin when the approval check itself fails, never keeping the old list (DOR-2306, I-1)', async () => {
+      // Purpose: a refresh that cannot say which packages are approved must not
+      // leave the previous approved set loading into every session.
+      _mockListConsentedPluginNames.mockResolvedValue(['approved']);
+      _mockBuildPluginsArray.mockImplementation(async ({ enabledPluginNames }) =>
+        (enabledPluginNames as string[]).map((name) => ({
+          type: 'local',
+          path: `/h/plugins/${name}`,
+        }))
+      );
+      await agentManager.refreshActivatedPlugins();
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const optionsOfLastTurn = async (sessionId: string) => {
+        (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(wrapSdkQuery(sdkSimpleText('')));
+        agentManager.ensureSession(sessionId, { permissionMode: 'default' });
+        for await (const _ of agentManager.sendMessage(sessionId, 'hello')) {
+          // drain
+        }
+        return (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0]?.options;
+      };
+      expect((await optionsOfLastTurn('partition-ok'))?.plugins).toEqual([
+        { type: 'local', path: '/h/plugins/approved' },
+      ]);
+
+      _mockListConsentedPluginNames.mockRejectedValue(new Error('settings unreadable'));
+      await agentManager.refreshActivatedPlugins();
+
+      expect((await optionsOfLastTurn('partition-threw'))?.plugins ?? []).toEqual([]);
     });
 
     it('broadcasts commands_changed so clients re-fetch the registry', async () => {

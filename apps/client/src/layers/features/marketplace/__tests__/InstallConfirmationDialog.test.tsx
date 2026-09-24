@@ -122,6 +122,17 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
 
 function makeDetail(preview?: Partial<PermissionPreview>): MarketplacePackageDetail {
   return {
+    // Runs nothing on its own: what an install is held to (DOR-2306).
+    disclosed: {
+      hooks: [],
+      schedules: [],
+      mcpServers: [],
+      lspServers: [],
+      monitors: [],
+      executables: [],
+      skillTools: [],
+    },
+    contentHash: 'sha256:staged',
     manifest: {
       name: '@dorkos/code-reviewer',
       version: '1.0.0',
@@ -306,7 +317,15 @@ describe('InstallConfirmationDialog', () => {
     // The dialog now uses mutateAsync + try/catch to wait for success before
     // closing. The bare `mutate` is not called by this code path.
     expect(installMutateAsync).toHaveBeenCalledTimes(1);
-    expect(installMutateAsync).toHaveBeenCalledWith({ name: '@dorkos/code-reviewer' });
+    expect(installMutateAsync).toHaveBeenCalledWith({
+      name: '@dorkos/code-reviewer',
+      // What the dialog showed the package runs, sent back so the install is
+      // held to it (DOR-2306).
+      options: {
+        approvedDisclosure: expect.objectContaining({ hooks: [] }),
+        approvedContentHash: 'sha256:staged',
+      },
+    });
   });
 
   it('disables the Install button when the preview has error-level conflicts', () => {
@@ -494,7 +513,15 @@ describe('InstallConfirmationDialog', () => {
 
     await user.click(screen.getByRole('button', { name: /^install$/i }));
 
-    expect(installMutateAsync).toHaveBeenCalledWith({ name: 'my-shape' });
+    expect(installMutateAsync).toHaveBeenCalledWith({
+      name: 'my-shape',
+      // What the dialog showed the package runs, sent back so the install is
+      // held to it (DOR-2306).
+      options: {
+        approvedDisclosure: expect.objectContaining({ hooks: [] }),
+        approvedContentHash: 'sha256:staged',
+      },
+    });
   });
 
   it('keeps the scope selector for a non-shape package (regression guard)', () => {

@@ -32,6 +32,7 @@ function createStubDeps(): MarketplaceMcpDeps {
     updateFlow: {} as MarketplaceMcpDeps['updateFlow'],
     confirmationProvider: {} as MarketplaceMcpDeps['confirmationProvider'],
     onPluginsChanged: vi.fn(),
+    consent: { settle: vi.fn(async () => {}), removed: vi.fn() },
     logger: {
       info: vi.fn(),
       warn: vi.fn(),

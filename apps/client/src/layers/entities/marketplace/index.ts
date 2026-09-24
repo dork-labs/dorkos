@@ -36,6 +36,8 @@ export {
   useApplyingInstallPaths,
 } from './model/use-apply-updates';
 
+export { useReviewHeldBackPackage } from './model/use-review-held-back';
+
 export { useAddMarketplaceSource } from './model/use-add-marketplace-source';
 
 export { useRemoveMarketplaceSource } from './model/use-remove-marketplace-source';

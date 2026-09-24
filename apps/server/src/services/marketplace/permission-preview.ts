@@ -312,6 +312,52 @@ async function resolveRequirement(
   return { ...parsed, satisfied };
 }
 
+/** Everything a package declares that runs on its own, and whatever of it could not be read. */
+export type RunnableDeclarations = Pick<
+  PermissionPreview,
+  | 'hooks'
+  | 'unreadableHooks'
+  | 'skillTools'
+  | 'mcpServers'
+  | 'lspServers'
+  | 'monitors'
+  | 'executables'
+  | 'unreadableDeclarations'
+>;
+
+/**
+ * Read everything a package directory declares that runs on its own: hooks
+ * (plugin, plugin.json, and skill or command frontmatter), each skill's
+ * `allowed-tools`, MCP and language servers, monitors and `bin/` commands,
+ * plus every declaration that could not be read.
+ *
+ * The one reader for both sides of a consent: the install preview a person
+ * approves reads a staged package with it, and global activation reads the
+ * installed package with it (`global-plugin-consent.ts`), so the two can only
+ * disagree when the files do.
+ *
+ * @param packagePath - Absolute path to a package directory, staged or installed.
+ * @returns The runnable declarations, verbatim.
+ */
+export async function readRunnableDeclarations(packagePath: string): Promise<RunnableDeclarations> {
+  const pluginJson = await readPluginJson(packagePath);
+  const hookDeclarations = await readPackageHooks(packagePath, pluginJson);
+  // A skill's or command's frontmatter hooks run while it is in use, and the
+  // model picks skills by description, so they are listed with the plugin's.
+  const skills = await readPackageSkills(packagePath, pluginJson);
+  const programs = await readPackagePrograms(packagePath, pluginJson);
+  return {
+    hooks: [...hookDeclarations.hooks, ...skills.hooks],
+    unreadableHooks: [...hookDeclarations.unreadable, ...skills.unreadable],
+    skillTools: skills.skillTools,
+    mcpServers: programs.mcpServers,
+    lspServers: programs.lspServers,
+    monitors: programs.monitors,
+    executables: programs.executables,
+    unreadableDeclarations: programs.unreadable,
+  };
+}
+
 /**
  * Builds {@link PermissionPreview} reports for marketplace package installs.
  *
@@ -418,21 +464,7 @@ export class PermissionPreviewBuilder {
       slots: extractSlots(extManifest.contributions),
     }));
 
-    const pluginJson = await readPluginJson(packagePath);
-    const hookDeclarations = await readPackageHooks(packagePath, pluginJson);
-    // A skill's or command's frontmatter hooks run while it is in use, and the
-    // model picks skills by description, so they are listed with the plugin's.
-    const skills = await readPackageSkills(packagePath, pluginJson);
-    preview.hooks = [...hookDeclarations.hooks, ...skills.hooks];
-    preview.unreadableHooks = [...hookDeclarations.unreadable, ...skills.unreadable];
-    preview.skillTools = skills.skillTools;
-
-    const programs = await readPackagePrograms(packagePath, pluginJson);
-    preview.mcpServers = programs.mcpServers;
-    preview.lspServers = programs.lspServers;
-    preview.monitors = programs.monitors;
-    preview.executables = programs.executables;
-    preview.unreadableDeclarations = programs.unreadable;
+    Object.assign(preview, await readRunnableDeclarations(packagePath));
 
     preview.schedules = [
       ...(await readTaskSkills(packagePath)),

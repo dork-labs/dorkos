@@ -134,12 +134,42 @@ describe('useApplyUpdatesWithToast', () => {
     // those installations and no others.
     const { result } = renderHook(() => useApplyUpdatesWithToast());
 
-    act(() => result.current.apply([makeCheck(), FLOW].map(stale)));
+    const runs = {
+      hooks: [{ event: 'Stop', matcher: null, command: 'echo hi', source: null }],
+      schedules: [],
+      mcpServers: [],
+      lspServers: [],
+      monitors: [],
+      executables: [],
+      skillTools: [],
+    };
+    act(() =>
+      result.current.apply(
+        [
+          makeCheck({ disclosed: runs, contentHash: 'sha256:r' }),
+          { ...FLOW, contentHash: 'sha256:f' },
+        ].map(stale)
+      )
+    );
 
+    // Each installation carries the version and disclosure the person was
+    // shown, untouched: the server installs only what still matches (DOR-2306).
+    // A check with no disclosure sends `null`, which only matches a version
+    // that runs nothing.
     expect(mutateAsync).toHaveBeenCalledWith({
       targets: [
-        { installPath: '/home/.dork/agents/reviewer' },
-        { installPath: '/home/.dork/plugins/flow' },
+        {
+          installPath: '/home/.dork/agents/reviewer',
+          latestVersion: '1.3.0',
+          disclosed: runs,
+          contentHash: 'sha256:r',
+        },
+        {
+          installPath: '/home/.dork/plugins/flow',
+          latestVersion: '0.7.3',
+          disclosed: null,
+          contentHash: 'sha256:f',
+        },
       ],
     });
     expect(toastMock.loading).toHaveBeenCalledWith('Updating 2 packages…');
@@ -315,9 +345,28 @@ describe('useApplyUpdatesWithToast', () => {
     expect(headline).toBe('Couldn’t update 2 packages');
     expect(options.description).toBe(
       'Each of these installs needs your approval first, and DorkOS can’t ask for it here. ' +
-        'Update each one from the terminal with `dorkos marketplace update <name>`.'
+        'Update each one from the terminal with `dorkos marketplace update <name> --apply`.'
     );
     expect(options.description).not.toMatch(/\/api\//);
+  });
+
+  it('says a package changed what it runs since it was shown, and that nothing changed', async () => {
+    // Purpose: the server refused because a new version now runs something the
+    // person did not see (DOR-2306). The toast says so in plain words, and
+    // points at looking again rather than retrying blind.
+    const refusal = Object.assign(new Error('What an update would install is not what was shown'), {
+      code: 'disclosure_changed',
+      status: 409,
+    });
+    await runApply([makeCheck()], { error: refusal });
+
+    const [, options] = toastMock.error.mock.calls[0] as unknown as [
+      string,
+      { description: string },
+    ];
+    expect(options.description).toBe(
+      'This package changed what it runs since you looked, so nothing was updated. Review it again before updating.'
+    );
   });
 
   it('names the command for the one package it refused', async () => {
@@ -334,7 +383,7 @@ describe('useApplyUpdatesWithToast', () => {
       { description: string },
     ];
     expect(options.description).toMatch(
-      /Update it from the terminal with `dorkos marketplace update @dorkos\/reviewer`\.$/
+      /Update it from the terminal with `dorkos marketplace update @dorkos\/reviewer --apply`\.$/
     );
   });
 
@@ -349,7 +398,14 @@ describe('useApplyUpdatesWithToast', () => {
 
     expect(mutateAsync).toHaveBeenCalledTimes(2);
     expect(mutateAsync).toHaveBeenLastCalledWith({
-      targets: [{ installPath: '/home/.dork/plugins/flow' }],
+      targets: [
+        {
+          installPath: '/home/.dork/plugins/flow',
+          latestVersion: '0.7.3',
+          disclosed: null,
+          contentHash: '',
+        },
+      ],
     });
     expect(toastMock.loading).toHaveBeenCalledTimes(2);
 

@@ -132,13 +132,14 @@ describe('runMarketplaceDispatcher', () => {
   });
 
   it('routes `update <name>` to the per-package door', async () => {
-    fetchMock.mockResolvedValueOnce(mockResponse(200, { checks: [], applied: [] }));
+    fetchMock.mockResolvedValueOnce(mockResponse(200, { checks: [] }));
 
     expect(await runMarketplaceDispatcher('update', ['flow'])).toBe(0);
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toMatch(/\/api\/marketplace\/packages\/flow\/update$/);
-    expect(JSON.parse(String(init.body))).toEqual({ apply: false });
+    // A check only: the per-package door no longer applies (DOR-2306).
+    expect(JSON.parse(String(init.body))).toEqual({});
   });
 
   it('routes `uninstall <name>` to the uninstall door', async () => {

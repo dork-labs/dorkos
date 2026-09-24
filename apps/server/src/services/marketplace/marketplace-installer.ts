@@ -50,6 +50,7 @@ import { skillFileProblems, type SkillPackInstallFlow } from './flows/install-sk
 import type { UninstallFlow } from './flows/uninstall.js';
 import { reportInstallEvent, type InstallEvent } from './telemetry-hook.js';
 import { writeInstallMetadata } from './installed-metadata.js';
+import { assertShipsNoRuntimeState, packageContentHash } from './lib/content-hash.js';
 import { locateInstallRoot } from './lib/locate-install.js';
 import {
   deriveSourceProvenance,
@@ -348,6 +349,12 @@ export class MarketplaceInstaller implements InstallerLike {
         throw new ConflictError(preview.conflicts);
       }
 
+      // The package exactly as it came through the channel, hashed BEFORE the
+      // flow copies it, npm writes into the copy and `prepareStaged` injects
+      // skillRef schedules (neither of which the preview does): what a person's
+      // approval of a global package binds, the same hash the preview showed
+      // (DOR-2306).
+      const shippedHash = await recordableContentHash(staged.packagePath);
       // A `skillRef` schedule is written into the package's own SKILL.md in the
       // staged tree, before the installed-files record is computed, so the
       // record holds the file as installed: an untouched update then reports
@@ -440,6 +447,11 @@ export class MarketplaceInstaller implements InstallerLike {
           ...(materialized.generatedPaths.length > 0 && {
             generatedSchedulePaths: materialized.generatedPaths,
           }),
+          // What was installed, as it arrived (hashed above, never re-hashed
+          // after npm wrote into it): what a person's approval of a global
+          // package binds (DOR-2306). Left out if it could not be hashed, which
+          // holds the package back until someone reviews it.
+          ...shippedHash,
         });
       } catch (metaErr) {
         this.deps.logger.warn('[marketplace-installer] failed to write install-metadata.json', {
@@ -766,6 +778,10 @@ export class MarketplaceInstaller implements InstallerLike {
         .map((i) => i.message);
       throw new InvalidPackageError(errorMessages);
     }
+    // A package may not ship DorkOS's runtime state (settings, secrets, install
+    // records): files there are left out of the content hash an approval binds,
+    // and a shipped install record must never stand in for ours (DOR-2306).
+    await assertShipsNoRuntimeState(staged.path);
 
     return {
       resolved,
@@ -1058,4 +1074,19 @@ function recordSourceOf(
   }
   if (resolved.localPath) return { localPath: path.resolve(resolved.localPath) };
   return undefined;
+}
+
+/**
+ * A staged package's content hash for the install metadata, or nothing when
+ * it cannot be hashed (DOR-2306).
+ *
+ * @param installPath - The staged package root, as it arrived.
+ * @internal
+ */
+async function recordableContentHash(installPath: string): Promise<{ contentHash?: string }> {
+  try {
+    return { contentHash: await packageContentHash(installPath) };
+  } catch {
+    return {};
+  }
 }
