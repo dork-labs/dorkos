@@ -1,7 +1,7 @@
 ---
 id: 260924-163130
 title: Whether DorkOS may edit a schedule inside an install root is read from the installed-files record
-status: draft
+status: accepted
 created: 2026-09-24
 spec: marketplace-agent-schedules
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: marketplace-agent-schedules). Finishes DOR-1791 in the shape DOR-2245 made possible (DOR-2272).
+Accepted (extracted from spec: marketplace-agent-schedules). Finishes DOR-1791 in the shape DOR-2245 made possible (DOR-2272).
 
 ## Context
 

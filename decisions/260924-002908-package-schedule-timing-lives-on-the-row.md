@@ -1,7 +1,7 @@
 ---
 id: 260924-002908
 title: A person's timing for a package's schedule lives on the row
-status: draft
+status: accepted
 created: 2026-09-24
 spec: package-schedule-timing
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: package-schedule-timing)
+Accepted (extracted from spec: package-schedule-timing)
 
 ## Context
 

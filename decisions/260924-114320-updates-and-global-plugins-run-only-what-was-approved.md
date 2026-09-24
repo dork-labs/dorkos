@@ -1,7 +1,7 @@
 ---
 id: 260924-114320
 title: Updates and global plugins run only what a person approved
-status: draft
+status: accepted
 created: 2026-09-24
 spec: marketplace-update-disclosure-binding
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: marketplace-update-disclosure-binding)
+Accepted (auto-extracted from spec: marketplace-update-disclosure-binding)
 
 ## Context
 

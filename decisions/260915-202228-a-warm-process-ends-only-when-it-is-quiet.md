@@ -1,7 +1,7 @@
 ---
 id: 260915-202228
 title: A warm process ends only when it is quiet, and everything it says is projected
-status: proposed
+status: accepted
 created: 2026-09-15
 spec: warm-process-lifecycle
 superseded-by: null
@@ -12,7 +12,7 @@ amends: [260812-134510]
 
 ## Status
 
-Proposed. Amends [ADR 260812-134510](260812-134510-persistent-streaming-input-sessions.md), which stays accepted; its
+Accepted. Amends [ADR 260812-134510](260812-134510-persistent-streaming-input-sessions.md), which stays accepted; its
 Status section quotes each retired passage. In short: a relaunch pin change no longer replaces the process at the next
 dispatch whatever it is doing; eviction no longer tears down a process holding background work; "a reap costs nothing
 observable" now holds only for a quiet process; a process holding background work is not reclaimable for the warm

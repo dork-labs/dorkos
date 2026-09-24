@@ -1,7 +1,7 @@
 ---
 id: 260923-223910
 title: Destructive actions ask unless allowed one by one, and three floor areas are never Allowed
-status: draft
+status: accepted
 created: 2026-09-23
 spec: agent-permissions
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: agent-permissions).
+Accepted (extracted from spec: agent-permissions).
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 id: 260923-163513
 title: An installed package owns only the files its install put there, proven by a recorded hash
-status: draft
+status: accepted
 created: 2026-09-23
 spec: marketplace-package-file-ownership
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: marketplace-package-file-ownership). Amends ADR-0233 (the update's preserve-and-restore steps) and ADR-0304 (adds a carry-over step to the transaction).
+Accepted (extracted from spec: marketplace-package-file-ownership). Amends ADR-0233 (the update's preserve-and-restore steps) and ADR-0304 (adds a carry-over step to the transaction).
 
 ## Context
 
