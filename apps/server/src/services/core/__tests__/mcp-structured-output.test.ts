@@ -101,6 +101,7 @@ const TASK: Task = {
   defaultTimezone: null,
   timingOverridden: false,
   packageOwned: null,
+  approvalChanges: [],
   agentId: null,
   enabled: true,
   maxRuntime: null,

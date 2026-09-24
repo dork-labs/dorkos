@@ -112,6 +112,7 @@ const PARKED_SCHEDULE: Task = {
   defaultTimezone: 'UTC',
   timingOverridden: false,
   packageOwned: null,
+  approvalChanges: [],
   agentId: null,
   enabled: false,
   sticky: false,

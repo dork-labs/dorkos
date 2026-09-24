@@ -22,7 +22,10 @@ import type { EffortLevel, PermissionMode, UpdateTaskRequest } from '@dorkos/sha
 import { slugify } from '@dorkos/skills/slug';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
-import { clampSchedulePermissionMode } from '../../../tasks/schedule-permission-clamp.js';
+import {
+  clampSchedulePermissionMode,
+  taskWorkOf,
+} from '../../../tasks/schedule-permission-clamp.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -33,6 +36,8 @@ import {
 import { createScheduledTask } from '../../../tasks/lifecycle/create-task.js';
 import { removeScheduledTaskFile } from '../../../tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../../../tasks/lifecycle/update-task-file.js';
+import { changesApprovedWork } from '../../../tasks/task-file-update.js';
+import { AGENT_TIMING_CHANGE_REASON } from '../../../tasks/timing/effective-timing.js';
 import { describeScheduleProblem } from '../../../tasks/cron-validation.js';
 import { broadcastTasksChanged } from '../../../tasks/task-sse-events.js';
 import {
@@ -644,34 +649,20 @@ export function createUpdateScheduleHandler(
     // file declaring more power than its row holds is a standing request from disk
     // that nobody made, and the next sync would read it back.
     //
-    // `name` belongs beside prompt and cron because it is not inert: a scheduled
-    // run is told `Job: ${task.name}` in its system prompt
-    // (`services/tasks/task-append.ts`), so a rename changes what the unattended
-    // run reads. A metadata-only edit (enabled/maxRuntime) changes no
-    // approved work, so it never clamps — a legitimate on/off toggle keeps the
-    // grant. The change must be REAL: a field re-sent at its current value is not
-    // a new piece of work, mirroring the route's `!== existing` predicate.
-    //
-    // The two predicates are separate because the gates they feed are not the
-    // same width. `scheduleContentKey` is `[prompt, cron, timezone]` and nothing
-    // else (the timezone since DOR-2307), so those three alone decide whether a person's APPROVAL still covers this
-    // schedule ({@link REAPPROVAL_NOTE}); the clamp below is deliberately wider,
-    // because a rename changes what the unattended run is told without touching
-    // the key.
-    const changesApprovedContent =
-      (args.prompt !== undefined && args.prompt !== existing.prompt) ||
-      (args.cron !== undefined && (args.cron ?? '') !== (existing.cron ?? '')) ||
-      // Part of the approved work since DOR-2307: the same cron in another
-      // timezone runs at another time.
-      (args.timezone !== undefined && args.timezone !== (existing.timezone ?? 'UTC'));
-    const changesApprovedWork =
-      changesApprovedContent || (args.name !== undefined && args.name !== existing.name);
+    // The approved work is the prompt, the timing and the settings in the
+    // approval key (`ScheduleSettings`, DOR-2323): the name the run is told, the
+    // runtime, model and effort that do it, its time limit and whether it
+    // remembers earlier runs. An edit that touches none of them (the switch,
+    // the description) never clamps, so a legitimate on/off toggle keeps the
+    // grant. The change must be REAL: a field re-sent at its current value is
+    // not a new piece of work. One predicate, shared with the REST route.
+    const editsApprovedWork = changesApprovedWork(args, existing);
     // Handed to the file step rather than set on the patch, so a package's
     // row-only timing change can leave it out (`clampApplied`, DOR-2302): that
     // change is parked for a person below, and carried into the request the
     // clamp would read as a permission change the package's file refuses.
     let clampTo: PermissionMode | undefined;
-    if (changesApprovedWork) {
+    if (editsApprovedWork) {
       const clamp = clampSchedulePermissionMode(existing.permissionMode);
       if (clamp.clamped) clampTo = clamp.mode;
     }
@@ -716,12 +707,7 @@ export function createUpdateScheduleHandler(
     // sweep caught up.
     const settled = deps.taskStore!.settleApprovedWorkChange(
       updated.id,
-      {
-        prompt: existing.prompt,
-        cron: existing.cron ?? '',
-        timezone: existing.timezone ?? 'UTC',
-        status: existing.status,
-      },
+      { ...taskWorkOf(existing), status: existing.status },
       { trusted: false }
     );
     if (settled === 'parked') {
@@ -765,10 +751,10 @@ export function createUpdateScheduleHandler(
       return jsonContent({
         schedule: updated,
         needsReapproval: true,
+        // The note follows the sentence the park wrote: timing alone, or the
+        // work itself (its prompt or how it runs).
         note:
-          args.prompt !== undefined && args.prompt !== existing.prompt
-            ? REAPPROVAL_NOTE
-            : TIMING_REAPPROVAL_NOTE,
+          updated.reason === AGENT_TIMING_CHANGE_REASON ? TIMING_REAPPROVAL_NOTE : REAPPROVAL_NOTE,
       });
     }
     return jsonContent({ schedule: updated });

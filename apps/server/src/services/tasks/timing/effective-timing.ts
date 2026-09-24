@@ -24,7 +24,12 @@
  *
  * @module services/tasks/timing/effective-timing
  */
-import { scheduleContentKey } from '../schedule-permission-clamp.js';
+import {
+  scheduleContentKey,
+  scheduleSettingsOf,
+  type IncomingTaskContent,
+  type ScheduleSettings,
+} from '../schedule-permission-clamp.js';
 
 /** The four columns that decide when a schedule runs, as a row carries them. */
 export interface TimingColumns {
@@ -61,20 +66,33 @@ export function effectiveTiming(row: TimingColumns): EffectiveTiming {
 }
 
 /**
+ * The approved work this row actually runs: its prompt, its settings, and the
+ * timing that runs (a person's own where they set one).
+ *
+ * @param row - The row's prompt, settings and four timing columns.
+ */
+export function effectiveWork(
+  row: TimingColumns & ScheduleSettings & { prompt: string }
+): IncomingTaskContent {
+  const { cron, timezone } = effectiveTiming(row);
+  return { ...scheduleSettingsOf(row), prompt: row.prompt, cron, timezone };
+}
+
+/**
  * The approval key of what this row actually runs.
  *
- * The same `[prompt, cron, timezone]` key both content gates share
- * ({@link scheduleContentKey}), with cron and timezone meaning the ones that
- * run. A person approving a schedule approved WHEN it runs, so a grant
- * recorded against the package's timing while the person's ran would cover
- * work nobody looked at.
+ * The key both content gates share ({@link scheduleContentKey}), with cron and
+ * timezone meaning the ones that run. A person approving a schedule approved
+ * WHEN it runs, so a grant recorded against the package's timing while the
+ * person's ran would cover work nobody looked at.
  *
- * @param row - The row's prompt and its four timing columns.
+ * @param row - The row's prompt, settings and four timing columns.
  * @returns The content key to record or compare a grant against.
  */
-export function effectiveContentKey(row: TimingColumns & { prompt: string }): string {
-  const { cron, timezone } = effectiveTiming(row);
-  return scheduleContentKey({ prompt: row.prompt, cron, timezone });
+export function effectiveContentKey(
+  row: TimingColumns & ScheduleSettings & { prompt: string }
+): string {
+  return scheduleContentKey(effectiveWork(row));
 }
 
 /**
@@ -204,3 +222,27 @@ export const AGENT_TIMING_CHANGE_REASON =
 export const AGENT_CONTENT_CHANGE_REASON =
   'An agent changed what this schedule does, so it is waiting for you again. ' +
   'Read what it does now, then approve it or change it back.';
+
+/**
+ * Why a schedule is waiting again after an agent changed how it runs: its name,
+ * the runtime or model that runs it, its effort, its time limit, or whether it
+ * remembers earlier runs (DOR-2323). The approval card lists what changed.
+ */
+export const AGENT_SETTINGS_CHANGE_REASON =
+  'An agent changed how this schedule runs, so it is waiting for you again. ' +
+  'Check what changed, then approve it or change it back.';
+
+/**
+ * The sentence for an agent's change to approved work, by what it changed:
+ * the prompt first (the part a person most needs to read), then the settings,
+ * then the timing alone.
+ *
+ * @param before - What was approved.
+ * @param after - What would run now.
+ */
+export function agentChangeReason(before: IncomingTaskContent, after: IncomingTaskContent): string {
+  if (after.prompt !== before.prompt) return AGENT_CONTENT_CHANGE_REASON;
+  const settings = (work: IncomingTaskContent) => JSON.stringify(scheduleSettingsOf(work));
+  if (settings(after) !== settings(before)) return AGENT_SETTINGS_CHANGE_REASON;
+  return AGENT_TIMING_CHANGE_REASON;
+}

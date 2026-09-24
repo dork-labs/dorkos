@@ -453,16 +453,16 @@ describe('tasks_update closes the keeps-approved-bypass window (security)', () =
   });
 
   it('leaves the grant alone when an agent edits only metadata (the clamp is narrow)', async () => {
-    // enabled / maxRuntime do not change the approved WORK, so a legitimate
-    // toggle must keep the bypass — or flipping a task off and on would silently
-    // strip its autonomy. (The timezone did until DOR-2307; it moves the real
-    // run time now, so it is work — see the case below.)
+    // enabled and the description do not change the approved WORK, so a
+    // legitimate toggle must keep the bypass — or flipping a task off and on
+    // would silently strip its autonomy. (The timezone joined the work in
+    // DOR-2307, and the time limit and the other settings in DOR-2323.)
     const task = seedApprovedBypass();
 
     const { isError } = await call('tasks_update', {
       id: task.id,
       enabled: false,
-      maxRuntime: '10m',
+      description: 'Tidier words',
     });
     expect(isError).toBe(false);
 

@@ -213,6 +213,28 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
     expect(resynced.permissionMode).toBe('acceptEdits');
   });
 
+  it.each([
+    ['model', { model: 'claude-opus-4' }],
+    ['runtime', { runtime: 'codex' }],
+    ['effort', { effort: 'max' }],
+    ['time limit', { maxRuntime: '8h' }],
+    ['memory of earlier runs', { sticky: true }],
+  ])('drops the bypass when an agent changes the %s (DOR-2323)', async (_, change) => {
+    // Purpose: each is part of the approved work now, so a full-power grant
+    // must not ride across an agent's change to it, in the file as well as the
+    // row.
+    const { id, filePath } = await seedApprovedBypassTask();
+
+    const res = await request(fixtureServer)
+      .patch(`/api/tasks/${id}`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send(change);
+
+    expect(res.status).toBe(200);
+    expect(store.getTask(id)!.permissionMode).toBe('acceptEdits');
+    expect(await filePermission(filePath)).toBe('acceptEdits');
+  });
+
   it('drops the bypass when an agent moves the timezone (DOR-2307)', async () => {
     // Purpose: the same cron in another zone runs at another time, so a
     // timezone change is a change to the approved work, exactly like the cron.
@@ -248,7 +270,9 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
     const after = store.getTask(id)!;
     expect(after.name).toBe('renamed-sweep');
     expect(after.permissionMode).toBe('acceptEdits');
-    expect(after.status).toBe('active');
+    // The name is part of the approval since DOR-2323, so the rename also
+    // sends the schedule back to a person.
+    expect(after.status).toBe('pending_approval');
   });
 
   it('refuses a name the SKILL.md frontmatter would reject, before anything is written', async () => {

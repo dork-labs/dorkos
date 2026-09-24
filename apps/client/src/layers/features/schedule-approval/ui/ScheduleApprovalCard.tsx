@@ -30,6 +30,7 @@ import { useSessionDetail } from '@/layers/entities/session';
 import { AskCard } from '@/layers/features/ask';
 import { RequestingAgent } from '@/layers/features/approvals';
 import { formatCadence, formatFirstRuns } from '../lib/format-schedule-times';
+import { describeApprovalChanges } from '../lib/describe-approval-changes';
 import {
   useScheduleApprovalPower,
   type ScheduleApprovalRaise,
@@ -223,6 +224,7 @@ export function ScheduleApprovalCard({
       ? task.description
       : null;
   const reason = task.reason ?? fallbackReason;
+  const changeLines = describeApprovalChanges(task.approvalChanges ?? []);
 
   /**
    * Arm the schedule, optionally at a level the person names as they do it.
@@ -469,6 +471,23 @@ export function ScheduleApprovalCard({
         >
           {dorkosWrote ? reason : <>“{reason}”</>}
         </p>
+      )}
+
+      {/* What the agent (or the file) changed since the person approved it
+          (DOR-2323): the old and the new value, side by side, so approving
+          again is a decision about the change and not a guess at it. */}
+      {changeLines.length > 0 && (
+        <div data-slot="schedule-changes" className="min-w-0 space-y-0.5 text-xs">
+          <p className="text-muted-foreground">Changed since you approved it:</p>
+          <ul className="space-y-0.5">
+            {changeLines.map((line) => (
+              <li key={line.label} className="min-w-0 break-words">
+                <span className="font-medium">{line.label}:</span>{' '}
+                {line.from === null ? line.to : `${line.from} → ${line.to}`}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <AskCard.Detail className="text-xs">

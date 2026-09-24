@@ -29,18 +29,19 @@ import type {
 import type { TaskDefinition } from '@dorkos/skills/types';
 import { parseDuration } from '@dorkos/skills/duration';
 import { logger } from '../../lib/logger.js';
-import { FileSyncGates, type FileSyncSource } from './file-sync-gates.js';
+import { FileSyncGates, fileSettingsOf, type FileSyncSource } from './file-sync-gates.js';
 import {
   scheduleContentKey,
+  scheduleSettingsOf,
   upgradeLegacyContentKey,
   type IncomingTaskContent,
 } from './schedule-permission-clamp.js';
 import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
 import {
-  AGENT_CONTENT_CHANGE_REASON,
-  AGENT_TIMING_CHANGE_REASON,
+  agentChangeReason,
   effectiveContentKey,
   effectiveTiming,
+  effectiveWork,
   timingColumnWrites,
   type TimingLandsOn,
 } from './timing/effective-timing.js';
@@ -359,6 +360,12 @@ export class TaskStore {
           prompt: input.prompt,
           cron: input.cron ?? '',
           timezone: input.timezone ?? 'UTC',
+          name: input.name,
+          runtime: input.runtime ?? null,
+          model: input.model ?? null,
+          effort: input.effort ?? null,
+          maxRuntime: input.maxRuntime ?? null,
+          sticky: input.sticky ?? false,
         }),
         filePath: input.filePath,
         reason: input.reason ?? null,
@@ -467,14 +474,14 @@ export class TaskStore {
     // an approval of work nobody looked at.
     this.db
       .update(pulseSchedules)
-      .set({ approvedContentKey: effectiveContentKey(row) })
+      .set({ approvedContentKey: effectiveContentKey(row), previousApprovalKey: null })
       .where(eq(pulseSchedules.id, id))
       .run();
   }
 
   /**
    * Keep a schedule's approval honest after the work it approved changed: its
-   * prompt, cron or timezone (`scheduleContentKey`), in the request that
+   * prompt, timing or settings (`scheduleContentKey`), in the request that
    * changed it rather than at the next sync.
    *
    * - **A person** (the caller cleared the agent bar) changing the timing of a
@@ -486,8 +493,9 @@ export class TaskStore {
    *   (a package's row-only timing, DOR-2302); a person's file-backed edit is
    *   re-approved by the route itself.
    * - **An agent** gets an `active` schedule parked at once, with DorkOS's own
-   *   sentence saying what it changed: {@link AGENT_CONTENT_CHANGE_REASON} when
-   *   the prompt changed, {@link AGENT_TIMING_CHANGE_REASON} otherwise. Left to
+   *   sentence saying what it changed (`agentChangeReason`: the prompt, how it
+   *   runs, or when), and keeps the approval it withdrew for the card
+   *   (`previousApprovalKey`, DOR-2323). Left to
    *   the sync, the agent's new work would run on an approved schedule until
    *   the watcher or the five-minute sweep caught up (DOR-2313), and the sync
    *   would say the FILE changed. A sync that landed mid-request, between the
@@ -507,7 +515,7 @@ export class TaskStore {
    */
   settleApprovedWorkChange(
     id: string,
-    before: { prompt: string; cron: string; timezone: string; status: string },
+    before: IncomingTaskContent & { status: string },
     caller: { trusted: boolean }
   ): WorkChangeSettlement {
     const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
@@ -520,7 +528,7 @@ export class TaskStore {
       if (row.approvedContentKey !== previousKey) return 'unchanged';
       this.db
         .update(pulseSchedules)
-        .set({ approvedContentKey: key })
+        .set({ approvedContentKey: key, previousApprovalKey: null })
         .where(eq(pulseSchedules.id, id))
         .run();
       return 'rekeyed';
@@ -533,8 +541,10 @@ export class TaskStore {
       .set({
         status: 'pending_approval',
         approvedContentKey: null,
-        reason:
-          row.prompt !== before.prompt ? AGENT_CONTENT_CHANGE_REASON : AGENT_TIMING_CHANGE_REASON,
+        // What was approved, so the card can say what the agent changed. A sync
+        // that parked mid-request already moved it here; keep that.
+        previousApprovalKey: row.approvedContentKey ?? row.previousApprovalKey,
+        reason: agentChangeReason(before, effectiveWork(row)),
         reasonSource: 'dorkos',
         updatedAt: new Date().toISOString(),
       })
@@ -600,7 +610,7 @@ export class TaskStore {
   rekeyMigratedFile(
     from: string,
     to: string,
-    rewritten: IncomingTaskContent,
+    rewritten: Pick<IncomingTaskContent, 'prompt' | 'cron' | 'timezone'>,
     park: string | null = null
   ): RekeyOutcome {
     return this.db.transaction((tx) => {
@@ -659,8 +669,8 @@ export class TaskStore {
   }
 
   /**
-   * Move every approval recorded before the approval key carried a timezone
-   * onto today's key (DOR-2307).
+   * Move every approval recorded in an older key format onto today's key: the
+   * timezone joined it in DOR-2307, the settings in DOR-2323.
    *
    * Runs once at boot, before any watcher starts, and before
    * {@link backfillApprovalGrants} would have anything to say about these rows.
@@ -674,7 +684,7 @@ export class TaskStore {
    * grant is upgraded, whatever its status — a paused or switched-off schedule a
    * person approved is still approved when it comes back.
    *
-   * Idempotent: a key already carrying a timezone is left alone, so a second
+   * Idempotent: a key already in today's format is left alone, so a second
    * boot changes nothing. Computed in JS row by row for the reason
    * {@link backfillApprovalGrants} gives.
    *
@@ -689,7 +699,10 @@ export class TaskStore {
 
     let upgraded = 0;
     for (const row of rows) {
-      const key = upgradeLegacyContentKey(row.approvedContentKey!, effectiveTiming(row).timezone);
+      const key = upgradeLegacyContentKey(row.approvedContentKey!, {
+        ...scheduleSettingsOf(row),
+        timezone: effectiveTiming(row).timezone,
+      });
       if (key === null) continue;
       this.db
         .update(pulseSchedules)
@@ -1495,7 +1508,14 @@ export class TaskStore {
                 ...fileProvenance(existing, arm),
                 // Parking withdraws the grant, so the next sync has to ask again
                 // rather than finding a key it left lying around.
-                ...(arm.status === 'pending_approval' ? { approvedContentKey: null } : {}),
+                ...(arm.status === 'pending_approval'
+                  ? {
+                      approvedContentKey: null,
+                      // Kept for the card's "what changed" (DOR-2323).
+                      previousApprovalKey:
+                        existing.approvedContentKey ?? existing.previousApprovalKey,
+                    }
+                  : { previousApprovalKey: null }),
               }
             : existing.status === 'paused'
               ? {
@@ -1510,10 +1530,12 @@ export class TaskStore {
                   // What will RUN, a person's own timing included (DOR-2302).
                   approvedContentKey: effectiveContentKey({
                     ...existing,
+                    ...fileSettingsOf(def),
                     prompt: def.body,
                     cron: incomingCron,
                     timezone: schedule.timezone,
                   }),
+                  previousApprovalKey: null,
                 }
               : {}),
           tags: '[]',
@@ -1553,6 +1575,7 @@ export class TaskStore {
         approvedContentKey: arm
           ? null
           : scheduleContentKey({
+              ...fileSettingsOf(def),
               prompt: def.body,
               cron: incomingCron,
               timezone: schedule.timezone,
