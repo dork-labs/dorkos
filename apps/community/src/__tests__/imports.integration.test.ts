@@ -73,7 +73,7 @@ beforeAll(async () => {
   h = await startTenancyHarness('imports', {
     now: () => clock,
     hooks: {
-      importUploadIdleMs: 700,
+      uploadIdleMs: 700,
       jsonBodyMs: 700,
       freeTempBytes: async () => freeTemp,
     },
@@ -655,4 +655,59 @@ it('drops a JSON body that drips slower than its deadline', async () => {
   expect(
     (await readImport(h, (await createImport(h, { bearer: keyImport })).importId, keyRead)).state
   ).toBe('awaiting_upload');
+});
+
+/** Post a file to channel A over a raw connection, in `pieces` parts `delayMs` apart. */
+async function dripAttachment(text: string, pieces: number, delayMs: number): Promise<string> {
+  const { port } = new URL(h.baseUrl);
+  const socket = connect(Number(port), '127.0.0.1');
+  const chunks: Buffer[] = [];
+  socket.on('data', (chunk: Buffer) => chunks.push(chunk));
+  socket.on('error', () => undefined);
+  const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()));
+  await new Promise<void>((resolve) => socket.once('connect', resolve));
+  const bytes = Buffer.from(text);
+  socket.write(
+    [
+      `POST /api/v1/communities/${a}/channels/${channelA}/attachments HTTP/1.1`,
+      `Host: 127.0.0.1:${port}`,
+      `Cookie: ${operatorCookie}`,
+      `Origin: ${h.config.publicUrl}`,
+      'Content-Type: text/plain',
+      `Idempotency-Key: drip-${randomUUID()}`,
+      'X-File-Name: drip.txt',
+      `X-File-Size: ${bytes.length}`,
+      `Content-Length: ${bytes.length}`,
+      'Connection: close',
+      '',
+      '',
+    ].join('\r\n')
+  );
+  const size = Math.ceil(bytes.length / pieces);
+  for (let at = 0; at < bytes.length; at += size) {
+    socket.write(bytes.subarray(at, at + size));
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  await closed;
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+// Purpose: the server allows hours for a request to arrive, so a file upload has its own idle
+// limit: one that stops sending is dropped with 408 and leaves no stored file, while one that
+// keeps sending slowly still lands.
+it('drops a file upload that stops sending, and keeps one that trickles', async () => {
+  const before = await count(
+    "SELECT 1 FROM managed_blobs WHERE community_id=$1 AND purpose='attachment' AND state<>'pending_delete'",
+    [a]
+  );
+  const stalled = await dripAttachment('a file that stalls halfway', 2, 1_500);
+  expect(stalled).toMatch(/^HTTP\/1\.1 408 /);
+  expect(
+    await count(
+      "SELECT 1 FROM managed_blobs WHERE community_id=$1 AND purpose='attachment' AND state<>'pending_delete'",
+      [a]
+    )
+  ).toBe(before);
+  const trickled = await dripAttachment('a file that keeps arriving slowly', 6, 400);
+  expect(trickled).toMatch(/^HTTP\/1\.1 201 /);
 });
