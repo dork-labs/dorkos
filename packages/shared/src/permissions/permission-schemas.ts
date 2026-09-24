@@ -199,6 +199,12 @@ export const PermissionChangedMetadataSchema = z.object({
   attribution: PermissionAttributionSchema,
   approvalId: z.string().optional(),
   undoOf: z.string().optional(),
+  /**
+   * One plain sentence the history shows beside the change, when the change
+   * alone would mislead: an upgrade that Blocked every area of an agent that
+   * used to be limited to reading says the conversation verbs still work.
+   */
+  note: z.string().max(500).optional(),
   /** What the preset, the defaults and the trust stop were BEFORE a preset write. */
   presetSnapshot: z
     .object({

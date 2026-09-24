@@ -297,11 +297,6 @@ export const CONFIG_DISCLOSURE = {
   'profile.displayNameSource.agentName': 'expose',
   'profile.rolePromptDismissedAt': 'expose',
 
-  'agentContext.relayTools': 'expose',
-  'agentContext.meshTools': 'expose',
-  'agentContext.adapterTools': 'expose',
-  'agentContext.tasksTools': 'expose',
-
   'uploads.maxFileSize': 'expose',
   'uploads.maxFiles': 'expose',
   'uploads.allowedTypes': 'expose',

@@ -96,11 +96,6 @@ vi.mock('../messaging/context-builder.js', () => ({
   }),
   renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
 }));
-vi.mock('../tooling/tool-filter.js', () => ({
-  resolveToolConfig: vi
-    .fn()
-    .mockReturnValue({ tasks: true, relay: true, mesh: true, adapter: true }),
-}));
 vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn().mockResolvedValue(null),
 }));

@@ -171,7 +171,6 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         registeredBy: 'dorkos-ui',
         personaEnabled: true,
         isSystem: false,
-        enabledToolGroups: {},
         mcpServers: [],
         workspace: { mode: 'home' },
       };

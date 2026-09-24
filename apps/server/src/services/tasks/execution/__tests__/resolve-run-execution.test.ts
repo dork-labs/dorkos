@@ -77,7 +77,6 @@ const BASE_MANIFEST: AgentManifest = {
   registeredAt: new Date().toISOString(),
   registeredBy: 'test',
   personaEnabled: true,
-  enabledToolGroups: {},
   mcpServers: [],
 };
 

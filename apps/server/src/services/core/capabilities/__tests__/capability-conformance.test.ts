@@ -320,7 +320,6 @@ const { ApprovalService } = await import('../../approvals/index.js');
 const PROBE_IDENTITY = {
   agentPath: path.join(SANDBOX_CWD, 'agents', 'prober'),
   displayName: 'Prober',
-  tierCeiling: 'destructive' as const,
   createdAt: new Date().toISOString(),
 };
 

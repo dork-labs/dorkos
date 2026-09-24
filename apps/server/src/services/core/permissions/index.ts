@@ -24,7 +24,11 @@ export {
   type PermissionActionInfo,
   type PermissionAgentRef,
 } from './permission-service.js';
-export { readRawManifestFile, runPermissionUpgradeSweep } from './permission-upgrade-sweep.js';
+export {
+  readRawManifestFile,
+  runPermissionRetirements,
+  runPermissionUpgradeSweep,
+} from './permission-upgrade-sweep.js';
 export {
   captureLiveStandingGrants,
   readStandingGrantLicence,

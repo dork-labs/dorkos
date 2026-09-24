@@ -48,7 +48,6 @@ function manifest(runtime: string | null): AgentManifest {
     registeredBy: 'test',
     personaEnabled: true,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [],
     workspace: { mode: 'home' },
   } as unknown as AgentManifest;

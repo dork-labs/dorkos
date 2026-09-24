@@ -200,6 +200,8 @@ export interface PermissionChangeRecord {
   presetSnapshot?: PermissionChangedMetadata['presetSnapshot'];
   /** The approval an agent request was answered through (phase 2). */
   approvalId?: string;
+  /** A sentence the history shows beside the change, when it alone would mislead. */
+  note?: string;
 }
 
 /**
@@ -232,6 +234,7 @@ export async function recordPermissionChange(
     attribution: record.writer.attribution,
     ...(record.approvalId ? { approvalId: record.approvalId } : {}),
     ...(record.presetSnapshot ? { presetSnapshot: record.presetSnapshot } : {}),
+    ...(record.note ? { note: record.note } : {}),
   };
   await activity.emit({
     actorType: record.writer.actorType,

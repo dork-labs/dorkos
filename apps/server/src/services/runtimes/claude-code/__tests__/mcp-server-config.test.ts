@@ -44,7 +44,6 @@ function manifestWith(servers: AgentManifest['mcpServers']): AgentManifest {
     registeredBy: 'test-suite',
     personaEnabled: true,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: servers,
   };
 }

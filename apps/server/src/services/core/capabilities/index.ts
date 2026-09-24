@@ -17,6 +17,7 @@ export {
   computeCatalogVersion,
   type CapabilityRegistry,
   type CapabilityHandlerContext,
+  type HandToolReach,
   type CapabilityInvocationContext,
   type CapabilityInvocationObserver,
   type CapabilityPreflightResult,

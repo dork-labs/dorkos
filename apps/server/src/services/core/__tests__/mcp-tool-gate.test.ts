@@ -89,7 +89,6 @@ import {
 } from '../../runtimes/claude-code/mcp-tools/index.js';
 import { MCP_TOOL_TIERS, gatedActionForMcpTool, type McpToolTier } from '../mcp-tool-tiers.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../external-mcp/tool-security.js';
-import { SESSION_CORE_TOOL_NAMES } from '@dorkos/shared/mcp-tool-groups';
 import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import {
   DORKOS_AGENT_TOOLS,
@@ -113,7 +112,6 @@ import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js'
 const AGENT: AgentIdentity = {
   agentPath: '/projects/prober',
   displayName: 'Prober',
-  tierCeiling: 'destructive',
   createdAt: new Date().toISOString(),
 };
 
@@ -474,28 +472,14 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       ).toEqual([]);
     });
 
-    it('never lets a destructive tool into the always-on session set', () => {
-      // `SESSION_CORE_TOOL_NAMES` is the set no toggle gates, so it applies to every
-      // agent regardless of the person's toggles, and the cockpit presents it as
-      // always enabled. A destructive tool landing in one of those groups is not a
-      // cosmetic miscategorization: it is an irreversible action nobody can turn off.
-      //
-      // This assertion used to guard something sharper. Until DOR-519 the same set was
-      // handed to the SDK's `allowedTools`, an approval bypass rather than an
-      // availability filter, so a destructive tool in here stopped asking for approval
-      // for every agent, permanently. Nothing feeds `allowedTools` now, so the stakes
-      // are lower, but the pin stays: this is still the set a person cannot opt out of.
-      //
-      // Pinned by NAME rather than left to the count assertions in
-      // `tool-filter.test.ts`, which caught this only incidentally and said nothing
-      // about why it matters. Review demonstrated the gap: moving `tasks_delete`
-      // from `tasks` to `core` passed `tsc` (the type-level guards compare key
-      // SETS, and the keys do not change) and passed the whole targeted suite
-      // against a stale `dist`, which is why `vitest.config.ts` now aliases this
-      // module to source.
+    it('puts every destructive tool in an area a person can switch off', () => {
+      // A destructive tool with no area is one no permission can Block: it would
+      // ask on every call and nothing could take it away. This used to be pinned
+      // against the always-on tool-group set, which the permission areas replaced
+      // (spec `agent-permissions` D2).
       expect(
-        DESTRUCTIVE.filter((name) => (SESSION_CORE_TOOL_NAMES as readonly string[]).includes(name)),
-        'a destructive tool is always-on and therefore cannot be turned off'
+        DESTRUCTIVE.filter((name) => (MCP_TOOL_TIERS[name] as McpToolTier).area === null),
+        'a destructive tool has no area, so nothing can turn it off'
       ).toEqual([]);
     });
 
@@ -791,8 +775,8 @@ describe('hand-registered MCP tools carry a permission tier', () => {
           expect(payloadOf(result).status).not.toBe('approval_required');
         });
 
-        it(`${server} ${name}: refuses an agent whose ceiling forbids the tier`, async () => {
-          const result = await toolsFor({ ...AGENT, tierCeiling: 'act' })
+        it(`${server} ${name}: refuses an agent whose access was turned off`, async () => {
+          const result = await toolsFor({ ...AGENT, inactive: 'revoked' })
             .get(name)!
             .call(DESTRUCTIVE_INPUT[name]);
           expect(sideEffects()).toEqual([]);

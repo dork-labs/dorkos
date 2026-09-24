@@ -249,7 +249,6 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
         registeredAt: '2026-09-08T00:00:00.000Z',
         registeredBy: 'test',
         personaEnabled: true,
-        enabledToolGroups: {},
         mcpServers: [],
       });
     });
@@ -320,7 +319,6 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
         registeredAt: '2026-09-06T00:00:00.000Z',
         registeredBy: 'test',
         personaEnabled: true,
-        enabledToolGroups: {},
         mcpServers: [],
       });
     });
@@ -346,7 +344,6 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
       registeredAt: '2026-09-06T00:00:00.000Z',
       registeredBy: 'test',
       personaEnabled: true,
-      enabledToolGroups: {},
       mcpServers: [],
     } satisfies AgentManifest;
     const streamState = useSessionStreamStore.getState().getSession(SESSION_ID);

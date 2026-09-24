@@ -67,7 +67,6 @@ const agents = agentLookupFor({
 const ANA: AgentIdentity = {
   agentPath: '/agents/ana',
   displayName: 'Ana',
-  tierCeiling: 'act',
   createdAt: '2026-09-15T09:00:00.000Z',
 };
 

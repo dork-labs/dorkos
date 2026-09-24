@@ -22,12 +22,15 @@
  * Blocked is gated exactly as if it had been called directly (Allowed runs, Ask
  * raises the ordinary card), and `blockedRequest` changes nothing for it.
  *
- * ### What it can reach in this phase
+ * ### What it can reach
  *
- * Registry capabilities, by id or MCP tool name. Hand-registered MCP tools
- * (`tasks_create`, `mesh_list`, …) carry no area yet (they are assigned one in
- * phase 3), so none of them can be Blocked and none needs asking for; a request
- * naming one is told to call it directly. Phase 3 extends this to them.
+ * Registry capabilities, by id or MCP tool name, among the ones the calling
+ * surface lists. And the hand-registered MCP tools (`tasks_create`,
+ * `mesh_unregister`, …) on the two servers that build them, the claude-code
+ * in-session server and the external `/mcp` server: each hands the request tool
+ * a reach over every tool it built, the ones a Blocked permission left out of
+ * the list included (`context.handTools`). Over HTTP there is no such server,
+ * and a request naming a hand-registered tool is told so.
  *
  * ## `permissions.list`
  *
@@ -305,10 +308,22 @@ async function requestAccess(
   const registry = requireRegistry(deps);
   const target = findRequestedAction(registry, input.action, callingSurface(context));
   if (!target) {
-    if (titleForMcpTool(bareToolName(input.action)) !== undefined) {
+    const bare = bareToolName(input.action);
+    if (context.handTools?.has(bare)) {
+      // A hand-registered tool this server built, hidden or not. The reach runs
+      // it through the same gate a direct call meets, as a request past Blocked;
+      // a card or a refusal comes back as the gate's own refusal.
+      return context.handTools.request(bare, input.arguments, {
+        identity,
+        reason: input.reason,
+        ...(context.approvalToken ? { approvalToken: context.approvalToken } : {}),
+      });
+    }
+    if (titleForMcpTool(bare) !== undefined) {
       refuse(
-        'CALL_IT_DIRECTLY',
-        `"${input.action}" is not something you need to ask for: it is not blocked. Call it directly.`
+        'NOT_ON_THIS_SURFACE',
+        `"${input.action}" is a DorkOS tool this connection cannot reach. Ask from a DorkOS ` +
+          'session, or ask the person directly.'
       );
     }
     refuse(

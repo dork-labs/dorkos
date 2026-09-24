@@ -44,7 +44,6 @@ const SEED = {
   registeredBy: 'test',
   personaEnabled: true,
   isSystem: false,
-  enabledToolGroups: {},
   mcpServers: [],
 } as unknown as AgentManifest;
 
@@ -425,13 +424,11 @@ describe('a patch into a nested object leaves the flags it did not name (DOR-171
  *
  * This service is where `PATCH /api/agents/current` and the `update_agent` MCP
  * tool both land. An agent's `permissions` decide what it may DO, so an agent
- * that could write them could grant itself anything. The four tool-group keys
- * decide what the agent is TOLD about, and they are refused too: their global
- * twins (`agentContext.*`) are operator-only at the config seam, a per-agent value
- * beats the global one, so leaving these writable meant an agent could undo a
- * narrowing the person had made to its own tool context.
+ * that could write them could grant itself anything. The two retired fields
+ * that used to carry the same answer, `enabledToolGroups` and `tierCeiling`, are
+ * refused by name too.
  */
-describe('an agent cannot write its own permissions or tool groups', () => {
+describe('an agent cannot write its own permissions', () => {
   it('refuses a permissions patch on the agent-reachable self-edit path', async () => {
     await expect(
       updateAgentManifest({
@@ -462,56 +459,26 @@ describe('an agent cannot write its own permissions or tool groups', () => {
     );
   });
 
-  it('refuses the retired roomsManage key, which no longer names a known field', async () => {
-    // An unclassified key under `enabledToolGroups` reaches all four guarded
-    // leaves as an ancestor, so the old self-grant is still a refusal.
+  it('refuses the retired enabledToolGroups by name, roomsManage included', async () => {
+    // Stripped silently, it would answer "done" for a setting that no longer
+    // exists (the DOR-1253 shape). Where it went is the Permissions page.
     await expect(
       updateAgentManifest({ agentPath, body: { enabledToolGroups: { roomsManage: true } } })
     ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
+    await expect(
+      updateAgentManifest({ agentPath, body: { enabledToolGroups: { tasks: true } } })
+    ).rejects.toThrow(/Permissions page/);
   });
 
-  it('refuses the four documentation keys beside it (DOR-1506)', async () => {
-    // The reproduction from the issue: a person turns an agent's tool-context
-    // blocks off, and the agent turns its own back on. `resolveToolConfig` reads
-    // `agent.<group> ?? globalConfig.<group>Tools`, so this per-agent write BEAT
-    // the operator's global switch — which DOR-1497 had already made
-    // operator-only at the config seam.
+  it('refuses the retired tierCeiling by name, lowering included', async () => {
+    // Lowering one's own ceiling used to be the one allowed direction. It is a
+    // Blocked area now, which only a person sets.
     await expect(
-      updateAgentManifest({
-        agentPath,
-        body: { enabledToolGroups: { tasks: true, relay: true } },
-      })
+      updateAgentManifest({ agentPath, body: { tierCeiling: 'observe' } })
     ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
 
     const onDisk = await readManifest(agentPath);
-    expect(onDisk?.enabledToolGroups).toEqual({});
-  });
-
-  it('refuses an empty object too — replacing all four is a write to all four', async () => {
-    await expect(
-      updateAgentManifest({ agentPath, body: { enabledToolGroups: {} } })
-    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
-  });
-
-  it('refuses an object carrying only a key nobody recognises, and keeps the groups', async () => {
-    // Adversarial review of DOR-1506, executed against a real manifest. The
-    // matcher walks LEAVES, so `enabledToolGroups.zzz` matched nothing — while
-    // the WRITE replaces the whole object: Zod strips the unknown key, the raw
-    // body still names `enabledToolGroups`, and `{...existing, ...patch}` puts
-    // `{}` on disk. Before the fix this answered 200 and cleared a person's two
-    // disabled groups, which is DOR-1506's own defect reached through a key
-    // nobody had to guess right.
-    await writeManifest(agentPath, {
-      ...SEED,
-      enabledToolGroups: { tasks: false, relay: false },
-    } as AgentManifest);
-
-    await expect(
-      updateAgentManifest({ agentPath, body: { enabledToolGroups: { zzz: 1 } } })
-    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
-
-    const onDisk = await readManifest(agentPath);
-    expect(onDisk?.enabledToolGroups).toEqual({ tasks: false, relay: false });
+    expect(onDisk?.permissions).toBeUndefined();
   });
 });
 

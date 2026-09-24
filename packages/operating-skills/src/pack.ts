@@ -256,8 +256,13 @@ export interface OperatingSkill {
  *   23 would read a refusal it could ask past as final, or ask again into a limit
  *   with no idea why it was held back. Paid for by folding the tier list and
  *   dropping the rule that restated it.
+ * - 25: permissions (spec `agent-permissions`, phase 3). The per-agent tier
+ *   ceiling is gone, so `operating-dorkos` stopped naming a `tier_ceiling`
+ *   refusal nobody can receive any more; its example is now the Blocked one an
+ *   agent can ask past. An agent seeded at 24 would keep treating a reason that
+ *   no longer exists as the canonical "stop" answer.
  */
-export const OPERATING_SKILLS_VERSION = 24;
+export const OPERATING_SKILLS_VERSION = 25;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

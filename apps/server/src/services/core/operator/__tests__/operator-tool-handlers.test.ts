@@ -383,7 +383,6 @@ describe('config_patch', () => {
       const handler = createConfigPatchHandler({
         agentPath: '/Users/dorian/.dork/agents/dorkbot',
         displayName: 'DorkBot',
-        tierCeiling: 'destructive',
         createdAt: '2026-09-01T00:00:00.000Z',
       });
       const result = await handler({ patch: { profile: { displayName: 'Dorian' } } });
@@ -398,7 +397,6 @@ describe('config_patch', () => {
       const handler = createConfigPatchHandler({
         agentPath: '/Users/dorian/.dork/agents/dorkbot',
         displayName: '',
-        tierCeiling: 'destructive',
         createdAt: '2026-09-01T00:00:00.000Z',
       });
       await handler({ patch: { profile: { displayName: 'Dorian' } } });
@@ -432,7 +430,6 @@ describe('config_patch', () => {
           identity: {
             agentPath: '/Users/dorian/.dork/agents/dorkbot',
             displayName: 'DorkBot',
-            tierCeiling: 'destructive',
             createdAt: '2026-09-01T00:00:00.000Z',
           },
         }

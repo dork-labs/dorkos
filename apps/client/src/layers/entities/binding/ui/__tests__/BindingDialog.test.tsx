@@ -72,7 +72,6 @@ const MOCK_AGENTS: AgentManifest[] = [
     behavior: { responseMode: 'always' },
     registeredAt: new Date().toISOString(),
     registeredBy: 'test',
-    enabledToolGroups: {},
     mcpServers: [],
     personaEnabled: true,
   },

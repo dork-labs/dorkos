@@ -35,6 +35,32 @@
  * a permission nobody can read is a permission that is not held. A missing
  * manifest is not a failure: the caller inherits the defaults.
  *
+ * ## Unidentified callers, and the residual they leave (spec D11)
+ *
+ * A caller that presents no agent identity and is not a trusted one (an
+ * external `/mcp` client with no token, `dorkos call` from a terminal without
+ * `DORKOS_AGENT_TOKEN`) resolves against the install's DEFAULTS: agent layers
+ * are skipped, Always allow is never offered, and `request_permission` is
+ * refused. Identity is never what decides WHETHER to gate; it only picks whose
+ * settings apply.
+ *
+ * That leaves one residual, stated here because a per-agent setting invites
+ * the wrong reading: an agent set STRICTER than the defaults that strips its own
+ * token (`env -u DORKOS_AGENT_TOKEN dorkos call …`, or a bare `curl`) arrives
+ * here unidentified and gets the defaults. It is still gated (a Blocked default
+ * still refuses, an Ask default still asks, and the card says an unidentified
+ * caller asked) and still audited; what it is not is held to its own, stricter
+ * setting.
+ *
+ * That is the same `local-trust` residual every per-agent setting carries (an
+ * agent with a shell can reach the person's own HTTP routes too), and it has
+ * the same remedy: turn login on, which makes every `/api/*` path demand a
+ * credential the agent has no way to mint. (An agent that can edit files can
+ * also edit its own `.dork/agent.json`, which login does not stop; the observer
+ * records that as a change made outside DorkOS.) **A Blocked permission stops an
+ * agent that plays by the rules; it is not a sandbox**, and no user-facing copy
+ * may promise otherwise.
+ *
  * @module services/core/capabilities/permission-enforcement
  */
 import fs from 'node:fs/promises';

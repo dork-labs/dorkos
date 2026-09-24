@@ -45,7 +45,6 @@ import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.
 const AGENT: AgentIdentity = {
   agentPath: '/agents/dorkbot',
   displayName: 'DorkBot',
-  tierCeiling: 'destructive',
   createdAt: new Date().toISOString(),
 };
 

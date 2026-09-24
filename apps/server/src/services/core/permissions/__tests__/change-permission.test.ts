@@ -28,7 +28,6 @@ import { createPermissionWorld, TWO_AGENTS } from './permission-fixtures.js';
 const DORKBOT: AgentIdentity = {
   agentPath: '/agents/dorkbot',
   displayName: 'DorkBot',
-  tierCeiling: 'destructive',
   createdAt: new Date().toISOString(),
 };
 

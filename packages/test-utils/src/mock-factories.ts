@@ -161,7 +161,6 @@ const mockAgent: AgentManifest = {
   registeredBy: 'test',
   personaEnabled: true,
   isSystem: false,
-  enabledToolGroups: {},
   mcpServers: [],
   workspace: { mode: 'home' },
 };

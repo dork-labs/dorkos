@@ -20,11 +20,6 @@ import {
 } from '@dorkos/shared/mesh-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
-import {
-  CAPABILITY_CEILING_PHRASE,
-  CAPABILITY_TIER_RANK,
-  DEFAULT_AGENT_TIER_CEILING,
-} from '@dorkos/shared/capabilities';
 import { writeConventionFile } from '@dorkos/shared/convention-files-io';
 import {
   composeSoulFile,
@@ -179,8 +174,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * object it named, which is how the config seam has always behaved
  * (`applyConfigPatch` deep-merges).
  *
- * **The base comes from the same lockless read every guard on this seam uses**
- * (the `tierCeiling` check says the same thing at more length): read, decide,
+ * **The base comes from the same lockless read every guard on this seam uses**:
+ * read, decide,
  * write, with nothing held over `.dork/agent.json`, so two PATCHes landing
  * together can interleave. This change strictly NARROWS that window rather than
  * opening it — the losing write used to clobber every leaf of the object, and now
@@ -275,9 +270,9 @@ export async function updateAgentManifest(opts: {
   //
   // The operator's own surface, `PATCH /api/mesh/agents/:id`, writes every one of
   // these and does not come through here. **A cockpit that edits an operator-only
-  // field must use that route** — the Tools tab does, for the tool groups. An
-  // agent's `permissions` are refused here too and have their own routes (spec
-  // `agent-permissions` D10).
+  // field must use that route.** An agent's `permissions` are refused here too
+  // and have their own routes (spec `agent-permissions` D10), and so are the two
+  // retired fields that used to answer the same question.
   const refusedPaths = findOperatorOnlyAgentPaths(rawBody);
   if (refusedPaths.length > 0) {
     throw new AgentUpdateError('OPERATOR_ONLY', describeAgentOperatorOnlyRefusal(refusedPaths));
@@ -291,56 +286,6 @@ export async function updateAgentManifest(opts: {
   const existing = await readManifest(agentPath);
   if (!existing) {
     throw new AgentUpdateError('NOT_FOUND', 'No agent registered at this path');
-  }
-
-  // Guard: an agent may TIGHTEN its own ceiling, never widen one (DOR-486).
-  //
-  // The policy table above refuses a FIELD. This one refuses a
-  // DIRECTION, and the difference is the point: `tierCeiling` is the cap on what
-  // an agent may ever reach, so lowering it is an agent giving something up —
-  // a normal, safe thing to let it do, and the honest way for an agent to say
-  // "I only ever read." Raising it hands privilege back, which is precisely the
-  // decision a person has to make (`config-write-policy.ts`: a field is
-  // operator-only when changing it alone widens a security control). Clearing
-  // the field counts as raising, because absent means `destructive`.
-  //
-  // AFTER the manifest read, unlike the policy check above, because the answer is
-  // a comparison against what is on disk rather than a property of the key. The
-  // parse has already rejected a value that is not a tier, so this only ever
-  // compares real rungs.
-  //
-  // The table records this verdict as `tighten-only` and derives
-  // `TIGHTEN_ONLY_AGENT_PATHS` from it, so a SECOND field classified that way
-  // fails `__tests__/agent-write-policy.test.ts` until somebody teaches this
-  // block what "tighter" means for it — the comparison is per field and cannot
-  // be generalized by the table alone.
-  //
-  // The operator's own surface, `PATCH /api/mesh/agents/:id`, does not come
-  // through here and sets any ceiling. **A cockpit that edits the ceiling must
-  // use that route** — the same split the four tool groups use.
-  //
-  // **The comparison and the write are not atomic**, and that is unchanged from
-  // every other guard on this seam: read, decide, write, with no lock over
-  // `.dork/agent.json`. Two PATCHes landing together can interleave so the later
-  // write is judged against a ceiling the earlier one already replaced. What the
-  // window CANNOT do is manufacture a widening out of nothing — every value that
-  // reaches the file passed this check against a real recorded ceiling, so the
-  // worst case is that a raise the operator made and a lowering the agent made
-  // resolve in the other order, and the operator's next write settles it. Closing
-  // it properly means file locking for the whole manifest, which is a change to
-  // this seam rather than to this field (DOR-486 review).
-  if ('tierCeiling' in rawBody) {
-    const current = existing.tierCeiling ?? DEFAULT_AGENT_TIER_CEILING;
-    const requested = parsed.data.tierCeiling ?? DEFAULT_AGENT_TIER_CEILING;
-    if (CAPABILITY_TIER_RANK[requested] > CAPABILITY_TIER_RANK[current]) {
-      throw new AgentUpdateError(
-        'OPERATOR_ONLY',
-        `Only a person can widen what an agent is allowed to do. This agent is limited to ` +
-          `${CAPABILITY_CEILING_PHRASE[current]}, and that asks for ` +
-          `${CAPABILITY_CEILING_PHRASE[requested]}. Ask them to change it in the agent's ` +
-          `Tools settings.`
-      );
-    }
   }
 
   // Guard: system agents cannot have identity fields changed.

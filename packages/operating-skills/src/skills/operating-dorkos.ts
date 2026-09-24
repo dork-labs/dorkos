@@ -102,10 +102,10 @@ DorkOS already asked again for you, so use the token in THIS payload from now on
 A refusal is a different payload, and \`approvable\` says whether asking again can
 ever help:
 
-    { "status": "denied", "reason": "tier_ceiling", "approvable": false, "message": "..." }
+    { "status": "denied", "reason": "permission_blocked", "approvable": true, "message": "..." }
 
-- \`approvable: false\` (\`tier_ceiling\`, \`enforcement_unavailable\`): no approval can
-  unlock this. Stop and report it; do not look for a workaround.
+- \`approvable: false\` (your access was turned off, \`enforcement_unavailable\`): no
+  approval can unlock this. Stop and report it; do not look for a workaround.
 - \`operator_denied\`: a person said no. Do not try again unless they ask you to.
 - \`permission_blocked\` with \`approvable: true\`: ask ONCE with \`request_permission\`
   (\`action\` = the tool name, the exact \`arguments\`, a one-sentence \`reason\`), then wait.

@@ -20,7 +20,6 @@ import { noopLogger } from '@dorkos/shared/logger';
 const IDENTITY: AgentIdentity = {
   agentPath: '/projects/researcher',
   displayName: 'Researcher',
-  tierCeiling: 'destructive',
   createdAt: new Date().toISOString(),
 };
 

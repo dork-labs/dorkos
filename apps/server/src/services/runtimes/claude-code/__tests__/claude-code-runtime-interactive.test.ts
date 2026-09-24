@@ -20,7 +20,7 @@ vi.mock('../../../../lib/boundary.js', () => ({
 }));
 
 // Mock the canonical paths so that ClaudeCodeRuntime's direct imports are intercepted.
-const { contextBuilderFactory, toolFilterFactory } = vi.hoisted(() => ({
+const { contextBuilderFactory } = vi.hoisted(() => ({
   contextBuilderFactory: () => ({
     buildSystemPromptAppend: vi.fn().mockResolvedValue({
       text: '<env>\nWorking directory: /mock\n</env>',
@@ -28,14 +28,8 @@ const { contextBuilderFactory, toolFilterFactory } = vi.hoisted(() => ({
     }),
     renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
   }),
-  toolFilterFactory: () => ({
-    resolveToolConfig: vi
-      .fn()
-      .mockReturnValue({ tasks: true, relay: true, mesh: true, adapter: true }),
-  }),
 }));
 vi.mock('../messaging/context-builder.js', contextBuilderFactory);
-vi.mock('../tooling/tool-filter.js', toolFilterFactory);
 vi.mock('@dorkos/shared/manifest', async () => ({
   readManifest: vi.fn().mockResolvedValue(null),
 }));

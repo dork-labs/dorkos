@@ -43,17 +43,14 @@ import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import { readManifest } from '@dorkos/shared/manifest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
-import { configManager } from '../../../core/config-manager.js';
 import { resolveClaudeCredentialEnv } from '../../../core/credential-env.js';
 import { resolveAgentTokenEnv } from '../../../core/agent-identity/index.js';
 import { creditsTurnEnv } from '../../../core/cloud/credits-inference.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
-import { isTasksEnabled } from '../../../tasks/task-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
-import { resolveToolConfig } from '../tooling/tool-filter.js';
 import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { env } from '../../../../env.js';
 import {
@@ -62,6 +59,7 @@ import {
   isClassifierContextEnabled,
 } from './classifier-context.js';
 import { buildSystemPromptAppend, renderContextEntry } from './context-builder.js';
+import { toolDocGates } from './tool-doc-gates.js';
 import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
 import {
   renderBlockedAreaLines,
@@ -162,27 +160,14 @@ export async function resolveLaunch(args: {
     opts.meshCore.updateLastSeen(meshAgentId, 'message_sent');
   }
 
-  // Load agent manifest for the agent's per-agent tool-group settings. These decide
-  // which tool docs reach the system prompt; they never restrict what is callable.
+  // Load the agent manifest for the settings a launch is pinned to (its account,
+  // below). What its permissions hide is resolved separately, off the file.
   let manifest: Awaited<ReturnType<typeof readManifest>> | null = null;
   try {
     manifest = await readManifest(effectiveCwd);
   } catch {
-    // No manifest found -- all tools inherit global defaults
+    // No manifest found -- the launch inherits the server defaults
   }
-
-  const globalConfig = configManager.get('agentContext') ?? {
-    tasksTools: true,
-    relayTools: true,
-    meshTools: true,
-    adapterTools: true,
-  };
-
-  const toolConfig = resolveToolConfig(manifest?.enabledToolGroups, {
-    relayEnabled: isRelayEnabled(),
-    tasksEnabled: isTasksEnabled(),
-    globalConfig,
-  });
 
   // Slash commands must reach the CLI as the bare prompt — it only parses a
   // command when `/` starts the message (DOR-107). Verify the name against the
@@ -211,6 +196,9 @@ export async function resolveLaunch(args: {
   // and the one context line per Blocked area come from one resolution, so the
   // prompt never names an area the tools disagree with.
   const toolVisibility = await resolveToolVisibilityFor(session.cwd ?? effectiveCwd);
+  // The four switchable tool-doc blocks follow the same resolution: a Blocked
+  // area's docs go with its tools.
+  const toolConfig = toolDocGates(toolVisibility.blockedAreas);
   const baseAppend = await buildSystemPromptAppend(effectiveCwd, toolConfig, {
     agentSession: loadsAgentToAgentTools(
       !!(session.cwd && opts.meshCore?.getByPath(session.cwd)),
@@ -530,14 +518,15 @@ export async function resolveLaunch(args: {
     });
   }
 
-  // Nothing here sets `allowedTools`, on purpose (DOR-519). The tool-group toggles
-  // used to feed it a list, on the premise that the SDK option restricts which tools
+  // Nothing here sets `allowedTools`, on purpose (DOR-519). The retired tool-group
+  // toggles used to feed it a list, on the premise that the SDK option restricts which tools
   // a session may call. It does not: it auto-approves the names in it. Because the
   // list was only non-empty once a group was turned OFF, turning a group off widened
   // this agent's auto-approval instead of narrowing its access. Every DorkOS tool now
   // goes through `canUseTool` below, which auto-approves only `DORKOS_AGENT_TOOLS`.
-  // The toggles still take effect through `buildSystemPromptAppend` above, which
-  // leaves a disabled group's tool block out of the agent's context.
+  // What an agent may call is its permission, resolved by the gate on every call;
+  // a Blocked area's tools are left out of the list above, and its docs out of
+  // `buildSystemPromptAppend` (spec `agent-permissions` D15).
   const editBaselineCapture = createEditBaselineCapture(sessionId, effectiveCwd);
   sdkOptions.canUseTool = createCanUseTool(session, logger, editBaselineCapture);
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):

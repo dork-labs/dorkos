@@ -78,7 +78,7 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
     ),
   },
   tools: {
-    title: 'Tools & MCP',
+    title: 'MCP servers',
     component: lazy(() => import('./ToolsPage').then((m) => ({ default: m.ToolsPage }))),
   },
   connections: {

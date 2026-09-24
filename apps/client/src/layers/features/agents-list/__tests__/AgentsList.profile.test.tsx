@@ -42,7 +42,6 @@ const ALPHA: TopologyAgent = {
   registeredAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
   registeredBy: 'user',
   personaEnabled: true,
-  enabledToolGroups: {},
   mcpServers: [],
   projectPath: AGENT_PATH,
   healthStatus: 'active',

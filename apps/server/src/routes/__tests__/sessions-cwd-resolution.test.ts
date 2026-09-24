@@ -127,7 +127,6 @@ vi.mock('@dorkos/shared/manifest', () => ({
           registeredBy: 'test',
           personaEnabled: true,
           isSystem: false,
-          enabledToolGroups: {},
           mcpServers: [],
           workspace: manifestBinding,
         } as AgentManifest)

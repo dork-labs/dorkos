@@ -56,9 +56,6 @@ vi.mock('../../messaging/context-builder.js', () => ({
     .mockResolvedValue({ text: '<env>test</env>', stable: '<env>test</env>' }),
   renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
 }));
-vi.mock('../../tooling/tool-filter.js', () => ({
-  resolveToolConfig: vi.fn().mockReturnValue({ tasks: true, relay: true, mesh: true }),
-}));
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
 vi.mock('../../../../relay/relay-state.js', () => ({ isRelayEnabled: () => false }));
 vi.mock('../../../../tasks/task-state.js', () => ({ isTasksEnabled: () => false }));

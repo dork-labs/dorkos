@@ -111,7 +111,6 @@ vi.mock('@dorkos/shared/manifest', () => ({
     registeredBy: 'test',
     behavior: { responseMode: 'always' },
     personaEnabled: true,
-    enabledToolGroups: {},
   }),
 }));
 vi.mock('../../../../lib/logger.js', () => ({

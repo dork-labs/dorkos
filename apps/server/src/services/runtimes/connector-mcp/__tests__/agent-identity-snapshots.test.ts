@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AgentIdentity } from '../../../core/agent-identity/index.js';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
 import { AgentIdentitySnapshotPrincipalPort } from '../agent-identity-snapshots.js';
@@ -48,14 +47,13 @@ function openInput(sessionId: string) {
 
 describe('AgentIdentitySnapshotPrincipalPort', () => {
   it('keeps each concurrent turn on the exact identity captured before its launch', async () => {
-    let currentTier: AgentIdentity['tierCeiling'] = 'observe';
+    let currentName = 'Agent A';
     const principals = backing();
     const snapshots = new AgentIdentitySnapshotPrincipalPort({
       principals,
       snapshotIdentity: async (agentPath) => ({
         agentPath,
-        displayName: 'Agent A',
-        tierCeiling: currentTier,
+        displayName: currentName,
         createdAt: '2026-09-08T00:00:00.000Z',
       }),
       identityWasRevoked: async () => false,
@@ -63,25 +61,24 @@ describe('AgentIdentitySnapshotPrincipalPort', () => {
     });
 
     const first = await snapshots.openTurn(openInput('session-1'), ownership);
-    currentTier = 'destructive';
+    currentName = 'Agent B';
     const second = await snapshots.openTurn(openInput('session-2'), ownership);
 
     await expect(
       snapshots.identityFor(principal(first.bindingId, 'session-1'))
-    ).resolves.toMatchObject({ tierCeiling: 'observe' });
+    ).resolves.toMatchObject({ displayName: 'Agent A' });
     await expect(
       snapshots.identityFor(principal(second.bindingId, 'session-2'))
-    ).resolves.toMatchObject({ tierCeiling: 'destructive' });
+    ).resolves.toMatchObject({ displayName: 'Agent B' });
   });
 
-  it('refuses a later revocation without replacing the captured ceiling', async () => {
+  it('refuses a later revocation without replacing the captured identity', async () => {
     let revoked = false;
     const snapshots = new AgentIdentitySnapshotPrincipalPort({
       principals: backing(),
       snapshotIdentity: async (agentPath) => ({
         agentPath,
         displayName: 'Agent A',
-        tierCeiling: 'act',
         createdAt: '2026-09-08T00:00:00.000Z',
       }),
       identityWasRevoked: async () => revoked,
@@ -103,7 +100,6 @@ describe('AgentIdentitySnapshotPrincipalPort', () => {
       snapshotIdentity: async (agentPath) => ({
         agentPath,
         displayName: 'Agent A',
-        tierCeiling: 'observe',
         createdAt: '2026-09-08T00:00:00.000Z',
       }),
       identityWasRevoked: async () => false,
@@ -124,7 +120,6 @@ describe('AgentIdentitySnapshotPrincipalPort', () => {
       snapshotIdentity: async (agentPath) => ({
         agentPath,
         displayName: 'Agent A',
-        tierCeiling: 'observe',
         createdAt: '2026-09-08T00:00:00.000Z',
       }),
       identityWasRevoked: async () => false,
@@ -139,15 +134,14 @@ describe('AgentIdentitySnapshotPrincipalPort', () => {
   });
 
   it('forwards exact turn ownership and renews expiry without refreshing the frozen identity', async () => {
-    let currentTier: AgentIdentity['tierCeiling'] = 'observe';
+    let currentName = 'Agent A';
     let now = new Date('2026-09-08T10:00:00.000Z');
     const principals = backing();
     const snapshots = new AgentIdentitySnapshotPrincipalPort({
       principals,
       snapshotIdentity: async (agentPath) => ({
         agentPath,
-        displayName: 'Agent A',
-        tierCeiling: currentTier,
+        displayName: currentName,
         createdAt: '2026-09-08T00:00:00.000Z',
       }),
       identityWasRevoked: async () => false,
@@ -163,7 +157,7 @@ describe('AgentIdentitySnapshotPrincipalPort', () => {
     const backingOpenResult = await vi.mocked(principals.openTurn).mock.results[0]?.value;
     expect(opened).toBe(backingOpenResult);
     expect(opened.renewalPermit).toBe(backingOpenResult?.renewalPermit);
-    currentTier = 'destructive';
+    currentName = 'Agent B';
     const renewal = { bindingId: opened.bindingId, permit };
     await expect(snapshots.renew(renewal)).resolves.toEqual({
       status: 'renewed',
@@ -175,7 +169,7 @@ describe('AgentIdentitySnapshotPrincipalPort', () => {
     now = new Date('2026-09-08T13:00:00.000Z');
     await expect(
       snapshots.identityFor(principal(opened.bindingId, 'session-1'))
-    ).resolves.toMatchObject({ tierCeiling: 'observe' });
+    ).resolves.toMatchObject({ displayName: 'Agent A' });
   });
 
   it('does not extend a snapshot when the backing lease refuses renewal', async () => {
@@ -190,7 +184,6 @@ describe('AgentIdentitySnapshotPrincipalPort', () => {
       snapshotIdentity: async (agentPath) => ({
         agentPath,
         displayName: 'Agent A',
-        tierCeiling: 'observe',
         createdAt: '2026-09-08T00:00:00.000Z',
       }),
       identityWasRevoked: async () => false,
@@ -214,7 +207,6 @@ describe('AgentIdentitySnapshotPrincipalPort', () => {
       snapshotIdentity: async (agentPath) => ({
         agentPath,
         displayName: 'Agent A',
-        tierCeiling: 'observe',
         createdAt: '2026-09-08T00:00:00.000Z',
       }),
       identityWasRevoked: async () => false,
@@ -227,7 +219,7 @@ describe('AgentIdentitySnapshotPrincipalPort', () => {
     ).rejects.toThrow('temporary storage failure');
     await expect(
       snapshots.identityFor(principal(opened.bindingId, 'session-1'))
-    ).resolves.toMatchObject({ tierCeiling: 'observe' });
+    ).resolves.toMatchObject({ displayName: 'Agent A' });
 
     now = new Date(expiresAt);
     await expect(
@@ -250,7 +242,6 @@ describe('AgentIdentitySnapshotPrincipalPort', () => {
       snapshotIdentity: async (agentPath) => ({
         agentPath,
         displayName: 'Agent A',
-        tierCeiling: 'observe',
         createdAt: '2026-09-08T00:00:00.000Z',
       }),
       identityWasRevoked: async () => false,
@@ -285,7 +276,6 @@ describe('AgentIdentitySnapshotPrincipalPort', () => {
       snapshotIdentity: async (agentPath) => ({
         agentPath,
         displayName: 'Agent A',
-        tierCeiling: 'observe',
         createdAt: '2026-09-08T00:00:00.000Z',
       }),
       identityWasRevoked: async () => false,

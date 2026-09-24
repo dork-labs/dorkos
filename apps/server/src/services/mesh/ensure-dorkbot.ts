@@ -172,7 +172,6 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
     registeredAt: new Date().toISOString(),
     registeredBy: 'dorkos-system',
     personaEnabled: true,
-    enabledToolGroups: {},
     mcpServers: [],
     workspace: { mode: 'home' },
   };

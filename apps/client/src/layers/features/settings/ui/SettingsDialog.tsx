@@ -26,7 +26,7 @@ import { RoomsTab } from './tabs/RoomsTab';
 import { PermissionsTab } from './tabs/PermissionsTab';
 import { RuntimesTab } from './runtimes/RuntimesTab';
 import { ServerTab } from './ServerTab';
-import { ToolsResetAction, ToolsTab } from './ToolsTab';
+import { ToolsTab } from './ToolsTab';
 import { AccessTab } from './AccessTab';
 import { RemoteAccessTab } from './RemoteAccessTab';
 import { PrivacyTab } from './PrivacyTab';
@@ -74,7 +74,6 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     label: 'Tools',
     icon: Wrench,
     component: ToolsTab,
-    actions: <ToolsResetAction />,
     group: 'Agents & sessions',
   },
   {

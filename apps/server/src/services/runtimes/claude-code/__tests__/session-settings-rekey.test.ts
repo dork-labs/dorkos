@@ -29,17 +29,12 @@ import type { Session } from '@dorkos/shared/types';
 
 // Same hoisted stubs the sibling runtime tests use — context assembly and tool
 // filtering are irrelevant here and must not touch the filesystem.
-const { contextBuilderFactory, toolFilterFactory } = vi.hoisted(() => ({
+const { contextBuilderFactory } = vi.hoisted(() => ({
   contextBuilderFactory: () => ({
     buildSystemPromptAppend: vi
       .fn()
       .mockResolvedValue({ text: '<env>mock</env>', stable: '<env>mock</env>' }),
     renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
-  }),
-  toolFilterFactory: () => ({
-    resolveToolConfig: vi
-      .fn()
-      .mockReturnValue({ tasks: true, relay: true, mesh: true, adapter: true }),
   }),
 }));
 
@@ -57,7 +52,6 @@ vi.mock('../../../../lib/logger.js', () => ({
   initLogger: vi.fn(),
 }));
 vi.mock('../messaging/context-builder.js', contextBuilderFactory);
-vi.mock('../tooling/tool-filter.js', toolFilterFactory);
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
 vi.mock('../../../relay/relay-state.js', () => ({
   isRelayEnabled: vi.fn().mockReturnValue(false),

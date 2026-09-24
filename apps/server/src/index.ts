@@ -214,6 +214,7 @@ import {
   readStandingGrantLicence,
   readRawManifestFile,
   recordEndedStandingGrants,
+  runPermissionRetirements,
   runPermissionUpgradeSweep,
 } from './services/core/permissions/index.js';
 import { titleForMcpTool } from './services/core/mcp-tool-tiers.js';
@@ -1960,13 +1961,15 @@ async function start() {
       logger.warn('[Mesh] Failed to ensure DorkBot system agent', logError(err));
     }
 
-    // The permission upgrade sweep (spec `agent-permissions` D13): once per server
-    // version, after the mesh and Activity are up, write folded manifests back
-    // and record what the upgrade changed. Non-fatal: a failure costs the audit
-    // line, never the boot, and the fold still happens on every read.
+    // The permission upgrade (spec `agent-permissions` D13), after the mesh and
+    // Activity are up: on every boot, fold whatever retired permission setting is
+    // still on disk (a manifest's `enabledToolGroups`/`tierCeiling`, the config's
+    // `agentContext`) and record what that decided; once per server version,
+    // record what the config migration changed. Non-fatal: a failure costs the
+    // audit line, never the boot, and a manifest is still folded on every read.
     try {
       const mesh = meshCore;
-      await runPermissionUpgradeSweep({
+      const upgradeDeps: Parameters<typeof runPermissionUpgradeSweep>[0] = {
         version: SERVER_VERSION,
         config: {
           get: () => configManager.get('permissions'),
@@ -1989,9 +1992,12 @@ async function start() {
           if (agentPath) await permissionObserver.writing(agentPath, fields.permissions, write);
           else await write();
         },
+        retireAgentContext: () => configManager.retireAgentContext(),
         activity: activityService,
         logger,
-      });
+      };
+      await runPermissionRetirements(upgradeDeps);
+      await runPermissionUpgradeSweep(upgradeDeps);
     } catch (err) {
       logger.warn('[Permissions] Upgrade sweep failed', logError(err));
     }
