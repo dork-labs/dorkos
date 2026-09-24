@@ -24,7 +24,7 @@
  */
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import type { Task, UpdateTaskRequest } from '@dorkos/shared/schemas';
+import type { PermissionMode, Task, UpdateTaskRequest } from '@dorkos/shared/schemas';
 import type { MeshCore } from '@dorkos/mesh';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
@@ -86,6 +86,18 @@ export interface TaskFileUpdateSuccess {
    * cannot ask on its own.
    */
   timingLandsOn: TimingLandsOn;
+  /**
+   * Whether the caller's permission clamp (`clampTo`) was applied, and so has
+   * to reach the row too.
+   *
+   * Always, except for a package's schedule whose change lands on its row alone
+   * (DOR-2302): the package's file is never written, and a timing change there
+   * is settled against the approval instead (`TaskStore.settleTimingChange`
+   * parks an agent's), so the clamp has nothing to protect — and carried into
+   * the request it would read as an attempt to change the package's permission
+   * level, and refuse a timing change with a sentence about approval levels.
+   */
+  clampApplied: boolean;
 }
 
 /** The outcome of a file rewrite. */
@@ -146,7 +158,7 @@ function describeTaskFileFailure(
  * @param existing - The task as it stands, whose `filePath` is being rewritten.
  * @param content - The file's current bytes.
  * @param data - The fields the request carries.
- * @param changed - Which file-backed fields this request changes.
+ * @param clampTo - The mode a non-trusted edit clamps the task to, if any.
  * @returns What to tell the caller: a refusal, or a success saying whether the
  *   file was written.
  */
@@ -155,8 +167,9 @@ async function rewriteTaskFile(
   existing: Task,
   content: string,
   data: UpdateTaskRequest,
-  changed: readonly string[]
+  clampTo: PermissionMode | undefined
 ): Promise<TaskFileUpdateOutcome> {
+  const written = clampTo ? { ...data, permissionMode: clampTo } : data;
   // A file the skill schema cannot read is the silent-success defect DOR-1481
   // closed: the update used to skip the write, change the row, and report
   // success. It refuses.
@@ -188,7 +201,12 @@ async function rewriteTaskFile(
     // schedule answer 409 with the sentence that offers the thing it refused
     // (FB-26). The row is then authoritative for that switch, and the sync
     // keeps it (`file-sync-gates.ts`).
-    if (landsOnRowAlone(changed)) return { ok: true, changesFile: false, timingLandsOn: 'row' };
+    // What the CALLER asked for, without the clamp: see
+    // {@link TaskFileUpdateSuccess.clampApplied}.
+    const changed = fileBackedChanges(data, existing);
+    if (landsOnRowAlone(changed)) {
+      return { ok: true, changesFile: false, timingLandsOn: 'row', clampApplied: false };
+    }
     // **When the refused request was a grant, say so about the grant** (DOR-2100).
     // Approving a packaged schedule at the operator's own trust stop arrives
     // here as an ordinary `permissionMode` change, and the sentence below is
@@ -219,7 +237,7 @@ async function rewriteTaskFile(
     };
   }
 
-  const plan = planTaskFileUpdate(existing.filePath, content, data, data.prompt);
+  const plan = planTaskFileUpdate(existing.filePath, content, written, written.prompt);
   if (plan.kind === 'refuse') {
     return { ok: false, status: 409, error: plan.message, code: 'schedule_file_unreadable' };
   }
@@ -239,7 +257,12 @@ async function rewriteTaskFile(
       error: describeTaskFileFailure('save', existing.filePath, diskReason(err)),
     };
   }
-  return { ok: true, changesFile: true, timingLandsOn: 'file' };
+  return {
+    ok: true,
+    changesFile: true,
+    timingLandsOn: 'file',
+    clampApplied: clampTo !== undefined,
+  };
 }
 
 /**
@@ -263,21 +286,28 @@ async function rewriteTaskFile(
  * could erase the file's `schedule:` block.
  *
  * @param deps - Data directory and Mesh.
- * @param options - The task as it stands and the fields the request carries.
+ * @param options - The task as it stands, the fields the request carries, and
+ *   the permission mode a non-trusted edit clamps the task down to, if any —
+ *   kept apart from `data` so a package's row-only change can leave it out
+ *   ({@link TaskFileUpdateSuccess.clampApplied}).
  * @returns Whether the file was in scope, or a refusal that wrote nothing.
  */
 export async function applyTaskFileUpdate(
   deps: TaskFileUpdateDeps,
-  options: { existing: Task; data: UpdateTaskRequest }
+  options: { existing: Task; data: UpdateTaskRequest; clampTo?: PermissionMode }
 ): Promise<TaskFileUpdateOutcome> {
-  const { existing, data } = options;
+  const { existing, data, clampTo } = options;
+  const clampApplied = clampTo !== undefined;
   // Arming is the one thing a person can ask for that the FILE can refuse, so it
   // opens the file even when nothing in the file changes.
   const arming = data.status === 'active' && existing.status === 'pending_approval';
-  const changed = fileBackedChanges(data, existing);
+  const changed = fileBackedChanges(
+    clampTo ? { ...data, permissionMode: clampTo } : data,
+    existing
+  );
   const changesFile = changed.length > 0;
   if (!existing.filePath || !(changesFile || arming)) {
-    return { ok: true, changesFile, timingLandsOn: 'file' };
+    return { ok: true, changesFile, timingLandsOn: 'file', clampApplied };
   }
 
   // No initializer: every catch path returns, so a value here could never be
@@ -306,7 +336,7 @@ export async function applyTaskFileUpdate(
       taskId: existing.id,
       filePath: existing.filePath,
     });
-    return { ok: true, changesFile, timingLandsOn: 'file' };
+    return { ok: true, changesFile, timingLandsOn: 'file', clampApplied };
   }
 
   // A schedule whose block or cron DorkOS cannot read has nothing to run on, so
@@ -327,7 +357,7 @@ export async function applyTaskFileUpdate(
     }
   }
 
-  if (!changesFile) return { ok: true, changesFile, timingLandsOn: 'file' };
+  if (!changesFile) return { ok: true, changesFile, timingLandsOn: 'file', clampApplied };
 
-  return rewriteTaskFile(deps, existing, content, data, changed);
+  return rewriteTaskFile(deps, existing, content, data, clampTo);
 }

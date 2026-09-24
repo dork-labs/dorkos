@@ -161,6 +161,23 @@ describe('tasks_update and a package’s schedule’s timing', () => {
     expect(store.getTask(task.id)).toMatchObject({ cron: '0 9 * * *', status: 'active' });
   });
 
+  it('retimes a schedule running with approval prompts off, instead of refusing about its level', async () => {
+    // Purpose: an agent changing an approved full-power schedule's cron is
+    // clamped. On a package's schedule that clamp used to ride into the
+    // request as a permission change, and the package-owned refusal answered a
+    // timing edit with a sentence about approval levels. The timing lands and
+    // the schedule is parked for a person, which is the protection the clamp
+    // exists to give.
+    const task = approvedSchedule();
+    store.updateTask(task.id, { permissionMode: 'bypassPermissions' });
+
+    const { isError, payload } = await call('tasks_update', { id: task.id, cron: '* * * * *' });
+
+    expect(isError).toBe(false);
+    expect(payload.schedule).toMatchObject({ cron: '* * * * *', status: 'pending_approval' });
+    expect(await fs.readFile(filePath, 'utf-8')).toBe(SKILL);
+  });
+
   it('still refuses a change to what it does', async () => {
     // Purpose: timing is the only new thing an agent may change here.
     const task = approvedSchedule();

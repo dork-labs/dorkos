@@ -687,6 +687,36 @@ describe('ScheduleRow', () => {
       );
     });
 
+    it('names the zone the person chose beside their timing', () => {
+      // Purpose: "At 07:30" is a time in a place; for a person's own timing the
+      // place has to be on the row.
+      renderScheduleRow(retimed);
+
+      expect(screen.getByText(/Every: 30 7 \* \* 1-5, Europe\/Berlin/)).toBeTruthy();
+    });
+
+    it('explains a timezone-only change by showing the zone', () => {
+      // Purpose: with only the zone overridden, the zone is the one thing on
+      // the row that says why it is "Your timing".
+      const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      renderScheduleRow({ ...activeSchedule, timezone: viewerZone, timingOverridden: true });
+
+      expect(screen.getByText(new RegExp(`, ${viewerZone.replace('/', '\\/')}`))).toBeTruthy();
+    });
+
+    it('names a zone that is not the reader’s own, and leaves out the one that is', () => {
+      // Purpose: an ordinary schedule in another zone is read wrong without it;
+      // one in the reader's own zone needs no label.
+      const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const elsewhere = viewerZone === 'Pacific/Kiritimati' ? 'Asia/Tokyo' : 'Pacific/Kiritimati';
+      const { unmount } = renderScheduleRow({ ...activeSchedule, timezone: elsewhere });
+      expect(screen.getByText(new RegExp(`, ${elsewhere.replace('/', '\\/')}`))).toBeTruthy();
+      unmount();
+
+      renderScheduleRow({ ...activeSchedule, timezone: viewerZone });
+      expect(screen.queryByText(new RegExp(`, ${viewerZone.replace('/', '\\/')}`))).toBeNull();
+    });
+
     it('says nothing of the kind for a schedule on its own timing', () => {
       // Purpose: the marker must mean something — never on every row.
       renderScheduleRow(activeSchedule, { expanded: true });

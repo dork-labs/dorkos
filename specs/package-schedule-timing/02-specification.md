@@ -83,6 +83,10 @@ The four places that read the columns directly switch to the helpers:
 - `FileSyncGates.resolve` — `approved.cron` is the row's effective cron and `incoming.cron` is the row's override when it has one, else the file's. So `keepsApprovedBypass` (`schedule-permission-clamp.ts:139`) and `resolveFileArmStatus` (249) both compare effective content, and so does `keepsRowEnabled`, which follows the arm verdict. The refusal log keeps keying on the file's own content.
 - `upsertFromFile` — the un-pause branch's grant uses the effective incoming key.
 
+**When the file stops being a package's.** Discovery reports `packageOwned` on every sync. When it reports `false` for a row that carries an override — an uninstall that left the file in place, now the person's to edit — the sync drops both overrides (`FileSyncGates.dropsTimingOverride`): the file is the one source of timing again, so a hand edit of its cron takes effect and the page never says "the package runs this…" without a package. The arm gate then compares the file's own timing with the approval: it stays live if they agree, and asks again if not. A sync that does not say who owns the file (an operator write) never drops anything.
+
+**Reinstall at the same path.** An override that was dropped does not come back when a package is reinstalled over the file: the person sets their timing again. A package whose file went away and came back without ever being seen as unowned — an update, or an uninstall that removed the file followed by a reinstall — keeps its override, because the row was only paused in between.
+
 Consequence, as designed: a package update that changes only the default cron of an overridden row does not re-park it (the effective content is unchanged); a changed prompt still does.
 
 ### The approval key

@@ -18,7 +18,7 @@ import {
   TASK_DURATION_PATTERN,
   TASK_DURATION_MAX,
 } from '@dorkos/shared/schemas';
-import type { EffortLevel, UpdateTaskRequest } from '@dorkos/shared/types';
+import type { EffortLevel, PermissionMode, UpdateTaskRequest } from '@dorkos/shared/types';
 import { slugify } from '@dorkos/skills/slug';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
@@ -672,9 +672,14 @@ export function createUpdateScheduleHandler(
       (args.cron !== undefined && (args.cron ?? '') !== (existing.cron ?? ''));
     const changesApprovedWork =
       changesApprovedContent || (args.name !== undefined && args.name !== existing.name);
+    // Handed to the file step rather than set on the patch, so a package's
+    // row-only timing change can leave it out (`clampApplied`, DOR-2302): that
+    // change is parked for a person below, and carried into the request the
+    // clamp would read as a permission change the package's file refuses.
+    let clampTo: PermissionMode | undefined;
     if (changesApprovedWork) {
       const clamp = clampSchedulePermissionMode(existing.permissionMode);
-      if (clamp.clamped) patch.permissionMode = clamp.mode;
+      if (clamp.clamped) clampTo = clamp.mode;
     }
 
     // The FILE first, through the seam `PATCH /api/tasks/:id` shares. Without it
@@ -692,7 +697,7 @@ export function createUpdateScheduleHandler(
     // still goes back to a person; it just no longer un-happens.
     const fileOutcome = await applyTaskFileUpdate(
       { dorkHome: deps.dorkHome, ...(deps.meshCore && { meshCore: deps.meshCore }) },
-      { existing, data: patch }
+      { existing, data: patch, clampTo }
     );
     if (!fileOutcome.ok) {
       return jsonContent(
@@ -704,7 +709,9 @@ export function createUpdateScheduleHandler(
       );
     }
 
-    let updated = deps.taskStore!.updateTask(args.id, patch, {
+    const rowPatch: UpdateTaskRequest =
+      fileOutcome.clampApplied && clampTo ? { ...patch, permissionMode: clampTo } : patch;
+    let updated = deps.taskStore!.updateTask(args.id, rowPatch, {
       timingLandsOn: fileOutcome.timingLandsOn,
     });
     if (!updated) return jsonContent({ error: `Schedule ${args.id} not found` }, true);

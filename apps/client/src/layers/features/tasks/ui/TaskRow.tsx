@@ -13,6 +13,7 @@ import { AgentAvatar } from '@/layers/entities/agent';
 import { RuntimeMark, formatModelLabel } from '@/layers/entities/runtime';
 import {
   Badge,
+  Button,
   Switch,
   DropdownMenu,
   DropdownMenuTrigger,
@@ -57,6 +58,18 @@ function formatCron(cron: string): string {
   } catch {
     return cron;
   }
+}
+
+/** The timezone this browser reads times in. */
+const VIEWER_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/**
+ * Whether the timing line names the zone its cron runs in: when a person chose
+ * the timing, or when the zone is not the reader's own.
+ */
+function showsZone(task: Task): boolean {
+  if (!task.timezone) return false;
+  return task.timingOverridden || task.timezone !== VIEWER_TIME_ZONE;
 }
 
 /**
@@ -283,6 +296,12 @@ export function TaskRow({
             {shouldShowCron && (
               <div className="text-muted-foreground text-xs">
                 {task.cron ? formatCron(task.cron) : 'On-demand'}
+                {/* The zone the cron is read in, whenever it is not the one the
+                    reader is in or the person chose it — without it "At 07:30"
+                    is a time in a place nobody named, and a timezone-only
+                    override would be marked "Your timing" with nothing on the
+                    row that differs. */}
+                {task.cron && showsZone(task) && <>, {task.timezone}</>}
                 {/* The timing a person set for a package's schedule, in place
                     of the package's own (DOR-2302). Said on the collapsed row,
                     because it is the answer to "why is this not running when
@@ -290,7 +309,13 @@ export function TaskRow({
                 {task.timingOverridden && (
                   <span data-slot="task-timing-override"> &middot; Your timing</span>
                 )}
-                {task.nextRun && <> &middot; Next: {new Date(task.nextRun).toLocaleString()}</>}
+                {task.nextRun && (
+                  <>
+                    {' '}
+                    &middot; Next:{' '}
+                    {new Date(task.nextRun).toLocaleString(undefined, { timeZoneName: 'short' })}
+                  </>
+                )}
               </div>
             )}
             {/* Why this one is waiting. A schedule DorkOS found in a file says
@@ -468,13 +493,17 @@ export function TaskRow({
                     className="text-muted-foreground mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
                   >
                     <span>The package runs this {describePackageTiming(task)}.</span>
-                    <button
-                      className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center gap-1 rounded-md border bg-transparent px-2 py-0.5 text-xs font-medium shadow-sm transition-colors"
+                    {/* Wraps rather than overflowing the row on a narrow phone. */}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      className="h-auto min-h-6 min-w-0 shrink whitespace-normal"
                       onClick={handleResetTiming}
                     >
-                      <RotateCcw className="size-3" />
+                      <RotateCcw />
                       Reset to the package’s default
-                    </button>
+                    </Button>
                   </div>
                 )}
                 <TaskRunHistoryPanel scheduleId={task.id} scheduleCwd={null} />

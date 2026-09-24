@@ -167,6 +167,23 @@ describe('PATCH /api/tasks/:id — a package’s schedule’s timing', () => {
     expect(vi.mocked(scheduler.previewNextRuns)).toHaveBeenLastCalledWith('* * * * *', 'UTC', 3);
   });
 
+  it('lets an agent retime a full-power package schedule, parking it rather than refusing', async () => {
+    // Purpose: the route clamps a non-trusted edit to the approved work; on a
+    // package's schedule that clamp must not become a permission change the
+    // package's file refuses with a 409 about approval levels.
+    const task = await approvedTask();
+    store.updateTask(task.id, { permissionMode: 'bypassPermissions' });
+
+    const res = await request(fixtureTarget.server)
+      .patch(`/api/tasks/${task.id}`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ cron: '*/5 * * * *' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ cron: '*/5 * * * *', status: 'pending_approval' });
+    expect(await fs.readFile(filePath, 'utf-8')).toBe(SKILL);
+  });
+
   it('puts the package’s timing back on a reset, still approved', async () => {
     // Purpose: the Schedules page's "Reset to the package's default".
     const task = await approvedTask();

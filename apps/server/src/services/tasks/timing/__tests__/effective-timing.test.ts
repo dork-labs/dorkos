@@ -112,6 +112,18 @@ describe('timingColumnWrites — a package schedule (lands on the row)', () => {
     ).toEqual({ timezoneOverride: null });
   });
 
+  it('stores choosing the package’s own timezone as no override', () => {
+    // Purpose: picking the package's timezone back is not a custom timing, so
+    // the row must stop saying "Your timing".
+    expect(
+      timingColumnWrites(
+        { ...PACKAGE_TIMING, timezoneOverride: 'Asia/Tokyo' },
+        { timezone: 'UTC' },
+        'row'
+      )
+    ).toEqual({ timezoneOverride: null });
+  });
+
   it('writes a timezone override on its own', () => {
     // Purpose: the second half lands on its own column, not the file's.
     expect(timingColumnWrites(PACKAGE_TIMING, { timezone: 'Asia/Tokyo' }, 'row')).toEqual({

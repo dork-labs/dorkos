@@ -61,6 +61,11 @@ export interface FileSyncVerdict {
    * scheduling column and that does not change.
    */
   keepsRowEnabled: boolean;
+  /**
+   * Whether the row's timing override is dropped by this sync, because its file
+   * is no longer a package's (DOR-2302). See {@link FileSyncGates.dropsTimingOverride}.
+   */
+  dropsTimingOverride: boolean;
 }
 
 /**
@@ -100,8 +105,13 @@ export class FileSyncGates {
     // package's schedule can carry a person's own cron on its row, which the
     // sync never overwrites — so the incoming content runs on that cron, and a
     // package update that changes only its default timing is not new work to
-    // approve. A changed prompt still is.
-    const incoming = { prompt: def.body, cron: existing?.cronOverride ?? fileCron };
+    // approve. A changed prompt still is. An override this sync drops runs no
+    // longer, so it is not part of what arrives.
+    const dropsTimingOverride = this.dropsTimingOverride(existing, options);
+    const incoming = {
+      prompt: def.body,
+      cron: (dropsTimingOverride ? null : existing?.cronOverride) ?? fileCron,
+    };
     const approved = existing && {
       permissionMode: existing.permissionMode as PermissionMode,
       status: existing.status,
@@ -126,7 +136,46 @@ export class FileSyncGates {
         ? resolveFileArmStatus(approved, incoming, options.problem)
         : null;
 
-    return { permissionMode, arm, keepsRowEnabled: this.keepsRowEnabled(existing, arm, options) };
+    return {
+      permissionMode,
+      arm,
+      keepsRowEnabled: this.keepsRowEnabled(existing, arm, options),
+      dropsTimingOverride,
+    };
+  }
+
+  /**
+   * Whether a person's timing override stops applying at this sync.
+   *
+   * An override exists only because DorkOS would not write the package's file.
+   * When discovery finds the file is no longer a package's — the package was
+   * uninstalled and left the file in place, so it is now the person's to edit —
+   * the file is the one source of timing again. Keeping the override would make
+   * a hand edit of the file's cron do nothing, and leave the Schedules page
+   * saying "the package runs this…" about a package that is gone.
+   *
+   * Only discovery answers `packageOwned`; a route or an install does not say
+   * (absent), and that is not an answer.
+   *
+   * The timing that runs changes with it, so the arm gate compares the file's
+   * own timing against the approval: it stays live when the two agree (the
+   * person wrote their timing into the file), and asks again otherwise.
+   *
+   * A package reinstalled over the same file later brings no override back.
+   * One that vanished and came back instead — an update, or an uninstall that
+   * took the file with it and a reinstall — never looked unowned, so its
+   * override is still there.
+   */
+  private dropsTimingOverride(
+    existing: typeof pulseSchedules.$inferSelect | undefined,
+    options?: FileSyncSource
+  ): boolean {
+    // `packageOwned` is only ever answered by discovery; absent is not `false`.
+    if (options?.packageOwned !== false) return false;
+    return (
+      existing !== undefined &&
+      (existing.cronOverride !== null || existing.timezoneOverride !== null)
+    );
   }
 
   /**

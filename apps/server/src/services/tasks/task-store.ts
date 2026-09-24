@@ -177,13 +177,25 @@ const DRIFTED_DURING_MIGRATION_REASON =
  */
 export interface UpdateTaskOptions {
   /**
-   * Where `cron` and `timezone` go. `file` (the default) is every schedule whose
-   * SKILL.md DorkOS writes; `row` is a package's schedule, whose timing becomes
-   * the row's override. Decided by `applyTaskFileUpdate`, which is the one step
+   * Where `cron` and `timezone` go. `file` is every schedule whose SKILL.md
+   * DorkOS writes; `row` is a package's schedule, whose timing becomes the
+   * row's override. Decided by `applyTaskFileUpdate`, which is the one step
    * that asks whether a package owns the file.
+   *
+   * Required, with no default, for any update that carries timing: a silent
+   * `file` would write a person's timing over a package's default and drop
+   * their override, which is the one mistake a caller must not be able to make
+   * by leaving an argument out.
    */
-  timingLandsOn?: TimingLandsOn;
+  timingLandsOn: TimingLandsOn;
 }
+
+/** An update that says nothing about timing, and so needs no {@link UpdateTaskOptions}. */
+export type UntimedTaskUpdate = Omit<UpdateTaskRequest, 'cron' | 'timezone' | 'resetTiming'> & {
+  cron?: never;
+  timezone?: never;
+  resetTiming?: never;
+};
 
 /**
  * What {@link TaskStore.settleTimingChange} did about a schedule whose timing
@@ -357,11 +369,22 @@ export class TaskStore {
   /**
    * Update an existing task. Returns the updated task or null if not found.
    *
+   * An update carrying `cron`, `timezone` or `resetTiming` must say where its
+   * timing lands ({@link UpdateTaskOptions}); the types require it, and so does
+   * this method, for a caller the types cannot see.
+   *
    * @param id - The task to update.
    * @param input - The fields to change; an omitted field is left alone.
    * @param options - Where the request's timing lands; see {@link UpdateTaskOptions}.
    */
-  updateTask(id: string, input: UpdateTaskRequest, options: UpdateTaskOptions = {}): Task | null {
+  updateTask(id: string, input: UntimedTaskUpdate): Task | null;
+  updateTask(id: string, input: UpdateTaskRequest, options: UpdateTaskOptions): Task | null;
+  updateTask(id: string, input: UpdateTaskRequest, options?: UpdateTaskOptions): Task | null {
+    const carriesTiming =
+      input.cron !== undefined || input.timezone !== undefined || input.resetTiming !== undefined;
+    if (carriesTiming && !options) {
+      throw new Error('updateTask: an update carrying timing must say where it lands');
+    }
     const existing = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
     if (!existing) return null;
 
@@ -385,7 +408,7 @@ export class TaskStore {
     // For a package's schedule the same two fields land in the override
     // columns instead, and a reset clears them (DOR-2302) — one rule, in
     // `timingColumnWrites`, so the NOT NULL spelling above holds on both paths.
-    Object.assign(updates, timingColumnWrites(existing, input, options.timingLandsOn ?? 'file'));
+    Object.assign(updates, timingColumnWrites(existing, input, options?.timingLandsOn ?? 'file'));
     if (input.enabled !== undefined) updates.enabled = input.enabled;
     if (input.sticky !== undefined) updates.sticky = input.sticky;
     if (input.maxRuntime !== undefined) {
@@ -1350,7 +1373,11 @@ export class TaskStore {
     // What a file on disk may do to this row, decided in one place so the
     // permission clamp and the arm gate cannot disagree — see
     // `file-sync-gates.ts` and `schedule-permission-clamp.ts`.
-    const { permissionMode, arm, keepsRowEnabled } = this.fileGates.resolve(def, existing, options);
+    const { permissionMode, arm, keepsRowEnabled, dropsTimingOverride } = this.fileGates.resolve(
+      def,
+      existing,
+      options
+    );
 
     if (existing) {
       this.db
@@ -1378,6 +1405,9 @@ export class TaskStore {
           runtime: schedule.runtime ?? null,
           model: schedule.model ?? null,
           effort: schedule.effort ?? null,
+          // The file is no longer a package's, so it is the one source of
+          // timing again (DOR-2302, `FileSyncGates.dropsTimingOverride`).
+          ...(dropsTimingOverride ? { cronOverride: null, timezoneOverride: null } : {}),
           // A `paused` row whose file is back is un-paused here, because
           // nothing else ever will: the scheduler requires `enabled` AND
           // `status === 'active'`, and restoring only `enabled` leaves a task

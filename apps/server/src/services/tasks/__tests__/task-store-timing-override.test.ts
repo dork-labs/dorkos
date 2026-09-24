@@ -116,7 +116,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       store.updateTask(id, { cron: MY_CRON, timezone: 'Asia/Tokyo' }, { timingLandsOn: 'row' });
 
-      const task = store.updateTask(id, { resetTiming: true })!;
+      const task = store.updateTask(id, { resetTiming: true }, { timingLandsOn: 'row' })!;
 
       expect(task).toMatchObject({ cron: PACKAGE_CRON, timezone: 'UTC', timingOverridden: false });
     });
@@ -126,7 +126,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       // default `timingLandsOn` must stay `file`.
       const id = approvedSchedule();
 
-      const task = store.updateTask(id, { cron: MY_CRON })!;
+      const task = store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'file' })!;
 
       expect(row(id)).toMatchObject({ cron: MY_CRON, cronOverride: null });
       expect(task.timingOverridden).toBe(false);
@@ -240,6 +240,64 @@ describe('a person’s own timing on a package’s schedule', () => {
         scheduleContentKey({ prompt: PROMPT, cron: MY_CRON })
       );
     });
+  });
+
+  describe('when the file stops being a package’s', () => {
+    // An uninstall can leave the file in place, where it becomes the person's
+    // to edit. Discovery says so with `packageOwned: false`.
+    const UNOWNED = { source: 'discovery', packageOwned: false } as const;
+
+    it('drops the override, so the file’s own timing runs and a hand edit takes effect', () => {
+      // Purpose: kept, the override would beat every edit of the file's cron and
+      // the page would name a package that is gone.
+      const id = approvedSchedule();
+      personRetimes(id, MY_CRON);
+
+      const synced = store.upsertFromFile(definition({ cron: '0 6 * * *' }), undefined, UNOWNED);
+
+      expect(synced).toMatchObject({ cron: '0 6 * * *', timingOverridden: false });
+      expect(row(id)).toMatchObject({ cronOverride: null, timezoneOverride: null });
+    });
+
+    it('stays approved when the file already says the person’s timing', () => {
+      // Purpose: writing your own cron into the file you now own is the same
+      // approved work, not new work to look at.
+      const id = approvedSchedule();
+      personRetimes(id, MY_CRON);
+
+      expect(store.upsertFromFile(definition({ cron: MY_CRON }), undefined, UNOWNED).status).toBe(
+        'active'
+      );
+    });
+
+    it('asks again when the timing that runs changes with it', () => {
+      // Purpose: the file's cron is not the one the person approved, and it is
+      // about to be the one that runs.
+      const id = approvedSchedule();
+      personRetimes(id, MY_CRON);
+
+      expect(store.upsertFromFile(definition(), undefined, UNOWNED).status).toBe(
+        'pending_approval'
+      );
+    });
+
+    it('keeps the override through a sync that does not say who owns the file', () => {
+      // Purpose: only discovery knows; an operator write saying nothing is not
+      // "no longer a package's".
+      const id = approvedSchedule();
+      personRetimes(id, MY_CRON);
+
+      expect(store.upsertFromFile(definition()).cron).toBe(MY_CRON);
+    });
+  });
+
+  it('refuses a timing update that does not say where it lands', () => {
+    // Purpose: a silent `file` default would copy a person's timing over the
+    // package's and drop their override.
+    const id = approvedSchedule();
+    const untyped = store.updateTask.bind(store) as (id: string, input: object) => unknown;
+
+    expect(() => untyped(id, { cron: MY_CRON })).toThrow(/where it lands/);
   });
 
   describe('settleTimingChange', () => {

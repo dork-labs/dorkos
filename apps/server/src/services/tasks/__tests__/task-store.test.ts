@@ -163,7 +163,11 @@ describe('TaskStore', () => {
       // on every save of a task with no cron (`TaskFormInner.tsx`).
       const created = store.createTask(taskInput({ name: 'OnDemand', prompt: 'p', cron: '' }));
 
-      const updated = store.updateTask(created.id, { cron: null, prompt: 'edited' });
+      const updated = store.updateTask(
+        created.id,
+        { cron: null, prompt: 'edited' },
+        { timingLandsOn: 'file' }
+      );
 
       expect(updated).not.toBeNull();
       expect(updated!.cron).toBe('');

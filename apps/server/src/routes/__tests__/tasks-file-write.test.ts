@@ -68,7 +68,7 @@ import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskReconciler } from '../../services/tasks/task-reconciler.js';
 import { ScheduleIdentityRegistry } from '../../services/tasks/schedule-identity.js';
 import { skillsRoot } from '../../services/tasks/__tests__/task-root-fixtures.js';
-import { TaskStore } from '../../services/tasks/task-store.js';
+import { TaskStore, type UpdateTaskOptions } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
 const fixtureTarget = swappableServer();
@@ -568,13 +568,15 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
     // Stand in for the watcher firing between the two writes.
     const realUpdate = store.updateTask.bind(store);
     let raced = false;
-    vi.spyOn(store, 'updateTask').mockImplementation((taskId, data) => {
-      if (!raced) {
-        raced = true;
-        realUpdate(taskId, { status: 'pending_approval' });
+    vi.spyOn(store, 'updateTask').mockImplementation(
+      (taskId, data, options?: UpdateTaskOptions) => {
+        if (!raced) {
+          raced = true;
+          realUpdate(taskId, { status: 'pending_approval' });
+        }
+        return realUpdate(taskId, data, options ?? { timingLandsOn: 'file' });
       }
-      return realUpdate(taskId, data);
-    });
+    );
 
     const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)

@@ -27,7 +27,7 @@
  */
 import { Router, type Request, type Response } from 'express';
 import { UpdateTaskRequestSchema, ListTaskRunsQuerySchema } from '@dorkos/shared/schemas';
-import type { Task } from '@dorkos/shared/schemas';
+import type { PermissionMode, Task } from '@dorkos/shared/schemas';
 import type { MeshCore } from '@dorkos/mesh';
 import type { TaskStore } from '../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../services/tasks/task-scheduler-service.js';
@@ -448,6 +448,11 @@ export function createTasksRouter(
     // A trusted caller — the person editing their own task in the cockpit — is left
     // untouched: their approval is what the write-order protects, and it still
     // round-trips through disk exactly as before.
+    // Handed to the file step rather than set on `data`, which lands it on the
+    // file and — `clampApplied` — the row. A package's row-only timing change
+    // leaves it out: that change is parked for a person anyway, and the package's
+    // permission level is not DorkOS's to write (DOR-2302).
+    let clampTo: PermissionMode | undefined;
     const promptChangesApprovedWork = data.prompt !== undefined && data.prompt !== existing.prompt;
     const cronChangesApprovedWork =
       data.cron !== undefined && (data.cron ?? '') !== (existing.cron ?? '');
@@ -457,7 +462,7 @@ export function createTasksRouter(
       (promptChangesApprovedWork || cronChangesApprovedWork || nameChangesApprovedWork)
     ) {
       const clamp = clampSchedulePermissionMode(existing.permissionMode);
-      if (clamp.clamped) data.permissionMode = clamp.mode;
+      if (clamp.clamped) clampTo = clamp.mode;
     }
 
     // The SKILL.md first, then the row — through `applyTaskFileUpdate`, because
@@ -468,7 +473,7 @@ export function createTasksRouter(
     // anything is written, so a refusal here leaves the row untouched too.
     const fileOutcome = await applyTaskFileUpdate(
       { dorkHome, ...(meshCore && { meshCore }) },
-      { existing, data }
+      { existing, data, clampTo }
     );
     if (!fileOutcome.ok) {
       return res.status(fileOutcome.status).json({
@@ -481,7 +486,9 @@ export function createTasksRouter(
     // one thing `settleTimingChange` below compares against.
     const previousKey = scheduleContentKey({ prompt: existing.prompt, cron: existing.cron ?? '' });
 
-    let updated = store.updateTask(req.params.id, data, { timingLandsOn });
+    const rowData =
+      fileOutcome.clampApplied && clampTo ? { ...data, permissionMode: clampTo } : data;
+    let updated = store.updateTask(req.params.id, rowData, { timingLandsOn });
     if (!updated) {
       return res.status(404).json({ error: 'Scheduled task not found' });
     }

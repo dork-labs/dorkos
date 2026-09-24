@@ -136,7 +136,11 @@ interface PatchResult {
 async function patch(existing: Task, data: UpdateTaskRequest): Promise<PatchResult> {
   const outcome = await applyTaskFileUpdate({ dorkHome, meshCore } as never, { existing, data });
   if (!outcome.ok) return { ok: false, code: outcome.code, error: outcome.error };
-  return { ok: true, task: store.updateTask(existing.id, data) ?? undefined };
+  return {
+    ok: true,
+    task:
+      store.updateTask(existing.id, data, { timingLandsOn: outcome.timingLandsOn }) ?? undefined,
+  };
 }
 
 describe('a schedule that came with an installed package', () => {
