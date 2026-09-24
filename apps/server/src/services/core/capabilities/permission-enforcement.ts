@@ -70,6 +70,24 @@ export interface PermissionGateSources {
    * cannot be read, which the gate turns into a Blocked refusal.
    */
   readAgentPermissions: (agentPath: string) => Promise<AgentPermissions | undefined>;
+  /**
+   * Every action an agent can reach, with its area and the MCP tool name it is
+   * listed under, so the tool-list builders can hide a Blocked one. Read per
+   * build; empty until boot wires the registry.
+   */
+  listActions: () => readonly PermissionListedAction[];
+}
+
+/** One agent-reachable action, as the tool-list builders read it. */
+export interface PermissionListedAction {
+  /** Capability id or hand-registered tool name. */
+  id: string;
+  /** The action's tier. */
+  tier: GatedAction['tier'];
+  /** Its area, or `null` for an action with no switch. */
+  area: PermissionAreaId | null;
+  /** The MCP tool name the action is listed under, when it has one. */
+  toolName?: string;
 }
 
 /** What an install is before anybody chose a preset: today's behaviour. */
@@ -108,6 +126,7 @@ export async function readAgentPermissionsFromManifest(
 const DEFAULT_SOURCES: PermissionGateSources = {
   readConfig: () => UNCHOSEN,
   readAgentPermissions: readAgentPermissionsFromManifest,
+  listActions: () => [],
 };
 
 let sources: PermissionGateSources = DEFAULT_SOURCES;
@@ -128,6 +147,17 @@ export function initPermissionGate(next: Partial<PermissionGateSources>): void {
 /** Drop the wired sources. Test-only seam, mirroring `resetCapabilityTierGate`. */
 export function resetPermissionGate(): void {
   sources = DEFAULT_SOURCES;
+}
+
+/**
+ * The wired sources, for the tool-list builders that hide a Blocked action
+ * (`runtimes/shared/permission-tool-filter.ts`). The gate itself never reads
+ * through this: it resolves each call in {@link resolveCallPermission}.
+ *
+ * @returns The live sources.
+ */
+export function permissionGateSources(): PermissionGateSources {
+  return sources;
 }
 
 /** A gated action, with the area it declares. */

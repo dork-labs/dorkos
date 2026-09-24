@@ -58,10 +58,17 @@ export function permissionActions(
     title: cap.title,
     tier: cap.tier,
     area: cap.area,
+    ...(cap.surfaces.mcp ? { toolName: cap.surfaces.mcp.toolName } : {}),
   }));
   const tools: PermissionActionInfo[] = Object.entries(
     MCP_TOOL_TIERS as Record<string, McpToolTier>
-  ).map(([id, tool]) => ({ id, title: tool.title, tier: tool.tier, area: tool.area }));
+  ).map(([id, tool]) => ({
+    id,
+    title: tool.title,
+    tier: tool.tier,
+    area: tool.area,
+    toolName: id,
+  }));
   return [...capabilities, ...tools];
 }
 

@@ -74,6 +74,8 @@ export interface PermissionActionInfo {
   tier: CapabilityTier;
   /** Its area, or `null` for an action with no switch. */
   area: PermissionAreaId | null;
+  /** The MCP tool name the action is listed under, when it has one. */
+  toolName?: string;
 }
 
 /** One registered agent, as the service needs it. */

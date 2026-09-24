@@ -29,10 +29,12 @@ export {
   blockedAreaPhrase,
   canRaiseApproval,
   initPermissionGate,
+  permissionGateSources,
   resetPermissionGate,
   resolveCallPermission,
   type CallPermission,
   type PermissionGateSources,
+  type PermissionListedAction,
 } from './permission-enforcement.js';
 export {
   // `enforceCapabilityTier` is deliberately NOT re-exported: the gate is reached

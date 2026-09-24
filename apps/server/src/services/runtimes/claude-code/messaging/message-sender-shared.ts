@@ -70,6 +70,23 @@ export interface SdkReportedModel {
   supportsAutoMode?: boolean;
 }
 
+/** What a turn's launch tells the tool server factory about THIS turn. */
+export interface McpServerLaunch {
+  /**
+   * MCP tool names this agent should not be shown, because their permission
+   * resolves to Blocked (spec `agent-permissions` D15). Enforcement never waits
+   * on this list: the gate refuses a Blocked call whatever the list says.
+   */
+  hiddenToolNames?: ReadonlySet<string>;
+}
+
+/** Builds the per-query MCP server configs for one session's turn. */
+export type McpServerFactory = (
+  session: AgentSession,
+  sessionId: string,
+  launch?: McpServerLaunch
+) => Record<string, McpServerConfig>;
+
 /** Options bundle for executeSdkQuery, grouping runtime dependencies. */
 export interface MessageSenderOpts {
   cwd: string;
@@ -91,8 +108,7 @@ export interface MessageSenderOpts {
   bindingRouter?: BindingRouter;
   bindingStore?: BindingStore;
   adapterManager?: AdapterManager;
-  mcpServerFactory?:
-    ((session: AgentSession, sessionId: string) => Record<string, McpServerConfig>) | null;
+  mcpServerFactory?: McpServerFactory | null;
   onModelsReceived?: (models: SdkReportedModel[]) => void;
   onMcpStatusReceived?: (servers: McpServerEntry[]) => void;
   /**

@@ -201,8 +201,10 @@ import { createA2aRouter } from './routes/a2a.js';
 import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { createAgentsRouter } from './routes/agents.js';
 import { createPermissionsRouter } from './routes/permissions.js';
+import { resolveToolVisibilityFor } from './services/runtimes/shared/permission-tool-filter.js';
 import {
   createPermissionService,
+  permissionActions,
   readRawManifestFile,
   runPermissionUpgradeSweep,
 } from './services/core/permissions/index.js';
@@ -3139,7 +3141,7 @@ async function start() {
       // the caller resolution to the owner's left 712 tests green.
       listVisibleRooms: (caller) => visibleRoomsForCaller(roomService, caller),
     };
-    claudeRuntime.setMcpServerFactory((session, sessionId) =>
+    claudeRuntime.setMcpServerFactory((session, sessionId, launch) =>
       // Managed servers first and `dorkos` last so it can never be shadowed —
       // the ordering guarantee lives in `mergeSessionMcpServers`
       // (spec `mcp-server-management` §6).
@@ -3161,7 +3163,8 @@ async function start() {
           session,
           sessionId,
           marketplaceMcpDeps,
-          capabilityRegistry
+          capabilityRegistry,
+          launch?.hiddenToolNames
         ),
       })
     );
@@ -3184,7 +3187,7 @@ async function start() {
     requireMcpEnabled,
     createMcpAuth({ surface: 'mcp' }),
     mcpRateLimiter,
-    createMcpRouter((caller) => {
+    createMcpRouter(async (caller) => {
       if (!claudeRuntime || !mcpToolDeps) {
         throw new Error(
           'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
@@ -3193,13 +3196,21 @@ async function start() {
       // The server is rebuilt per request, so who is calling — the agent that
       // presented a token, the person the auth middleware verified, or neither
       // — is captured by the capability tool handlers it registers.
+      //
+      // What a Blocked permission hides from this caller (spec
+      // `agent-permissions` D15): its own settings when it identified itself,
+      // the install's defaults when it did not.
+      const visibility = await resolveToolVisibilityFor(caller.identity?.agentPath, {
+        inactive: Boolean(caller.identity?.inactive),
+      });
       return createExternalMcpServer(
         mcpToolDeps,
         marketplaceMcpDeps,
         capabilityRegistry,
         caller.identity,
         caller.userId,
-        caller.agentIdentityPresented
+        caller.agentIdentityPresented,
+        visibility.hiddenToolNames
       );
     })
   );
@@ -4452,7 +4463,12 @@ async function start() {
   // the live `permissions` config section, read per call like everything else
   // this gate decides on. The agent's own overrides are read fresh off its
   // manifest file by the default source.
-  initPermissionGate({ readConfig: () => configManager.get('permissions') });
+  initPermissionGate({
+    readConfig: () => configManager.get('permissions'),
+    // The tool-list builders hide an action whose permission is Blocked; they
+    // read this catalog, per build, off the composed registry.
+    listActions: () => permissionActions(capabilityRegistry),
+  });
   if (connectorRuntimePrincipals) {
     const agentScopedRuntimePrincipals = new AgentIdentitySnapshotPrincipalPort({
       principals: connectorRuntimePrincipals,
@@ -4466,7 +4482,17 @@ async function start() {
       agentServerFactory: async (principal) => {
         const identity = await agentScopedRuntimePrincipals.identityFor(principal);
         if (!identity) return null;
-        return createAgentRuntimeMcpServer(capabilityRegistry!, principal, identity);
+        // What a Blocked permission hides from this agent (spec
+        // `agent-permissions` D15), read fresh for this turn.
+        const visibility = await resolveToolVisibilityFor(identity.agentPath, {
+          inactive: Boolean(identity.inactive),
+        });
+        return createAgentRuntimeMcpServer(
+          capabilityRegistry!,
+          principal,
+          identity,
+          visibility.hiddenToolNames
+        );
       },
     });
     for (const runtime of runtimeRegistry.listRuntimes()) {

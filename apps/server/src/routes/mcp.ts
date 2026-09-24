@@ -61,7 +61,9 @@ export interface McpCaller {
  * @param serverFactory - Creates a fresh McpServer instance per request,
  *   specialized to whoever is calling.
  */
-export function createMcpRouter(serverFactory: (caller: McpCaller) => McpServer): Router {
+export function createMcpRouter(
+  serverFactory: (caller: McpCaller) => McpServer | Promise<McpServer>
+): Router {
   const router = Router();
 
   // POST: JSON-RPC tool calls (primary endpoint)
@@ -74,7 +76,7 @@ export function createMcpRouter(serverFactory: (caller: McpCaller) => McpServer)
       // Filled by `createMcpAuth` on the login-on identity branch; absent on
       // every tokenless path, which is exactly the fact downstream must keep.
       const user = res.locals.user as RequestUser | undefined;
-      const server = serverFactory({
+      const server = await serverFactory({
         ...(identity ? { identity } : {}),
         ...(agentIdentityPresented ? { agentIdentityPresented } : {}),
         ...(user ? { userId: user.userId } : {}),
