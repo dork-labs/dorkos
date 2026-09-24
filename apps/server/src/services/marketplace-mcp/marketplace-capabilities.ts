@@ -184,7 +184,8 @@ export const marketplaceDomain: CapabilityDomain = {
         'Filter by type (agent/plugin/skill-pack/adapter). Includes install path, version, and provenance. ' +
         'Pass checkUpdates:true to also get, per entry, update.status (update-available | current | unknown), ' +
         "update.latestVersion and a note. That checks each package's marketplace, so it is slower; " +
-        'without it nothing is fetched.',
+        'without it nothing is fetched. Pass verify:true to also get, per entry, integrity.status ' +
+        '(clean | modified | unknown) with the files that changed since install; that reads every shipped file.',
       tier: 'observe',
       area: null,
       areaNote: 'reading',
