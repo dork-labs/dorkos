@@ -20,6 +20,9 @@ const navigate = vi.fn();
 const openSettings = vi.fn();
 const openConnections = vi.fn();
 const setControlCenterOpen = vi.fn();
+const openProfile = vi.fn();
+const usePermissions = vi.fn(() => ({ data: undefined as unknown }));
+const resetMutate = vi.fn();
 
 vi.mock('@/layers/entities/config', () => ({ useConfig: () => useConfig() }));
 vi.mock('@/layers/entities/runtime', () => ({
@@ -32,10 +35,18 @@ vi.mock('@/layers/entities/tasks', () => ({
   useTasksEnabled: () => useTasksEnabled(),
 }));
 vi.mock('@/layers/entities/binding', () => ({ useBindings: () => useBindings() }));
+vi.mock('@/layers/entities/permissions', () => ({
+  usePermissions: () => usePermissions(),
+  useResetAgentPermission: () => ({ mutate: resetMutate, isPending: false }),
+}));
+vi.mock('@/layers/features/permissions', () => ({
+  STATE_LABEL: { blocked: 'Blocked', ask: 'Ask', allowed: 'Allowed' },
+}));
 vi.mock('@/layers/shared/model', () => ({
   useSafeNavigate: () => navigate,
   useOpenConnections: () => openConnections,
   useSettingsDeepLink: () => ({ open: openSettings }),
+  useProfileDeepLink: () => ({ open: openProfile }),
   useAppStore: (selector: (s: { setControlCenterOpen: typeof setControlCenterOpen }) => unknown) =>
     selector({ setControlCenterOpen }),
 }));
@@ -86,6 +97,7 @@ beforeEach(() => {
   useSessions.mockReturnValue({ sessions: [] });
   useTasks.mockReturnValue({ data: [] });
   useBindings.mockReturnValue({ data: [] });
+  usePermissions.mockReturnValue({ data: undefined });
   seedCaps();
 });
 
@@ -186,5 +198,62 @@ describe('useOverridesLedger', () => {
     const { result } = renderHook(() => useOverridesLedger());
     expect(result.current.rows).toHaveLength(0);
     expect(result.current.isEmpty).toBe(true);
+  });
+
+  it("lists each agent's own permission, opens its page, and resets it in one tap", () => {
+    usePermissions.mockReturnValue({
+      data: {
+        areas: [
+          {
+            id: 'rooms',
+            label: 'Rooms',
+            actions: [{ id: 'rooms.create', title: 'create rooms' }],
+          },
+        ],
+        exceptions: [
+          { agentId: 'a1', agentName: 'security-auditor', area: 'rooms', state: 'blocked' },
+          {
+            agentId: 'a2',
+            agentName: 'DorkBot',
+            area: 'rooms',
+            action: 'rooms.create',
+            state: 'allowed',
+          },
+        ],
+        filesAndCommands: {
+          exceptions: [{ agentId: 'a1', agentName: 'security-auditor', stop: 'ask' }],
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useOverridesLedger());
+    const rows = result.current.rows.filter((r) => r.kind === 'agent-permission');
+    expect(rows.map((r) => `${r.name}: ${r.detail}`)).toEqual([
+      'security-auditor: Rooms Blocked',
+      'DorkBot: create rooms Allowed',
+      'security-auditor: Files & commands Ask first',
+    ]);
+
+    rows[0]!.onOpen?.();
+    expect(openProfile).toHaveBeenCalledWith('a1', 'permissions');
+
+    rows[0]!.onReset?.();
+    expect(resetMutate).toHaveBeenCalledWith({
+      agentId: 'a1',
+      key: { kind: 'area', area: 'rooms' },
+      surface: 'control-center',
+    });
+    rows[1]!.onReset?.();
+    expect(resetMutate).toHaveBeenLastCalledWith({
+      agentId: 'a2',
+      key: { kind: 'action', action: 'rooms.create' },
+      surface: 'control-center',
+    });
+    rows[2]!.onReset?.();
+    expect(resetMutate).toHaveBeenLastCalledWith({
+      agentId: 'a1',
+      key: { kind: 'files' },
+      surface: 'control-center',
+    });
   });
 });

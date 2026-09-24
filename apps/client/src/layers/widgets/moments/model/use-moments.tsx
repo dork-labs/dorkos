@@ -1,4 +1,5 @@
 import { useConfig } from '@/layers/entities/config';
+import { usePermissions } from '@/layers/entities/permissions';
 import { TelemetryConsentMoment } from '@/layers/features/telemetry-consent';
 import { FullPowerDoorMoment } from '@/layers/features/full-power-door';
 
@@ -31,7 +32,9 @@ export function useTelemetryMomentDescriptor(): MomentDescriptor | null {
  * flips full power on, so it outranks the telemetry invitation below it.
  *
  * Eligible when config has loaded, onboarding is over (`completedAt ?? dismissedAt`
- * is set), and `ui.fullPowerDecidedAt` is still null — a nullable timestamp plus
+ * is set), no permission preset has been chosen (a preset picked in Settings or
+ * from a terminal already answers the question), and `ui.fullPowerDecidedAt` is
+ * still null — a nullable timestamp plus
  * an "onboarding already over" gate, the same existing-user re-ask idiom as
  * `use-profile-prompt`. The rail's own rules (no moment over the onboarding
  * overlay, at most one moment per launch, nothing from an unconfirmed cache) are
@@ -43,7 +46,12 @@ export function useTelemetryMomentDescriptor(): MomentDescriptor | null {
  */
 export function useFullPowerMomentDescriptor(): MomentDescriptor | null {
   const { data: config } = useConfig();
+  const permissions = usePermissions();
   if (!config) return null;
+  // Wait for the answer rather than flash the door at someone who has chosen.
+  // An error (the Obsidian embed has no permissions) leaves the old rule alone.
+  if (permissions.isPending) return null;
+  if (permissions.data?.preset != null) return null;
   const onboardingOver =
     config.onboarding?.completedAt != null || config.onboarding?.dismissedAt != null;
   if (!onboardingOver) return null;

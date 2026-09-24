@@ -38,6 +38,9 @@ export const PermissionActionEntrySchema = z
   })
   .openapi('PermissionActionEntry');
 
+/** One action inside an area, as the permissions pages list it. */
+export type PermissionActionEntry = z.infer<typeof PermissionActionEntrySchema>;
+
 /** One area as the permissions pages list it. */
 export const PermissionAreaEntrySchema = z
   .object({

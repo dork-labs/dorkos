@@ -29,7 +29,7 @@ const CLIENT_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  * blanking the descriptor on the two runtime-neutral dials and watching 1299
  * tests pass. Each of the last three sites therefore carries its own RTL
  * assertion (note present at autonomy, absent at a stop that still asks) beside
- * its own component: `ControlCenterDial.test.tsx`, `GlobalTrustRow.test.tsx`,
+ * its own component: `PresetPicker.test.tsx`, `GlobalTrustRow.test.tsx`,
  * `TrustRow.test.tsx`. This guard is what notices a NEW picker; those are what
  * notice a broken one.
  *
@@ -40,6 +40,11 @@ const CLIENT_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  * acknowledgement never opens the dialog again, so Settings and the Control
  * Center could move somebody to Full autonomy having said nothing at all about
  * DorkOS's own cards.
+ *
+ * The Control Center's dial became the permission preset picker (spec
+ * `agent-permissions`, task 3.8), which moves the Files & commands stop with
+ * the preset, so the note now travels with the picker and with the Files &
+ * commands rows on the Permissions pages.
  *
  * DOR-2100 added the last, and it is a different shape from all six: the
  * SCHEDULE approval card, where approving a schedule an agent proposed can
@@ -53,7 +58,8 @@ const MODE_PICKERS = [
   'layers/features/tasks/ui/TaskFormInner.tsx',
   'layers/features/settings/ui/runtimes/rows/TrustRow.tsx',
   'layers/features/settings/ui/runtimes/GlobalTrustRow.tsx',
-  'layers/widgets/control-center/ui/ControlCenterDial.tsx',
+  'layers/features/permissions/ui/PresetPicker.tsx',
+  'layers/features/permissions/ui/FilesAndCommandsRow.tsx',
   'layers/features/schedule-approval/ui/ScheduleApprovalCard.tsx',
 ];
 

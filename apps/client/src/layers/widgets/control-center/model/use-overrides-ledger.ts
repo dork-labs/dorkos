@@ -31,6 +31,7 @@ import {
   useAppStore,
   useSafeNavigate,
   useOpenConnections,
+  useProfileDeepLink,
   useSettingsDeepLink,
 } from '@/layers/shared/model';
 import { useConfig } from '@/layers/entities/config';
@@ -38,12 +39,14 @@ import { useRuntimeCapabilities, getRuntimeDescriptor } from '@/layers/entities/
 import { useSessions } from '@/layers/entities/session';
 import { useTasks, useTasksEnabled } from '@/layers/entities/tasks';
 import { useBindings } from '@/layers/entities/binding';
+import { usePermissions, useResetAgentPermission } from '@/layers/entities/permissions';
+import { STATE_LABEL } from '@/layers/features/permissions';
 
 /** The runtime a task's or a binding's turns actually run on today. */
 const UNATTENDED_RUNTIME = 'claude-code';
 
 /** Which surface an override row belongs to. */
-export type OverrideKind = 'runtime' | 'session' | 'task' | 'binding';
+export type OverrideKind = 'runtime' | 'session' | 'task' | 'binding' | 'agent-permission';
 
 /** One line in the overrides ledger. */
 export interface OverrideRow {
@@ -57,11 +60,19 @@ export interface OverrideRow {
   detail: string;
   /** Open the owning surface, or `null` where there is nowhere to navigate (the embed). */
   onOpen: (() => void) | null;
+  /**
+   * Put it back on the default in one tap. Only an agent's own permission has
+   * one: the other kinds are settings of a runtime, a session, a task or a
+   * binding, which their own surfaces change.
+   */
+  onReset?: () => void;
+  /** Whether a reset is in flight. */
+  resetting?: boolean;
 }
 
 /** What {@link useOverridesLedger} hands back. */
 export interface OverridesLedger {
-  /** Every override, runtimes first, then sessions, tasks and bindings. */
+  /** Every override: runtimes, sessions, tasks, bindings, then agents' own permissions. */
   rows: OverrideRow[];
   /** True once resolved and nothing diverges — the calm empty state. */
   isEmpty: boolean;
@@ -88,8 +99,11 @@ export function useOverridesLedger(): OverridesLedger {
   const tasksEnabled = useTasksEnabled();
   const { data: tasks } = useTasks(tasksEnabled);
   const { data: bindings } = useBindings();
+  const { data: permissions } = usePermissions();
+  const resetPermission = useResetAgentPermission();
   const navigate = useSafeNavigate();
   const { open: openSettings } = useSettingsDeepLink();
+  const { open: openProfile } = useProfileDeepLink();
   const openConnections = useOpenConnections();
   const setControlCenterOpen = useAppStore((s) => s.setControlCenterOpen);
 
@@ -183,6 +197,51 @@ export function useOverridesLedger(): OverridesLedger {
         name: binding.label || binding.adapterId,
         detail: descriptor?.label ?? permissionModeLabel(binding.permissionMode),
         onOpen: navigate ? openAndClose(() => openConnections('messaging')) : null,
+      });
+    }
+  }
+
+  // 5. Agents with a permission of their own (spec `agent-permissions`, task
+  //    3.8): an area, a single action, or a Files & commands stop that differs
+  //    from what everyone has. Read from the permissions overview, and absent
+  //    where it cannot be read (the Obsidian embed has no permissions).
+  if (permissions) {
+    const areaLabel = new Map(permissions.areas.map((area) => [area.id, area.label]));
+    const actionTitle = new Map(
+      permissions.areas.flatMap((area) => area.actions.map((a) => [a.id, a.title] as const))
+    );
+    const openAgent = (agentId: string) => openAndClose(() => openProfile(agentId, 'permissions'));
+    for (const e of permissions.exceptions) {
+      const what = e.action ? (actionTitle.get(e.action) ?? e.action) : areaLabel.get(e.area);
+      rows.push({
+        key: `agent-permission:${e.agentId}:${e.action ?? e.area}`,
+        kind: 'agent-permission',
+        name: e.agentName,
+        detail: `${what ?? e.area} ${STATE_LABEL[e.state]}`,
+        onOpen: openAgent(e.agentId),
+        onReset: () =>
+          resetPermission.mutate({
+            agentId: e.agentId,
+            key: e.action ? { kind: 'action', action: e.action } : { kind: 'area', area: e.area },
+            surface: 'control-center',
+          }),
+        resetting: resetPermission.isPending,
+      });
+    }
+    for (const e of permissions.filesAndCommands.exceptions) {
+      rows.push({
+        key: `agent-permission:${e.agentId}:files`,
+        kind: 'agent-permission',
+        name: e.agentName,
+        detail: `Files & commands ${stopLabel(e.stop)}`,
+        onOpen: openAgent(e.agentId),
+        onReset: () =>
+          resetPermission.mutate({
+            agentId: e.agentId,
+            key: { kind: 'files' },
+            surface: 'control-center',
+          }),
+        resetting: resetPermission.isPending,
       });
     }
   }

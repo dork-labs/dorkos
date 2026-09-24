@@ -36,6 +36,8 @@ vi.mock('@/layers/entities/mesh', () => ({ useSetOpenMesh: vi.fn() }));
 // door opens, so the write is a no-op mutation like the two above.
 vi.mock('@/layers/entities/permissions', () => ({
   useSetPermission: () => ({ mutateAsync: vi.fn().mockResolvedValue({}), isPending: false }),
+  // No preset chosen yet, so the door is eligible.
+  usePermissions: () => ({ isPending: false, data: { preset: null } }),
 }));
 
 /** A config where the full-power door is eligible: onboarding over, power undecided. */

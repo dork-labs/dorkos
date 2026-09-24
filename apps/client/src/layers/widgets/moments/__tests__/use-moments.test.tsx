@@ -18,6 +18,16 @@ vi.mock('@/layers/features/full-power-door', () => ({
   FullPowerDoorMoment: () => null,
 }));
 
+// Whether a preset has been chosen: none by default, answered, so the door's
+// other rules decide.
+const permissionsState: { isPending: boolean; data: { preset: string | null } | undefined } = {
+  isPending: false,
+  data: { preset: null },
+};
+vi.mock('@/layers/entities/permissions', () => ({
+  usePermissions: () => permissionsState,
+}));
+
 vi.mock('@/layers/entities/config', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/entities/config')>();
   return { ...actual, useConfig: vi.fn() };
@@ -33,6 +43,11 @@ function setTelemetry(telemetry: { userHasDecided: boolean } | null) {
     refetch: vi.fn(),
   } as unknown as ReturnType<typeof useConfig>);
 }
+
+beforeEach(() => {
+  permissionsState.isPending = false;
+  permissionsState.data = { preset: null };
+});
 
 describe('useMoments', () => {
   beforeEach(() => {
@@ -149,6 +164,25 @@ describe('useFullPowerMomentDescriptor', () => {
 
   it('never offers the door once the power question has been answered', () => {
     setConfig({ fullPowerDecidedAt: '2026-08-02T09:00:00.000Z' });
+
+    const { result } = renderHook(() => useFullPowerMomentDescriptor());
+
+    expect(result.current).toBeNull();
+  });
+
+  it('never offers the door once a preset has been chosen somewhere else', () => {
+    // Settings or `dorkos permissions set --preset` already answered it.
+    setConfig({ fullPowerDecidedAt: null });
+    permissionsState.data = { preset: 'balanced' };
+
+    const { result } = renderHook(() => useFullPowerMomentDescriptor());
+
+    expect(result.current).toBeNull();
+  });
+
+  it('waits for the permissions answer rather than flash the door', () => {
+    setConfig({ fullPowerDecidedAt: null });
+    permissionsState.isPending = true;
 
     const { result } = renderHook(() => useFullPowerMomentDescriptor());
 
