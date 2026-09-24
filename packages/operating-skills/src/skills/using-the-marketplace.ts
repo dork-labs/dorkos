@@ -7,152 +7,152 @@ export const usingTheMarketplace: OperatingSkill = {
   description:
     'Use when finding, inspecting, installing, updating, or removing a DorkOS marketplace package ' +
     '(agent, plugin, skill pack, or adapter), or reading marketplace sources. Covers search, ' +
-    'the install confirmation flow, checking for and applying updates, the uninstall approval ' +
+    'the install confirmation flow, checking for and applying updates and what they keep, ' +
+    'packages held back from sessions until a person approves them, the uninstall approval ' +
     'flow, listing what is installed, and why only a person may add or remove a source.',
   body: `# Using the marketplace
 
 ${TOOL_NAME_NOTE}
 
 The marketplace distributes installable packages: agents, plugins, skill packs,
-and adapters. You can search it, inspect a package, and install or remove one.
-
-Every operation here is a capability, so each one is also reachable by id with
-\`dorkos call marketplace.<verb> --input '<json>'\` from any runtime. Run
-\`dorkos capabilities\` for the live list and each entry's tier.
+and adapters. Every operation here is a capability, so it is also reachable
+with \`dorkos call marketplace.<verb> --input '<json>'\` from any runtime;
+\`dorkos capabilities\` lists them with their tiers. On the command line,
+\`dorkos marketplace <verb>\` is the home for all of it, and \`dorkos install\`,
+\`dorkos update\` and \`dorkos uninstall\` are shorthand for the same three verbs.
 
 ## Find a package (tier: observe)
 
-- Search: \`marketplace_search\` with \`query\` (free text) and optional \`type\`
+- Search: \`marketplace_search\` with \`query\` and optional \`type\`
   (\`agent\`/\`plugin\`/\`skill-pack\`/\`adapter\`), \`category\`, \`tags\`, or \`marketplace\`.
 - Recommend: \`marketplace_recommend\` with a context description
   (e.g. "I need to track errors in my Next.js app") returns ranked matches.
-- Details: \`marketplace_get\` with a package \`name\` returns its manifest, README,
-  and metadata.
+- Details: \`marketplace_get\` with a \`name\` returns its manifest, README, and metadata.
 
 ## See what is installed (tier: observe)
 
-- Tool: \`marketplace_list_installed\` (filter by \`type\`). One entry per install
-  across scopes, tagged \`global\` / \`agent-local\` / \`override\`. Pass
-  \`checkUpdates: true\` to also get an \`update\` block per entry (\`status\`,
-  \`latestVersion\`, \`note\`). It is slower, because it checks each package's
-  marketplace, so only ask when you need to know what is out of date.
-- Sources: \`marketplace_list_marketplaces\` lists configured sources with their
-  enabled flag and package counts.
+- \`marketplace_list_installed\` (filter by \`type\`): one entry per install, tagged
+  \`global\` / \`agent-local\` / \`override\`. \`checkUpdates: true\` adds an \`update\`
+  block (\`status\`, \`latestVersion\`, \`note\`); it is slower, so ask only when needed.
+- \`dorkos marketplace installed [--project <path>] [--json]\` lists the same.
+- \`dorkos marketplace outdated [--project <path>] [--json]\` lists only what has an
+  update, and answers in its exit code: \`0\` all current, \`1\` something has an
+  update, \`2\` could not tell (a package could not be checked, or DorkOS is down).
+- \`marketplace_list_marketplaces\` lists the configured sources.
 
 ## Install a package (tier: act)
 
-### In-session: the confirmation flow
-
 \`marketplace_install\` runs its own confirmation handshake, which is NOT the
-approval flow described in operating-dorkos. Watch for these exact field names:
+approval flow described in operating-dorkos:
 
-1. Call \`marketplace_install\` with the package \`name\`. It returns
-   \`status: requires_confirmation\` and a \`confirmationToken\`.
+1. Call it with the package \`name\`. It returns \`status: requires_confirmation\`
+   and a \`confirmationToken\`.
 2. Tell the user what will be installed and wait for them to approve in DorkOS.
-   Then call \`marketplace_install\` again WITH the \`confirmationToken\` to complete.
+   Then call it again WITH the \`confirmationToken\` to complete.
 
 Never skip the confirmation step. It is the trust boundary for putting code on
-the user's machine.
-
-\`marketplace_create_package\` (below) uses the same \`confirmationToken\` handshake.
-
-### From the CLI (any runtime)
-
-\`dorkos install <name> [--marketplace <name>] [--source <url>]\` installs against
-the running server. Use \`--marketplace\` to disambiguate when several sources
-carry the same package name, or \`--source\` for an explicit Git / marketplace.json
-URL.
+the user's machine. From a shell: \`dorkos marketplace install <name>
+[--marketplace <name>] [--source <url>]\`. When it needs a person, it prints a
+\`Retry with:\` line carrying \`--approval <token>\`; tell them, wait, then run it.
 
 ## Update installed packages (tier: act)
 
-\`marketplace_update\` checks installed packages for a newer version and, by
-default, changes nothing: one entry per installation, with \`status\`
-(\`update-available\`, \`current\`, or \`unknown\` with a \`note\` saying why), the
-versions, and where it is installed (\`installPath\`). Narrow it with \`names\` or
-\`installPaths\`.
+\`marketplace_update\` checks for newer versions and, by default, changes
+nothing: one entry per installation with \`status\` (\`update-available\`,
+\`current\`, or \`unknown\` with a \`note\`), the versions, and \`installPath\`.
+Narrow it with \`names\` or \`installPaths\`.
 
 To install updates, call it with \`apply: true\`. It uses the \`confirmationToken\`
-handshake above; the \`updates\` it returns list what each new version runs, so
-tell the user that, wait, then call again with the SAME arguments plus the token.
-A linked install (a working copy) is never reinstalled. From a shell,
-\`dorkos update\` checks. \`dorkos update --apply --yes\` prints what each new
-version runs and asks the user for approval on a card; tell them, wait, then run
-the \`Retry with:\` command it printed (it adds \`--approval <token>\`).
+handshake above; the \`updates\` it returns list what each new version runs (its
+commands, servers and programs), so tell the user that, wait, then call again with
+the SAME arguments plus the token. DorkOS installs exactly what the person saw;
+a new version that changed what it runs in the meantime is refused, not installed,
+and the result says so. A linked
+install (a working copy) is never reinstalled. From a shell: \`dorkos marketplace
+update\` checks; \`dorkos marketplace update --apply --yes\` prints what each new
+version runs and puts a card in front of the person, then you run the
+\`Retry with:\` line it printed.
+
+## What an update or reinstall keeps
+
+Files the person and their agents added to a package's folder stay through an
+update, a reinstall and an uninstall. If one of the package's own files was
+edited, the new version's copy goes in and the edited one is saved beside it as
+\`<file>.dork-old\`. A package can mark a file as the person's to edit
+(\`userEditable\`, such as a settings file): then the edit stays and the new
+default is saved as \`<file>.dork-new\`. Read \`warnings\` on the result and tell
+the person about each of these. A package may not mark a file that decides what
+it runs (hooks, servers, \`bin/\`, skills, commands, extensions) as user-editable,
+and one that ships \`.dork/data/\`, \`.dork/secrets.json\` or an install record is
+refused.
+
+## Packages that load into every session
+
+A plugin, skill pack or adapter installed for all projects loads into every
+session. If it runs programs of its own (hooks, servers, \`bin/\` commands), it
+loads only after a person approved that exact install. Their own install or
+update counts, and so does a card they granted for yours. Anything else is held
+back: a package installed before DorkOS checked this, or a copy that arrived
+another way. \`dorkos marketplace held-back\` lists them and why.
+
+You cannot approve one, not even one you installed: \`--allow\` and \`--refuse\`
+refuse you. Tell the person which package is held back and what it runs, and
+that they can press **Review** on its row under Marketplace, then Installed.
 
 ## Remove a package (tier: destructive)
 
-Removing a package cannot be undone, so it is gated on a person's approval and
-returns the APPROVAL payload, not a \`confirmationToken\`. Two gated paths, pick the
-one your session has:
+Removing a package is gated on a person's approval and returns the APPROVAL
+payload, not a confirmation token. Two gated paths, pick the one your session has:
 
-- **In-session tool:** \`marketplace_uninstall\`, retried with an \`approvalToken\`
-  argument.
+- **In-session tool:** \`marketplace_uninstall\`, retried with an \`approvalToken\`.
 - **Any runtime, from a shell:** \`dorkos call marketplace.uninstall --input
-  '{"name":"<pkg>"}'\`, retried with \`--approval <token>\`. This is the gated path
-  for a Codex or OpenCode session, which has no \`marketplace_uninstall\` tool.
+  '{"name":"<pkg>"}'\`, retried with \`--approval <token>\`. This is the path for a
+  Codex or OpenCode session, which has no \`marketplace_uninstall\` tool.
 
-Either way:
-
-1. Call it with \`name\` (and \`purge: true\` only if the user asked to delete saved
-   data). It comes back with \`status: approval_required\`, an \`approvalId\`, and an
-   \`approvalToken\`.
-2. Tell the user what would be removed and that an approval card is waiting for
-   them in DorkOS. Wait for their answer.
+1. Call it with \`name\` (and \`purge: true\` only if the user asked to delete what
+   they added). It returns \`status: approval_required\` and an \`approvalToken\`.
+2. Tell the user what would be removed and that a card is waiting in DorkOS.
 3. Call again with the SAME arguments plus the token. Changing any argument,
    \`purge\` included, invalidates the approval.
 
 Read \`reason\` and \`status\` as operating-dorkos describes: \`awaiting_decision\`
 means present the same token later, and \`status: "denied"\` means stop.
 
-By default uninstall keeps the files the person and their agents added or changed in
-the package's folder, and a later reinstall picks them up; \`purge: true\` removes them,
-which is a bigger action and worth saying out loud. Uninstalling an agent package also
-removes that agent from the team: its rooms, schedules, sign-ins and access go, and
-reinstalling does not bring them back. Say so before asking.
+Uninstall keeps what the person and their agents added (see above) and a later
+reinstall picks it up; \`purge: true\` removes it too, so say that out loud.
+Uninstalling an agent package also removes that agent from the team: its rooms,
+schedules, sign-ins and access go, and reinstalling does not bring them back.
 
-\`dorkos uninstall <name>\` also exists. It is the person's verb, and it is gated
-for you exactly like the two paths above, so it is not a way around waiting for an
-approval. Prefer \`dorkos call marketplace.uninstall\`: it reports the approval
-payload in the shape this skill describes.
+\`dorkos uninstall <name>\` is the person's verb, and it is gated for you
+exactly like the paths above, so it is not a way around an approval.
 
 ## Sources: you may read them, only a person may change them
 
-A source is a feed this install fetches and runs code from, so the list of
-sources is the person's to set, not yours. What you can do:
+A source is a feed this install fetches and runs code from, so the list is the
+person's to set. You can run \`dorkos marketplace list\`, \`refresh [<name>]\`, and
+\`validate <path-or-url>\` (checks a marketplace file, changes nothing).
 
-- \`dorkos marketplace list\` shows the sources this install reads from.
-- \`dorkos marketplace refresh [<name>]\` re-fetches a source's catalog.
-- \`dorkos marketplace validate <path-or-url>\` checks a marketplace or package
-  file without changing anything.
-
-\`dorkos marketplace add\` and \`dorkos marketplace remove\` exist, but the server
-refuses you. You will get a 403 with
-\`code: "operator_only_marketplace_source"\`. There is no approval that unlocks
-it and retrying will not help, so do not try a second time or look for another
-route to the same change.
-
-When you need a package from a feed this install does not read yet, say so and
-hand the person the exact line to run:
+\`dorkos marketplace add\` and \`remove\` refuse you with a 403 and
+\`code: "operator_only_marketplace_source"\`. No approval unlocks it, so do not
+retry or look for another route. Hand the person the line instead, then wait:
 
 \`\`\`
 dorkos marketplace add <url> --name <name>
 \`\`\`
 
-Then wait. They can also do it on the Marketplace sources screen in DorkOS. Once
-they have, \`install\` works normally.
+They can also add it on the Marketplace sources screen. Then \`install\` works.
 
 ## Scaffold your own package (tier: act)
 
-\`marketplace_create_package\` scaffolds a new package under
+\`marketplace_create_package\` scaffolds a package under
 \`~/.dork/personal-marketplace/packages/<name>/\` and registers it in the personal
-marketplace. It uses the \`confirmationToken\` handshake described above. Publishing
-to a public marketplace is a separate step that is not part of this flow.
+marketplace, with the same \`confirmationToken\` handshake. Publishing to a public
+marketplace is a separate step.
 
 ## Rule
 
 Installing, updating, uninstalling, and scaffolding all change the user's system.
 State plainly what you are about to do, complete whichever gate the tool asks for
 (\`confirmationToken\` for install, update and scaffold, \`approvalToken\` for
-uninstall),
-then report what landed.`,
+uninstall), then report what landed.`,
 };

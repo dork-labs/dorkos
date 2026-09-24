@@ -99,6 +99,7 @@ Options:
       --force               Override warning-level conflicts
   -y, --yes                 Skip the interactive confirmation prompt
       --project <path>      Project path for project-local installs
+      --approval <token>    Retry an install a person approved in DorkOS
 
 Examples:
   dorkos marketplace install code-review-suite
@@ -131,12 +132,13 @@ Examples:
 Usage: dorkos marketplace held-back [--allow <name> [--yes] | --refuse <name>]
 
 A package you installed for all your projects loads into every session. If it
-runs commands or programs of its own, DorkOS holds it back until you approve it
-exactly as it is. Installing or updating it yourself counts as approving it.
+runs commands or programs of its own, DorkOS holds it back until you approve the
+copy that was installed. Installing or updating it yourself counts as approving it.
 
 On its own this lists what is held back and why. --allow prints everything the
-package runs and asks you; --refuse turns it down. Either decision covers the
-package's files as they are now: if they change, DorkOS asks again.
+package runs and asks you; --refuse turns it down. Either decision covers this
+install: if the package is reinstalled or updated another way, DorkOS asks again.
+Only you can decide: an agent is refused, and with sign-in on, decide in the app.
 
 Options:
       --allow <name>    Let this package run in every session

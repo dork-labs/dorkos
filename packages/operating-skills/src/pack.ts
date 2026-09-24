@@ -270,8 +270,18 @@ export interface OperatingSkill {
  *   now prints what each new version runs and waits on an approval card, then
  *   takes `--approval <token>`. An agent seeded at 26 would run the old command
  *   and read the card as a failure.
+ * - 28: the marketplace and scheduling pages catch up with the package
+ *   programme (DOR-2305). `using-the-marketplace` teaches `dorkos marketplace
+ *   installed|outdated` (and outdated's exit codes), what an update keeps
+ *   (`.dork-old` / `.dork-new`, and what `userEditable` may not cover), and
+ *   global packages held back until a person approves them, which an agent
+ *   cannot do itself. `scheduling-tasks` says the timezone is part of what a
+ *   person approves (DOR-2307), and that a package's schedule takes only on/off
+ *   and a new timing, with `resetTiming` to undo it (DOR-2302). An agent seeded
+ *   at 27 would retime a package schedule believing it stays live, or try to
+ *   approve a held-back package it installed.
  */
-export const OPERATING_SKILLS_VERSION = 27;
+export const OPERATING_SKILLS_VERSION = 28;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
