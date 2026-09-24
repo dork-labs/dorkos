@@ -66,6 +66,33 @@ export const PACKAGE_DATA_DIR = '.dork/data';
 export const PACKAGE_SECRETS_PATH = '.dork/secrets.json';
 
 /**
+ * The default locations a package's install preview reads what the package
+ * runs from: hooks, MCP and language servers, monitors, commands on the PATH,
+ * extensions, scheduled tasks, skills and commands (their frontmatter hooks and
+ * allowed tools), and npm dependencies. A person approves the NEW version's copy
+ * of each on update, so a `userEditable` entry may never reach one: an edited
+ * copy would survive and run unapproved (DOR-2245, DOR-2195). The server's
+ * preview readers take their defaults from here, so the two lists cannot
+ * drift. Folders are listed whole; plugin.json can declare other locations,
+ * which `validatePackage` checks against `userEditable` too.
+ */
+export const EFFECT_BEARING_PATHS = {
+  hooks: 'hooks',
+  hooksFile: 'hooks/hooks.json',
+  mcpServersFile: '.mcp.json',
+  lspServersFile: '.lsp.json',
+  monitors: 'monitors',
+  monitorsFile: 'monitors/monitors.json',
+  executables: 'bin',
+  extensions: '.dork/extensions',
+  tasks: '.dork/tasks',
+  skills: 'skills',
+  rootSkill: 'SKILL.md',
+  commands: 'commands',
+  npmManifest: 'package.json',
+} as const;
+
+/**
  * Suffixes of the copies an update saves beside a file: `.dork-old` for the
  * person's edited copy, `.dork-new` for a package's changed default. Either may
  * be followed by `.<n>` when the plain name is taken. A package may never ship one.

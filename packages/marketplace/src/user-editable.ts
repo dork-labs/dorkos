@@ -19,6 +19,7 @@
 import { z } from 'zod';
 import {
   CLAUDE_PLUGIN_MANIFEST_PATH,
+  EFFECT_BEARING_PATHS,
   INSTALL_METADATA_POSIX_PATH,
   INSTALLED_FILES_PATH,
   PACKAGE_DATA_DIR,
@@ -81,8 +82,34 @@ function covers(pattern: string, target: string): boolean {
   return target.startsWith(`${prefix}/`) || `${target}/`.startsWith(`${prefix}/`);
 }
 
+/**
+ * Whether a `userEditable` pattern reaches `target`, a file or folder path:
+ * the pattern names it or something inside it, or is a `dir/**` that contains
+ * it. Compared folded, as a case-insensitive volume would.
+ *
+ * @param pattern - A `userEditable` entry.
+ * @param target - A package-relative POSIX path.
+ */
+export function userEditableReaches(pattern: string, target: string): boolean {
+  const folded = fold(pattern);
+  const t = fold(target);
+  const prefix = prefixOf(folded);
+  const body = prefix ?? folded;
+  if (body === t || body.startsWith(`${t}/`)) return true;
+  return prefix !== undefined && t.startsWith(`${prefix}/`);
+}
+
+/** Whether a pattern reaches any reserved path, package identity file or effect-bearing path, in any case. */
+function coversOwnedPath(value: string): 'reserved' | 'identity' | 'effect' | undefined {
+  const owned = coversPersonOrIdentityPath(value);
+  if (owned) return owned;
+  return Object.values(EFFECT_BEARING_PATHS).some((p) => userEditableReaches(value, p))
+    ? 'effect'
+    : undefined;
+}
+
 /** Whether a pattern reaches any reserved path or package identity file, in any case. */
-function coversOwnedPath(value: string): 'reserved' | 'identity' | undefined {
+function coversPersonOrIdentityPath(value: string): 'reserved' | 'identity' | undefined {
   const pattern = fold(value);
   const prefix = prefixOf(pattern);
   if (prefix === undefined) {
@@ -119,6 +146,11 @@ export const UserEditablePathSchema = z.string().superRefine((value, ctx) => {
   const owned = coversOwnedPath(value);
   if (owned === 'identity') {
     return fail(`"${value}": a package's own manifest files can't be user-editable`);
+  }
+  if (owned === 'effect') {
+    return fail(
+      `"${value}": that path decides what the package runs, and a person approves the new version's copy of it on update, so it can't be user-editable`
+    );
   }
   if (owned === 'reserved') {
     return fail(`"${value}": that path already belongs to the person or DorkOS`);

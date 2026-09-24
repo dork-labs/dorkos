@@ -119,6 +119,40 @@ describe('manifest userEditable', () => {
     }
   );
 
+  // Purpose (delta review 2): a person approves the NEW version's copy of every
+  // file that decides what a package runs, so none of them may be user-editable
+  // (an edited copy would survive the update and run unapproved).
+  it.each([
+    'hooks/hooks.json',
+    'hooks/**',
+    'hooks/run.sh',
+    'Hooks/hooks.json',
+    '.mcp.json',
+    '.lsp.json',
+    '.dork/extensions/**',
+    '.dork/extensions/x/index.ts',
+    'monitors/**',
+    'monitors/monitors.json',
+    'bin/**',
+    'bin/tool',
+    '.dork/tasks/**',
+    'skills/**',
+    'skills/a/SKILL.md',
+    'commands/**',
+    'SKILL.md',
+    'package.json',
+  ])('refuses the effect-bearing path %s', (value) => {
+    expect(UserEditablePathSchema.safeParse(value).success).toBe(false);
+  });
+
+  // Purpose: near-miss names beside an effect-bearing path stay editable.
+  it.each(['config/**', 'binder/x.json', 'skillset/**', 'hooks.md', 'commands.md'])(
+    'still accepts %s',
+    (value) => {
+      expect(UserEditablePathSchema.safeParse(value).success).toBe(true);
+    }
+  );
+
   // Purpose: a bad pattern makes the manifest invalid, not silently dropped.
   it('rejects a manifest whose userEditable names an identity file', () => {
     const result = MarketplacePackageManifestSchema.safeParse({

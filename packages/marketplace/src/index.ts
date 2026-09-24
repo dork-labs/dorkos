@@ -133,11 +133,13 @@ export {
   PACKAGE_SECRETS_PATH,
   KEPT_COPY_SUFFIXES,
   AGENT_IDENTITY_FILES,
+  EFFECT_BEARING_PATHS,
 } from './constants.js';
 
 // Who owns which paths inside a package (ADR 260923-163513, 260923-163514)
 export {
   isReservedPackagePath,
   matchesUserEditable,
+  userEditableReaches,
   UserEditablePathSchema,
 } from './user-editable.js';

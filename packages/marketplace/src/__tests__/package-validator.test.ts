@@ -397,6 +397,56 @@ describe('validatePackage', () => {
     });
   });
 
+  describe('USER_EDITABLE_EFFECT_PATH (DOR-2245 delta review 2)', () => {
+    async function writePlugin(pkg: string, userEditable: string[], pluginJson: object) {
+      await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
+        schemaVersion: 1,
+        name: path.basename(pkg),
+        version: '1.0.0',
+        type: 'plugin',
+        description: 'A plugin used to test userEditable against declared paths',
+        license: 'MIT',
+        userEditable,
+      });
+      await writeJson(path.join(pkg, '.claude-plugin', 'plugin.json'), {
+        name: path.basename(pkg),
+        version: '1.0.0',
+        ...pluginJson,
+      });
+    }
+
+    // Purpose: plugin.json can move hooks, servers and commands anywhere; a
+    // userEditable entry reaching a path it declares is refused like a default.
+    it.each([
+      [{ hooks: './custom/hooks.json' }, 'custom/**'],
+      [{ mcpServers: './servers.json' }, 'servers.json'],
+      [{ commands: ['./cmds'] }, 'cmds/**'],
+      [{ skills: './my-skills' }, 'my-skills/a/SKILL.md'],
+      [{ experimental: { monitors: './watch/m.json' } }, 'watch/**'],
+    ])(
+      'refuses userEditable reaching a path plugin.json declares (%j)',
+      async (pluginJson, pattern) => {
+        const pkg = path.join(await tempDir(), 'declared');
+        await writePlugin(pkg, [pattern], pluginJson);
+
+        const result = await validatePackage(pkg);
+
+        expect(result.issues.filter((i) => i.code === 'USER_EDITABLE_EFFECT_PATH')).toHaveLength(1);
+        expect(result.ok).toBe(false);
+      }
+    );
+
+    // Purpose: an editable path beside the declared ones stays allowed.
+    it('allows userEditable that reaches none of the declared paths', async () => {
+      const pkg = path.join(await tempDir(), 'fine');
+      await writePlugin(pkg, ['config/**'], { hooks: './custom/hooks.json' });
+
+      const result = await validatePackage(pkg);
+
+      expect(result.issues.filter((i) => i.code === 'USER_EDITABLE_EFFECT_PATH')).toEqual([]);
+    });
+  });
+
   describe('RESERVED_PATH_SHIPPED (DOR-2245)', () => {
     async function writeAgent(pkg: string): Promise<void> {
       await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {

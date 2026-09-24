@@ -32,7 +32,7 @@ import {
 import { requiresClaudePlugin } from './package-types.js';
 import { parseMarketplaceJson, parseDorkosSidecar } from './marketplace-json-parser.js';
 import { validateAgainstCcSchema } from './cc-validator.js';
-import { isReservedPackagePath } from './user-editable.js';
+import { isReservedPackagePath, userEditableReaches } from './user-editable.js';
 
 /**
  * A single validation finding produced by {@link validatePackage}. Errors
@@ -350,8 +350,81 @@ export async function validatePackage(
     await checkReservedPaths(packagePath, issues);
   }
 
+  // 10. userEditable entries that reach a path plugin.json declares hooks,
+  //     servers, monitors, skills or commands at (DOR-2245). The defaults are
+  //     refused by the manifest schema; these locations only plugin.json knows.
+  await checkUserEditableDeclaredPaths(packagePath, manifest.userEditable ?? [], issues);
+
   const hasErrors = issues.some((i) => i.level === 'error');
   return { ok: !hasErrors, issues, manifest, declaredVersion };
+}
+
+/** plugin.json fields whose string values name files or folders a package runs from. */
+const DECLARED_EFFECT_FIELDS = [
+  'hooks',
+  'mcpServers',
+  'lspServers',
+  'monitors',
+  'skills',
+  'commands',
+];
+
+/** Every package-relative path a plugin.json field names (a string, or strings in an array). */
+function declaredPathsOf(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : [value];
+  return values
+    .filter((v): v is string => typeof v === 'string' && v.length > 0)
+    .map((v) =>
+      path.posix.normalize(v.split('\\').join('/')).replace(/^\.\//, '').replace(/\/$/, '')
+    )
+    .filter((v) => v !== '.' && !v.startsWith('../') && !path.posix.isAbsolute(v));
+}
+
+/**
+ * Fail for every `userEditable` entry that reaches a location plugin.json
+ * declares something runnable at. A person approves the new version's copy of
+ * those files on update, so an edited copy must never be kept over it
+ * (DOR-2245, DOR-2195). The manifest schema already refuses the default
+ * locations (`EFFECT_BEARING_PATHS`).
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param userEditable - The manifest's `userEditable` list.
+ * @param issues - Mutable issue list to append findings to.
+ * @internal
+ */
+async function checkUserEditableDeclaredPaths(
+  packagePath: string,
+  userEditable: readonly string[],
+  issues: ValidationIssue[]
+): Promise<void> {
+  if (userEditable.length === 0) return;
+  let pluginJson: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(
+      await fs.readFile(path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH), 'utf-8')
+    );
+    if (typeof parsed !== 'object' || parsed === null) return;
+    pluginJson = parsed as Record<string, unknown>;
+  } catch {
+    return;
+  }
+  const experimental = pluginJson.experimental as Record<string, unknown> | undefined;
+  const declared = [
+    ...DECLARED_EFFECT_FIELDS.flatMap((field) => declaredPathsOf(pluginJson[field])),
+    ...declaredPathsOf(experimental?.monitors),
+  ];
+  for (const pattern of userEditable) {
+    const reached = declared.find((p) => userEditableReaches(pattern, p));
+    if (reached === undefined) continue;
+    issues.push({
+      level: 'error',
+      code: 'USER_EDITABLE_EFFECT_PATH',
+      message:
+        `userEditable entry "${pattern}" reaches ${reached}, which plugin.json names as something ` +
+        "the package runs. A person approves the new version's copy on update, so it can't be user-editable.",
+      path: PACKAGE_MANIFEST_PATH,
+    });
+  }
 }
 
 /** Directories the reserved-path walk never enters: vendored code and git's own store. */

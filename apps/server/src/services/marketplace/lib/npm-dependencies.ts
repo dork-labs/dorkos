@@ -65,6 +65,7 @@ import { spawn } from 'node:child_process';
 import { lstat, readdir, readFile, realpath, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
+import { EFFECT_BEARING_PATHS } from '@dorkos/marketplace';
 
 /** How long one dependency install may run before it is killed. */
 export const NPM_INSTALL_TIMEOUT_MS = 120_000;
@@ -179,7 +180,9 @@ export function npmInstallCommand(dir: string): NpmInstallCommand {
 export async function readNpmDependencies(packageRoot: string): Promise<NpmDependency[]> {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(await readFile(path.join(packageRoot, 'package.json'), 'utf-8'));
+    parsed = JSON.parse(
+      await readFile(path.join(packageRoot, EFFECT_BEARING_PATHS.npmManifest), 'utf-8')
+    );
   } catch {
     return [];
   }
