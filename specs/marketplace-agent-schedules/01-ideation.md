@@ -12,6 +12,8 @@ status: ideation
 **Date:** 2026-09-06
 **Author:** investigation agent (Opus)
 
+> **Update 2026-09-24 (DOR-2272).** T1 and T2 shipped inside DOR-2245 (#2084), which also made every unrecorded file in an install root survive updates. T3's separate `.dork/schedules/` root is therefore not built, and T4 is specified against the installed-files record in [`02-specification.md`](./02-specification.md). T5 is still open.
+
 ---
 
 ## 1) Intent & Assumptions
