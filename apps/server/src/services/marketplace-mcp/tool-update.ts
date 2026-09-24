@@ -250,5 +250,8 @@ async function confirmBatch(
       reason: confirmation.reason ?? 'User declined the update',
     });
   }
+  // A person read the card and said yes to exactly these programs: a global
+  // package among them loads into sessions without being asked about again.
+  deps.consent.approveUpdates(updates);
   return undefined;
 }

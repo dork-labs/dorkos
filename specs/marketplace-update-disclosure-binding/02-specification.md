@@ -48,7 +48,7 @@ No new libraries. Builds on `disclosed-effects.ts`, `update-installed.ts#applyAp
 
 ### D1. Every check discloses
 
-`checkInstalledUpdates` plans with `disclose: true`, so `GET /api/marketplace/updates`, the MCP advisory `marketplace_update` and `marketplace_list_installed { checkUpdates }` all return, on every `update-available` check, `disclosed`: what the new version runs (`DisclosedEffects`, or `null` when nothing was previewed). A new version with a declaration DorkOS cannot read is `unknown` with the reason, as the MCP apply already treats it, so nothing unreadable can be offered.
+`checkInstalledUpdates` plans with `disclose: true`, so `GET /api/marketplace/updates` and the MCP advisory `marketplace_update` return, on every `update-available` check, `disclosed`: what the new version runs (`DisclosedEffects`, or `null` when nothing was previewed). A new version with a declaration DorkOS cannot read is `unknown` with the reason, as the MCP apply already treats it, so nothing unreadable can be offered.
 
 The wire type moves to `@dorkos/shared/marketplace-schemas` (`DisclosedEffects` and its parts), and the server's `disclosed-effects.ts` uses those types, so there is one definition. `InstallationUpdateCheck.disclosed?: DisclosedEffects | null` is added.
 
@@ -75,7 +75,7 @@ The existing tier gate (`authorize(..., 'marketplace.install', ...)` per package
 
 After the gate, `applyPlan` holds each reinstall to the approved disclosure, and the installer's stage-once update refuses a `DisclosureChangedError` before uninstalling. So there are two checks and no gap: check→apply at the gate, apply→install in the installer.
 
-`POST /api/marketplace/packages/:name/update` becomes advisory only: its body schema is strict, so `apply` is refused with a 400. `UpdateFlow.run`'s `apply` path and `applyInstalledUpdates` are deleted (superseded). The route's check reports the one installation's `disclosed` too, so `dorkos update <name>` can show it.
+`POST /api/marketplace/packages/:name/update` becomes advisory only: its body schema is strict, so `apply` is refused with a 400. `UpdateFlow.run`'s `apply` path, `UpdateFlow.checkInstallations` (whose only apply was unbound) and `applyInstalledUpdates` are deleted (superseded), and `UpdateFlow.applyPlan` requires the approved disclosures: no code path can reinstall without one.
 
 ### D3. Global activation consent
 

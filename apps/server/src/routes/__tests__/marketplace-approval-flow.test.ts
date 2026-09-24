@@ -77,6 +77,7 @@ describe('marketplace install → cockpit approval → retry', () => {
       installer,
       confirmationProvider: new TokenConfirmationProvider(approvals),
       onPluginsChanged: () => {},
+      consent: { approveUpdates: vi.fn(), approveInstall: vi.fn() },
     } as unknown as MarketplaceMcpDeps);
 
     app = express();

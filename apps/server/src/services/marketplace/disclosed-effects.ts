@@ -91,95 +91,93 @@
  *
  * @module services/marketplace/disclosed-effects
  */
+import { z } from 'zod';
 import { stableStringify } from '@dorkos/shared/capabilities';
+import {
+  describeHookEvent,
+  describeProgramLine,
+  describeScheduleArrival,
+  describeSchedulePermissionMode,
+  revealHiddenCharacters,
+} from '@dorkos/shared/marketplace-schemas';
 import { quoteSummaryValue } from '../core/approvals/index.js';
+import type {
+  DisclosedEffects,
+  DisclosedHook,
+  DisclosedMcpServer,
+  DisclosedProgram,
+  DisclosedSchedule,
+} from '@dorkos/shared/marketplace-schemas';
 import type { PermissionPreview } from './types.js';
 
-/** One shell command a package declares, as the approval card showed it. */
-export interface DisclosedHook {
-  /** Harness event the command fires on (e.g. `PreToolUse`, `Stop`). */
-  event: string;
-  /** Tool/event matcher the hook narrows to; `null` when it matches everything. */
-  matcher: string | null;
-  /** The literal shell command, verbatim — never paraphrased or normalized. */
-  command: string;
-  /** The skill or command file it belongs to (it runs while that is in use); `null` for a plugin hook. */
-  source: string | null;
-}
+export type {
+  DisclosedEffects,
+  DisclosedHook,
+  DisclosedMcpServer,
+  DisclosedProgram,
+  DisclosedSchedule,
+  DisclosedSkillTools,
+} from '@dorkos/shared/marketplace-schemas';
 
-/** A skill or command's `allowed-tools`: tools it may use without asking. */
-export interface DisclosedSkillTools {
-  /** Package-relative path of the skill or command. */
-  source: string;
-  /** The skill's name. */
-  skill: string;
-  /** Each allowed-tools entry, verbatim. */
-  tools: string[];
-}
-
-/** One scheduled job the install would create, and what it may do unattended. */
-export interface DisclosedSchedule {
-  /** Job name as the package declares it. */
-  name: string;
-  /** Cron expression, or `null` when the job only runs when asked. */
-  cron: string | null;
-  /** How much the job may do without a person in the loop, after the clamp. */
-  permissionMode: string;
-  /**
-   * Whether the package asked for the job to be switched on. Its declared
-   * intent, not an outcome: `resolveFileArmStatus` parks every packaged
-   * schedule at `pending_approval` on first sighting whatever this says.
-   */
-  startsEnabled: boolean;
-}
-
-/** One MCP server the package starts, as the approval card showed it. */
-export interface DisclosedMcpServer {
-  /** The server's declared name. */
-  name: string;
-  /** `stdio` for a local program, else the remote transport. */
-  transport: string;
-  /** The program a local server runs, verbatim; `null` for a remote one. */
-  command: string | null;
-  /** Its arguments, verbatim and in order; empty for a remote server. */
-  args: string[];
-  /** The address a remote server connects to; `null` for a local one. */
-  url: string | null;
-}
-
-/** One language server or monitor: a named program and how it is started. */
-export interface DisclosedProgram {
-  /** Its declared name. */
-  name: string;
-  /** The program it runs, verbatim. */
-  command: string;
-  /** Its arguments, verbatim and in order. */
-  args: string[];
-  /** When it starts, for a monitor that says; `null` otherwise. */
-  when: string | null;
-}
+/** A named program and how it is started, as {@link DisclosedEffectsSchema} accepts it. */
+const DisclosedProgramSchema = z.object({
+  name: z.string(),
+  command: z.string(),
+  args: z.array(z.string()),
+  when: z.string().nullable(),
+});
 
 /**
- * Everything executable a permission preview disclosed, in the shape an approval
- * binds to. Plain JSON throughout, because `hashApprovalInput` refuses anything
- * canonicalization would flatten.
+ * The wire form of a disclosure a caller sends back as what it was shown
+ * (DOR-2306): `InstallOptions.approvedDisclosure` and each update target's
+ * `disclosed`. It only has to parse; whether it is the TRUE disclosure is
+ * decided by comparing it with the version resolved now, so a value an HTTP
+ * caller invents is refused rather than trusted.
  */
-export interface DisclosedEffects {
-  /** Every hook command the package declares, in declaration order. */
-  hooks: DisclosedHook[];
-  /** Every scheduled job the install would create, in preview order. */
-  schedules: DisclosedSchedule[];
-  /** Every MCP server the package starts, sorted by name. */
-  mcpServers: DisclosedMcpServer[];
-  /** Every language server the package starts, sorted by name. */
-  lspServers: DisclosedProgram[];
-  /** Every background monitor the package runs, sorted by name. */
-  monitors: DisclosedProgram[];
-  /** The names of the commands the package puts on the agent's PATH, sorted. */
-  executables: string[];
-  /** Every skill or command's allowed tools, sorted by file. */
-  skillTools: DisclosedSkillTools[];
-}
+export const DisclosedEffectsSchema = z.object({
+  hooks: z.array(
+    z.object({
+      event: z.string(),
+      matcher: z.string().nullable(),
+      command: z.string(),
+      source: z.string().nullable(),
+    })
+  ),
+  schedules: z.array(
+    z.object({
+      name: z.string(),
+      cron: z.string().nullable(),
+      permissionMode: z.string(),
+      startsEnabled: z.boolean(),
+    })
+  ),
+  mcpServers: z.array(
+    z.object({
+      name: z.string(),
+      transport: z.string(),
+      command: z.string().nullable(),
+      args: z.array(z.string()),
+      url: z.string().nullable(),
+    })
+  ),
+  lspServers: z.array(DisclosedProgramSchema),
+  monitors: z.array(DisclosedProgramSchema),
+  executables: z.array(z.string()),
+  skillTools: z.array(
+    z.object({ source: z.string(), skill: z.string(), tools: z.array(z.string()) })
+  ),
+}) satisfies z.ZodType<DisclosedEffects>;
+
+/**
+ * The parts of a preview a disclosure is read from. A whole
+ * {@link PermissionPreview} is one; so is what global activation reads off an
+ * installed package (`global-plugin-consent.ts`), which has no file list or
+ * conflicts to report.
+ */
+export type DisclosureSource = Pick<
+  PermissionPreview,
+  'hooks' | 'schedules' | 'mcpServers' | 'lspServers' | 'monitors' | 'executables' | 'skillTools'
+>;
 
 /**
  * Total order over schedules, so the binding does not move when `readdir` does.
@@ -208,12 +206,10 @@ function compareSchedules(a: DisclosedSchedule, b: DisclosedSchedule): number {
  * Hooks keep their declaration order and schedules are sorted; see the module
  * TSDoc for why those differ.
  *
- * @param preview - The preview the person was shown, when there was one.
+ * @param preview - The preview the person was shown (or its runnable parts), when there was one.
  * @returns The disclosed executable content, or `null` when nothing was previewed.
  */
-export function disclosedEffectsOf(
-  preview: PermissionPreview | undefined
-): DisclosedEffects | null {
+export function disclosedEffectsOf(preview: DisclosureSource | undefined): DisclosedEffects | null {
   if (!preview) return null;
   return {
     hooks: preview.hooks.map((hook) => ({
@@ -350,4 +346,59 @@ export function describeDisclosedEffects(effects: DisclosedEffects | null): stri
       ? ''
       : `, and ${effects.skillTools.length} ${effects.skillTools.length === 1 ? 'skill that uses' : 'skills that use'} tools without asking`;
   return `${describeHooks(effects.hooks)}, ${describeSchedules(effects.schedules)} and ${describeMcpServers(effects.mcpServers)}${rest}${tools}`;
+}
+
+/**
+ * A value written out whole, quoted and escaped, with every hidden or
+ * direction-changing character shown, so it cannot forge the text around it.
+ */
+const whole = (value: string): string => revealHiddenCharacters(JSON.stringify(value));
+
+/**
+ * Every line an approval card's detail shows for one disclosure: each command
+ * and when it runs, each skill's tools, each scheduled job, and each program
+ * with where it starts. Values are written out whole and escaped, never
+ * shortened: a command cut at 80 characters is a command nobody read. Shared
+ * by the update card (`marketplace-mcp/update-approval-detail.ts`) and the card
+ * a withheld global package raises (`ask-withheld-global-plugins.ts`).
+ *
+ * @param effects - What a package runs, or `null` when nothing was previewed.
+ * @param where - When its own programs start, in words (e.g. `in every session`).
+ * @returns One indented line per effect, or one line saying it runs nothing.
+ */
+export function describeEffectsInFull(effects: DisclosedEffects | null, where: string): string[] {
+  if (!effects) return ['  runs nothing on its own'];
+  const lines = [
+    ...effects.hooks.map(
+      (hook) =>
+        `  runs ${whole(hook.command)} ${describeHookEvent(hook.event, hook.matcher ?? undefined)}` +
+        (hook.source ? `, while the skill in ${whole(hook.source)} is in use` : '')
+    ),
+    ...effects.skillTools.map(
+      (entry) =>
+        `  skill ${whole(entry.skill)} (${whole(entry.source)}) may use without asking: ${entry.tools.map(whole).join(', ')}`
+    ),
+    ...effects.schedules.map(
+      (job) =>
+        `  scheduled job ${whole(job.name)}: ${job.cron ? `runs on ${whole(job.cron)}` : 'runs only when asked'}, ` +
+        `${describeSchedulePermissionMode(job.permissionMode)}, ${describeScheduleArrival(job.startsEnabled)}`
+    ),
+    ...effects.mcpServers.map((server) =>
+      server.command !== null
+        ? `  MCP server ${whole(server.name)} (${where}): ${describeProgramLine(server.command, server.args)}`
+        : `  remote MCP server ${whole(server.name)} (${where}) at ${whole(server.url ?? '')}`
+    ),
+    ...effects.lspServers.map(
+      (server) =>
+        `  language server ${whole(server.name)} (${where}): ${describeProgramLine(server.command, server.args)}`
+    ),
+    ...effects.monitors.map(
+      (monitor) =>
+        `  background monitor ${whole(monitor.name)} (${where}${monitor.when ? `, ${whole(monitor.when)}` : ''}): ${describeProgramLine(monitor.command)}`
+    ),
+    ...effects.executables.map(
+      (name) => `  adds the command ${whole(name)} to the agent's PATH (${where})`
+    ),
+  ];
+  return lines.length > 0 ? lines : ['  runs nothing on its own'];
 }

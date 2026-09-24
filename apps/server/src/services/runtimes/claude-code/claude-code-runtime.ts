@@ -202,7 +202,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * (command wrappers, skill symlinks, `.claude/settings.local.json` hooks) via
    * `@dorkos/harness`, so external CLI and DorkOS sessions see the same thing
    * (ADR 260706-192819, amending ADR-0239). Global-scope projection is deferred
-   * (DOR-174), so global installs keep SDK injection for now.
+   * (DOR-174), so global installs keep SDK injection for now. A global package
+   * that runs anything on its own is in it only when a person approved exactly
+   * what it runs (`marketplace/global-plugin-consent.ts`, DOR-2306).
    */
   private activatedPlugins: Array<{ type: 'local'; path: string }> = [];
 
@@ -688,11 +690,14 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   async refreshActivatedPlugins(changedProjectPath?: string): Promise<void> {
     try {
       const { resolveDorkHome } = await import('../../../lib/dork-home.js');
-      const { listEnabledPluginNames } = await import('../../marketplace/installed-scanner.js');
+      const { listConsentedPluginNames } =
+        await import('../../marketplace/global-plugin-consent.js');
       const { buildClaudeAgentSdkPluginsArray } = await import('./messaging/plugin-activation.js');
       const { logger } = await import('../../../lib/logger.js');
       const dorkHome = resolveDorkHome();
-      const enabledNames = await listEnabledPluginNames(dorkHome);
+      // Only packages a person approved (or that run nothing on their own):
+      // a global package's hooks and servers start in every session (DOR-2306).
+      const enabledNames = await listConsentedPluginNames(dorkHome);
       if (enabledNames.length === 0) {
         this.activatedPlugins = [];
       } else {

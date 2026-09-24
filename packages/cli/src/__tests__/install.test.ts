@@ -142,6 +142,33 @@ describe('runInstall', () => {
     expect(allLogs).toContain('Installed demo-pkg@1.2.3 to /home/user/.dork/plugins/demo-pkg');
   });
 
+  it('holds the install to what it printed, by sending the preview\u2019s disclosure back', async () => {
+    // Purpose: the person approves what the preview printed; the server
+    // installs only a package that still runs exactly that (DOR-2306).
+    const disclosed = {
+      hooks: [{ event: 'Stop', matcher: null, command: 'echo hi', source: null }],
+      schedules: [],
+      mcpServers: [],
+      lspServers: [],
+      monitors: [],
+      executables: [],
+      skillTools: [],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockResponse(200, { ...PREVIEW_BODY, disclosed }))
+      .mockResolvedValueOnce(mockResponse(200, INSTALL_BODY));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await runInstall({ name: 'demo-pkg', yes: true });
+
+    const [, installInit] = fetchMock.mock.calls[1];
+    expect(JSON.parse(installInit.body).approvedDisclosure).toEqual(disclosed);
+    // The preview request itself never carries one.
+    const [, previewInit] = fetchMock.mock.calls[0];
+    expect(JSON.parse(previewInit.body)).not.toHaveProperty('approvedDisclosure');
+  });
+
   it('non-TTY without --yes treats the prompt as a decline and cancels', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(200, PREVIEW_BODY));
     vi.stubGlobal('fetch', fetchMock);

@@ -254,6 +254,17 @@ export function createInstallHandler(deps: MarketplaceMcpDeps) {
       return errorContent(err, 'INSTALL_FAILED');
     }
 
+    // A person read the card and approved exactly what this package runs, and
+    // the install was held to it: a global package loads into sessions without
+    // a second card. Not for `preApproved`, where nobody was shown anything
+    // (DOR-2306). Recorded before the refresh below, which reads it.
+    if (!context?.preApproved) {
+      deps.consent.approveInstall(
+        { installPath: result.installPath, type: result.type, global: projectPath === undefined },
+        disclosedEffectsOf(preview.preview)
+      );
+    }
+
     // 4. Set the package up, exactly as the HTTP install route does: refresh the
     //    runtime's plugin list and project it to the project's harnesses
     //    (DOR-2057). The package is on disk by now, so a notifier that throws is

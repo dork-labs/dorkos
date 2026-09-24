@@ -86,26 +86,22 @@ export interface UpdateCheckResult {
   note?: string;
 }
 
-/** A request to check one package (and optionally apply its update). */
+/** A request to check one package. Advisory: applying goes through `UpdateFlow.applyPlan`. */
 export interface UpdateRequest {
   /** The package name, as the update check names it (`updateNameOf`). */
   name: string;
   /**
    * The installation of that name the caller resolved ({@link pickInstallation}),
    * or `undefined` when the name is not installed in the caller's scope. The
-   * caller resolves it so it can authorize and notify against the installation
-   * that will actually change.
+   * caller resolves it so the check answers for the installation the caller
+   * means, in the caller's scope.
    */
   installation: InstallationRecord | undefined;
-  /** Apply the update (default: advisory only). */
-  apply?: boolean;
 }
 
-/** The composite result of a one-package update check. */
+/** The result of a one-package update check. */
 export interface UpdateResult {
   checks: UpdateCheckResult[];
-  /** Populated only when `apply: true`; one entry per successful reinstall. */
-  applied: InstallResult[];
 }
 
 /**
@@ -145,12 +141,10 @@ export interface InstallationUpdateCheck extends UpdateCheckResult {
   disclosed?: DisclosedEffects | null;
 }
 
-/** A request to check (and optionally apply) a set of scanned installations. */
+/** A request to check a set of scanned installations. */
 export interface InstallationUpdatesRequest {
   /** The installations to check, from one `scanInstallationRecords` call. */
   installations: InstallationRecord[];
-  /** Reinstall every installation whose check is `update-available`. */
-  apply?: boolean;
   /**
    * Also stage each `update-available` installation's new version and record
    * what it would run ({@link InstallationUpdateCheck.disclosed}). A new version
@@ -171,7 +165,7 @@ export interface UpdatePlan {
   readonly steps: readonly { record: InstallationRecord; request?: InstallRequest }[];
 }
 
-/** The result of {@link UpdateFlow.checkInstallations}. */
+/** The result of checking, or applying, a set of installations. */
 export interface InstallationUpdatesResult {
   /** One per installation, in the order the installations were given. */
   checks: InstallationUpdateCheck[];

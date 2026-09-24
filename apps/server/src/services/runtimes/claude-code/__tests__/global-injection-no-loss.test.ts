@@ -36,6 +36,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildClaudeAgentSdkPluginsArray } from '../messaging/plugin-activation.js';
 import { listEnabledPluginNames } from '../../../marketplace/installed-scanner.js';
+import {
+  globalActivationEntry,
+  partitionGlobalPlugins,
+  readActivationEffects,
+} from '../../../marketplace/global-plugin-consent.js';
 
 /** A no-op logger, so a warning never becomes console noise. */
 const logger = {
@@ -97,8 +102,19 @@ describe('case 10: global SDK injection survives the user tier', () => {
   it('a globally installed package is still activated, and its whole directory is handed to the SDK', async () => {
     installGlobalPackage('globex');
 
-    // The list the runtime reads (`refreshActivatedPlugins` calls exactly this).
-    const enabled = await listEnabledPluginNames(dorkHome);
+    // The list the runtime reads (`refreshActivatedPlugins` calls
+    // `listConsentedPluginNames`, which is this partition over the stored
+    // decisions). The package runs a hook and an MCP server, so it loads only
+    // once a person approved exactly those (DOR-2306); before that it is held back.
+    expect(
+      (await partitionGlobalPlugins(dorkHome, { approved: [], refused: [] })).activate
+    ).toEqual([]);
+    const reading = await readActivationEffects(join(dorkHome, 'plugins', 'globex'));
+    if (!('effects' in reading)) throw new Error('the staged package should be readable');
+    const { activate: enabled } = await partitionGlobalPlugins(dorkHome, {
+      approved: [globalActivationEntry('globex', reading.effects)],
+      refused: [],
+    });
     expect(enabled).toContain('globex');
 
     // The array the runtime hands `query()`. Seeded defect: delete the global

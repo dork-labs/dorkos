@@ -145,6 +145,10 @@ describe('createUpdateHandler', () => {
   };
   let approvals: ApprovalService;
   let onPluginsChanged: ReturnType<typeof vi.fn<MarketplaceMcpDeps['onPluginsChanged']>>;
+  let consent: {
+    approveUpdates: ReturnType<typeof vi.fn<MarketplaceMcpDeps['consent']['approveUpdates']>>;
+    approveInstall: ReturnType<typeof vi.fn<MarketplaceMcpDeps['consent']['approveInstall']>>;
+  };
   let deps: MarketplaceMcpDeps;
 
   beforeEach(async () => {
@@ -230,11 +234,13 @@ describe('createUpdateHandler', () => {
 
     approvals = new ApprovalService(createTestDb());
     onPluginsChanged = vi.fn<MarketplaceMcpDeps['onPluginsChanged']>();
+    consent = { approveUpdates: vi.fn(), approveInstall: vi.fn() };
     deps = {
       dorkHome,
       updateFlow,
       confirmationProvider: new TokenConfirmationProvider(approvals),
       onPluginsChanged,
+      consent,
       listAgentScopes: () => [{ projectPath, id: 'agent-1', name: 'Alpha Agent' }],
       logger: buildLogger(),
     } as unknown as MarketplaceMcpDeps;
@@ -543,6 +549,31 @@ describe('createUpdateHandler', () => {
       { projectPath: undefined, packageName: 'alpha', action: 'install' },
       { projectPath, packageName: 'alpha', action: 'install' },
     ]);
+    // The person read everything each new version runs and said yes: that yes
+    // is what lets a global package load into sessions (DOR-2306), recorded
+    // before the refresh reads it.
+    expect(consent.approveUpdates).toHaveBeenCalledTimes(1);
+    expect(consent.approveUpdates.mock.calls[0]?.[0].map((u) => u.installPath).sort()).toEqual(
+      [alphaPath, projectAlphaPath].sort()
+    );
+    expect(consent.approveUpdates.mock.invocationCallOrder[0]).toBeLessThan(
+      onPluginsChanged.mock.invocationCallOrder[0] ?? 0
+    );
+  });
+
+  it('records no approval while the card waits, or when the person says no', async () => {
+    // Purpose: only a person's yes may let a global package's programs load.
+    const handler = createUpdateHandler(deps);
+    const first = parse(await handler({ names: ['alpha'], apply: true }));
+    expect(consent.approveUpdates).not.toHaveBeenCalled();
+    for (const pending of approvals.listPending()) approvals.deny(pending.approvalId, 'no');
+    await handler({
+      names: ['alpha'],
+      apply: true,
+      confirmationToken: first.confirmationToken as string,
+    });
+
+    expect(consent.approveUpdates).not.toHaveBeenCalled();
   });
 
   it('runs nothing when the person says no', async () => {
@@ -589,6 +620,9 @@ describe('createUpdateHandler', () => {
     expect(body.status).toBe('applied');
     expect(approvals.listPending()).toEqual([]);
     expect(installer.update).toHaveBeenCalledTimes(2);
+    // Nobody was shown anything on this call, so nothing is recorded as seen:
+    // a global package it updated waits for its own card before it loads.
+    expect(consent.approveUpdates).not.toHaveBeenCalled();
   });
 
   it('refuses a project outside the boundary before looking at anything', async () => {

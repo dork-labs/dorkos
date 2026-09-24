@@ -23,6 +23,7 @@ import { confirm } from '../lib/confirm-prompt.js';
 import { hasBlockingConflicts, renderPreview, type PreviewPayload } from '../lib/preview-render.js';
 import { resolveProjectFlag } from '../lib/package-commands.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
+import type { DisclosedEffects } from '@dorkos/shared/marketplace-schemas';
 
 /** Parsed CLI arguments accepted by {@link runInstall}. */
 export interface InstallArgs {
@@ -50,11 +51,13 @@ interface InstallResultBody {
   warnings?: string[];
 }
 
-/** Preview API response shape — `{ preview, manifest, packagePath }`. */
+/** Preview API response shape — `{ preview, manifest, packagePath, disclosed }`. */
 interface PreviewResponseBody {
   preview: PreviewPayload;
   manifest: { name: string; version: string };
   packagePath: string;
+  /** What the package runs, in the form an install is held to (DOR-2306). */
+  disclosed?: DisclosedEffects;
 }
 
 /** One-line usage string surfaced in error messages. */
@@ -147,10 +150,16 @@ export async function runInstall(args: InstallArgs): Promise<number> {
       }
     }
 
+    // Held to what was just printed: the server installs only a package that
+    // still runs exactly this, and refuses anything else before writing
+    // (DOR-2306). An older server that sent no disclosure gets none back.
     const result = await apiCall<InstallResultBody>(
       'POST',
       `/api/marketplace/packages/${encodeURIComponent(args.name)}/install`,
-      buildRequestBody(args)
+      {
+        ...buildRequestBody(args),
+        ...(preview.disclosed && { approvedDisclosure: preview.disclosed }),
+      }
     );
 
     console.log(`Installed ${result.packageName}@${result.version} to ${result.installPath}`);

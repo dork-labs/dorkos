@@ -272,6 +272,16 @@ const EMPTY_PREVIEW: PermissionPreview = {
 };
 
 const PKG_DETAIL: MarketplacePackageDetail = {
+  // Runs nothing on its own: what an install is held to (DOR-2306).
+  disclosed: {
+    hooks: [],
+    schedules: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+  },
   manifest: {
     name: '@dorkos/pr-linter',
     version: '1.0.0',
@@ -373,7 +383,12 @@ describe('Marketplace install flow integration', () => {
     await user.click(dialogInstallButton);
 
     expect(installHandle.mutateAsync).toHaveBeenCalledTimes(1);
-    expect(installHandle.mutateAsync).toHaveBeenCalledWith({ name: PKG.name });
+    expect(installHandle.mutateAsync).toHaveBeenCalledWith({
+      name: PKG.name,
+      // What the dialog showed the package runs, sent back so the install is
+      // held to it (DOR-2306).
+      options: { approvedDisclosure: expect.objectContaining({ hooks: [] }) },
+    });
   });
 
   it('clicking Install on the card opens the confirmation dialog directly without the detail sheet', async () => {
@@ -396,7 +411,12 @@ describe('Marketplace install flow integration', () => {
     const dialogInstallButton = within(dialog).getByRole('button', { name: /^install$/i });
     await user.click(dialogInstallButton);
 
-    expect(installHandle.mutateAsync).toHaveBeenCalledWith({ name: PKG.name });
+    expect(installHandle.mutateAsync).toHaveBeenCalledWith({
+      name: PKG.name,
+      // What the dialog showed the package runs, sent back so the install is
+      // held to it (DOR-2306).
+      options: { approvedDisclosure: expect.objectContaining({ hooks: [] }) },
+    });
   });
 
   it('routes an agent package Install into the creation flow, not the confirm dialog', async () => {

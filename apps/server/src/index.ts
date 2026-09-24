@@ -292,6 +292,11 @@ import { onProjectorTurnBoundary } from './services/session/session-state-projec
 import { subscribeRuntimeTurns } from './services/session/runtime-turns/runtime-turn.js';
 import { DEFAULT_CWD } from './lib/resolve-root.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
+import { globalConsentRecorder } from './services/marketplace/global-plugin-consent.js';
+import {
+  askAboutWithheldGlobalPlugins,
+  describeGlobalActivationCapability,
+} from './services/marketplace/ask-withheld-global-plugins.js';
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
   TokenConfirmationProvider,
@@ -2558,10 +2563,15 @@ async function start() {
     describeCapability: (capabilityId) => {
       const capability = capabilityRegistry?.get(capabilityId);
       if (capability) return { title: capability.title, tier: capability.tier };
-      // One id that is not a capability anyone can invoke: the card raised when an
-      // installed package wants to write shell commands into a coding agent's hook
-      // files (DOR-522). Without this the card would show the raw id.
-      return describeHookProjectionCapability(capabilityId);
+      // Two ids that are not capabilities anyone can invoke: the card raised when
+      // an installed package wants to write shell commands into a coding agent's
+      // hook files (DOR-522), and the one a global package raises before its
+      // programs load into every session (DOR-2306). Without these the card
+      // would show the raw id.
+      return (
+        describeHookProjectionCapability(capabilityId) ??
+        describeGlobalActivationCapability(capabilityId)
+      );
     },
   });
   // An answer given after the in-session hold gave up has to reach the agent that
@@ -4304,6 +4314,22 @@ async function start() {
     });
     marketplaceCacheRetention.start();
 
+    // Ask a person about every global package held back from sessions because
+    // nobody approved what it runs (DOR-2306). Fire-and-forget: a card stays
+    // open for the approval window, and a yes reloads the plugins sessions get.
+    const askAboutWithheldGlobals = (): void => {
+      askAboutWithheldGlobalPlugins({
+        dorkHome,
+        approvals: approvalService,
+        onGranted: () => claudeRuntime?.refreshActivatedPlugins(),
+      }).catch((err) => {
+        logger.warn('[Marketplace] Asking about held-back global packages failed', { err });
+      });
+    };
+    // Once at start: packages installed before this version, or changed on disk
+    // while DorkOS was off, are asked about now rather than at the next install.
+    askAboutWithheldGlobals();
+
     // The one post-change notifier, handed to BOTH surfaces that mutate installed
     // packages: the HTTP router below and the marketplace MCP tools
     // (`marketplaceMcpDeps`). It is required on both deps types, so a surface
@@ -4319,6 +4345,9 @@ async function start() {
         claudeRuntime?.refreshActivatedPlugins(ctx.projectPath).catch((err) => {
           logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
         });
+        // A global change can leave a package held back from every session until
+        // a person approves what it runs (DOR-2306): ask now, in the background.
+        if (ctx.projectPath === undefined) askAboutWithheldGlobals();
         // Harness Sync auto-projection (GAP-4): project the changed plugin's
         // assets to the project's other harnesses. Fire-and-forget; the
         // service is internally best-effort and never throws, but we still
@@ -4330,6 +4359,16 @@ async function start() {
         logger.warn('[Marketplace] Post-change notification failed', { err });
       }
     };
+
+    // Build the confirmation provider that gates marketplace mutations. There is
+    // exactly one, and no way to switch it off: it records an approval the
+    // operator decides from the approval card (`POST /api/approvals/:id/grant|deny`).
+    // Automation answers that approval through the same routes a person uses
+    // rather than skipping it (DOR-501). Shared by the MCP tools and the HTTP
+    // update route, so an agent's update raises the same card on both (DOR-2306).
+    const confirmationProvider: ConfirmationProvider = new TokenConfirmationProvider(
+      approvalService
+    );
 
     app.use(
       '/api/marketplace',
@@ -4348,6 +4387,8 @@ async function start() {
         dorkHome,
         listAgentScopes,
         onPluginsChanged,
+        confirmationProvider,
+        consent: globalConsentRecorder,
       })
     );
     mountedRouters.push('marketplace');
@@ -4390,15 +4431,6 @@ async function start() {
       });
     }
 
-    // Build the confirmation provider that gates marketplace mutation tools.
-    // There is exactly one, and no way to switch it off: it records an approval
-    // the operator decides from the cockpit's approval card
-    // (`POST /api/approvals/:id/grant|deny`). Automation answers that approval
-    // through the same routes a person uses rather than skipping it (DOR-501).
-    const confirmationProvider: ConfirmationProvider = new TokenConfirmationProvider(
-      approvalService
-    );
-
     marketplaceMcpDeps = {
       dorkHome,
       installer: marketplaceInstaller,
@@ -4408,6 +4440,7 @@ async function start() {
       uninstallFlow: marketplaceUninstallFlow,
       updateFlow: marketplaceUpdateFlow,
       confirmationProvider,
+      consent: globalConsentRecorder,
       onPluginsChanged,
       listAgentScopes,
       logger,

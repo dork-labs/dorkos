@@ -73,6 +73,7 @@ function buildDeps(opts: {
     updateFlow: {} as MarketplaceMcpDeps['updateFlow'],
     confirmationProvider: {} as MarketplaceMcpDeps['confirmationProvider'],
     onPluginsChanged: vi.fn(),
+    consent: { approveUpdates: vi.fn(), approveInstall: vi.fn() },
     logger,
   } satisfies MarketplaceMcpDeps;
 

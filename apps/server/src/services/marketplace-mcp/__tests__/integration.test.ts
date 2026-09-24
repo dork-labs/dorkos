@@ -363,6 +363,7 @@ function buildIntegrationDeps(opts: {
     uninstallFlow: opts.uninstallFlow,
     confirmationProvider: opts.confirmationProvider,
     onPluginsChanged: vi.fn(),
+    consent: { approveUpdates: vi.fn(), approveInstall: vi.fn() },
     logger: opts.logger,
   };
 }

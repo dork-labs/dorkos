@@ -1,23 +1,29 @@
 /**
  * Marketplace package update flow.
  *
- * Advisory by default: checks installed packages, works out what installing
- * each one right now would give, and returns the comparison without touching
- * any installed package. When `apply` is set, the flow delegates reinstallation
- * of every installation with an update to an injected {@link InstallerLike},
- * which uninstalls as the first half of a replace and reinstalls, keeping the
- * files the person and their agents added or changed (ADR-0233, amended by
- * ADR 260923-163513).
+ * Checks installed packages, works out what installing each one right now
+ * would give, and returns the comparison without touching any installed
+ * package. Applying is a separate, second step that exists only for a checked
+ * plan and the disclosures a person approved: the flow delegates each approved
+ * reinstallation to an injected {@link InstallerLike}, which uninstalls as the
+ * first half of a replace and reinstalls, keeping the files the person and
+ * their agents added or changed (ADR-0233, amended by ADR 260923-163513), held
+ * to what the person was shown.
  *
  * Two doors lead here, and both check {@link InstallationRecord}s from the
  * installed scanner's one walk rather than walking install roots themselves:
  *
  * - {@link UpdateFlow.run} — one package, the installation the caller resolved
- *   with {@link pickInstallation} (the per-package route).
- * - {@link UpdateFlow.checkInstallations} — every installation it is handed,
- *   one result per installation, each carrying that installation's identity
- *   (the all-packages door, whose shared steps live in `update-installed.ts`).
- *   The caller scans once and passes the records in.
+ *   with {@link pickInstallation} (the per-package route). Advisory only.
+ * - {@link UpdateFlow.planInstallations} then {@link UpdateFlow.applyPlan} —
+ *   every installation it is handed, one result per installation, each
+ *   carrying that installation's identity (the all-packages door, whose shared
+ *   steps live in `update-installed.ts`). The caller scans once and passes the
+ *   records in.
+ *
+ * There is no way to reinstall without a disclosure to hold it to (DOR-2306):
+ * `applyPlan` requires the approved disclosures, and reinstalls only the
+ * installations they name.
  *
  * Checks from both doors share one server-wide cap
  * ({@link UPDATE_CHECK_CONCURRENCY}). A symlinked install is checked but never
@@ -108,13 +114,13 @@ interface PlannedCheck {
 }
 
 /**
- * Advisory-by-default update orchestrator for marketplace packages.
+ * Update orchestrator for marketplace packages.
  *
  * {@link UpdateFlow.run} checks one package by name; {@link
- * UpdateFlow.checkInstallations} checks every installation it is handed. Both
- * reinstall `update-available` installations when asked to apply, each in its
- * own scope. One instance serves the whole server, and it holds the
- * commit-lookup and index memos (see {@link UPDATE_MEMO_TTL_MS}).
+ * UpdateFlow.planInstallations} checks every installation it is handed, and
+ * {@link UpdateFlow.applyPlan} reinstalls the approved ones, each in its own
+ * scope. One instance serves the whole server, and it holds the commit-lookup
+ * and index memos (see {@link UPDATE_MEMO_TTL_MS}).
  */
 export class UpdateFlow {
   private readonly commitMemo: TtlMemo<string>;
@@ -136,63 +142,33 @@ export class UpdateFlow {
 
   /**
    * Check one package — the per-package route's door. The caller resolves which
-   * installation the name means ({@link pickInstallation}); an apply reinstalls
-   * that installation in ITS scope, so a global package is reinstalled globally
-   * even when the request named a project. A failed reinstall throws, so the
-   * route can map the error to a status.
+   * installation the name means ({@link pickInstallation}). Advisory: it never
+   * reinstalls anything; an update is applied only through
+   * {@link applyPlan}, held to what a person was shown.
    *
-   * @param req - The package name, its resolved installation, and the apply flag.
-   * @returns One check (or one `unknown` "not installed in this scope" check
-   *   when there is no installation), and the reinstall when applied.
+   * @param req - The package name and its resolved installation.
+   * @returns One check, or one `unknown` "not installed in this scope" check
+   *   when there is no installation.
    */
   async run(req: UpdateRequest): Promise<UpdateResult> {
     const match = req.installation;
-    if (!match) return { checks: [notInScope(req.name)], applied: [] };
-
-    const { check, request } = await this.checkSafely(match);
-    const applied: InstallResult[] = [];
-    if (req.apply) {
-      try {
-        if (check.status === 'update-available' && request) {
-          applied.push(await this.reinstall(match, request));
-        }
-      } finally {
-        // What was just installed changes what the next check should see.
-        this.clearMemos();
-      }
-    }
-    return { checks: [check], applied };
+    if (!match) return { checks: [notInScope(req.name)] };
+    const { check } = await this.checkSafely(match);
+    return { checks: [check] };
   }
 
   /**
-   * Check every installation handed in — the all-packages door. The caller
-   * scans once (`scanInstallationRecords`) and passes the records, so a list and
-   * its check never walk twice.
+   * Check the installations handed in, without applying anything. The caller
+   * scans once (`scanInstallationRecords`) and passes the records, so a list
+   * and its check never walk twice. Checks share the server-wide
+   * {@link UPDATE_CHECK_CONCURRENCY} cap and come back in the order given, each
+   * carrying its installation's identity. Nothing is dropped: an installation
+   * that cannot be checked is `unknown`, with the reason, and a symlinked
+   * install is `unknown` with {@link LINKED_INSTALL_NOTE} and is never
+   * reinstalled.
    *
-   * Checks share the server-wide {@link UPDATE_CHECK_CONCURRENCY} cap and come
-   * back in the order given, each carrying its installation's identity. Nothing
-   * is dropped: an installation that cannot be checked is `unknown`, with the
-   * reason, and a symlinked install is `unknown` with {@link LINKED_INSTALL_NOTE}
-   * and is never reinstalled.
-   *
-   * With `apply`, every `update-available` installation is reinstalled one at a
-   * time, in order, in its own scope. A failed reinstall is recorded on that
-   * installation as `applyError` and the rest carry on, so one broken package
-   * can never hide what already landed.
-   *
-   * @param req - The scanned installations, and whether to apply.
-   * @returns One check per installation.
-   */
-  async checkInstallations(req: InstallationUpdatesRequest): Promise<InstallationUpdatesResult> {
-    const plan = await this.planInstallations(req);
-    return req.apply ? this.applyPlan(plan) : { checks: plan.checks };
-  }
-
-  /**
-   * Check the installations handed in, without applying anything: the first
-   * half of {@link checkInstallations}, for a caller that must show the checks
-   * to a person and apply only what they approved. With `disclose`, each
-   * `update-available` check also says what its new version would run.
+   * With `disclose`, each `update-available` check also says what its new
+   * version would run: what a person must be shown before {@link applyPlan}.
    *
    * @param req - The scanned installations, and whether to disclose.
    * @returns The checks, and what an apply of them would reinstall.
@@ -216,14 +192,16 @@ export class UpdateFlow {
   }
 
   /**
-   * Reinstall a plan's `update-available` installations one at a time, in
-   * order, each in its own scope. A failed reinstall is recorded on that
-   * installation as `applyError` and the rest carry on.
+   * Reinstall the approved `update-available` installations of a plan one at
+   * a time, in order, each in its own scope. A failed reinstall is recorded on
+   * that installation as `applyError` and the rest carry on, so one broken
+   * package can never hide what already landed.
    *
-   * With `approved`, only the installations it names (by `installPath`) are
+   * Only the installations `approved` names (by `installPath`) are
    * reinstalled, and each is held to the disclosure it maps to: the installer
    * refuses a new version that now declares something else
-   * (`DisclosureChangedError`), before it removes anything.
+   * (`DisclosureChangedError`), before it removes anything. `approved` is
+   * required: there is no unbound apply (DOR-2306).
    *
    * @param plan - A plan from {@link planInstallations}.
    * @param approved - The approved installations and what each was shown to run.
@@ -231,7 +209,7 @@ export class UpdateFlow {
    */
   async applyPlan(
     plan: UpdatePlan,
-    approved?: ReadonlyMap<string, DisclosedEffects | null>
+    approved: ReadonlyMap<string, DisclosedEffects | null>
   ): Promise<InstallationUpdatesResult> {
     const checks = plan.checks.map((c) => ({ ...c }));
     try {
@@ -239,12 +217,12 @@ export class UpdateFlow {
         const check = checks[i]!;
         if (check.status !== 'update-available' || !request) continue;
         const path = record.package.installPath;
-        if (approved && !approved.has(path)) continue;
+        if (!approved.has(path)) continue;
         try {
-          check.applied = await this.reinstall(
-            record,
-            approved ? { ...request, approvedDisclosure: approved.get(path) ?? null } : request
-          );
+          check.applied = await this.reinstall(record, {
+            ...request,
+            approvedDisclosure: approved.get(path) ?? null,
+          });
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
           this.deps.logger.warn('update-flow: reinstall failed', {

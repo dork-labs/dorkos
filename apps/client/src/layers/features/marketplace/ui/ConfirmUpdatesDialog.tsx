@@ -1,10 +1,15 @@
 /**
  * The confirm step before updating packages: it names every installation it
- * will reinstall (package, place, version change), and confirming updates
- * exactly those. It confirms any list, one installation included. "Update all"
- * opens it today; a row's Update still applies directly until a new version
- * has something of its own to disclose (DOR-2306), when that row will come
- * through here too, with the disclosure under its item.
+ * will reinstall (package, place, version change) and, under each one,
+ * everything its new version runs on its own: each command and when it runs,
+ * each server or program and where it starts, each skill allowed to use tools
+ * without asking, each scheduled job. Confirming updates exactly those, held
+ * to what is listed: the apply sends each disclosure back, and the server
+ * refuses a version that now runs anything else (DOR-2306).
+ *
+ * It confirms any list, one installation included. "Update all" opens it, and
+ * so does a row's Update whenever the new version runs something; a new
+ * version that runs nothing updates straight from its row.
  *
  * The list is a snapshot taken when the dialog opened, so a check that lands
  * meanwhile cannot change what the person agreed to.
@@ -22,11 +27,13 @@ import {
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
 import { humanizePackageName } from '@/layers/shared/lib';
+import { formatDisclosedEffects } from '../lib/format-permissions';
 import {
   formatCheckVersion,
   installationPlace,
   type StaleInstallation,
 } from '../lib/installed-updates';
+import { PermissionItem } from './PermissionPreviewSection';
 
 interface ConfirmUpdatesDialogProps {
   /** The installations to confirm; `null` keeps the dialog closed. */
@@ -47,17 +54,44 @@ function subjectOf(stale: StaleInstallation[]): string {
 }
 
 /**
- * One installation in the list. A column, so what a person must know about
- * this one installation before agreeing (DOR-2306's disclosures) has a place
- * directly under its name and version.
+ * What one installation's new version runs, as rows. Nothing to list is said
+ * in one line, so "runs nothing" is never mistaken for "not checked".
  */
-function StaleItem({ installation, check }: StaleInstallation) {
+function Disclosure({ check }: StaleInstallation) {
+  const rows = check.disclosed
+    ? formatDisclosedEffects(check.disclosed, check.scope === 'global' ? 'global' : 'project')
+    : [];
+  if (rows.length === 0) {
+    return (
+      <p className="text-muted-foreground text-xs">The new version runs nothing on its own.</p>
+    );
+  }
+  return (
+    <div className="space-y-1.5">
+      <p className="text-muted-foreground text-xs">
+        The new version runs {rows.length === 1 ? 'this' : `these ${rows.length}`} on its own:
+      </p>
+      <ul aria-label="What the new version runs" className="space-y-2">
+        {rows.map((row, index) => (
+          <PermissionItem key={index} item={row} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * One installation in the list: its name, place and version change, and under
+ * them what its new version runs.
+ */
+function StaleItem(item: StaleInstallation) {
+  const { installation, check } = item;
   const place = installationPlace(installation);
   const from = formatCheckVersion(check.installedVersion, check.installedVersionSource);
   const to = formatCheckVersion(check.latestVersion, check.latestVersionSource);
 
   return (
-    <li className="bg-muted/40 space-y-1 rounded-lg px-3 py-2">
+    <li className="bg-muted/40 space-y-2 rounded-lg px-3 py-2">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="text-sm font-medium">{humanizePackageName(installation.name)}</div>
@@ -73,6 +107,7 @@ function StaleItem({ installation, check }: StaleInstallation) {
           <span className="sr-only">to</span> {to}
         </div>
       </div>
+      <Disclosure {...item} />
     </li>
   );
 }
@@ -91,8 +126,8 @@ export function ConfirmUpdatesDialog({ stale, onCancel, onConfirm }: ConfirmUpda
               <ResponsiveDialogTitle>Update {subjectOf(stale)}?</ResponsiveDialogTitle>
               <ResponsiveDialogDescription>
                 {stale.length === 1
-                  ? 'DorkOS replaces this package with its newest version, in the same place it is installed now.'
-                  : 'DorkOS replaces each package below with its newest version, in the same place it is installed now.'}
+                  ? 'DorkOS replaces this package with its newest version, in the same place it is installed now. Check what the new version runs before you update.'
+                  : 'DorkOS replaces each package below with its newest version, in the same place it is installed now. Check what each new version runs before you update.'}
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>
 

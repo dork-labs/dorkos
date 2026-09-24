@@ -3,17 +3,18 @@
  *
  * `GET` / `POST /api/marketplace/updates` and the marketplace MCP tools
  * (DOR-2195) share these steps: scan the installations in view once, narrow
- * them ({@link checkInstalledUpdates} for a read), apply, and send one
- * `onPluginsChanged` per reinstall that landed. How a surface gets permission
- * is passed in, and the two applies differ in WHEN they ask:
+ * them, check them saying what each new version would run
+ * ({@link checkInstalledUpdates}), apply only after the surface's permission
+ * step ({@link applyApprovedUpdates}), and send one `onPluginsChanged` per
+ * reinstall that landed.
  *
- * - {@link applyInstalledUpdates} (the HTTP route) authorizes every reinstall
- *   per package, through a {@link ReinstallGate}, before any network work. The
- *   tier gate never shows a person anything, so there is nothing to read first.
- * - {@link applyApprovedUpdates} (the MCP tool) asks a person, through an
- *   {@link ApprovalGate}, so it checks first and stages each stale installation's
- *   new version: the card lists exactly what would change and everything the
- *   new versions would run, and each reinstall is then held to it.
+ * Every apply checks first and stages each stale installation's new version,
+ * so the permission step is asked about exactly the installations that would
+ * change, with everything each new version would run, and each reinstall is
+ * then held to it. Only the permission step is the surface's own: the MCP tool
+ * raises an approval card; the HTTP route compares what the caller says it was
+ * shown ({@link updatesNotAsShown}) and, for an agent, raises the same card
+ * (DOR-2306).
  *
  * ## Two spellings of one project
  *
@@ -34,7 +35,7 @@ import {
   type AgentScopeRef,
   type InstallationRecord,
 } from '../installed-scanner.js';
-import type { DisclosedEffects } from '../disclosed-effects.js';
+import { sameDisclosedEffects, type DisclosedEffects } from '../disclosed-effects.js';
 import type { PackageScope } from '../installed-scanner.js';
 import type { PackageType } from '@dorkos/marketplace';
 import type { UpdateFlow } from './update.js';
@@ -50,7 +51,7 @@ export interface InstalledUpdatesDeps {
   /** Resolved DorkOS data directory (see `.claude/rules/dork-home.md`). */
   dorkHome: string;
   /** The server's one update flow. */
-  updateFlow: Pick<UpdateFlow, 'checkInstallations' | 'planInstallations' | 'applyPlan'>;
+  updateFlow: Pick<UpdateFlow, 'planInstallations' | 'applyPlan'>;
   /** Registered agents whose projects are in view when no project is named. */
   listAgentScopes?: () => AgentScopeRef[];
   /** The post-change notifier every surface that mutates installs must fire. */
@@ -72,11 +73,29 @@ export interface ReinstallGateInput {
 }
 
 /**
- * Ask whether one reinstall may run. Resolves `undefined` to allow it, or the
- * surface's refusal, which ends the whole batch before anything runs. Async
- * because the capability gate reads the caller's permissions fresh.
+ * The distinct `marketplace.install` inputs a set of reinstalls is authorized
+ * with at the capability tier gate: one per package and scope, in the caller's
+ * spelling of the scope. The HTTP apply asks the tier gate about each of these
+ * before any network work, as the per-package route always did.
+ *
+ * @param records - The installations the apply covers.
+ * @param requested - The project the request named, in both spellings.
+ * @returns One input per distinct package and scope, in scan order.
  */
-export type ReinstallGate<R> = (input: ReinstallGateInput) => Promise<R | undefined>;
+export function reinstallInputsFor(
+  records: readonly InstallationRecord[],
+  requested: RequestedProject
+): ReinstallGateInput[] {
+  const inputs = new Map<string, ReinstallGateInput>();
+  for (const record of records) {
+    const name = installationUpdateName(record);
+    const projectPath = callerSpelling(record.package.agentPath, requested);
+    const key = `${name}\n${projectPath ?? ''}`;
+    if (!inputs.has(key))
+      inputs.set(key, { name, ...(projectPath !== undefined && { projectPath }) });
+  }
+  return [...inputs.values()];
+}
 
 /**
  * The installations one update request covers, from ONE scan: the requested
@@ -116,9 +135,15 @@ export function callerSpelling(
 }
 
 /**
- * Check every installation in view, or the selected ones. Advisory: no
- * installed package changes, though a check may stage a newer version into the
- * package cache.
+ * Check every installation in view, or the selected ones, and say what each
+ * new version would run. Advisory: no installed package changes, though a
+ * check may stage a newer version into the package cache.
+ *
+ * Every `update-available` check carries `disclosed`, read from the version a
+ * reinstall would install, because that is what an apply is held to
+ * (DOR-2306): a surface can only confirm an update by showing it and sending
+ * it back. A new version whose declarations cannot be read is `unknown` with
+ * the reason, so nothing unreadable is ever offered.
  *
  * @param deps - The server's update dependencies.
  * @param projectPath - The canonical project path, when one was named.
@@ -133,43 +158,8 @@ export async function checkInstalledUpdates(
   selector?: InstallationSelector
 ): Promise<InstallationUpdatesResult> {
   const installations = selectInstallations(await scanUpdateView(deps, projectPath), selector);
-  return deps.updateFlow.checkInstallations({ installations });
-}
-
-/**
- * Reinstall every stale installation in view, or the selected ones. Every
- * distinct reinstall is authorized first, with the per-package input, and the
- * first refusal ends the batch with nothing run. The result is the record of
- * what changed: each installation's `applied` or `applyError`.
- *
- * @param deps - The server's update dependencies.
- * @param req - The requested project and the selection.
- * @param gate - The surface's permission check for one reinstall.
- * @returns The refusal, or the per-installation result.
- * @throws {PackageNotInstalledForUpdateError} When a selected name or path is
- *   not in view, before any gate or check.
- */
-export async function applyInstalledUpdates<R>(
-  deps: InstalledUpdatesDeps,
-  req: RequestedProject & InstallationSelector,
-  gate: ReinstallGate<R>
-): Promise<{ refused: R } | { result: InstallationUpdatesResult }> {
-  const installations = selectInstallations(await scanUpdateView(deps, req.projectPath), req);
-
-  const asked = new Set<string>();
-  for (const record of installations) {
-    const name = installationUpdateName(record);
-    const projectPath = callerSpelling(record.package.agentPath, req);
-    const key = `${name}\n${projectPath ?? ''}`;
-    if (asked.has(key)) continue;
-    asked.add(key);
-    const refused = await gate({ name, ...(projectPath !== undefined && { projectPath }) });
-    if (refused !== undefined) return { refused };
-  }
-
-  const result = await deps.updateFlow.checkInstallations({ installations, apply: true });
-  notifyApplied(deps, result, req);
-  return { result };
+  const { checks } = await deps.updateFlow.planInstallations({ installations, disclose: true });
+  return { checks };
 }
 
 /**
@@ -232,11 +222,11 @@ export type ApprovalGate<R> = (updates: ApprovableUpdate[]) => Promise<R | undef
 /**
  * Reinstall the stale installations in view, or the selected ones, only after
  * a person has approved each one as it would actually be installed: the MCP
- * `marketplace_update` apply (DOR-2195).
+ * `marketplace_update` apply (DOR-2195) and `POST /api/marketplace/updates`
+ * (DOR-2306), the only two ways an update is applied.
  *
- * Unlike {@link applyInstalledUpdates}, which authorizes before any network
- * work, this checks first and stages every stale installation's new version,
- * so the gate is asked about exactly the installations that would change, with
+ * It checks first and stages every stale installation's new version, so the
+ * gate is asked about exactly the installations that would change, with
  * their versions and everything the new version would run. Nothing stale means
  * nothing to ask. After a yes, each approved installation is reinstalled held
  * to the disclosure the person saw: the installer refuses one whose new version
@@ -284,4 +274,46 @@ export async function applyApprovedUpdates<R>(
   );
   notifyApplied(deps, result, req);
   return { result };
+}
+
+/**
+ * One installation as a caller says it was shown: the version a check offered
+ * and what that version runs, sent back untouched.
+ */
+export interface ShownUpdate {
+  /** The installation, as the check reported it. */
+  installPath: string;
+  /** The version the check offered. */
+  latestVersion: string;
+  /** What that version runs, as the check reported it. */
+  disclosed: DisclosedEffects | null;
+}
+
+/**
+ * The reinstalls an apply would make that differ from what the caller was
+ * shown: another version, or a version that runs anything else, or an
+ * installation it was never shown at all. Empty means every reinstall is
+ * exactly what was shown.
+ *
+ * The comparison is {@link sameDisclosedEffects}, the canonicalization the
+ * approval hash uses, so "the same disclosure" means one thing on every
+ * surface.
+ *
+ * @param updates - The reinstalls, recomputed now.
+ * @param shown - What the caller was shown, by installation.
+ * @returns The reinstalls that are not as shown, in the order given.
+ */
+export function updatesNotAsShown(
+  updates: readonly ApprovableUpdate[],
+  shown: readonly ShownUpdate[]
+): ApprovableUpdate[] {
+  const byPath = new Map(shown.map((target) => [target.installPath, target]));
+  return updates.filter((update) => {
+    const target = byPath.get(update.installPath);
+    return (
+      target === undefined ||
+      target.latestVersion !== update.latestVersion ||
+      !sameDisclosedEffects(target.disclosed, update.disclosed)
+    );
+  });
 }

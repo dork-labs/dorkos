@@ -110,7 +110,7 @@ export function createListInstalledHandler(deps: MarketplaceMcpDeps) {
       (r) => r.package
     );
     if (args.checkUpdates) {
-      const { checks } = await deps.updateFlow.checkInstallations({ installations: records });
+      const { checks } = await deps.updateFlow.planInstallations({ installations: records });
       const byPath = new Map(checks.map((c) => [c.installPath, c]));
       installed = records.map((r) => {
         const check = byPath.get(r.package.installPath);

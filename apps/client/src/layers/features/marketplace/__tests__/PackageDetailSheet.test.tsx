@@ -142,6 +142,16 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
 
 function makeDetail(overrides: Partial<MarketplacePackageDetail> = {}): MarketplacePackageDetail {
   return {
+    // Runs nothing on its own: what an install is held to (DOR-2306).
+    disclosed: {
+      hooks: [],
+      schedules: [],
+      mcpServers: [],
+      lspServers: [],
+      monitors: [],
+      executables: [],
+      skillTools: [],
+    },
     manifest: {
       name: '@dorkos/code-reviewer',
       version: '1.0.0',

@@ -12,7 +12,10 @@ import {
   describeProgramLine,
   PLUGIN_PROGRAMS_SCOPE_NOTE,
   revealHiddenCharacters,
+  type DisclosedEffects,
   type PermissionPreview,
+  type PreviewSchedule,
+  type SchedulePermissionMode,
 } from '@dorkos/shared/marketplace-schemas';
 import { describePreviewSchedule, runsUnattended } from '@/layers/entities/marketplace';
 
@@ -103,6 +106,19 @@ export interface FormattedPermissionGroups {
   /** Conflicts with already-installed packages. */
   conflicts: FormattedPermission[];
 }
+
+/** The parts of a preview that run on their own, and what of them could not be read. */
+type RunnableParts = Pick<
+  PermissionPreview,
+  | 'hooks'
+  | 'unreadableHooks'
+  | 'mcpServers'
+  | 'lspServers'
+  | 'monitors'
+  | 'executables'
+  | 'skillTools'
+  | 'unreadableDeclarations'
+>;
 
 // ---------------------------------------------------------------------------
 // Helpers — file paths
@@ -351,9 +367,13 @@ function formatEffects(
  * "declares no commands", and those are very different things to be told right
  * before you click Install.
  *
- * @param preview - Full permission preview from the server.
+ * @param preview - The runnable parts of a permission preview.
+ * @param scopeNote - When the plugin's own programs start, in one sentence.
  */
-function formatCommands(preview: PermissionPreview): FormattedPermission[] {
+function formatCommands(
+  preview: RunnableParts,
+  scopeNote: string = PLUGIN_PROGRAMS_SCOPE_NOTE
+): FormattedPermission[] {
   const rows: FormattedPermission[] = preview.hooks.map((hook) => ({
     icon: 'terminal',
     label: revealHiddenCharacters(hook.command),
@@ -380,7 +400,7 @@ function formatCommands(preview: PermissionPreview): FormattedPermission[] {
   const programRow = (label: string, name: string, local = true): FormattedPermission => ({
     icon: local ? 'terminal' : 'globe',
     label,
-    description: `${name}. ${PLUGIN_PROGRAMS_SCOPE_NOTE}`,
+    description: `${name}. ${scopeNote}`,
     mono: true,
   });
   for (const server of preview.mcpServers) {
@@ -452,9 +472,9 @@ function formatCommands(preview: PermissionPreview): FormattedPermission[] {
  * severity here, which is this dialog's own concern: the arrival confirm's
  * ledger has no severity column.
  *
- * @param preview - Full permission preview from the server.
+ * @param preview - The scheduled jobs of a permission preview.
  */
-function formatSchedules(preview: PermissionPreview): FormattedPermission[] {
+function formatSchedules(preview: Pick<PermissionPreview, 'schedules'>): FormattedPermission[] {
   return preview.schedules.map((schedule) => ({
     icon: 'clock',
     label: schedule.name,
@@ -594,4 +614,70 @@ export function formatPermissionPreview(
       severity: (conflict.level === 'error' ? 'error' : 'warning') satisfies PermissionSeverity,
     })),
   };
+}
+
+/** Where an update lands, which decides whether its own programs start at all. */
+export type DisclosureScope = 'global' | 'project';
+
+/**
+ * When a plugin's own programs start, for an update in a known place: a global
+ * package is loaded into every session; a project's copy is written as files
+ * for the project's agent tools, and its servers, monitors and `bin/` commands
+ * are not started from it.
+ */
+const PROGRAMS_START: Record<DisclosureScope, string> = {
+  global: 'Starts in every session.',
+  project: 'Declared, but not started for a project install.',
+};
+
+/**
+ * Rows for everything a disclosure says a new version runs: each command and
+ * when it runs, each program with where it starts, each skill's tools, and each
+ * scheduled job. The same rows, in the same words, as the install preview's
+ * commands and schedules groups, so a person reads one vocabulary on every
+ * consent surface. The update confirm shows these under each package, and the
+ * apply sends the same disclosure back, so what a person approves is what
+ * they read (DOR-2306).
+ *
+ * @param effects - What a new version runs, as the update check reported it.
+ * @param scope - Where the installation is, which decides when programs start.
+ * @returns One row per thing it runs; empty when it runs nothing on its own.
+ */
+export function formatDisclosedEffects(
+  effects: DisclosedEffects,
+  scope: DisclosureScope
+): FormattedPermission[] {
+  const parts: RunnableParts = {
+    hooks: effects.hooks.map((hook) => ({
+      event: hook.event,
+      ...(hook.matcher !== null && { matcher: hook.matcher }),
+      command: hook.command,
+      ...(hook.source !== null && { source: hook.source }),
+    })),
+    unreadableHooks: [],
+    mcpServers: effects.mcpServers.map((server) => ({
+      name: server.name,
+      transport: server.transport,
+      ...(server.command !== null && { command: server.command, args: server.args }),
+      ...(server.url !== null && { url: server.url }),
+    })),
+    lspServers: effects.lspServers.map(({ name, command, args }) => ({ name, command, args })),
+    monitors: effects.monitors.map(({ name, command, when }) => ({
+      name,
+      command,
+      ...(when !== null && { when }),
+    })),
+    executables: effects.executables,
+    skillTools: effects.skillTools,
+    unreadableDeclarations: [],
+  };
+  const schedules: PreviewSchedule[] = effects.schedules.map((job) => ({
+    name: job.name,
+    cron: job.cron,
+    // The server clamps a packaged job's mode before disclosing it, so it is
+    // always one of the known modes; the wire carries it as a plain string.
+    permissionMode: job.permissionMode as SchedulePermissionMode,
+    startsEnabled: job.startsEnabled,
+  }));
+  return [...formatCommands(parts, PROGRAMS_START[scope]), ...formatSchedules({ schedules })];
 }

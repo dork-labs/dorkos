@@ -75,7 +75,9 @@ To install updates, call it with \`apply: true\`. It uses the \`confirmationToke
 handshake above; the \`updates\` it returns list what each new version runs, so
 tell the user that, wait, then call again with the SAME arguments plus the token.
 A linked install (a working copy) is never reinstalled. From a shell,
-\`dorkos update\` checks and \`dorkos update --apply\` installs.
+\`dorkos update\` checks. \`dorkos update --apply --yes\` prints what each new
+version runs and asks the user for approval on a card; tell them, wait, then run
+the \`Retry with:\` command it printed (it adds \`--approval <token>\`).
 
 ## Remove a package (tier: destructive)
 

@@ -112,11 +112,13 @@ function PermissionDetails({ items, label }: { items: PermissionDetailItem[]; la
 
 /**
  * A single permission row with an icon, label, optional description, and an
- * optional inline disclosure holding its detail lines.
+ * optional inline disclosure holding its detail lines. Shared with the update
+ * confirm (`ConfirmUpdatesDialog`), so a command reads the same on every
+ * consent surface.
  *
  * @param item - The formatted permission row to display.
  */
-function PermissionItem({ item }: { item: FormattedPermission }) {
+export function PermissionItem({ item }: { item: FormattedPermission }) {
   const Icon = ICON_MAP[item.icon] ?? File;
   const colorClass = item.severity ? SEVERITY_CLASS[item.severity] : SEVERITY_CLASS.info;
 

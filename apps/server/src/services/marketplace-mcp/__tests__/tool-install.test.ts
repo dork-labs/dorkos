@@ -190,6 +190,7 @@ function createStubDeps(opts: {
     uninstallFlow: {} as MarketplaceMcpDeps['uninstallFlow'],
     confirmationProvider: opts.confirmationProvider,
     onPluginsChanged: opts.onPluginsChanged ?? vi.fn(),
+    consent: { approveUpdates: vi.fn(), approveInstall: vi.fn() },
     logger: {
       info: vi.fn(),
       warn: vi.fn(),
@@ -594,6 +595,73 @@ describe('createInstallHandler — error mapping', () => {
     expect(payload.error).toContain('package not found');
     expect(provider.requestInstallConfirmation).not.toHaveBeenCalled();
     expect(installer.install).not.toHaveBeenCalled();
+  });
+});
+
+// DOR-2306: a person who read the card and said yes has approved exactly what
+// the package runs, so a global install of it loads into sessions without a
+// second card. Nobody else's yes is recorded.
+describe('createInstallHandler — recording what a person approved (DOR-2306)', () => {
+  let confirmationProvider: FakeConfirmationProvider;
+
+  beforeEach(() => {
+    confirmationProvider = new FakeConfirmationProvider();
+  });
+
+  function stubs() {
+    const installer = createStubInstaller({
+      preview: previewResult({ name: 'flow' }),
+      install: installResult({ packageName: 'flow' }),
+    });
+    const onPluginsChanged = vi.fn();
+    const deps = createStubDeps({ confirmationProvider, installer, onPluginsChanged });
+    return { deps, onPluginsChanged, installer };
+  }
+
+  it('records a granted global install, before the refresh that reads it', async () => {
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const { deps, onPluginsChanged } = stubs();
+
+    await createInstallHandler(deps)({ name: 'flow' });
+
+    const approveInstall = vi.mocked(deps.consent.approveInstall);
+    expect(approveInstall).toHaveBeenCalledTimes(1);
+    expect(approveInstall.mock.calls[0]?.[0]).toMatchObject({ global: true });
+    expect(approveInstall.mock.invocationCallOrder[0]).toBeLessThan(
+      onPluginsChanged.mock.invocationCallOrder[0] ?? 0
+    );
+  });
+
+  it('says a project install is not global, so nothing loads into every session on it', async () => {
+    const projectPath = await boundedProjectPath();
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const { deps } = stubs();
+
+    await createInstallHandler(deps)({ name: 'flow', projectPath });
+
+    expect(vi.mocked(deps.consent.approveInstall).mock.calls[0]?.[0]).toMatchObject({
+      global: false,
+    });
+  });
+
+  it('records nothing when the tier gate skipped the card: nobody was shown anything', async () => {
+    const { deps } = stubs();
+
+    await createInstallHandler(deps)({ name: 'flow' }, { preApproved: true });
+
+    expect(deps.consent.approveInstall).not.toHaveBeenCalled();
+  });
+
+  it('records nothing while the card waits', async () => {
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({
+      status: 'pending',
+      token: 'tok-1',
+    });
+    const { deps } = stubs();
+
+    await createInstallHandler(deps)({ name: 'flow' });
+
+    expect(deps.consent.approveInstall).not.toHaveBeenCalled();
   });
 });
 

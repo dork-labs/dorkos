@@ -11,6 +11,7 @@
  */
 import type {
   AggregatedPackage,
+  DisclosedEffects,
   InstallationUpdateCheck,
   InstalledPackage,
   MarketplaceSource,
@@ -366,6 +367,49 @@ export const MOCK_INSTALLED_FOR_UPDATES: InstalledPackage[] = [
 ];
 
 /** One check per {@link MOCK_INSTALLED_FOR_UPDATES} row, in the server's shape. */
+/** What a new version of the Flow plugin runs on its own, as a check discloses it. */
+const FLOW_NEXT_RUNS: DisclosedEffects = {
+  hooks: [
+    {
+      event: 'PreToolUse',
+      matcher: 'Bash',
+      command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/guard-git.mjs"',
+      source: null,
+    },
+    {
+      event: 'Stop',
+      matcher: null,
+      command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/tidy.mjs"',
+      source: null,
+    },
+  ],
+  schedules: [],
+  mcpServers: [
+    {
+      name: 'linear',
+      transport: 'stdio',
+      command: 'npx',
+      args: ['-y', '@linear/mcp-server'],
+      url: null,
+    },
+  ],
+  lspServers: [],
+  monitors: [],
+  executables: [],
+  skillTools: [{ source: 'skills/triage/SKILL.md', skill: 'triage', tools: ['Bash(gh:*)'] }],
+};
+
+/** A new version that runs nothing on its own. */
+const RUNS_NOTHING: DisclosedEffects = {
+  hooks: [],
+  schedules: [],
+  mcpServers: [],
+  lspServers: [],
+  monitors: [],
+  executables: [],
+  skillTools: [],
+};
+
 export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
   {
     packageName: 'code-reviewer',
@@ -379,6 +423,7 @@ export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
     installPath: '/Users/kai/.dork/agents/code-reviewer',
     type: 'agent',
     scope: 'global',
+    disclosed: RUNS_NOTHING,
   },
   {
     packageName: 'flow',
@@ -395,19 +440,21 @@ export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
     agentPath: '/Users/kai/work/release-bot',
     agentName: 'Release Bot',
     applyError: 'another install is already running in this folder',
+    disclosed: FLOW_NEXT_RUNS,
   },
   {
     packageName: 'flow',
     installedVersion: '0.7.3',
-    latestVersion: '0.7.3',
-    hasUpdate: false,
+    latestVersion: '0.8.0',
+    hasUpdate: true,
     marketplace: 'dorkos-community',
-    status: 'current',
+    status: 'update-available',
     installedVersionSource: 'package',
     latestVersionSource: 'package',
     installPath: '/Users/kai/.dork/plugins/flow',
     type: 'plugin',
     scope: 'global',
+    disclosed: FLOW_NEXT_RUNS,
   },
   {
     packageName: 'obsidian-sync',
@@ -448,6 +495,7 @@ export const MOCK_UPDATE_CHECKS_ALL_CURRENT: InstallationUpdateCheck[] = MOCK_UP
     marketplace: check.marketplace,
     applyError: undefined,
     note: undefined,
+    disclosed: undefined,
   })
 );
 

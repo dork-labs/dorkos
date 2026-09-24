@@ -87,6 +87,10 @@ Leave out the package name to check every package you have, wherever it's instal
 
 `--apply` updates each package where it's installed. If you add `--project` to update a package that's installed for everything, it stays installed for everything. It isn't moved into that project.
 
+Before `--apply` installs anything, it prints everything each new version runs on its own: the commands it runs and when, the servers and programs it starts, and the skills it lets use tools without asking. Then it asks you. Add `--yes` to skip the question. DorkOS installs exactly what it printed. If a new version changes what it runs before the install happens, nothing is updated and the command tells you to look again. When an agent runs the update for you, DorkOS shows you an approval card first and changes nothing until you allow it.
+
+A package you install for everyone loads into every session. If it runs commands or programs of its own, it only loads after you approve exactly what it runs. Installing or updating it yourself counts as that approval. If a package changes what it runs another way (for example an agent installs it, or a file in it changes), DorkOS holds it back and asks you with an approval card. `dorkos harness hooks --list` shows your answers, and `--revoke <name>` forgets one.
+
 `dorkos marketplace outdated` prints only the packages that are behind, and changes nothing. It ends with exit code `1` when something has an update, so a script or a scheduled job can check for you. See [the CLI guide](/docs/guides/cli-usage#marketplace) for all three exit codes.
 
 </Step>
@@ -159,13 +163,13 @@ The **Installed** tab of Marketplace lists every package you've installed, in ev
 
 Each package says where it stands:
 
-- **Update available: v1.2.0 → v1.3.0.** Its **Update to v1.3.0** button installs the new version in the same place.
+- **Update available: v1.2.0 → v1.3.0.** Its **Update to v1.3.0** button installs the new version in the same place. If the new version runs commands or programs of its own, the button first shows you what they are and asks you to confirm.
 - **Up to date.** There's nothing to install, so there's no Update button.
 - **Couldn't check for updates, and why.** For example, "couldn't reach github.com" when you're offline, or "linked install — update its source instead" for a package linked to a folder on your computer. DorkOS never calls a package up to date when it couldn't check it.
 
 While the check runs, each package says **Checking for updates…**. It can take a moment when many packages are installed.
 
-**Update all…** opens a list of every package it will update, where each one is installed (all agents, or a named agent), and which version it moves to. Nothing changes until you confirm, and then only those packages are updated. If one fails, the others still update, and the failed one shows why. **Check again** runs the check again whenever you like.
+**Update all…** opens a list of every package it will update, where each one is installed (all agents, or a named agent), and which version it moves to. Under each package it lists what the new version runs on its own: each command and when it runs, each server or program and whether it starts in every session. Nothing changes until you confirm, and then only those packages are updated, exactly as listed. If a package changes what it runs after you opened the list, DorkOS updates nothing and asks you to review it again. If one fails, the others still update, and the failed one shows why. **Check again** runs the check again whenever you like.
 
 ## Managing installed packages
 

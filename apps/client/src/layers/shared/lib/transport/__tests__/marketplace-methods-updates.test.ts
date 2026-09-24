@@ -62,26 +62,53 @@ describe('createMarketplaceMethods().checkMarketplaceUpdates', () => {
   });
 });
 
+/** One target that runs nothing on its own. */
+const TARGET = { installPath: '/x', latestVersion: '2.0.0', disclosed: null };
+
 describe('createMarketplaceMethods().applyMarketplaceUpdates', () => {
-  it('POSTs apply: true with exactly the named installations', async () => {
+  it('POSTs apply: true with exactly the named installations, each as it was shown', async () => {
     // Purpose: the route refuses any POST without the literal `apply: true`,
-    // and "Update all" must touch exactly the installations it showed.
+    // "Update all" must touch exactly the installations it showed, and each
+    // must carry the version and disclosure the person saw, untouched: the
+    // server installs only what still matches them (DOR-2306).
     const fetchMock = answerWithResult();
+    const runs = {
+      hooks: [{ event: 'Stop', matcher: null, command: 'echo hi', source: null }],
+      schedules: [],
+      mcpServers: [],
+      lspServers: [],
+      monitors: [],
+      executables: [],
+      skillTools: [],
+    };
+    const targets = [
+      { installPath: '/home/.dork/plugins/flow', latestVersion: '2.0.0', disclosed: runs },
+      { installPath: '/work/alpha/.dork/plugins/flow', latestVersion: '2.0.0', disclosed: null },
+    ] as const;
 
     await createMarketplaceMethods('/api').applyMarketplaceUpdates({
-      targets: [
-        { installPath: '/home/.dork/plugins/flow' },
-        { installPath: '/work/alpha/.dork/plugins/flow' },
-      ],
+      targets: [targets[0], targets[1]],
     });
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('/api/marketplace/updates');
     expect(init?.method).toBe('POST');
-    expect(JSON.parse(String(init?.body))).toEqual({
-      apply: true,
-      installPaths: ['/home/.dork/plugins/flow', '/work/alpha/.dork/plugins/flow'],
-    });
+    expect(JSON.parse(String(init?.body))).toEqual({ apply: true, targets });
+  });
+
+  it('refuses to pass off a waiting approval as a result', async () => {
+    // Purpose: a 202 means nothing was reinstalled; the app must say so, not
+    // report an apply with no checks as done.
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ status: 'requires_confirmation', confirmationToken: 't' }), {
+          status: 202,
+        })
+    ) as unknown as typeof fetch;
+
+    await expect(
+      createMarketplaceMethods('/api').applyMarketplaceUpdates({ targets: [TARGET] })
+    ).rejects.toThrow(/waiting for someone to approve/);
   });
 
   it('rejects with the server error rather than resolving a half-result', async () => {
@@ -94,7 +121,7 @@ describe('createMarketplaceMethods().applyMarketplaceUpdates', () => {
 
     await expect(
       createMarketplaceMethods('/api').applyMarketplaceUpdates({
-        targets: [{ installPath: '/nope' }],
+        targets: [{ ...TARGET, installPath: '/nope' }],
       })
     ).rejects.toThrow(/not installed/);
   });
@@ -108,8 +135,8 @@ describe('embedded mode', () => {
   });
 
   it('refuses to apply', async () => {
-    await expect(
-      marketplaceStubs.applyMarketplaceUpdates({ targets: [{ installPath: '/x' }] })
-    ).rejects.toThrow(/not supported in embedded mode/);
+    await expect(marketplaceStubs.applyMarketplaceUpdates({ targets: [TARGET] })).rejects.toThrow(
+      /not supported in embedded mode/
+    );
   });
 });

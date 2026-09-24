@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Trash2, RefreshCw, FolderOpen, Bot, Shapes, AlertTriangle } from 'lucide-react';
-import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
+import { disclosesAnything, type InstalledPackage } from '@dorkos/shared/marketplace-schemas';
 import { useApplyingInstallPaths, useInstalledPackages } from '@/layers/entities/marketplace';
 import { useShapes } from '@/layers/entities/shapes';
 import { Badge, Button } from '@/layers/shared/ui';
@@ -272,8 +272,9 @@ export function InstalledPackagesView() {
   // Track which installation (by installPath — unique per scope, unlike the
   // package name) is in the confirm-uninstall window.
   const [confirmingPath, setConfirmingPath] = useState<string | null>(null);
-  // What "Update all" is asking about, snapshotted when the dialog opens, so a
-  // check that lands meanwhile cannot change what the person confirms.
+  // What the confirm step is asking about ("Update all", or one row whose new
+  // version runs something), snapshotted when the dialog opens, so a check
+  // that lands meanwhile cannot change what the person confirms.
   const [confirmingUpdate, setConfirmingUpdate] = useState<StaleInstallation[] | null>(null);
 
   // ---------------------------------------------------------------------------
@@ -320,7 +321,7 @@ export function InstalledPackagesView() {
     }
   }
 
-  function handleConfirmUpdateAll(stale: StaleInstallation[]) {
+  function handleConfirmUpdate(stale: StaleInstallation[]) {
     setConfirmingUpdate(null);
     apply(stale);
   }
@@ -365,8 +366,15 @@ export function InstalledPackagesView() {
                 updateState={updateState}
                 onApplyClick={() => openShapeSwitcherToShape(pkg.name)}
                 onUpdateClick={() => {
-                  if (updateState.kind === 'update-available') {
-                    apply([{ installation: pkg, check: updateState.check }]);
+                  if (updateState.kind !== 'update-available') return;
+                  const item = { installation: pkg, check: updateState.check };
+                  // A new version that runs anything on its own is confirmed
+                  // first, with what it runs listed; one that runs nothing
+                  // updates straight away (DOR-2306).
+                  if (disclosesAnything(updateState.check.disclosed)) {
+                    setConfirmingUpdate([item]);
+                  } else {
+                    apply([item]);
                   }
                 }}
                 onUninstallClick={() => handleUninstallClick(pkg)}
@@ -379,7 +387,7 @@ export function InstalledPackagesView() {
       <ConfirmUpdatesDialog
         stale={confirmingUpdate}
         onCancel={() => setConfirmingUpdate(null)}
-        onConfirm={handleConfirmUpdateAll}
+        onConfirm={handleConfirmUpdate}
       />
     </div>
   );

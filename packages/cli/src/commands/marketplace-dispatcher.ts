@@ -108,17 +108,22 @@ Usage: dorkos marketplace update [<name>] [options]
        dorkos update [<name>] [options]
 
 Check installed marketplace packages for a newer version. On its own it only
-checks and changes nothing; add --apply to install the updates it finds. Each
-package is updated where it is installed.
+checks and changes nothing; add --apply to install the updates it finds. Before
+it installs anything it prints everything each new version runs (commands,
+servers, programs) and asks. Each package is updated where it is installed,
+exactly as printed: if a new version changes what it runs in the meantime,
+nothing is updated.
 
 Options:
-      --apply           Apply the update (default: advisory only)
-      --project <path>  Check what this project sees (global installs plus its own)
+      --apply             Apply the updates (default: advisory only)
+  -y, --yes               Do not ask before applying (it still prints what runs)
+      --approval <token>  Retry an update a person approved in DorkOS
+      --project <path>    Check what this project sees (global installs plus its own)
 
 Examples:
   dorkos marketplace update                       # check every installed package
   dorkos marketplace update code-review-suite     # check a single package
-  dorkos marketplace update --apply               # apply every available update
+  dorkos marketplace update --apply               # review and apply every available update
 `,
   uninstall: `
 Usage: dorkos marketplace uninstall <name> [options]

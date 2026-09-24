@@ -149,6 +149,12 @@ export interface MarketplacePackageDetail {
   /** Permission preview computed for this package. */
   preview: PermissionPreview;
   /**
+   * The part of {@link preview} an install approval binds to: everything the
+   * package runs on its own, in canonical form. Send it back as
+   * `InstallOptions.approvedDisclosure` to install only this (DOR-2306).
+   */
+  disclosed: DisclosedEffects;
+  /**
    * Raw markdown of the package's root `README.md`, read from the staged clone
    * (case-insensitive, capped at 200 KB). Omitted when the package ships no
    * README so the UI renders nothing rather than an empty section.
@@ -550,6 +556,124 @@ export interface PermissionPreview {
   conflicts: ConflictReport[];
 }
 
+// ---------------------------------------------------------------------------
+// Disclosed effects — what an approval attests to
+// ---------------------------------------------------------------------------
+
+/** One shell command a package declares, as the approval showed it. */
+export interface DisclosedHook {
+  /** Harness event the command fires on (e.g. `PreToolUse`, `Stop`). */
+  event: string;
+  /** Tool/event matcher the hook narrows to; `null` when it matches everything. */
+  matcher: string | null;
+  /** The literal shell command, verbatim — never paraphrased or normalized. */
+  command: string;
+  /** The skill or command file it belongs to (it runs while that is in use); `null` for a plugin hook. */
+  source: string | null;
+}
+
+/** A skill or command's `allowed-tools`: tools it may use without asking. */
+export interface DisclosedSkillTools {
+  /** Package-relative path of the skill or command. */
+  source: string;
+  /** The skill's name. */
+  skill: string;
+  /** Each allowed-tools entry, verbatim. */
+  tools: string[];
+}
+
+/** One scheduled job the install would create, and what it may do unattended. */
+export interface DisclosedSchedule {
+  /** Job name as the package declares it. */
+  name: string;
+  /** Cron expression, or `null` when the job only runs when asked. */
+  cron: string | null;
+  /** How much the job may do without a person in the loop, after the clamp. */
+  permissionMode: string;
+  /**
+   * Whether the package asked for the job to be switched on. Its declared
+   * intent, not an outcome: every packaged schedule is parked at
+   * `pending_approval` on first sighting whatever this says.
+   */
+  startsEnabled: boolean;
+}
+
+/** One MCP server a package starts, as the approval showed it. */
+export interface DisclosedMcpServer {
+  /** The server's declared name. */
+  name: string;
+  /** `stdio` for a local program, else the remote transport. */
+  transport: string;
+  /** The program a local server runs, verbatim; `null` for a remote one. */
+  command: string | null;
+  /** Its arguments, verbatim and in order; empty for a remote server. */
+  args: string[];
+  /** The address a remote server connects to; `null` for a local one. */
+  url: string | null;
+}
+
+/** One language server or monitor: a named program and how it is started. */
+export interface DisclosedProgram {
+  /** Its declared name. */
+  name: string;
+  /** The program it runs, verbatim. */
+  command: string;
+  /** Its arguments, verbatim and in order. */
+  args: string[];
+  /** When it starts, for a monitor that says; `null` otherwise. */
+  when: string | null;
+}
+
+/**
+ * Everything executable a package declares, in the canonical shape an approval
+ * binds to (DOR-647, DOR-2195): the subset of a {@link PermissionPreview} that
+ * runs on its own. Hooks keep declaration order (they run in it); everything
+ * else is sorted, so the value does not move when a directory listing does.
+ *
+ * Built only by the server (`disclosedEffectsOf` in
+ * `apps/server/src/services/marketplace/disclosed-effects.ts`). A client shows
+ * it and sends it back untouched as what the person was shown (DOR-2306); the
+ * server compares it with the version it resolves now and refuses any other.
+ */
+export interface DisclosedEffects {
+  /** Every hook command the package declares, in declaration order. */
+  hooks: DisclosedHook[];
+  /** Every scheduled job the install would create, sorted. */
+  schedules: DisclosedSchedule[];
+  /** Every MCP server the package starts, sorted by name. */
+  mcpServers: DisclosedMcpServer[];
+  /** Every language server the package starts, sorted by name. */
+  lspServers: DisclosedProgram[];
+  /** Every background monitor the package runs, sorted by name. */
+  monitors: DisclosedProgram[];
+  /** The names of the commands the package puts on the agent's PATH, sorted. */
+  executables: string[];
+  /** Every skill or command's allowed tools, sorted by file. */
+  skillTools: DisclosedSkillTools[];
+}
+
+/**
+ * Whether a disclosure names anything that runs on its own: a hook, a program,
+ * a scheduled job, or a skill allowed to use tools without asking. `null`
+ * (nothing was previewed) runs nothing.
+ *
+ * @param effects - A disclosure, or `null`.
+ * @returns True when a person has something to read before approving.
+ */
+export function disclosesAnything(effects: DisclosedEffects | null | undefined): boolean {
+  if (!effects) return false;
+  return (
+    effects.hooks.length +
+      effects.schedules.length +
+      effects.mcpServers.length +
+      effects.lspServers.length +
+      effects.monitors.length +
+      effects.executables.length +
+      effects.skillTools.length >
+    0
+  );
+}
+
 /**
  * A single conflict detected between an incoming package and the installed set.
  *
@@ -594,6 +718,13 @@ export interface InstallOptions {
   yes?: boolean;
   /** Project path for project-local installs. */
   projectPath?: string;
+  /**
+   * What the person was shown this package runs: the preview's `disclosed`,
+   * sent back untouched. The install refuses a package that now runs anything
+   * else, before writing anything, and a person's install of a global plugin
+   * is then recorded as their approval to load it (DOR-2306).
+   */
+  approvedDisclosure?: DisclosedEffects;
 }
 
 /**
@@ -741,14 +872,13 @@ export interface UpdateCheckResult {
 }
 
 /**
- * The composite result of an update check, with optional applied reinstalls.
+ * The result of a one-package update check (`POST /api/marketplace/packages/:name/update`).
+ * Advisory: updates are applied only through `POST /api/marketplace/updates`.
  *
- * Mirrors `UpdateResult` in `apps/server/src/services/marketplace/flows/update.ts`.
+ * Mirrors `UpdateResult` in `apps/server/src/services/marketplace/flows/update-types.ts`.
  */
 export interface UpdateResult {
   checks: UpdateCheckResult[];
-  /** Populated only when `apply: true`; one entry per successful reinstall. */
-  applied: InstallResult[];
 }
 
 /**
@@ -782,18 +912,28 @@ export interface InstallationUpdateCheck extends UpdateCheckResult {
   applied?: InstallResult;
   /** Set when an apply tried to reinstall this installation and failed: why. */
   applyError?: string;
+  /**
+   * What the new version would run, read from the version a reinstall would
+   * install. Present on every `update-available` check; `null` when nothing
+   * was previewed. An update is applied only with this sent back untouched
+   * ({@link ApplyUpdateTarget}), so it is what a confirm step must show.
+   */
+  disclosed?: DisclosedEffects | null;
 }
 
 /**
- * One installation an apply is asked to update, as a check reported it.
- *
- * An object rather than a bare path so a later binding can travel with its
- * installation (DOR-2306 will bind each apply to the disclosure a person saw
- * for that installation's new version).
+ * One installation an apply is asked to update, exactly as a check reported
+ * it and a person was shown it: which installation, which version, and what
+ * that version runs. The server recomputes the last two and refuses the whole
+ * apply when either moved (DOR-2306).
  */
 export interface ApplyUpdateTarget {
   /** The installation, exactly as a check reported it. */
   installPath: string;
+  /** The version the check offered. */
+  latestVersion: string;
+  /** What that version runs, as the check reported it (`check.disclosed`). */
+  disclosed: DisclosedEffects | null;
 }
 
 /**
