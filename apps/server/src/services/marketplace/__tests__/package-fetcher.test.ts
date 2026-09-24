@@ -6,7 +6,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import type { Logger } from '@dorkos/shared/logger';
 import type { MarketplaceJson } from '@dorkos/marketplace';
 import { initBoundary } from '../../../lib/boundary.js';
-import { PackageFetcher } from '../package-fetcher.js';
+import { MARKETPLACE_JSON_TIMEOUT_MS, PackageFetcher } from '../package-fetcher.js';
 import { MarketplaceCache, type CachedMarketplace } from '../marketplace-cache.js';
 import {
   GitFetchError,
@@ -352,6 +352,29 @@ describe('PackageFetcher', () => {
       expect(cache.readMarketplace).toHaveBeenCalledWith('dorkos-community');
       expect(cache.writeMarketplace).not.toHaveBeenCalled();
       expect(logger.calls.some((c) => c.level === 'warn')).toBe(true);
+    });
+
+    it('gives up on a marketplace server that stops answering, with a plain reason', async () => {
+      // Purpose: a bare fetch has no deadline, so one slow server could hold an
+      // update-check slot for minutes. The request carries a timeout signal,
+      // and running out of time reads as a sentence, not a DOMException.
+      const timeout = vi
+        .spyOn(AbortSignal, 'timeout')
+        .mockImplementation(() =>
+          AbortSignal.abort(new DOMException('The operation timed out.', 'TimeoutError'))
+        );
+      const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
+        init?.signal?.aborted ? Promise.reject(init.signal.reason) : new Promise(() => {})
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      const cache = buildCacheMock({ readMarketplace: vi.fn().mockResolvedValue(null) });
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+      await expect(fetcher.fetchMarketplaceJson(buildSource())).rejects.toThrow(
+        `the marketplace server didn't answer within ${MARKETPLACE_JSON_TIMEOUT_MS / 1000} seconds`
+      );
+      expect(timeout).toHaveBeenCalledWith(MARKETPLACE_JSON_TIMEOUT_MS);
+      timeout.mockRestore();
     });
 
     it('rethrows when both network fetch and stale cache fail', async () => {

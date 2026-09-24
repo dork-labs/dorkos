@@ -27,6 +27,33 @@ import type { BroadcastAudience } from '../event-fan-out.js';
 export interface ConfigChange {
   /** Top-level sections this write touched. */
   sections: readonly string[];
+  /** The exact key paths this write stored, e.g. `ui.communityNavigation`. */
+  paths: readonly string[];
+}
+
+/**
+ * Where the server keeps remembered Community navigation: each owner's
+ * Community order, the last room in each Community, and the last route inside
+ * this DorkOS. It lives in `config.json` for durability, but it is a record of
+ * where the person has been, not a setting they chose.
+ */
+const COMMUNITY_NAVIGATION_PATH = 'ui.communityNavigation';
+
+/**
+ * Whether every path a write stored lies inside remembered Community
+ * navigation, so the write is ordinary movement and not a settings change.
+ *
+ * A write that also stored anything else — including a whole `ui` section,
+ * which is what `PATCH /api/config` does — is not, and still broadcasts.
+ */
+function isNavigationOnlyWrite(paths: readonly string[]): boolean {
+  return (
+    paths.length > 0 &&
+    paths.every(
+      (path) =>
+        path === COMMUNITY_NAVIGATION_PATH || path.startsWith(`${COMMUNITY_NAVIGATION_PATH}.`)
+    )
+  );
 }
 
 /** The narrow slice of `MeshCore` this wiring needs. */
@@ -145,6 +172,15 @@ export interface CommunityConnectionsChangedEvent {
  * and a subscriber that wants a value reads it back off `GET /api/config`,
  * which also keeps the event from going stale between the write and the read.
  *
+ * **Remembered Community navigation is not a settings change** (DOR-2227).
+ * Every distinct move between Communities saves the destination under
+ * `ui.communityNavigation`, and broadcasting that made every open window
+ * refetch the whole config on ordinary movement — which is also what let the
+ * one-time "full power" dialog open mid-flow. A write that stored nothing but
+ * that path is skipped. No window reads navigation state from `GET
+ * /api/config`: each asks the owner-scoped navigation routes when it needs a
+ * remembered destination, so nothing waits on this frame for it.
+ *
  * One asymmetry worth knowing: `agents_changed` is suppressed when a write
  * changed nothing (the mesh registry compares the row before and after), while
  * `config_changed` has no such suppression — `ConfigManager` reports every
@@ -190,6 +226,7 @@ export function wireLiveChangeBroadcasts(deps: LiveChangeBroadcastDeps): void {
   });
 
   configManager.onChange((change) => {
+    if (isNavigationOnlyWrite(change.paths)) return;
     const event: ConfigChangedEvent = { sections: change.sections, changedAt: now() };
     eventFanOut.broadcast('config_changed', event, operatorAudience);
   });

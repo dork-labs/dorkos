@@ -821,6 +821,32 @@ describe('SidebarHeaderBlock', () => {
     expect(screen.getByLabelText('3 other unread')).toBeVisible();
   });
 
+  it('says when stale counts were last checked, and only for stale counts', async () => {
+    const community = (ref: string, label: string, state: 'verified' | 'stale') => ({
+      ref,
+      remoteCommunityId: `remote-${ref}`,
+      label,
+      pinnedOrigin: `https://${ref}.example.com`,
+      connectedHumanMemberId: `person-${ref}`,
+      status: 'connected' as const,
+      expiresAt: null,
+      attention: {
+        state,
+        unreadCount: 3,
+        mentionCount: 1,
+        verifiedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+      },
+    });
+    mockConnections = [community('a', 'Alpha', 'stale'), community('b', 'Beta', 'verified')];
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    const alpha = (await screen.findByText('Alpha')).closest('[role="menuitemradio"]');
+    const beta = screen.getByText('Beta').closest('[role="menuitemradio"]');
+    expect(alpha).toHaveTextContent('1 mention, 2 other unread, last checked 5m ago');
+    expect(beta).toHaveTextContent('1 mention, 2 other unread');
+    expect(beta).not.toHaveTextContent('last checked');
+  });
+
   it('discards a delayed destination after the local owner changes', async () => {
     let resolveRemembered!: (value: {
       ref: string;

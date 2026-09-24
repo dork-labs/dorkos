@@ -17,7 +17,11 @@ import { CommunityConnectionAccessSchema } from './community-wire.js';
 
 /**
  * Activity state for one owner-scoped Community connection. A number is only
- * present when it came from a current authorized Community response.
+ * present when it came from an authorized Community response: `verified`
+ * counts answered this read, `stale` counts are the last ones the Community
+ * confirmed (at `verifiedAt`) when it did not answer in time this read, and
+ * `unavailable` means it has not confirmed any since the connection was last
+ * readable.
  */
 export const CommunityConnectionAttentionSchema = z.discriminatedUnion('state', [
   z.strictObject({

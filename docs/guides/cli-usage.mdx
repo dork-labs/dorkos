@@ -154,7 +154,7 @@ dorkos update <package> --apply                   # Install an available update
 dorkos update <package> --project <path>          # Check or apply within a specific project
 ```
 
-For each package, `dorkos update` tells you one of three things: a newer version is available, the package is up to date, or it couldn't be checked (with the reason, for example when you're offline). On its own it only checks. Add `--apply` to install the updates it finds.
+For each package, `dorkos update` tells you one of three things: a newer version is available, the package is up to date, or it couldn't be checked (with the reason, for example when you're offline). On its own it only checks. Add `--apply` to install the updates it finds. Each package is updated where it's installed. A package installed for one agent is shown with that agent's name, like `flow [Alpha]`.
 
 **`dorkos marketplace`**: manage the marketplace sources that list available packages.
 
