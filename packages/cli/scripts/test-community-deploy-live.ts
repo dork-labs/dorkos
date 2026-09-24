@@ -40,6 +40,7 @@ import {
   type CommunityLiveGateJournal,
 } from './community-deploy-live-cleanup.js';
 import {
+  guardCommunityLiveProvenance,
   probeCommunityLiveNetworkAfterCleanup,
   probeCommunityLiveProvenance,
   readFlyGraphql,
@@ -318,29 +319,34 @@ async function main(): Promise<void> {
     let cleanup;
     let provenance;
     try {
-      // Read-only, and never throws: what a finished launch shows about its markers, recorded
-      // before cleanup removes the resources that carry them.
-      provenance = await probeCommunityLiveProvenance(journal, {
-        readAppProvenance: (name) => tigris((client) => client.readAppProvenance(name)),
-        flyGraphql,
-        readNeonRoleNames: async (projectId, branchId) =>
-          (await readNeonBranchTopology(neon, projectId, branchId)).roles.map((role) => role.name),
-        readNeonProjects: (organization) => readNeonProjects(neon, organization),
-        readTigris: async (id) => {
-          const item = await tigris((client) => client.readTigris(id));
-          return { appId: item.appId, appName: item.appName };
-        },
-        readSecretNames: async (name) =>
-          (await readFlySecretInventory(fly, name)).map((item) => item.name),
-        runSshNoOp: async (name) =>
-          void (await runProviderCommand({
-            ...fly,
-            timeoutMs: SSH_PROBE_TIMEOUT_MS,
-            args: ['ssh', 'console', '--app', name, '--command', 'true'],
-            parse: () => undefined,
-          })),
-        unknownAppName: () => `dorkos-gate-absent-${randomBytes(12).toString('hex')}`,
-      });
+      // What a finished launch shows about its markers, recorded before cleanup removes the
+      // resources that carry them. The guard resolves on every path within its deadline, so a
+      // probe that throws or hangs can never skip or hold up the cleanup below.
+      provenance = await guardCommunityLiveProvenance(() =>
+        probeCommunityLiveProvenance(journal, {
+          readAppProvenance: (name) => tigris((client) => client.readAppProvenance(name)),
+          flyGraphql,
+          readNeonRoleNames: async (projectId, branchId) =>
+            (await readNeonBranchTopology(neon, projectId, branchId)).roles.map(
+              (role) => role.name
+            ),
+          readNeonProjects: (organization) => readNeonProjects(neon, organization),
+          readTigris: async (id) => {
+            const item = await tigris((client) => client.readTigris(id));
+            return { appId: item.appId, appName: item.appName };
+          },
+          readSecretNames: async (name) =>
+            (await readFlySecretInventory(fly, name)).map((item) => item.name),
+          runSshNoOp: async (name) =>
+            void (await runProviderCommand({
+              ...fly,
+              timeoutMs: SSH_PROBE_TIMEOUT_MS,
+              args: ['ssh', 'console', '--app', name, '--command', 'true'],
+              parse: () => undefined,
+            })),
+          unknownAppName: () => `dorkos-gate-absent-${randomBytes(12).toString('hex')}`,
+        })
+      );
       cleanup = await cleanupCommunityLiveGate(journal, {
         readFlyApps: async (organization) =>
           (await readFlyApps(fly, organization)).map((item) => ({

@@ -126,7 +126,9 @@ describe('credentialed live gate entrypoint', () => {
       'utf8'
     );
     const main = source.slice(source.indexOf('async function main()'));
-    const probes = main.indexOf('await probeCommunityLiveProvenance(journal,');
+    const probes = main.indexOf(
+      'provenance = await guardCommunityLiveProvenance(() =>\n        probeCommunityLiveProvenance(journal, {'
+    );
     const cleanup = main.indexOf('await cleanupCommunityLiveGate(');
     const cleanedUp = main.indexOf('cleanedUp = true;');
     const network = main.indexOf('await probeCommunityLiveNetworkAfterCleanup(');
@@ -135,5 +137,10 @@ describe('credentialed live gate entrypoint', () => {
     expect(network).toBeGreaterThan(cleanedUp);
     expect(main).toMatch(/provenance: \{ \.\.\.provenance, networkAfterCleanup \}/u);
     expect(main).toContain("args: ['ssh', 'console', '--app', name, '--command', 'true']");
+    // Every probe call, including the unknown-app name, runs inside the guard's callback.
+    const guarded = main.slice(probes, cleanup);
+    expect(guarded).toContain('unknownAppName: () =>');
+    expect(main.slice(0, probes)).not.toContain('probeCommunityLiveProvenance(');
+    expect(main.slice(0, probes)).not.toContain('unknownAppName');
   });
 });

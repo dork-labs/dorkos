@@ -130,6 +130,8 @@ export interface GraphqlEnvelopeSummary {
 
 /** What the gate observed about the markers and their surroundings, before cleanup. */
 export interface CommunityLiveProvenanceReceipt {
+  /** Version of this block's shape, so the gate-flip PR can cite fields unambiguously. */
+  schema: 1;
   fly: Probe<{
     network: string | null;
     journaledNetwork: string | null;
@@ -141,6 +143,11 @@ export interface CommunityLiveProvenanceReceipt {
   flyNetworkHandle: Probe<{
     networkId: number | null;
     networkNodeIds: string[];
+    /**
+     * Whether `node(id)` resolved the first saved id to this app's network before cleanup. Only
+     * then can a `null` answer after cleanup mean the network is gone.
+     */
+    nodeReadableBeforeCleanup: boolean;
   }>;
   neon: Probe<{
     journaledRole: string | null;
@@ -163,13 +170,44 @@ export type CommunityLiveNetworkAfterCleanup =
   | { status: 'gone'; networkNodeId: string }
   | { status: 'unknown'; reason: string; summary?: GraphqlEnvelopeSummary };
 
-function failureCode(error: unknown): string {
-  const code =
-    error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : '';
-  if (typeof code === 'string' && SAFE_CODE.test(code)) return code;
-  const step =
-    error && typeof error === 'object' && 'step' in error ? (error as { step: unknown }).step : '';
-  return typeof step === 'string' && SAFE_CODE.test(step) ? step : 'ERROR';
+/**
+ * Where a failure came from, so one code can never mean two things in a receipt: `proc` is a
+ * bounded CLI process (`fly`, `neonctl`), `gql` the launcher's own Fly GraphQL client, `http` this
+ * module's raw read, `session` the Fly session and secret reads, `probe` a check in this module,
+ * `journal` a missing journal identity, `guard` the wrapper that bounds the whole probe run.
+ */
+const FAILURE_SOURCES: Readonly<Record<string, string>> = {
+  ProviderCommandError: 'proc',
+  ProviderMutationError: 'proc',
+  FlyGraphqlClientError: 'gql',
+  FlyGraphqlContractError: 'gql',
+  TigrisSessionError: 'session',
+  CommunityLiveGraphqlError: 'http',
+  CommunityLiveProbeError: 'probe',
+  CommunityLiveGateError: 'gate',
+  ZodError: 'input',
+};
+
+/** A stable failure raised by this module, named so its receipt code carries its source. */
+function liveError(name: 'CommunityLiveGraphqlError' | 'CommunityLiveProbeError', code: string) {
+  const error = new Error(`Community live provenance probe failed (${code})`);
+  error.name = name;
+  return Object.assign(error, { code });
+}
+
+/**
+ * The receipt code for a failure: `<source>:<code>`, with no provider text.
+ *
+ * @param error - Anything a probe threw.
+ */
+export function failureCode(error: unknown): string {
+  const record = error && typeof error === 'object' ? (error as Record<string, unknown>) : {};
+  const name = typeof record.name === 'string' ? record.name : '';
+  const source = FAILURE_SOURCES[name] ?? 'err';
+  for (const candidate of [record.code, record.step]) {
+    if (typeof candidate === 'string' && SAFE_CODE.test(candidate)) return `${source}:${candidate}`;
+  }
+  return `${source}:ERROR`;
 }
 
 async function probe<T>(read: () => Promise<T>): Promise<({ ok: true } & T) | ProbeFailure> {
@@ -260,13 +298,11 @@ export async function readFlyGraphql(input: {
       signal: AbortSignal.timeout(input.timeoutMs ?? REQUEST_TIMEOUT_MS),
     });
   } catch {
-    throw Object.assign(new Error('Fly GraphQL request failed'), { code: 'FLY_GRAPHQL_REQUEST' });
+    throw liveError('CommunityLiveGraphqlError', 'FLY_GRAPHQL_REQUEST');
   }
   if (!response.ok || !response.body) {
     await response.body?.cancel().catch(() => undefined);
-    throw Object.assign(new Error('Fly GraphQL request failed'), {
-      code: `FLY_GRAPHQL_HTTP_${response.status}`,
-    });
+    throw liveError('CommunityLiveGraphqlError', `FLY_GRAPHQL_HTTP_${response.status}`);
   }
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -278,9 +314,7 @@ export async function readFlyGraphql(input: {
       size += value.byteLength;
       if (size > MAX_RESPONSE_BYTES) {
         await reader.cancel().catch(() => undefined);
-        throw Object.assign(new Error('Fly GraphQL response too large'), {
-          code: 'FLY_GRAPHQL_RESPONSE_LIMIT',
-        });
+        throw liveError('CommunityLiveGraphqlError', 'FLY_GRAPHQL_RESPONSE_LIMIT');
       }
       chunks.push(value);
     }
@@ -290,9 +324,7 @@ export async function readFlyGraphql(input: {
   try {
     return JSON.parse(Buffer.concat(chunks, size).toString('utf8')) as unknown;
   } catch {
-    throw Object.assign(new Error('Fly GraphQL response unreadable'), {
-      code: 'FLY_GRAPHQL_JSON',
-    });
+    throw liveError('CommunityLiveGraphqlError', 'FLY_GRAPHQL_JSON');
   }
 }
 
@@ -302,7 +334,7 @@ function networkHandle(envelope: unknown, network: string | null) {
       ? envelope.data.app
       : null;
   if (!app) {
-    throw Object.assign(new Error('App network unreadable'), { code: 'APP_NETWORK_UNREADABLE' });
+    throw liveError('CommunityLiveProbeError', 'APP_NETWORK_UNREADABLE');
   }
   const nodes =
     isRecord(app.ipAddresses) && Array.isArray(app.ipAddresses.nodes) ? app.ipAddresses.nodes : [];
@@ -317,6 +349,15 @@ function networkHandle(envelope: unknown, network: string | null) {
     networkId: Number.isSafeInteger(app.networkId) ? (app.networkId as number) : null,
     networkNodeIds: [...networkNodeIds].sort(),
   };
+}
+
+/** The network name a clean `node(id)` answer resolves to, or `null` for anything else. */
+function readNetworkNode(envelope: unknown): string | null {
+  if (summarizeGraphqlEnvelope(envelope, 'node').errorCount > 0) return null;
+  const node = isRecord(envelope) && isRecord(envelope.data) ? envelope.data.node : undefined;
+  return isRecord(node) && node.__typename === 'Network' && typeof node.name === 'string'
+    ? node.name
+    : null;
 }
 
 /**
@@ -335,12 +376,12 @@ export async function probeCommunityLiveProvenance(
   const appName = journal.recoveryContext?.appName;
   const journaledNetwork = safeValue(journal.provenance?.flyNetwork);
   const journaledRole = safeValue(journal.resources.neonRoleId);
-  const missing = (code: string): ProbeFailure => ({ ok: false, code });
+  const missing = (code: string): ProbeFailure => ({ ok: false, code: `journal:${code}` });
 
   const fly = appName
     ? await probe(async () => {
         const app = await dependencies.readAppProvenance(appName);
-        if (!app) throw Object.assign(new Error('App not found'), { code: 'APP_NOT_FOUND' });
+        if (!app) throw liveError('CommunityLiveProbeError', 'APP_NOT_FOUND');
         return {
           network: safeValue(app.network),
           journaledNetwork,
@@ -353,12 +394,22 @@ export async function probeCommunityLiveProvenance(
     : missing('JOURNAL_APP_NAME');
   const network = fly.ok ? fly.network : null;
   const flyNetworkHandle = appName
-    ? await probe(async () =>
-        networkHandle(
+    ? await probe(async () => {
+        const handle = networkHandle(
           await dependencies.flyGraphql(FLY_GATE_APP_NETWORK_QUERY, { name: appName }),
           network
-        )
-      )
+        );
+        const first = handle.networkNodeIds[0];
+        // Nothing shows that `node(id)` can resolve a Network at all. Ask once while the app still
+        // exists: only an id that answers as this network can make a later `null` mean "gone".
+        const nodeReadableBeforeCleanup =
+          first !== undefined &&
+          network !== null &&
+          readNetworkNode(
+            await dependencies.flyGraphql(FLY_GATE_NETWORK_NODE_QUERY, { id: first })
+          ) === network;
+        return { ...handle, nodeReadableBeforeCleanup };
+      })
     : missing('JOURNAL_APP_NAME');
 
   const { neonProjectId, neonBranchId, tigrisBucketId, flyAppId } = journal.resources;
@@ -408,7 +459,8 @@ export async function probeCommunityLiveProvenance(
   let launcherRead: CommunityLiveProvenanceReceipt['unknownApp']['launcherRead'];
   try {
     const found = await dependencies.readAppProvenance(unknownName);
-    launcherRead = found === null ? { result: 'null' } : { result: 'error', code: 'APP_FOUND' };
+    launcherRead =
+      found === null ? { result: 'null' } : { result: 'error', code: 'probe:APP_FOUND' };
   } catch (error) {
     launcherRead = { result: 'error', code: failureCode(error) };
   }
@@ -420,6 +472,7 @@ export async function probeCommunityLiveProvenance(
   }));
 
   return {
+    schema: 1,
     fly,
     flyNetworkHandle,
     neon,
@@ -448,6 +501,9 @@ export async function probeCommunityLiveNetworkAfterCleanup(
   }
   const networkNodeId = before.flyNetworkHandle.networkNodeIds[0];
   if (networkNodeId === undefined) return { status: 'unknown', reason: 'no-network-node-id' };
+  if (!before.flyNetworkHandle.nodeReadableBeforeCleanup) {
+    return { status: 'unknown', reason: 'node-unreadable-before-cleanup' };
+  }
   const network = before.fly.ok ? before.fly.network : null;
   let envelope: unknown;
   try {
@@ -469,4 +525,51 @@ export async function probeCommunityLiveNetworkAfterCleanup(
     return { status: 'left-behind', networkNodeId };
   }
   return { status: 'unknown', reason: 'unexpected-answer', summary };
+}
+
+/** A receipt in which every probe failed with the same code; used when the run itself failed. */
+export function failedProvenanceReceipt(code: string): CommunityLiveProvenanceReceipt {
+  const failed: ProbeFailure = { ok: false, code };
+  return {
+    schema: 1,
+    fly: failed,
+    flyNetworkHandle: failed,
+    neon: failed,
+    tigrisBinding: failed,
+    tigrisSecrets: failed,
+    sshOnCustomNetwork: failed,
+    unknownApp: { launcherRead: { result: 'error', code }, envelope: failed },
+  };
+}
+
+/** Longest the gate waits for the whole probe run before it moves on to cleanup. */
+export const PROVENANCE_PROBE_DEADLINE_MS = 8 * 60_000;
+
+/**
+ * Run the probes so that cleanup never depends on them: a throw becomes `guard:PROBE_THREW` and a
+ * run that has not settled by the deadline becomes `guard:PROBE_DEADLINE`. Resolves; never rejects.
+ *
+ * @param run - The probe run, started inside this guard so even a synchronous throw is caught.
+ * @param deadlineMs - Overall deadline.
+ */
+export async function guardCommunityLiveProvenance(
+  run: () => Promise<CommunityLiveProvenanceReceipt>,
+  deadlineMs: number = PROVENANCE_PROBE_DEADLINE_MS
+): Promise<CommunityLiveProvenanceReceipt> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<CommunityLiveProvenanceReceipt>((resolve) => {
+    timer = setTimeout(() => resolve(failedProvenanceReceipt('guard:PROBE_DEADLINE')), deadlineMs);
+  });
+  const guarded = (async () => {
+    try {
+      return await run();
+    } catch {
+      return failedProvenanceReceipt('guard:PROBE_THREW');
+    }
+  })();
+  try {
+    return await Promise.race([guarded, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
 }

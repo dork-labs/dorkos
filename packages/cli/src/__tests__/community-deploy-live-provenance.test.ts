@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  failedProvenanceReceipt,
+  failureCode,
+  guardCommunityLiveProvenance,
   FLY_GATE_APP_NETWORK_QUERY,
   FLY_GATE_NETWORK_NODE_QUERY,
   FLY_GATE_UNKNOWN_APP_QUERY,
@@ -79,7 +82,9 @@ function dependencies(): CommunityLiveProvenanceDependencies & {
               },
             },
           }
-        : unknownEnvelope
+        : query === FLY_GATE_NETWORK_NODE_QUERY
+          ? { data: { node: { __typename: 'Network', name: NETWORK } } }
+          : unknownEnvelope
     ),
     readNeonRoleNames: vi.fn(async () => [ROLE]),
     readNeonProjects: vi.fn(async () => [
@@ -98,6 +103,7 @@ describe('live gate provenance receipt', () => {
     const boundary = dependencies();
     const receipt = await probeCommunityLiveProvenance(journal, boundary);
     expect(receipt).toEqual({
+      schema: 1,
       fly: {
         ok: true,
         network: NETWORK,
@@ -107,7 +113,12 @@ describe('live gate provenance receipt', () => {
         internalNumericIdPresent: true,
         createdAt: '2026-09-24T10:31:07Z',
       },
-      flyNetworkHandle: { ok: true, networkId: 77, networkNodeIds: ['net-node-1'] },
+      flyNetworkHandle: {
+        ok: true,
+        networkId: 77,
+        networkNodeIds: ['net-node-1'],
+        nodeReadableBeforeCleanup: true,
+      },
       neon: {
         ok: true,
         journaledRole: ROLE,
@@ -180,15 +191,16 @@ describe('live gate provenance receipt', () => {
     boundary.runSshNoOp.mockRejectedValue(withText('EXIT'));
     const receipt = await probeCommunityLiveProvenance(journal, boundary);
     expect(receipt).toEqual({
-      fly: { ok: false, code: 'INVALID_RESPONSE' },
-      flyNetworkHandle: { ok: false, code: 'FLY_GRAPHQL_HTTP_500' },
-      neon: { ok: false, code: 'EXIT' },
-      tigrisBinding: { ok: false, code: 'ERROR' },
-      tigrisSecrets: { ok: false, code: 'TIMEOUT' },
-      sshOnCustomNetwork: { ok: false, code: 'EXIT' },
+      schema: 1,
+      fly: { ok: false, code: 'gql:INVALID_RESPONSE' },
+      flyNetworkHandle: { ok: false, code: 'err:FLY_GRAPHQL_HTTP_500' },
+      neon: { ok: false, code: 'err:EXIT' },
+      tigrisBinding: { ok: false, code: 'err:ERROR' },
+      tigrisSecrets: { ok: false, code: 'err:TIMEOUT' },
+      sshOnCustomNetwork: { ok: false, code: 'err:EXIT' },
       unknownApp: {
-        launcherRead: { result: 'error', code: 'INVALID_RESPONSE' },
-        envelope: { ok: false, code: 'FLY_GRAPHQL_HTTP_500' },
+        launcherRead: { result: 'error', code: 'gql:INVALID_RESPONSE' },
+        envelope: { ok: false, code: 'err:FLY_GRAPHQL_HTTP_500' },
       },
     });
     expect(JSON.stringify(receipt)).not.toContain('secret-value');
@@ -224,10 +236,10 @@ describe('live gate provenance receipt', () => {
   it('never probes without the journal identities it needs', async () => {
     const boundary = dependencies();
     const receipt = await probeCommunityLiveProvenance({ resources: {} }, boundary);
-    expect(receipt.fly).toEqual({ ok: false, code: 'JOURNAL_APP_NAME' });
-    expect(receipt.neon).toEqual({ ok: false, code: 'JOURNAL_NEON_IDENTITY' });
-    expect(receipt.tigrisBinding).toEqual({ ok: false, code: 'JOURNAL_TIGRIS_IDENTITY' });
-    expect(receipt.sshOnCustomNetwork).toEqual({ ok: false, code: 'JOURNAL_APP_NAME' });
+    expect(receipt.fly).toEqual({ ok: false, code: 'journal:JOURNAL_APP_NAME' });
+    expect(receipt.neon).toEqual({ ok: false, code: 'journal:JOURNAL_NEON_IDENTITY' });
+    expect(receipt.tigrisBinding).toEqual({ ok: false, code: 'journal:JOURNAL_TIGRIS_IDENTITY' });
+    expect(receipt.sshOnCustomNetwork).toEqual({ ok: false, code: 'journal:JOURNAL_APP_NAME' });
     expect(boundary.runSshNoOp).not.toHaveBeenCalled();
     expect(boundary.readTigris).not.toHaveBeenCalled();
   });
@@ -293,6 +305,39 @@ describe('live gate network check after cleanup', () => {
     });
   });
 
+  // Nothing shows Fly's node(id) resolves a Network at all. A null after cleanup can only mean
+  // "gone" if the same read answered as this network while the app still existed.
+  it.each([
+    ['null', { data: { node: null } }],
+    ['another type', { data: { node: { __typename: 'App' } } }],
+    ['another network', { data: { node: { __typename: 'Network', name: 'default' } } }],
+    ['an error entry', { data: { node: { __typename: 'Network', name: NETWORK } }, errors: [{}] }],
+  ])(
+    'reports unknown, never gone, when node(id) answered %s before cleanup',
+    async (_label, answer) => {
+      const boundary = dependencies();
+      const base = dependencies().flyGraphql as (
+        query: string,
+        variables: Readonly<Record<string, string>>
+      ) => Promise<unknown>;
+      boundary.flyGraphql.mockImplementation(
+        async (query: string, variables: Readonly<Record<string, string>>) =>
+          query === FLY_GATE_NETWORK_NODE_QUERY ? answer : base(query, variables)
+      );
+      const receipt = await before(boundary);
+      expect(receipt.flyNetworkHandle).toMatchObject({
+        ok: true,
+        nodeReadableBeforeCleanup: false,
+      });
+      const read = vi.fn(async () => ({ data: { node: null } }));
+      await expect(probeCommunityLiveNetworkAfterCleanup(receipt, read)).resolves.toEqual({
+        status: 'unknown',
+        reason: 'node-unreadable-before-cleanup',
+      });
+      expect(read).not.toHaveBeenCalled();
+    }
+  );
+
   it('reports unknown without a read when no IP address exposed the network', async () => {
     const boundary = dependencies();
     boundary.flyGraphql.mockImplementation(async (query: string) =>
@@ -313,7 +358,7 @@ describe('live gate network check after cleanup', () => {
     });
     await expect(probeCommunityLiveNetworkAfterCleanup(await before(), read)).resolves.toEqual({
       status: 'unknown',
-      reason: 'read-FLY_GRAPHQL_REQUEST',
+      reason: 'read-err:FLY_GRAPHQL_REQUEST',
     });
   });
 });
@@ -343,5 +388,87 @@ describe('live gate raw Fly read', () => {
       expect(String((failed as Error).message)).not.toContain('tok-123');
       expect((failed as { code: string }).code).toMatch(/^FLY_GRAPHQL_/u);
     }
+  });
+});
+
+describe('live gate receipt codes', () => {
+  it('prefixes every failure code with where it came from', async () => {
+    const { ProviderCommandError } =
+      await import('../commands/community-deploy/provider-process.js');
+    const { TigrisSessionError } = await import('../commands/community-deploy/tigris-session.js');
+    expect(failureCode(new ProviderCommandError('TIMEOUT'))).toBe('proc:TIMEOUT');
+    expect(failureCode(new FlyGraphqlClientError('PROVIDER_UNAVAILABLE'))).toBe(
+      'gql:PROVIDER_UNAVAILABLE'
+    );
+    expect(failureCode(new TigrisSessionError('INVALID_INPUT'))).toBe('session:INVALID_INPUT');
+    const raw = await readFlyGraphql({
+      accessToken: 't',
+      query: 'q',
+      variables: {},
+      fetch: vi.fn(async () => new Response('', { status: 502 })),
+    }).catch((error: unknown) => error);
+    expect(failureCode(raw)).toBe('http:FLY_GRAPHQL_HTTP_502');
+    expect(failureCode(new Error('text only'))).toBe('err:ERROR');
+    expect(failureCode(Object.assign(new Error('x'), { code: 'has spaces' }))).toBe('err:ERROR');
+  });
+});
+
+describe('live gate probe guard', () => {
+  it('passes a finished receipt through unchanged', async () => {
+    const receipt = await probeCommunityLiveProvenance(journal, dependencies());
+    await expect(guardCommunityLiveProvenance(async () => receipt, 1_000)).resolves.toBe(receipt);
+  });
+
+  it('turns a rejected, a synchronously thrown and a throwing name probe into PROBE_THREW', async () => {
+    const throwingName = dependencies();
+    throwingName.unknownAppName.mockImplementation(() => {
+      throw new Error('boom');
+    });
+    for (const run of [
+      async () => {
+        throw new Error('boom');
+      },
+      () => {
+        throw new Error('sync boom');
+      },
+      () => probeCommunityLiveProvenance(journal, throwingName),
+    ]) {
+      await expect(
+        guardCommunityLiveProvenance(run as () => Promise<never>, 1_000)
+      ).resolves.toEqual(failedProvenanceReceipt('guard:PROBE_THREW'));
+    }
+  });
+
+  it('gives up on a probe run that never settles at the deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = guardCommunityLiveProvenance(() => new Promise(() => undefined), 8 * 60_000);
+      await vi.advanceTimersByTimeAsync(8 * 60_000);
+      await expect(pending).resolves.toEqual(failedProvenanceReceipt('guard:PROBE_DEADLINE'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The same order main uses: guard, then cleanup. A throwing or hanging probe still reaches it.
+  it.each([
+    ['throws', () => Promise.reject(new Error('boom'))],
+    ['never settles', () => new Promise<never>(() => undefined)],
+  ])('still reaches cleanup when the probe run %s', async (_label, run) => {
+    const cleanup = vi.fn(async () => ({ cleaned: ['x'], retained: [] }));
+    const flow = async () => {
+      const provenance = await guardCommunityLiveProvenance(run, 50);
+      const receipt = await cleanup();
+      return { provenance, receipt };
+    };
+    const result = await flow();
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(result.provenance.fly).toMatchObject({
+      ok: false,
+      code: expect.stringMatching(/^guard:/u),
+    });
+    await expect(
+      probeCommunityLiveNetworkAfterCleanup(result.provenance, vi.fn())
+    ).resolves.toMatchObject({ status: 'unknown' });
   });
 });
