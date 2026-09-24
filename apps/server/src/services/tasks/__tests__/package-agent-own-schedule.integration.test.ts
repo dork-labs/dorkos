@@ -36,6 +36,7 @@ import { skillsRoot } from './task-root-fixtures.js';
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
 import {
   computeInstalledFiles,
+  readInstalledFiles,
   writeInstalledFiles,
 } from '../../marketplace/lib/installed-files.js';
 
@@ -186,5 +187,93 @@ describe('the schedule the package shipped, beside it', () => {
     const after = await sweep(shippedFile);
     expect(after.enabled).toBe(true);
     expect(after.status).toBe('active');
+  });
+});
+
+describe('a package schedule the record stops listing', () => {
+  /**
+   * Rewrite the record without the shipped schedule: a later version that no
+   * longer ships it, a rebuilt legacy record that could not prove it, or a
+   * hand-edited record. The file is the person's from then on.
+   */
+  async function releaseShippedFile() {
+    const record = (await readInstalledFiles(agentDir))!;
+    const { ['.agents/skills/package-sweep/SKILL.md']: _released, ...files } = record.files;
+    await writeInstalledFiles(agentDir, { ...record, files });
+  }
+
+  /** Discover, approve and switch on the shipped schedule, as a person does. */
+  async function approvedShipped(): Promise<Task> {
+    await patch(await sweep(shippedFile), { status: 'active', enabled: true });
+    return sweep(shippedFile);
+  }
+
+  it("keeps the person's OFF switch, and writes it into the file that is now theirs", async () => {
+    // Reviewer repro (DOR-2272): the switch lived on the row only while the
+    // file was the package's. The moment ownership lapsed, the sync copied the
+    // file's `enabled` (the package's default, on) back over a schedule the
+    // person had switched off, and it started running.
+    const approved = await approvedShipped();
+    await fs.writeFile(
+      shippedFile,
+      (await fs.readFile(shippedFile, 'utf-8')).replace('  enabled: false\n', ''),
+      'utf-8'
+    );
+    const onByFile = await sweep(shippedFile);
+    expect(onByFile.enabled).toBe(true);
+    await patch(approved, { enabled: false });
+    expect((await sweep(shippedFile)).enabled).toBe(false);
+
+    await releaseShippedFile();
+    const after = await sweep(shippedFile);
+
+    expect(after.enabled).toBe(false);
+    expect(after.packageOwned).toBeNull();
+    await vi.waitFor(async () =>
+      expect(await fs.readFile(shippedFile, 'utf-8')).toContain('enabled: false')
+    );
+  });
+
+  it('keeps an approved ON switch the person set on a schedule the package shipped off', async () => {
+    // The other direction: the person approved the package's off-by-default
+    // schedule, which switched it on on the row. Releasing the file must not
+    // switch it back off, and the file must now say what runs.
+    await approvedShipped();
+
+    await releaseShippedFile();
+    const after = await sweep(shippedFile);
+
+    expect(after.enabled).toBe(true);
+    await vi.waitFor(async () =>
+      expect(await fs.readFile(shippedFile, 'utf-8')).not.toContain('enabled: false')
+    );
+  });
+
+  it('keeps an OFF switch even when the same sync finds new work to approve', async () => {
+    // A later version can stop listing the file AND change what it does in one
+    // update. The schedule parks for approval, and it must park switched off,
+    // as the person left it, not switched on by the package's default.
+    const approved = await approvedShipped();
+    await patch(approved, { enabled: false });
+    expect((await sweep(shippedFile)).enabled).toBe(false);
+    await fs.writeFile(
+      shippedFile,
+      (await fs.readFile(shippedFile, 'utf-8'))
+        .replace('  enabled: false\n', '')
+        .replace(/The package sweeps\.$/, 'The package sweeps harder.'),
+      'utf-8'
+    );
+
+    await releaseShippedFile();
+    const after = await sweep(shippedFile);
+
+    expect(after.status).toBe('pending_approval');
+    expect(after.enabled).toBe(false);
+  });
+
+  it('records ownership on the row as discovery finds it', async () => {
+    // The app shows ownership before an edit, so the row must carry it.
+    expect((await sweep(shippedFile)).packageOwned).toBe('record');
+    expect((await sweep(ownFile)).packageOwned).toBeNull();
   });
 });

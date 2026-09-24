@@ -44,6 +44,7 @@ import {
   type ScheduleBlock,
 } from '@dorkos/skills';
 import { parseSkillFile, readRawFrontmatter } from '@dorkos/skills/parser';
+import { writeSkillFile } from '@dorkos/skills/writer';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
 import { matchesUserEditable } from '@dorkos/marketplace';
@@ -317,20 +318,27 @@ export function rootPackageOwnershipContext(root: TaskRoot): PackageOwnershipCon
 }
 
 /**
- * Whether a file discovered in a skills root belongs to an installed package —
- * {@link isPackageOwned}, asked the way discovery can ask it.
+ * Whether a file discovered in a skills root belongs to an installed package,
+ * and how that is known — {@link packageOwnershipOf}, asked the way discovery
+ * can ask it.
  *
  * Discovery asks because ownership decides more than whether DorkOS may WRITE
  * the file: a file DorkOS refuses to write can never record a person's decision
  * to switch its schedule on, so that decision lives on the row and the sync must
- * not overwrite it (FB-26, `file-sync-gates.ts`).
+ * not overwrite it (FB-26, `file-sync-gates.ts`); and the row keeps the answer,
+ * so the sync sees the moment a file stops being a package's, and the app can
+ * show it (DOR-2272).
  *
  * @param filePath - The schedule's file, already resolved by discovery.
  * @param root - The skills root it was discovered in.
- * @returns True when an installed package owns it.
+ * @returns How a package owns it, or `null` when the file is the person's.
  */
-export async function isPackageOwnedInRoot(filePath: string, root: TaskRoot): Promise<boolean> {
-  return isPackageOwned(filePath, rootPackageOwnershipContext(root));
+export async function packageOwnershipInRoot(
+  filePath: string,
+  root: TaskRoot
+): Promise<PackageOwnershipKind | null> {
+  const ownership = await packageOwnershipOf(filePath, rootPackageOwnershipContext(root));
+  return ownership.owned ? ownership.by : null;
 }
 
 /**
@@ -345,13 +353,28 @@ export async function isPackageOwnedInRoot(filePath: string, root: TaskRoot): Pr
  */
 const PACKAGE_MARKERS = [PACKAGE_MANIFEST_PATH, INSTALL_METADATA_PATH];
 
+/** How a package's ownership of a file is known: its record, or the legacy answer. */
+export type PackageOwnershipKind = 'record' | 'legacy';
+
 /**
  * Who a schedule's file belongs to, and how DorkOS knows.
  *
  * `record`: the install root's installed-files record lists it. `legacy`: the
  * install predates records and the location-and-marker answer claimed it.
+ * `packageName` and `agentOwned` exist so a refusal can name the right owner: a
+ * path under an agent can lead, through a Harness Sync link, into a plugin that
+ * is not that agent's package at all.
  */
-export type PackageOwnership = { owned: false } | { owned: true; by: 'record' | 'legacy' };
+export type PackageOwnership =
+  | { owned: false }
+  | {
+      owned: true;
+      by: PackageOwnershipKind;
+      /** The owning package's name, from its record or manifest. */
+      packageName: string;
+      /** True when the owning install is the schedule's own agent directory. */
+      agentOwned: boolean;
+    };
 
 /** An install root a file sits in, and how to answer for it without a record. */
 interface CandidateInstall {
@@ -359,6 +382,8 @@ interface CandidateInstall {
   installRoot: string;
   /** With no record: `location` claims the file outright; `marker` needs a marker. */
   legacy: 'location' | 'marker';
+  /** Whether this install root is the owning agent's own directory. */
+  agentOwned: boolean;
 }
 
 /**
@@ -411,14 +436,16 @@ export async function packageOwnershipOf(
   const resolvedFile = await resolveThroughExisting(filePath);
   for (const candidate of await candidateInstalls(resolvedFile, ctx)) {
     const record = await readInstalledFiles(candidate.installRoot);
+    const { agentOwned } = candidate;
     if (record) {
       if (recordClaims(record, toPosix(path.relative(candidate.installRoot, resolvedFile)))) {
-        return { owned: true, by: 'record' };
+        return { owned: true, by: 'record', packageName: record.package.name, agentOwned };
       }
       continue;
     }
     if (candidate.legacy === 'location' || (await hasPackageMarker(candidate.installRoot))) {
-      return { owned: true, by: 'legacy' };
+      const packageName = await legacyPackageName(candidate.installRoot);
+      return { owned: true, by: 'legacy', packageName, agentOwned };
     }
   }
   return { owned: false };
@@ -439,6 +466,24 @@ export async function isPackageOwned(
   return (await packageOwnershipOf(filePath, ctx)).owned;
 }
 
+/**
+ * The name an install without a record goes by: its DorkOS manifest's, else its
+ * Claude Code manifest's, else its directory's.
+ */
+async function legacyPackageName(installRoot: string): Promise<string> {
+  for (const manifest of [PACKAGE_MANIFEST_PATH, '.claude-plugin/plugin.json']) {
+    try {
+      const parsed = JSON.parse(await fs.readFile(path.join(installRoot, manifest), 'utf-8')) as {
+        name?: unknown;
+      };
+      if (typeof parsed.name === 'string' && parsed.name.trim() !== '') return parsed.name;
+    } catch {
+      // Missing or unreadable; the next source may still name it.
+    }
+  }
+  return path.basename(installRoot);
+}
+
 /** Whether a record says its package's next install puts its own copy of `rel` back. */
 function recordClaims(record: InstalledFiles, rel: string): boolean {
   if (record.uninstalledAt !== undefined) return false;
@@ -457,8 +502,10 @@ async function candidateInstalls(
   ctx: PackageOwnershipContext
 ): Promise<CandidateInstall[]> {
   const found = new Map<string, CandidateInstall>();
+  const resolvedAgent = ctx.agentDir === undefined ? undefined : await resolveOrSelf(ctx.agentDir);
   const add = (installRoot: string, legacy: CandidateInstall['legacy']) => {
-    if (!found.has(installRoot)) found.set(installRoot, { installRoot, legacy });
+    if (found.has(installRoot)) return;
+    found.set(installRoot, { installRoot, legacy, agentOwned: installRoot === resolvedAgent });
   };
   for (const [roots, legacy] of [
     [ctx.packageOnlyRoots, 'location'],
@@ -475,9 +522,8 @@ async function candidateInstalls(
       if (inside.length > 0) add(path.join(resolvedRoot, installDir), legacy);
     }
   }
-  if (ctx.agentDir !== undefined) {
-    const resolvedAgent = await resolveOrSelf(ctx.agentDir);
-    if (resolvedFile.startsWith(resolvedAgent + path.sep)) add(resolvedAgent, 'marker');
+  if (resolvedAgent !== undefined && resolvedFile.startsWith(resolvedAgent + path.sep)) {
+    add(resolvedAgent, 'marker');
   }
   return [...found.values()];
 }
@@ -513,6 +559,39 @@ async function resolveThroughExisting(target: string): Promise<string> {
     if (parent === target) return target;
     return path.join(await resolveThroughExisting(parent), path.basename(target));
   }
+}
+
+/**
+ * Write the row's switch into a schedule file that has just stopped being a
+ * package's, when the two disagree (DOR-2272).
+ *
+ * While a package owned the file, DorkOS kept the person's switch on the row
+ * because it would not write the file (FB-26). The sync that finds the file is
+ * now the person's keeps that switch rather than copying the file's over it
+ * (`FileSyncGates.keepsRowEnabled`), and this writes it where it belongs, so
+ * the file says what runs and the next sync reads it back unchanged. Any other
+ * disagreement cannot reach here: for a file that is not a package's, the sync
+ * copies the file's switch to the row.
+ *
+ * A file DorkOS cannot fully read is left alone, as every other write does.
+ *
+ * @param task - The row as the sync just left it.
+ * @param def - The file as discovery parsed it.
+ * @param ownership - Discovery's answer; only `null` (the person's file) writes.
+ * @returns True when the file was rewritten.
+ */
+export async function carrySwitchIntoReleasedFile(
+  task: { enabled: boolean },
+  def: { filePath: string; meta: { schedule: { enabled: boolean } } },
+  ownership: 'record' | 'legacy' | null
+): Promise<boolean> {
+  if (ownership !== null || task.enabled === def.meta.schedule.enabled) return false;
+  const content = await fs.readFile(def.filePath, 'utf-8');
+  const plan = planTaskFileUpdate(def.filePath, content, { enabled: task.enabled });
+  if (plan.kind === 'refuse') return false;
+  const dirPath = path.dirname(def.filePath);
+  await writeSkillFile(path.dirname(dirPath), path.basename(dirPath), plan.frontmatter, plan.body);
+  return true;
 }
 
 /** `fs.realpath`, falling back to the path itself when it cannot be resolved. */

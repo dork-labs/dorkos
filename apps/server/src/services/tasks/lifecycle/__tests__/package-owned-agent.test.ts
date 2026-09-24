@@ -202,6 +202,9 @@ describe.each(Object.entries(SCOPES))('a recorded agent package at %s scope', (_
 
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
+    expect(!outcome.ok && outcome.ownedBy).toBe('record');
+    expect(!outcome.ok && outcome.error).toContain('came with the "helper" package');
+    expect(!outcome.ok && outcome.error).toContain('make your own copy');
     expect(await fs.readFile(filePath, 'utf-8')).toContain('packaged prompt');
   });
 
@@ -280,6 +283,31 @@ describe('a recorded agent package, edge cases', () => {
     expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
   });
 
+  it('names the package that really owns a path linked into another checkout', async () => {
+    // A Harness Sync link from the agent's skills root into a plugin. The
+    // refusal is the plugin's, not "this agent's package" (DOR-2272 review).
+    await makeAgent(agentDir(), 'recorded');
+    const pluginSkill = path.join(dorkHome, 'plugins', 'pack', 'skills', 'drain');
+    await fs.mkdir(pluginSkill, { recursive: true });
+    await fs.writeFile(path.join(pluginSkill, 'SKILL.md'), SKILL, 'utf-8');
+    await writeInstalledFiles(
+      path.join(dorkHome, 'plugins', 'pack'),
+      await computeInstalledFiles(path.join(dorkHome, 'plugins', 'pack'), {
+        identity: { name: 'pack', type: 'plugin' },
+        userEditable: [],
+        npmRan: false,
+      })
+    );
+    await fs.rm(path.join(pluginSkill, 'SKILL.md'));
+    await fs.symlink(pluginSkill, path.join(agentDir(), '.agents', 'skills', 'pack-drain'));
+
+    const outcome = await createSchedule(agentDir(), 'pack-drain');
+
+    expect(outcome.ok).toBe(false);
+    expect(!outcome.ok && outcome.error).toContain('The "pack" package already has');
+    expect(!outcome.ok && outcome.error).not.toContain("This agent's package");
+  });
+
   it('claims nothing once the package is uninstalled', async () => {
     // An uninstall leaves a pruned record (`uninstalledAt`) listing the edited
     // files it kept. No package is there to put anything back.
@@ -311,6 +339,11 @@ describe('an agent package installed before records existed', () => {
 
       expect(outcome.ok).toBe(false);
       expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
+      // Not "came with a package": the refusal is about DorkOS not knowing yet,
+      // it says when that ends, and it offers no copy (DOR-2272 review).
+      expect(!outcome.ok && outcome.ownedBy).toBe('legacy');
+      expect(!outcome.ok && outcome.error).toContain("after the package's next update");
+      expect(!outcome.ok && outcome.error).not.toContain('make your own copy');
     }
   );
 
@@ -324,7 +357,8 @@ describe('an agent package installed before records existed', () => {
 
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
-    expect(!outcome.ok && outcome.error).toContain('Update or reinstall the package once');
+    expect(!outcome.ok && outcome.error).toContain('This will work after that update.');
+    expect(!outcome.ok && outcome.ownedBy).toBe('legacy');
     await expect(fs.access(scheduleFile(agentDir, 'my-own-sweep'))).rejects.toThrow();
   });
 });

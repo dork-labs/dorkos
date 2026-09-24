@@ -4547,6 +4547,22 @@ export const TaskSchema = z
      * value the person chose and their choice still stands.
      */
     timingOverridden: z.boolean().default(false),
+    /**
+     * Whether an installed package owns this schedule's file, as DorkOS last
+     * found it (DOR-2272).
+     *
+     * `record`: the package lists the file, so its next update puts its own copy
+     * back. DorkOS does not change what the schedule does; its switch and its
+     * timing can still be changed, and a person can make their own copy.
+     * `legacy`: the package was installed by an older DorkOS, which kept no list
+     * of its files, so DorkOS cannot yet tell them from the person's and treats
+     * the schedule the same way until the package's next update. `null`: the
+     * schedule is the person's own.
+     */
+    packageOwned: z.enum(['record', 'legacy']).nullable().default(null).openapi({
+      description:
+        "Whether an installed package owns this schedule's file: 'record' (the package lists it), 'legacy' (installed before DorkOS kept file lists), or null (the person's own).",
+    }),
     agentId: z.string().nullable().default(null),
     enabled: z.boolean(),
     /**

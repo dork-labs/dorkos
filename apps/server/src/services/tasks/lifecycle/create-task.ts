@@ -46,6 +46,7 @@ import {
   packageOwnershipContext,
   packageOwnershipOf,
   planTaskFileCreate,
+  type PackageOwnershipKind,
 } from '../task-file-update.js';
 import { broadcastTasksChanged } from '../task-sse-events.js';
 import type { TaskStore } from '../task-store.js';
@@ -107,6 +108,8 @@ export interface CreateScheduledTaskRefusal {
   error: string;
   /** A machine-readable code, on the refusals that carry one. */
   code?: string;
+  /** For `schedule_package_owned`: how the package's ownership is known (DOR-2272). */
+  ownedBy?: PackageOwnershipKind;
   /** Zod's flattened issues, on a schema refusal. */
   details?: unknown;
 }
@@ -314,17 +317,23 @@ export async function createScheduledTask(
     packageOwnershipContext(deps.dorkHome, home.projectPath)
   );
   if (ownership.owned) {
+    // Named for whoever really owns the path: under an agent, a skills entry can
+    // be a Harness Sync link into some other package's checkout.
+    const owner = ownership.agentOwned
+      ? `This agent's package`
+      : `The "${ownership.packageName}" package`;
     return {
       ok: false,
       status: 409,
       error:
         ownership.by === 'record'
-          ? `This agent's package already has a schedule called "${slug}", so DorkOS didn't ` +
-            `make another one with that name. Pick a different name.`
-          : `This agent's package was installed by an older version of DorkOS, so DorkOS can't ` +
-            `yet tell the package's files from yours, and a schedule made here could be lost at ` +
-            `the package's next update. Update or reinstall the package once, then try again.`,
+          ? `${owner} already has a schedule called "${slug}", so DorkOS didn't make another ` +
+            `one with that name. Pick a different name.`
+          : `${owner} was installed by an older version of DorkOS without a list of its files, ` +
+            `so DorkOS can't yet tell them from yours, and a schedule made here could be lost ` +
+            `at the package's next update. This will work after that update.`,
       code: 'schedule_package_owned',
+      ownedBy: ownership.by,
     };
   }
 

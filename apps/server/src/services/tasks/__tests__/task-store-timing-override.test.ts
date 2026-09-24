@@ -50,7 +50,7 @@ function definition(
 }
 
 /** The sync a package's file gets every five minutes. */
-const DISCOVERY = { source: 'discovery', packageOwned: true } as const;
+const DISCOVERY = { source: 'discovery', packageOwned: 'record' } as const;
 
 describe('a person’s own timing on a package’s schedule', () => {
   let db: Db;
@@ -245,8 +245,8 @@ describe('a person’s own timing on a package’s schedule', () => {
 
   describe('when the file stops being a package’s', () => {
     // An uninstall can leave the file in place, where it becomes the person's
-    // to edit. Discovery says so with `packageOwned: false`.
-    const UNOWNED = { source: 'discovery', packageOwned: false } as const;
+    // to edit. Discovery says so with `packageOwned: null`.
+    const UNOWNED = { source: 'discovery', packageOwned: null } as const;
 
     it('drops the override, so the file’s own timing runs and a hand edit takes effect', () => {
       // Purpose: kept, the override would beat every edit of the file's cron and

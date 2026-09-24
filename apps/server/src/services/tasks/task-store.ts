@@ -1458,6 +1458,10 @@ export class TaskStore {
           // The file is no longer a package's, so it is the one source of
           // timing again (DOR-2302, `FileSyncGates.dropsTimingOverride`).
           ...(dropsTimingOverride ? { cronOverride: null, timezoneOverride: null } : {}),
+          // Discovery's answer about who owns the file, kept so the next sync can
+          // see ownership lapse and the app can show it (DOR-2272). A write that
+          // did not ask leaves it as it was.
+          ...(options?.packageOwned !== undefined ? { packageOwned: options.packageOwned } : {}),
           // A `paused` row whose file is back is un-paused here, because
           // nothing else ever will: the scheduler requires `enabled` AND
           // `status === 'active'`, and restoring only `enabled` leaves a task
@@ -1546,6 +1550,7 @@ export class TaskStore {
               timezone: schedule.timezone,
             }),
         filePath: def.filePath,
+        packageOwned: options?.packageOwned ?? null,
         tags: '[]',
         createdAt: now,
         updatedAt: now,

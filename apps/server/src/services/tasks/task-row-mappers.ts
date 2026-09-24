@@ -56,6 +56,7 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     defaultCron: row.cron,
     defaultTimezone: row.timezone,
     timingOverridden: row.cronOverride !== null || row.timezoneOverride !== null,
+    packageOwned: row.packageOwned ?? null,
     agentId: row.agentId ?? null,
     enabled: row.enabled,
     sticky: row.sticky,
