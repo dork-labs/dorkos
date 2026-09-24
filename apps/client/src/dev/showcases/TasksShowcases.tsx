@@ -17,6 +17,9 @@ const RUNNING_SCHEDULE: Task = {
   prompt: 'Check the status of all agents and report any issues.',
   cron: '0 8 * * 1',
   timezone: 'UTC',
+  defaultCron: '0 8 * * 1',
+  defaultTimezone: 'UTC',
+  timingOverridden: false,
   agentId: null,
   enabled: true,
   sticky: false,
@@ -52,6 +55,25 @@ const PAUSED_SCHEDULE: Task = {
 };
 
 /**
+ * A schedule that came with an installed package, running on the person's own
+ * timing instead of the package's (DOR-2302): the row marks it and, expanded,
+ * offers to put the package's timing back.
+ */
+const RETIMED_PACKAGE_SCHEDULE: Task = {
+  ...RUNNING_SCHEDULE,
+  id: 'sched-flow-drain',
+  name: 'flow-drain',
+  prompt: 'Claim the top-ranked eligible issue and carry it to its review gate.',
+  cron: '30 7 * * 1-5',
+  timezone: 'Europe/Berlin',
+  defaultCron: '0 * * * *',
+  defaultTimezone: 'UTC',
+  timingOverridden: true,
+  filePath: '~/.dork/plugins/flow/skills/flow-drain/SKILL.md',
+  nextRun: '2026-09-08T05:30:00.000Z',
+};
+
+/**
  * Build an isolated, pre-seeded `QueryClient` for a `TasksPanel` demo.
  *
  * `TasksPanel` reads exclusively from hooks (feature gate, the task list, mesh
@@ -76,14 +98,14 @@ function TasksPanelShowcase() {
   const disabledClient = useMemo(() => makeTasksQueryClient(false, []), []);
   const emptyClient = useMemo(() => makeTasksQueryClient(true, []), []);
   const populatedClient = useMemo(
-    () => makeTasksQueryClient(true, [RUNNING_SCHEDULE, PAUSED_SCHEDULE]),
+    () => makeTasksQueryClient(true, [RUNNING_SCHEDULE, RETIMED_PACKAGE_SCHEDULE, PAUSED_SCHEDULE]),
     []
   );
 
   return (
     <PlaygroundSection
       title="TasksPanel"
-      description="The composed schedule list every route reaches through the Tasks dialog — disabled, empty, and populated with a running and a paused schedule."
+      description="The composed schedule list every route reaches through the Tasks dialog — disabled, empty, and populated with a running schedule, a package's schedule on the person's own timing, and a paused schedule."
     >
       <ShowcaseLabel>Feature disabled</ShowcaseLabel>
       <ShowcaseDemo>
@@ -103,7 +125,7 @@ function TasksPanelShowcase() {
         </QueryClientProvider>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Running and paused schedules</ShowcaseLabel>
+      <ShowcaseLabel>Running, retimed and paused schedules</ShowcaseLabel>
       <ShowcaseDemo>
         <QueryClientProvider client={populatedClient}>
           <div className="bg-background h-96 max-w-2xl overflow-hidden rounded-lg border">

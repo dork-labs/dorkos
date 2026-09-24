@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import cronstrue from 'cronstrue';
-import { MoreHorizontal, Pencil, Play, Trash2, AlertCircle, Shield } from 'lucide-react';
+import { MoreHorizontal, Pencil, Play, Trash2, AlertCircle, Shield, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   isScheduleAwaitingApproval,
@@ -13,6 +13,7 @@ import { AgentAvatar } from '@/layers/entities/agent';
 import { RuntimeMark, formatModelLabel } from '@/layers/entities/runtime';
 import {
   Badge,
+  Button,
   Switch,
   DropdownMenu,
   DropdownMenuTrigger,
@@ -57,6 +58,29 @@ function formatCron(cron: string): string {
   } catch {
     return cron;
   }
+}
+
+/** The timezone this browser reads times in. */
+const VIEWER_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/**
+ * Whether the timing line names the zone its cron runs in: when a person chose
+ * the timing, or when the zone is not the reader's own.
+ */
+function showsZone(task: Task): boolean {
+  if (!task.timezone) return false;
+  return task.timingOverridden || task.timezone !== VIEWER_TIME_ZONE;
+}
+
+/**
+ * The package's own timing for a schedule a person has retimed, as a sentence
+ * fragment: "every hour, UTC", "at 09:00 AM, Europe/Berlin", "on demand".
+ */
+function describePackageTiming(task: Task): string {
+  if (!task.defaultCron) return 'on demand';
+  const words = formatCron(task.defaultCron);
+  const lowered = words.charAt(0).toLowerCase() + words.slice(1);
+  return task.defaultTimezone ? `${lowered}, ${task.defaultTimezone}` : lowered;
 }
 
 /**
@@ -194,6 +218,18 @@ export function TaskRow({
     deleteTask.mutate(task.id);
   };
 
+  // A schedule that came with an installed package, running on the person's
+  // own timing (DOR-2302): put it back on the package's. A person's reset is
+  // itself the approval of the timing it restores, so it stays live.
+  const handleResetTiming = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    // No local onError: the shared mutation toast reports a failure.
+    updateTask.mutate(
+      { id: task.id, resetTiming: true },
+      { onSuccess: () => toast('Back on the package’s timing') }
+    );
+  };
+
   const confirmDelete = () => {
     // No local onError: the shared mutation toast (`useDeleteTask`'s
     // `meta.errorLabel`) reports a failure.
@@ -260,7 +296,26 @@ export function TaskRow({
             {shouldShowCron && (
               <div className="text-muted-foreground text-xs">
                 {task.cron ? formatCron(task.cron) : 'On-demand'}
-                {task.nextRun && <> &middot; Next: {new Date(task.nextRun).toLocaleString()}</>}
+                {/* The zone the cron is read in, whenever it is not the one the
+                    reader is in or the person chose it — without it "At 07:30"
+                    is a time in a place nobody named, and a timezone-only
+                    override would be marked "Your timing" with nothing on the
+                    row that differs. */}
+                {task.cron && showsZone(task) && <>, {task.timezone}</>}
+                {/* The timing a person set for a package's schedule, in place
+                    of the package's own (DOR-2302). Said on the collapsed row,
+                    because it is the answer to "why is this not running when
+                    the package says it does". */}
+                {task.timingOverridden && (
+                  <span data-slot="task-timing-override"> &middot; Your timing</span>
+                )}
+                {task.nextRun && (
+                  <>
+                    {' '}
+                    &middot; Next:{' '}
+                    {new Date(task.nextRun).toLocaleString(undefined, { timeZoneName: 'short' })}
+                  </>
+                )}
               </div>
             )}
             {/* Why this one is waiting. A schedule DorkOS found in a file says
@@ -392,6 +447,12 @@ export function TaskRow({
                     <Play className="mr-2 size-3.5" />
                     Run Now
                   </DropdownMenuItem>
+                  {task.timingOverridden && (
+                    <DropdownMenuItem onClick={handleResetTiming}>
+                      <RotateCcw className="mr-2 size-3.5" />
+                      Reset to the package’s default
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={(e) => {
@@ -425,6 +486,25 @@ export function TaskRow({
                   <p className="text-muted-foreground text-2xs mb-2 truncate font-mono">
                     {shortenHomePath(task.filePath)}
                   </p>
+                )}
+                {task.timingOverridden && (
+                  <div
+                    data-slot="task-package-timing"
+                    className="text-muted-foreground mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+                  >
+                    <span>The package runs this {describePackageTiming(task)}.</span>
+                    {/* Wraps rather than overflowing the row on a narrow phone. */}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      className="h-auto min-h-6 min-w-0 shrink whitespace-normal"
+                      onClick={handleResetTiming}
+                    >
+                      <RotateCcw />
+                      Reset to the package’s default
+                    </Button>
+                  </div>
                 )}
                 <TaskRunHistoryPanel scheduleId={task.id} scheduleCwd={null} />
               </div>

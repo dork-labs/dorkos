@@ -4519,8 +4519,34 @@ export const TaskSchema = z
     displayName: z.string().nullable().optional(),
     description: z.string().nullable().optional(),
     prompt: z.string(),
+    /**
+     * The cron this schedule RUNS on: a person's own timing when they set one
+     * for a package's schedule, otherwise what its file says (DOR-2302). The
+     * scheduler, the approval grant and the next-runs preview all read this.
+     */
     cron: z.string().nullable(),
+    /** The timezone this schedule runs in — a person's own, else its file's. */
     timezone: z.string().nullable(),
+    /**
+     * The cron the schedule's own file declares, whatever runs.
+     *
+     * The same as {@link TaskSchema.cron} unless {@link TaskSchema.timingOverridden}:
+     * for a schedule that came with an installed package, this is the package's
+     * timing, which a person can put back with `resetTiming`.
+     */
+    defaultCron: z.string().nullable().default(null),
+    /** The timezone the schedule's own file declares. See {@link TaskSchema.defaultCron}. */
+    defaultTimezone: z.string().nullable().default(null),
+    /**
+     * Whether this schedule runs on a person's own timing rather than its file's.
+     *
+     * Only a schedule that came with an installed package can carry one: its
+     * file is the package's and DorkOS never writes it, so the person's choice
+     * is kept by DorkOS instead and survives the package's updates. A flag
+     * rather than a comparison, because the package can later ship the very
+     * value the person chose and their choice still stands.
+     */
+    timingOverridden: z.boolean().default(false),
     agentId: z.string().nullable().default(null),
     enabled: z.boolean(),
     /**
@@ -5030,6 +5056,17 @@ export const UpdateTaskRequestSchema = z
     status: SettableTaskStatusSchema.optional(),
     /** Why this schedule should exist. See {@link CreateTaskRequestSchema}. */
     reason: z.string().optional(),
+    /**
+     * Put this schedule back on its package's own timing (DOR-2302).
+     *
+     * A schedule that came with an installed package takes a new `cron` or
+     * `timezone` without its file changing: DorkOS keeps the person's timing
+     * itself (see {@link TaskSchema.timingOverridden}). This clears it, both
+     * halves at once. Its own field because `cron: null` already means "run on
+     * demand"; sent together with `cron` or `timezone` the request is refused,
+     * since the two ask for different timings.
+     */
+    resetTiming: z.literal(true).optional(),
   })
   .openapi('UpdateTaskRequest');
 

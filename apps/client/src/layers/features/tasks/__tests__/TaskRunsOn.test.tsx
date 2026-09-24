@@ -422,9 +422,12 @@ describe('the task form Runs-on controls', () => {
       await waitFor(() =>
         expect(updateTask).toHaveBeenCalledWith(
           'sched-1',
-          expect.objectContaining({ runtime: 'codex', permissionMode: 'acceptEdits' })
+          expect.objectContaining({ runtime: 'codex' })
         )
       );
+      // Agreeing moved the runtime, not the mode: an edit sends only what the
+      // person changed, so a mode left alone is not in the request at all.
+      expect(updateTask.mock.calls[0]?.[1]).not.toHaveProperty('permissionMode');
     });
 
     it('puts the runtime back when the door is dismissed', async () => {
@@ -441,13 +444,11 @@ describe('the task form Runs-on controls', () => {
       await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
 
       expect(screen.getByTestId('task-runtime-select')).toHaveTextContent(/Server default/);
+      // Put back means put back: the form is exactly as it opened, so saving it
+      // sends nothing at all — and certainly not the runtime the door refused.
       fireEvent.click(screen.getByText('Save'));
-      await waitFor(() =>
-        expect(updateTask).toHaveBeenCalledWith(
-          'sched-1',
-          expect.objectContaining({ runtime: null })
-        )
-      );
+      await act(async () => {});
+      expect(updateTask).not.toHaveBeenCalled();
     });
 
     it('does not ask when the mode is no more permissive on the new runtime', async () => {
@@ -802,6 +803,11 @@ describe('the task form Runs-on controls', () => {
         );
 
         await expectSelected('task-runtime-select', 'Agent’s runtime (Codex)');
+        // An edit sends only what changed, so change something for there to be
+        // a request to inspect.
+        fireEvent.change(screen.getByDisplayValue('Review open PRs'), {
+          target: { value: 'Review every open PR' },
+        });
         fireEvent.click(screen.getByText('Save'));
         await waitFor(() => expect(updateTask).toHaveBeenCalled());
         const body = updateTask.mock.calls[0]?.[1] as Record<string, unknown>;
