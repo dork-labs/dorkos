@@ -1,5 +1,6 @@
 /**
- * CLI handler for `dorkos uninstall <name>`.
+ * CLI handler for `dorkos marketplace uninstall <name>` (and its shorthand,
+ * `dorkos uninstall <name>`).
  *
  * Calls `POST /api/marketplace/packages/:name/uninstall` and prints a
  * one-line summary. Defaults preserve `.dork/data/` and
@@ -62,10 +63,10 @@ function isAwaitingApproval(
 
 /** One-line usage string surfaced in error messages. */
 const USAGE_LINE =
-  'Usage: dorkos uninstall <name> [--purge] [--project <path>] [--approval <token>]';
+  'Usage: dorkos marketplace uninstall <name> [--purge] [--project <path>] [--approval <token>]';
 
 /**
- * Parse the raw argv slice that follows `dorkos uninstall`.
+ * Parse the raw argv slice that follows `dorkos marketplace uninstall`.
  *
  * @param rawArgs - The argv slice after `uninstall`.
  * @returns A typed {@link UninstallArgs} object.
@@ -84,7 +85,7 @@ export function parseUninstallArgs(rawArgs: string[]): UninstallArgs {
       strict: true,
     });
   } catch (err) {
-    rethrowUnknownOption(err, 'uninstall', USAGE_LINE);
+    rethrowUnknownOption(err, 'marketplace uninstall', USAGE_LINE);
   }
 
   const { values, positionals } = parsed;
@@ -102,7 +103,7 @@ export function parseUninstallArgs(rawArgs: string[]): UninstallArgs {
 }
 
 /**
- * Implements `dorkos uninstall <name>`.
+ * Implements `dorkos marketplace uninstall <name>`.
  *
  * @param args - Parsed uninstall arguments.
  * @returns The intended process exit code (`0` success, `1` error).
@@ -128,7 +129,9 @@ export async function runUninstall(args: UninstallArgs): Promise<number> {
       console.error(result.message);
       console.error(result.retry.instructions);
       console.error(`Approval id: ${result.approvalId}`);
-      console.error(`Retry with: dorkos uninstall ${args.name} --approval ${result.approvalToken}`);
+      console.error(
+        `Retry with: dorkos marketplace uninstall ${args.name} --approval ${result.approvalToken}`
+      );
       return 1;
     }
 

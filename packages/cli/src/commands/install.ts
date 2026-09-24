@@ -1,5 +1,6 @@
 /**
- * CLI handler for `dorkos install <name>`.
+ * CLI handler for `dorkos marketplace install <name>` (and its shorthand,
+ * `dorkos install <name>`).
  *
  * Talks to a running DorkOS server via the marketplace HTTP API:
  *
@@ -57,11 +58,11 @@ interface PreviewResponseBody {
 
 /** One-line usage string surfaced in error messages. */
 const USAGE_LINE =
-  'Usage: dorkos install <name> [--marketplace <name>] [--source <url>] ' +
+  'Usage: dorkos marketplace install <name> [--marketplace <name>] [--source <url>] ' +
   '[--force] [--yes] [--project <path>]';
 
 /**
- * Parse the raw argv slice that follows `dorkos install`. Splits the
+ * Parse the raw argv slice that follows `dorkos marketplace install`. Splits the
  * positional name on `@` to support the `<name>@<marketplace>` shorthand
  * documented in the spec.
  *
@@ -84,7 +85,7 @@ export function parseInstallArgs(rawArgs: string[]): InstallArgs {
       strict: true,
     });
   } catch (err) {
-    rethrowUnknownOption(err, 'install', USAGE_LINE);
+    rethrowUnknownOption(err, 'marketplace install', USAGE_LINE);
   }
 
   const { values, positionals } = parsed;
@@ -116,7 +117,7 @@ export function parseInstallArgs(rawArgs: string[]): InstallArgs {
 }
 
 /**
- * Implements `dorkos install <name>`.
+ * Implements `dorkos marketplace install <name>`.
  *
  * @param args - Parsed install arguments.
  * @returns The intended process exit code (`0` success, `1` error).

@@ -53,7 +53,9 @@ describe('parseUpdateArgs', () => {
   });
 
   it('throws on unknown option', () => {
-    expect(() => parseUpdateArgs(['--nope'])).toThrow(/Unknown option for 'update': --nope/);
+    expect(() => parseUpdateArgs(['--nope'])).toThrow(
+      /Unknown option for 'marketplace update': --nope/
+    );
   });
 });
 
