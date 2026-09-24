@@ -144,7 +144,7 @@ Spec §3.1's "absent identity = today's behavior" resolution is about **attribut
 
 **`tierCeiling` now has a setter, so both of those do something (DOR-486).** It lives on `.dork/agent.json`; `resolveAgentTokenEnv` reads it and stamps it onto every token a spawn mints; the agent's Tools settings and `dorkos agent update --ceiling <observe|act|destructive>` write it. Absent means `destructive`, so nothing that predates the field lost capability. The subsection below has the direction rule that governs writing it.
 
-**What you may and may not say about it.** A ceiling caps the caller that PRESENTS ITS TOKEN. An agent with a shell can drop the token — `env -u DORKOS_AGENT_TOKEN dorkos call …`, or a bare `curl` — and arrive unidentified, where the cap is `DEFAULT_ANONYMOUS_TIER_CEILING` and restricts nothing. That is the same `local-trust` residual `account` and `enabledToolGroups.roomsManage` carry (an agent with a shell can call the operator's own routes too), and it has the same remedy: **turn login on**, which makes every `/api/*` path demand a credential no agent can mint. So a ceiling is protection against a confused or prompt-injected agent following the sanctioned path — **it is not a sandbox**, and no user-facing sentence may imply it is. The call still gets gated and audited when the token is dropped; it just is not capped.
+**What you may and may not say about it.** A ceiling caps the caller that PRESENTS ITS TOKEN. An agent with a shell can drop the token — `env -u DORKOS_AGENT_TOKEN dorkos call …`, or a bare `curl` — and arrive unidentified, where the cap is `DEFAULT_ANONYMOUS_TIER_CEILING` and restricts nothing. That is the same `local-trust` residual `account` and a per-agent permission carry (an agent set stricter than the default that drops its token is judged by the default instead) (an agent with a shell can call the operator's own routes too), and it has the same remedy: **turn login on**, which makes every `/api/*` path demand a credential no agent can mint. So a ceiling is protection against a confused or prompt-injected agent following the sanctioned path — **it is not a sandbox**, and no user-facing sentence may imply it is. The call still gets gated and audited when the token is dropped; it just is not capped.
 
 One narrowing of that §3.1 resolution, added after review: an anonymous **destructive** invocation is recorded anyway, as `actorType: 'system'` / `'Unidentified caller'`. Anonymous `observe` and `act` calls still write nothing. So "absent identity = today's behavior" holds for everything except the one case where silence is indefensible: an irreversible action DorkOS cannot attribute (see `specs/agent-trust/02-specification.md` Errata).
 
@@ -152,26 +152,24 @@ In-session identity is derived from the session's working directory rather than 
 
 Both anonymous and identified paths are covered by the same falsifiable mechanism, and it is no longer a list of adapters: the conformance suite drives every `destructive` capability the registry carries through `registry.invoke` itself and requires a refusal. Because the gate is inside `invoke`, that one check covers every adapter at once, including ones that do not exist yet.
 
-### Its companion: a positive per-agent grant fails the other way
+### Its companion: the permission gate keys on identity on purpose
 
-The rule above is about the **tier** gate, and reading it as "nothing may ever key on identity" is a mistake worth heading off, because DorkOS now has one gate that does (ADR `260828-123331`, DOR-1611).
+The rule above is about the **tier** gate, and reading it as "nothing may ever key on identity" is a mistake worth heading off, because the permission gate does (spec `agent-permissions`; it replaced the `roomsManage` grant of ADR `260828-123331`, DOR-1611).
 
-The difference is the polarity of the question, not the mechanism:
+| Gate                                 | Question                                 | An absent identity means         |
+| ------------------------------------ | ---------------------------------------- | -------------------------------- |
+| Tier (`enforceCapabilityTier`)       | "is this caller restricted?"             | not restricted                   |
+| Permission (`resolveCallPermission`) | "what state is this action in for them?" | the install-wide defaults decide |
 
-| Gate                                 | Question                            | An absent identity means | It fails   |
-| ------------------------------------ | ----------------------------------- | ------------------------ | ---------- |
-| Tier (`enforceCapabilityTier`)       | "is this caller restricted?"        | not restricted           | **open**   |
-| Tool group (`enforceToolGroupGrant`) | "does this caller hold this grant?" | holds nothing            | **closed** |
+Every capability declares an `area` (or `null` plus an `areaNote` saying why). `resolvePermission` in `@dorkos/shared/permissions` answers Blocked, Ask or Allowed from the agent's own settings, then the defaults, then the preset; the unchosen preset (`null`) keeps every action exactly where it was before permissions existed. The resolved state is passed into `enforceCapabilityTier` at all three choke points — `registry.invoke`, `authorizeCapability` and the MCP tool gate's `runGate` — so no adapter can reach a handler without it.
 
-That is why the first must not key on identity presence and the second must. Both obey the invariant the doctrine actually protects — _dropping a credential can never widen what a caller reaches_. Under a negative question, dropping one widens, which is the bypass. Under a positive grant it strictly narrows: `env -u DORKOS_AGENT_TOKEN` buys an anonymous caller that holds nothing.
+Three things follow, and each is load-bearing:
 
-Three things follow, and each is load-bearing rather than incidental:
+- **Only a person writes permissions.** `updateAgentManifest` refuses any patch naming `permissions` (`REFUSED_OFF_WIRE_AGENT_PATHS` in `agent-write-policy.ts`), `PATCH /api/mesh/agents/:id` refuses it with `USE_PERMISSIONS_API`, and the generic config writers refuse `permissions.*` the same way. The only way in is `/api/permissions/*` and `/api/agents/:id/permissions`, behind `resolveDecisionAuthority` plus the operator cookie under login, and every write records a `permission.changed` Activity event (category `permissions`, never pruned).
+- **Blocked is checked before the tier gate**, so a call that can never run cannot mint an approval card on its way to being refused. The refusal reuses `TierDeniedPayload` with `reason: 'permission_blocked'` and `approvable: false`; an Ask on an `act` action mints a card that is never eligible for a standing grant.
+- **An agent's settings are read fresh, from the manifest file, on every call**, never the SQLite `agents` cache. A manifest that cannot be read fails closed.
 
-- **The grant has to be unwritable by the agent it governs**, or it is not a grant. `updateAgentManifest` — the agent-reachable write path — refuses any patch naming `enabledToolGroups.roomsManage`, before the schema parse and whatever the value. The operator's `PATCH /api/mesh/agents/:id` is the one way in, and does not come through there. DOR-1506 generalised that guard into a per-field table over the whole manifest (`agent-write-policy.ts`), with a drift guard that fails the build when a new field arrives unclassified — so the grant is one row of a policy now rather than a guard somebody remembered to write.
-- **It runs before the tier gate**, so a call the caller may never make cannot mint an approval card on its way to being refused. The refusal reuses `TierDeniedPayload` with `reason: 'tool_group_disabled'` and `approvable: false`, so 403 / non-`isError` MCP / `capability.denied` all come free — and a model is told plainly that no approval will ever unlock it.
-- **The grant is read fresh, from the manifest file, on every call.** Never the SQLite `agents` cache: it has no column for `enabledToolGroups` and hands back `{}` for every agent, so a cached read would report everyone as ungranted and ignore a real grant. Fresh is also what makes "turning it off stops the very next call" a property of the code rather than a promise.
-
-Do not read this as a general licence. Adding a second such group is a decision about a boundary, not a toggle: read ADR `260726-171347` on why the four keys beside it deliberately shape documentation only, and ADR-0070 on what happens when a switch appears to be a boundary and is not.
+The residual is the same as the ceiling's: an agent set stricter than the default can drop its token and be judged by the default. Login on closes it.
 
 #### The tier ceiling is the same doctrine keyed on a DIRECTION (DOR-486)
 
@@ -253,7 +251,7 @@ Redaction, confirmation-token flows, and identity guards live inside `invoke` (o
 
   **It covers TWO fields, and leaving either behind would have gated nothing.** `nopeContent` replaces the text; `conventions.nope: false` is the stronger one — `runtimes/shared/agent-context.ts` drops the whole `<agent_safety_boundaries>` block when it is off, so the file survives on disk saying what it always said while no turn is ever given it. A mute leaves no diff to notice. Both are refused on `update_agent`, both are accepted here.
 
-  Two implementation notes that look like accidents and are not. `update_agent` still DECLARES `nopeContent` and `conventions.nope`, as `z.unknown()`, because `registry.invoke` parses before the handler runs: a field the schema does not declare is stripped in silence (an agent reporting a boundary change that never happened), and a field typed `z.boolean()` answers `{nope: null}` with a type error that never mentions where the switch lives. Present at any value refuses the whole patch, exactly as `roomsManage` does. And `conventions` is spelled out here rather than reusing `ConventionsSchema`, whose keys all carry `.default(true)` — with defaults applied, "did the caller name `nope`" is unanswerable.
+  Two implementation notes that look like accidents and are not. `update_agent` still DECLARES `nopeContent` and `conventions.nope`, as `z.unknown()`, because `registry.invoke` parses before the handler runs: a field the schema does not declare is stripped in silence (an agent reporting a boundary change that never happened), and a field typed `z.boolean()` answers `{nope: null}` with a type error that never mentions where the switch lives. Present at any value refuses the whole patch, exactly as `permissions` does. And `conventions` is spelled out here rather than reusing `ConventionsSchema`, whose keys all carry `.default(true)` — with defaults applied, "did the caller name `nope`" is unanswerable.
 
   The card carries the full new text through `approvalDetailField`, not the summary's 80-character preview. That clamp is right for a package name and wrong when the value IS the decision: review reproduced 2,000 characters whose first 80 were the current boundaries verbatim, with the part that undid them past the cut.
 

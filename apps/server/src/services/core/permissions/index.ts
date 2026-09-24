@@ -23,24 +23,11 @@ export {
   PermissionService,
   type PermissionActionInfo,
   type PermissionAgentRef,
-  type PermissionPatch,
-  type PermissionServiceDeps,
 } from './permission-service.js';
+export { readRawManifestFile, runPermissionUpgradeSweep } from './permission-upgrade-sweep.js';
 export {
-  PERMISSION_UPGRADE_STEPS,
-  readRawManifestFile,
-  runPermissionUpgradeSweep,
-  type PermissionUpgradeStep,
-  type PermissionUpgradeSweepDeps,
-} from './permission-upgrade-sweep.js';
-export {
-  LOCAL_TRUST_ACTOR_DETAIL,
-  LOCAL_TRUST_ACTOR_LABEL,
-  UPGRADE_WRITER,
-  describePermissionChanges,
   listPermissionHistory,
   personWriter,
-  recordPermissionChange,
   type PermissionWriter,
 } from './permission-history.js';
 

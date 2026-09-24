@@ -75,7 +75,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * Step 1: write back every manifest that still carries `roomsManage`, folded,
  * and record one event per agent whose Rooms setting the fold decided.
  */
-export const foldRoomsManageStep: PermissionUpgradeStep = async (deps) => {
+const foldRoomsManageStep: PermissionUpgradeStep = async (deps) => {
   let events = 0;
   for (const agent of deps.agents()) {
     try {
@@ -128,7 +128,7 @@ export const foldRoomsManageStep: PermissionUpgradeStep = async (deps) => {
  * install ever makes, which is the boot right after that migration set the
  * preset from the first-run answer.
  */
-export const recordPresetMigrationStep: PermissionUpgradeStep = async (deps) => {
+const recordPresetMigrationStep: PermissionUpgradeStep = async (deps) => {
   const config = deps.config.get();
   if (config.upgradeSweptVersion !== null || config.preset === null) return 0;
   await recordPermissionChange(deps.activity, {
@@ -142,7 +142,7 @@ export const recordPresetMigrationStep: PermissionUpgradeStep = async (deps) => 
 };
 
 /** The phase-1 steps, in order. Later phases append theirs. */
-export const PERMISSION_UPGRADE_STEPS: readonly PermissionUpgradeStep[] = [
+const PERMISSION_UPGRADE_STEPS: readonly PermissionUpgradeStep[] = [
   foldRoomsManageStep,
   recordPresetMigrationStep,
 ];

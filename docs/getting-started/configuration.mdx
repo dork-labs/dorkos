@@ -862,6 +862,33 @@ Switching either one off ends every permission you have open, right away. It sta
 
 DorkOS keeps one more value in this section, `approvals.standingGrantsVoidBefore`. It writes that one itself to remember when you last switched standing permissions off, and it is what stops an old permission waking up later. Leave it alone — editing the config file by hand here can bring back a permission you meant to end.
 
+### Agent permissions
+
+What your agents may do on their own, what waits for your yes, and what they cannot do at all. See the [Permissions guide](/docs/guides/permissions).
+
+These are changed on the Permissions page (Settings → Permissions, or an agent's own Permissions page), never here: every change needs a person and is recorded in the history. `PATCH /api/config` and `dorkos config set` refuse any `permissions` key and say where to go instead.
+
+<TypeTable
+  type={{
+    'permissions.preset': {
+      description:
+        'The starting point for every area: `careful`, `balanced` or `full`. `null` means you have not chosen yet, and agents work as they did before permissions existed.',
+      type: "'careful' | 'balanced' | 'full' | null",
+      default: 'null',
+    },
+    'permissions.defaults': {
+      description:
+        'The changes you made on top of the preset, as `areas` and `actions`, each mapping to `blocked`, `ask` or `allowed`.',
+      type: 'object',
+      default: '{ areas: {}, actions: {} }',
+    },
+  }}
+/>
+
+DorkOS keeps one more value here, `permissions.upgradeSweptVersion`. It records which version last carried your old settings across on upgrade; leave it alone.
+
+Each agent's own differences live in its `.dork/agent.json`, under `permissions`.
+
 ### Full autonomy
 
 Turning a conversation up to Full autonomy asks you to confirm what that means first. The agent no longer stops for your approval before each action, so it is a setting you cannot notice in time to undo — which is why it asks twice. It still asks you when something genuinely needs your call, and still follows anything you have told it to check with you about; what changes is the approval prompt that used to halt each action, not the agent's judgment.

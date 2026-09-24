@@ -14,7 +14,7 @@ import type { ActivityItem, ListActivityQuery } from '@dorkos/shared/activity-sc
 import { PermissionService, type PermissionActionInfo } from '../permission-service.js';
 
 /** The actions the fixture world knows. */
-export const FIXTURE_ACTIONS: PermissionActionInfo[] = [
+const FIXTURE_ACTIONS: PermissionActionInfo[] = [
   { id: 'rooms.create', title: 'Open a room', tier: 'act', area: 'rooms' },
   { id: 'rooms.merge', title: 'Merge into main', tier: 'act', area: 'rooms' },
   { id: 'rooms.post', title: 'Post in a room', tier: 'act', area: null },

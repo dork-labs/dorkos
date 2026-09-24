@@ -78,7 +78,7 @@ export function ApplyToOverridesDialog({
         }
       }}
     >
-      <ResponsiveDialogContent className="sm:max-w-md">
+      <ResponsiveDialogContent className="!min-h-0 sm:max-w-md">
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>
             {subject} will be set to {nextLabel} for everyone.

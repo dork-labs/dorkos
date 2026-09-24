@@ -9,7 +9,6 @@
  *
  * @module entities/permissions
  */
-export { permissionKeys } from './model/permission-keys';
 export { usePermissions } from './model/use-permissions';
 export { useAgentPermissions } from './model/use-agent-permissions';
 export { useOverridingAgents } from './model/use-overriding-agents';

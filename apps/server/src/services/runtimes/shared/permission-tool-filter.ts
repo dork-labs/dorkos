@@ -32,7 +32,7 @@ export interface ToolVisibility {
 }
 
 /** Nothing hidden. */
-export const NOTHING_HIDDEN: ToolVisibility = { hiddenToolNames: new Set(), blockedAreas: [] };
+const NOTHING_HIDDEN: ToolVisibility = { hiddenToolNames: new Set(), blockedAreas: [] };
 
 /**
  * Resolve which tools an agent should not see.

@@ -46,11 +46,10 @@ export interface PermissionWriter {
 }
 
 /** The label a login-off person write carries. Never "You": nobody proved it. */
-export const LOCAL_TRUST_ACTOR_LABEL = 'Someone on this computer';
+const LOCAL_TRUST_ACTOR_LABEL = 'Someone on this computer';
 
 /** The honesty line a login-off write carries in the history. */
-export const LOCAL_TRUST_ACTOR_DETAIL =
-  "Login is off, so DorkOS can't confirm who made this change.";
+const LOCAL_TRUST_ACTOR_DETAIL = "Login is off, so DorkOS can't confirm who made this change.";
 
 /** The writer every upgrade step records. */
 export const UPGRADE_WRITER: PermissionWriter = {
@@ -140,7 +139,7 @@ function describeOne(change: PermissionChange, actionTitle: (id: string) => stri
  * @param changes - Every change the write made, default rows first.
  * @param actionTitle - Names an action id the way the permissions page does.
  */
-export function describePermissionChanges(
+function describePermissionChanges(
   changes: readonly PermissionChange[],
   actionTitle: (id: string) => string = (id) => id
 ): string {

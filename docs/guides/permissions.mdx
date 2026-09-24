@@ -1,0 +1,80 @@
+---
+title: Permissions
+description: Decide what your agents may do on their own, what waits for your yes, and what they cannot do at all
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Permissions
+
+Your agents can do more than chat. They can open rooms, change who is in them, and put them away when the work is done. Permissions decide which of those things an agent does on its own, which ones wait for your yes, and which ones it cannot do at all.
+
+You set them once for everyone. If one agent needs to be different, you set that one agent differently.
+
+## The three states
+
+Every permission is in one of three states:
+
+- **Allowed**: the agent does it without asking.
+- **Ask**: the agent asks first. An approval card appears, and the action runs only after you say yes.
+- **Blocked**: the agent cannot do it. It does not even see the tool, and it is told to ask you if it needs it.
+
+<Callout type="warn">
+  Blocked stops an agent that plays by the rules; it isn't a sandbox. An agent that can run terminal
+  commands on your computer can still act outside DorkOS. Turn on **Require login** in Settings →
+  Access to close that door too.
+</Callout>
+
+## Areas
+
+Permissions come in areas, so you decide about a kind of work rather than about every tool one at a time. In this release one area is live:
+
+- **Rooms**: make rooms, add or remove people, rename them, leave them, and put them away (archive). Archiving is not deleting: the room and everything said in it are kept, and you can bring it back from the room's settings.
+
+Talking in a room is not part of this area. An agent in a room can always post and react there, whatever you set here, because nothing should be able to mute an agent in the middle of a conversation.
+
+More areas (tasks, other agents, chat connections, packages, settings) arrive in later releases.
+
+## Presets
+
+A preset is the starting point for every area. You pick one when you first set up DorkOS:
+
+- **Full power**: your agents do everyday work themselves, rooms included.
+- **Careful**: your agents ask before changing anything.
+
+If you have not picked yet, your agents keep working exactly as they did before permissions existed. Settings → Permissions says so, and has a button to choose.
+
+Three areas are never Allowed, whatever preset you pick: safety limits, permissions themselves, and reach and secrets. The most they can be is Ask. These show a lock.
+
+## Change what everyone may do
+
+1. Open **Settings → Permissions**.
+2. Find the area and pick **Blocked**, **Ask**, or **Allowed**.
+
+If some agents are set differently, DorkOS asks before it changes anything. Nothing is checked for you: tick the agents you want to follow the new setting, then choose **Update selected**, or choose **Keep their settings** to leave them as they are.
+
+A **"2 agents differ"** link under a row lists who is set differently. Each has its own **Reset**, which puts that agent back on the setting everyone else has.
+
+## Set one agent differently
+
+1. Open the agent's profile.
+2. Choose **Permissions**.
+3. Pick a state for the area.
+
+A row that says **"Same as everyone (Allowed)"** follows your default. Once you change it, the row shows a dot and a **Reset to default** button.
+
+If the agent runs on a program that cannot use DorkOS tools, the page says so: those settings do not change anything for it.
+
+## Only you can change them
+
+An agent can never change its own permissions, or another agent's. Every change goes through the permission pages, and DorkOS refuses one that comes from an agent.
+
+## The history
+
+Every change is recorded, and the history is kept for good rather than for 30 days. Settings → Permissions shows all of them; an agent's Permissions page shows the ones that touched it. Each line says what changed, who changed it, and when.
+
+With login off, DorkOS cannot tell you apart from any other program running on your computer, so it records a change as made by **"Someone on this computer"** and says why. With login on, it names your account. Changes made when DorkOS upgraded itself are labelled **"Upgrade"**.
+
+## After an upgrade
+
+If you already told DorkOS to run at full power, your agents get the Full power preset. If you chose to keep being asked, they get Careful. An agent you had switched **Manage rooms** on for keeps rooms; one you had switched it off for has Rooms blocked. The history records each of these as an upgrade.

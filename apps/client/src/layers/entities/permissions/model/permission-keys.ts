@@ -6,7 +6,7 @@
  */
 
 /** Every permission query sits under this prefix. */
-export const PERMISSIONS_KEY = ['permissions'] as const;
+const PERMISSIONS_KEY = ['permissions'] as const;
 
 /** The query keys the permission hooks read under. */
 export const permissionKeys = {
