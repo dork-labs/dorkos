@@ -127,6 +127,26 @@ function invalid(condition: boolean): void {
   if (condition) throw new ImportFailure('IMPORT_ARCHIVE_INVALID');
 }
 
+/**
+ * Each entry's new sequence: 1 to n within its channel, in the order the export numbered
+ * them. An export's own numbers only order the history; kept as they are, a large one could
+ * leave a channel whose next post or unread count the app can no longer serve.
+ */
+export function renumberedSequences(
+  entries: CommunityExportManifestV1['entries']
+): Map<string, number> {
+  const byChannel = new Map<string, CommunityExportManifestV1['entries']>();
+  for (const entry of entries)
+    byChannel.set(entry.channel_id, [...(byChannel.get(entry.channel_id) ?? []), entry]);
+  const sequences = new Map<string, number>();
+  for (const channelEntries of byChannel.values()) {
+    channelEntries
+      .sort((a, b) => (BigInt(a.seq) < BigInt(b.seq) ? -1 : BigInt(a.seq) > BigInt(b.seq) ? 1 : 0))
+      .forEach((entry, index) => sequences.set(entry.id, index + 1));
+  }
+  return sequences;
+}
+
 /** Refuse unless `value` is exactly what the member read schema would serve. */
 function readable(schema: ZodType, value: unknown): void {
   invalid(!schema.safeParse(value).success);
@@ -148,7 +168,8 @@ function readable(schema: ZodType, value: unknown): void {
  *   resolves to exactly one author. Handles are unique across members and agents.
  * - Exactly one member is the active owner, and it is the member who made the export.
  * - Every entry's channel and author resolve; a reply names its top-level parent in the same
- *   channel as both parent and thread root, and comes after it; `seq` is unique per channel.
+ *   channel as both parent and thread root, and comes after it; `seq` is unique per channel
+ *   and only orders the history, which is renumbered 1 to n (see {@link renumberedSequences}).
  * - Every attachment's channel, message, and uploader resolve, and its message is in its
  *   channel. Every audit event belongs to the exported community and names a known actor.
  */
@@ -239,6 +260,7 @@ export function checkManifest(
   unique(manifest.entries.map((entry) => entry.id));
   const entries = new Map(manifest.entries.map((entry) => [entry.id, entry]));
   const sequences = new Set<string>();
+  const renumbered = renumberedSequences(manifest.entries);
   for (const attachment of manifest.attachments)
     invalid(entries.get(attachment.entryId)?.channel_id !== attachment.channelId);
   for (const entry of manifest.entries) {
@@ -265,7 +287,7 @@ export function checkManifest(
     readable(CommunityWireEntrySchema, {
       id: entry.id,
       channelId: entry.channel_id,
-      seq: Number(entry.seq),
+      seq: renumbered.get(entry.id),
       authorMemberId: entry.author_member_id ?? entry.author_agent_id,
       authorDisplayName: entry.author_display_name,
       authorKind: entry.author_agent_id ? 'agent' : 'human',
@@ -277,8 +299,6 @@ export function checkManifest(
       cursor: 'cursor',
       attachments: filesOf.get(entry.id) ?? [],
     });
-    // A read serves `seq` as a JSON number, so it must survive the trip exactly.
-    invalid(String(Number(entry.seq)) !== entry.seq);
   }
 
   const auditEvents = manifest.auditEvents ?? [];

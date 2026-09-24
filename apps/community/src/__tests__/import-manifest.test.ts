@@ -6,6 +6,7 @@ import {
   checkManifest,
   importedChannel,
   parseManifest,
+  renumberedSequences,
 } from '../imports/manifest.js';
 
 const id = (n: number) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -265,10 +266,6 @@ describe('checkManifest', () => {
       },
     ],
     [
-      'a sequence past 2^53',
-      (m: CommunityExportManifestV1) => void (m.entries[1].seq = '9007199254740993'),
-    ],
-    [
       'an empty author name',
       (m: CommunityExportManifestV1) => void (m.entries[0].author_display_name = ''),
     ],
@@ -316,6 +313,20 @@ describe('checkManifest', () => {
     expect(importedChannel(m.channels[1]).name).toBe('n'.repeat(80));
   });
 
+  // Purpose: an export's sequence numbers only order its history; they are renumbered 1 to n
+  // per channel, in order, so a huge one can never reach a read or the next post.
+  it('renumbers sequences 1 to n per channel in their order', () => {
+    const m = manifest();
+    m.entries[0].seq = '5000000000000000';
+    m.entries[1].seq = '9999999999999999';
+    m.entries.push({ ...m.entries[0], id: id(23), channel_id: id(11), seq: '42', mentions: [] });
+    const sequences = renumberedSequences(m.entries);
+    expect([sequences.get(id(20)), sequences.get(id(21)), sequences.get(id(23))]).toEqual([
+      1, 2, 1,
+    ]);
+    expect(failureOf(() => Object.assign(m, {}))).toBeNull();
+  });
+
   // Purpose: a file larger than this host's COMMUNITY_ATTACHMENT_BYTES is a size refusal.
   it('refuses a file over the configured attachment size as too large', () => {
     expect(failureOf((m) => void (m.attachments[0].byteSize = limits.attachmentBytes + 1))).toBe(
@@ -335,7 +346,7 @@ describe('checkManifest', () => {
             archivePath: `attachments/${id(40 + n)}`,
           });
         m.entries[0].text = 'é'.repeat(8 * 1024);
-        m.entries[1].seq = '9007199254740991';
+        m.entries[1].seq = '9999999999999999';
         m.channels[0].name = 'n'.repeat(80);
         m.entries[1].created_at = '2026-02-01T00:04:00.000Z';
       })

@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import type { CommunityExportManifestV1 } from '@dorkos/shared/community-wire';
 import { sanitizeDisplayName } from '../storage/blob-store.js';
 import { uuidv5 } from './derived-id.js';
-import { ImportFailure, importedChannel } from './manifest.js';
+import { ImportFailure, importedChannel, renumberedSequences } from './manifest.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -21,7 +21,8 @@ export interface RestoredFile {
  * Audit events keep `origin='imported'`, so nothing an export claims passes for an event this
  * host wrote. Members and agents are historical: no account, inactive, `origin='imported'`; agents are
  * revoked. The owner who made the export is the one row the claimant later adopts, and it is
- * added to every channel. Emails are dropped. Entries keep their sequence, thread, mentions,
+ * added to every channel. Emails are dropped. Entries keep their order (renumbered 1 to n per
+ * channel), thread, mentions,
  * author name, and time.
  *
  * @returns The adopted owner's new member ID.
@@ -40,10 +41,11 @@ export async function insertImportedRows(
   const insert = (sql: string, rows: unknown[]) =>
     rows.length ? client.query(sql, [JSON.stringify(rows), communityId]) : Promise.resolve();
 
-  const lastSeq = new Map<string, bigint>();
+  const sequences = renumberedSequences(manifest.entries);
+  const lastSeq = new Map<string, number>();
   for (const entry of manifest.entries) {
-    const seq = BigInt(entry.seq);
-    if (seq > (lastSeq.get(entry.channel_id) ?? 0n)) lastSeq.set(entry.channel_id, seq);
+    const seq = sequences.get(entry.id)!;
+    if (seq > (lastSeq.get(entry.channel_id) ?? 0)) lastSeq.set(entry.channel_id, seq);
   }
   await insert(
     `INSERT INTO channels(id,community_id,name,description,visibility,archived,last_seq,epoch,created_at)
@@ -56,7 +58,7 @@ export async function insertImportedRows(
       description: channel.description,
       visibility: channel.visibility,
       archived: channel.archived,
-      last_seq: String(lastSeq.get(channel.id) ?? 0n),
+      last_seq: lastSeq.get(channel.id) ?? 0,
       created_at: channel.created_at,
     }))
   );
@@ -118,7 +120,7 @@ export async function insertImportedRows(
   // Parents first, as a live community wrote them: by sequence within each channel.
   const entries = [...manifest.entries].sort((a, b) =>
     a.channel_id === b.channel_id
-      ? Number(BigInt(a.seq) - BigInt(b.seq))
+      ? sequences.get(a.id)! - sequences.get(b.id)!
       : a.channel_id.localeCompare(b.channel_id)
   );
   await insert(
@@ -134,7 +136,7 @@ export async function insertImportedRows(
     entries.map((entry) => ({
       id: derive(entry.id),
       channel_id: derive(entry.channel_id),
-      seq: entry.seq,
+      seq: sequences.get(entry.id),
       author_member_id: entry.author_member_id && derive(entry.author_member_id),
       author_agent_id: entry.author_agent_id && derive(entry.author_agent_id),
       author_display_name: entry.author_display_name,

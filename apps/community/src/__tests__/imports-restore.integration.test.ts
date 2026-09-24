@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CommunityExportManifestV1 } from '@dorkos/shared/community-wire';
 import { CommunityExportManifestV1Schema } from '@dorkos/shared/community-wire';
 import { uuidv5 } from '../imports/derived-id.js';
+import { renumberedSequences } from '../imports/manifest.js';
 import type { ImportWorkerHooks } from '../imports/process.js';
 import { sweepImports } from '../imports/worker.js';
 import { responseCookies } from './bootstrap-test-helper.js';
@@ -320,6 +321,7 @@ it('restores an owner export exactly, and the claimant adopts the owner’s hist
   );
   expect(entries.rowCount).toBe(manifest.entries.length);
   const byId = new Map(entries.rows.map((row) => [row.id, row]));
+  const sequences = renumberedSequences(manifest.entries);
   for (const entry of manifest.entries) {
     const row = byId.get(derive(entry.id));
     expect(row).toBeDefined();
@@ -336,7 +338,7 @@ it('restores an owner export exactly, and the claimant adopts the owner’s hist
       at: row.created_at.toISOString(),
     }).toEqual({
       channel: derive(entry.channel_id),
-      seq: entry.seq,
+      seq: String(sequences.get(entry.id)),
       member: entry.author_member_id && derive(entry.author_member_id),
       agent: entry.author_agent_id && derive(entry.author_agent_id),
       name: entry.author_display_name,
@@ -886,6 +888,17 @@ it('restores content at every limit and serves it through the member API', async
       mentions: [owner],
       created_at: '2026-01-02T00:00:00.000Z',
     };
+    const second = randomUUID();
+    manifest.channels.push({ ...manifest.channels[0], id: second, name: 'second' });
+    manifest.entries.push({
+      ...base,
+      id: randomUUID(),
+      channel_id: second,
+      seq: '5000000000000000',
+      text: 'far along',
+      parent_entry_id: null,
+      thread_root_entry_id: null,
+    });
     manifest.entries.push(
       {
         ...base,
@@ -932,7 +945,9 @@ it('restores content at every limit and serves it through the member API', async
     200,
     'channels'
   );
-  const [channel] = (await channels.json()).channels;
+  const channel = (await channels.json()).channels.find(
+    (candidate: { name: string }) => candidate.name !== 'second'
+  );
   const history = await expectStatus(
     await h.call(`${base}/channels/${channel.id}/entries?limit=50`, { cookie: owner.cookie }),
     200,
@@ -941,7 +956,8 @@ it('restores content at every limit and serves it through the member API', async
   const entries = (await history.json()).entries;
   const root = entries.find((entry: { parentEntryId: string | null }) => !entry.parentEntryId);
   expect(root.attachments).toHaveLength(8);
-  expect(root.seq).toBe(9007199254740990);
+  // The export's own numbers only ordered the history; the channel starts again at 1.
+  expect(root.seq).toBe(1);
   await expectStatus(
     await h.call(`${base}/channels/${channel.id}/entries?limit=50&thread=${root.id}`, {
       cookie: owner.cookie,
@@ -956,30 +972,28 @@ it('restores content at every limit and serves it through the member API', async
     200,
     'thread summaries'
   );
-  expect((await threads.json()).threads[0].lastReplySeq).toBe(9007199254740991);
+  expect((await threads.json()).threads[0].lastReplySeq).toBe(2);
+  // A second channel whose export numbers were huge still reads and counts.
+  const attention = await expectStatus(
+    await h.call(`${base}/attention`, { cookie: owner.cookie }),
+    200,
+    'attention'
+  );
+  expect((await attention.json()).unreadCount).toBeGreaterThanOrEqual(0);
+  // And the next post after the import continues the channel's numbering.
+  const posted = await expectStatus(
+    await h.call(`${base}/channels/${channel.id}/entries`, {
+      cookie: owner.cookie,
+      body: { text: 'first post here', idempotencyKey: 'after-import' },
+    }),
+    201,
+    'post after import'
+  );
+  expect((await posted.json()).entry.seq).toBe(3);
 });
 
 describe('an export past a member-API or host limit fails and leaves nothing', () => {
   const past: [string, (m: CommunityExportManifestV1) => void, string][] = [
-    [
-      'a sequence past 2^53',
-      (m) => {
-        m.entries.push({
-          id: randomUUID(),
-          channel_id: m.channels[0].id,
-          seq: '9007199254740993',
-          author_member_id: m.requesterMemberId,
-          author_agent_id: null,
-          author_display_name: 'O',
-          text: 'x',
-          mentions: [],
-          parent_entry_id: null,
-          thread_root_entry_id: null,
-          created_at: '2026-01-02T00:00:00.000Z',
-        });
-      },
-      'IMPORT_ARCHIVE_INVALID',
-    ],
     [
       'an empty author name',
       (m) => {
@@ -1219,4 +1233,36 @@ it('shortens an over-long channel name and description instead of refusing', asy
   expect(channel.rows[0].name).toBe(`${'n'.repeat(79)}…`);
   expect(Array.from(channel.rows[0].description)).toHaveLength(1_000);
   expect(channel.rows[0].description.endsWith('…')).toBe(true);
+});
+
+// Purpose: a storage provider that fails without a Node error code (an S3 503 carries only a
+// name, a fault, and an HTTP status) is retried like any storage failure, not ended at once.
+it('retries a storage provider error that carries no error code', async () => {
+  const created = await createImport(h, { bearer: key }, { autoCommit: true });
+  await expectStatus(
+    await uploadArchive(h, created.importId, archive, { bearer: created.uploadToken }),
+    200,
+    'upload'
+  );
+  const flaky = {
+    ...h.blobStore,
+    get: async () => {
+      throw Object.assign(new Error('Service Unavailable'), {
+        name: 'ServiceUnavailable',
+        $fault: 'server',
+        $metadata: { httpStatusCode: 503 },
+      });
+    },
+  };
+  await h.pool.query('UPDATE community_imports SET next_attempt_at=$1 WHERE id=$2', [
+    clock,
+    created.importId,
+  ]);
+  await sweepImports(h.pool, flaky, h.config.limits, clock);
+  const row = await h.pool.query('SELECT state,attempts FROM community_imports WHERE id=$1', [
+    created.importId,
+  ]);
+  expect(row.rows[0]).toEqual({ state: 'validating', attempts: 1 });
+  await runImports();
+  expect((await readImport(h, created.importId, key)).state).toBe('ready');
 });
