@@ -45,6 +45,23 @@ const JournalLockSchema = z
   .object({ ownerId: z.uuid(), pid: z.number().int().positive(), createdAt: z.iso.datetime() })
   .strict();
 
+/** Most removals one run may record; a run that needs more should start a new launch. */
+export const MAX_REMOVALS = 8;
+
+/** A confirmed removal of the one resource an uncertain create left behind. */
+const PendingRemovalSchema = z
+  .object({
+    provider: z.enum(['fly', 'neon', 'tigris']),
+    // Read back from the service: Fly internalNumericId, Neon project id, or Tigris add-on id.
+    token: SafeIdentifierSchema,
+    resourceName: SafeIdentifierSchema,
+    proof: z.enum(['marker', 'binding']),
+    // Tigris only: non-secret digests of the bucket's AWS_* credentials before removal.
+    priorSecretDigests: z.record(SecretNameSchema, SecretDigestSchema).optional(),
+    requestedAt: z.iso.datetime(),
+  })
+  .strict();
+
 /** State checkpoints that can be proved through provider readback. */
 export const LaunchStateSchema = z.enum([
   'planned',
@@ -100,6 +117,7 @@ export const LaunchSafeErrorCodeSchema = z.enum([
   'COMMUNITY_RELEASE_PROVENANCE_MISMATCH',
   'JOURNAL_LOCKED',
   'CANCELLED',
+  'REMOVAL_OUTCOME_UNCERTAIN',
 ]);
 
 /** Canonical schema for a launch recovery journal. */
@@ -139,23 +157,14 @@ export const LaunchJournalSchema = z
       .nullable(),
     // Values read back from the service when a create step completed, never copied from an intent.
     provenance: z.object({ flyNetwork: SafeIdentifierSchema.optional() }).strict().optional(),
-    // Resources a verified uncertain-create removal deleted. Nothing writes this yet; the Tigris
-    // create step already reads it so a re-created bucket can never reuse removed credentials.
+    // A removal of an uncertain create's leftover resource that was confirmed and may be under way.
+    // While it is set, `--resume` refuses to run and only `--remove-uncertain` may finish it.
+    pendingRemoval: PendingRemovalSchema.nullable().optional(),
+    // Resources a verified uncertain-create removal deleted. The Tigris create step reads the
+    // recorded digests so a re-created bucket can never reuse removed credentials.
     removals: z
-      .array(
-        z
-          .object({
-            provider: z.enum(['fly', 'neon', 'tigris']),
-            token: SafeIdentifierSchema,
-            resourceName: SafeIdentifierSchema,
-            proof: z.enum(['marker', 'binding']),
-            priorSecretDigests: z.record(SecretNameSchema, SecretDigestSchema).optional(),
-            requestedAt: z.iso.datetime(),
-            removedAt: z.iso.datetime(),
-          })
-          .strict()
-      )
-      .max(8)
+      .array(PendingRemovalSchema.extend({ removedAt: z.iso.datetime() }).strict())
+      .max(MAX_REMOVALS)
       .optional(),
     resources: z
       .object({

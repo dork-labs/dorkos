@@ -90,7 +90,8 @@ else if(args[0]==='orgs'&&args[1]==='show') value={ID:'fly-org-id',Slug:args[2],
 else if(args[0]==='orgs') value={'dork-labs':'Dork Labs'};
 else if(args[0]==='platform') value=[{code:'ord',name:'Chicago',latitude:41.8,longitude:-87.6,gateway_available:true,requires_paid_plan:false,deprecated:false}];
 else if(args[0]==='apps'&&args[1]==='list') value=state.flyApp?[state.flyApp]:[];
-else if(args[0]==='apps'&&args[1]==='create') { state.flyCreates++; state.flyNetwork=at('--network'); state.flyCreatedAt=new Date().toISOString(); state.flyApp={ID:'app-id-1',Name:args[2],Status:'deployed',Network:'',Organization:{ID:'fly-org-id',Slug:at('--org'),Name:'Dork Labs'}}; write(state); value=state.flyApp; }
+else if(args[0]==='apps'&&args[1]==='create') { state.flyCreates++; state.flyNetwork=at('--network'); state.flyCreatedAt=new Date().toISOString(); state.flyApp={ID:'app-id-1',Name:args[2],Status:'deployed',Network:'',Organization:{ID:'fly-org-id',Slug:at('--org'),Name:'Dork Labs'}}; write(state); if(state.failFlyCreate) process.exit(1); value=state.flyApp; }
+else if(args[0]==='apps'&&args[1]==='destroy') { state.flyDestroys=(state.flyDestroys??0)+1; state.flyApp=null; write(state); value={}; }
 else if(args[0]==='auth'&&args[1]==='token') value={token:'fixture-fly-token'};
 else if(args[0]==='secrets'&&args[1]==='list') value=Object.entries(state.secrets).map(([name,item])=>({name,digest:item.digest,status:item.status}));
 else if(args[0]==='secrets'&&args[1]==='import') { const input=fs.readFileSync(0,'utf8'); for(const line of input.trim().split('\\n')) { const name=line.slice(0,line.indexOf('=')); state.secrets[name]={digest:'digest-'+name.toLowerCase().replaceAll('_','-')+'-'+Date.now(),status:'Staged'}; } write(state); value={}; }
@@ -333,8 +334,75 @@ try {
   ) {
     throw new Error('Packaged launch did not create and record the Neon marker role');
   }
+
+  // An uncertain Fly create that leaves a marked app behind with no recorded id (shape A). The
+  // committed gate has not confirmed Fly's marker round trip, so the removal command must refuse
+  // to delete it and say why, even when the right internal id is given.
+  await writeFile(statePath, JSON.stringify({ ...initialState, secrets: {}, failFlyCreate: true }));
+  const orphanHome = join(temporary, 'dork-home-orphan');
+  const orphanEnvironment = { ...environment, DORK_HOME: orphanHome };
+  const stopped = await runInteractive(interactiveHelper, binary, args(), orphanEnvironment);
+  const orphanDirectory = join(orphanHome, 'launches/community');
+  const orphanName = (await readdir(orphanDirectory)).find((name) => name.endsWith('.json'));
+  if (stopped.code === 0 || !orphanName) {
+    throw new Error(`Packaged uncertain create did not stop with a journal (${stopped.code})`);
+  }
+  const orphanRunId = orphanName.slice(0, -5);
+  if (!stopped.output.includes(`--remove-uncertain ${orphanRunId}`)) {
+    throw new Error('Packaged recovery text did not offer the removal command');
+  }
+  const orphanJournalPath = join(orphanDirectory, orphanName);
+  const orphanJournal = JSON.parse(await readFile(orphanJournalPath, 'utf8')) as {
+    revision: number;
+    pendingIntent: { provider: string; provenanceMarker?: string } | null;
+    resources: { flyAppId?: string };
+  };
+  const orphanState = JSON.parse(await readFile(statePath, 'utf8')) as {
+    flyApp: unknown;
+    flyNetwork: string | null;
+  };
+  if (
+    orphanJournal.pendingIntent?.provider !== 'fly' ||
+    orphanJournal.resources.flyAppId !== undefined ||
+    !orphanState.flyApp ||
+    orphanState.flyNetwork !== `dorkos-${orphanJournal.pendingIntent.provenanceMarker}`
+  ) {
+    throw new Error('Packaged uncertain create did not leave a marked shape-A Fly app');
+  }
+  const assertOrphanSurvives = async (expected: string, label: string) => {
+    for (const extra of [[], ['--confirm', '4817203']]) {
+      const removal = await runPlain(
+        binary,
+        ['community', 'deploy', '--remove-uncertain', orphanRunId, ...extra],
+        orphanEnvironment
+      );
+      if (removal.code !== 0 || !removal.output.includes(expected)) {
+        process.stderr.write(removal.output);
+        throw new Error(`Packaged removal did not refuse the ${label} (${removal.code})`);
+      }
+      const after = JSON.parse(await readFile(statePath, 'utf8')) as {
+        flyApp: unknown;
+        flyDestroys?: number;
+      };
+      const journalAfter = JSON.parse(await readFile(orphanJournalPath, 'utf8')) as {
+        revision: number;
+      };
+      if (!after.flyApp || after.flyDestroys || journalAfter.revision !== orphanJournal.revision) {
+        throw new Error(`Packaged removal changed something for the ${label}`);
+      }
+    }
+  };
+  await assertOrphanSurvives('not yet confirmed this proof with Fly', 'marked orphan');
+
+  // A same-name app that does not carry the run's marker is never this run's, gate or no gate.
+  await writeFile(
+    statePath,
+    JSON.stringify({ ...JSON.parse(await readFile(statePath, 'utf8')), flyNetwork: 'default' })
+  );
+  await assertOrphanSurvives('does not carry the marker this run recorded', 'unmarked app');
+
   process.stdout.write(
-    'Packaged Community launcher proof passed: dry-run, exact release, provisioning with provenance markers, resume, pinned config, owner-pending.\n'
+    'Packaged Community launcher proof passed: dry-run, exact release, provisioning with provenance markers, resume, pinned config, owner-pending, uncertain-create removal refused for a marked orphan and an unmarked same-name app.\n'
   );
 } finally {
   await rm(temporary, { recursive: true, force: true });

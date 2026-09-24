@@ -29,7 +29,7 @@ function parseInput<T>(schema: z.ZodType<T>, value: unknown): T {
 /** Non-secret acknowledgement that a Fly command returned and still needs readback. */
 export interface FlyMutationReceipt {
   /** Operation whose remote state must be independently verified. */
-  operation: 'secrets-stage' | 'deploy' | 'destroy';
+  operation: 'secrets-stage' | 'secrets-unset' | 'deploy' | 'destroy';
 }
 
 /**
@@ -179,6 +179,32 @@ export async function destroyFlyApp(
     ...options,
     args: ['apps', 'destroy', app, '--yes'],
     parse: () => ({ operation: 'destroy' as const }),
+  });
+}
+
+/**
+ * Unset the two credential names a Tigris bucket set on its app, without deploying.
+ *
+ * Used only after the bucket itself is confirmed gone. No Machine exists at the Tigris step, so
+ * `--stage` needs no restart. Completion must be proved through the secret inventory.
+ */
+export async function unsetFlyTigrisSecrets(
+  options: FlySessionReadOptions,
+  appName: string
+): Promise<FlyMutationReceipt> {
+  const app = parseInput(ExternalIdentifierSchema, appName);
+  return runProviderMutation({
+    ...options,
+    args: [
+      'secrets',
+      'unset',
+      'AWS_ACCESS_KEY_ID',
+      'AWS_SECRET_ACCESS_KEY',
+      '--app',
+      app,
+      '--stage',
+    ],
+    parse: () => ({ operation: 'secrets-unset' as const }),
   });
 }
 

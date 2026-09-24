@@ -33,9 +33,19 @@ dorkos community deploy \
   --dry-run
 ```
 
-Remove `--dry-run` to start setup. The command creates a recovery journal under your DorkOS data directory and prints its path. If setup stops, it keeps every confirmed resource and prints its owner, possible charges and stored data, read-only inspection commands, provider pages, and a complete command with `--resume <run-id>`. It never deletes paid resources automatically. Pressing Control-C stops the current bounded operation before returning and saves the last confirmed state. List saved work with `dorkos community deploy --list-incomplete`.
+Remove `--dry-run` to start setup. The command creates a recovery journal under your DorkOS data directory and prints its path. If setup stops, it keeps every confirmed resource and prints its owner, possible charges and stored data, read-only inspection commands, provider pages, and a complete command with `--resume <run-id>`. It never deletes a paid resource unless it can prove your launch made it and you confirm. Pressing Control-C stops the current bounded operation before returning and saves the last confirmed state. List saved work with `dorkos community deploy --list-incomplete`.
 
 Before it creates each resource, setup saves a random code in the recovery journal and attaches it to what it creates. The Fly app gets its own private network named `dorkos-` plus that code, and the Neon database role is named `community_` plus a code of its own. The codes are not secret. They let DorkOS check later that a leftover resource came from your launch and not from someone else. Because of the separate network, the app cannot reach your other Fly apps over Fly's private network. Community does not need to. Fly keeps a custom network after its app is destroyed, so each launch attempt leaves one empty network named `dorkos-…` behind in your Fly organization, including an attempt you removed and started again.
+
+Sometimes setup cannot tell whether a create worked, for example when a request times out. It stops and says the outcome is uncertain. If it had already saved the new resource's id, `--resume` checks that resource itself. If it had not, the recovery text gives a second command:
+
+```sh
+dorkos community deploy --remove-uncertain <run-id>
+```
+
+It reads the one unresolved resource from Fly or Neon and removes it only when DorkOS can prove your launch made it. The proof is the code that setup saved before the create, read back from that resource, plus a creation time within a few minutes of the request. When it can prove it, it shows the resource, its owner, when it was made and what it holds, and asks you to type the resource's id from Fly or Neon (for a Fly app, its internal id, never its name). Just before deleting, it checks everything again. When it cannot prove it, it removes nothing and prints the reason with the commands to check and remove it yourself. A launch started before these codes existed can never be proved. Outside a terminal, add `--confirm <id>` with the id it printed; the same checks still apply. After a removal, `--resume` continues the same launch. If Fly is still releasing the app name, wait a few minutes and resume again.
+
+DorkOS has not yet confirmed with a real Fly and Neon launch that these codes come back unchanged. Until it has, `--remove-uncertain` reports what it finds, says the proof is not yet confirmed, and removes nothing.
 
 Fly may require you to accept the Tigris terms separately. The command checks the current terms state and pauses for an explicit second confirmation before creating the bucket. Owner signup remains in Community's own browser page. After signup, the command applies a replacement Setup secret and asks you to confirm one post and one private attachment round trip.
 

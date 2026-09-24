@@ -92,6 +92,43 @@ const AppProvenanceEnvelopeSchema = z
   })
   .strict();
 
+const TigrisOnAppSchema = z
+  .object({
+    internalNumericId: z.number().int().nonnegative(),
+    name: SafeIdentifierSchema,
+    network: z
+      .string()
+      .max(256)
+      .regex(/^[\x21-\x7e]*$/u)
+      .nullable(),
+    organization: z.object({ slug: SafeIdentifierSchema }).strict(),
+    addOns: z
+      .object({
+        totalCount: z.number().int().nonnegative(),
+        nodes: z.array(
+          z
+            .object({
+              id: SafeIdentifierSchema,
+              name: SafeIdentifierSchema.nullable(),
+              createdAt: z.iso.datetime({ offset: true }),
+              organization: z.object({ slug: SafeIdentifierSchema }).strict(),
+            })
+            .strict()
+        ),
+      })
+      .strict(),
+  })
+  .strict();
+const TigrisOnAppEnvelopeSchema = z
+  .object({
+    data: z.object({ app: TigrisOnAppSchema.nullable() }).strict(),
+    errors: z.array(z.unknown()).optional(),
+  })
+  .strict();
+const AppNameAvailableEnvelopeSchema = z
+  .object({ data: z.object({ appNameAvailable: z.boolean() }).strict() })
+  .strict();
+
 const ExpectedBindingSchema = z
   .object({
     addOnId: SafeIdentifierSchema,
@@ -183,6 +220,32 @@ export const FLY_APP_PROVENANCE_QUERY = `
   }
 `;
 
+/**
+ * Minimal read of the Tigris add-ons on one app, with the app's own network so a removal can
+ * re-prove the app the bucket is bound to in the same readback.
+ */
+export const FLY_TIGRIS_ON_APP_QUERY = `
+  query DorkosFindTigrisOnApp($name: String!) {
+    app(name: $name) {
+      internalNumericId
+      name
+      network
+      organization { slug }
+      addOns(type: tigris) {
+        totalCount
+        nodes { id name createdAt organization { slug } }
+      }
+    }
+  }
+`;
+
+/** Whether Fly would accept a new app with this name now. */
+export const FLY_APP_NAME_AVAILABLE_QUERY = `
+  query DorkosAppNameAvailable($name: String!) {
+    appNameAvailable(name: $name)
+  }
+`;
+
 /** Minimal deletion mutation used only after exact journal binding is reverified. */
 export const FLY_TIGRIS_DELETE_MUTATION = `
   mutation DorkosDeleteTigris($name: String!, $provider: String!) {
@@ -262,6 +325,34 @@ export interface FlyAppProvenance {
   certificateCount: number;
   /** Secret names on the app, without values. */
   secretNames: string[];
+}
+
+/** One Tigris add-on attached to an app, as the service reports it. */
+export interface TigrisAddOnOnApp {
+  /** Add-on ID, the confirmation token for removing it. */
+  id: string;
+  /** Add-on name, when the service reports one. */
+  name: string | null;
+  /** Creation time the service reported. */
+  createdAt: string;
+  /** Owning organization slug. */
+  organizationSlug: string;
+}
+
+/** An app and the Tigris add-ons attached to it, read in one request. */
+export interface TigrisOnApp {
+  /** Numeric app ID. */
+  internalNumericId: string;
+  /** App name. */
+  name: string;
+  /** Private network name, or `null` when Fly reports none. */
+  network: string | null;
+  /** Owning organization slug. */
+  organizationSlug: string;
+  /** Number of Tigris add-ons the service says the app has. */
+  totalCount: number;
+  /** The add-ons returned; fewer than `totalCount` means the list was cut short. */
+  addOns: TigrisAddOnOnApp[];
 }
 
 /** Expected Tigris identity and binding selected in the immutable plan. */
@@ -373,6 +464,50 @@ export function parseFlyAppProvenanceResponse(response: unknown): FlyAppProvenan
     certificateCount: app.certificates.totalCount,
     secretNames: app.secrets.map((secret) => secret.name),
   };
+}
+
+/**
+ * Parse one read of an app's Tigris add-ons.
+ *
+ * @param response - Decoded response held in the bounded sensitive sink.
+ * @returns The app and its add-ons, or `null` when Fly reports no app with that name.
+ */
+export function parseTigrisOnAppResponse(response: unknown): TigrisOnApp | null {
+  let parsed: z.infer<typeof TigrisOnAppEnvelopeSchema>;
+  try {
+    parsed = TigrisOnAppEnvelopeSchema.parse(response);
+  } catch {
+    throw invalidResponse();
+  }
+  const app = parsed.data.app;
+  if (app === null) return null;
+  if (parsed.errors !== undefined && parsed.errors.length > 0) throw invalidResponse();
+  return {
+    internalNumericId: String(app.internalNumericId),
+    name: app.name,
+    network: app.network,
+    organizationSlug: app.organization.slug,
+    totalCount: app.addOns.totalCount,
+    addOns: app.addOns.nodes.map((node) => ({
+      id: node.id,
+      name: node.name,
+      createdAt: node.createdAt,
+      organizationSlug: node.organization.slug,
+    })),
+  };
+}
+
+/**
+ * Parse whether Fly would accept a new app with a name. Any error entry is a failed read.
+ *
+ * @param response - Decoded response held in the bounded sensitive sink.
+ */
+export function parseAppNameAvailableResponse(response: unknown): boolean {
+  try {
+    return AppNameAvailableEnvelopeSchema.parse(response).data.appNameAvailable;
+  } catch {
+    throw invalidResponse();
+  }
 }
 
 /** Parse Tigris deletion acknowledgement and bind it to the exact expected name. */

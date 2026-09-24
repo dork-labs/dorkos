@@ -335,4 +335,50 @@ describe('Community launch journal', () => {
       })
     ).rejects.toThrow();
   });
+
+  it('round-trips a pending removal and its uncertain outcome, and rejects anything extra in it', async () => {
+    const directory = await root();
+    const runId = randomUUID();
+    const filePath = launchJournalPath(directory, runId);
+    const removing: LaunchJournal = {
+      ...journal(runId),
+      state: 'uncertain',
+      pendingIntent: {
+        provider: 'fly',
+        organizationId: 'dork-labs',
+        resourceName: 'community-a',
+        provenanceMarker: '7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a',
+        requestedAt: '2026-09-23T10:31:03.000Z',
+      },
+      pendingRemoval: {
+        provider: 'fly',
+        token: '4817203',
+        resourceName: 'community-a',
+        proof: 'marker',
+        requestedAt: '2026-09-23T10:40:00.000Z',
+      },
+      lastSafeError: { category: 'uncertain', code: 'REMOVAL_OUTCOME_UNCERTAIN' },
+    };
+    await initializeLaunchJournal(filePath, removing);
+    await expect(readLaunchJournal(filePath)).resolves.toEqual(removing);
+
+    const other = randomUUID();
+    await expect(
+      initializeLaunchJournal(launchJournalPath(directory, other), {
+        ...removing,
+        runId: other,
+        pendingRemoval: { ...removing.pendingRemoval!, appName: 'extra' } as never,
+      })
+    ).rejects.toThrow();
+    const many = randomUUID();
+    await expect(
+      initializeLaunchJournal(launchJournalPath(directory, many), {
+        ...journal(many),
+        removals: Array.from({ length: 9 }, () => ({
+          ...removing.pendingRemoval!,
+          removedAt: '2026-09-23T10:41:00.000Z',
+        })),
+      })
+    ).rejects.toThrow();
+  });
 });

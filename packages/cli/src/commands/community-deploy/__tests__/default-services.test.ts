@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   createTigris: vi.fn(),
   readTigris: vi.fn(),
   readAppProvenance: vi.fn(),
+  isAppNameAvailable: vi.fn(),
   readNeonProjects: vi.fn(),
   readNeonBranches: vi.fn(),
   readNeonBranchTopology: vi.fn(),
@@ -49,6 +50,7 @@ vi.mock('../fly-graphql-client.js', () => ({
     createTigris = mocks.createTigris;
     readTigris = mocks.readTigris;
     readAppProvenance = mocks.readAppProvenance;
+    isAppNameAvailable = mocks.isAppNameAvailable;
   },
 }));
 
@@ -424,5 +426,47 @@ describe('default Community creation boundaries', () => {
         context({ AWS_ACCESS_KEY_ID: 'old-access', AWS_SECRET_ACCESS_KEY: 'old-secret' })
       )
     ).rejects.toMatchObject({ code: 'MISSING_TIGRIS_SECRETS' });
+  });
+});
+
+describe('Fly create after an uncertain-create removal', () => {
+  const removal = {
+    provider: 'fly' as const,
+    token: '4817203',
+    resourceName: 'community-fixture-app',
+    proof: 'marker' as const,
+    requestedAt: '2026-09-21T00:00:00.500Z',
+    removedAt: '2026-09-21T00:00:00.900Z',
+  };
+
+  it('does not ask Fly about the name when nothing with it was removed', async () => {
+    await dependencies(
+      baseJournal({ state: 'planned', resources: {}, completedSteps: ['planned'] })
+    ).fly.prepare!();
+    await dependencies(
+      baseJournal({
+        state: 'planned',
+        resources: {},
+        completedSteps: ['planned'],
+        removals: [{ ...removal, resourceName: 'another-app' }],
+      })
+    ).fly.prepare!();
+    expect(mocks.isAppNameAvailable).not.toHaveBeenCalled();
+  });
+
+  it('stops before any intent while Fly still holds a removed app name', async () => {
+    const latest = baseJournal({
+      state: 'planned',
+      resources: {},
+      completedSteps: ['planned'],
+      removals: [removal],
+    });
+    mocks.isAppNameAvailable.mockResolvedValueOnce(false);
+    await expect(dependencies(latest).fly.prepare!()).rejects.toThrow(
+      'Fly is still releasing the name community-fixture-app. Try `--resume` again in a few minutes.'
+    );
+    mocks.isAppNameAvailable.mockResolvedValueOnce(true);
+    await expect(dependencies(latest).fly.prepare!()).resolves.toBeUndefined();
+    expect(mocks.isAppNameAvailable).toHaveBeenCalledWith('community-fixture-app');
   });
 });
