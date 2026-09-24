@@ -4153,10 +4153,25 @@ async function start() {
       extensionManager,
       logger,
     });
+    // One agent-registry surface for the flows that take an agent off the team
+    // (DOR-2245): an uninstalled agent package, and an agent a different
+    // package with the same name replaces.
+    const marketplaceAgentRegistry = {
+      unregisterAtPath: async (projectPath: string) => {
+        const agent = meshCore?.getByPath(projectPath);
+        if (!meshCore || !agent) return null;
+        const { manifestKept } = await meshCore.unregister(agent.id);
+        return { id: agent.id, directoryDenied: manifestKept };
+      },
+      restoreAtPath: async (projectPath: string) => {
+        await meshCore?.syncFromDisk(projectPath);
+      },
+    };
     const marketplaceAgentFlow = new AgentInstallFlow({
       dorkHome,
       agentCreator: { createAgentWorkspace },
       getMeshCore: () => meshCore,
+      agentRegistry: marketplaceAgentRegistry,
       logger,
     });
     const marketplaceSkillPackFlow = new SkillPackInstallFlow({ dorkHome, logger });
@@ -4180,17 +4195,7 @@ async function start() {
       shapeScheduleTeardown: shapeScheduleService,
       // An uninstalled agent package's agent leaves the team (DOR-2245): the
       // full unregister cascade, and back again if the uninstall rolls back.
-      agentRegistry: {
-        unregisterAtPath: async (projectPath: string) => {
-          const agent = meshCore?.getByPath(projectPath);
-          if (!meshCore || !agent) return null;
-          const { manifestKept } = await meshCore.unregister(agent.id);
-          return { id: agent.id, directoryDenied: manifestKept };
-        },
-        restoreAtPath: async (projectPath: string) => {
-          await meshCore?.syncFromDisk(projectPath);
-        },
-      },
+      agentRegistry: marketplaceAgentRegistry,
       // An install made before installed-files records existed gets one rebuilt
       // from the commit it was installed at (DOR-2245 §9).
       rebuildLegacy: (installRoot: string) =>

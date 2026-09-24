@@ -171,6 +171,39 @@ describe('agent identity across sources (DOR-2245 §8)', () => {
   });
 });
 
+describe('an agent from a different source replaces a registered one (code review 5)', () => {
+  // Purpose: installing a different package over a still-registered agent must
+  // take the old agent off the team with the full cascade (schedules, grants,
+  // room seats) BEFORE its identity is set aside; a silent id swap orphans them
+  // (DOR-1791 F1). A same-source reinstall keeps the agent registered.
+  it('unregisters the earlier agent before setting its identity aside', async () => {
+    const harness = buildInstallerForTests(dorkHome);
+    const first = await harness.installer.install({ name: path.join(FIXTURES_DIR, 'valid-agent') });
+    const root = first.installPath;
+    await put(root, '.dork/agent.json', '{"id":"01OLD"}');
+    const seenAtCall: string[] = [];
+    harness.spies.agentUnregister.mockImplementation(async (at: string) => {
+      seenAtCall.push(await readFile(path.join(at, '.dork', 'agent.json'), 'utf8'));
+      return { id: '01OLD', directoryDenied: false };
+    });
+
+    await harness.installer.install({ name: path.join(FIXTURES_DIR, 'valid-agent') });
+    expect(harness.spies.agentUnregister).not.toHaveBeenCalled();
+
+    const otherSource = path.join(dorkHome, 'elsewhere', 'valid-agent');
+    await cp(path.join(FIXTURES_DIR, 'valid-agent'), otherSource, { recursive: true });
+    await initBoundary(path.dirname(dorkHome));
+    try {
+      await harness.installer.install({ name: otherSource });
+    } finally {
+      await initBoundary(FIXTURES_DIR);
+    }
+    expect(harness.spies.agentUnregister).toHaveBeenCalledTimes(1);
+    expect(harness.spies.agentUnregister).toHaveBeenCalledWith(root);
+    expect(seenAtCall).toEqual(['{"id":"01OLD"}']);
+  });
+});
+
 describe('an agent package that ships identity seeds (code review 1)', () => {
   // Purpose: a package shipping SOUL.md, MEMORY.md and agent.json seeds must
   // never overwrite the agent's own copies on update, nor set them aside.

@@ -31,6 +31,7 @@ import { flowOwnership } from '../lib/flow-ownership.js';
 import { readInstalledFiles, sameSource } from '../lib/installed-files.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
+import type { UninstallAgentRegistry } from './uninstall.js';
 
 /**
  * Structural interface for the agent-creator dependency. Mirrors only the
@@ -53,6 +54,12 @@ export interface AgentFlowDeps {
    * denial on its own folder. Absent when Mesh is off.
    */
   getMeshCore?: () => Parameters<typeof createAgentWorkspace>[1];
+  /**
+   * Takes an earlier, different package's agent off the team (the full
+   * unregister cascade) before this one replaces it (DOR-2245). Absent when
+   * Mesh is off.
+   */
+  agentRegistry?: Pick<UninstallAgentRegistry, 'unregisterAtPath'>;
   /** Logger for diagnostic output. */
   logger: Logger;
 }
@@ -149,6 +156,11 @@ export class AgentInstallFlow {
     // A different package that happens to share this name never inherits the
     // earlier agent (DOR-2245): its identity files are set aside, and this one
     // starts fresh.
+    // The earlier agent leaves the team first, with the full cascade: setting
+    // its identity aside while it is still registered would swap the id under
+    // its schedules, grants and room seats (DOR-1791 F1). Like an uninstall's,
+    // the cascade is not undone if the install then rolls back.
+    if (differentPackage) await this.deps.agentRegistry?.unregisterAtPath(targetDir);
     if (differentPackage && (await setAsideIdentityFiles(targetDir))) {
       warnings.push(
         `An earlier agent named ${manifest.name} came from a different source, so its files were set aside (.dork-old) and this one starts fresh.`
