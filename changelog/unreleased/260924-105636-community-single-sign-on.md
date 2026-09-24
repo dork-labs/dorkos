@@ -2,6 +2,7 @@
 covers:
   - "feat(community): optional single sign-on through the host's OpenID Connect provider"
   - 'fix(community): harden single sign-on and Google sign-in after review'
+  - 'fix(community): pin checked OIDC endpoints and guard account release'
 ---
 
 ### Added
