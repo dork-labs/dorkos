@@ -74,7 +74,7 @@ A legacy install has no record until its next update, reinstall or uninstall reb
 
 - **Recorded install, a new name:** allowed. The file is unlisted, so it is the person's.
 - **Recorded install, a name the package ships** (present, or deleted by the person but still listed, so its next update would bring it back): refused with a message that says the name is the package's.
-- **Legacy install:** refused, with a message that says how to get out: update or reinstall the package once, which writes a record.
+- **Legacy install:** refused, with a message that says when it ends: after the package's next update, which writes a record. (Not "reinstall": for an agent package the app's Reinstall makes a fresh agent, see Review round 1.)
 
 ### Decision 5: Make my own copy, from the refused edit
 
@@ -167,7 +167,7 @@ No logic change; the call already goes through `isPackageOwned`. Both refusal se
 
 - **Create, recorded package agent:** works exactly as for any agent.
 - **Create, name the package ships:** "This agent's package already has a schedule called "nightly-sweep", so DorkOS didn't make another one with that name. Pick a different name."
-- **Create, package installed by an older DorkOS:** "This agent's package was installed by an older version of DorkOS, so DorkOS can't yet tell the package's files from yours, and a schedule made here could be lost at the package's next update. Update or reinstall the package once, then try again."
+- **Create, package installed by an older DorkOS:** "This agent's package was installed by an older version of DorkOS without a list of its files, so DorkOS can't yet tell them from yours, and a schedule made here could be lost at the package's next update. This will work after that update." A path that leads into another package (a Harness Sync link) names that package instead of "this agent's package".
 - **Edit a package's schedule (what it does):** "This schedule came with an installed package, so DorkOS didn't change it: the package's next update would put its own version back. You can switch it on or off, or change when it runs, here. To change what it does, make your own copy."
 - **Edit a package's schedule (a higher power level):** "This schedule came with an installed package, so DorkOS didn't change how much it may do: the package's next update would put its own setting back. You can still approve it as it stands, and it will run at the level the package asks for. To give it more, make your own copy."
 - **In the app,** either edit refusal shows inline in the edit dialog with **Make my own copy**. The notice ends: "The package's schedule keeps running unless you switch it off." Clicking the button shows the New Schedule form with the person's edits and the name `<name>-copy`; Create files it for the same agent, where it parks for approval or arms through the usual rules.
@@ -223,3 +223,16 @@ None.
 
 - DOR-2272, DOR-1791, DOR-1789, DOR-2245 (#2084), DOR-2302, DOR-2318 (#2087), FB-26.
 - `specs/marketplace-package-file-ownership/02-specification.md` §1, §4 (the carry-over table), §9.
+
+## Review round 1 (2026-09-24)
+
+The adversarial review kept the ownership rule and required the following, all built in the same PR.
+
+1. **Ownership is kept on the row** (`pulse_schedules.package_owned`: `record` | `legacy` | NULL, migration `0109`), written by every discovery sync. When it goes from a package to NULL, the sync keeps the row's switch (an OFF switch always, an ON switch only under a standing approval) and `carrySwitchIntoReleasedFile` writes it into the now-writable file, from the watcher and the reconciler. Before, a person's OFF switch flipped back ON when the record stopped listing the file.
+2. **The inline refusal replaces the toast only while the form is on screen.** `useUpdateTask({ isShownInline })` replaces `inlineErrorCodes`; the form answers from a mounted ref, so a refusal landing after the dialog closed still toasts.
+3. **Legacy wording on the edit door**, with `ownedBy` on every `schedule_package_owned` refusal (routes and MCP tools pass it through). A legacy refusal says the rest works after the package's next update and offers no copy.
+4. **Refusals name the real owner**: `PackageOwnership` carries `packageName` and `agentOwned`.
+5. **Copy names count up** (`-copy`, `-copy-2`, …) past the names of the same agent's schedules.
+6. **UX (operator decision):** the task wire type carries `packageOwned` (in the OpenAPI). A package's schedule opens with a notice at the top; its name, description, prompt, power level and runtime settings are read-only (a disabled fieldset), its switch and timing stay editable; a `record` notice offers Make my own copy, a `legacy` one does not. The copy form has **Switch off the package's schedule**, ticked by default; after Create it sends `enabled: false` for the original.
+
+**Reinstall finding.** The Installed view offers Update (only when one exists) and Uninstall per row; Reinstall is only on the package's detail sheet, and for an agent package it opens agent creation, a fresh agent, rather than reinstalling in place. So "reinstall" is not honest advice for a legacy agent package, and the wording says "after the package's next update" instead. A safe background record rebuild is DOR-2197's.

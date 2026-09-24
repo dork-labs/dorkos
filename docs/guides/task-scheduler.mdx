@@ -168,14 +168,14 @@ You can still change **when** a package's schedule runs. Open it from the Schedu
 
 The row then says **Your timing**. Open it to see the package's own timing, and choose **Reset to the package's default** to go back to it. If an agent changes when one of these schedules runs, the schedule stops and waits for you to approve it again.
 
-What the schedule does, its instructions and its name, still belongs to the package, because the package's next update would put its own version back. If you try to change them, the edit window says so and offers **Make my own copy**: it opens a new schedule for the same agent with your changes already filled in, named after the original with `-copy` on the end. Check it and choose **Create**. The package's schedule keeps running unless you switch it off.
+What the schedule does, its instructions, its name and its settings, still belongs to the package, because the package's next update would put its own version back. The edit window says so as soon as you open it, and shows those fields without letting you change them. To change them, choose **Make my own copy**: it opens a new schedule for the same agent with everything filled in, under the original's name with `-copy` on the end (or `-copy-2` and so on, if that is taken). Change what you like and choose **Create**. **Switch off the package's schedule** is ticked by default, so the two don't both run; untick it to keep both.
 
 ### Schedules for an agent from the marketplace
 
 You can make your own schedules for an agent you installed from the marketplace, the same way as for any other agent. DorkOS keeps them when the package updates. Two things are turned down, each with a note saying why:
 
 - a name the package already uses for one of its own schedules, because its next update would put that schedule back; pick a different name;
-- any new schedule for an agent whose package was installed by an older version of DorkOS, because DorkOS can't yet tell that package's files from yours. Update or reinstall the package once, then try again.
+- any new schedule for an agent whose package was installed by an older version of DorkOS, because DorkOS can't yet tell that package's files from yours. This works after the package's next update.
 
 If a later version of the package starts shipping a schedule with the same name as one of yours, the update keeps a copy of yours beside it (its file ends in `.dork-old`) and tells you. Yours stops running until you make it again under another name.
 

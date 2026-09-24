@@ -25,6 +25,8 @@ A file inside an install root that has a record is the package's exactly when th
 
 An install root with no record (installed before DOR-2245, not yet updated) keeps the DOR-1789 answer: location for plugin and Shape roots, a marker for agent directories.
 
+The answer is also kept on the task row (`package_owned`, rewritten by every discovery sync), so the sync sees ownership lapse and the app shows it before an edit. When a file stops being a package's, the row's switch, which was the only place the person's choice could live, is kept and written into the file.
+
 Both task doors ask this one question about the file they would write. Create is refused only where update would be refused, so a person can never make a schedule DorkOS then refuses to let them edit.
 
 The separate preserved task root DOR-1791 designed (`<installRoot>/.dork/schedules/`) is not built. The agent's existing `.agents/skills/` root is durable now, and a second root would add a watched directory, a naming collision and a schedule the agent cannot invoke as a skill, for nothing the record does not already give.
@@ -38,6 +40,6 @@ The separate preserved task root DOR-1791 designed (`<installRoot>/.dork/schedul
 
 ### Negative
 
-- Legacy installs keep the old refusal until their next update or reinstall writes a record.
+- Legacy installs keep the old refusal until their next update writes a record. (For an agent package, the app's Reinstall makes a fresh agent rather than reinstalling in place, so it is not a way out.)
 - A later package version that ships a schedule with the same name as a person's takes the path; the person's copy is saved as `SKILL.md.dork-old` and stops running. The update result says so, and the replaced schedule parks for approval.
 - Each ownership question reads a small JSON file.
