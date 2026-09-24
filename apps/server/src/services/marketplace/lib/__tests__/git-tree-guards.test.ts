@@ -27,38 +27,39 @@ let versionReads = 0;
 
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  const { EventEmitter } = await import('node:events');
+  const { PassThrough } = await import('node:stream');
+  /** A child process that prints `stdout`/`stderr` and exits with `code`. */
+  const fakeChild = (stdout: string, stderr: string, code: number) => {
+    const child = Object.assign(new EventEmitter(), {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      stdin: new PassThrough(),
+      pid: undefined,
+    });
+    setImmediate(() => {
+      child.stdout.end(stdout);
+      child.stderr.end(stderr);
+      setImmediate(() => child.emit('close', code, null));
+    });
+    return child;
+  };
   return {
     ...actual,
-    // Node's callback shape: (err, stdout, stderr), with git's output also on
-    // the error, as the real execFile gives it.
-    execFile: vi.fn(
-      (
-        _cmd: string,
-        args: string[],
-        opts: { env: NodeJS.ProcessEnv },
-        callback: (...a: unknown[]) => void
-      ) => {
-        if (args[0] === '--version') {
-          versionReads += 1;
-          setImmediate(() => callback(null, gitVersionOutput, ''));
-          return;
-        }
-        calls.push(args);
-        envs.push(opts.env);
-        const answer = respond(args);
-        setImmediate(() => {
-          if ('fail' in answer) {
-            callback(
-              Object.assign(new Error('Command failed: git'), { stderr: answer.fail }),
-              '',
-              answer.fail
-            );
-          } else {
-            callback(null, answer.stdout, answer.stderr ?? '');
-          }
-        });
+    // Git runs through `spawn` (its own process group, so a limit can stop
+    // the whole tree); this answers each call from `respond`.
+    spawn: vi.fn((_cmd: string, args: string[], opts: { env: NodeJS.ProcessEnv }) => {
+      if (args[0] === '--version') {
+        versionReads += 1;
+        return fakeChild(gitVersionOutput, '', 0);
       }
-    ),
+      calls.push(args);
+      envs.push(opts.env);
+      const answer = respond(args);
+      return 'fail' in answer
+        ? fakeChild('', answer.fail, 128)
+        : fakeChild(answer.stdout, answer.stderr ?? '', 0);
+    }),
   };
 });
 
@@ -67,7 +68,7 @@ const resolveGitAuth = vi.fn(() => 'ghp_secret');
 // fetch has nothing to measure; it has its own test (git-tree-size.test.ts).
 vi.mock('@dorkos/marketplace/package-size', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@dorkos/marketplace/package-size')>()),
-  measurePackageTree: vi.fn().mockResolvedValue({ files: 0, bytes: 0 }),
+  measurePackageTree: vi.fn().mockResolvedValue({ entries: 0, bytes: 0 }),
 }));
 
 vi.mock('../../../core/template-downloader.js', async () => {

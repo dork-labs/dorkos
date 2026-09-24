@@ -3,7 +3,7 @@
  * repositories. The clone limits are shrunk for this file only: 1 MB and 100
  * files and folders.
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -25,7 +25,7 @@ vi.mock('@dorkos/marketplace/package-size', async (importOriginal) => ({
   CLONE_SIZE_LIMITS: { maxTotalBytes: 1024 * 1024, maxEntries: 100, maxFileBytes: 1024 * 1024 },
 }));
 
-import { fetchTree, GitFetchError } from '../git-tree.js';
+import { fetchTree, GitFetchError, killProcessTree, pastByteLimit } from '../git-tree.js';
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim();
@@ -160,4 +160,80 @@ describe('fetchTree size limits (DOR-2321)', () => {
     expect(error!.message).toContain('The download grew past 1 MB, so DorkOS stopped it.');
     expect(readdirSync(dir)).toEqual([]);
   }, 60_000);
+});
+
+describe('the blobless path sizes files before checkout (DOR-2321)', () => {
+  // Purpose: the normal case (a package in a folder, fetched blobless). One
+  // small download named several times would unpack past the byte limit;
+  // its files are fetched and sized, counted once per place they appear,
+  // before anything is written.
+  it('refuses a blob that unpacks past the limit through repeated use', async () => {
+    const blob = gitIn(work, Buffer.alloc(400 * 1024, 97), 'hash-object', '-w', '--stdin');
+    const pkg = gitIn(
+      work,
+      Array.from({ length: 4 }, (_, i) => `100644 blob ${blob}\tcopy${i}`).join('\n') + '\n',
+      'mktree'
+    );
+    const commit = commitTree(gitIn(work, `040000 tree ${pkg}\tpkg\n`, 'mktree'), 'repeated');
+    const { dir, error } = await fetchInto(commit, 'pkg');
+    expect(error!.message).toContain(
+      'The download is larger than 1 MB, so DorkOS did not unpack it.'
+    );
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  // Purpose: within the limits, the blobless path still checks the package out.
+  it('still checks out a folder within the limits', async () => {
+    const { dir, error } = await fetchInto(small, 'pkg');
+    expect(error).toBeUndefined();
+    expect(existsSync(path.join(dir, 'pkg', 'SKILL.md'))).toBe(true);
+  });
+});
+
+describe('stopping git (DOR-2321)', () => {
+  // Purpose: a stopped git must not leave helpers running. On POSIX the whole
+  // process group goes: a shell and the two sleeps it started all stop.
+  it.skipIf(process.platform === 'win32')('kills the whole process group on POSIX', async () => {
+    const child = spawn('sh', ['-c', 'sleep 30 & sleep 30 & wait'], { detached: true });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const kids = execFileSync('pgrep', ['-P', String(child.pid)], { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .map(Number);
+    expect(kids.length).toBeGreaterThanOrEqual(2);
+    killProcessTree(child.pid!);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const alive = [child.pid!, ...kids].filter((pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    expect(alive).toEqual([]);
+  });
+
+  // Purpose: on Windows the tree is stopped with taskkill /T /F.
+  it('uses taskkill /T /F on Windows', () => {
+    const run = vi.fn();
+    killProcessTree(1234, 'win32', run);
+    expect(run).toHaveBeenCalledWith('taskkill', ['/T', '/F', '/PID', '1234']);
+  });
+
+  // Purpose: the byte watch stops git on either signal: the download on disk,
+  // or free space falling by more than the limit (plus a margin for the
+  // disk's other writers), which catches what a checkout writes.
+  it.each([
+    ['a download past the limit', { size: 11, freeBefore: 1e12, freeNow: 1e12 }, true],
+    [
+      'free space falling past the limit',
+      { size: 0, freeBefore: 1e12, freeNow: 1e12 - 400e6 },
+      true,
+    ],
+    ['free space within the margin', { size: 0, freeBefore: 1e12, freeNow: 1e12 - 100e6 }, false],
+    ['free space unknown', { size: 0, freeBefore: undefined, freeNow: undefined }, false],
+  ])('decides on %s', (_label, sample, stop) => {
+    expect(pastByteLimit({ ...sample, maxBytes: 10 })).toBe(stop);
+  });
 });
