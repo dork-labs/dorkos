@@ -7,7 +7,7 @@
  * `flow-drain` skill reached through the `flow__flow-drain` symlink Harness Sync
  * writes. Every step goes through the doors production uses — the reconciler
  * for discovery, and {@link applyTaskFileUpdate} + `updateTask` +
- * `settleTimingChange` in the order `PATCH /api/tasks/:id` calls them — because
+ * `settleApprovedWorkChange` in the order `PATCH /api/tasks/:id` calls them — because
  * the whole feature is a round trip: the edit lands on the row, and the next
  * sweep of a file DorkOS will not change must leave it there.
  *
@@ -106,13 +106,14 @@ async function patch(
   if (!outcome.ok) return { ok: false, code: outcome.code };
   store.updateTask(existing.id, data, { timingLandsOn: outcome.timingLandsOn });
   if (!outcome.changesFile) {
-    store.settleTimingChange(
+    store.settleApprovedWorkChange(
       existing.id,
-      scheduleContentKey({
+      {
         prompt: existing.prompt,
         cron: existing.cron ?? '',
         timezone: existing.timezone ?? 'UTC',
-      }),
+        status: 'active',
+      },
       { trusted }
     );
   }

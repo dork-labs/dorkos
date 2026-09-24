@@ -20,11 +20,33 @@ import type { PermissionMode } from '@dorkos/shared/schemas';
 import type { TaskDefinition } from '@dorkos/skills/types';
 import type { pulseSchedules } from '@dorkos/db';
 import {
+  CHANGED_REASON,
   resolveFileArmStatus,
   resolveFilePermissionMode,
+  scheduleContentKey,
   type FileArmVerdict,
 } from './schedule-permission-clamp.js';
-import { effectiveTiming } from './timing/effective-timing.js';
+import {
+  AGENT_CONTENT_CHANGE_REASON,
+  AGENT_TIMING_CHANGE_REASON,
+  effectiveContentKey,
+  effectiveTiming,
+} from './timing/effective-timing.js';
+
+/**
+ * The park sentences a sync keeps on a row still parked at the same content
+ * (DOR-2313): each says why a schedule that WAS approved is waiting, and stays
+ * true until the content changes again. Without this the next sync rewrote
+ * every one of them as "DorkOS found this schedule in a file", because a park
+ * withdraws the grant the gate reads to tell "changed" from "found". A
+ * validation complaint is deliberately not here: it is about the file, and the
+ * file's own answer on each sync is the one to show.
+ */
+const KEPT_PARK_REASONS: ReadonlySet<string> = new Set([
+  CHANGED_REASON,
+  AGENT_TIMING_CHANGE_REASON,
+  AGENT_CONTENT_CHANGE_REASON,
+]);
 import { logger } from '../../lib/logger.js';
 
 /** Where a file-sourced write came from, and what is wrong with the file. */
@@ -142,10 +164,14 @@ export class FileSyncGates {
 
     // Only discovery is subject to the arm gate: a file DorkOS found is nobody's
     // decision to run, while a route write is a person's (ADR `260823-200726`).
-    const arm =
+    const verdict =
       options?.source === 'discovery'
         ? resolveFileArmStatus(approved, incoming, options.problem)
         : null;
+    const arm =
+      verdict && options && this.keepsParkReason(verdict, existing, incoming, options)
+        ? { ...verdict, reason: existing!.reason }
+        : verdict;
 
     const keepsRowEnabled = this.keepsRowEnabled(existing, arm, options);
     return {
@@ -155,6 +181,36 @@ export class FileSyncGates {
       dropsTimingOverride,
       packageOwned: this.packageOwnedToWrite(def, existing, keepsRowEnabled, options),
     };
+  }
+
+  /**
+   * Whether this sync keeps the sentence the row was parked with, instead of
+   * writing the arm gate's (DOR-2313).
+   *
+   * A park withdraws the grant, so the gate reading the same file afterwards has
+   * only "DorkOS found this schedule in a file" to say, which is false for a
+   * schedule a person approved before: an agent's own request that parked it
+   * (`TaskStore.settleApprovedWorkChange`), or an earlier sync that saw its
+   * file change. The earlier sentence ({@link KEPT_PARK_REASONS}) stands while
+   * it is still true: the row is parked, the file has nothing wrong with it,
+   * and what would run is exactly the work that was parked. Any new change to
+   * the file is new work, and the gate's own sentence takes over.
+   */
+  private keepsParkReason(
+    verdict: FileArmVerdict,
+    existing: typeof pulseSchedules.$inferSelect | undefined,
+    incoming: { prompt: string; cron: string; timezone: string },
+    options: FileSyncSource
+  ): boolean {
+    return (
+      verdict.status === 'pending_approval' &&
+      !options.problem &&
+      existing?.status === 'pending_approval' &&
+      existing.reasonSource === 'dorkos' &&
+      existing.reason !== null &&
+      KEPT_PARK_REASONS.has(existing.reason) &&
+      effectiveContentKey(existing) === scheduleContentKey(incoming)
+    );
   }
 
   /**

@@ -164,7 +164,7 @@ export const TASK_WRITE_POLICY = {
   // A timing choice, like `cron`, not a power one — and treated exactly like a
   // cron change where it matters: a reset that changes when an approved
   // schedule runs parks it for a person, the same as an agent's own cron would
-  // (`TaskStore.settleTimingChange`).
+  // (`TaskStore.settleApprovedWorkChange`).
   resetTiming: 'agent-writable',
   // WHICH backend does the work, and how hard it thinks (DOR-1615/DOR-1347).
   // Not a power choice: every runtime here runs under the SAME

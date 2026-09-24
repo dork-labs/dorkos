@@ -444,6 +444,45 @@ describe('a package schedule the record stops listing', () => {
     expect(await fs.readFile(shippedFile, 'utf-8')).toContain('enabled: false');
   });
 
+  it('keeps an agent-parked schedule parked, and its switch, through a release (DOR-2313)', async () => {
+    // An agent retimes the package's approved schedule: parked in the same
+    // request, on the row alone. If the record then stops listing the file, the
+    // release drops the agent's row-only timing, so what would run is new work;
+    // it must stay parked, and nothing may switch it on.
+    const approved = await approvedShipped();
+    const before = {
+      prompt: approved.prompt,
+      cron: approved.cron ?? '',
+      timezone: approved.timezone ?? 'UTC',
+      status: approved.status,
+    };
+    const outcome = await applyTaskFileUpdate({ dorkHome, meshCore } as never, {
+      existing: approved,
+      data: { cron: '*/5 * * * *' } as never,
+    });
+    if (!outcome.ok) throw new Error(outcome.error);
+    store.updateTask(
+      approved.id,
+      { cron: '*/5 * * * *' },
+      { timingLandsOn: outcome.timingLandsOn }
+    );
+    expect(store.settleApprovedWorkChange(approved.id, before, { trusted: false })).toBe('parked');
+    const parked = store.getTask(approved.id)!;
+
+    await releaseShippedFile();
+    const first = await sweep(shippedFile);
+    const second = await sweep(shippedFile);
+
+    // The row's ON was the person's approval of the package's work; the park
+    // withdrew it, so only an OFF is kept through the release and the file's
+    // OFF stands. Nothing is switched on, and nothing runs.
+    expect(parked.enabled).toBe(true);
+    for (const row of [first, second]) {
+      expect(row.status).toBe('pending_approval');
+      expect(row.enabled).toBe(false);
+    }
+  });
+
   it('records ownership on the row as discovery finds it', async () => {
     // The app shows ownership before an edit, so the row must carry it.
     expect((await sweep(shippedFile)).packageOwned).toBe('record');

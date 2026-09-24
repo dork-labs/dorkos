@@ -237,7 +237,7 @@ const UNAPPROVED_REASON =
  * situation, and the first one would be a lie on a schedule the person made
  * themselves months ago: nothing was "found", something changed.
  */
-const CHANGED_REASON =
+export const CHANGED_REASON =
   'This schedule’s file changed since it was last approved, so it is waiting for you again. ' +
   'Read what it does now, then approve it or delete it.';
 

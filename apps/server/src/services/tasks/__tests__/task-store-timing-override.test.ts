@@ -4,7 +4,7 @@
  * how the approval grant follows it.
  *
  * Every case drives the store the way production does — `upsertFromFile` for a
- * sync, `updateTask` + `settleTimingChange` for an edit — and then asks the
+ * sync, `updateTask` + `settleApprovedWorkChange` for an edit — and then asks the
  * question that would come out differently if one reader looked at the
  * package's cron instead of the one that runs: does the next sync of the
  * unchanged file leave the schedule approved?
@@ -75,9 +75,9 @@ describe('a person’s own timing on a package’s schedule', () => {
   function personRetimes(id: string, cron: string): void {
     const before = store.getTask(id)!;
     store.updateTask(id, { cron }, { timingLandsOn: 'row' });
-    store.settleTimingChange(
+    store.settleApprovedWorkChange(
       id,
-      scheduleContentKey({ prompt: before.prompt, cron: before.cron!, timezone: before.timezone! }),
+      { prompt: before.prompt, cron: before.cron!, timezone: before.timezone!, status: 'active' },
       {
         trusted: true,
       }
@@ -301,15 +301,15 @@ describe('a person’s own timing on a package’s schedule', () => {
     expect(() => untyped(id, { cron: MY_CRON })).toThrow(/where it lands/);
   });
 
-  describe('settleTimingChange', () => {
+  describe('settleApprovedWorkChange', () => {
     it('moves a person’s approval to their new timing', () => {
       // Purpose: the design's "re-approves in the same act".
       const id = approvedSchedule();
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleTimingChange(
+      const outcome = store.settleApprovedWorkChange(
         id,
-        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC' }),
+        { prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: true }
       );
 
@@ -327,9 +327,9 @@ describe('a person’s own timing on a package’s schedule', () => {
       store.markRemovedByFilePath(FILE_PATH);
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      store.settleTimingChange(
+      store.settleApprovedWorkChange(
         id,
-        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC' }),
+        { prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         {
           trusted: true,
         }
@@ -343,9 +343,9 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = store.upsertFromFile(definition(), undefined, DISCOVERY).id;
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleTimingChange(
+      const outcome = store.settleApprovedWorkChange(
         id,
-        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC' }),
+        { prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: true }
       );
 
@@ -359,9 +359,9 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleTimingChange(
+      const outcome = store.settleApprovedWorkChange(
         id,
-        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC' }),
+        { prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: false }
       );
 
@@ -381,9 +381,9 @@ describe('a person’s own timing on a package’s schedule', () => {
       store.markRemovedByFilePath(FILE_PATH);
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleTimingChange(
+      const outcome = store.settleApprovedWorkChange(
         id,
-        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC' }),
+        { prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'paused' },
         { trusted: false }
       );
 
@@ -397,9 +397,9 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       store.updateTask(id, { timezone: 'Pacific/Kiritimati' }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleTimingChange(
+      const outcome = store.settleApprovedWorkChange(
         id,
-        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC' }),
+        { prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: false }
       );
 
@@ -413,9 +413,9 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       store.updateTask(id, { enabled: false });
 
-      const outcome = store.settleTimingChange(
+      const outcome = store.settleApprovedWorkChange(
         id,
-        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC' }),
+        { prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: false }
       );
 

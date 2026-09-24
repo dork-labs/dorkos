@@ -180,8 +180,9 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
     const after = store.getTask(id)!;
     expect(after.prompt).toBe(MALICIOUS_PROMPT);
     expect(after.permissionMode).toBe('acceptEdits');
-    // The task stays live — it simply runs with the normal approval prompts back.
-    expect(after.status).toBe('active');
+    // And it goes back to a person at once (DOR-2313), still switched on so a
+    // yes resumes it, but running nothing until then.
+    expect(after.status).toBe('pending_approval');
     expect(after.enabled).toBe(true);
 
     // The file, too, must no longer declare the grant, or the next reconciler

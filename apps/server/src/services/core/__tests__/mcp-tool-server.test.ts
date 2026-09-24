@@ -151,7 +151,7 @@ function makeMockTasksStore(overrides: Partial<Record<string, ReturnType<typeof 
     updateTask: vi.fn().mockReturnValue(null),
     // A row-only update (no file written) is settled against the approval
     // (DOR-2302); these cases never change a package's timing, so nothing moves.
-    settleTimingChange: vi.fn().mockReturnValue('unchanged'),
+    settleApprovedWorkChange: vi.fn().mockReturnValue('unchanged'),
     deleteTask: vi.fn().mockReturnValue(false),
     listRuns: vi.fn().mockReturnValue([]),
     ...overrides,
