@@ -28,6 +28,7 @@ import {
   type TenancyHarness,
   type TenancyMember,
 } from './tenancy-test-harness.js';
+import { drainExports } from './export-test-helpers.js';
 import { responseCookies } from './bootstrap-test-helper.js';
 
 const DAY = 24 * 60 * 60_000;
@@ -624,14 +625,20 @@ it('still serves history, read-only pairing, and the owner’s export while held
     200,
     'history through a read-only installation'
   );
-  await expectStatus(
+  const exported = await expectStatus(
     await h.call(`${tenant(a)}/owner/export`, {
       cookie: operator.cookie,
       body: { password: TENANCY_PASSWORD },
     }),
-    201,
+    202,
     'owner export while held'
   );
+  // The background job finishes while the community is held.
+  const exportId = (await exported.json()).export.id;
+  await drainExports(h.pool, h.blobStore);
+  expect(
+    (await h.pool.query('SELECT state FROM export_archives WHERE id=$1', [exportId])).rows[0]
+  ).toEqual({ state: 'ready' });
   const memberships = await expectStatus(
     await h.call('/api/v1/memberships', { cookie: member.cookie }),
     200,
