@@ -42,8 +42,13 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
     };
     try {
       await transaction(pool, async (client) => {
-        const managed = await client.query<{ state: string; lease_expired: boolean }>(
-          `SELECT state,created_at<=now()-($2 * interval '1 millisecond') AS lease_expired
+        const managed = await client.query<{
+          state: string;
+          lease_expired: boolean;
+          committed: boolean;
+        }>(
+          `SELECT state,created_at<=now()-($2 * interval '1 millisecond') AS lease_expired,
+                  committed_at IS NOT NULL AS committed
            FROM managed_blobs WHERE blob_key=$1 FOR UPDATE`,
           [candidate.blob_key, MANAGED_BLOB_RESERVATION_TTL_MS]
         );
@@ -54,8 +59,11 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
           [candidate.blob_key]
         );
         const managedRow = managed.rows[0];
+        // A committed blob's writer finished long ago, so no delayed publish can follow this
+        // delete, and its inventory row (which keeps the file's checksum) can go with it. Only
+        // a blob whose writer never reported back stays tombstoned for later sweeps.
         const outcomeUncertain = Boolean(
-          managedRow && (!queue.rows[0] || queue.rows[0].outcome_uncertain)
+          managedRow && !managedRow.committed && (!queue.rows[0] || queue.rows[0].outcome_uncertain)
         );
         const staleReservation =
           managedRow &&

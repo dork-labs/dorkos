@@ -18,6 +18,7 @@ import {
 } from '../data.js';
 import type { ConfirmPassword } from '../password-confirmation.js';
 import { ApiError, json, readJson } from '../http.js';
+import { memberIsLeaving } from '../erasure/guards.js';
 
 async function live(client: PoolClient, id: string, communityId: string) {
   await lockActiveCommunity(client, communityId);
@@ -28,7 +29,16 @@ async function live(client: PoolClient, id: string, communityId: string) {
   return result.rows[0];
 }
 
-async function remove(client: PoolClient, target: Member, actorId: string, action: string) {
+/**
+ * End one membership: deactivate the member, revoke every credential derived from it, and
+ * record `action` in the tenant audit log. The caller holds the member row lock.
+ */
+export async function remove(
+  client: PoolClient,
+  target: Pick<Member, 'id' | 'community_id'>,
+  actorId: string,
+  action: string
+) {
   await client.query(
     'UPDATE members SET active=false,removed_at=now() WHERE id=$1 AND community_id=$2',
     [target.id, target.community_id]
@@ -196,6 +206,8 @@ export function registerMemberRoutes(
       if (!successor) throw new ApiError(404, 'NOT_FOUND', 'Successor not found.');
       if (successor.role === 'owner')
         throw new ApiError(409, 'STATE_CONFLICT', 'That member already owns this community.');
+      if (await memberIsLeaving(client, successor))
+        throw new ApiError(409, 'STATE_CONFLICT', 'That member is leaving this community.');
       await client.query("UPDATE members SET role='member' WHERE id=$1", [current.id]);
       await client.query("UPDATE members SET role='owner' WHERE id=$1", [successor.id]);
       const updated = await client.query<{ lifecycle_version: number }>(

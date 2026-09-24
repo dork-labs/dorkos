@@ -12,10 +12,17 @@ import { sweepExpiredExports } from './routes/exports.js';
 import { sweepExpiredAdmissions } from './routes/invites.js';
 import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './deletion-worker.js';
+import { ERASURE_POLL_MS, pruneErasureRequests, sweepErasures } from './erasure/worker.js';
+import { sweepExpiredPairings } from './routes/pairings.js';
 
 const config = parseConfig(process.env);
 await migrate(config.databaseUrl);
 const pool = new Pool({ connectionString: config.databaseUrl });
+// A database restart or failover drops idle connections. The pool has already discarded the
+// broken one and opens a fresh one for the next query, so log it rather than crash the server.
+pool.on('error', (error: Error & { code?: string }) => {
+  console.error('Community database connection lost', error.code ?? error.name);
+});
 const blobStore = createBlobStore(config);
 const app = createCommunityApp({ config, pool, blobStore });
 const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
@@ -83,8 +90,42 @@ const cleanup = setInterval(() => {
       error instanceof Error ? error.name : 'unknown'
     );
   });
+  void sweepExpiredPairings(pool).catch((error: unknown) => {
+    console.error(
+      'Community pairing cleanup unavailable',
+      error instanceof Error ? error.name : 'unknown'
+    );
+  });
+  void pruneErasureRequests(pool).catch((error: unknown) => {
+    console.error(
+      'Community erasure record cleanup unavailable',
+      error instanceof Error ? error.name : 'unknown'
+    );
+  });
 }, 60_000);
 cleanup.unref();
-const onSignal = createSignalHandler(createStop({ server, pool, timers: [cleanup] }));
+let erasing = false;
+const erasures = setInterval(() => {
+  if (erasing) return;
+  erasing = true;
+  void (async () => {
+    // Drain what is due, a bounded number per tick so one tick never runs unbounded.
+    for (let claimed = 0; claimed < 10; claimed++) {
+      const result = await sweepErasures(pool, { journalPath: config.erasureJournal });
+      if (!result.claimed) break;
+    }
+  })()
+    .catch((error: unknown) => {
+      console.error(
+        'Community erasure unavailable',
+        error instanceof Error ? error.name : 'unknown'
+      );
+    })
+    .finally(() => {
+      erasing = false;
+    });
+}, ERASURE_POLL_MS);
+erasures.unref();
+const onSignal = createSignalHandler(createStop({ server, pool, timers: [cleanup, erasures] }));
 process.on('SIGINT', onSignal);
 process.on('SIGTERM', onSignal);

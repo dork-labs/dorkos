@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import type { Pool } from 'pg';
 import type { CommunityConfig } from './config.js';
+import { accountErasureRunning } from './erasure/guards.js';
 import { hashSecret, readCookie, verifyValue } from './security.js';
 
 /** Create one independent Better Auth instance for a community deployment. */
@@ -84,6 +85,20 @@ export function createCommunityAuth(pool: Pool, config: CommunityConfig) {
               });
             }
             return { data: user };
+          },
+        },
+      },
+      session: {
+        create: {
+          // Every sign-in method ends here, including an OAuth callback whose account a
+          // request hook cannot see, so a running account erasure refuses them all at once.
+          before: async (session) => {
+            if (await accountErasureRunning(pool, session.userId)) {
+              throw new APIError('FORBIDDEN', {
+                message: 'This account is being deleted.',
+              });
+            }
+            return { data: session };
           },
         },
       },

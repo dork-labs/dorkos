@@ -16,6 +16,7 @@ import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
 import { requireSessionUser, transaction } from '../data.js';
 import { mintHandle } from '../handles.js';
+import { accountErasureOpen } from '../erasure/guards.js';
 import {
   hostProjectionSql,
   parseHostCommunityId,
@@ -209,6 +210,14 @@ export function registerOwnerClaimRoutes(
       );
       if (owner.rowCount)
         throw new ApiError(409, 'STATE_CONFLICT', 'This community already has an owner.');
+      // The account row lock orders this check against a new account-erasure request.
+      await client.query('SELECT 1 FROM "user" WHERE id=$1 FOR SHARE', [user.id]);
+      if (await accountErasureOpen(client, user.id))
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'This account is being deleted, so it cannot claim a community.'
+        );
       const handle = await mintHandle(client, community.rows[0].id, user.name);
       const member = await client.query<{ id: string }>(
         `INSERT INTO members(community_id,user_id,display_name,handle,role)
