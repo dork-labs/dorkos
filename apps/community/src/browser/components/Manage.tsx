@@ -5,6 +5,7 @@ import { describeInstallAccess, describeReauthenticationError } from '../account
 import { SignOutButton } from './SignOut.js';
 import { HostLinksPanel } from './HostLinks.js';
 import { CommunityAddress } from './CommunityAddress.js';
+import { SignInMethodsPanel } from './SignInMethods.js';
 import { CommunityAdministration } from './CommunityAdministration.js';
 import { EraseMembershipPanel } from './Erasure.js';
 import type { Agent, Channel, Member } from '../types.js';
@@ -805,6 +806,7 @@ export function Manage({
               </p>
               <SignOutButton onSignedOut={onSignedOut} />
             </section>
+            <SignInMethodsPanel communityId={communityId} />
             <HostLinksPanel communityId={communityId} />
             <section className="panel" aria-labelledby="installations-title">
               <h3 id="installations-title" ref={installationsHeading} tabIndex={-1}>

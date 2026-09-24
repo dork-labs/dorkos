@@ -101,12 +101,19 @@ export const CommunityWireBootstrapPreflightResponseSchema = z.strictObject({
   granted: z.boolean(),
   expiresAt: timestamp,
 });
+/**
+ * The shortest new password a Community accepts, wherever one is set: sign-up, first-install
+ * setup, adding a password to a provider account, and offline recovery. Signing in with an older,
+ * shorter password still works.
+ */
+export const COMMUNITY_PASSWORD_MIN_LENGTH = 12;
+
 /** First-install setup creates the host account and initial tenant in one transaction. */
 export const CommunityWireBootstrapCompleteRequestSchema = z.strictObject({
   secret: id,
   accountName: z.string().trim().min(1).max(128),
   email: z.email(),
-  password: z.string().min(8).max(128),
+  password: z.string().min(COMMUNITY_PASSWORD_MIN_LENGTH).max(128),
   communityName: z.string().trim().min(1).max(120),
   channelName: z.string().trim().min(1).max(80),
 });
@@ -223,7 +230,11 @@ export const CommunityWireMemberDirectoryPageSchema = z.strictObject({
 export const CommunityWireAuthOptionsSchema = z.strictObject({
   google: z.boolean(),
   github: z.boolean(),
+  /** The host's OpenID Connect sign-in and its button text, or `null` when the host set none. */
+  oidc: z.strictObject({ label: z.string().trim().min(1).max(40) }).nullable(),
 });
+/** Public sign-in options: which buttons the sign-in page shows beside email and password. */
+export type CommunityWireAuthOptions = z.infer<typeof CommunityWireAuthOptionsSchema>;
 
 const REPORT_MAILBOX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 
@@ -264,6 +275,20 @@ export const CommunityWireHostLinksSchema = z.strictObject({
 });
 /** Host-set public links shown on sign-in, in account settings and on each message. */
 export type CommunityWireHostLinks = z.infer<typeof CommunityWireHostLinksSchema>;
+
+/** How the signed-in account can sign in: a password, the host's OIDC issuer, or both. */
+export const CommunityWireAccountSignInMethodsSchema = z.strictObject({
+  password: z.boolean(),
+  oidc: z.boolean(),
+});
+/** How the signed-in account can sign in. */
+export type CommunityWireAccountSignInMethods = z.infer<
+  typeof CommunityWireAccountSignInMethodsSchema
+>;
+/** Add a first password to an account that signs in only through a provider. */
+export const CommunityWireAccountPasswordRequestSchema = z.strictObject({
+  newPassword: z.string().min(COMMUNITY_PASSWORD_MIN_LENGTH).max(128),
+});
 
 /** Public channel projection. `joined` is for the current caller only. */
 export const CommunityWireChannelSchema = z.strictObject({
@@ -837,6 +862,7 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'COMMUNITY_HELD',
   'SHORT_NAME_TAKEN',
   'SHORT_NAME_RESERVED',
+  'PASSWORD_REQUIRED',
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;

@@ -39,6 +39,83 @@ function hostLink(name: string, value: string | undefined, allowMailto = false):
   throw new Error(`${name} must be ${allowed}`);
 }
 
+/** One configured OpenID Connect issuer: the host's own single sign-on, beside passwords. */
+export type CommunityOidcConfig = {
+  /** The issuer, without a trailing slash; discovery is `<issuer>/.well-known/openid-configuration`. */
+  issuer: string;
+  clientId: string;
+  clientSecret: string;
+  /** Sign-in button text. */
+  label: string;
+  scopes: string[];
+};
+
+// RFC 6749 section 3.3 scope-token characters.
+const SCOPE_TOKEN = /^[\x21\x23-\x5B\x5D-\x7E]+$/u;
+
+/**
+ * Read the OpenID Connect settings: all of issuer, client ID and client secret, or none of them.
+ * The label and scopes are optional and only allowed alongside an issuer.
+ */
+function parseOidc(value: {
+  COMMUNITY_OIDC_ISSUER_URL?: string;
+  COMMUNITY_OIDC_CLIENT_ID?: string;
+  COMMUNITY_OIDC_CLIENT_SECRET?: string;
+  COMMUNITY_OIDC_LABEL?: string;
+  COMMUNITY_OIDC_SCOPES?: string;
+}): CommunityOidcConfig | null {
+  const {
+    COMMUNITY_OIDC_ISSUER_URL: issuerUrl,
+    COMMUNITY_OIDC_CLIENT_ID: clientId,
+    COMMUNITY_OIDC_CLIENT_SECRET: clientSecret,
+    COMMUNITY_OIDC_LABEL: label,
+    COMMUNITY_OIDC_SCOPES: scopes,
+  } = value;
+  if (!issuerUrl && !clientId && !clientSecret) {
+    if (label || scopes)
+      throw new Error(
+        'COMMUNITY_OIDC_LABEL and COMMUNITY_OIDC_SCOPES need COMMUNITY_OIDC_ISSUER_URL, COMMUNITY_OIDC_CLIENT_ID and COMMUNITY_OIDC_CLIENT_SECRET'
+      );
+    return null;
+  }
+  if (!issuerUrl || !clientId || !clientSecret)
+    throw new Error(
+      'COMMUNITY_OIDC_ISSUER_URL, COMMUNITY_OIDC_CLIENT_ID and COMMUNITY_OIDC_CLIENT_SECRET must be set together'
+    );
+  let issuer: URL;
+  try {
+    issuer = new URL(issuerUrl);
+  } catch (cause) {
+    throw new Error('COMMUNITY_OIDC_ISSUER_URL must be an https:// address', { cause });
+  }
+  if (
+    issuer.protocol !== 'https:' &&
+    !(issuer.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(issuer.hostname))
+  )
+    throw new Error('COMMUNITY_OIDC_ISSUER_URL must use HTTPS, or HTTP on localhost');
+  if (issuer.username || issuer.password || issuer.search || issuer.hash)
+    throw new Error(
+      'COMMUNITY_OIDC_ISSUER_URL must not contain credentials, a query or a fragment'
+    );
+  const buttonLabel = label?.trim() ?? 'Single sign-on';
+  if (buttonLabel.length < 1 || buttonLabel.length > 40)
+    throw new Error('COMMUNITY_OIDC_LABEL must be 1 to 40 characters');
+  const scopeList = (scopes ?? 'openid email profile').split(/\s+/u).filter(Boolean);
+  if (
+    !scopeList.includes('openid') ||
+    scopeList.length > 16 ||
+    scopeList.some((scope) => !SCOPE_TOKEN.test(scope))
+  )
+    throw new Error('COMMUNITY_OIDC_SCOPES must be space-separated scopes that include openid');
+  return {
+    issuer: issuer.href.replace(/\/+$/u, ''),
+    clientId,
+    clientSecret,
+    label: buttonLabel,
+    scopes: [...new Set(scopeList)],
+  };
+}
+
 const schema = z.object({
   COMMUNITY_DATABASE_URL: z.url().startsWith('postgres'),
   COMMUNITY_AUTH_SECRET: z.string().min(32),
@@ -135,6 +212,11 @@ const schema = z.object({
   COMMUNITY_GOOGLE_CLIENT_SECRET: z.string().optional(),
   COMMUNITY_GITHUB_CLIENT_ID: z.string().optional(),
   COMMUNITY_GITHUB_CLIENT_SECRET: z.string().optional(),
+  COMMUNITY_OIDC_ISSUER_URL: optionalText,
+  COMMUNITY_OIDC_CLIENT_ID: optionalText,
+  COMMUNITY_OIDC_CLIENT_SECRET: optionalText,
+  COMMUNITY_OIDC_LABEL: optionalText,
+  COMMUNITY_OIDC_SCOPES: optionalText,
   COMMUNITY_TERMS_URL: optionalText,
   COMMUNITY_PRIVACY_URL: optionalText,
   COMMUNITY_REPORT_ABUSE_URL: optionalText,
@@ -228,6 +310,7 @@ export function parseConfig(env: Record<string, unknown>) {
       secretAccessKey: value.COMMUNITY_S3_SECRET_ACCESS_KEY,
     };
   })();
+  const oidc = parseOidc(value);
   const hostLinks = {
     termsUrl: hostLink('COMMUNITY_TERMS_URL', value.COMMUNITY_TERMS_URL),
     privacyUrl: hostLink('COMMUNITY_PRIVACY_URL', value.COMMUNITY_PRIVACY_URL),
@@ -271,6 +354,7 @@ export function parseConfig(env: Record<string, unknown>) {
             }
           : undefined,
     },
+    oidc,
     limits: {
       postsPerTenMinutes: value.COMMUNITY_POSTS_PER_TEN_MINUTES,
       agentsPerOwner: value.COMMUNITY_AGENTS_PER_OWNER,

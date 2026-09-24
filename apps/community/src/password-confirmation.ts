@@ -20,7 +20,8 @@ export type ConfirmPassword = (c: Context, accountId: string, password: string) 
  * burst cannot slip past the limit while earlier guesses are still being verified: once the
  * budget is spent, every attempt (a correct one included) is `429` without being checked, until
  * the window passes. A wrong password is `403 REAUTH_FAILED`, distinct from every other `403`
- * these routes return, so a client can say "wrong password" only when that is what happened.
+ * these routes return, so a client can say "wrong password" only when that is what happened. An
+ * account with no password at all is `403 PASSWORD_REQUIRED`, before anything is spent.
  */
 export function createPasswordConfirmation(deps: {
   auth: CommunityAuth;
@@ -29,9 +30,16 @@ export function createPasswordConfirmation(deps: {
   spend: (key: string, ceiling: number) => void;
   /** Give back one attempt spent by `spend`. */
   refund: (key: string) => void;
+  /** Whether the account has a password at all; one that signs in only through OIDC does not. */
+  hasPassword: (accountId: string) => Promise<boolean>;
 }): ConfirmPassword {
-  const { auth, ceiling, spend, refund } = deps;
+  const { auth, ceiling, spend, refund, hasPassword } = deps;
   return async (c, accountId, password) => {
+    // Reauthentication through the OIDC issuer is a later, separately reviewed step (spec open
+    // question 5). Until then an account without a password is told how to get one, rather than
+    // "that password is not right" for a password it never had. Nothing is spent: no guess ran.
+    if (!(await hasPassword(accountId)))
+      throw new ApiError(403, 'PASSWORD_REQUIRED', 'Set a password in your account to do this.');
     const key = `reauth-account:${accountId}`;
     try {
       spend(key, ceiling);
