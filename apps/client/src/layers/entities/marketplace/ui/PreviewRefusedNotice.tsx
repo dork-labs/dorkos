@@ -53,7 +53,7 @@ export function PreviewRefusedNotice({ error }: { error: unknown }) {
     >
       <p className="text-destructive flex items-center gap-2 font-medium">
         <ShieldX className="size-4 shrink-0" aria-hidden />
-        DorkOS won&rsquo;t install this package
+        DorkOS won’t install this package
       </p>
       <p className="text-muted-foreground text-xs">
         {checked
