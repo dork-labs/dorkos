@@ -63,7 +63,7 @@ Examples:
   dorkos permissions
   dorkos permissions set --preset balanced
   dorkos permissions set rooms ask
-  dorkos permissions set tasks.delete blocked
+  dorkos permissions set tasks_delete blocked
   dorkos permissions reset rooms
   dorkos permissions history --agent dorkbot --limit 20
 
@@ -184,6 +184,29 @@ function statePatch(target: Target, value: PermissionState | null): Record<strin
   if (target.kind === 'area') return { areas: { [target.id]: value } };
   if (target.kind === 'action') return { actions: { [target.id]: value } };
   throw new Error('unreachable: files is not a state');
+}
+
+/**
+ * Check an action id against the ones this server has, so a typo is caught here
+ * with the list to choose from instead of arriving as a refusal. Areas are
+ * checked locally; `files` needs no lookup.
+ *
+ * @param target - What the person named.
+ * @throws {Error} Naming every action, by area, when the id is not one of them.
+ */
+async function checkActionExists(target: Target): Promise<void> {
+  if (target.kind !== 'action') return;
+  const overview = await apiCall<PermissionsResponse>('GET', '/api/permissions');
+  if (overview.areas.some((area) => area.actions.some((action) => action.id === target.id))) {
+    return;
+  }
+  const lines = overview.areas
+    .filter((area) => area.actions.length > 0)
+    .map((area) => `  ${area.id}: ${area.actions.map((action) => action.id).join(', ')}`);
+  throw new Error(
+    `'${target.id}' is not an area or an action. Areas: ${PERMISSION_AREA_IDS.join(', ')}.\n` +
+      `Actions, by area:\n${lines.join('\n')}`
+  );
 }
 
 /**
@@ -371,6 +394,7 @@ async function runPermissionsWrite(rawArgs: string[], reset: boolean): Promise<n
   }
   const state = reset ? null : readState(positionals[1], usage);
   try {
+    await checkActionExists(target);
     const result = await apiCall<{ changes: unknown[]; permissions: PermissionsResponse }>(
       'PATCH',
       '/api/permissions/defaults',
@@ -534,6 +558,7 @@ export async function runAgentPermissions(rawArgs: string[]): Promise<number> {
           : `${agent.name}'s Files & commands is now ${STOP_LABEL[stop]}.`;
     } else {
       const state = verb === 'reset' ? null : readState(rawValue, usage);
+      await checkActionExists(target);
       body = statePatch(target, state);
       done =
         state === null

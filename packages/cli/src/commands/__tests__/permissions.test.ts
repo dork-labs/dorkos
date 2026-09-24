@@ -40,6 +40,15 @@ const OVERVIEW = {
       actions: [],
       resolved: { state: 'ask', source: 'default-area', layer: 'default' },
     },
+    {
+      id: 'tasks',
+      label: 'Tasks & schedules',
+      description: '',
+      floor: false,
+      kind: 'state',
+      actions: [{ id: 'tasks_delete', title: 'Delete a schedule', tier: 'destructive' }],
+      resolved: { state: 'ask', source: 'preset', layer: 'default' },
+    },
   ],
   exceptions: [{ agentId: 'a1', agentName: 'auditor', area: 'rooms', state: 'blocked' }],
   agentCount: 2,
@@ -96,10 +105,12 @@ describe('dorkos permissions', () => {
   });
 
   it('sets a single action, and resets one with null', async () => {
-    apiCallMock.mockResolvedValue({ changes: [], permissions: { ...OVERVIEW, exceptions: [] } });
-    await runPermissionsDispatcher(['set', 'tasks.delete', 'blocked']);
+    apiCallMock.mockImplementation(async (method: string) =>
+      method === 'GET' ? OVERVIEW : { changes: [], permissions: { ...OVERVIEW, exceptions: [] } }
+    );
+    expect(await runPermissionsDispatcher(['set', 'tasks_delete', 'blocked'])).toBe(0);
     expect(apiCallMock).toHaveBeenLastCalledWith('PATCH', '/api/permissions/defaults', {
-      actions: { 'tasks.delete': 'blocked' },
+      actions: { tasks_delete: 'blocked' },
       surface: 'cli',
     });
     await runPermissionsDispatcher(['reset', 'rooms']);
@@ -107,6 +118,14 @@ describe('dorkos permissions', () => {
       areas: { rooms: null },
       surface: 'cli',
     });
+  });
+
+  it('catches an action id the server does not have, and lists the real ones', async () => {
+    apiCallMock.mockResolvedValue(OVERVIEW);
+    expect(await runPermissionsDispatcher(['set', 'tasks.delete', 'blocked'])).toBe(1);
+    expect(apiCallMock).not.toHaveBeenCalledWith('PATCH', expect.anything(), expect.anything());
+    expect(err()).toContain("'tasks.delete' is not an area or an action");
+    expect(err()).toContain('tasks: tasks_delete');
   });
 
   it('refuses a state that does not exist, before calling the server', async () => {
