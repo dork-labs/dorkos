@@ -49,6 +49,8 @@ let waitForExchange: (() => Promise<void>) | undefined;
 let rejectedAuthorization: string | undefined;
 let rejectedStatus = 403;
 let rejectedPath: string | undefined;
+/** What the host says to `/me/host-access`; `undefined` models a host built before it (404). */
+let hostAccessAnswer: { status: number; body: unknown } | undefined;
 const token = 'private-pairing-bearer-should-never-appear-in-dto';
 const remoteCommunityId = randomUUID();
 const secondRemoteCommunityId = randomUUID();
@@ -188,6 +190,12 @@ beforeAll(async () => {
           },
         },
       });
+    } else if (req.url === `${qualified}/me/host-access` && hostAccessAnswer) {
+      if (req.headers.authorization !== `Bearer ${token}`) {
+        send({ error: 'Unauthorized' }, 401);
+        return;
+      }
+      send(hostAccessAnswer.body, hostAccessAnswer.status);
     } else if (req.url === `${qualified}/attention`) {
       if (req.headers.authorization !== `Bearer ${token}`) {
         send({ error: 'Unauthorized' }, 401);
@@ -578,6 +586,76 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       rejectedStatus = 403;
     }
   });
+  it('carries the host’s operator answer only while the connection is verified', async () => {
+    approved = true;
+    const owner = 'host-operator-owner';
+    const store = new RemoteConnectionStore(directory);
+    const service = new RemoteCommunityPairingService(
+      store,
+      vi.fn(async () => undefined)
+    );
+    const started = await service.start(owner, `${origin}/c/${remoteCommunityId}`, 'Host test');
+    const { ref } = started.connection;
+    await service.poll(ref, owner);
+    const hostRequests = () =>
+      requests.filter((request) => request.path === `${qualified}/me/host-access`).length;
+
+    try {
+      // A host built before the read exists answers 404: still a working
+      // connection, just no offer.
+      hostAccessAnswer = undefined;
+      const before = hostRequests();
+      const older = await service.status(ref, owner);
+      expect(older.access).toMatchObject({ state: 'verified' });
+      expect(older).not.toHaveProperty('hostOperator');
+      expect(hostRequests()).toBe(before + 1);
+
+      hostAccessAnswer = { status: 200, body: { hostOperator: true } };
+      expect(await service.status(ref, owner)).toMatchObject({ hostOperator: true });
+      expect(await service.list(owner)).toEqual([
+        expect.objectContaining({ ref, hostOperator: true }),
+      ]);
+
+      hostAccessAnswer = { status: 200, body: { hostOperator: false } };
+      expect(await service.status(ref, owner)).not.toHaveProperty('hostOperator');
+
+      // Anything the app cannot read as a clear yes is a no, and never costs
+      // the connection its verified access.
+      for (const answer of [
+        { status: 200, body: { hostOperator: 'yes' } },
+        { status: 200, body: { hostOperator: true, extra: true } },
+        { status: 500, body: { hostOperator: true } },
+      ]) {
+        hostAccessAnswer = answer;
+        const read = await service.status(ref, owner);
+        expect(read.access).toMatchObject({ state: 'verified' });
+        expect(read).not.toHaveProperty('hostOperator');
+      }
+
+      // An offline host keeps the last answer on disk but offers nothing.
+      hostAccessAnswer = { status: 200, body: { hostOperator: true } };
+      expect(await service.status(ref, owner)).toMatchObject({ hostOperator: true });
+      rejectedAuthorization = `Bearer ${token}`;
+      rejectedPath = `${qualified}/me/connection-access`;
+      rejectedStatus = 503;
+      const offline = await service.status(ref, owner);
+      expect(offline.access).toMatchObject({ state: 'unverified' });
+      expect(offline).not.toHaveProperty('hostOperator');
+
+      // A rejected grant ends the offer with the connection.
+      rejectedStatus = 401;
+      const rejected = await service.status(ref, owner);
+      expect(rejected.status).toBe('reconnect-required');
+      expect(rejected).not.toHaveProperty('hostOperator');
+    } finally {
+      await service.disconnect(ref, owner);
+      hostAccessAnswer = undefined;
+      rejectedAuthorization = undefined;
+      rejectedPath = undefined;
+      rejectedStatus = 403;
+    }
+  });
+
   describe('list re-checks access within a budget', () => {
     let release: () => void = () => undefined;
     function holdAccess(): void {

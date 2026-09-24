@@ -6,6 +6,7 @@ import {
   CommunityWireConnectionAccessResponseSchema,
   CommunityWireDisconnectAllRequestSchema,
   CommunityWireGrantListResponseSchema,
+  CommunityWireHostAccessResponseSchema,
   CommunityWirePairingApproveRequestSchema,
   CommunityWirePairingApproveResponseSchema,
   CommunityWirePairingPollRequestSchema,
@@ -154,6 +155,23 @@ export function registerPairingRoutes(
   app.delete('/me/connection', async (c) => {
     await revokeCallingConnectionGrant(c, pool);
     return c.body(null, 204);
+  });
+
+  // Host authority of the account behind this exact grant, so the person's own
+  // installation can offer a way to this host's creation page. Host authority
+  // belongs to the account, not to a membership, so it reads the same through
+  // any of that account's grants; another account's grant never reveals it.
+  // It grants nothing: the creation page rechecks the signed-in session.
+  app.get('/me/host-access', async (c) => {
+    const { member: grant } = await requireConnectionGrant(c, pool, 'read');
+    const operator = await pool.query(
+      'SELECT 1 FROM host_operators WHERE user_id=$1 AND revoked_at IS NULL',
+      [grant.user_id]
+    );
+    c.header('Cache-Control', 'no-store');
+    return json(c, CommunityWireHostAccessResponseSchema, {
+      hostOperator: Boolean(operator.rowCount),
+    });
   });
 
   app.post('/pairings/start', async (c) => {

@@ -1058,6 +1058,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     'DELETE /me/grants': "revokes all of the caller's own grants; takes only a password",
     'GET /me/connection-access': 'the calling grant only',
     'DELETE /me/connection': 'the calling grant revokes itself only',
+    'GET /me/host-access': "the calling grant's own account; takes no id",
     'GET /me/grants': "lists the caller's own grants",
     'GET /members': 'lists the URL community',
     'GET /channels': 'lists the URL community',
