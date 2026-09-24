@@ -27,8 +27,16 @@ export interface HostKeyActor {
 /** Whoever holds host authority for one request. A person holds every scope. */
 export type HostActor = HostPersonActor | HostKeyActor;
 
-/** Every actor a host audit row can name, including the offline key command. */
-export type HostAuditActor = HostActor | { kind: 'offline' };
+/**
+ * Every actor a host audit row can name: a person, a key, the offline key command, or the
+ * server itself (the import worker). Only the identity is recorded, so any {@link HostActor}
+ * is one.
+ */
+export type HostAuditActor =
+  | Pick<HostPersonActor, 'kind' | 'userId'>
+  | Pick<HostKeyActor, 'kind' | 'keyId'>
+  | { kind: 'offline' }
+  | { kind: 'system' };
 
 /** Append one metadata-only host audit row naming its actor. Never pass values, only field names. */
 export async function recordHostAudit(

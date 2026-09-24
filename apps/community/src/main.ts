@@ -17,6 +17,7 @@ import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './deletion-worker.js';
 import { ERASURE_POLL_MS, pruneErasureRequests, sweepErasures } from './erasure/worker.js';
 import { sweepExpiredPairings } from './routes/pairings.js';
+import { IMPORT_POLL_MS, pruneImports, sweepImports } from './imports/worker.js';
 
 const config = parseConfig(process.env);
 await migrate(config.databaseUrl);
@@ -121,6 +122,12 @@ const cleanup = setInterval(() => {
       error instanceof Error ? error.name : 'unknown'
     );
   });
+  void pruneImports(pool).catch((error: unknown) => {
+    console.error(
+      'Community import record cleanup unavailable',
+      error instanceof Error ? error.name : 'unknown'
+    );
+  });
   void pruneErasureRequests(pool).catch((error: unknown) => {
     console.error(
       'Community erasure record cleanup unavailable',
@@ -151,6 +158,30 @@ const erasures = setInterval(() => {
     });
 }, ERASURE_POLL_MS);
 erasures.unref();
-const onSignal = createSignalHandler(createStop({ server, pool, timers: [cleanup, erasures] }));
+let importing = false;
+const imports = setInterval(() => {
+  if (importing) return;
+  importing = true;
+  void (async () => {
+    // One import at a time on this replica, a bounded number per tick.
+    for (let claimed = 0; claimed < 10; claimed++) {
+      const result = await sweepImports(pool, blobStore);
+      if (!result.claimed) break;
+    }
+  })()
+    .catch((error: unknown) => {
+      console.error(
+        'Community import unavailable',
+        error instanceof Error ? error.name : 'unknown'
+      );
+    })
+    .finally(() => {
+      importing = false;
+    });
+}, IMPORT_POLL_MS);
+imports.unref();
+const onSignal = createSignalHandler(
+  createStop({ server, pool, timers: [cleanup, erasures, imports] })
+);
 process.on('SIGINT', onSignal);
 process.on('SIGTERM', onSignal);

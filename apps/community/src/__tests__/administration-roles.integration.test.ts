@@ -15,7 +15,7 @@
  *   binding and redeeming an invitation are refused for every role, and the close is raced
  *   against an invitation and a join in both orders.
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -35,10 +35,12 @@ import { registerHostLifecycleRoutes } from '../routes/host-lifecycle.js';
 import { registerShortNameRoutes } from '../routes/short-names.js';
 import { registerOwnerClaimRoutes } from '../routes/owner-claims.js';
 import { registerHostKeyRoutes } from '../routes/host-keys.js';
+import { registerImportRoutes } from '../routes/imports.js';
 import { createHostAuthority } from '../host/authority.js';
 import { issueHostApiKey } from '../host/key-store.js';
 import { hashSecret, randomToken } from '../security.js';
 import { FileSystemBlobStore } from '../storage/index.js';
+import { buildArchive, minimalManifest } from './import-fixture.js';
 import {
   bootstrapFirstHost,
   responseCookies,
@@ -557,6 +559,23 @@ async function ensureIcon(): Promise<void> {
 }
 
 const HOST_ROLES = ['hostOnly', 'hostMember'] as const;
+
+/** A small, well-formed zip for the upload route; the matrix never validates it. */
+const IMPORT_ARCHIVE = buildArchive(minimalManifest());
+
+/** Start an import as the first-install host operator. */
+async function startImport(): Promise<{ importId: string }> {
+  const created = (await ok(
+    {
+      method: 'POST',
+      path: '/api/v1/host/imports',
+      body: { idempotencyKey: `roles-import-${randomUUID()}`, name: 'Matrix import' },
+    },
+    'founder',
+    201
+  )) as { import: { importId: string } };
+  return { importId: created.import.importId };
+}
 const SESSION_ROLES = ROLES.filter((role) => role !== 'signedOut' && role !== 'agent');
 const MEMBERS_OF_A = ['owner', 'admin', 'member', 'hostMember'] as const;
 const MODERATORS = ['owner', 'admin'] as const;
@@ -628,6 +647,8 @@ const actions: Action<unknown>[] = [
           'deletionState',
           'description',
           'id',
+          'importId',
+          'importState',
           'lifecycle',
           'lifecycleVersion',
           'name',
@@ -676,6 +697,8 @@ const actions: Action<unknown>[] = [
         'deletionState',
         'description',
         'id',
+        'importId',
+        'importState',
         'lifecycle',
         'lifecycleVersion',
         'name',
@@ -811,6 +834,86 @@ const actions: Action<unknown>[] = [
     call: () => ({ method: 'GET', path: `/api/v1/host/communities/${alphaId}/usage` }),
     effect: async (body) => {
       expect(JSON.parse(body.toString('utf8')).communityId).toBe(alphaId);
+    },
+  }),
+  define<{ key: string }>({
+    rule: 'Start an import into a new unclaimed community: host operator yes, community roles no',
+    route: 'POST /host/imports',
+    allowed: HOST_ROLES,
+    status: 201,
+    prepare: async () => ({ key: `roles-import-${randomUUID()}` }),
+    call: ({ key }) => ({
+      method: 'POST',
+      path: '/api/v1/host/imports',
+      body: { idempotencyKey: key, name: 'Imported by matrix' },
+    }),
+    effect: async (body) => {
+      const created = JSON.parse(body.toString('utf8')) as { import: { communityId: string } };
+      const community = await pool.query('SELECT lifecycle FROM communities WHERE id=$1', [
+        created.import.communityId,
+      ]);
+      expect(community.rows).toEqual([{ lifecycle: 'pending_owner' }]);
+    },
+  }),
+  define<{ importId: string }>({
+    rule: 'Read one import: host operator yes; state, counts, and sizes only',
+    route: 'GET /host/imports/:id',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: async () => ({ importId: (await startImport()).importId }),
+    call: ({ importId }) => ({ method: 'GET', path: `/api/v1/host/imports/${importId}` }),
+    effect: async (body) => {
+      expect(Object.keys(JSON.parse(body.toString('utf8'))).sort()).toEqual([
+        'archiveBytes',
+        'autoCommit',
+        'communityId',
+        'createdAt',
+        'failureCode',
+        'importId',
+        'maxArchiveBytes',
+        'report',
+        'state',
+        'updatedAt',
+        'uploadExpiresAt',
+      ]);
+    },
+  }),
+  define<{ importId: string }>({
+    rule: 'Cancel an import: host operator yes, community roles no',
+    route: 'POST /host/imports/:id/cancel',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: async () => ({ importId: (await startImport()).importId }),
+    call: ({ importId }) => ({
+      method: 'POST',
+      path: `/api/v1/host/imports/${importId}/cancel`,
+      body: {},
+    }),
+    effect: async (_body, _role, { importId }) => {
+      const row = await pool.query('SELECT state FROM community_imports WHERE id=$1', [importId]);
+      expect(row.rows).toEqual([{ state: 'cancelled' }]);
+    },
+  }),
+  define<{ importId: string }>({
+    rule: 'Upload an import export: host operator or the upload token; community roles no',
+    route: 'PUT /imports/:id/archive',
+    allowed: HOST_ROLES,
+    status: 200,
+    // A bearer that is not a host key is read as an upload token, and is not this one.
+    refused: { agent: 401 },
+    prepare: async () => ({ importId: (await startImport()).importId }),
+    call: ({ importId }) => ({
+      method: 'PUT',
+      path: `/api/v1/imports/${importId}/archive`,
+      bytes: IMPORT_ARCHIVE,
+      headers: {
+        'content-type': 'application/zip',
+        'x-archive-sha256': createHash('sha256').update(IMPORT_ARCHIVE).digest('hex'),
+      },
+    }),
+    effect: async (_body, _role, { importId }) => {
+      const row = await pool.query('SELECT state FROM community_imports WHERE id=$1', [importId]);
+      expect(row.rows).toEqual([{ state: 'validating' }]);
     },
   }),
   define({
@@ -1966,6 +2069,13 @@ it('classifies every registered route, and puts every host and settings route in
   registerHostLifecycleRoutes(modules, { pool, config, blobStore, authority, now });
   registerShortNameRoutes(modules, { pool, config, authority, now, limitLookup: () => undefined });
   registerHostKeyRoutes(modules, { pool, auth, authority, now, confirmPassword: unused });
+  registerImportRoutes(modules, {
+    pool,
+    blobStore,
+    authority,
+    now,
+    limitTokenMiss: () => undefined,
+  });
   registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });
   const administration = [
     ...new Set(modules.routes.map((route) => `${route.method} ${route.path}`)),

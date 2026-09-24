@@ -12,7 +12,7 @@ export const MANAGED_BLOB_RESERVATION_TTL_MS = 60 * 60 * 1000;
 export interface ManagedBlobReservation {
   key: string;
   communityId: string;
-  purpose: 'attachment' | 'export' | 'icon';
+  purpose: 'attachment' | 'export' | 'icon' | 'import_staging';
   lifecycleVersion: number;
   allowArchived?: boolean;
 }
@@ -53,6 +53,86 @@ export async function reserveManagedBlob(
     [reservation.key, communityId, purpose, reservation.lifecycleVersion]
   );
   return reservation;
+}
+
+/**
+ * Reserve a key for an import's own writes: its uploaded export (`import_staging`, while the
+ * import waits for it) or a restored file (`attachment`, while the import restores).
+ *
+ * {@link reserveManagedBlob} refuses a community that is not active; this accepts only the
+ * unclaimed community an import made, and only while that import is in `importState`, under
+ * the same lifecycle lock. Nobody can read that community, so nothing reserved here is
+ * visible to anyone until the import's final transaction commits it.
+ */
+export async function reserveImportBlob(
+  client: PoolClient,
+  importId: string,
+  purpose: 'import_staging' | 'attachment',
+  importState: 'awaiting_upload' | 'restoring'
+): Promise<ManagedBlobReservation> {
+  await client.query(
+    "SELECT pg_advisory_xact_lock_shared(hashtext('dorkos:tenant-reconciliation'))"
+  );
+  const result = await client.query<{
+    community_id: string;
+    lifecycle: string;
+    lifecycle_version: number;
+    state: string;
+  }>(
+    `SELECT c.id AS community_id,c.lifecycle,c.lifecycle_version,i.state
+     FROM community_imports i JOIN communities c ON c.id=i.community_id
+     WHERE i.id=$1 FOR SHARE`,
+    [importId]
+  );
+  const target = result.rows[0];
+  if (!target || target.lifecycle !== 'pending_owner' || target.state !== importState) {
+    throw new ApiError(409, 'STATE_CONFLICT', 'This import is not accepting files.');
+  }
+  const reservation = {
+    key: randomBytes(32).toString('hex'),
+    communityId: target.community_id,
+    purpose,
+    lifecycleVersion: target.lifecycle_version,
+  };
+  await client.query(
+    `INSERT INTO managed_blobs(blob_key,community_id,purpose,community_lifecycle_version,state)
+     VALUES($1,$2,$3,$4,'reserved')`,
+    [reservation.key, reservation.communityId, purpose, reservation.lifecycleVersion]
+  );
+  return reservation;
+}
+
+/**
+ * Record an import's write as `stored` (a restored file, committed later with the rest of the
+ * import) or `committed` (the uploaded export, which the import row then references). The
+ * caller holds the import row's lock and has checked its state.
+ */
+export async function settleImportBlob(
+  client: PoolClient,
+  reservation: ManagedBlobReservation,
+  stored: StoredBlob,
+  next: 'stored' | 'committed'
+): Promise<void> {
+  if (stored.key !== reservation.key) throw new Error('Stored blob key changed after reservation');
+  const updated = await client.query(
+    `UPDATE managed_blobs
+     SET state=$6,byte_size=$2,checksum=$3,stored_at=now(),
+         committed_at=CASE WHEN $6='committed' THEN now() END
+     WHERE blob_key=$1 AND community_id=$4 AND purpose=$5 AND state='reserved'
+       AND created_at>now()-($7 * interval '1 millisecond')`,
+    [
+      reservation.key,
+      stored.byteSize,
+      stored.sha256,
+      reservation.communityId,
+      reservation.purpose,
+      next,
+      MANAGED_BLOB_RESERVATION_TTL_MS,
+    ]
+  );
+  if (updated.rowCount !== 1) {
+    throw new ApiError(409, 'STATE_CONFLICT', 'The file reservation expired before it committed.');
+  }
 }
 
 /** Recheck lifecycle and move a reservation to stored inside its reference transaction. */
@@ -204,7 +284,9 @@ export async function discardManagedBlob(
       `DELETE FROM managed_blobs m
        WHERE m.blob_key=$1 AND m.community_id=$2 AND m.state='pending_delete'
          AND NOT EXISTS(SELECT 1 FROM attachments a WHERE a.blob_key=m.blob_key)
-         AND NOT EXISTS(SELECT 1 FROM export_archives e WHERE e.blob_key=m.blob_key)`,
+         AND NOT EXISTS(SELECT 1 FROM export_archives e WHERE e.blob_key=m.blob_key)
+         AND NOT EXISTS(SELECT 1 FROM community_imports i WHERE i.staging_blob_key=m.blob_key)
+         AND NOT EXISTS(SELECT 1 FROM community_import_files f WHERE f.blob_key=m.blob_key)`,
       [reservation.key, reservation.communityId]
     );
     await client.query('DELETE FROM pending_blob_deletions WHERE blob_key=$1', [reservation.key]);

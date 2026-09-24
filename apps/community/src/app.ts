@@ -37,6 +37,7 @@ import { callerAddress } from './caller-address.js';
 import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
 import { registerHostLinkRoutes } from './routes/host-links.js';
+import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/imports.js';
 import { createHostAuthority } from './host/authority.js';
 import { registerAdministrationRoutes } from './routes/administration.js';
 import { registerAccountErasureRoutes, registerOwnerErasureRoutes } from './routes/erasures.js';
@@ -113,8 +114,9 @@ export function createCommunityApp({
       }
       // Bound JSON and auth requests before parsing, even for chunked or false-length bodies.
       if (
-        c.req.path.match(/^\/api\/v1\/(?:communities\/[^/]+\/)?channels\/[^/]+\/attachments$/) &&
-        c.req.method === 'POST'
+        (c.req.path.match(/^\/api\/v1\/(?:communities\/[^/]+\/)?channels\/[^/]+\/attachments$/) &&
+          c.req.method === 'POST') ||
+        (IMPORT_ARCHIVE_UPLOAD_PATH.test(c.req.path) && c.req.method === 'PUT')
       ) {
         await next();
         return;
@@ -315,6 +317,14 @@ export function createCommunityApp({
     limitLookup: (c) => limitAttempts(`name-lookup:${peer(c)}`, config.limits.nameLookupsPerMinute),
   });
   registerHostKeyRoutes(hostApi, { pool, auth, authority, now, confirmPassword });
+  registerImportRoutes(hostApi, {
+    pool,
+    blobStore,
+    authority,
+    now,
+    limitTokenMiss: (c) =>
+      limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
+  });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   registerAccountPasswordRoutes(hostApi, { pool, auth });
   app.route('/api/v1', hostApi);

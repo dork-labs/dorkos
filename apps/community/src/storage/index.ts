@@ -18,7 +18,9 @@ export {
   MANAGED_BLOB_RESERVATION_TTL_MS,
   prepareManagedBlobCommit,
   queueCommittedBlobDeletion,
+  reserveImportBlob,
   reserveManagedBlob,
+  settleImportBlob,
 } from './managed-blobs.js';
 export type { ManagedBlobReservation } from './managed-blobs.js';
 export { S3BlobStore } from './s3-blob-store.js';

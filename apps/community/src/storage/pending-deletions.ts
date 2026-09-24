@@ -29,7 +29,12 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
        WHERE (state='pending_delete' AND NOT EXISTS(
                 SELECT 1 FROM pending_blob_deletions p WHERE p.blob_key=managed_blobs.blob_key
               ))
-          OR (state IN ('reserved','stored') AND created_at<=now()-($2 * interval '1 millisecond'))
+          OR (state IN ('reserved','stored') AND created_at<=now()-($2 * interval '1 millisecond')
+              -- A file an import restored waits, stored, for the import's final transaction,
+              -- which can come long after its reservation; its progress row keeps it.
+              AND NOT EXISTS(
+                SELECT 1 FROM community_import_files f WHERE f.blob_key=managed_blobs.blob_key
+              ))
      ) candidates
      ORDER BY eligible_at,blob_key LIMIT $1`,
     [batchSize, MANAGED_BLOB_RESERVATION_TTL_MS]
@@ -71,7 +76,11 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
           managedRow.lease_expired;
         if (!queue.rows[0] && managedRow?.state !== 'pending_delete' && !staleReservation) return;
         const referenced = await client.query(
-          'SELECT 1 FROM attachments WHERE blob_key=$1 UNION ALL SELECT 1 FROM export_archives WHERE blob_key=$1 UNION ALL SELECT 1 FROM communities WHERE icon_blob_key=$1 LIMIT 1',
+          `SELECT 1 FROM attachments WHERE blob_key=$1
+           UNION ALL SELECT 1 FROM export_archives WHERE blob_key=$1
+           UNION ALL SELECT 1 FROM communities WHERE icon_blob_key=$1
+           UNION ALL SELECT 1 FROM community_imports WHERE staging_blob_key=$1
+           UNION ALL SELECT 1 FROM community_import_files WHERE blob_key=$1 LIMIT 1`,
           [candidate.blob_key]
         );
         if (referenced.rowCount) {
