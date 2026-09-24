@@ -23,6 +23,7 @@ import {
 import { packageDisplayLabel } from '@/layers/shared/lib';
 import type { PackageScope } from '@dorkos/shared/marketplace-schemas';
 import { usePermissionPreview, useInstalledPackages } from '@/layers/entities/marketplace';
+import { PreviewRefusedNotice } from './PreviewRefusedNotice';
 import { useConfig } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { AgentPicker } from '@/layers/features/tasks';
@@ -140,7 +141,11 @@ export function InstallConfirmationDialog() {
   // show the GLOBAL scope's effects and conflicts for a non-global install.
   const needsAgent = effectiveScope === 'agent-local' && !selectedAgentId;
 
-  const { data: detail, isLoading: previewLoading } = usePermissionPreview(pkg?.name ?? null, {
+  const {
+    data: detail,
+    isLoading: previewLoading,
+    error: previewError,
+  } = usePermissionPreview(pkg?.name ?? null, {
     enabled: pkg !== null && !needsAgent,
     ...(selectedProjectPath ? { projectPath: selectedProjectPath } : {}),
   });
@@ -175,8 +180,16 @@ export function InstallConfirmationDialog() {
       (p) => p.name === pkg?.name && occupiesScope(p.scope, effectiveScope)
     );
 
+  // A package the server would not preview is one it will not install (the
+  // same validation runs on both), so the button never offers it (DOR-2314).
+  const previewRefused = !needsAgent && previewError !== null;
   const installDisabled =
-    install.isPending || previewLoading || hasBlockingConflicts || pkg === null || needsAgent;
+    install.isPending ||
+    previewLoading ||
+    previewRefused ||
+    hasBlockingConflicts ||
+    pkg === null ||
+    needsAgent;
 
   const buttonLabel = computeInstallButtonLabel({
     isPending: install.isPending,
@@ -283,6 +296,7 @@ export function InstallConfirmationDialog() {
                 </p>
               )}
               {previewLoading && <p className="text-muted-foreground text-sm">Loading preview…</p>}
+              {previewRefused && <PreviewRefusedNotice error={previewError} />}
               {preview && <PermissionPreviewSection preview={preview} installBase={installBase} />}
             </ResponsiveDialogBody>
 

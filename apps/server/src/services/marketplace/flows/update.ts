@@ -342,7 +342,9 @@ export class UpdateFlow {
       // now, so a confirm step can say what is new (DOR-2306).
       const [contentHash, installedDisclosed] = await Promise.all([
         packageContentHash(packagePath),
-        readRunnableDeclarations(record.package.installPath).then((declared) =>
+        readRunnableDeclarations(record.package.installPath, {
+          agentWorkspace: record.package.type === 'agent',
+        }).then((declared) =>
           disclosedEffectsOf(
             declared.unreadableHooks.length + declared.unreadableDeclarations.length > 0
               ? undefined

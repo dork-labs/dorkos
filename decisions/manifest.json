@@ -6417,6 +6417,22 @@
         "apps/server/src/services/tasks/task-store.ts",
         "apps/client/src/layers/features/schedule-approval/ui/ScheduleApprovalCard.tsx"
       ]
+    },
+    {
+      "id": "260924-212826",
+      "slug": "a-packaged-agent-carries-no-harness-configuration",
+      "title": "A packaged agent carries no harness configuration for its own sessions",
+      "status": "draft",
+      "created": "2026-09-24",
+      "extractedFrom": "agent-workspace-config",
+      "specSlug": "agent-workspace-config",
+      "supersedes": null,
+      "affects": [
+        "packages/marketplace/src/agent-workspace-config.ts",
+        "packages/marketplace/src/package-validator.ts",
+        "packages/marketplace/src/constants.ts",
+        "apps/server/src/services/marketplace/lib/package-skills.ts"
+      ]
     }
   ]
 }

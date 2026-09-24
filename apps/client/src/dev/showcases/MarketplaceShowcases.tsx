@@ -39,6 +39,7 @@ import { FeaturedRail } from '@/layers/features/marketplace/ui/FeaturedRail';
 import { PackageDetailSheet } from '@/layers/features/marketplace/ui/PackageDetailSheet';
 import { InstallConfirmationDialog } from '@/layers/features/marketplace/ui/InstallConfirmationDialog';
 import { PermissionPreviewSection } from '@/layers/features/marketplace/ui/PermissionPreviewSection';
+import { PreviewRefusedNotice } from '@/layers/features/marketplace/ui/PreviewRefusedNotice';
 import { MarketplaceToolbar } from '@/layers/features/marketplace/ui/MarketplaceToolbar';
 
 import { marketplaceKeys } from '@/layers/entities/marketplace';
@@ -57,6 +58,8 @@ import {
   MOCK_PERMISSION_PREVIEW_BLOCKING,
   MOCK_PERMISSION_PREVIEW_MANY_FILES,
   MOCK_PERMISSION_PREVIEW_ESCAPES,
+  MOCK_PERMISSION_PREVIEW_AGENT_WORKSPACE,
+  MOCK_PREVIEW_REFUSED_ERROR,
   MOCK_DORK_HOME,
   MOCK_SOURCES,
 } from './marketplace-mocks';
@@ -363,7 +366,7 @@ function PermissionPreviewSectionShowcase() {
   return (
     <PlaygroundSection
       title="PermissionPreviewSection"
-      description="Human-readable breakdown of everything a package will do on install. A one-line verdict leads, then the three groups a person must see before trusting a stranger's package — commands, jobs, conflicts — start expanded and the other four open on a click, counts in their headings. The file effects name the folder, count each action, and hide the paths behind a disclosure. A warning row appears only when a file lands outside the folder the caller says the install targets."
+      description="Human-readable breakdown of everything a package will do on install. When the server refuses to preview a package (it refuses to install it too), a refusal notice takes its place and names why. A one-line verdict leads, then the three groups a person must see before trusting a stranger's package — commands, jobs, conflicts — start expanded and the other four open on a click, counts in their headings. The file effects name the folder, count each action, and hide the paths behind a disclosure. A warning row appears only when a file lands outside the folder the caller says the install targets."
     >
       <ShowcaseLabel>Minimal (no secrets, no hosts, no conflicts)</ShowcaseLabel>
       <ShowcaseDemo>
@@ -403,6 +406,19 @@ function PermissionPreviewSectionShowcase() {
           preview={MOCK_PERMISSION_PREVIEW_BLOCKING}
           installBase={MOCK_DORK_HOME}
         />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Agent package: skills its sessions load from its folder</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PermissionPreviewSection
+          preview={MOCK_PERMISSION_PREVIEW_AGENT_WORKSPACE}
+          installBase={MOCK_DORK_HOME}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Refused: the server will not install it</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PreviewRefusedNotice error={MOCK_PREVIEW_REFUSED_ERROR} />
       </ShowcaseDemo>
     </PlaygroundSection>
   );

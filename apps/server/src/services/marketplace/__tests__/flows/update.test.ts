@@ -1153,6 +1153,38 @@ describe('UpdateFlow', () => {
       });
     });
 
+    it("reads an installed agent's working-directory skills for what it runs now (DOR-2314)", async () => {
+      // Purpose: an agent's sessions load `.claude/skills` from its folder, so
+      // what the installed version runs includes them, and an update carrying
+      // the same skill is not marked new.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'alpha' }]),
+        latest: { alpha: '2.0.0' },
+      });
+      const staged = await mkdtemp(path.join(tmpdir(), 'update-flow-staged-'));
+      cleanupDirs.push(staged);
+      ctx.installer.preview.mockResolvedValue({ preview: HOOKED, packagePath: staged });
+      const alpha = await stageInstalledAgent({
+        scopeRoot: ctx.dorkHome,
+        name: 'alpha',
+        version: '1.0.0',
+      });
+      await mkdir(path.join(alpha, '.claude', 'skills', 'deploy'), { recursive: true });
+      await writeFile(
+        path.join(alpha, '.claude', 'skills', 'deploy', 'SKILL.md'),
+        '---\nname: deploy\nallowed-tools: Bash(kubectl:*)\n---\nDeploy.\n'
+      );
+
+      const plan = await new UpdateFlow(ctx.deps).planInstallations({
+        installations: await scanInstallationRecords(ctx.dorkHome, { agents: [] }),
+        disclose: true,
+      });
+
+      expect(plan.checks[0]?.installedDisclosed?.skillTools).toEqual([
+        { source: '.claude/skills/deploy/SKILL.md', skill: 'deploy', tools: ['Bash(kubectl:*)'] },
+      ]);
+    });
+
     it('says what each new version would run, and previews nothing that is current', async () => {
       // Purpose: the card for an apply must show what the new version runs,
       // read from the version that would be installed, in its own scope.

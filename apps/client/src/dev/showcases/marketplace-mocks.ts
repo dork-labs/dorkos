@@ -192,12 +192,66 @@ export const MOCK_PERMISSION_PREVIEW_MINIMAL: PermissionPreview = {
   conflicts: [],
 };
 
-/** Full preview with all sections populated. */
+/**
+ * An agent package whose skills live where its sessions load them: its folder
+ * is the agent's working directory, so `.claude/skills` and `.agents/skills`
+ * are on the card (DOR-2314).
+ */
+export const MOCK_PERMISSION_PREVIEW_AGENT_WORKSPACE: PermissionPreview = {
+  ...MOCK_PERMISSION_PREVIEW_MINIMAL,
+  fileChanges: [
+    { path: `${MOCK_DORK_HOME}/agents/release-bot/CLAUDE.md`, action: 'create' },
+    { path: `${MOCK_DORK_HOME}/agents/release-bot/.claude/skills/ship/SKILL.md`, action: 'create' },
+    {
+      path: `${MOCK_DORK_HOME}/agents/release-bot/.agents/skills/notes/SKILL.md`,
+      action: 'create',
+    },
+  ],
+  extensions: [],
+  hooks: [
+    {
+      event: 'PreToolUse',
+      matcher: 'Bash',
+      command: './scripts/check-branch.sh',
+      source: '.claude/skills/ship/SKILL.md',
+    },
+  ],
+  skillTools: [
+    {
+      source: '.claude/skills/ship/SKILL.md',
+      skill: 'ship',
+      tools: ['Bash(git push:*)', 'Bash(gh:*)'],
+    },
+    { source: '.agents/skills/notes/SKILL.md', skill: 'notes', tools: ['Read', 'Write'] },
+  ],
+  schedules: [],
+  requires: [],
+};
+
+/**
+ * The error a refused preview carries: the server's reasons ride on `body`
+ * exactly as `http-client.ts` attaches them (DOR-2314).
+ */
+export const MOCK_PREVIEW_REFUSED_ERROR = Object.assign(new Error('Package failed validation'), {
+  status: 400,
+  body: {
+    error: 'Package failed validation',
+    errors: [
+      "An agent package can't ship .claude/settings.json: its folder is the agent's working directory, so Claude Code would load it into every session the agent runs, without it being shown to you. Leave it out; hooks, servers and permissions are added after install through DorkOS, where a person approves each one.",
+      "An agent package can't ship opencode.json: its folder is the agent's working directory, so OpenCode would load it into every session the agent runs, without it being shown to you. Leave it out; hooks, servers and permissions are added after install through DorkOS, where a person approves each one.",
+    ],
+  },
+});
+
+/**
+ * Full preview with all sections populated. A plugin: an agent package may not
+ * ship servers or programs of its own (DOR-2314).
+ */
 export const MOCK_PERMISSION_PREVIEW_FULL: PermissionPreview = {
   fileChanges: [
-    { path: `${MOCK_DORK_HOME}/agents/deploy-bot/agent.json`, action: 'create' },
-    { path: `${MOCK_DORK_HOME}/agents/deploy-bot/config.json`, action: 'modify' },
-    { path: `${MOCK_DORK_HOME}/agents/deploy-bot/legacy-hooks.json`, action: 'delete' },
+    { path: `${MOCK_DORK_HOME}/plugins/deploy-bot/.claude-plugin/plugin.json`, action: 'create' },
+    { path: `${MOCK_DORK_HOME}/plugins/deploy-bot/config.json`, action: 'modify' },
+    { path: `${MOCK_DORK_HOME}/plugins/deploy-bot/legacy-hooks.json`, action: 'delete' },
   ],
   extensions: [{ id: 'deploy-bot-ext', slots: ['dashboard-panel', 'task-runner'] }],
   hooks: [

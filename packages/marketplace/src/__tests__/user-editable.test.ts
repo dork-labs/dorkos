@@ -145,17 +145,35 @@ describe('manifest userEditable', () => {
     'agents/reviewer.md',
     'output-styles/**',
     'output-styles/terse.md',
+    // What a harness loads from an agent's working directory (DOR-2314).
+    '.claude/**',
+    '.claude/settings.json',
+    '.Claude/Settings.json',
+    '.claude/agents/reviewer.md',
+    '.agents/**',
+    '.agents/skills/a/SKILL.md',
+    '.codex/**',
+    '.codex/config.toml',
+    '.opencode/**',
+    'opencode.json',
+    'OpenCode.jsonc',
   ])('refuses the effect-bearing path %s', (value) => {
     expect(UserEditablePathSchema.safeParse(value).success).toBe(false);
   });
 
   // Purpose: near-miss names beside an effect-bearing path stay editable.
-  it.each(['config/**', 'binder/x.json', 'skillset/**', 'hooks.md', 'commands.md', 'agents.md'])(
-    'still accepts %s',
-    (value) => {
-      expect(UserEditablePathSchema.safeParse(value).success).toBe(true);
-    }
-  );
+  it.each([
+    'config/**',
+    'binder/x.json',
+    'skillset/**',
+    'hooks.md',
+    'commands.md',
+    'agents.md',
+    '.claude-notes/x.md',
+    'opencode.md',
+  ])('still accepts %s', (value) => {
+    expect(UserEditablePathSchema.safeParse(value).success).toBe(true);
+  });
 
   // Purpose: a bad pattern makes the manifest invalid, not silently dropped.
   it('rejects a manifest whose userEditable names an identity file', () => {
