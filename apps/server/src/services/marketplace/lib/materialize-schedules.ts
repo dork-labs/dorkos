@@ -38,8 +38,9 @@
  *
  * @module services/marketplace/lib/materialize-schedules
  */
-import { lstat, mkdir, readFile } from 'node:fs/promises';
+import { lstat, mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import type { PackageScheduleDecl } from '@dorkos/marketplace/manifest-schema';
@@ -301,7 +302,9 @@ async function injectScheduleIntoShippedSkill(
   }
 
   const filePath = path.join(skillDir, 'SKILL.md');
-  const parsed = parseFrontmatter(await readFile(filePath, 'utf-8'));
+  const parsed = parseFrontmatter(
+    await readTextFileWithin(filePath, PACKAGE_TEXT_MAX_BYTES, 'The SKILL.md')
+  );
   const incoming = scheduleToFrontmatter(block);
 
   // An update reinstalls the package, which rewrites this block from the new
@@ -465,7 +468,11 @@ async function readScheduleOwner(
 
   let content: string;
   try {
-    content = await readFile(path.join(dirPath, 'SKILL.md'), 'utf-8');
+    content = await readTextFileWithin(
+      path.join(dirPath, 'SKILL.md'),
+      PACKAGE_TEXT_MAX_BYTES,
+      'The SKILL.md'
+    );
   } catch {
     // Occupied by something that is not a readable skill — a draft directory, a
     // dangling link, a differently named entry file. Present, and not ours.

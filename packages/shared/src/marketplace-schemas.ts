@@ -542,6 +542,11 @@ export interface PermissionPreview {
   skillTools: PreviewSkillTools[];
   /** Program declarations that could not be read or point outside the package. */
   unreadableDeclarations: UnreadableDeclaration[];
+  /**
+   * Shortcuts (symbolic links) in the package, each with a sentence saying it
+   * will not be installed: staging drops every link (DOR-2319).
+   */
+  skippedLinks: { path: string; message: string }[];
   /** Scheduled jobs that will be created, and what each may do unattended. */
   schedules: PreviewSchedule[];
   /** Secrets the package will request from the user. */

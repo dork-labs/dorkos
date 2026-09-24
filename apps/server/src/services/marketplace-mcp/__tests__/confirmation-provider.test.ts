@@ -22,6 +22,7 @@ function buildPreview(): PermissionPreview {
     monitors: [],
     executables: [],
     skillTools: [],
+    skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],

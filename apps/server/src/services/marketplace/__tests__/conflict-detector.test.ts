@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
@@ -279,6 +279,33 @@ describe('ConflictDetector', () => {
       type: 'slot',
       conflictingPackage: 'installed-plugin',
     });
+  });
+
+  it('does not read a staged extension.json that is a symbolic link (DOR-2319)', async () => {
+    // Purpose: a staged package's extension.json linked to a file elsewhere
+    // (here, a real slot binding that would conflict) is never followed, so
+    // nothing outside the package decides what the preview reports.
+    const installedRoot = await installPluginSkeleton(dorkHome, 'installed-plugin');
+    await writeExtension(installedRoot, 'installed-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+    const outside = await mkdtemp(join(tmpdir(), 'conflict-detector-outside-'));
+    try {
+      await writeExtension(outside, 'decoy', [{ slot: 'sidebar.top', priority: 10 }]);
+      await mkdir(join(stagedRoot, '.dork', 'extensions', 'staged-ext'), { recursive: true });
+      await symlink(
+        join(outside, '.dork', 'extensions', 'decoy', 'extension.json'),
+        join(stagedRoot, '.dork', 'extensions', 'staged-ext', 'extension.json')
+      );
+
+      const result = await detector.detect({
+        packagePath: stagedRoot,
+        manifest: pluginManifest('staged-plugin'),
+        dorkHome,
+      });
+
+      expect(result.filter((r) => r.type === 'slot')).toEqual([]);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 
   it('does not report a slot conflict when priorities differ', async () => {

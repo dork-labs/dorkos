@@ -262,6 +262,7 @@ const EMPTY_PREVIEW: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
   schedules: [],

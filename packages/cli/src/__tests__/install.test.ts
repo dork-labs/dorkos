@@ -29,6 +29,7 @@ const PREVIEW_BODY = {
     monitors: [],
     executables: [],
     skillTools: [],
+    skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],

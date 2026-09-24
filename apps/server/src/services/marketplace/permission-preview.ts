@@ -11,10 +11,12 @@
  *
  * @module services/marketplace/permission-preview
  */
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { EFFECT_BEARING_PATHS, PackageTypeSchema } from '@dorkos/marketplace';
+import { describePackageLink, findPackageLinks } from '@dorkos/marketplace/package-links';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema, hasSchedule } from '@dorkos/skills';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
@@ -137,7 +139,13 @@ async function readExtensionManifests(
     const manifestPath = join(extRoot, entry.name, 'extension.json');
     if (!(await pathExists(manifestPath))) continue;
     try {
-      const raw = await readFile(manifestPath, 'utf-8');
+      // Inside the package, never through a link out of it (DOR-2319).
+      const raw = await readPackageFileWithin(
+        packagePath,
+        join(EFFECT_BEARING_PATHS.extensions, entry.name, 'extension.json'),
+        PACKAGE_TEXT_MAX_BYTES,
+        "The package's extension.json"
+      );
       const parsed = ExtensionManifestSchema.safeParse(JSON.parse(raw));
       if (parsed.success) {
         results.push({ id: entry.name, manifest: parsed.data });
@@ -195,7 +203,12 @@ async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
     const skillPath = join(tasksRoot, entry.name, 'SKILL.md');
     if (!(await pathExists(skillPath))) continue;
     try {
-      const content = await readFile(skillPath, 'utf-8');
+      const content = await readPackageFileWithin(
+        packagePath,
+        join(EFFECT_BEARING_PATHS.tasks, entry.name, 'SKILL.md'),
+        PACKAGE_TEXT_MAX_BYTES,
+        'The SKILL.md'
+      );
       // Read with the UNIFIED schema since DOR-1486: scheduling lives in the
       // `schedule:` block, and a package still shipping the retired top-level
       // fields declares no schedule at all — nothing materializes it, nothing
@@ -447,6 +460,7 @@ export class PermissionPreviewBuilder {
       monitors: [],
       executables: [],
       skillTools: [],
+      skippedLinks: [],
       unreadableDeclarations: [],
       schedules: [],
       secrets: [],
@@ -465,6 +479,13 @@ export class PermissionPreviewBuilder {
     }));
 
     Object.assign(preview, await readRunnableDeclarations(packagePath));
+
+    // Staging drops every shortcut, so each one is named rather than a skill
+    // folder silently missing once installed (DOR-2319).
+    preview.skippedLinks = (await findPackageLinks(packagePath)).map((link) => ({
+      path: link.path,
+      message: describePackageLink(link),
+    }));
 
     preview.schedules = [
       ...(await readTaskSkills(packagePath)),

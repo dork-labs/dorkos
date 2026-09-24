@@ -228,6 +228,7 @@ function buildEmptyPermissionPreview(): PermissionPreview {
     monitors: [],
     executables: [],
     skillTools: [],
+    skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],

@@ -19,8 +19,9 @@
  *
  * @module services/marketplace/installed-scanner
  */
-import { lstat, readdir, readFile } from 'node:fs/promises';
+import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import type { PackageType } from '@dorkos/marketplace';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
 import { readDeclaredVersion, validatePackage } from '@dorkos/marketplace/package-validator';
@@ -508,7 +509,7 @@ async function readManifestSummary(
   const manifestPath = join(packagePath, PACKAGE_MANIFEST_PATH);
   let raw: string;
   try {
-    raw = await readFile(manifestPath, 'utf-8');
+    raw = await readTextFileWithin(manifestPath, PACKAGE_TEXT_MAX_BYTES, 'The manifest');
   } catch {
     // No .dork/manifest.json — a CC-native package installed verbatim. The
     // canonical validator synthesizes identity from .claude-plugin/plugin.json,

@@ -20,8 +20,8 @@
  *
  * @module services/marketplace/lib/package-declarations
  */
-import { lstat, readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, join, normalize, relative, sep } from 'node:path';
+import { normalize } from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
 
 /** Where a Claude Code plugin's own manifest lives, package-relative. */
 export const PLUGIN_JSON = '.claude-plugin/plugin.json';
@@ -35,16 +35,10 @@ export type DeclarationSource =
   | { kind: 'file'; path: string; required: boolean }
   | { kind: 'inline'; path: string; value: unknown };
 
-/** A path that stays inside its root once normalized. */
-function staysInside(path: string): boolean {
-  const inside = normalize(path);
-  return !isAbsolute(inside) && inside !== '..' && !inside.startsWith(`..${sep}`);
-}
-
 /**
  * Read one package-relative file as text, refusing anything that is not the
- * package's own: a path out of the package, a symbolic link, anything but a
- * regular file, or a file whose real location is outside the package's real root.
+ * package's own: a path out of the package, a symbolic link anywhere on the
+ * way, anything but a regular file, or a file over the size limit.
  *
  * @param packagePath - Absolute path to the staged package.
  * @param path - The file's package-relative path.
@@ -54,14 +48,18 @@ export async function readPackageText(
   packagePath: string,
   path: string
 ): Promise<{ kind: 'absent' } | { kind: 'unreadable' } | { kind: 'ok'; text: string }> {
-  if (!staysInside(path)) return { kind: 'unreadable' };
-  const full = join(packagePath, normalize(path));
   try {
-    const stats = await lstat(full);
-    if (stats.isSymbolicLink() || !stats.isFile()) return { kind: 'unreadable' };
-    const [realRoot, realFile] = await Promise.all([realpath(packagePath), realpath(full)]);
-    if (!staysInside(relative(realRoot, realFile))) return { kind: 'unreadable' };
-    return { kind: 'ok', text: await readFile(full, 'utf-8') };
+    // Refuses a path out of the package, a symbolic link anywhere on the way,
+    // anything but a regular file, and a file over the size limit (DOR-2319).
+    return {
+      kind: 'ok',
+      text: await readPackageFileWithin(
+        packagePath,
+        path,
+        PACKAGE_TEXT_MAX_BYTES,
+        `The package's ${path}`
+      ),
+    };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'absent' };
     return { kind: 'unreadable' };

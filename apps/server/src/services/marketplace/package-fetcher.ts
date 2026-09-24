@@ -28,9 +28,14 @@
  *
  * @module services/marketplace/package-fetcher
  */
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  CATALOG_MAX_BYTES,
+  TooLargeError,
+  readResponseTextWithin,
+  readTextFileWithin,
+} from '@dorkos/shared/bounded-read';
 import type { Logger } from '@dorkos/shared/logger';
 import {
   parseDorkosSidecar,
@@ -434,11 +439,19 @@ export class PackageFetcher {
     }
     const url = resolveDorkosSidecarUrl(source.source);
     try {
-      const response = await fetch(url);
+      // The same deadline as marketplace.json; it also bounds reading the body.
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(MARKETPLACE_JSON_TIMEOUT_MS),
+      });
       if (!response.ok) {
+        await response.body?.cancel();
         return null;
       }
-      const raw = await response.text();
+      const raw = await readResponseTextWithin(
+        response,
+        CATALOG_MAX_BYTES,
+        "The marketplace's dorkos.json"
+      );
       const parsed = parseDorkosSidecar(raw);
       if (!parsed.ok) {
         this.logger.warn('package-fetcher: dorkos.json parse failed', {
@@ -449,10 +462,15 @@ export class PackageFetcher {
       }
       return parsed.sidecar;
     } catch (err) {
-      this.logger.debug('package-fetcher: dorkos.json fetch failed (non-fatal)', {
-        marketplaceName: source.name,
-        error: err instanceof Error ? err.message : String(err),
-      });
+      // Too large is the marketplace's doing and worth seeing; a network
+      // failure is routine for an optional file.
+      this.logger[err instanceof TooLargeError ? 'warn' : 'debug'](
+        'package-fetcher: dorkos.json fetch failed (non-fatal)',
+        {
+          marketplaceName: source.name,
+          error: err instanceof Error ? err.message : String(err),
+        }
+      );
       return null;
     }
   }
@@ -467,8 +485,18 @@ export class PackageFetcher {
     const sidecarPath = path.join(root, '.claude-plugin', 'dorkos.json');
     let raw: string;
     try {
-      raw = await readFile(sidecarPath, 'utf-8');
-    } catch {
+      raw = await readTextFileWithin(
+        sidecarPath,
+        CATALOG_MAX_BYTES,
+        "The marketplace's dorkos.json"
+      );
+    } catch (err) {
+      if (err instanceof TooLargeError) {
+        this.logger.warn('package-fetcher: local dorkos.json skipped', {
+          marketplaceName: source.name,
+          error: err.message,
+        });
+      }
       return null;
     }
     const parsed = parseDorkosSidecar(raw);
@@ -516,12 +544,17 @@ export class PackageFetcher {
   private async readLocalMarketplaceJsonRaw(root: string): Promise<string> {
     const rootPath = path.join(root, 'marketplace.json');
     const claudePluginPath = path.join(root, '.claude-plugin', 'marketplace.json');
+    const what = "The marketplace's marketplace.json";
     try {
-      return await readFile(rootPath, 'utf-8');
+      return await readTextFileWithin(rootPath, CATALOG_MAX_BYTES, what);
     } catch (rootErr) {
+      // A root file that is there but too large is the answer, not a reason to
+      // look elsewhere.
+      if (rootErr instanceof TooLargeError) throw rootErr;
       try {
-        return await readFile(claudePluginPath, 'utf-8');
+        return await readTextFileWithin(claudePluginPath, CATALOG_MAX_BYTES, what);
       } catch (pluginErr) {
+        if (pluginErr instanceof TooLargeError) throw pluginErr;
         // Two failures, and both survive: the root attempt as prose in the
         // message, the `.claude-plugin` attempt as the cause. Chaining the
         // second one is the deliberate half — it is the layout registries
@@ -560,9 +593,14 @@ export class PackageFetcher {
       throw err;
     }
     if (!response.ok) {
+      await response.body?.cancel();
       throw new Error(`marketplace.json fetch failed: ${response.status} ${response.statusText}`);
     }
-    const raw = await response.text();
+    const raw = await readResponseTextWithin(
+      response,
+      CATALOG_MAX_BYTES,
+      "The marketplace's marketplace.json"
+    );
     const parsed = parseMarketplaceJsonLenient(raw);
     if (!parsed.ok) {
       throw new Error(parsed.error);
