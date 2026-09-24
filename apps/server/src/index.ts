@@ -578,6 +578,7 @@ function registeredAgentRoots(
  * @param summary - The sweep's totals.
  */
 function logInstallSweep(scope: string, summary: InstallSweepSummary): void {
+  registerRestoredAgents(summary.restoredAgentRoots);
   const { settled, kept, discarded, inFlightTargets } = summary;
   if (settled + kept + discarded + inFlightTargets.length > 0) {
     logger.info(
@@ -589,6 +590,35 @@ function logInstallSweep(scope: string, summary: InstallSweepSummary): void {
   retryInFlightTargetsLater(inFlightTargets, logger, (retry) =>
     logInstallSweep(`${scope} (retry)`, { ...retry, inFlightTargets: [] })
   );
+}
+
+/** Agent folders recovery restored before Mesh started, registered once it has. */
+const agentRootsAwaitingMesh: string[] = [];
+
+/**
+ * Register again the agents whose interrupted uninstall recovery rolled back
+ * (DOR-2245): their `agent.json` is back, but the uninstall had already taken
+ * them off the team. The global sweep runs before Mesh exists, so its roots
+ * wait for {@link flushRestoredAgents}.
+ *
+ * @param roots - {@link InstallSweepSummary.restoredAgentRoots}.
+ */
+function registerRestoredAgents(roots: readonly string[]): void {
+  if (!meshCore) {
+    agentRootsAwaitingMesh.push(...roots);
+    return;
+  }
+  const mesh = meshCore;
+  for (const root of roots) {
+    mesh.syncFromDisk(root).catch((err: unknown) => {
+      logger.warn(`[Marketplace] Could not register the restored agent at ${root}`, logError(err));
+    });
+  }
+}
+
+/** Register the agents {@link registerRestoredAgents} held until Mesh started. */
+function flushRestoredAgents(): void {
+  registerRestoredAgents(agentRootsAwaitingMesh.splice(0));
 }
 
 let taskFileWatcher: TaskFileWatcher | undefined;
@@ -2030,6 +2060,7 @@ async function start() {
     // itself was making there, and only to entries whose names prove they are
     // DorkOS's own records. Fire-and-forget: each target is settled under its
     // install lock, so an install that races it simply waits.
+    flushRestoredAgents();
     try {
       const projects = projectsOfAgents(meshCore.listWithPaths().map((a) => a.projectPath));
       recoverInterruptedInstalls(projects.flatMap(projectSweepDirs), logger)

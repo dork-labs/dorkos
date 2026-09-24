@@ -39,8 +39,9 @@
  *
  * @module services/marketplace/backup-janitor
  */
-import { readdir } from 'node:fs/promises';
+import { lstat, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { AGENT_MANIFEST_PATH } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { agentSkillsRoot, globalSkillsRoot } from '../tasks/skills-roots.js';
@@ -63,6 +64,12 @@ export interface InstallSweepSummary {
   discarded: number;
   /** Targets left alone because another live process may be mid-install on them. */
   inFlightTargets: string[];
+  /**
+   * Agent folders whose interrupted uninstall was rolled back with their
+   * `agent.json` in place again (DOR-2245). Recovery runs before Mesh starts,
+   * so the caller registers these agents again once it has.
+   */
+  restoredAgentRoots: string[];
 }
 
 /**
@@ -127,7 +134,13 @@ export async function recoverInterruptedInstalls(
   dirs: readonly string[],
   logger: Logger
 ): Promise<InstallSweepSummary> {
-  const summary: InstallSweepSummary = { settled: 0, kept: 0, discarded: 0, inFlightTargets: [] };
+  const summary: InstallSweepSummary = {
+    settled: 0,
+    kept: 0,
+    discarded: 0,
+    inFlightTargets: [],
+    restoredAgentRoots: [],
+  };
   for (const dir of new Set(dirs)) {
     const targets = await findTargetsWithRecords(dir, logger);
     await settleTargets(targets, summary, logger);
@@ -158,6 +171,7 @@ export function retryInFlightTargetsLater(
       kept: 0,
       discarded: 0,
       inFlightTargets: [],
+      restoredAgentRoots: [],
     };
     settleTargets(targets, summary, logger)
       .then(() => onDone(summary))
@@ -222,6 +236,13 @@ async function settleTargets(
       }
       for (const { record, outcome } of report.settled) {
         summary.settled++;
+        if (
+          record.kind === 'uninstall' &&
+          outcome === 'rolled-back' &&
+          (await hasAgentManifest(target))
+        ) {
+          summary.restoredAgentRoots.push(target);
+        }
         logger.info(
           `[marketplace/backup-janitor] settled an interrupted install at ${target} (${record.kind}: ${outcome})`
         );
@@ -271,6 +292,12 @@ async function readNames(dir: string): Promise<string[]> {
  * `./transaction.ts`, which sidesteps the "cannot spy on a `node:fs/promises`
  * named export" ESM limitation.
  */
+/** Whether `root` holds an agent manifest. */
+async function hasAgentManifest(root: string): Promise<boolean> {
+  const stats = await lstat(path.join(root, ...AGENT_MANIFEST_PATH.split('/'))).catch(() => null);
+  return stats?.isFile() ?? false;
+}
+
 export const _internal = {
   readNames,
 };

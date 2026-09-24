@@ -334,7 +334,9 @@ const INSTALL_RECORD_POLICIES: readonly InstallRecordPolicy[] = [
           return 'rolled-forward';
         }
         // An agent the uninstall already took off the team gets its manifest
-        // back here; Mesh re-registers it on its next scan of the folder.
+        // back here; the startup sweep names the folder
+        // (`restoredAgentRoots`) and the server registers it again once Mesh
+        // is up.
         await rollBackUninstall(record.path, journal);
         await restoreParkedAgent(target);
         return 'rolled-back';
