@@ -88,6 +88,9 @@ export function handleError(error: unknown, c: Context): Response {
   );
 }
 
+/** How long a streamed upload (a file or an export) may go without a byte before it is dropped. */
+export const UPLOAD_IDLE_MS = 60_000;
+
 /** The longest a JSON request body (at most about 96 KiB) may take to arrive. */
 export const JSON_BODY_MS = 30_000;
 
@@ -97,9 +100,9 @@ export const REQUEST_TIMEOUT_MS = 3 * 60 * 60_000;
 /**
  * Let one request take up to {@link REQUEST_TIMEOUT_MS} to arrive. Node's default of five
  * minutes cuts off an export upload part-way. Headers must still arrive within Node's own
- * header timeout, JSON bodies must arrive within {@link JSON_BODY_MS}, and an export upload
- * is dropped as soon as it goes a minute without a byte, so the long ceiling only ever helps
- * a request that keeps sending.
+ * header timeout, JSON bodies must arrive within {@link JSON_BODY_MS}, and a file or export
+ * upload is dropped as soon as it goes {@link UPLOAD_IDLE_MS} without a byte, so the long
+ * ceiling only ever helps a request that keeps sending.
  */
 export function configureServerTimeouts(server: object): void {
   if ('requestTimeout' in server) server.requestTimeout = REQUEST_TIMEOUT_MS;

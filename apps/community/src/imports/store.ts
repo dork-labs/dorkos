@@ -16,8 +16,6 @@ export const MAX_IMPORT_ARCHIVE_BYTES = 1024 * 1024 * 1024;
 export const IMPORT_UPLOAD_WINDOW_MS = 24 * 60 * 60_000;
 /** How long a checked import waits at `validated` for the host to commit it. */
 export const IMPORT_COMMIT_WINDOW_MS = 7 * 24 * 60 * 60_000;
-/** How long an upload may go without receiving a byte before it is dropped. */
-export const IMPORT_UPLOAD_IDLE_MS = 60_000;
 /** How long one upload's lease lasts between renewals. */
 export const IMPORT_UPLOAD_LEASE_MS = 2 * 60_000;
 /** Temporary folders an import writes; swept at startup when a crash left one behind. */

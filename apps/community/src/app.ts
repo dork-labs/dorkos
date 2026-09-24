@@ -15,7 +15,7 @@ import {
 import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
 import { bootstrapGrant, transaction } from './data.js';
-import { ApiError, JSON_BODY_MS, handleError, json, readJson } from './http.js';
+import { ApiError, JSON_BODY_MS, UPLOAD_IDLE_MS, handleError, json, readJson } from './http.js';
 import { equalSecret, hashSecret, isHostApiKeyBearer, randomToken, signValue } from './security.js';
 import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/channels.js';
@@ -38,7 +38,6 @@ import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
 import { registerHostLinkRoutes } from './routes/host-links.js';
 import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/imports.js';
-import { IMPORT_UPLOAD_IDLE_MS } from './imports/store.js';
 import { UploadSlots } from './imports/upload.js';
 import { createHostAuthority } from './host/authority.js';
 import { registerAdministrationRoutes } from './routes/administration.js';
@@ -69,8 +68,8 @@ export function createCommunityApp({
     afterExportSnapshot?: () => Promise<void>;
     /** How long a JSON request body may take to arrive; tests shorten it. */
     jsonBodyMs?: number;
-    /** How long an export upload may go without a byte; tests shorten it. */
-    importUploadIdleMs?: number;
+    /** How long a file or export upload may go without a byte; tests shorten it. */
+    uploadIdleMs?: number;
     /** Free bytes in the temporary folder, as an upload's space check sees them. */
     freeTempBytes?: () => Promise<number>;
   };
@@ -352,7 +351,7 @@ export function createCommunityApp({
     limitTokenMiss: (c) =>
       limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
     uploadSlots: new UploadSlots(config.limits.importUploads),
-    uploadIdleMs: hooks?.importUploadIdleMs ?? IMPORT_UPLOAD_IDLE_MS,
+    uploadIdleMs: hooks?.uploadIdleMs ?? UPLOAD_IDLE_MS,
     freeTempBytes: hooks?.freeTempBytes,
   });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
@@ -431,7 +430,13 @@ export function createCommunityApp({
     limitStart: (c) => limitAttempts(`pairing:${peer(c)}`, config.limits.pairingAttemptsPerMinute),
   });
   registerAgentRoutes(communityApi, { pool, auth, config });
-  registerAttachmentRoutes(communityApi, { pool, auth, config, blobStore });
+  registerAttachmentRoutes(communityApi, {
+    pool,
+    auth,
+    config,
+    blobStore,
+    uploadIdleMs: hooks?.uploadIdleMs,
+  });
   registerRemovalRoutes(communityApi, { pool, auth, config });
   registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword, hooks });
   registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
