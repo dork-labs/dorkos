@@ -135,7 +135,15 @@ When you must stop a community without destroying it, for example while you look
 
 If you intend to delete a held community, publish a deletion notice: a date at least `COMMUNITY_HOST_DELETION_NOTICE_DAYS` away (14 days unless you change it; never fewer than 7). Members see the date on every channel, with a reminder that the owner can export until then. After the date passes, **Delete** asks for the last eight characters of the community's ID and schedules the same seven-day deletion an owner's request does; you can cancel it during those seven days, and the owner cannot. A suspended community cannot be deleted this way, because its owner could not export: hold it with a notice date first.
 
-Before you roll back to a release without holds, release every hold and cancel every deletion you started. Older releases do not know the held state.
+A suspended community can be put on hold directly. It goes from suspended to on hold in one step and is never live in between.
+
+## Legal holds
+
+When you must preserve a community, for example under a court order or while litigation is pending, place a **legal hold** with `PUT /api/v1/host/communities/:id/legal-hold`. It needs a key with the `communities:legal_hold` permission, which suspend-and-delete keys do not have. Nothing in the community changes for anyone, but it can't be permanently deleted until you release the hold. Your own delete and abandon actions are refused. If the owner asks to delete it, their request is accepted and the community closes as they asked, but nothing is removed until you release the hold. The owner and members are not told a legal hold exists. A hold placed while a deletion is already running stops it before the next file. Release it with `DELETE` on the same address, and a deletion that was waiting then goes ahead.
+
+A legal hold does not stop someone removing their own messages or asking to be erased. If you must keep specific content, take a copy through your own database and file backups while the hold stands.
+
+Before you roll back to a release without holds, release every hold and cancel every deletion you started. Older releases do not know the held state. Release every legal hold first too: an older release would carry out a deletion that the legal hold was stopping.
 
 ## Web addresses
 

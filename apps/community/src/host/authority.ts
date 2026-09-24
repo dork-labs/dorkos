@@ -30,6 +30,14 @@ export type HostActor = HostPersonActor | HostKeyActor;
 /** Every actor a host audit row can name, including the offline key command. */
 export type HostAuditActor = HostActor | { kind: 'offline' };
 
+/**
+ * How a row records the host actor that changed it (a host-started deletion, a legal hold):
+ * `person:<userId>` or `api_key:<keyId>`, the form the database checks.
+ */
+export function hostActorRequester(actor: HostActor): string {
+  return actor.kind === 'person' ? `person:${actor.userId}` : `api_key:${actor.keyId}`;
+}
+
 /** Append one metadata-only host audit row naming its actor. Never pass values, only field names. */
 export async function recordHostAudit(
   client: PoolClient,

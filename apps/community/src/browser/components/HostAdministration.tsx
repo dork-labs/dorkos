@@ -21,6 +21,7 @@ type Community = {
   deletionNoticeAt: string | null;
   deletionRequestedBy: 'owner' | 'host' | null;
   shortName: string | null;
+  legalHold: { since: string; reference: string | null } | null;
   createdAt: string;
 };
 type Claim = { grantId: string; ownerClaimToken: string; expiresAt: string };
@@ -286,6 +287,13 @@ export function HostAdministration() {
                       {community.ownerPresent ? 'assigned' : 'not assigned'}
                       {community.deletionState ? ` · Cleanup ${community.deletionState}` : ''}
                     </p>
+                    {community.legalHold && (
+                      <p className="small">
+                        Legal hold since {new Date(community.legalHold.since).toLocaleDateString()}
+                        {community.legalHold.reference ? ` (${community.legalHold.reference})` : ''}
+                        . This community can’t be deleted until the hold is released.
+                      </p>
+                    )}
                     <div className="row flex-wrap gap-2">
                       {pending && (
                         <button

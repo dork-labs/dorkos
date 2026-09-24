@@ -17,6 +17,7 @@ import {
 } from '../host/short-names.js';
 import {
   hostProjectionSql,
+  legalHoldActive,
   parseHostCommunityId,
   projectCommunity,
   type HostCommunityRow,
@@ -256,12 +257,13 @@ export function registerHostRoutes(
     const actor = await authority.require(c, 'communities:write');
     const communityId = parseHostCommunityId(c.req.param('id'));
     await transaction(pool, async (client) => {
-      const community = await client.query<{ lifecycle: string }>(
-        'SELECT lifecycle FROM communities WHERE id=$1 FOR UPDATE',
+      const community = await client.query<{ lifecycle: string; legal_hold_at: Date | null }>(
+        'SELECT lifecycle,legal_hold_at FROM communities WHERE id=$1 FOR UPDATE',
         [communityId]
       );
       await assertHostActor(client, actor, now());
       if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (community.rows[0].legal_hold_at) throw legalHoldActive();
       if (community.rows[0].lifecycle !== 'pending_owner') {
         throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed community can be abandoned.');
       }

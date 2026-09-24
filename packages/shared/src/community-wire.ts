@@ -1069,6 +1069,7 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'SHORT_NAME_TAKEN',
   'SHORT_NAME_RESERVED',
   'PASSWORD_REQUIRED',
+  'LEGAL_HOLD_ACTIVE',
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;

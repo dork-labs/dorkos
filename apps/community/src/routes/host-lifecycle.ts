@@ -10,6 +10,7 @@ import { transaction } from '../data.js';
 import { prepareCommunityDeletionInventory } from '../deletion-worker.js';
 import {
   hostProjectionSql,
+  legalHoldActive,
   parseHostCommunityId,
   projectCommunity,
   revokeTenantAccess,
@@ -17,19 +18,14 @@ import {
 } from '../host/communities.js';
 import {
   assertHostActor,
+  hostActorRequester,
   recordHostAudit,
-  type HostActor,
   type HostAuthority,
 } from '../host/authority.js';
 import { ApiError, json, readJson } from '../http.js';
 import type { BlobStore } from '../storage/index.js';
 
 const DAY_MS = 24 * 60 * 60_000;
-
-/** How a pending deletion records the host actor that asked for it. */
-function hostRequester(actor: HostActor): string {
-  return actor.kind === 'person' ? `person:${actor.userId}` : `api_key:${actor.keyId}`;
-}
 
 async function lockHostCommunity(client: PoolClient, communityId: string) {
   const current = await client.query<HostCommunityRow>(
@@ -122,12 +118,34 @@ export function registerHostLifecycleRoutes(
              lifecycle_version=lifecycle_version+1 WHERE id=$1`,
           [row.id, next]
         );
+      } else if (body.action === 'hold' && row.lifecycle === 'suspended') {
+        // Hold a suspended community in one step (DOR-2299). Resuming and then holding in two
+        // calls left it live if the second failed; here the only states anyone can observe are
+        // suspended before and held after. Suspension already revoked every credential, and a
+        // hold revives none. From a suspension of a hold, the kept held_from_state and held_at
+        // stand; the suspension withdrew the old notice, so a new one may be published now.
+        if (!row.suspended_from_state) {
+          throw new ApiError(409, 'STATE_CONFLICT', 'This community cannot be held.');
+        }
+        const notice = assertNotice(body.deletionNoticeAt, at);
+        next = 'held';
+        changedFields.push('suspended_from_state');
+        if (notice) changedFields.push('deletion_notice_at');
+        await client.query(
+          `UPDATE communities SET lifecycle='held',
+             held_from_state=CASE WHEN suspended_from_state='held' THEN held_from_state
+                                  ELSE suspended_from_state END,
+             held_at=CASE WHEN suspended_from_state='held' THEN held_at ELSE $2 END,
+             suspended_from_state=NULL,suspended_at=NULL,deletion_notice_at=$3,
+             lifecycle_version=lifecycle_version+1 WHERE id=$1`,
+          [row.id, at, notice]
+        );
       } else if (body.action === 'hold') {
         if (row.lifecycle !== 'active' && row.lifecycle !== 'archived') {
           throw new ApiError(
             409,
             'STATE_CONFLICT',
-            'Only an active or archived community can be held.'
+            'Only an active, archived, or suspended community can be held.'
           );
         }
         const notice = assertNotice(body.deletionNoticeAt, at);
@@ -188,6 +206,7 @@ export function registerHostLifecycleRoutes(
     // request from building the deletion inventory at all.
     const gate = (row: HostCommunityRow | undefined, at: Date): HostCommunityRow => {
       if (!row) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (row.legal_hold_at) throw legalHoldActive();
       if (row.lifecycle_version !== body.lifecycleVersion) {
         throw new ApiError(409, 'STATE_CONFLICT', 'Community lifecycle changed.');
       }
@@ -227,7 +246,7 @@ export function registerHostLifecycleRoutes(
       const row = gate(locked, at);
       await revokeTenantAccess(client, row.id);
       const deleteAfter = new Date(at.getTime() + 7 * DAY_MS);
-      const requester = hostRequester(actor);
+      const requester = hostActorRequester(actor);
       const updated = await client.query<{ lifecycle_version: number }>(
         `UPDATE communities SET lifecycle='deletion_pending',
            deletion_from_state='held',deletion_from_prior_state=held_from_state,
