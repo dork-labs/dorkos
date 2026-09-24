@@ -15,7 +15,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
@@ -83,10 +83,14 @@ interface Script {
   /** When set, the move start waits for this before answering. */
   moveStartGate: Promise<void> | null;
   entitlements: unknown;
+  /** When set, the entitlements read waits for this before answering. */
+  entitlementsGate: Promise<void> | null;
 }
 
 let script: Script;
 const received: Received[] = [];
+/** Requests the fake has started on and not yet answered. */
+let inFlight = 0;
 
 function defaultScript(): Script {
   return {
@@ -110,6 +114,7 @@ function defaultScript(): Script {
       },
       used: { ...entitlementsFixture.used, communities: 1 },
     },
+    entitlementsGate: null,
   };
 }
 
@@ -131,6 +136,8 @@ function send(res: ServerResponse, status: number, body: unknown) {
  * Routes by method and path the way the contract names them.
  */
 const fake = listeningServer(async (req, res) => {
+  inFlight++;
+  res.on('close', () => inFlight--);
   const url = new URL(req.url ?? '/', 'http://fake');
   const body = await readBody(req);
   received.push({
@@ -143,7 +150,10 @@ const fake = listeningServer(async (req, res) => {
   const route = `${req.method} ${url.pathname}`;
   if (route === 'GET /v1/communities') return send(res, 200, script.list);
   if (route === 'GET /v1/communities/moves') return send(res, 200, movesFixture);
-  if (route === 'GET /v1/entitlements') return send(res, 200, script.entitlements);
+  if (route === 'GET /v1/entitlements') {
+    if (script.entitlementsGate) await script.entitlementsGate;
+    return send(res, 200, script.entitlements);
+  }
   if (route === 'GET /v1/communities/name-check') {
     return send(res, 200, { ...nameFreeFixture, name: url.searchParams.get('name') });
   }
@@ -214,6 +224,13 @@ beforeEach(() => {
   script = defaultScript();
   received.length = 0;
   uploads = new CommunityMoveUploads();
+});
+
+// Every request a test starts must be answered inside that test. One still
+// running would land in the next test's `received` and fail an assertion
+// that has nothing to do with it (DOR-2298).
+afterEach(async () => {
+  await vi.waitFor(() => expect(inFlight).toBe(0));
 });
 
 describe('unlinked', () => {
@@ -295,6 +312,32 @@ describe('GET /api/cloud/communities', () => {
     script.list = '<html>proxy error</html>';
     const res = await request(server).get('/api/cloud/communities').expect(502);
     expect(res.body).toEqual({ error: 'Couldn’t reach your DorkOS account. Try again.' });
+  });
+
+  // Purpose: a failed list waits for the reads it started beside it. Fails if
+  // the route answers while the allowance read is still running, which is
+  // how that read once reached the service during a later test (DOR-2298).
+  it('does not answer a failed list while its other reads are still running', async () => {
+    let release!: () => void;
+    script.entitlementsGate = new Promise((resolve) => (release = resolve));
+    script.list = '<html>proxy error</html>';
+    let answered = false;
+    const pending = request(server)
+      .get('/api/cloud/communities')
+      .then((res) => {
+        answered = true;
+        return res;
+      });
+    try {
+      await vi.waitFor(() =>
+        expect(received.some((r) => r.path === '/v1/entitlements')).toBe(true)
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(answered).toBe(false);
+    } finally {
+      release();
+    }
+    expect((await pending).status).toBe(502);
   });
 });
 
