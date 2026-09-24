@@ -357,6 +357,8 @@ export const CommunityAdminImportCreateRequestSchema = z.strictObject({
   name: z.string().trim().min(1).max(80),
   description: z.string().max(1_000).nullable().optional(),
   admissionPolicy: CommunityAdminAdmissionPolicySchema.optional(),
+  /** The new community's web address, set in the same transaction. Part of the key's payload. */
+  shortName: CommunityShortNameSchema.optional(),
   /** Set in the same transaction and part of the idempotency key's payload. */
   limits: CommunityAdminLimitsUpdateRequestSchema.omit({ limitsVersion: true }).optional(),
   /** Restore as soon as the export checks out, instead of pausing at `validated`. */

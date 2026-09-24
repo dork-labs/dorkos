@@ -11,7 +11,9 @@ import {
   CommunityAdminImportSchema,
 } from '@dorkos/shared/community-admin-wire';
 import { transaction } from '../data.js';
+import type { CommunityConfig } from '../config.js';
 import { createCommunityGated } from '../host/communities.js';
+import { assignShortName, shortNameHoldKey, type ShortNameHolds } from '../host/short-names.js';
 import {
   assertHostActor,
   recordHostAudit,
@@ -69,6 +71,7 @@ function payloadHash(body: CreateRequest): string {
             }
           : null,
         autoCommit: body.autoCommit ?? false,
+        shortName: body.shortName ?? null,
       })
     )
     .digest('hex');
@@ -120,6 +123,7 @@ export function registerImportRoutes(
   app: Hono,
   deps: {
     pool: Pool;
+    config: CommunityConfig;
     blobStore: BlobStore;
     authority: HostAuthority;
     now: () => Date;
@@ -135,6 +139,11 @@ export function registerImportRoutes(
 ): void {
   const { pool, blobStore, authority, now, limitTokenMiss, uploadSlots, uploadIdleMs } = deps;
   const freeTempBytes = deps.freeTempBytes;
+  const { config } = deps;
+  const holds: ShortNameHolds = {
+    key: shortNameHoldKey(config.authSecret),
+    cooloffDays: config.limits.shortNameCooloffDays,
+  };
 
   app.post('/host/imports', async (c) => {
     const actor = await authority.require(c, 'communities:import');
@@ -166,6 +175,14 @@ export function registerImportRoutes(
            VALUES($1,$2,$3)`,
           [communityId, body.limits.maxActiveMembers, body.limits.maxStorageBytes]
         );
+      if (body.shortName)
+        await assignShortName(client, {
+          communityId,
+          shortName: body.shortName,
+          reservedNames: config.reservedShortNames,
+          holds,
+          at: now(),
+        });
       const created = await client.query<ImportRow>(
         `INSERT INTO community_imports(
            community_id,idempotency_key,payload_hash,auto_commit,upload_token_hash,
@@ -191,6 +208,7 @@ export function registerImportRoutes(
           'description',
           'admission_policy',
           ...(body.limits ? ['limits'] : []),
+          ...(body.shortName ? ['short_name'] : []),
         ],
       });
       return { row: created.rows[0], replayed: false };

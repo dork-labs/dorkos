@@ -345,6 +345,7 @@ export function createCommunityApp({
   registerHostKeyRoutes(hostApi, { pool, auth, authority, now, confirmPassword });
   registerImportRoutes(hostApi, {
     pool,
+    config,
     blobStore,
     authority,
     now,

@@ -10,7 +10,8 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { CommunityExportManifestV1Schema } from '@dorkos/shared/community-wire';
 import { sweepImports } from '../imports/worker.js';
 import { acquireUploadLease, renewUploadLease } from '../imports/upload.js';
-import { drainCleanup, post, upload } from './member-erasure-fixture.js';
+import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
+import { post, upload } from './member-erasure-fixture.js';
 import {
   buildArchive,
   createImport,
@@ -54,7 +55,12 @@ async function settleImports(): Promise<void> {
     await h.pool.query('UPDATE community_imports SET next_attempt_at=$1 WHERE settled_at IS NULL', [
       clock,
     ]);
-    await drainCleanup(h);
+    // Not drainCleanup: a file upload dropped mid-stream elsewhere in this file leaves a cleanup
+    // tombstone that never settles, by the blob inventory's design, and has nothing to do here.
+    await h.pool.query(
+      "UPDATE pending_blob_deletions SET next_attempt_at=now()-interval '1 second'"
+    );
+    await sweepPendingBlobDeletions(h.pool, h.blobStore, 100);
     const result = await sweepImports(h.pool, h.blobStore, clock);
     if (!result.claimed) return;
   }
@@ -710,4 +716,52 @@ it('drops a file upload that stops sending, and keeps one that trickles', async 
   ).toBe(before);
   const trickled = await dripAttachment('a file that keeps arriving slowly', 6, 400);
   expect(trickled).toMatch(/^HTTP\/1\.1 201 /);
+});
+
+// Purpose: an import can take its web address when it starts, like any new community, and a
+// cancelled import frees that name at once, with no cool-off, so a retried move can use it.
+// A reserved or taken name is refused before anything is created.
+it('names an imported community at creation and frees the name when cancelled', async () => {
+  const first = await h.call('/api/v1/host/imports', {
+    bearer: keyImport,
+    body: { idempotencyKey: `named-${randomUUID()}`, name: 'Named', shortName: 'moved-here' },
+  });
+  expect(first.status).toBe(201);
+  const created = (await first.json()).import;
+  expect(
+    await count(
+      "SELECT 1 FROM community_short_names WHERE short_name='moved-here' AND community_id=$1",
+      [created.communityId]
+    )
+  ).toBe(1);
+  const taken = await h.call('/api/v1/host/imports', {
+    bearer: keyImport,
+    body: { idempotencyKey: `named-${randomUUID()}`, name: 'Again', shortName: 'moved-here' },
+  });
+  expect(taken.status).toBe(409);
+  expect((await taken.json()).code).toBe('SHORT_NAME_TAKEN');
+  const reserved = await h.call('/api/v1/host/imports', {
+    bearer: keyImport,
+    body: { idempotencyKey: `named-${randomUUID()}`, name: 'Reserved', shortName: 'admin' },
+  });
+  expect((await reserved.json()).code).toBe('SHORT_NAME_RESERVED');
+
+  await expectStatus(
+    await h.call(`/api/v1/host/imports/${created.importId}/cancel`, {
+      bearer: keyImport,
+      body: {},
+    }),
+    200,
+    'cancel'
+  );
+  await settleImports();
+  expect(
+    await count('SELECT 1 FROM community_short_names WHERE short_name=$1', ['moved-here'])
+  ).toBe(0);
+  expect(await count('SELECT 1 FROM released_short_names')).toBe(0);
+  const retried = await h.call('/api/v1/host/imports', {
+    bearer: keyImport,
+    body: { idempotencyKey: `named-${randomUUID()}`, name: 'Retry', shortName: 'moved-here' },
+  });
+  expect(retried.status).toBe(201);
 });

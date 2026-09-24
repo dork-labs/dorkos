@@ -2072,6 +2072,7 @@ it('classifies every registered route, and puts every host and settings route in
   registerHostKeyRoutes(modules, { pool, auth, authority, now, confirmPassword: unused });
   registerImportRoutes(modules, {
     pool,
+    config,
     blobStore,
     authority,
     now,

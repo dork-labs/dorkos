@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { transaction } from '../data.js';
+import { releaseCommunityShortNames } from '../host/short-names.js';
 import type { BlobStore } from '../storage/index.js';
 import { cleanupBackoffSql } from '../storage/pending-deletions.js';
 import { MANAGED_BLOB_RESERVATION_TTL_MS } from '../storage/managed-blobs.js';
@@ -115,6 +116,9 @@ export async function teardownImport(
       return 'waiting';
     }
     await client.query('DELETE FROM community_limits WHERE community_id=$1', [communityId]);
+    // Nobody ever reached an unclaimed community by its name, so the name is free at once:
+    // someone retrying a move can use the name they chose.
+    await releaseCommunityShortNames(client, communityId, { hold: false });
     await client.query('DELETE FROM bootstrap_grants WHERE community_id=$1', [communityId]);
     await client.query(
       `UPDATE tenant_reconciliation SET community_id=NULL,state='dirty',validated_generation=NULL,
