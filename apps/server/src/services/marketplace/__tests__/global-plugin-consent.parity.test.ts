@@ -12,7 +12,7 @@
  * @vitest-environment node
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chmod, cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -150,6 +150,33 @@ describe('global activation consent, through the real installer', () => {
     });
   });
 
+  it('records the shipped hash for a package whose skill a schedule runs (skillRef)', async () => {
+    // Purpose: the install writes a skillRef schedule into the package's
+    // SKILL.md (DOR-2318 moves that into the install transaction), but the
+    // preview never does. The recorded hash is of the package as shipped, so
+    // the two still match and the approval holds.
+    const manifestPath = path.join(source, '.dork', 'manifest.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf-8'));
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ ...manifest, schedules: [{ skillRef: 'jot', cron: '0 9 * * *' }] })
+    );
+    const { installer } = buildInstallerForTests(dorkHome);
+    const { preview, packagePath } = await installer.preview({ name: source });
+    const shown = disclosedEffectsOf(preview);
+    expect(shown?.schedules.length).toBe(1);
+    const contentHash = await packageContentHash(packagePath);
+
+    const result = await installer.install({ name: source, approvedDisclosure: shown });
+    await globalConsentRecorder.settle(
+      { installPath: result.installPath, type: result.type, global: true },
+      { disclosed: shown, contentHash }
+    );
+
+    expect((await readInstallMetadata(result.installPath))?.contentHash).toBe(contentHash);
+    expect((await partitionGlobalPlugins(dorkHome)).activate).toEqual(['valid-plugin']);
+  });
+
   it('holds back an install whose source moved after the preview, even inside node_modules', async () => {
     // Purpose: the reviewer's PoC. The declarations stay the same, so the
     // install is not refused, but the recorded hash is of what actually came
@@ -190,11 +217,12 @@ describe('global activation consent, through the real installer', () => {
       err instanceof ShipsRuntimeStateError ||
       (err instanceof InvalidPackageError && err.errors.some((e) => e.includes(shipped)));
 
+    // One at a time: a second promise created up front would reject unhandled.
     for (const attempt of [
-      installer.preview({ name: source }),
-      installer.install({ name: source }),
+      () => installer.preview({ name: source }),
+      () => installer.install({ name: source }),
     ]) {
-      const err = await attempt.then(
+      const err = await attempt().then(
         () => undefined,
         (e: unknown) => e
       );
