@@ -65,6 +65,10 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useInstalledPackages: vi.fn(),
   usePackageInstallations: vi.fn(),
   useUninstallPackage: vi.fn(),
+  // The Installed tab's update count; this flow never reaches a check.
+  useInstalledUpdates: vi
+    .fn()
+    .mockReturnValue({ data: undefined, isFetching: false, error: null, refetch: vi.fn() }),
 }));
 
 vi.mock('@/layers/entities/mesh', () => ({

@@ -15,8 +15,8 @@ import type {
   InstallResult,
   UninstallOptions,
   UninstallResult,
-  UpdateOptions,
-  UpdateResult,
+  ApplyUpdatesOptions,
+  InstallationUpdatesResult,
   InstalledPackage,
   MarketplaceSource,
   AddSourceInput,
@@ -89,17 +89,20 @@ export function createMarketplaceMethods(baseUrl: string) {
       );
     },
 
-    // --- Update ---
+    // --- Updates ---
 
-    updateMarketplacePackage(name: string, opts?: UpdateOptions): Promise<UpdateResult> {
-      return fetchJSON<UpdateResult>(
-        baseUrl,
-        `/marketplace/packages/${encodeURIComponent(name)}/update`,
-        {
-          method: 'POST',
-          body: JSON.stringify(opts ?? {}),
-        }
-      );
+    checkMarketplaceUpdates(projectPath?: string): Promise<InstallationUpdatesResult> {
+      const qs = buildQueryString({ projectPath });
+      return fetchJSON<InstallationUpdatesResult>(baseUrl, `/marketplace/updates${qs}`);
+    },
+
+    applyMarketplaceUpdates(opts: ApplyUpdatesOptions): Promise<InstallationUpdatesResult> {
+      // `apply: true` is the route's literal switch: a POST without it is
+      // refused, so an empty or mistyped body can never reinstall anything.
+      return fetchJSON<InstallationUpdatesResult>(baseUrl, '/marketplace/updates', {
+        method: 'POST',
+        body: JSON.stringify({ apply: true, ...opts }),
+      });
     },
 
     // --- Installed packages ---

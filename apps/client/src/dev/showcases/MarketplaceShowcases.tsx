@@ -11,17 +11,19 @@
  *
  * @module dev/showcases/MarketplaceShowcases
  */
-import { useMemo } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CONNECTOR_ADAPTER_TYPE } from '@dorkos/marketplace';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { IsolatedQueryProvider } from './marketplace-query-provider';
+import {
+  InstalledPackagesViewShowcase,
+  UpdateAllDialogShowcase,
+} from './MarketplaceUpdateShowcases';
 
 // The barrel first, then the leaves it does not carry — see the import rule in
 // `.claude/skills/maintaining-dev-playground/SKILL.md`.
 import {
-  InstalledPackagesView,
   MarketplaceSidebar,
   MarketplaceSourcesView,
   PackageCard,
@@ -56,43 +58,8 @@ import {
   MOCK_PERMISSION_PREVIEW_MANY_FILES,
   MOCK_PERMISSION_PREVIEW_ESCAPES,
   MOCK_DORK_HOME,
-  MOCK_INSTALLED_PACKAGES,
   MOCK_SOURCES,
 } from './marketplace-mocks';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Build an isolated QueryClient with marketplace package data pre-seeded.
- *
- * Each invocation returns a new client to ensure showcase sections are fully
- * independent. The `staleTime: Infinity` prevents background refetches that
- * would hit the server (which is not running in the playground context).
- */
-function makeSeededQueryClient(seed: (qc: QueryClient) => void): QueryClient {
-  const qc = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, staleTime: Infinity, refetchOnWindowFocus: false },
-    },
-  });
-  seed(qc);
-  return qc;
-}
-
-/** Wrapper providing an isolated QueryClient with pre-seeded data. */
-function IsolatedQueryProvider({
-  seed,
-  children,
-}: {
-  seed: (qc: QueryClient) => void;
-  children: React.ReactNode;
-}) {
-  // useMemo ensures the client is created once per component mount.
-  const qc = useMemo(() => makeSeededQueryClient(seed), []); // eslint-disable-line react-hooks/exhaustive-deps
-  return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
-}
 
 // ---------------------------------------------------------------------------
 // PackageCard showcase
@@ -442,42 +409,6 @@ function PermissionPreviewSectionShowcase() {
 }
 
 // ---------------------------------------------------------------------------
-// InstalledPackagesView showcase
-// ---------------------------------------------------------------------------
-
-/** InstalledPackagesView in empty, populated states. */
-function InstalledPackagesViewShowcase() {
-  return (
-    <PlaygroundSection
-      title="InstalledPackagesView"
-      description="Manage installed packages — list with per-row update and two-click uninstall actions."
-    >
-      <ShowcaseLabel>Empty state</ShowcaseLabel>
-      <ShowcaseDemo>
-        <IsolatedQueryProvider
-          seed={(qc) => {
-            qc.setQueryData(marketplaceKeys.installed(), []);
-          }}
-        >
-          <InstalledPackagesView />
-        </IsolatedQueryProvider>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Populated (3 packages)</ShowcaseLabel>
-      <ShowcaseDemo>
-        <IsolatedQueryProvider
-          seed={(qc) => {
-            qc.setQueryData(marketplaceKeys.installed(), MOCK_INSTALLED_PACKAGES);
-          }}
-        >
-          <InstalledPackagesView />
-        </IsolatedQueryProvider>
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // MarketplaceSourcesView showcase
 // ---------------------------------------------------------------------------
 
@@ -620,6 +551,7 @@ export function MarketplaceShowcases() {
       <InstallConfirmationDialogShowcase />
       <PermissionPreviewSectionShowcase />
       <InstalledPackagesViewShowcase />
+      <UpdateAllDialogShowcase />
       <MarketplaceSourcesViewShowcase />
       <MarketplaceToolbarShowcase />
       <MarketplaceSidebarShowcase />

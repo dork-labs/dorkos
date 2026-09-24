@@ -512,16 +512,6 @@ export interface UninstallResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Options for `POST /api/marketplace/packages/:name/update`.
- */
-export interface UpdateOptions {
-  /** Apply the update (default: advisory check only). */
-  apply?: boolean;
-  /** Project path for project-local updates. */
-  projectPath?: string;
-}
-
-/**
  * Where a package's version came from, in Claude Code's order: the version
  * the package declares, its marketplace entry's, or the commit it was fetched
  * at. Declared here as a literal union because this package does not depend
@@ -596,6 +586,22 @@ export interface InstallationUpdateCheck extends UpdateCheckResult {
   applied?: InstallResult;
   /** Set when an apply tried to reinstall this installation and failed: why. */
   applyError?: string;
+}
+
+/**
+ * Options for `POST /api/marketplace/updates`, which always applies: the
+ * transport sends `apply: true` itself.
+ *
+ * `installPaths` is required and non-empty, so a client can only ever apply
+ * the installations a check reported and a person confirmed, never an
+ * unnamed "update everything". The route's `names` filter is left out on
+ * purpose: no client surface selects by name.
+ */
+export interface ApplyUpdatesOptions {
+  /** The installations to update, exactly as a check reported them. */
+  installPaths: [string, ...string[]];
+  /** The project whose view the paths came from; omit for the every-scope view. */
+  projectPath?: string;
 }
 
 /**

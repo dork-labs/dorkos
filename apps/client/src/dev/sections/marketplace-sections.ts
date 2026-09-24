@@ -9,7 +9,7 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Sources: MarketplaceShowcases — PackageCard, PackageTypeBadge, PackageGrid,
  * FeaturedRail, PackageDetailSheet, InstallConfirmationDialog,
- * PermissionPreviewSection, InstalledPackagesView, MarketplaceSourcesView,
+ * PermissionPreviewSection, InstalledPackagesView, UpdateAllDialog, MarketplaceSourcesView,
  * MarketplaceToolbar, MarketplaceSidebar, Package Primitives.
  */
 export const MARKETPLACE_SECTIONS: PlaygroundSection[] = [
@@ -67,7 +67,14 @@ export const MARKETPLACE_SECTIONS: PlaygroundSection[] = [
     title: 'InstalledPackagesView',
     page: 'marketplace',
     category: 'Marketplace',
-    keywords: ['installed', 'packages', 'view', 'uninstall', 'update', 'manage'],
+    keywords: ['installed', 'packages', 'view', 'uninstall', 'update', 'manage', 'outdated'],
+  },
+  {
+    id: 'updatealldialog',
+    title: 'UpdateAllDialog',
+    page: 'marketplace',
+    category: 'Marketplace',
+    keywords: ['update', 'all', 'confirm', 'dialog', 'installed', 'outdated', 'version'],
   },
   {
     id: 'marketplacesourcesview',
