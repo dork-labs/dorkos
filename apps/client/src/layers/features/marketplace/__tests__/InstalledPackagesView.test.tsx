@@ -6,15 +6,21 @@ import { render, screen, cleanup, act, fireEvent, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import type {
   InstallationUpdateCheck,
+  InstallIntegrity,
   InstalledPackage,
   InstalledShapeSummary,
 } from '@dorkos/shared/marketplace-schemas';
-import { useApplyingInstallPaths, useInstalledPackages } from '@/layers/entities/marketplace';
+import {
+  useApplyingInstallPaths,
+  useInstalledIntegrity,
+  useInstalledPackages,
+} from '@/layers/entities/marketplace';
 import { useShapes } from '@/layers/entities/shapes';
 import { useAppStore } from '@/layers/shared/model';
 
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { useApplyUpdatesWithToast } from '../model/use-apply-updates-with-toast';
+import { usePrepareWithToast } from '../model/use-prepare-with-toast';
 import {
   useInstalledUpdatesView,
   type InstalledUpdatesView,
@@ -38,6 +44,11 @@ vi.mock('@/layers/entities/marketplace', () => ({
     isPending: false,
     variables: undefined,
   }),
+  useInstalledIntegrity: vi.fn(),
+}));
+
+vi.mock('../model/use-prepare-with-toast', () => ({
+  usePrepareWithToast: vi.fn(),
 }));
 
 vi.mock('@/layers/entities/shapes', () => ({
@@ -57,6 +68,22 @@ vi.mock('../model/use-installed-updates-view', () => ({
 }));
 
 const uninstallMutate = vi.fn();
+const prepareMutate = vi.fn();
+
+/** Set what verification says about each installation, by installPath (DOR-2197). */
+function setIntegrity(byPath: Record<string, InstallIntegrity> = {}) {
+  vi.mocked(useInstalledIntegrity).mockReturnValue({
+    data: new Map(Object.entries(byPath)),
+  } as unknown as ReturnType<typeof useInstalledIntegrity>);
+}
+
+function setPrepareState(state: { isPending?: boolean; variables?: { name: string } } = {}) {
+  vi.mocked(usePrepareWithToast).mockReturnValue({
+    mutate: prepareMutate,
+    isPending: state.isPending ?? false,
+    variables: state.variables,
+  } as unknown as ReturnType<typeof usePrepareWithToast>);
+}
 const applyUpdates = vi.fn();
 const recheck = vi.fn();
 
@@ -202,6 +229,8 @@ describe('InstalledPackagesView', () => {
     setUpdatesState();
     vi.mocked(useApplyUpdatesWithToast).mockReturnValue({ apply: applyUpdates });
     setShapesState();
+    setIntegrity();
+    setPrepareState();
     useAppStore.setState({ shapeSwitcherOpen: false, shapeSwitcherFocus: null });
   });
 
@@ -938,6 +967,122 @@ describe('InstalledPackagesView', () => {
       render(<InstalledPackagesView />);
 
       expect(screen.queryByRole('button', { name: /update all/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('whether files changed since install (DOR-2197, DOR-2320)', () => {
+    const FLOW = makeInstalled({
+      name: 'flow',
+      type: 'plugin',
+      version: '0.7.2',
+      installPath: '/tmp/.dork/plugins/flow',
+    });
+    const MODIFIED: InstallIntegrity = {
+      status: 'modified',
+      changed: ['skills/a/SKILL.md', 'hooks/hooks.json'],
+      missing: ['README.md'],
+      added: [],
+      customized: [],
+    };
+
+    // Purpose: a changed install says so on its row, with the files, and what
+    // an update would do to them, before anyone presses Update.
+    it('says how many files changed since install, and what an update does to them', () => {
+      showRows([FLOW], [staleCheck(FLOW, '0.7.3')]);
+      setIntegrity({ [FLOW.installPath]: MODIFIED });
+
+      render(<InstalledPackagesView />);
+
+      const note = screen.getByTestId('installation-integrity');
+      expect(note).toHaveTextContent('3 files changed since install.');
+      expect(note).toHaveTextContent('Updating replaces them and keeps your copies beside them.');
+      expect(note).toHaveAttribute('title', 'skills/a/SKILL.md\nhooks/hooks.json\nREADME.md');
+    });
+
+    // Purpose: a linked working copy or an unreadable record is not something
+    // Prepare can fix, so neither offers it.
+    it('offers Prepare only for an install an older DorkOS made', () => {
+      showRows([FLOW], [makeCheck(FLOW)]);
+      for (const reason of ['linked', 'unreadable-record'] as const) {
+        setIntegrity({ [FLOW.installPath]: { status: 'unknown', reason } });
+        render(<InstalledPackagesView />);
+        expect(screen.queryByRole('button', { name: /^Prepare/ })).not.toBeInTheDocument();
+        cleanup();
+      }
+    });
+
+    // Purpose: an unchanged install, or one not yet verified, says nothing new.
+    it('adds nothing for a clean or unverified install', () => {
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({ [FLOW.installPath]: { status: 'clean', customized: [] } });
+      render(<InstalledPackagesView />);
+      expect(screen.queryByTestId('installation-integrity')).not.toBeInTheDocument();
+      cleanup();
+
+      setIntegrity({});
+      render(<InstalledPackagesView />);
+      expect(screen.queryByTestId('installation-integrity')).not.toBeInTheDocument();
+    });
+
+    // Purpose: an older install says why DorkOS can't tell its files apart,
+    // and offers Prepare for exactly that installation.
+    it('offers Prepare for an install an older DorkOS made', async () => {
+      const user = userEvent.setup();
+      const onAlpha = makeInstalled({
+        ...FLOW,
+        scope: 'agent-local',
+        agentPath: '/work/alpha',
+        agentName: 'Alpha',
+        installPath: '/work/alpha/.dork/plugins/flow',
+      });
+      showRows([onAlpha], [makeCheck(onAlpha)]);
+      setIntegrity({ [onAlpha.installPath]: { status: 'unknown', reason: 'no-record' } });
+
+      render(<InstalledPackagesView />);
+
+      expect(screen.getByTestId('installation-integrity')).toHaveTextContent(
+        'Installed by an older DorkOS, so DorkOS can’t tell its files from yours yet.'
+      );
+      await user.click(screen.getByRole('button', { name: 'Prepare Flow on Alpha' }));
+      expect(prepareMutate).toHaveBeenCalledWith({
+        name: 'flow',
+        options: { installRoot: onAlpha.installPath, projectPath: '/work/alpha' },
+        where: 'Alpha',
+      });
+    });
+
+    // Purpose: while one installation is being prepared its button says so and
+    // cannot be pressed again.
+    it('shows Prepare as busy while that installation is being prepared', () => {
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({ [FLOW.installPath]: { status: 'unknown', reason: 'no-record' } });
+      setPrepareState({ isPending: true, variables: { name: 'flow' } });
+
+      render(<InstalledPackagesView />);
+
+      const button = screen.getByRole('button', { name: 'Preparing Flow' });
+      expect(button).toBeDisabled();
+    });
+
+    // Purpose: the update-all confirm says, per installation, when an update
+    // will replace files the person changed.
+    it('warns in the update-all confirm about changed files', async () => {
+      const user = userEvent.setup();
+      const other = makeInstalled({ installPath: '/tmp/.dork/agents/reviewer' });
+      showRows([FLOW, other], [staleCheck(FLOW, '0.7.3'), staleCheck(other, '1.3.0')]);
+      setIntegrity({ [FLOW.installPath]: MODIFIED });
+
+      render(<InstalledPackagesView />);
+      await user.click(screen.getByRole('button', { name: 'Update all…' }));
+      const dialog = await screen.findByRole('dialog');
+      const items = within(dialog).getAllByRole('listitem');
+
+      const flowItem = items.find((i) => i.textContent?.includes('Flow'))!;
+      expect(flowItem).toHaveTextContent(
+        'Your changes to 3 files will be replaced; your copies are saved beside them (.dork-old).'
+      );
+      const otherItem = items.find((i) => i.textContent?.includes('Reviewer'))!;
+      expect(otherItem).not.toHaveTextContent('Your changes');
     });
   });
 
