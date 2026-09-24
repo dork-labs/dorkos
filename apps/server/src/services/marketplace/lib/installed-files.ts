@@ -141,6 +141,17 @@ export class LegacyInstallError extends Error {
   }
 }
 
+/**
+ * Whether a path is never carried from an old install into a new one: the
+ * installer's own files, and anything at or under an owned path.
+ *
+ * @param p - A root-relative POSIX path.
+ * @param ownedPaths - The owned paths in force (old and new records together).
+ */
+export function isNeverCarried(p: string, ownedPaths: readonly string[]): boolean {
+  return NEVER_CARRIED.has(p) || ownedPaths.some((owned) => isAtOrUnder(p, owned));
+}
+
 /** Join a root and a POSIX record path into a filesystem path. */
 function toFsPath(root: string, posixPath: string): string {
   return path.join(root, ...posixPath.split('/'));
@@ -231,6 +242,41 @@ export interface TreeEntry {
   kind: 'file' | 'symlink' | 'special';
   /** `sha256:<hex>`, present only for files the caller asked to hash. */
   hash?: string;
+  /** The entry's `lstat` identity, present when the caller asked for it. */
+  stat?: EntryStat;
+}
+
+/**
+ * The part of an `lstat` that changes when anything writes an entry: its size,
+ * its mtime and its inode (an atomic rename-over replaces the inode). Compared
+ * by {@link sameEntryStat}.
+ */
+export interface EntryStat {
+  /** Bytes. */
+  size: number;
+  /** Modification time, milliseconds. */
+  mtimeMs: number;
+  /** Inode number. */
+  ino: number;
+}
+
+/**
+ * Reduce an `lstat` result to an {@link EntryStat}.
+ *
+ * @param stats - An lstat result.
+ */
+export function entryStatOf(stats: Stats): EntryStat {
+  return { size: stats.size, mtimeMs: stats.mtimeMs, ino: stats.ino };
+}
+
+/**
+ * Whether two {@link EntryStat}s describe the same, unwritten entry.
+ *
+ * @param a - One stat.
+ * @param b - The other.
+ */
+export function sameEntryStat(a: EntryStat, b: EntryStat): boolean {
+  return a.size === b.size && a.mtimeMs === b.mtimeMs && a.ino === b.ino;
 }
 
 /** Everything {@link scanTree} found under a root. */
@@ -246,11 +292,12 @@ export interface TreeScan {
  *
  * @param root - Directory to walk.
  * @param opts - `skip(p)`: do not descend into or list `p` (checked for every
- *   entry); `hash(p)`: whether to hash the file at `p`.
+ *   entry); `hash(p)`: whether to hash the file at `p`; `stat`: record every
+ *   entry's {@link EntryStat}.
  */
 export async function scanTree(
   root: string,
-  opts: { skip?: (p: string) => boolean; hash?: (p: string) => boolean } = {}
+  opts: { skip?: (p: string) => boolean; hash?: (p: string) => boolean; stat?: boolean } = {}
 ): Promise<TreeScan> {
   const entries = new Map<string, TreeEntry>();
   const dirs = new Set<string>();
@@ -269,11 +316,14 @@ export async function scanTree(
       if (kind === 'dir') {
         dirs.add(childRel);
         await walk(childRel);
-      } else if (kind === 'file' && opts.hash?.(childRel)) {
-        entries.set(childRel, { kind, hash: await hashFile(toFsPath(root, childRel)) });
-      } else {
-        entries.set(childRel, { kind });
+        continue;
       }
+      const entry: TreeEntry = { kind };
+      if (kind === 'file' && opts.hash?.(childRel)) {
+        entry.hash = await hashFile(toFsPath(root, childRel));
+      }
+      if (opts.stat) entry.stat = entryStatOf(stats);
+      entries.set(childRel, entry);
     }
   };
   await walk('');
@@ -390,8 +440,10 @@ export async function isInstallWhole(root: string): Promise<'whole' | 'broken' |
   if (!record) return 'unknown';
   for (const relPath of Object.keys(record.files)) {
     if (!(await isProvenPackageFile(root, relPath, record))) {
-      // An edited file is still present; only a missing or non-file one breaks the install.
+      // An edited file is still present; only a missing or non-file one breaks
+      // the install, and an editable default the person deleted does not.
       const facts = await lstatChain(root, relPath);
+      if (facts.kind === 'missing' && matchesUserEditable(relPath, record.userEditable)) continue;
       if (facts.kind !== 'file') return 'broken';
     }
   }
@@ -479,8 +531,7 @@ export function planCarryOver(input: CarryOverInput): CarryOverPlan {
   const ownedPaths = [...(rOld?.ownedPaths ?? []), ...rNew.ownedPaths];
   const pendingOld = rOld?.pendingDefaults ?? {};
   const pendingFor = new Map(Object.entries(pendingOld).map(([dn, p]) => [p, dn]));
-  const skipped = (p: string): boolean =>
-    NEVER_CARRIED.has(p) || ownedPaths.some((owned) => isAtOrUnder(p, owned));
+  const skipped = (p: string): boolean => isNeverCarried(p, ownedPaths);
   const editable = (p: string): boolean =>
     p in newFiles
       ? matchesUserEditable(p, rNew.userEditable)
