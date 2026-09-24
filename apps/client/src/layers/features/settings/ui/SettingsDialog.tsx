@@ -33,6 +33,9 @@ import { PrivacyTab } from './PrivacyTab';
 import { DangerZoneTab } from './DangerZoneTab';
 import { ExperimentsTab } from './ExperimentsTab';
 
+/** Tabs the Obsidian embed leaves out; see the comment in {@link SettingsDialog}. */
+const EMBED_HIDDEN_TABS: ReadonlySet<SettingsTab> = new Set(['remote-access', 'permissions']);
+
 const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
   // "You" names what used to be an unlabelled run of four tabs above the first
   // section header — four loose things, then three real sections (DOR-1758).
@@ -175,12 +178,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { activeTab: urlTab } = useSettingsDeepLink();
 
   // Remote access is a tunnel into this machine from somewhere else, which the
-  // Obsidian embed cannot open — the panel there would render nothing at all. A
-  // tab that shows an empty panel is worse than no tab.
+  // Obsidian embed cannot open — the panel there would render nothing at all.
+  // Permissions are managed in the DorkOS app, and the embed's transport
+  // refuses them, so that panel could only ever show an error. A tab that shows
+  // an empty or broken panel is worse than no tab.
   const tabs = useMemo(
     () =>
       getPlatform().isEmbedded
-        ? SETTINGS_TABS.filter((tab) => tab.id !== 'remote-access')
+        ? SETTINGS_TABS.filter((tab) => !EMBED_HIDDEN_TABS.has(tab.id))
         : SETTINGS_TABS,
     []
   );

@@ -11,6 +11,7 @@
  * @module features/profile/ui/pages/registry
  */
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
+import { getPlatform } from '@/layers/shared/lib';
 import type { ProfilePageId } from '../../model/profile-stack';
 import type { ProfilePageContentProps } from './types';
 
@@ -103,11 +104,20 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
 };
 
 /**
- * The page behind an id, or `null` when this build does not have it.
+ * Pages the Obsidian embed cannot serve: permissions are managed in the DorkOS
+ * app, and the embed's transport refuses them, so the page would only ever
+ * show an error. A row with no page is not drawn, which is the honest answer.
+ */
+const APP_ONLY_PAGES: ReadonlySet<ProfilePageId> = new Set(['permissions']);
+
+/**
+ * The page behind an id, or `null` when this build (or this platform) does
+ * not have it.
  *
  * @param id - The page a row wants to push.
  */
 export function profilePage(id: ProfilePageId): ProfilePageDefinition | null {
+  if (getPlatform().isEmbedded && APP_ONLY_PAGES.has(id)) return null;
   return PROFILE_PAGES[id] ?? null;
 }
 
@@ -117,5 +127,5 @@ export function profilePage(id: ProfilePageId): ProfilePageDefinition | null {
  * @param id - The page a row wants to push.
  */
 export function isProfilePageAvailable(id: ProfilePageId): boolean {
-  return PROFILE_PAGES[id] !== undefined;
+  return profilePage(id) !== null;
 }
