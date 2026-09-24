@@ -15,10 +15,37 @@ import type { ImportFailureCode } from './store.js';
 export const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
 /** The largest file one attachment may be: the ceiling of `COMMUNITY_ATTACHMENT_BYTES`. */
 export const MAX_IMPORT_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-/** The longest channel name an import keeps, the same cap as a community's name. */
+/** The longest channel name an import keeps, in characters, the same cap as a community's. */
 export const MAX_IMPORT_CHANNEL_NAME = 80;
-/** The longest channel description an import keeps, the same cap as a community's. */
+/** The longest channel description an import keeps, in characters, as for a community. */
 export const MAX_IMPORT_CHANNEL_DESCRIPTION = 1_000;
+
+/** Cut `text` to at most `max` characters, ending in an ellipsis when anything was cut. */
+function shorten(text: string, max: number): string {
+  const characters = Array.from(text);
+  return characters.length <= max ? text : `${characters.slice(0, max - 1).join('')}…`;
+}
+
+/**
+ * A channel as an import restores it. A name or description longer than a community's own is
+ * shortened with an ellipsis rather than refusing the whole export over a cosmetic field; the
+ * report counts how many were shortened.
+ */
+export function importedChannel<T extends { name: string; description: string | null }>(
+  channel: T
+): T & { shortened: number } {
+  const name = shorten(channel.name, MAX_IMPORT_CHANNEL_NAME);
+  const description =
+    channel.description === null
+      ? null
+      : shorten(channel.description, MAX_IMPORT_CHANNEL_DESCRIPTION);
+  return {
+    ...channel,
+    name,
+    description,
+    shortened: Number(name !== channel.name) + Number(description !== channel.description),
+  };
+}
 /**
  * How far past the moment the export arrived a timestamp in it may be, for clock drift
  * between hosts. Nothing an export holds can really be newer than its own upload.
@@ -56,6 +83,8 @@ export interface ManifestCounts {
   historicalAgents: number;
   auditEvents: number;
   attachmentBytes: number;
+  /** Channel names and descriptions shortened to fit this host. */
+  shortened: number;
 }
 
 /**
@@ -111,8 +140,9 @@ function readable(schema: ZodType, value: unknown): void {
  * - Each row is projected the way the member API serves it and parsed with that API's own
  *   read schema (channels, members, agents, entries with their files), so an import can never
  *   restore something a read would refuse, and a change to a read schema changes this check.
- * - The host's own content limits apply: message text within `COMMUNITY_TEXT_BYTES`, each file
- *   within `COMMUNITY_ATTACHMENT_BYTES`, channel names and descriptions within a community's.
+ * - The host's own content limits apply: message text within `COMMUNITY_TEXT_BYTES` and each
+ *   file within `COMMUNITY_ATTACHMENT_BYTES`. A longer channel name or description is
+ *   shortened (see {@link importedChannel}) and counted, never refused.
  * - No timestamp is later than the moment the export arrived (with a little clock drift).
  * - IDs are unique in each collection, and no ID is both a member and an agent, so a mention
  *   resolves to exactly one author. Handles are unique across members and agents.
@@ -164,10 +194,11 @@ export function checkManifest(
   }
 
   const channels = unique(manifest.channels.map((channel) => channel.id));
-  for (const channel of manifest.channels) {
+  let shortened = 0;
+  for (const source of manifest.channels) {
+    const channel = importedChannel(source);
+    shortened += channel.shortened;
     notFuture(channel.created_at);
-    invalid(channel.name.length > MAX_IMPORT_CHANNEL_NAME);
-    invalid((channel.description?.length ?? 0) > MAX_IMPORT_CHANNEL_DESCRIPTION);
     readable(CommunityWireChannelSchema, {
       id: channel.id,
       name: channel.name,
@@ -266,5 +297,6 @@ export function checkManifest(
     historicalAgents: manifest.agents.length,
     auditEvents: auditEvents.length,
     attachmentBytes,
+    shortened,
   };
 }

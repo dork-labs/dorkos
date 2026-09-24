@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { CommunityExportManifestV1 } from '@dorkos/shared/community-wire';
 import { uuidv5 } from '../imports/derived-id.js';
-import { ImportFailure, checkManifest, parseManifest } from '../imports/manifest.js';
+import {
+  ImportFailure,
+  checkManifest,
+  importedChannel,
+  parseManifest,
+} from '../imports/manifest.js';
 
 const id = (n: number) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const at = '2026-01-01T00:00:00.000Z';
@@ -165,6 +170,7 @@ describe('checkManifest', () => {
       historicalAgents: 1,
       auditEvents: 1,
       attachmentBytes: 3,
+      shortened: 0,
     });
   });
 
@@ -275,14 +281,6 @@ describe('checkManifest', () => {
       'text over COMMUNITY_TEXT_BYTES',
       (m: CommunityExportManifestV1) => void (m.entries[0].text = 'é'.repeat(8 * 1024 + 1)),
     ],
-    [
-      'a channel name over 80 characters',
-      (m: CommunityExportManifestV1) => void (m.channels[0].name = 'n'.repeat(81)),
-    ],
-    [
-      'a channel description over 1,000 characters',
-      (m: CommunityExportManifestV1) => void (m.channels[0].description = 'd'.repeat(1_001)),
-    ],
     // Nothing newer than the upload.
     [
       'a message from the future',
@@ -304,6 +302,18 @@ describe('checkManifest', () => {
     ],
   ])('refuses %s', (_label, change) => {
     expect(failureOf(change)).toBe('IMPORT_ARCHIVE_INVALID');
+  });
+
+  // Purpose: a long channel name or description is shortened and counted, not refused; one at
+  // the limit is left alone.
+  it('counts shortened channel names and descriptions instead of refusing them', () => {
+    const m = manifest();
+    m.channels[0].name = 'n'.repeat(81);
+    m.channels[0].description = 'd'.repeat(1_001);
+    m.channels[1].name = 'n'.repeat(80);
+    expect(checkManifest(m, limits, received).shortened).toBe(2);
+    expect(importedChannel(m.channels[0]).name).toBe(`${'n'.repeat(79)}…`);
+    expect(importedChannel(m.channels[1]).name).toBe('n'.repeat(80));
   });
 
   // Purpose: a file larger than this host's COMMUNITY_ATTACHMENT_BYTES is a size refusal.

@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import type { CommunityExportManifestV1 } from '@dorkos/shared/community-wire';
 import { sanitizeDisplayName } from '../storage/blob-store.js';
 import { uuidv5 } from './derived-id.js';
-import { ImportFailure } from './manifest.js';
+import { ImportFailure, importedChannel } from './manifest.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -50,7 +50,7 @@ export async function insertImportedRows(
      SELECT r.id,$2,r.name,r.description,r.visibility,r.archived,r.last_seq,1,r.created_at
      FROM jsonb_to_recordset($1::jsonb) AS r(id uuid,name text,description text,visibility text,
        archived boolean,last_seq bigint,created_at timestamptz)`,
-    manifest.channels.map((channel) => ({
+    manifest.channels.map(importedChannel).map((channel) => ({
       id: derive(channel.id),
       name: channel.name,
       description: channel.description,

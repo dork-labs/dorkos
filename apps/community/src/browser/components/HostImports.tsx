@@ -12,6 +12,7 @@ type Report = {
   historicalAgents: number;
   attachmentBytes: number;
   fitsStorageLimit: boolean;
+  shortened: number;
 };
 type HostImport = {
   importId: string;
@@ -237,6 +238,8 @@ export function HostImportStatus({
           {(report.attachmentBytes / 1024 / 1024).toFixed(1)} MiB),{' '}
           {report.historicalMembers.toLocaleString()} past members,{' '}
           {report.historicalAgents.toLocaleString()} past agents.
+          {report.shortened > 0 &&
+            ` ${report.shortened.toLocaleString()} channel names or descriptions are too long and will be shortened.`}
         </p>
       )}
       <div className="row flex-wrap gap-2">
