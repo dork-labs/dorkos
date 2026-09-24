@@ -77,6 +77,16 @@ Every fix began with a test that failed first; the three survivors in item 7 wer
 | 10  | The denial check compares real paths                                                                                                             | `3f54bc645` |
 | 12  | Only directories the uninstall emptied are pruned; a person's empty folder stays (kills M23)                                                     | see log     |
 
+### Delta review fixes (after rebasing onto DOR-2195)
+
+| #   | Fix                                                                                                                                                                                                                                                                           | Commit      |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 1   | `assertInstallable` (schedules croner rejects, unparseable `SKILL.md`) runs before the update's uninstall half; failures it cannot predict (npm, disk, an extension compiled against npm dependencies) still leave the package uninstalled with the person's files and record | `8311e85a6` |
+| 2   | `userEditable` may not reach an effect-bearing path: the defaults are `EFFECT_BEARING_PATHS`, which the preview readers now import, and `validatePackage` refuses paths plugin.json declares (`USER_EDITABLE_EFFECT_PATH`); all 14 marketplace plugins still validate         | `7439ccdc5` |
+| 3   | Journal `moves[].path`, `unitFiles[]` and `savedCopies[]` are `RecordPathSchema`s; a tampered journal is unreadable and its sibling kept                                                                                                                                      | `748aef76a` |
+| 4   | `settleInterruptedInstall` reports `restoredAgent`; the uninstall flow registers that agent again before removing it                                                                                                                                                          | `9b55c8294` |
+| 5   | `types.ts` doc comment on its own line                                                                                                                                                                                                                                        | `d165320f1` |
+
 ### Verification
 
 See the report for the final targeted runs.
