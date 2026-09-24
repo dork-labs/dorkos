@@ -31,6 +31,13 @@ import { HARNESS_IDS } from './harness-ids.js';
 import { BUILTIN_MEMORY_PROVIDER_ID } from './memory-provider.js';
 import { ROOM_REPO_CAP_DEFAULTS } from './room-repo.js';
 import { RuntimeEnvironmentSchema } from './runtime-environment-schema.js';
+// Plain id lists, never the named schemas in `permissions/permission-schemas.ts`:
+// the same SRC-alias reason as `HARNESS_IDS` above.
+import {
+  PERMISSION_ACTION_ID_PATTERN,
+  PERMISSION_PRESETS,
+  PERMISSION_STATES,
+} from './permissions/permission-ids.js';
 export {
   RuntimeInheritedEnvNamesSchema,
   isReservedRuntimeEnvName,
@@ -1514,6 +1521,9 @@ const LoggingConfigSchema = z.object({
   maxLogFiles: z.number().int().min(1).max(30).default(14),
 });
 
+/** A permission state as the config file stores it. */
+const PermissionConfigStateSchema = z.enum(PERMISSION_STATES);
+
 export const UserConfigSchema = z.object({
   version: z.literal(1),
   server: z
@@ -2791,6 +2801,42 @@ export const UserConfigSchema = z.object({
       standingGrants: false,
       trustWindowMinutes: DEFAULT_TRUST_WINDOW_MINUTES,
       standingGrantsVoidBefore: null,
+    })),
+  /**
+   * What agents may do, by area (spec `agent-permissions` D4). The preset every
+   * area starts from, plus the changes a person made on top of it; each agent's
+   * own differences live in its manifest, not here.
+   *
+   * `operator-only` and refused outright by the generic config write paths
+   * (`PATCH /api/config`, `dorkos config set`): only the permission routes may
+   * write it, so every change carries a person's yes and an audit event.
+   *
+   * Declared twice on purpose (per field AND in the object-literal default):
+   * one feeds fresh installs, the other upgrades, and they must agree.
+   */
+  permissions: z
+    .object({
+      /** The preset every area starts from. `null` = not chosen yet ("Unchanged"). */
+      preset: z.enum(PERMISSION_PRESETS).nullable().default(null),
+      /** The changes a person made on top of the preset ("Full power, 2 changes"). */
+      defaults: z
+        .object({
+          areas: z.record(z.string(), PermissionConfigStateSchema).default(() => ({})),
+          actions: z
+            .record(z.string().regex(PERMISSION_ACTION_ID_PATTERN), PermissionConfigStateSchema)
+            .default(() => ({})),
+        })
+        .default(() => ({ areas: {}, actions: {} })),
+      /**
+       * The server version the permission upgrade sweep last ran for; `null`
+       * means never. Machine-managed: the boot sweep stamps it.
+       */
+      upgradeSweptVersion: z.string().nullable().default(null),
+    })
+    .default(() => ({
+      preset: null,
+      defaults: { areas: {}, actions: {} },
+      upgradeSweptVersion: null,
     })),
   cloud: z
     .object({

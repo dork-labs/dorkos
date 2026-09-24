@@ -13,11 +13,16 @@
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from '../zod-openapi.js';
 import { PERMISSION_STOPS } from '../permission-semantics.js';
+import {
+  PERMISSION_ACTION_ID_PATTERN,
+  PERMISSION_AREA_IDS,
+  PERMISSION_PRESETS,
+  PERMISSION_STATES,
+} from './permission-ids.js';
 
 extendZodWithOpenApiOnce();
 
-/** The three states an area or a single action can be in, strictest first. */
-export const PERMISSION_STATES = ['blocked', 'ask', 'allowed'] as const;
+export { PERMISSION_STATES, PERMISSION_AREA_IDS, PERMISSION_PRESETS, PERMISSION_ACTION_ID_PATTERN };
 
 /** One of {@link PERMISSION_STATES}. */
 export const PermissionStateSchema = z.enum(PERMISSION_STATES).openapi('PermissionState');
@@ -25,28 +30,11 @@ export const PermissionStateSchema = z.enum(PERMISSION_STATES).openapi('Permissi
 /** A permission state: Blocked, Ask, or Allowed. */
 export type PermissionState = z.infer<typeof PermissionStateSchema>;
 
-/** The ten areas that take a state. `files` is separate: it takes a trust stop. */
-export const PERMISSION_AREA_IDS = [
-  'rooms',
-  'tasks',
-  'agents',
-  'messages',
-  'connections',
-  'packages',
-  'settings',
-  'safety',
-  'permissions',
-  'reach',
-] as const;
-
 /** One of {@link PERMISSION_AREA_IDS}. */
 export const PermissionAreaIdSchema = z.enum(PERMISSION_AREA_IDS).openapi('PermissionAreaId');
 
 /** The id of an area that takes a permission state. */
 export type PermissionAreaId = z.infer<typeof PermissionAreaIdSchema>;
-
-/** The three presets a person picks from, most careful first. */
-export const PERMISSION_PRESETS = ['careful', 'balanced', 'full'] as const;
 
 /** One of {@link PERMISSION_PRESETS}. */
 export const PermissionPresetSchema = z.enum(PERMISSION_PRESETS).openapi('PermissionPreset');
@@ -59,7 +47,7 @@ export const PermissionActionIdSchema = z
   .string()
   .min(1)
   .max(128)
-  .regex(/^[a-z0-9_]+(\.[a-z0-9_]+)?$/);
+  .regex(PERMISSION_ACTION_ID_PATTERN);
 
 /**
  * Stored overrides. Keyed by plain string ON PURPOSE, not by the enum: a manifest

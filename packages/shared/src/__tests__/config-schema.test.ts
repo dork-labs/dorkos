@@ -229,6 +229,11 @@ describe('UserConfigSchema', () => {
       },
       auth: { enabled: false },
       approvals: { standingGrants: false, trustWindowMinutes: 480, standingGrantsVoidBefore: null },
+      permissions: {
+        preset: null,
+        defaults: { areas: {}, actions: {} },
+        upgradeSweptVersion: null,
+      },
       cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
       connectors: { rawMcpServers: [] },
       providers: {},
@@ -622,6 +627,11 @@ describe('USER_CONFIG_DEFAULTS', () => {
       },
       auth: { enabled: false },
       approvals: { standingGrants: false, trustWindowMinutes: 480, standingGrantsVoidBefore: null },
+      permissions: {
+        preset: null,
+        defaults: { areas: {}, actions: {} },
+        upgradeSweptVersion: null,
+      },
       cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
       connectors: { rawMcpServers: [] },
       providers: {},
@@ -2029,5 +2039,45 @@ describe('claudeAccountId', () => {
     const started = performance.now();
     expect(claudeAccountId({ label: null, path, taken: [] })).toBe('x');
     expect(performance.now() - started).toBeLessThan(100);
+  });
+});
+
+describe('permissions section (spec agent-permissions D4)', () => {
+  // Declared twice on purpose (per field AND in the object-literal default): one
+  // feeds fresh installs, the other feeds a stored `permissions: {}` on upgrade.
+  // They must agree, and this pins both.
+  const EXPECTED = {
+    preset: null,
+    defaults: { areas: {}, actions: {} },
+    upgradeSweptVersion: null,
+  };
+
+  it('defaults the whole section from the object-literal default', () => {
+    expect(UserConfigSchema.parse({ version: 1 }).permissions).toEqual(EXPECTED);
+    expect(USER_CONFIG_DEFAULTS.permissions).toEqual(EXPECTED);
+  });
+
+  it('defaults every field from its own declaration', () => {
+    expect(UserConfigSchema.parse({ version: 1, permissions: {} }).permissions).toEqual(EXPECTED);
+    expect(
+      UserConfigSchema.parse({ version: 1, permissions: { defaults: {} } }).permissions
+    ).toEqual(EXPECTED);
+  });
+
+  it('refuses a state that is not one of the three', () => {
+    expect(() =>
+      UserConfigSchema.parse({
+        version: 1,
+        permissions: { defaults: { areas: { rooms: 'yes' } } },
+      })
+    ).toThrow();
+  });
+
+  it('keeps an area key a newer build knows', () => {
+    const parsed = UserConfigSchema.parse({
+      version: 1,
+      permissions: { defaults: { areas: { future: 'ask' } } },
+    });
+    expect(parsed.permissions.defaults.areas).toEqual({ future: 'ask' });
   });
 });
