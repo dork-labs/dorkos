@@ -1,0 +1,39 @@
+{
+ "schema": 1,
+ "id": "260919-175501",
+ "verdict": "pending",
+ "reason": "The after-window runs to 2026-09-30T10:45:58Z; the verdict is computed on 2026-10-01.",
+ "computed_at": "2026-09-24T09:51:07.810Z",
+ "hypothesis_hash": "8f5e34ebba61a075",
+ "metric": "gate.wf.credential-free-build.credential-free-build.failure_rate@merge_group",
+ "anchor": "2026-09-23T10:45:58Z",
+ "prs": [
+  2005
+ ],
+ "baseline": {
+  "value": 0.04,
+  "source": "before-window"
+ },
+ "target": 0.015,
+ "min_n": 10,
+ "before": {
+  "from": "2026-09-16T10:45:58Z",
+  "to": "2026-09-23T10:45:58Z",
+  "n": 175,
+  "value": 0.04
+ },
+ "after": {
+  "from": "2026-09-23T10:45:58Z",
+  "to": "2026-09-30T10:45:58Z",
+  "n": 0,
+  "value": null
+ },
+ "confounders": [],
+ "slo": {
+  "id": "wasted-queue-builds",
+  "stat": "share",
+  "before": 0.1782,
+  "after": null,
+  "movement": "unknown"
+ }
+}

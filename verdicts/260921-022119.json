@@ -3,7 +3,7 @@
  "id": "260921-022119",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-10-05T04:14:37Z; the verdict is computed on 2026-10-06.",
- "computed_at": "2026-09-23T09:51:37.072Z",
+ "computed_at": "2026-09-24T09:51:07.810Z",
  "hypothesis_hash": "1c62f1d4459cfb87",
  "metric": "local-commit",
  "anchor": "2026-09-21T04:14:37Z",
@@ -11,7 +11,7 @@
   1969
  ],
  "baseline": {
-  "value": 313.2,
+  "value": 327,
   "source": "before-window"
  },
  "target": 240,
@@ -19,14 +19,14 @@
  "before": {
   "from": "2026-09-14T04:14:37Z",
   "to": "2026-09-21T04:14:37Z",
-  "n": 72,
-  "value": 313.2
+  "n": 144,
+  "value": 327
  },
  "after": {
   "from": "2026-09-21T04:14:37Z",
   "to": "2026-10-05T04:14:37Z",
-  "n": 0,
-  "value": null
+  "n": 372,
+  "value": 265.1
  },
  "confounders": [
   "260919-175505"
@@ -34,8 +34,8 @@
  "slo": {
   "id": "local-commit",
   "stat": "p90",
-  "before": 313.2,
-  "after": null,
-  "movement": "unknown"
+  "before": 327,
+  "after": 265.1,
+  "movement": "better"
  }
 }

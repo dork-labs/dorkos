@@ -1,0 +1,39 @@
+{
+ "schema": 1,
+ "id": "260923-165836",
+ "verdict": "pending",
+ "reason": "The after-window runs to 2026-10-07T17:53:58Z; the verdict is computed on 2026-10-08.",
+ "computed_at": "2026-09-24T09:51:07.810Z",
+ "hypothesis_hash": "45c5a193a7ba3e24",
+ "metric": "gate.wf.merge-tail.arm.failure_rate@schedule",
+ "anchor": "2026-09-23T17:53:58Z",
+ "prs": [
+  2034
+ ],
+ "baseline": {
+  "value": 0,
+  "source": "before-window"
+ },
+ "target": 0,
+ "min_n": 10,
+ "before": {
+  "from": "2026-09-16T17:53:58Z",
+  "to": "2026-09-23T17:53:58Z",
+  "n": 40,
+  "value": 0
+ },
+ "after": {
+  "from": "2026-09-23T17:53:58Z",
+  "to": "2026-10-07T17:53:58Z",
+  "n": 0,
+  "value": null
+ },
+ "confounders": [],
+ "slo": {
+  "id": "lead-time",
+  "stat": "p50",
+  "before": 110.6,
+  "after": null,
+  "movement": "unknown"
+ }
+}

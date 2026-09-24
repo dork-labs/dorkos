@@ -1,0 +1,39 @@
+{
+ "schema": 1,
+ "id": "260923-095643",
+ "verdict": "pending",
+ "reason": "The after-window runs to 2026-10-07T11:56:17Z; the verdict is computed on 2026-10-08.",
+ "computed_at": "2026-09-24T09:51:07.810Z",
+ "hypothesis_hash": "bfeb1ca52a8bc3ec",
+ "metric": "gate.wf.browser-test.browser-shard.duration_p90@merge_group",
+ "anchor": "2026-09-23T11:56:17Z",
+ "prs": [
+  2006
+ ],
+ "baseline": {
+  "value": 28.7,
+  "source": "before-window"
+ },
+ "target": 26,
+ "min_n": 10,
+ "before": {
+  "from": "2026-09-16T11:56:17Z",
+  "to": "2026-09-23T11:56:17Z",
+  "n": 660,
+  "value": 28.7
+ },
+ "after": {
+  "from": "2026-09-23T11:56:17Z",
+  "to": "2026-10-07T11:56:17Z",
+  "n": 138,
+  "value": 27.2
+ },
+ "confounders": [],
+ "slo": {
+  "id": "headroom",
+  "stat": "p95_over_timeout",
+  "before": 0.65,
+  "after": null,
+  "movement": "unknown"
+ }
+}
