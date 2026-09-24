@@ -223,6 +223,21 @@ export function createDefaultCommunityCreationDependencies(input: {
         };
       },
       inspect: async (id, context) => {
+        const expectedNetwork = context.provenanceMarker
+          ? flyProvenanceNetwork(context.provenanceMarker)
+          : context.journal.provenance?.flyNetwork;
+        // A run started before markers shipped has no network to check and records none. It keeps
+        // the listing read it has always used, so a launch already in progress is never re-checked
+        // through the newer provenance read.
+        if (expectedNetwork === undefined) {
+          const listed = await exactFlyApp(
+            input.options,
+            input.plan.fly.organizationId,
+            id,
+            input.plan.fly.appName
+          );
+          return { id: listed.id, organizationId: listed.organizationSlug, name: listed.name };
+        }
         const found = await readAppProvenance(input.plan.fly.appName);
         if (
           !found ||
@@ -232,14 +247,13 @@ export function createDefaultCommunityCreationDependencies(input: {
         ) {
           throw new ProviderMutationError('INVALID_RESPONSE');
         }
-        const identity = { id: found.id, organizationId: found.organizationSlug, name: found.name };
-        const expectedNetwork = context.provenanceMarker
-          ? flyProvenanceNetwork(context.provenanceMarker)
-          : context.journal.provenance?.flyNetwork;
-        // A run started before markers shipped has no network to check, and records none.
-        if (expectedNetwork === undefined) return identity;
         if (found.network !== expectedNetwork) throw new ProviderMutationError('INVALID_RESPONSE');
-        return { ...identity, provenance: { flyNetwork: found.network } };
+        return {
+          id: found.id,
+          organizationId: found.organizationSlug,
+          name: found.name,
+          provenance: { flyNetwork: found.network },
+        };
       },
     },
     neon: {

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(cli): mark each Community launch create so its resources can be traced back (DOR-2238)'
+  - 'fix(cli): keep pre-marker launches on the Fly app listing, pin the journaled Neon role (DOR-2238)'
 ---
 
 ### Changed

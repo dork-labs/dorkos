@@ -285,8 +285,9 @@ describe('default Community creation boundaries', () => {
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
-  it('checks no network for a run started before markers, and records none', async () => {
-    mocks.readAppProvenance.mockResolvedValueOnce(appProvenance({ network: '' }));
+  // A launch already in progress when this shipped must be re-checked exactly as before: through
+  // the listing it has always used, never the newer provenance read.
+  it('re-checks a run started before markers through the app listing, and records no network', async () => {
     await expect(
       dependencies().fly.inspect('app_fixture_01', { journal: baseJournal() })
     ).resolves.toEqual({
@@ -294,6 +295,27 @@ describe('default Community creation boundaries', () => {
       organizationId: 'fixture-org',
       name: 'community-fixture-app',
     });
+    expect(mocks.readFlyApps).toHaveBeenCalledWith(expect.anything(), 'fixture-org');
+    expect(mocks.readAppProvenance).not.toHaveBeenCalled();
+
+    mocks.readFlyApps.mockResolvedValueOnce([]);
+    await expect(
+      dependencies().fly.inspect('app_fixture_01', { journal: baseJournal() })
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    expect(mocks.readAppProvenance).not.toHaveBeenCalled();
+  });
+
+  it('re-checks a marked run through the provenance read, never the listing', async () => {
+    const completed = baseJournal({ provenance: { flyNetwork: network } });
+    for (const context of [inFlight(), { journal: completed }]) {
+      await expect(
+        dependencies(completed).fly.inspect('app_fixture_01', context)
+      ).resolves.toMatchObject({
+        provenance: { flyNetwork: network },
+      });
+    }
+    expect(mocks.readAppProvenance).toHaveBeenCalledTimes(2);
+    expect(mocks.readFlyApps).not.toHaveBeenCalled();
   });
 
   it('creates the Neon project with the marker role instead of a fixed one', async () => {
@@ -323,6 +345,28 @@ describe('default Community creation boundaries', () => {
       ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
     }
   });
+
+  // A finished Neon step is re-checked on every resume. It must match the role the journal
+  // recorded, not one derived from an intent marker, which is gone once the step completes.
+  it.each([`community_${marker}`, 'community_owner'])(
+    're-checks a finished Neon step against the journaled role %s',
+    async (roleName) => {
+      const finished = baseJournal({
+        resources: { flyAppId: 'app_fixture_01', neonRoleId: roleName },
+      });
+      mocks.readNeonBranchTopology.mockResolvedValue(neonTopology(roleName));
+      await expect(
+        dependencies(finished).neon.inspect('project_fixture_01', { journal: finished })
+      ).resolves.toMatchObject({ relatedResources: { neonRoleId: roleName } });
+
+      // Any other role on the project is drift, including the one the journal did not record.
+      const other = roleName === 'community_owner' ? `community_${marker}` : 'community_owner';
+      mocks.readNeonBranchTopology.mockResolvedValue(neonTopology(other));
+      await expect(
+        dependencies(finished).neon.inspect('project_fixture_01', { journal: finished })
+      ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    }
+  );
 
   it('keeps the journaled Neon role, and the old fixed role for a pre-marker intent', async () => {
     const journaled = baseJournal({
