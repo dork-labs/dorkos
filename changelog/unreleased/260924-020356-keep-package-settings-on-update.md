@@ -16,6 +16,20 @@ covers:
   - 'feat(server): a marketplace agent keeps its identity, persona and memory (DOR-2245)'
   - 'feat(server): rebuild the installed-files record of an install made before records existed (DOR-2245)'
   - 'fix(server,cli): uninstall copy says what is kept, and what removing an agent takes away (DOR-2245)'
+  - "fix(server): an agent's own SOUL.md and MEMORY.md replace the package's seeds on update (DOR-2245)"
+  - 'fix(marketplace): reserved paths match in any case (DOR-2245)'
+  - 'fix(server): the legacy record check reads only regular files (DOR-2245)'
+  - 'fix(server): prune the uninstall record before deleting the journal (DOR-2245)'
+  - 'fix(server): a different package takes the earlier agent off the team before replacing it (DOR-2245)'
+  - 'fix(server): an uninstalled agent package leaves no live agent.json behind (DOR-2245)'
+  - 'fix(server): register an agent again when recovery rolls back its uninstall (DOR-2245)'
+  - 'fix(server): a rolled-back uninstall removes the identity copies it made (DOR-2245)'
+  - 'fix(server): match a denied agent folder by its real path (DOR-2245)'
+  - "fix(server): an uninstall keeps the person's empty folders (DOR-2245)"
+  - 'fix(server): refuse an update the new version can never pass before uninstalling (DOR-2245)'
+  - 'feat(marketplace): nothing that decides what a package runs can be user-editable (DOR-2245)'
+  - 'fix(server): refuse an uninstall journal whose paths leave the install root (DOR-2245)'
+  - "fix(server): an uninstall's own settle registers a restored agent again (DOR-2245)"
 ---
 
 ### Fixed
@@ -24,8 +38,10 @@ covers:
 - If you changed one of a package's own files, an update saves your copy next to the new one (as `.dork-old`) and tells you, instead of losing it. A package can mark a file as yours to edit, such as a settings file, and then your copy stays and the new default is saved next to it (as `.dork-new`) (DOR-2245)
 - A marketplace agent keeps its identity, persona and memory when its package updates. Before, every update gave it a new identity and reset its notes (DOR-2245)
 - Uninstalling a package keeps the files you and your agents added or changed, and lists them; reinstalling picks them up. `--purge` still removes everything (DOR-2245)
+- An update that the new version could never finish, such as one with a schedule in an unknown time zone, is refused before anything is removed, so the version you had stays installed (DOR-2245)
 
 ### Changed
 
 - Uninstalling a marketplace agent now removes it from your team, and the confirmation says what that takes away: its rooms, schedules, sign-ins and access. Reinstalling brings back its identity but not those (DOR-2245)
+- Package authors can't mark files that decide what a package runs (hooks, servers, commands, skills, extensions) as yours to edit, so an update always runs exactly what you approved (DOR-2245)
 - Plugins written for Claude Code can keep their own state with `${CLAUDE_PLUGIN_DATA}`, which DorkOS points at a folder inside each install (DOR-2245)
