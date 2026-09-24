@@ -75,8 +75,6 @@ import type {
   PermissionPreview,
   ResolveLatestOptions,
 } from './types.js';
-import { cp, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 /** Sentinel marketplace value used when a package was resolved directly (git URL / local path). */
@@ -498,20 +496,15 @@ export class MarketplaceInstaller implements InstallerLike {
   }
 
   /**
-   * Update an installed package by uninstalling without purging
-   * (`--purge: false`, which preserves `.dork/data/` and `.dork/secrets.json`)
-   * and then reinstalling fresh. This is the documented apply-mode update
-   * pattern (ADR-0233).
+   * Update an installed package: uninstall it as the first half of a replace,
+   * then install the new version (ADR-0233, amended by ADR 260923-163513).
    *
-   * The two-step uninstall → install dance is necessary because the install
-   * flows use `atomicMove` to swing the staging directory onto the live
-   * install root, which throws `ENOTEMPTY` against an existing install.
-   * Removing the live install first sidesteps that and lets the freshly
-   * fetched package version land cleanly. The uninstall flow's data
-   * preservation primitives copy `.dork/data/` and `.dork/secrets.json`
-   * back into the live location after package removal, so user state
-   * survives the round trip and is then overwritten only if the new
-   * version explicitly ships replacement files.
+   * The uninstall half runs the package's teardown (its extensions turned off
+   * and their run approvals forgotten, DOR-516; its adapter entry; its
+   * generated schedules) and moves only the package's own files out, in
+   * place. The install half's transaction then carries every file the person
+   * or their agent added or changed into the new version, and reports what it
+   * did with any shipped file the person had edited.
    *
    * Resolves the request through the same {@link PackageResolver} the
    * install path uses so the uninstall lookup keys off the canonical
@@ -530,7 +523,7 @@ export class MarketplaceInstaller implements InstallerLike {
    * Locating the root is the one step outside the lock, because the path to
    * lock is not known until it has run; the residue is the same narrow, loud
    * one the uninstall flow documents (a package removed between the probe and
-   * the lock fails with `ENOENT` rather than destroying anything).
+   * the lock is reported as not installed rather than destroying anything).
    *
    * @param req - The install request to apply as an update.
    * @returns The {@link InstallResult} from the post-uninstall reinstall.
@@ -597,16 +590,12 @@ export class MarketplaceInstaller implements InstallerLike {
       }
     }
 
-    // 2. Uninstall WITHOUT purge: the package is removed, but `.dork/data/`
-    //    and `.dork/secrets.json` stay behind in the install root. Step 3
-    //    copies them aside and removes that data-only root, so
-    //    `atomicMove(stagingDir, installRoot)` does not trip on `ENOTEMPTY`,
-    //    and step 5 copies them back into the fresh install.
-    //    `deactivateShape: false` keeps `ui.shapes.active` intact: this
-    //    uninstall is the first half of a replace, not a removal — clearing
-    //    the pointer here would silently drop the user's cockpit to "no
-    //    active Shape" on every active-Shape update.
-    const result = await this.deps.uninstallFlow.uninstall({
+    // 2. Uninstall as the first half of a replace (DOR-2245): only the
+    //    package's own files leave, in place and journaled; the person's files
+    //    and the pruned installed-files record stay in the root. `replacing`
+    //    keeps `ui.shapes.active` intact and an agent package's agent on the
+    //    team: the same package lands back here moments later.
+    await this.deps.uninstallFlow.uninstall({
       name: resolved.packageName,
       purge: false,
       projectPath: req.projectPath,
@@ -614,80 +603,20 @@ export class MarketplaceInstaller implements InstallerLike {
       ...(req.installRoot !== undefined && { installRoot: req.installRoot }),
     });
 
-    // 3. Capture preserved data into a temp scratch directory and remove
-    //    the now-data-only install root before the fresh install runs.
-    //    Without this, the surviving `.dork/data/` and `.dork/secrets.json`
-    //    leave the install root non-empty and atomicMove throws ENOTEMPTY.
-    const preserved = result.preservedData ?? [];
-    let scratchDir: string | null = null;
-    let installRoot: string | null = null;
-    if (preserved.length > 0) {
-      scratchDir = await mkdtemp(path.join(tmpdir(), 'dorkos-update-preserve-'));
-      // Every preserved path lives under the same install root — derive
-      // it from the first entry by finding the `.dork/` boundary so we
-      // can strip the install-root prefix when copying back later.
-      installRoot = await findInstallRootFromPreservedPath(preserved[0]);
-      for (const livePath of preserved) {
-        const relPath = path.relative(installRoot, livePath);
-        const scratchPath = path.join(scratchDir, relPath);
-        await mkdir(path.dirname(scratchPath), { recursive: true });
-        await cp(livePath, scratchPath, { recursive: true });
-      }
-      // Now remove the data-only install root entirely so atomicMove has
-      // a clean target. The caller's data is safe in `scratchDir`.
-      await rm(installRoot, { recursive: true, force: true });
-    }
+    // 3. Reinstall exactly the version staged and checked above. Its
+    //    transaction carries the person's files over from the root the
+    //    uninstall left, and restores that root exactly if it fails.
+    //
+    //    Pre-existing residual, unchanged: a failed install leaves the package
+    //    uninstalled (its person files and record in place, so a retry picks
+    //    them up). When the update targeted the ACTIVE Shape,
+    //    `ui.shapes.active` still points at it; the next apply 404s honestly
+    //    and the switcher offers a re-install, where an auto-clear would
+    //    silently discard the person's place.
+    const installResult = await this.installStaged({ ...req, force: true }, staged);
 
-    // 4. Fresh install. The install flow's atomicMove now lands cleanly
-    //    onto an empty parent.
-    let installResult: InstallResult;
-    try {
-      installResult = await this.installStaged({ ...req, force: true }, staged);
-    } catch (err) {
-      // If the install fails after we removed the data-only install root,
-      // restore preserved data to the original location so the user does
-      // not lose state. Best-effort: rethrow the original error either way.
-      //
-      // Residual (accepted): when the failed update targeted the ACTIVE
-      // Shape, `ui.shapes.active` still points at the now-removed install
-      // (deactivation was suppressed above). That is deliberate — clearing it
-      // here could wrongly deactivate when a same-name package of a different
-      // type was the one removed, and the dangling pointer is recoverable:
-      // the next apply attempt 404s honestly and the switcher offers a
-      // re-install, whereas an auto-clear would silently discard the user's
-      // place.
-      if (scratchDir && installRoot) {
-        try {
-          await mkdir(installRoot, { recursive: true });
-          for (const livePath of preserved) {
-            const relPath = path.relative(installRoot, livePath);
-            const scratchPath = path.join(scratchDir, relPath);
-            await mkdir(path.dirname(livePath), { recursive: true });
-            await cp(scratchPath, livePath, { recursive: true });
-          }
-        } catch {
-          /* best-effort restore on failure path */
-        }
-        await rm(scratchDir, { recursive: true, force: true }).catch(() => undefined);
-      }
-      throw err;
-    }
-
-    // 5. Copy preserved data back into the freshly installed package.
-    if (scratchDir && installRoot) {
-      for (const livePath of preserved) {
-        const relPath = path.relative(installRoot, livePath);
-        const scratchPath = path.join(scratchDir, relPath);
-        const destPath = path.join(installResult.installPath, relPath);
-        if (!(await pathExists(scratchPath))) continue;
-        await mkdir(path.dirname(destPath), { recursive: true });
-        await cp(scratchPath, destPath, { recursive: true });
-      }
-      await rm(scratchDir, { recursive: true, force: true }).catch(() => undefined);
-    }
-
-    // 6. If the updated package is the currently-applied Shape, re-apply it so
-    //    the cockpit picks up the new version's extensions, schedules, and
+    // 4. If the updated package is the currently-applied Shape, re-apply it so
+    //    the app picks up the new version's extensions, schedules, and
     //    chrome — the suppressed uninstall kept `ui.shapes.active` pointing
     //    here, but only `applyShape` actually activates a manifest.
     //    `installResult.type === 'shape'` guards the cross-type same-name edge
@@ -1035,40 +964,6 @@ function buildResolverInput(req: InstallRequest): string {
     return `${req.name}@${req.marketplace}`;
   }
   return req.name;
-}
-
-/**
- * Test whether a path exists on disk. Used by `update()` to skip
- * preserved paths that the user removed between snapshot and restore.
- *
- * @internal
- */
-async function pathExists(target: string): Promise<boolean> {
-  try {
-    await stat(target);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Derive the install root from a preserved-data path produced by the
- * uninstall flow. Preserved entries always live under `<installRoot>/.dork/`
- * (either `.dork/data` or `.dork/secrets.json`), so the install root is the
- * parent of the first `.dork` segment in the path.
- *
- * @internal
- */
-async function findInstallRootFromPreservedPath(preservedPath: string): Promise<string> {
-  const segments = preservedPath.split(path.sep);
-  const dorkIdx = segments.lastIndexOf('.dork');
-  if (dorkIdx <= 0) {
-    throw new Error(
-      `[marketplace-installer] Cannot derive install root from preserved path '${preservedPath}'`
-    );
-  }
-  return segments.slice(0, dorkIdx).join(path.sep);
 }
 
 /**

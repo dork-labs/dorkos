@@ -89,3 +89,51 @@ describe('notices on the install result', () => {
     );
   });
 });
+
+describe('update (uninstall then install, DOR-2245 §6)', () => {
+  // Purpose: an update keeps the person's files, reports a replaced edit, and
+  // uses no scratch directory in os.tmpdir().
+  it("keeps the person's files across an update and uses no temp scratch dir", async () => {
+    const harness = buildInstallerForTests(dorkHome);
+    const name = path.join(FIXTURES_DIR, 'valid-plugin');
+    const first = await harness.installer.install({ name });
+    const root = first.installPath;
+    const record = await readInstalledFiles(root);
+    const shipped = '.dork/tasks/sample-task/SKILL.md';
+    expect(record!.files[shipped]).toBeDefined();
+    await put(root, 'config/mine.json', 'mine');
+    await put(root, shipped, 'edited');
+    const tmpBefore = (await readdir(tmpdir())).filter((n) =>
+      n.startsWith('dorkos-update-preserve-')
+    );
+
+    const result = await harness.installer.update({ name });
+
+    expect(await readFile(path.join(root, 'config', 'mine.json'), 'utf8')).toBe('mine');
+    expect(await readFile(path.join(root, `${shipped}.dork-old`), 'utf8')).toBe('edited');
+    expect(result.fileNotices?.[0]).toMatchObject({ path: shipped, outcome: 'replaced-edit' });
+    const tmpAfter = (await readdir(tmpdir())).filter((n) =>
+      n.startsWith('dorkos-update-preserve-')
+    );
+    expect(tmpAfter).toEqual(tmpBefore);
+    expect(await readdir(path.dirname(root))).toEqual([path.basename(root)]);
+  });
+
+  // Purpose: a failed install half leaves exactly the person's files and the record.
+  it("leaves the person's files in place when the install half fails", async () => {
+    const harness = buildInstallerForTests(dorkHome);
+    const name = path.join(FIXTURES_DIR, 'valid-plugin');
+    const { installPath: root } = await harness.installer.install({ name });
+    await put(root, 'config/mine.json', 'mine');
+    const realInstall = harness.installer.install.bind(harness.installer);
+    let calls = 0;
+    harness.installer.install = async (req) => {
+      calls++;
+      if (calls === 1) throw new Error('install half failed');
+      return realInstall(req);
+    };
+    await expect(harness.installer.update({ name })).rejects.toThrow('install half failed');
+    expect(await readFile(path.join(root, 'config', 'mine.json'), 'utf8')).toBe('mine');
+    expect((await readInstalledFiles(root))?.uninstalledAt).toBeDefined();
+  });
+});

@@ -131,6 +131,20 @@ describe('in-place uninstall (DOR-2245)', () => {
     expect((await readdir(path.dirname(root))).sort()).toEqual(['pkg']);
   });
 
+  // Purpose: an edited identity file still leaves with the package, but the
+  // person's copy stays as .dork-old: nothing of theirs is deleted.
+  it('keeps a copy of an edited identity file', async () => {
+    const dorkHome = await home();
+    const root = path.join(dorkHome, 'plugins', 'pkg');
+    await installed(root, { '.claude-plugin/plugin.json': '{"name":"pkg"}' });
+    await put(root, '.claude-plugin/plugin.json', '{"name":"pkg","mine":true}');
+    await new UninstallFlow(deps(dorkHome)).uninstall({ name: 'pkg' });
+    expect(await exists(path.join(root, '.claude-plugin', 'plugin.json'))).toBe(false);
+    expect(
+      await readFile(path.join(root, '.claude-plugin', 'plugin.json.dork-old'), 'utf8')
+    ).toContain('mine');
+  });
+
   // Purpose: an untouched package leaves nothing, not even an empty .dork/data.
   it('leaves no folder behind for an untouched package', async () => {
     const dorkHome = await home();

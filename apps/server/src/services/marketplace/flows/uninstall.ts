@@ -475,6 +475,18 @@ export class UninstallFlow {
         moves.push({ path: p });
       }
     }
+    // An identity file always leaves with the package, but one the person
+    // edited is theirs too: a copy stays behind as `.dork-old`, as an update does.
+    if (record) {
+      for (const p of IDENTITY_FILES) {
+        if (!(p in record.files) || (await isProvenPackageFile(root, p, record))) continue;
+        const abs = path.join(root, ...p.split('/'));
+        if (!(await pathExists(abs))) continue;
+        let saved = `${abs}.dork-old`;
+        for (let n = 2; await pathExists(saved); n++) saved = `${abs}.dork-old.${n}`;
+        await copyFile(abs, saved);
+      }
+    }
     return moves;
   }
 
