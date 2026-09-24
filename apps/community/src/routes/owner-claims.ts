@@ -233,16 +233,31 @@ export function registerOwnerClaimRoutes(
           'STATE_CONFLICT',
           'This account is being deleted, so it cannot claim a community.'
         );
-      const handle = await mintHandle(client, community.rows[0].id, user.name);
-      const member = await client.query<{ id: string }>(
-        `INSERT INTO members(community_id,user_id,display_name,handle,role)
-         VALUES($1,$2,$3,$4,'owner') RETURNING id`,
-        [community.rows[0].id, user.id, user.name, handle]
+      // An imported community's owner adopts the row of the owner who made the export, so
+      // their own history stays theirs; every other past author stays historical.
+      const adopted = await client.query<{ id: string }>(
+        `UPDATE members m SET user_id=$2,active=true,removed_at=NULL
+         FROM community_imports i
+         WHERE i.community_id=$1 AND i.state='ready' AND m.id=i.adopt_member_id
+           AND m.community_id=$1 AND m.user_id IS NULL AND m.origin='imported'
+         RETURNING m.id`,
+        [community.rows[0].id, user.id]
       );
-      await client.query(
-        'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',
-        [community.rows[0].id, handle, member.rows[0].id]
-      );
+      const member = adopted.rows[0]
+        ? adopted
+        : await (async () => {
+            const handle = await mintHandle(client, community.rows[0].id, user.name);
+            const inserted = await client.query<{ id: string }>(
+              `INSERT INTO members(community_id,user_id,display_name,handle,role)
+               VALUES($1,$2,$3,$4,'owner') RETURNING id`,
+              [community.rows[0].id, user.id, user.name, handle]
+            );
+            await client.query(
+              'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',
+              [community.rows[0].id, handle, inserted.rows[0].id]
+            );
+            return inserted;
+          })();
       await client.query(
         `UPDATE communities SET lifecycle='active',activated_at=now(),
            lifecycle_version=lifecycle_version+1 WHERE id=$1`,

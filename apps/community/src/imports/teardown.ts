@@ -33,6 +33,19 @@ async function legallyHeld(
   return true;
 }
 
+/** Every table an import writes into, in an order that deletes children before parents. */
+const IMPORTED_TABLES = [
+  'entry_mentions',
+  'attachments',
+  'entries',
+  'channel_members',
+  'community_handles',
+  'agents',
+  'audit_events',
+  'channels',
+  'members',
+] as const;
+
 /**
  * Lock an import that needs tearing down and its community, community first, the same order
  * every host route takes them in. Returns the community, or null when there is nothing to do.
@@ -66,7 +79,8 @@ async function lockTarget(
 export type TeardownOutcome = 'settled' | 'waiting' | 'skipped';
 
 /**
- * Remove what a cancelled or failed import left behind, then its unclaimed community.
+ * Remove what a cancelled or failed import left behind, then its unclaimed community: the
+ * rows of an abandoned ready import, every file, and finally the community itself.
  *
  * Each pass queues every stored or committed file of the community for deletion and deletes
  * it, keeping failures as cleanup work the pending-deletion sweep retries. A reservation whose
@@ -84,8 +98,19 @@ export async function teardownImport(
     const communityId = await lockTarget(client, importId, true);
     if (!communityId) return null;
     if (await legallyHeld(client, importId, communityId)) return 'held';
+    const community = await client.query<{ lifecycle: string }>(
+      'SELECT lifecycle FROM communities WHERE id=$1',
+      [communityId]
+    );
+    // Only an unclaimed community is torn down; nobody has ever been able to read it.
+    if (community.rows[0]?.lifecycle !== 'pending_owner') return null;
+    // A ready import that the host abandoned has restored rows. They go first, children
+    // before parents, so every file below is unreferenced.
+    for (const table of IMPORTED_TABLES) {
+      await client.query(`DELETE FROM ${table} WHERE community_id=$1`, [communityId]);
+    }
     // Progress rows and the staging reference are what keep these files from the cleanup
-    // sweeps; they go first so every file below is unreferenced.
+    // sweeps; they go too.
     await client.query('DELETE FROM community_import_files WHERE import_id=$1', [importId]);
     await client.query('UPDATE community_imports SET staging_blob_key=NULL WHERE id=$1', [
       importId,

@@ -120,6 +120,22 @@ export function CommunityApp() {
     },
     [returnToChooser]
   );
+  // Read once per community: a moved community's channels note where their history began.
+  const [importedAt, setImportedAt] = useState<string | null>(null);
+  useEffect(() => {
+    if (!me || !community) return;
+    let active = true;
+    void request<{ importedAt: string | null }>('/api/v1/history-origin')
+      .then((body) => {
+        if (active) setImportedAt(body.importedAt);
+      })
+      .catch(() => {
+        // The note is a courtesy; history reads the same without it.
+      });
+    return () => {
+      active = false;
+    };
+  }, [community, me?.member.memberId]);
   useEffect(() => {
     if (!me || !community) return;
     const timer = window.setInterval(() => {
@@ -491,6 +507,7 @@ export function CommunityApp() {
             onMemberStale={() => void refreshCurrentMember().catch(() => {})}
             readOnly={readOnly}
             held={held}
+            importedAt={importedAt}
           />
         ) : (
           <div className="settings">
