@@ -192,6 +192,7 @@ import type {
   InstalledPackage,
   MarketplaceSource,
   AddSourceInput,
+  AddedMarketplaceSource,
   InstalledShapeSummary,
   ApplyShapeResult,
   ForkShapeResult,
@@ -967,7 +968,7 @@ export const marketplaceStubs = {
     return [];
   },
 
-  async addMarketplaceSource(_input: AddSourceInput): Promise<MarketplaceSource> {
+  async addMarketplaceSource(_input: AddSourceInput): Promise<AddedMarketplaceSource> {
     throw new Error('Marketplace is not supported in embedded mode');
   },
 

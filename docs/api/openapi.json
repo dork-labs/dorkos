@@ -18141,7 +18141,7 @@
           "Marketplace"
         ],
         "summary": "Add a marketplace source (operator only)",
-        "description": "Only the person running DorkOS may add a package source. Any caller that could not decide an approval is refused with 403, which includes one presenting an agent identity, one presenting an approval token, and (with local login on) one with no signed-in identity. There is no approval that unlocks it.",
+        "description": "Only the person running DorkOS may add a package source. Any caller that could not decide an approval is refused with 403, which includes one presenting an agent identity, one presenting an approval token, and (with local login on) one with no signed-in identity. There is no approval that unlocks it. After saving, the server fetches the new source's listing once, the same way the refresh route does; a failed fetch is reported in `listing` and never fails the add.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -18171,7 +18171,7 @@
         },
         "responses": {
           "201": {
-            "description": "Source added",
+            "description": "Source added, with how the first fetch of its listing went",
             "content": {
               "application/json": {
                 "schema": {
@@ -18188,13 +18188,56 @@
                     },
                     "addedAt": {
                       "type": "string"
+                    },
+                    "listing": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "fetched": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            },
+                            "packageCount": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "fetched",
+                            "packageCount"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "fetched": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "fetched",
+                            "reason"
+                          ]
+                        }
+                      ],
+                      "description": "The first fetch of the new source's listing. `fetched: false` never undoes the add: the source is saved, `reason` says why the listing is not there yet, and a refresh tries again."
                     }
                   },
                   "required": [
                     "name",
                     "source",
                     "enabled",
-                    "addedAt"
+                    "addedAt",
+                    "listing"
                   ]
                 }
               }

@@ -6,6 +6,11 @@
  * derived from the URL's last path segment so common cases like
  * `https://github.com/dorkos/marketplace` produce a sensible default.
  *
+ * The server fetches the new source's listing once as part of the add
+ * (DOR-2304), and this prints how that went: the package count, or why the
+ * listing isn't there yet and the refresh command that tries again. A failed
+ * fetch is not a failed add, so it still exits 0.
+ *
  * Returns the intended exit code rather than calling `process.exit` so the
  * top-level dispatcher in `cli.ts` retains the single source of truth for
  * process termination.
@@ -13,6 +18,7 @@
  * @module commands/marketplace-add
  */
 import { parseArgs } from 'node:util';
+import type { AddedMarketplaceSource } from '@dorkos/shared/marketplace-schemas';
 import { ApiError, apiCall } from '../lib/api-client.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
@@ -25,15 +31,11 @@ export interface MarketplaceAddArgs {
 }
 
 /**
- * Successful response shape for `POST /api/marketplace/sources`. The server
- * returns the created {@link MarketplaceSource} verbatim.
+ * Successful response shape for `POST /api/marketplace/sources`. `listing` is
+ * optional here only because a server older than DOR-2304 omits it.
  */
-interface AddSourceResponseBody {
-  name: string;
-  source: string;
-  enabled: boolean;
-  addedAt: string;
-}
+type AddSourceResponseBody = Omit<AddedMarketplaceSource, 'listing'> &
+  Partial<Pick<AddedMarketplaceSource, 'listing'>>;
 
 /** One-line usage string surfaced in error messages. */
 const USAGE_LINE = 'Usage: dorkos marketplace add <url> [--name <name>]';
@@ -129,6 +131,16 @@ export async function runMarketplaceAdd(args: MarketplaceAddArgs): Promise<numbe
     });
 
     console.log(`Added marketplace '${created.name}' (${created.source}).`);
+    const listing = created.listing;
+    if (listing?.fetched) {
+      const count = listing.packageCount;
+      console.log(`Fetched its listing: ${count} ${count === 1 ? 'package' : 'packages'}.`);
+    } else if (listing) {
+      console.error(
+        `Couldn't fetch its listing yet: ${listing.reason.replace(/\.$/, '')}.\n` +
+          `Run \`dorkos marketplace refresh ${created.name}\` to try again.`
+      );
+    }
     return 0;
   } catch (err) {
     if (err instanceof ApiError) {

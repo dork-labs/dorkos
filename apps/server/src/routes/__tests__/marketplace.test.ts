@@ -52,7 +52,11 @@ import {
 import { MarketplaceSourceManager } from '../../services/marketplace/marketplace-source-manager.js';
 import { MarketplaceCache } from '../../services/marketplace/marketplace-cache.js';
 import { PackageCacheRetention } from '../../services/marketplace/package-cache-retention.js';
-import type { PackageFetcher } from '../../services/marketplace/package-fetcher.js';
+import {
+  MARKETPLACE_JSON_TIMEOUT_MS,
+  PackageFetcher,
+} from '../../services/marketplace/package-fetcher.js';
+import type { GitTreeSource } from '../../services/marketplace/lib/git-tree.js';
 import {
   ConflictError,
   DisclosureChangedError,
@@ -293,6 +297,15 @@ describe('Marketplace Routes', () => {
     approvals = new ApprovalService(createTestDb());
     initCapabilityTierGate({ approvals });
 
+    mountRouter(fetcher as unknown as PackageFetcher);
+  });
+
+  /**
+   * Build the app around a given fetcher and mount it. The fake fetcher is the
+   * default; the listing-fetch tests (DOR-2304) remount with a real
+   * `PackageFetcher`, so the add is proved through the very path refresh takes.
+   */
+  function mountRouter(routeFetcher: PackageFetcher): void {
     app = express();
     app.use(express.json());
     app.use((req, res, next) => {
@@ -315,7 +328,7 @@ describe('Marketplace Routes', () => {
           listAgentScopes: () => agentScopes,
           logger: noopLogger,
         }),
-        fetcher: fetcher as unknown as PackageFetcher,
+        fetcher: routeFetcher,
         installer,
         uninstallFlow: uninstallFlow as unknown as UninstallFlow,
         updateFlow: updateFlow as unknown as UpdateFlow,
@@ -330,7 +343,7 @@ describe('Marketplace Routes', () => {
     );
 
     fixtureTarget.mount(app);
-  });
+  }
 
   afterEach(() => {
     rmSync(dorkHome, { recursive: true, force: true });
@@ -399,6 +412,143 @@ describe('Marketplace Routes', () => {
     });
   });
 
+  describe('POST /sources fetches the new source listing (DOR-2304)', () => {
+    it('fetches the listing once, through the refresh path, and says how many packages it names', async () => {
+      // Purpose: without this fetch the first install from a new source fails
+      // with "no cached document" until someone runs a refresh by hand.
+      fetcher.fetchMarketplaceJson.mockResolvedValueOnce({
+        ...SAMPLE_MARKETPLACE_JSON,
+        plugins: [
+          ...SAMPLE_MARKETPLACE_JSON.plugins,
+          { name: 'second-plugin', source: 'https://github.com/dorkos/second-plugin' },
+        ],
+      });
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'fresh', source: 'https://example.com/fresh' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.listing).toEqual({ fetched: true, packageCount: 2 });
+      expect(fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(1);
+      expect(fetcher.fetchMarketplaceJson.mock.calls[0][0]).toMatchObject({
+        name: 'fresh',
+        source: 'https://example.com/fresh',
+        enabled: true,
+      });
+    });
+
+    it('keeps the source when the fetch fails, and says why the listing is not there yet', async () => {
+      // Purpose: a server that is down right now must not cost the operator
+      // the add — the source is saved and a refresh can try again later.
+      fetcher.fetchMarketplaceJson.mockRejectedValueOnce(
+        new Error('marketplace.json fetch failed: 404 Not Found')
+      );
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'offline', source: 'https://example.com/offline' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.name).toBe('offline');
+      expect(res.body.listing).toEqual({
+        fetched: false,
+        reason: 'marketplace.json fetch failed: 404 Not Found',
+      });
+      const list = await request(fixtureServer).get('/api/marketplace/sources');
+      expect(list.body.sources.map((s: { name: string }) => s.name)).toContain('offline');
+    });
+
+    it('fetches nothing for an address it refuses to save', async () => {
+      // Purpose: the URL policy runs before anything is fetched, so a refused
+      // address never reaches the network.
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'hostile', source: 'ext::sh -c id' });
+
+      expect(res.status).toBe(400);
+      expect(fetcher.fetchMarketplaceJson).not.toHaveBeenCalled();
+    });
+
+    it('fetches nothing for a duplicate name', async () => {
+      // Purpose: a refused add must not refetch (and so overwrite the cache of)
+      // the source that already holds that name.
+      await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'dup', source: 'https://example.com/one' });
+      fetcher.fetchMarketplaceJson.mockClear();
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'dup', source: 'https://example.com/two' });
+
+      expect(res.status).toBe(409);
+      expect(fetcher.fetchMarketplaceJson).not.toHaveBeenCalled();
+    });
+
+    describe('with the real fetcher', () => {
+      beforeEach(() => {
+        mountRouter(new PackageFetcher(cache, {} as GitTreeSource, noopLogger));
+      });
+
+      afterEach(() => {
+        vi.unstubAllGlobals();
+      });
+
+      it('reads a file:// source from disk and caches it, so an install can resolve at once', async () => {
+        // Purpose: a local marketplace is read in place — no network — and the
+        // cache holds the listing afterwards, which is what install reads.
+        const root = join(dorkHome, 'local-mp');
+        mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+          join(root, '.claude-plugin', 'marketplace.json'),
+          JSON.stringify({
+            name: 'local-mp',
+            owner: { name: 'Me' },
+            plugins: [{ name: 'sample-plugin', source: './packages/sample-plugin' }],
+          })
+        );
+        const fetchSpy = vi.fn();
+        vi.stubGlobal('fetch', fetchSpy);
+
+        const res = await request(fixtureServer)
+          .post('/api/marketplace/sources')
+          .send({ name: 'local-mp', source: `file://${root}` });
+
+        expect(res.status).toBe(201);
+        expect(res.body.listing).toEqual({ fetched: true, packageCount: 1 });
+        expect(fetchSpy).not.toHaveBeenCalled();
+        const cached = await cache.readMarketplace('local-mp');
+        expect(cached?.json.plugins.map((p) => p.name)).toEqual(['sample-plugin']);
+      });
+
+      it('gives up after the marketplace timeout and still saves the source', async () => {
+        // Purpose: the add waits no longer than refresh does (DOR-2194), and a
+        // silent server surfaces as a plain reason rather than a failed add.
+        const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockRejectedValue(new DOMException('The operation timed out.', 'TimeoutError'))
+        );
+
+        const res = await request(fixtureServer)
+          .post('/api/marketplace/sources')
+          .send({ name: 'slow', source: 'https://github.com/slow/marketplace' });
+
+        expect(res.status).toBe(201);
+        expect(res.body.listing).toEqual({
+          fetched: false,
+          reason: `the marketplace server didn't answer within ${MARKETPLACE_JSON_TIMEOUT_MS / 1000} seconds`,
+        });
+        expect(timeoutSpy).toHaveBeenCalledWith(MARKETPLACE_JSON_TIMEOUT_MS);
+        timeoutSpy.mockRestore();
+        expect(await cache.readMarketplace('slow')).toBeNull();
+        const list = await request(fixtureServer).get('/api/marketplace/sources');
+        expect(list.body.sources.map((s: { name: string }) => s.name)).toContain('slow');
+      });
+    });
+  });
+
   describe('DELETE /sources/:name', () => {
     it('removes a source and returns 204', async () => {
       await request(fixtureServer)
@@ -419,6 +569,8 @@ describe('Marketplace Routes', () => {
       await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'refreshable', source: 'https://example.com/refresh' });
+      // The add fetched the listing once already (DOR-2304); count the refresh alone.
+      fetcher.fetchMarketplaceJson.mockClear();
 
       const res = await request(fixtureServer).post('/api/marketplace/sources/refreshable/refresh');
 

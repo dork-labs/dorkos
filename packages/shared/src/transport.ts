@@ -164,6 +164,7 @@ import type {
   InstalledPackage,
   MarketplaceSource,
   AddSourceInput,
+  AddedMarketplaceSource,
   InstalledShapeSummary,
   ApplyShapeResult,
   ForkShapeResult,
@@ -2382,11 +2383,13 @@ export interface Transport
   listMarketplaceSources(): Promise<MarketplaceSource[]>;
 
   /**
-   * Add a new marketplace source.
+   * Add a new marketplace source. The server fetches the new source's listing
+   * once after saving it; `listing` says whether that worked, and a failed
+   * fetch never undoes the add.
    *
    * @param input - Source name, URL, and optional enabled flag.
    */
-  addMarketplaceSource(input: AddSourceInput): Promise<MarketplaceSource>;
+  addMarketplaceSource(input: AddSourceInput): Promise<AddedMarketplaceSource>;
 
   /**
    * Remove a configured marketplace source by name.

@@ -2300,6 +2300,24 @@ const MarketplaceSourceSchema = z.object({
   addedAt: z.string(),
 });
 
+/**
+ * How the one listing fetch `POST /api/marketplace/sources` makes after saving
+ * went (DOR-2304). Mirrors `SourceListingOutcome` in `@dorkos/shared`.
+ */
+const SourceListingOutcomeSchema = z
+  .discriminatedUnion('fetched', [
+    z.object({ fetched: z.literal(true), packageCount: z.number().int().nonnegative() }),
+    z.object({ fetched: z.literal(false), reason: z.string() }),
+  ])
+  .describe(
+    "The first fetch of the new source's listing. `fetched: false` never undoes the add: the " +
+      'source is saved, `reason` says why the listing is not there yet, and a refresh tries again.'
+  );
+
+const AddedMarketplaceSourceSchema = MarketplaceSourceSchema.extend({
+  listing: SourceListingOutcomeSchema,
+});
+
 const AddMarketplaceSourceBodySchema = z.object({
   name: z.string().min(1).max(128),
   source: z.string().min(1),
@@ -2428,7 +2446,9 @@ registry.registerPath({
     'Only the person running DorkOS may add a package source. Any caller that could not decide ' +
     'an approval is refused with 403, which includes one presenting an agent identity, one ' +
     'presenting an approval token, and (with local login on) one with no signed-in identity. ' +
-    'There is no approval that unlocks it.',
+    'There is no approval that unlocks it. After saving, the server fetches the new ' +
+    "source's listing once, the same way the refresh route does; a failed fetch is reported " +
+    'in `listing` and never fails the add.',
   request: {
     body: {
       content: { 'application/json': { schema: AddMarketplaceSourceBodySchema } },
@@ -2436,8 +2456,8 @@ registry.registerPath({
   },
   responses: {
     201: {
-      description: 'Source added',
-      content: { 'application/json': { schema: MarketplaceSourceSchema } },
+      description: 'Source added, with how the first fetch of its listing went',
+      content: { 'application/json': { schema: AddedMarketplaceSourceSchema } },
     },
     400: {
       description: 'Validation error',

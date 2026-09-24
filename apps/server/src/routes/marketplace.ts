@@ -75,6 +75,7 @@ import {
   type UninstallFlow,
 } from '../services/marketplace/flows/uninstall.js';
 import { UnsupportedSourceUrlError } from '../services/marketplace/source-url-policy.js';
+import { fetchNewSourceListing } from '../services/marketplace/source-listing.js';
 import {
   GitCommitNotFoundError,
   GitFetchError,
@@ -484,7 +485,7 @@ function updateRefusalResponse(res: Response, refusal: UpdateRefusal): Response 
  * (typically `/api/marketplace`):
  *
  * - `GET /sources` — list configured marketplace sources
- * - `POST /sources` — add a new source (operator-only; agents are refused)
+ * - `POST /sources` — add a new source and fetch its listing once (operator-only; agents are refused)
  * - `DELETE /sources/:name` — remove a source (operator-only; agents are refused)
  * - `POST /sources/:name/refresh` — force refetch of a source's marketplace.json
  * - `GET /installed` — list installed packages across scopes (or one project via `?projectPath`)
@@ -769,9 +770,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
     }
 
+    let created: MarketplaceSource;
     try {
-      const created = await sourceManager.add(parsed.data);
-      return res.status(201).json(created);
+      created = await sourceManager.add(parsed.data);
     } catch (err) {
       // An address DorkOS will not fetch from. Answered here rather than left
       // to the 500 below: this is the caller's input, and the message names the
@@ -792,6 +793,12 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       logger.error('[Marketplace] Failed to add source', err);
       return res.status(500).json({ error: 'Failed to add marketplace source' });
     }
+
+    // One best-effort fetch of the new listing, the way refresh fetches it, so
+    // the first install does not need a refresh first (DOR-2304). It never
+    // throws: a failure is reported in `listing`, and the source stays saved.
+    const listing = await fetchNewSourceListing(fetcher, created);
+    return res.status(201).json({ ...created, listing });
   });
 
   // DELETE /sources/:name -- remove a marketplace source (operator-only, DOR-502)

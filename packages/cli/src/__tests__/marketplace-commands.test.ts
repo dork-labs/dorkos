@@ -134,6 +134,53 @@ describe('runMarketplaceAdd', () => {
     expect(allLogs).toContain('https://github.com/dorkos/marketplace');
   });
 
+  it('says the listing is ready and how many packages it names (DOR-2304)', async () => {
+    // Purpose: the operator learns in plain words that they can install now.
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          mockResponse(201, { ...SOURCE_FIXTURE_A, listing: { fetched: true, packageCount: 12 } })
+        )
+    );
+
+    const code = await runMarketplaceAdd({ url: 'https://github.com/dorkos/marketplace' });
+
+    expect(code).toBe(0);
+    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allLogs).toContain('Fetched its listing: 12 packages.');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('says the listing could not be fetched yet, why, and how to retry — and still exits 0 (DOR-2304)', async () => {
+    // Purpose: the add worked, so the exit code says so; the warning names
+    // the reason and the exact refresh command to run later.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        mockResponse(201, {
+          ...SOURCE_FIXTURE_A,
+          listing: {
+            fetched: false,
+            reason: "the marketplace server didn't answer within 15 seconds",
+          },
+        })
+      )
+    );
+
+    const code = await runMarketplaceAdd({ url: 'https://github.com/dorkos/marketplace' });
+
+    expect(code).toBe(0);
+    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allLogs).toContain("Added marketplace 'dorkos-community'");
+    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allErr).toContain(
+      "Couldn't fetch its listing yet: the marketplace server didn't answer within 15 seconds."
+    );
+    expect(allErr).toContain('dorkos marketplace refresh dorkos-community');
+  });
+
   it('uses --name when supplied', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(201, SOURCE_FIXTURE_A));
     vi.stubGlobal('fetch', fetchMock);

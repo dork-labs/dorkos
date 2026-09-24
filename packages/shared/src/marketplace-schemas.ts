@@ -1142,6 +1142,37 @@ export interface AddSourceInput {
   enabled?: boolean;
 }
 
+/**
+ * What happened when DorkOS fetched a just-added source's listing (its
+ * `marketplace.json`) — the one fetch `POST /api/marketplace/sources` makes
+ * right after saving, through the same path `POST /sources/:name/refresh` takes.
+ *
+ * A failed fetch never undoes the add: the source stays saved, and `reason`
+ * says why the listing isn't there yet so a refresh can be tried later.
+ */
+export type SourceListingOutcome =
+  | {
+      /** The listing was fetched and cached; the source's packages can be installed now. */
+      fetched: true;
+      /** How many packages the listing names. */
+      packageCount: number;
+    }
+  | {
+      /** The listing could not be fetched; the source is saved all the same. */
+      fetched: false;
+      /** Why, in the fetcher's words (a status code, a timeout, a missing file). */
+      reason: string;
+    };
+
+/**
+ * Response body of `POST /api/marketplace/sources`: the saved source plus how
+ * the first fetch of its listing went.
+ */
+export interface AddedMarketplaceSource extends MarketplaceSource {
+  /** The outcome of the one best-effort listing fetch made after saving. */
+  listing: SourceListingOutcome;
+}
+
 // ---------------------------------------------------------------------------
 // Install backups
 // ---------------------------------------------------------------------------
