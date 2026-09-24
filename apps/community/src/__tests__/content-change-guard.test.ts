@@ -18,22 +18,40 @@ const ALLOWLIST_PATH = fileURLToPath(new URL('./content-change-allowlist.json', 
 const EXEMPT = 'content-removal.ts';
 const MARKER = /^\s*\/\/\s*content-change:\s*(\S*)\s*$/;
 
-/** A table name, with or without quotes and a schema prefix, and nothing after it. */
-const table = (names: string) => `(?:"?public"?\\s*\\.\\s*)?"?(?:${names})"?(?![\\w"])`;
+/**
+ * A table name, with or without `ONLY`, quotes, and a schema prefix, and nothing after it.
+ * `names` is a regex alternation.
+ */
+const table = (names: string) =>
+  `(?:ONLY\\s+)?(?:"?public"?\\s*\\.\\s*)?"?(?:${names})"?(?![\\w"])`;
+const CONTENT = 'entries|attachments|entry_mentions';
 
 const STATEMENTS = [
   new RegExp(`\\bUPDATE\\s+${table('entries|entry_mentions')}`, 'gi'),
-  new RegExp(`\\bDELETE\\s+FROM\\s+${table('entries|attachments|entry_mentions')}`, 'gi'),
+  new RegExp(`\\bDELETE\\s+FROM\\s+${table(CONTENT)}`, 'gi'),
   new RegExp(`\\bINSERT\\s+INTO\\s+${table('entry_mentions')}`, 'gi'),
-  // A table named at run time could be any of the above.
-  /\b(?:UPDATE|DELETE\s+FROM|INSERT\s+INTO)\s+\$\{/gi,
+  new RegExp(`\\bTRUNCATE\\s+(?:TABLE\\s+)?${table(CONTENT)}`, 'gi'),
+  new RegExp(`\\bMERGE\\s+INTO\\s+${table(CONTENT)}`, 'gi'),
+  // An upsert changes the existing row it conflicts with. Bounded by the template literal.
+  new RegExp(
+    `\\bINSERT\\s+INTO\\s+${table('entries|attachments')}[^\`;]*?\\bON\\s+CONFLICT\\b[^\`;]*?\\bDO\\s+UPDATE\\b`,
+    'gi'
+  ),
+  // A table named at run time, by interpolation or by concatenation, could be any of the above.
+  /\b(?:UPDATE|DELETE\s+FROM|INSERT\s+INTO|TRUNCATE|MERGE\s+INTO)\s+(?:ONLY\s+)?\$\{/gi,
+  /\b(?:UPDATE|DELETE\s+FROM|INSERT\s+INTO|TRUNCATE|MERGE\s+INTO)(?:\s+ONLY)?\s*['"`]\s*\+/gi,
 ];
-/** `UPDATE attachments [[AS] alias] SET <clause>`: counted only when the clause sets entry_id. */
+/**
+ * `UPDATE attachments [[AS] alias] SET <clause>`: counted only when the clause sets entry_id.
+ * The clause ends at the next SQL keyword, `;`, or the end of a template literal, never at a
+ * quote, so a quoted value before `entry_id` cannot hide it.
+ */
 const ATTACHMENT_UPDATE = new RegExp(
-  `\\bUPDATE\\s+${table('attachments')}(?:\\s+(?:AS\\s+)?(?!SET\\b)"?\\w+"?)?\\s+SET\\b([\\s\\S]*?)(?=\\bWHERE\\b|\\bFROM\\b|\\bRETURNING\\b|[\`';]|$)`,
+  `\\bUPDATE\\s+${table('attachments')}(?:\\s+(?:AS\\s+)?(?!SET\\b)"?\\w+"?)?\\s+SET\\b([\\s\\S]*?)(?=\\bWHERE\\b|\\bFROM\\b|\\bRETURNING\\b|[\`;]|$)`,
   'gi'
 );
-const SETS_ENTRY_ID = /(?:^|[\s,])(?:"?\w+"?\s*\.\s*)?"?entry_id"?\s*=/i;
+/** `entry_id` as a target column: `entry_id =`, or inside a `(a, entry_id) =` column list. */
+const SETS_ENTRY_ID = /(?:^|[\s,(])(?:"?\w+"?\s*\.\s*)?"?entry_id"?\s*(?:=|,|\))/i;
 
 /** One content-changing statement found in a source text, by the line it starts on. */
 interface Found {
@@ -127,6 +145,23 @@ describe('content-change guard (AC-11)', () => {
     ['a delete split across lines', 'query(`DELETE FROM\n  attachments WHERE id=$1`)'],
     ['a mention update', "query('UPDATE entry_mentions SET position=1')"],
     ['a table named at run time', 'query(`DELETE FROM ${table} WHERE community_id=$1`)'],
+    ['a concatenated table name', "query('DELETE FROM ' + table + ' WHERE id=$1')"],
+    ['UPDATE ONLY', "query('UPDATE ONLY entries SET text=$1')"],
+    ['DELETE FROM ONLY', "query('DELETE FROM ONLY public.attachments WHERE id=$1')"],
+    ['a truncate', "query('TRUNCATE TABLE entry_mentions')"],
+    [
+      'a merge',
+      'query(`MERGE INTO entries e USING src s ON e.id=s.id WHEN MATCHED THEN UPDATE SET text=s.text`)',
+    ],
+    [
+      'an upsert',
+      'query(`INSERT INTO attachments(id,entry_id) VALUES($1,$2) ON CONFLICT (id) DO UPDATE SET entry_id=EXCLUDED.entry_id`)',
+    ],
+    ['a column-list rebind', "query('UPDATE attachments SET (entry_id, channel_id) = ($1, $2)')"],
+    [
+      'a rebind after a quoted value',
+      "query(`UPDATE attachments SET state='x', entry_id=$1 WHERE id=$2`)",
+    ],
   ])('catches %s', (_, source) => {
     expect(findContentChanges(source)).toHaveLength(1);
     expect(checkFile('fixture.ts', source, ALLOWLIST).problems).toHaveLength(1);
@@ -141,6 +176,11 @@ describe('content-change guard (AC-11)', () => {
     ],
     ['a read', "query('SELECT entry_id FROM attachments WHERE id=$1')"],
     ['a similarly named table', "query('UPDATE entries_archive SET text=$1')"],
+    ['a new entry', "query('INSERT INTO entries(text) VALUES($1) RETURNING id')"],
+    [
+      'an upsert that changes nothing',
+      "query('INSERT INTO attachments(id) VALUES($1) ON CONFLICT (id) DO NOTHING')",
+    ],
   ])('ignores %s', (_, source) => {
     expect(findContentChanges(source)).toEqual([]);
   });
