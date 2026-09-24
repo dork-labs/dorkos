@@ -19,6 +19,16 @@ import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../task-store.js';
 import { scheduleContentKey, upgradeLegacyContentKey } from '../schedule-permission-clamp.js';
 
+/** The fixture's settings, which are part of every approval key (DOR-2323). */
+const SETTINGS = {
+  name: 'digest',
+  runtime: null,
+  model: null,
+  effort: null,
+  maxRuntime: null,
+  sticky: false,
+};
+
 const FILE_PATH = `/home/u/.dork/skills/digest/${SKILL_FILENAME}`;
 const PROMPT = 'Post the overnight digest.';
 const CRON = '0 7 * * *';
@@ -52,18 +62,29 @@ const legacyKey = (prompt: string, cron: string) => JSON.stringify([prompt, cron
 describe('upgradeLegacyContentKey', () => {
   it('extends a two-part grant with the timezone the schedule runs in', () => {
     // Purpose: the old grant was only ever checked against the running zone.
-    expect(upgradeLegacyContentKey(legacyKey(PROMPT, CRON), 'Europe/Berlin')).toBe(
-      scheduleContentKey({ prompt: PROMPT, cron: CRON, timezone: 'Europe/Berlin' })
+    expect(
+      upgradeLegacyContentKey(legacyKey(PROMPT, CRON), { ...SETTINGS, timezone: 'Europe/Berlin' })
+    ).toBe(
+      scheduleContentKey({ ...SETTINGS, prompt: PROMPT, cron: CRON, timezone: 'Europe/Berlin' })
     );
   });
 
   it('leaves a current key, and anything it did not write, alone', () => {
     // Purpose: idempotent across boots, and never guesses at a key it cannot read.
-    const current = scheduleContentKey({ prompt: PROMPT, cron: CRON, timezone: 'UTC' });
-    expect(upgradeLegacyContentKey(current, 'Asia/Tokyo')).toBeNull();
-    expect(upgradeLegacyContentKey('not json', 'UTC')).toBeNull();
-    expect(upgradeLegacyContentKey(JSON.stringify([PROMPT, 7]), 'UTC')).toBeNull();
-    expect(upgradeLegacyContentKey(JSON.stringify({ prompt: PROMPT }), 'UTC')).toBeNull();
+    const current = scheduleContentKey({
+      ...SETTINGS,
+      prompt: PROMPT,
+      cron: CRON,
+      timezone: 'UTC',
+    });
+    expect(upgradeLegacyContentKey(current, { ...SETTINGS, timezone: 'Asia/Tokyo' })).toBeNull();
+    expect(upgradeLegacyContentKey('not json', { ...SETTINGS, timezone: 'UTC' })).toBeNull();
+    expect(
+      upgradeLegacyContentKey(JSON.stringify([PROMPT, 7]), { ...SETTINGS, timezone: 'UTC' })
+    ).toBeNull();
+    expect(
+      upgradeLegacyContentKey(JSON.stringify({ prompt: PROMPT }), { ...SETTINGS, timezone: 'UTC' })
+    ).toBeNull();
   });
 });
 
@@ -95,7 +116,7 @@ describe('the timezone is part of the approval', () => {
     const id = approvedSchedule();
 
     expect(row(id).approvedContentKey).toBe(
-      scheduleContentKey({ prompt: PROMPT, cron: CRON, timezone: 'Europe/Berlin' })
+      scheduleContentKey({ ...SETTINGS, prompt: PROMPT, cron: CRON, timezone: 'Europe/Berlin' })
     );
   });
 
@@ -169,7 +190,7 @@ describe('the timezone is part of the approval', () => {
       store.upgradeLegacyApprovalKeys();
 
       expect(row(id).approvedContentKey).toBe(
-        scheduleContentKey({ prompt: PROMPT, cron: CRON, timezone: 'Asia/Tokyo' })
+        scheduleContentKey({ ...SETTINGS, prompt: PROMPT, cron: CRON, timezone: 'Asia/Tokyo' })
       );
     });
 

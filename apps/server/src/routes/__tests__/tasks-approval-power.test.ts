@@ -217,6 +217,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     // the reconciler's next pass over unchanged content.
     const synced = store.upsertFromFile(
       {
+        name: 'mailroom-triage',
         filePath: store.getTask(task.id)!.filePath,
         body: 'Read the mailroom and file what came in.',
         meta: {

@@ -45,6 +45,7 @@ import {
   type TaskDefinition,
 } from '@dorkos/skills';
 import { parseSkillFile, readRawFrontmatter } from '@dorkos/skills/parser';
+import { parseDuration } from '@dorkos/skills/duration';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
@@ -162,6 +163,58 @@ export function fileBackedChanges(
     })
     .map(([field]) => field);
   return data.maxRuntime !== undefined ? [...changed, 'maxRuntime'] : changed;
+}
+
+/**
+ * Whether an update request changes the work a person approved: the prompt,
+ * the timing, or any of the settings in the approval key
+ * (`ScheduleSettings`, DOR-2323).
+ *
+ * Compared against the task as it stands, so a field re-sent at its current
+ * value is not a change. `maxRuntime` arrives as a duration string and is
+ * compared in milliseconds, the way the row holds it.
+ *
+ * @param data - The update request's fields.
+ * @param existing - The task as it stands.
+ */
+export function changesApprovedWork(
+  data: {
+    prompt?: string;
+    cron?: string | null;
+    timezone?: string | null;
+    name?: string;
+    runtime?: string | null;
+    model?: string | null;
+    effort?: string | null;
+    maxRuntime?: string | null;
+    sticky?: boolean;
+  },
+  existing: {
+    prompt: string;
+    cron: string | null;
+    timezone: string | null;
+    name: string;
+    runtime: string | null;
+    model: string | null;
+    effort: string | null;
+    maxRuntime: number | null;
+    sticky: boolean;
+  }
+): boolean {
+  const differs = <T>(sent: T | undefined, current: T) => sent !== undefined && sent !== current;
+  return (
+    differs(data.prompt, existing.prompt) ||
+    (data.cron !== undefined && (data.cron ?? '') !== (existing.cron ?? '')) ||
+    (data.timezone !== undefined && (data.timezone ?? 'UTC') !== (existing.timezone ?? 'UTC')) ||
+    differs(data.name, existing.name) ||
+    differs(data.runtime, existing.runtime ?? null) ||
+    differs(data.model, existing.model ?? null) ||
+    differs(data.effort, existing.effort ?? null) ||
+    (data.maxRuntime !== undefined &&
+      (data.maxRuntime === null ? null : parseDuration(data.maxRuntime)) !==
+        (existing.maxRuntime ?? null)) ||
+    differs(data.sticky, existing.sticky)
+  );
 }
 
 /**

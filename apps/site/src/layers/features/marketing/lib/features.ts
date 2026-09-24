@@ -497,7 +497,7 @@ export const features: Feature[] = [
     status: 'ga',
     benefits: [
       'Read what would run, in plain words, before deciding',
-      'One yes covers one exact action, then it is spent',
+      'Allow once, always allow for that agent, or deny',
       'Answer from a Telegram or Slack message, not just the app',
       'Only the person you name gets asked, not every chat',
       'Say yes right from the notification banner on your Mac',

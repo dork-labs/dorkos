@@ -3437,14 +3437,15 @@ async function start() {
     // column existed have none — so without this pass the first sync would park
     // every schedule an alpha user already approved. Runs BEFORE any watcher
     // starts, and matches nothing on the second boot.
-    // Approvals recorded before the key carried a timezone move onto today's
-    // key, extended with the timezone each schedule already runs in (DOR-2307).
-    // Before the backfill and before any watcher, for the same reason as both:
-    // a sync that found a stale-shaped key would park an approved schedule.
+    // Approvals recorded in an older key format move onto today's key, extended
+    // with the timezone (DOR-2307) and the settings (DOR-2323) each schedule
+    // already runs with. Before the backfill and before any watcher, for the
+    // same reason as both: a sync that found a stale-shaped key would park an
+    // approved schedule.
     const upgraded = taskStore.upgradeLegacyApprovalKeys();
     if (upgraded > 0) {
       logger.info(
-        `[Tasks] Carried ${upgraded} approval(s) over to include each schedule's timezone`
+        `[Tasks] Carried ${upgraded} approval(s) over to include each schedule's timezone and settings`
       );
     }
 

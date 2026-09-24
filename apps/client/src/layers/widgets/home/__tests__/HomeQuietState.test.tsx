@@ -93,6 +93,7 @@ function buildTask(overrides: Partial<Task> = {}): Task {
     defaultTimezone: null,
     timingOverridden: false,
     packageOwned: null,
+    approvalChanges: [],
     agentId: null,
     enabled: true,
     sticky: false,

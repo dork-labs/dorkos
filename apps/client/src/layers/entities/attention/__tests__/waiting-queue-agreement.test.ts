@@ -78,6 +78,7 @@ function schedule(overrides: Partial<Task> = {}): Task {
     defaultTimezone: 'UTC',
     timingOverridden: false,
     packageOwned: null,
+    approvalChanges: [],
     agentId: null,
     enabled: false,
     sticky: false,

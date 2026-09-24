@@ -39,6 +39,7 @@ import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import {
   AGENT_CONTENT_CHANGE_REASON,
+  AGENT_SETTINGS_CHANGE_REASON,
   AGENT_TIMING_CHANGE_REASON,
 } from '../../services/tasks/timing/effective-timing.js';
 import { raiseStanding } from '../../services/notifications/standing-events.js';
@@ -179,6 +180,68 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
       status: 'pending_approval',
       reason: AGENT_TIMING_CHANGE_REASON,
     });
+  });
+
+  it.each([
+    ['runtime', { runtime: 'codex' }],
+    ['model', { model: 'claude-opus-4' }],
+    ['effort', { effort: 'high' }],
+    ['time limit', { maxRuntime: '2h' }],
+    ['memory of earlier runs', { sticky: true }],
+    ['name', { name: 'drain-everything' }],
+  ])('parks when an agent changes the %s, and says what changed (DOR-2323)', async (_, change) => {
+    // Purpose: each of these changes what an unattended run does or costs; an
+    // agent changing one must put the schedule back in front of a person, and
+    // the card must be able to show old → new.
+    const task = await approvedTask();
+
+    const res = await agentEdit(task.id, change);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      status: 'pending_approval',
+      reason: AGENT_SETTINGS_CHANGE_REASON,
+      reasonSource: 'dorkos',
+    });
+    const [field] = Object.keys(change);
+    expect(res.body.approvalChanges).toEqual([
+      expect.objectContaining({ field: field === 'maxRuntime' ? 'maxRuntime' : field }),
+    ]);
+    expect(vi.mocked(raiseStanding)).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the old and the new model and runtime on the parked schedule', async () => {
+    const task = await approvedTask();
+
+    const res = await agentEdit(task.id, { runtime: 'codex', model: 'gpt-5' });
+
+    expect(res.body.approvalChanges).toEqual([
+      { field: 'runtime', from: null, to: 'codex' },
+      { field: 'model', from: null, to: 'gpt-5' },
+    ]);
+    expect((await resync()).approvalChanges).toEqual(res.body.approvalChanges);
+  });
+
+  it('keeps a person’s own change to how it runs approved', async () => {
+    const task = await approvedTask();
+
+    const res = await request(fixtureTarget.server)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ model: 'claude-opus-4', effort: 'high' });
+
+    expect(res.body.status).toBe('active');
+    expect((await resync()).status).toBe('active');
+  });
+
+  it('leaves an agent’s edit of the description alone', async () => {
+    // Purpose: the description changes nothing a run does, so it is not part
+    // of the approval; the over-parking direction.
+    const task = await approvedTask();
+
+    const res = await agentEdit(task.id, { description: 'Tidier words' });
+
+    expect(res.body.status).toBe('active');
+    expect((await resync()).status).toBe('active');
   });
 
   it('keeps the park and its sentence through the next sync', async () => {

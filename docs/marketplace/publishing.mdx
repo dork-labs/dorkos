@@ -120,6 +120,15 @@ People fill in settings, and agents write notes, inside an installed package's f
 - **Don't ship these paths.** They belong to the person or to DorkOS, and validation refuses a package that includes them: `.dork/data/`, `.dork/secrets.json`, `.dork/install-metadata.json`, `.dork/installed-files.json`, `.dork/uninstalled-agent.json`, and any file ending in `.dork-old` or `.dork-new`.
 - **Dependencies** you declare in `package.json` are already installed into your package's own `node_modules`, so you don't need to install them into the data folder yourself.
 
+## What DorkOS will read from your package
+
+DorkOS reads your package's files to check it and to show people what it does before they install it. It keeps those reads inside a few limits, so one odd file can't slow it down or point it somewhere else:
+
+- **Frontmatter is YAML or JSON.** The header between the `---` lines in a `SKILL.md` or command file is read as YAML, or as JSON when it starts with `---json`. A header in any other language (such as `---js`) is refused, never run.
+- **Keep headers small.** A header over 32 KB is refused, and so is one that uses more than 100 YAML aliases or expands into something huge. Real headers are a few KB at most.
+- **Text files up to 1 MB.** DorkOS stops reading a `SKILL.md`, README or manifest past 1 MB and reports the file as too large. A `marketplace.json` or `dorkos.json` catalog can be up to 5 MB.
+- **Links aren't installed.** DorkOS never follows a symbolic link inside a package. Validation warns about each one, the install preview lists them, and they are left out of the installed copy. Ship the real file instead.
+
 ## Scaffolding a new package
 
 The `dorkos` CLI can generate the starting files for you:

@@ -40,8 +40,9 @@ When Claude wants to use a tool (writing a file, running a command, editing code
     **Click Approve** to allow this single action. Claude executes the tool and continues.
   </Step>
   <Step>
-    **Click Always Allow** (when available) to approve this action and grant a standing permission
-    so similar tool calls won't require approval for the rest of the session.
+    **Click Always Allow** (when available) to approve this action and stop being asked about
+    similar calls. The button says how far that reaches: this session, this project, or all your
+    Claude sessions.
   </Step>
   <Step>
     **Or click Deny** to reject the tool call. Claude receives a denial and chooses a different
@@ -86,9 +87,13 @@ These tools never produce an approval card. That list is short and hand-picked, 
 When an approval card shows an **Always Allow** button, clicking it does two things:
 
 1. Approves the current tool call immediately
-2. Sends SDK permission updates back to Claude so that similar tool calls are auto-approved for the rest of the session
+2. Tells Claude Code to stop asking about similar tool calls
 
-Not every approval card shows this button: it only appears when the SDK provides permission suggestions for the tool. The keyboard shortcut is <kbd>Shift+Enter</kbd>.
+How far that reaches depends on what Claude Code suggests, and the button names it: **this session**, **this project**, or **all your Claude sessions**. The last two are saved in Claude Code's own settings files, so they last beyond this conversation.
+
+Not every approval card shows this button: it only appears when Claude Code offers a suggestion for the tool.
+
+This is different from **Always allow** on a DorkOS request card, which remembers your yes for one agent and one DorkOS action. See [Permissions](/docs/guides/permissions). The keyboard shortcut is <kbd>Shift+Enter</kbd>.
 
 ## Batch Approvals
 
@@ -162,10 +167,11 @@ Plan mode is a separate toggle next to the composer, not a stop on the dial: it 
 <Callout type="info">
   **This covers what an agent does in a session: editing files, running commands, and working
   outside this project.** DorkOS's own risky actions still stop for you, like deleting a schedule or
-  removing an agent. Those are a separate question with its own setting: turn on **Standing
-  permissions** in Settings, under Access, and you can then answer "stop asking about this" straight
-  from an approval card. See [Action approvals](/docs/guides/action-approvals). You will see the
-  same reminder next to the permission picker whenever you choose a stop that skips prompts.
+  removing an agent. Those are a separate question with their own setting. To stop being asked about
+  one of them, choose **Always allow** on the card when an agent asks, or change it in **Settings**,
+  under **Permissions**. See [Permissions](/docs/guides/permissions) and [Action
+  approvals](/docs/guides/action-approvals). You will see the same reminder next to the permission
+  picker whenever you choose a stop that skips prompts.
 </Callout>
 
 <Callout type="info">
@@ -223,7 +229,7 @@ Tools from MCP servers (prefixed with `mcp__`) are classified as **medium risk**
 ## Tips
 
 - **Read the full input.** Tool inputs can be long. Understanding the parameters before approving is worth the extra few seconds.
-- **Use Always Allow for repetitive approvals.** If Claude is performing many similar operations (e.g., editing multiple files), use Always Allow to grant a standing permission.
+- **Use Always Allow for repetitive approvals.** If Claude is performing many similar operations (e.g., editing multiple files), use Always Allow so similar calls stop asking. Check how far it reaches, named on the button, before you press it.
 - **Use batch actions for parallel operations.** When the batch bar appears, you can approve or deny all pending tools at once instead of handling them one by one.
 - **Deny when uncertain.** If you're not sure why Claude wants a tool, deny it and ask. Claude will explain.
 - **Check context first.** Claude often explains what it's about to do before requesting a tool. Read the assistant message before reviewing the approval card.

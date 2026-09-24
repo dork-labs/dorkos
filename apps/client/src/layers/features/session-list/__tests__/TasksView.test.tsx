@@ -105,6 +105,7 @@ function makeSchedule(overrides: Partial<Task> & { id: string; name: string }): 
     defaultTimezone: null,
     timingOverridden: false,
     packageOwned: null,
+    approvalChanges: [],
     agentId: null,
     sticky: false,
     maxRuntime: null,
