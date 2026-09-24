@@ -494,10 +494,12 @@ describe('CreateTaskDialog', () => {
 
     it('offers no copy for a package installed before DorkOS kept file lists', async () => {
       // Purpose: a legacy install is not a package's claim but DorkOS not
-      // knowing yet; the note says when it ends, and a copy is not the answer.
+      // knowing yet; the note says how to end it now (Check files, DOR-2320),
+      // and a copy is not the answer.
       await open(transportWith(), packaged('legacy'));
 
       expect(screen.getByText(/installed by an older version of DorkOS/)).toBeTruthy();
+      expect(screen.getByText(/Check files/)).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Make my own copy' })).toBeNull();
       expect(screen.getByDisplayValue('The package sweeps.')).toBeDisabled();
     });

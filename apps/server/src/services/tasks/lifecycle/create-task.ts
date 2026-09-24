@@ -331,7 +331,8 @@ export async function createScheduledTask(
             `one with that name. Pick a different name.`
           : `${owner} was installed by an older version of DorkOS without a list of its files, ` +
             `so DorkOS can't yet tell them from yours, and a schedule made here could be lost ` +
-            `at the package's next update. This will work after that update.`,
+            `at the package's next update. Choose Check files on it in Marketplace's Installed ` +
+            `tab (or run \`dorkos marketplace check-files ${ownership.packageName}\`), then try again.`,
       code: 'schedule_package_owned',
       ownedBy: ownership.by,
     };

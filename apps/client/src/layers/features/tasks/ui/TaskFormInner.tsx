@@ -47,7 +47,8 @@ const PACKAGE_NOTICE: Record<PackageOwnedBy, string> = {
   legacy:
     'This schedule sits in a package installed by an older version of DorkOS, which kept no ' +
     'list of the package’s files, so DorkOS can’t yet tell them from yours. You can switch it on ' +
-    'or off, or change when it runs, here. The rest will work after the package’s next update.',
+    'or off, or change when it runs, here. To change the rest, choose Check files on the ' +
+    'package in Marketplace’s Installed tab, then try again.',
 };
 
 /**
