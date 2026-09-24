@@ -199,7 +199,7 @@ export interface InstallOwnershipContext {
   /** Where the package came from. */
   source?: RecordSource;
   /** Rebuild a legacy install's record; `null` when none can be rebuilt. */
-  rebuildLegacy?: (liveRoot: string) => Promise<InstalledFiles | null>;
+  rebuildLegacy?: (liveRoot: string, stagedTree: string) => Promise<InstalledFiles | null>;
 }
 
 /**

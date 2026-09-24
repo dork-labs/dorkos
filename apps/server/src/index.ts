@@ -244,6 +244,7 @@ import { MarketplaceSourceManager } from './services/marketplace/marketplace-sou
 import { MarketplaceCache } from './services/marketplace/marketplace-cache.js';
 import { PackageCacheRetention } from './services/marketplace/package-cache-retention.js';
 import { PackageResolver } from './services/marketplace/package-resolver.js';
+import { rebuildInstalledFiles } from './services/marketplace/lib/legacy-record.js';
 import { PackageFetcher } from './services/marketplace/package-fetcher.js';
 import { ConflictDetector } from './services/marketplace/conflict-detector.js';
 import { PermissionPreviewBuilder } from './services/marketplace/permission-preview.js';
@@ -4190,6 +4191,10 @@ async function start() {
           await meshCore?.syncFromDisk(projectPath);
         },
       },
+      // An install made before installed-files records existed gets one rebuilt
+      // from the commit it was installed at (DOR-2245 §9).
+      rebuildLegacy: (installRoot: string) =>
+        rebuildInstalledFiles(installRoot, { fetcher: marketplaceFetcher, logger }),
       logger,
     });
 

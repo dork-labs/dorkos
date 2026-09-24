@@ -40,6 +40,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import { fileUrlToPath, type PackageFetcher } from './package-fetcher.js';
 import type { PackageResolver, ResolvedPackageSource } from './package-resolver.js';
 import type { RecordSource } from './lib/installed-files.js';
+import { rebuildInstalledFiles } from './lib/legacy-record.js';
 import type { PermissionPreviewBuilder } from './permission-preview.js';
 import type { AdapterInstallFlow } from './flows/install-adapter.js';
 import type { AgentInstallFlow } from './flows/install-agent.js';
@@ -363,6 +364,12 @@ export class MarketplaceInstaller implements InstallerLike {
       const result = await this.dispatchFlow(staged.packagePath, staged.manifest, {
         ...req,
         ownership: {
+          rebuildLegacy: (liveRoot: string, stagedTree: string) =>
+            rebuildInstalledFiles(
+              liveRoot,
+              { fetcher: this.deps.fetcher, logger: this.deps.logger },
+              stagedTree
+            ),
           ...req.ownership,
           ...(recordSourceOf(staged.sourceKey, resolved) && {
             source: recordSourceOf(staged.sourceKey, resolved),

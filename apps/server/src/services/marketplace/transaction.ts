@@ -156,6 +156,7 @@ import {
   type InstalledFiles,
   type RecordIdentity,
 } from './lib/installed-files.js';
+import { isReservedPackagePath } from '@dorkos/marketplace';
 import { hasPackageIdentity } from './lib/locate-install.js';
 import { currentRecordOwner, formatRecordOwner } from './lib/record-owner.js';
 import {
@@ -219,7 +220,7 @@ export interface TransactionOwnership {
    * anything moves. `null` when no record can be rebuilt; the install then
    * keeps nothing it cannot prove is the person's (see the spec §9).
    */
-  rebuildLegacy?: (liveRoot: string) => Promise<InstalledFiles | null>;
+  rebuildLegacy?: (liveRoot: string, stagedTree: string) => Promise<InstalledFiles | null>;
   /**
    * Told, once the install has committed, what happened to files the person
    * may have changed, and any warning to show. Flows copy both onto their result.
@@ -528,7 +529,7 @@ async function prepareOwnership(
     rOld = await readInstalledFiles(target);
     const oldHasIdentity = await hasPackageIdentity(target);
     if (rOld === null && oldHasIdentity && ownership.rebuildLegacy) {
-      rOld = await ownership.rebuildLegacy(target);
+      rOld = await ownership.rebuildLegacy(target, stagingDir);
     }
     if (rOld === null && oldHasIdentity) {
       warnings.push(
@@ -536,6 +537,22 @@ async function prepareOwnership(
       );
     } else {
       carry = await carryPersonFiles({ liveRoot: target, stagingDir, rOld, oldHasIdentity, rNew });
+    }
+    if (rOld?.inferred && carry) {
+      const kept = carry.plan.actions
+        .filter(
+          (a) =>
+            (a.kind === 'carry' || a.kind === 'carry-dir') &&
+            !(a.path in rNew.files) &&
+            !isReservedPackagePath(a.path)
+        )
+        .map((a) => a.path);
+      if (kept.length > 0) {
+        const shown = kept.slice(0, 10).join(', ');
+        warnings.push(
+          `Kept ${kept.length} item${kept.length === 1 ? '' : 's'} this package's new version doesn't include, because DorkOS couldn't tell whether you added ${kept.length === 1 ? 'it' : 'them'}: ${shown}${kept.length > 10 ? ', …' : ''}. Delete any you don't need.`
+        );
+      }
     }
     const oldSource = rOld?.package.source;
     const newSource = ownership.identity.source;

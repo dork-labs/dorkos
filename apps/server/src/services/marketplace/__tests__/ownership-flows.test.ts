@@ -170,3 +170,23 @@ describe('agent identity across sources (DOR-2245 §8)', () => {
     }
   });
 });
+
+describe('an install made before records existed (DOR-2245 §9)', () => {
+  // Purpose: the legacy path. With no record and no fetchable commit (a local
+  // install), a reinstall keeps the person's file, replaces the package's own
+  // unchanged files silently, and names what it kept.
+  it("keeps the person's files over a legacy install and says so", async () => {
+    const harness = buildInstallerForTests(dorkHome);
+    const name = path.join(FIXTURES_DIR, 'valid-plugin');
+    const { installPath: root } = await harness.installer.install({ name });
+    await rm(path.join(root, '.dork', 'installed-files.json'));
+    await put(root, 'config/config.json', '{"team":"DOR"}');
+
+    const result = await harness.installer.install({ name });
+
+    expect(await readFile(path.join(root, 'config', 'config.json'), 'utf8')).toBe('{"team":"DOR"}');
+    expect(result.fileNotices ?? []).toEqual([]);
+    expect(result.warnings.join(' ')).toMatch(/Kept 1 item .*: config\. /);
+    expect((await readInstalledFiles(root))?.inferred).toBeUndefined();
+  });
+});
