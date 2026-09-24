@@ -144,6 +144,25 @@ describe('createAgentWorkspace in marketplace mode', () => {
     expect(result.denialLifted).toBe(true);
   });
 
+  // Purpose (code review 10): Mesh stores denials by real path, so a folder
+  // reached through a symlink (macOS /var → /private/var) must still match.
+  it('lifts a denial recorded under the real path of a symlinked folder', async () => {
+    const dir = await agentDir();
+    const link = path.join(tmpRoot, 'linked-agents');
+    await fs.symlink(path.join(tmpRoot, 'agents'), link);
+    const undeny = vi.fn().mockResolvedValue(undefined);
+    const mesh = {
+      syncFromDisk: vi.fn().mockResolvedValue({ status: 'synced' }),
+      listDenied: () => [{ path: dir }],
+      undeny,
+    };
+    const result = await createAgentWorkspace(input(path.join(link, 'bot')), mesh as never, {
+      marketplace: true,
+    });
+    expect(undeny).toHaveBeenCalledWith(dir);
+    expect(result.denialLifted).toBe(true);
+  });
+
   // Purpose: new package defaults are reported, not applied over the agent's own.
   it('reports differing package defaults instead of applying them', async () => {
     const dir = await agentDir();

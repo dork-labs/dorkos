@@ -547,10 +547,15 @@ export async function createAgentWorkspace(
 
     // A marketplace install is an explicit act by the person, like registering
     // a folder, so it lifts a denial on its own folder (DOR-2245).
+    // Mesh stores a denial under the folder's real path, so compare real paths.
     let denialLifted = false;
-    if (internal.marketplace && meshCore?.listDenied?.().some((d) => d.path === resolvedPath)) {
-      await meshCore.undeny?.(resolvedPath);
-      denialLifted = true;
+    if (internal.marketplace && meshCore?.listDenied) {
+      const realPath = await fs.realpath(resolvedPath).catch(() => resolvedPath);
+      const denial = meshCore.listDenied().find((d) => d.path === realPath);
+      if (denial) {
+        await meshCore.undeny?.(denial.path);
+        denialLifted = true;
+      }
     }
     // Whether the adopted agent is already on the team: during an update it
     // never left, so its arrival is not announced again.
