@@ -279,9 +279,9 @@ describe('marketplace install pipeline — failure paths', () => {
     expect(result.packageName).toBe('valid-plugin');
     expect(result.installPath).toBe(collidingRoot);
 
-    // The target was replaced, not merged: the prior marker is gone and the
-    // reinstalled package's manifest is present.
-    expect(await pathExists(prevMarker)).toBe(false);
+    // The package is replaced; the prior marker, which no install recorded, is
+    // a person's file and is kept (DOR-2245).
+    expect(await readFile(prevMarker, 'utf-8')).toBe('prior install');
     expect(await pathExists(path.join(collidingRoot, '.dork', 'manifest.json'))).toBe(true);
 
     // No leftover transaction backup dir remains on success.

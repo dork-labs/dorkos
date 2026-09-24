@@ -14,6 +14,7 @@ import type {
 import type { NpmDependency } from './lib/npm-dependencies.js';
 import type { DisclosedEffects } from './disclosed-effects.js';
 import type { PackageFileNotice } from '@dorkos/shared/marketplace-schemas';
+import type { InstalledFiles, RecordSource } from './lib/installed-files.js';
 
 /**
  * Describes a package install, uninstall or applied update that just succeeded,
@@ -184,6 +185,21 @@ export interface InstallRequest {
    * `approvedDisclosure`: no HTTP body schema carries it.
    */
   installRoot?: string;
+  /**
+   * The installer's hand-off to the flows so an install keeps the person's
+   * files (DOR-2245): where the package came from, for the installed-files
+   * record, and how to rebuild the record of an install made before records
+   * existed. Server-internal: set by `MarketplaceInstaller.install()` only.
+   */
+  ownership?: InstallOwnershipContext;
+}
+
+/** See {@link InstallRequest.ownership}. */
+export interface InstallOwnershipContext {
+  /** Where the package came from. */
+  source?: RecordSource;
+  /** Rebuild a legacy install's record; `null` when none can be rebuilt. */
+  rebuildLegacy?: (liveRoot: string) => Promise<InstalledFiles | null>;
 }
 
 /**

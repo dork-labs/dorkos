@@ -439,6 +439,10 @@ async function runTransactionUnlocked<T>(opts: TransactionOptions<T>): Promise<T
   const lateNotices: PackageFileNotice[] = [];
   try {
     result = await opts.activate({ path: stagingDir });
+    // The package's own data directory, `${CLAUDE_PLUGIN_DATA}` (ADR
+    // 260923-163515). Created here, once for every flow; kept or carried as
+    // the person's from then on.
+    if (opts.ownership) await mkdir(path.join(opts.target, '.dork', 'data'), { recursive: true });
     // Before the commit, so a failure here rolls back and loses nothing: the
     // backup still holds whatever was written during the update.
     if (carried?.carry && record.kind === 'backup') {

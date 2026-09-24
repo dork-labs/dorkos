@@ -219,9 +219,10 @@ describe('SkillPackInstallFlow', () => {
     const result = await flow.install(packagePath, baseManifest, { name: baseManifest.name });
 
     expect(result.ok).toBe(true);
-    // The new package is present; the previous occupant was replaced.
+    // The new package is present. The previous occupant, which no install
+    // recorded, is a person's file and is kept (DOR-2245).
     expect(await exists(path.join(installRoot, '.dork/skills/first-skill/SKILL.md'))).toBe(true);
-    expect(await exists(path.join(installRoot, 'occupant.txt'))).toBe(false);
+    expect(await exists(path.join(installRoot, 'occupant.txt'))).toBe(true);
     expect(cleanupSpy).toHaveBeenCalled();
     // No leftover backup sibling under plugins/.
     const pluginEntries = await readdir(path.join(dorkHome, 'plugins'));

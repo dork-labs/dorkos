@@ -27,6 +27,7 @@ import { installRootDirForType } from '../lib/install-roots.js';
 import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
 import { stagePackageContents } from '../lib/stage-package.js';
 import { compileStagedExtensions, type StagedExtensionCompiler } from '../lib/staged-extensions.js';
+import { flowOwnership } from '../lib/flow-ownership.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -85,8 +86,9 @@ export class ShapeInstallFlow {
   async install(
     packagePath: string,
     manifest: ShapePackageManifest,
-    opts: Pick<InstallRequest, 'projectPath'>
+    opts: Pick<InstallRequest, 'projectPath' | 'ownership'>
   ): Promise<InstallResult> {
+    const { ownership, finish } = flowOwnership(manifest, opts);
     const installRoot = path.join(
       this.deps.dorkHome,
       installRootDirForType(manifest.type),
@@ -97,13 +99,15 @@ export class ShapeInstallFlow {
     // to the sidecar and re-shown on the installed-package view (DOR-1341).
     const dependencyWarnings: string[] = [];
 
-    return runTransaction<InstallResult>({
+    const result = await runTransaction<InstallResult>({
       name: `install-shape-${manifest.name}`,
       target: installRoot,
       stage: (staging) => this.stage(staging.path, packagePath, installRoot, dependencyWarnings),
       activate: (staging) =>
         this.activate(staging.path, installRoot, manifest, scopeWarnings, dependencyWarnings),
+      ownership,
     });
+    return finish(result);
   }
 
   /**

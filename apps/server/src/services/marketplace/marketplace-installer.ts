@@ -39,6 +39,7 @@ import { validatePackage } from '@dorkos/marketplace/package-validator';
 import type { Logger } from '@dorkos/shared/logger';
 import { fileUrlToPath, type PackageFetcher } from './package-fetcher.js';
 import type { PackageResolver, ResolvedPackageSource } from './package-resolver.js';
+import type { RecordSource } from './lib/installed-files.js';
 import type { PermissionPreviewBuilder } from './permission-preview.js';
 import type { AdapterInstallFlow } from './flows/install-adapter.js';
 import type { AgentInstallFlow } from './flows/install-agent.js';
@@ -361,7 +362,15 @@ export class MarketplaceInstaller implements InstallerLike {
         throw new ConflictError(preview.conflicts);
       }
 
-      const result = await this.dispatchFlow(staged.packagePath, staged.manifest, req);
+      const result = await this.dispatchFlow(staged.packagePath, staged.manifest, {
+        ...req,
+        ownership: {
+          ...req.ownership,
+          ...(recordSourceOf(staged.sourceKey, resolved) && {
+            source: recordSourceOf(staged.sourceKey, resolved),
+          }),
+        },
+      });
 
       // Turn the package's declared schedules into files. Type-agnostic and
       // therefore here rather than in each flow: a schedule means the same thing
@@ -1089,4 +1098,22 @@ function resolveRelativeSubpath(source: string, pluginRoot?: string): string {
 function isInsideDir(dir: string, target: string): boolean {
   const rel = path.relative(dir, target);
   return rel === '' || (rel.split(path.sep)[0] !== '..' && !path.isAbsolute(rel));
+}
+
+/**
+ * Where an install came from, as the installed-files record keeps it
+ * (DOR-2245): the fetched source key's clone URL, subpath and ref, or the
+ * local directory a local install copied. Compared later with the ref ignored.
+ *
+ * @internal
+ */
+function recordSourceOf(
+  sourceKey: SourceKey | undefined,
+  resolved: ResolvedPackageSource
+): RecordSource | undefined {
+  if (sourceKey) {
+    return { cloneUrl: sourceKey.cloneUrl, subpath: sourceKey.subpath, ref: sourceKey.ref };
+  }
+  if (resolved.localPath) return { localPath: path.resolve(resolved.localPath) };
+  return undefined;
 }

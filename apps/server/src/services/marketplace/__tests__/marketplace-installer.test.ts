@@ -347,7 +347,16 @@ describe('MarketplaceInstaller', () => {
         manifest,
         expect.objectContaining({ projectPath: undefined })
       );
-      expect(pluginFlow.install).toHaveBeenCalledWith('/tmp/hello-plugin', manifest, req);
+      // The installer adds its ownership hand-off (DOR-2245): a local install
+      // records the directory it came from.
+      expect(pluginFlow.install).toHaveBeenCalledWith(
+        '/tmp/hello-plugin',
+        manifest,
+        expect.objectContaining({
+          ...req,
+          ownership: expect.objectContaining({ source: { localPath: '/tmp/hello-plugin' } }),
+        })
+      );
       expect(mockedReportInstallEvent).toHaveBeenCalledTimes(1);
       expect(mockedReportInstallEvent).toHaveBeenCalledWith(
         expect.objectContaining({

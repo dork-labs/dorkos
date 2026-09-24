@@ -23,6 +23,7 @@ import { atomicMove } from '../lib/atomic-move.js';
 import { installRootDirForType } from '../lib/install-roots.js';
 import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
 import { stagePackageContents } from '../lib/stage-package.js';
+import { flowOwnership } from '../lib/flow-ownership.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -83,6 +84,7 @@ export class AgentInstallFlow {
     // Filled during `stage` by the npm dependency step; read after the
     // transaction commits, so a rolled-back install reports nothing.
     const warnings: string[] = [];
+    const { ownership, finish } = flowOwnership(manifest, opts);
 
     const transactionResult = await runTransaction({
       name: `install-agent-${manifest.name}`,
@@ -90,11 +92,12 @@ export class AgentInstallFlow {
       stage: (staging) =>
         stageAgentPackage(packagePath, staging.path, targetDir, warnings, this.deps.logger),
       activate: (staging) => this.activate(staging.path, targetDir, manifest),
+      ownership,
     });
 
     this.deps.logger.info('[marketplace/install-agent] success', { name: manifest.name });
 
-    return {
+    return finish({
       ok: true,
       packageName: manifest.name,
       version: manifest.version,
@@ -103,7 +106,7 @@ export class AgentInstallFlow {
       manifest,
       warnings: [...warnings],
       dependencyWarnings: [...warnings],
-    };
+    });
   }
 
   /**
