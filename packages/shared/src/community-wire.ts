@@ -32,6 +32,7 @@ export const CommunityWireHandleSchema = z.string().regex(HANDLE_PATTERN);
 /** Canonical method paths beneath the independently deployed `/api/v1` origin. */
 export const COMMUNITY_API_V1_ROUTES = {
   community: '/api/v1/community',
+  communityName: '/api/v1/community-names/:name',
   bootstrapPreflight: '/api/v1/bootstrap/preflight',
   bootstrapComplete: '/api/v1/bootstrap/complete',
   ownerClaimPreflight: '/api/v1/owner-claims/preflight',
