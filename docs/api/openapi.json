@@ -19216,6 +19216,24 @@
                             ]
                           }
                         },
+                        "skippedLinks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ]
+                          }
+                        },
                         "schedules": {
                           "type": "array",
                           "items": {
@@ -19367,6 +19385,7 @@
                         "executables",
                         "skillTools",
                         "unreadableDeclarations",
+                        "skippedLinks",
                         "schedules",
                         "secrets",
                         "npmDependencies",
@@ -20114,6 +20133,24 @@
                             ]
                           }
                         },
+                        "skippedLinks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ]
+                          }
+                        },
                         "schedules": {
                           "type": "array",
                           "items": {
@@ -20265,6 +20302,7 @@
                         "executables",
                         "skillTools",
                         "unreadableDeclarations",
+                        "skippedLinks",
                         "schedules",
                         "secrets",
                         "npmDependencies",
@@ -21146,6 +21184,24 @@
                             ]
                           }
                         },
+                        "skippedLinks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ]
+                          }
+                        },
                         "schedules": {
                           "type": "array",
                           "items": {
@@ -21297,6 +21353,7 @@
                         "executables",
                         "skillTools",
                         "unreadableDeclarations",
+                        "skippedLinks",
                         "schedules",
                         "secrets",
                         "npmDependencies",
