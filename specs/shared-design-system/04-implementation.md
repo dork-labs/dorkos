@@ -1,15 +1,15 @@
 # Implementation Summary: Shared UI foundations
 
 **Created:** 2026-09-23
-**Last Updated:** 2026-09-23
+**Last Updated:** 2026-09-24
 **Spec:** specs/shared-design-system/02-specification.md
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 12 / 14
+**Status:** Complete
+**Tasks Completed:** 14 / 14
 
-Foundations are implemented and independently reviewed. Public consumer migrations and the catalog are implemented; combined regression verification passed and independent branch review has converged; private preparation has passed local checks against the final candidate. Publication tasks 4.1 and 4.2 remain gated.
+Foundations are implemented and independently reviewed. Public consumer migrations and the catalog are implemented; combined regression verification passed and independent branch review has converged; private preparation has passed local checks against the final candidate. The authorized 0.1.0 release is published and independently verified from the registry. The independently released consumer adopted that registry version and completed its review and delivery gate.
 
 ## Tasks Completed
 
@@ -27,7 +27,7 @@ Specification, proposed ADR, canonical tasks, `packages/ui/`, root Vitest projec
 
 ## Known Issues
 
-- Publication is not authorized; private adoption can be prepared and locally verified only.
+- None within the frozen first-slice scope. Browser and emitted-CSS checks do not establish Obsidian runtime verification.
 
 ## Implementation Notes
 
@@ -108,3 +108,29 @@ After the clean-build correction, the complete affected typecheck/lint gate pass
 ### Merge-queue browser correction
 
 The full queue suite found another obsolete gallery locator: the mobile touch-reach test still looked for the generic Small button that moved out of the client. It now measures the existing, unmodified `size="sm"` Button in the client Card example, through the client facade and emitted styles. The 390×844 touch viewport, hit-reach measurement and 44px assertion remain unchanged. The focused real-browser test passed, E2E typecheck/lint passed (existing warnings only), and independent review confirmed the correction preserves the original regression coverage. The package archive and production source are unchanged.
+
+### Session 2 - 2026-09-24
+
+**Workers:** /root (release and registry proof), /root/private_review (release compliance and adoption), /root/final_review (release quality).
+
+- Task 4.1: publish the reviewed package release — worker: /root. Explicit authorization followed review of the concrete 0.1.0 candidate. Organization authority and version availability were confirmed before publishing.
+
+Published [@dork-labs/ui@0.1.0](https://www.npmjs.com/package/@dork-labs/ui/v/0.1.0). The downloaded registry archive matches the verified release exactly: SHA-256 `bba1a270350e5145b2023b6712dbf7b86b1d2929d44febb834cb4237d8903b54`; integrity `sha512-Ko47jhu4FwJ2nZsixbzuSVJ13iRiMRgUWaC3Kyju4IVs5MJSkalbdOHFCGvUzlqSNaQ6D8cPMTjpjLPU810Ajg==`. Package build, typecheck, lint and six tests passed. Independent compliance and quality reviews passed. The 41-file archive contains no private sources. Its runtime, declarations and CSS are byte-identical to the reviewed candidate; release metadata and README account for the new archive identity.
+
+An independent fixture installed the exact registry version with a normal registry lockfile. Typecheck, production build and single-React resolution passed. Computed browser checks passed all four 390px/1280px × light/dark combinations, explicit overrides and opposing theme regions.
+
+The public implementation reconciled pinned main `dfd77b0d733d3d98125ccfe70763fa275def0d3f`, preserving the new application-specific permission control gallery and incoming specification entries. Package and catalog source stayed unchanged. Fresh client typecheck/lint, 163 tests across 17 files, and both mobile touch-reach and feedback-focus browser checks passed.
+
+A later queue conflict affected only the shared decision/specification indexes. Reconciliation onto pinned main `a625edee15e31f690d00a10aa8405e6ad732e955` preserves all incoming records and their order. Independent review of pushed head `2b83ff6bd90afbe34a78ca7c97d965e555d05b6b` confirmed the implementation patch is identical to the prior reviewed head outside those indexes. Manifest formatting, 22 ADR corpus tests, the spec-index roundtrip test and changelog coverage passed.
+
+### Completed delivery
+
+- Task 4.2: pin and deliver the published version in the independent consumer — worker: /root/private_review. The exact registry version and integrity are recorded in its manifest/lockfile. Build, typecheck, lint, form suites, built-browser checks, repository guards and CI passed. Independent compliance and quality reviews converged, and adoption merged after the public implementation. Detailed evidence remains in the owning private repository.
+
+The public implementation merged through [PR #2046](https://github.com/dork-labs/dorkos/pull/2046) at `5dc5f2e513a615c12f5eafaaca0f3a2619f37761`. Required merge-group tests and all browser shards passed. The published package, public consumers, standalone catalog and independent registry adoption now complete all 14 tasks. Existing modified Radix-based primitives remain the maintained source; no fresh upstream replacement or Base UI migration was introduced.
+
+### Final release queue investigation
+
+The release-record PR encountered the same Community switcher keyboard-navigation race in two queue runs: the invitation case in run `35983964327` and the host-operator case in run `35986952230`. In the second trace, Add community had become the roving tab stop before an immediate active-element sample observed the focus change; an extra ArrowDown then moved to Account. Radix schedules roving focus asynchronously. The test must wait for each keyboard focus transition before sending another key; this does not require a product or package change.
+
+Both affected cases now wait for Alpha to be visible and assert each focus transition before the next key. Final focused real-Chromium verification passed all six runs (two cases repeated three times), with e2e typecheck and targeted ESLint passing. Independent compliance and code-quality reviews converged.

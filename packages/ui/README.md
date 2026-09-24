@@ -1,6 +1,6 @@
 # @dork-labs/ui
 
-Portable controls and theme colors for DorkOS interfaces. This package is under review and is protected from publication.
+Portable controls and theme colors for DorkOS interfaces.
 
 In your Tailwind 4 entry CSS, import `tailwindcss` first, then `@dork-labs/ui/tailwind.css` once. That stylesheet includes `tokens.css` and registers the installed JavaScript as a Tailwind source and maps `dui-*` colors; it does not ship a second reset or compiled utility sheet.
 

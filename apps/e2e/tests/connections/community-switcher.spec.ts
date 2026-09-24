@@ -417,15 +417,14 @@ test('Joining with an invitation opens the link on the Community’s site, not a
   await page.getByTestId('sidebar-header-block').focus();
   await page.keyboard.press('Meta+Shift+K');
   await expect(page.getByRole('menuitemradio', { name: /Your team|’s team/ })).toBeFocused();
-  // Down past the destinations to the add submenu, then into it. Addressed by
-  // its stable id rather than its wording.
+  // Wait for each keyboard focus move: Radix schedules it after the key event.
+  // Reading activeElement immediately can send one ArrowDown too many.
   const add = page.locator('[data-menu-item-id="add-community"]');
-  for (
-    let step = 0;
-    step < 4 && !(await add.evaluate((el) => el === document.activeElement));
-    step++
-  )
-    await page.keyboard.press('ArrowDown');
+  const alpha = page.getByRole('menuitemradio', { name: /Alpha/ });
+  await expect(alpha).toBeVisible();
+  await page.keyboard.press('ArrowDown');
+  await expect(alpha).toBeFocused();
+  await page.keyboard.press('ArrowDown');
   await expect(add).toBeFocused();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('menuitem', { name: 'Connect a community' })).toBeFocused();
@@ -459,12 +458,11 @@ test('A host operator can create a community on their own host, by keyboard and 
   await page.keyboard.press('Meta+Shift+K');
   await expect(page.getByRole('menuitemradio', { name: /Your team|’s team/ })).toBeFocused();
   const add = page.locator('[data-menu-item-id="add-community"]');
-  for (
-    let step = 0;
-    step < 4 && !(await add.evaluate((el) => el === document.activeElement));
-    step++
-  )
-    await page.keyboard.press('ArrowDown');
+  const alpha = page.getByRole('menuitemradio', { name: /Alpha/ });
+  await expect(alpha).toBeVisible();
+  await page.keyboard.press('ArrowDown');
+  await expect(alpha).toBeFocused();
+  await page.keyboard.press('ArrowDown');
   await expect(add).toBeFocused();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('menuitem', { name: 'Connect a community' })).toBeFocused();

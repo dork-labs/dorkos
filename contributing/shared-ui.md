@@ -8,7 +8,7 @@
 
 | Concept                                       | Location                                                                                                |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Public exports and package guard              | `packages/ui/package.json`, `packages/ui/src/index.ts`                                                  |
+| Public exports and release metadata           | `packages/ui/package.json`, `packages/ui/src/index.ts`                                                  |
 | Theme values and Tailwind source registration | `packages/ui/tokens.css`, `packages/ui/tailwind.css`                                                    |
 | Behavior tests                                | `packages/ui/src/__tests__/primitives.test.tsx`                                                         |
 | Client FSD facade                             | `apps/client/src/layers/shared/ui/index.ts`                                                             |
@@ -117,9 +117,9 @@ The first candidate was tested with React 19.3.0, Tailwind 4.3.3, Vite 6.4.3 and
 2. Pack into an ignored directory in the worktree. Inspect the file list: only selected built modules/declarations, CSS, README, license and metadata belong in it. Confirm React is a peer, CSS is retained as a side effect, and no runtime dependency uses `workspace:`.
 3. Install that archive into an independent React 19/Tailwind 4 fixture without source aliases or workspace resolution. Typecheck every export, build, inspect the React dependency graph and record the archive hash. Browser proof must cover explicit/system themes, dark opacity, source detection, focus, reduced motion and narrow-screen sizes.
 4. Run affected consumer suites, including parent compositions. A client facade change reaches the whole client suite. Run real built forms with mocked requests and inspect errors, pending state, Enter submission, labels, focus and overflow. Build and inspect embedded CSS separately.
-5. Finish independent review. The package's `private` flag and `prepublishOnly` guard intentionally refuse publication. A package owner must separately authorize the concrete name, version and release; permission for another package does not apply.
-6. Only after authorization, confirm organization authority and version availability, intentionally remove the guards, and create the final release archive. Repeat distribution checks on those exact bytes before publishing them. A metadata change produces a new archive and a new hash.
-7. Consumers outside this workspace install the actual registry version and regenerate their lockfiles. Repeat their checks before landing adoption. A locally verified private candidate remains prepared, not shipped, while this release gate is closed.
+5. Finish independent review. A package owner must authorize the concrete name, version and release; permission for another package does not apply. The `prepublishOnly` script builds the package before a directory publication.
+6. Only after authorization, confirm organization authority and version availability, and create the final release archive. Repeat distribution checks on those exact bytes before publishing them. A metadata change produces a new archive and a new hash.
+7. Consumers outside this workspace install the actual registry version and regenerate their lockfiles. Repeat their checks before landing adoption. Archive-only validation does not establish registry adoption.
 
 No CI release pipeline, deployment or package publication is implied by the local verification commands.
 
