@@ -1165,6 +1165,18 @@ export type SourceListingOutcome =
     };
 
 /**
+ * What `POST /api/marketplace/sources/:name/refresh` reports: the listing it
+ * just fetched and when. Only the package count is read by the app, so the
+ * listing is typed down to the part it uses.
+ */
+export interface RefreshedMarketplaceSource {
+  /** The source's listing, as fetched (or, when unreachable, as last cached). */
+  marketplace: { plugins: unknown[] };
+  /** When the refresh answered, as an ISO timestamp. */
+  fetchedAt: string;
+}
+
+/**
  * Response body of `POST /api/marketplace/sources`: the saved source plus how
  * the first fetch of its listing went.
  */

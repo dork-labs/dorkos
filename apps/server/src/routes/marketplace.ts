@@ -797,7 +797,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     // One best-effort fetch of the new listing, the way refresh fetches it, so
     // the first install does not need a refresh first (DOR-2304). It never
     // throws: a failure is reported in `listing`, and the source stays saved.
-    const listing = await fetchNewSourceListing(fetcher, created);
+    const listing = await fetchNewSourceListing({ fetcher, cache }, created);
     return res.status(201).json({ ...created, listing });
   });
 
@@ -808,11 +808,21 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
 
     try {
       await sourceManager.remove(req.params.name);
-      res.status(204).send();
     } catch (err) {
       logger.error(`[Marketplace] Failed to remove source ${req.params.name}`, err);
-      res.status(500).json({ error: 'Failed to remove marketplace source' });
+      return res.status(500).json({ error: 'Failed to remove marketplace source' });
     }
+    // Its listing goes with it: listings are cached by name, and one left
+    // behind would pass for the listing of the next source given that name
+    // (DOR-2304). The source is already gone, so a failure here is logged
+    // rather than answered — adding a source clears the name again anyway.
+    updateFlow.clearMemos();
+    try {
+      await cache.removeMarketplace(req.params.name);
+    } catch (err) {
+      logger.warn(`[Marketplace] Removed source ${req.params.name} but kept its listing`, err);
+    }
+    return res.status(204).send();
   });
 
   // POST /sources/:name/refresh -- force refetch of a source's marketplace.json

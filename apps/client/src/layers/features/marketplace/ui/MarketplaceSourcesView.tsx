@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Trash2, Circle } from 'lucide-react';
+import { Plus, Trash2, Circle, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   Button,
   Dialog,
@@ -18,8 +19,19 @@ import {
 import {
   useAddMarketplaceSource,
   useMarketplaceSources,
+  useRefreshMarketplaceSource,
   useRemoveMarketplaceSource,
 } from '@/layers/entities/marketplace';
+
+/** "12 packages are ready to install." — the success line add and refresh share. */
+function packagesReady(count: number): string {
+  return count === 1 ? '1 package is ready to install.' : `${count} packages are ready to install.`;
+}
+
+/** End a server reason with exactly one full stop. */
+function sentence(reason: string): string {
+  return `${reason.replace(/\.+$/, '')}.`;
+}
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -30,19 +42,36 @@ interface SourceCardProps {
   source: string;
   enabled: boolean;
   addedAt: string;
+  /** Why this source's packages aren't loaded, when a fetch of them just failed. */
+  listingNote: string | null;
+  onRefresh: () => void;
+  isRefreshing: boolean;
   onRemove: () => void;
   isRemoving: boolean;
 }
 
-function SourceCard({ name, source, enabled, addedAt, onRemove, isRemoving }: SourceCardProps) {
+function SourceCard({
+  name,
+  source,
+  enabled,
+  addedAt,
+  listingNote,
+  onRefresh,
+  isRefreshing,
+  onRemove,
+  isRemoving,
+}: SourceCardProps) {
   const addedDate = new Date(addedAt).toLocaleString(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
 
   return (
-    <div className="bg-card flex items-start justify-between rounded-xl border p-5">
-      <div className="flex items-start gap-3">
+    <div
+      data-slot="source-card"
+      className="bg-card flex items-start justify-between gap-4 rounded-xl border p-5"
+    >
+      <div className="flex min-w-0 items-start gap-3">
         <Circle
           className={`mt-0.5 size-3 shrink-0 fill-current ${enabled ? 'text-emerald-500' : 'text-muted-foreground'}`}
           aria-label={enabled ? 'Enabled' : 'Disabled'}
@@ -51,19 +80,36 @@ function SourceCard({ name, source, enabled, addedAt, onRemove, isRemoving }: So
           <p className="truncate text-sm font-semibold">{name}</p>
           <p className="text-muted-foreground truncate text-xs">{source}</p>
           <p className="text-muted-foreground mt-1 text-xs">Added {addedDate}</p>
+          {listingNote && (
+            <p role="status" className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+              {listingNote}
+            </p>
+          )}
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onRemove}
-        disabled={isRemoving}
-        className="text-destructive hover:text-destructive ml-4 shrink-0"
-        aria-label={`Remove ${name}`}
-      >
-        <Trash2 className="size-3.5" />
-        <span className="ml-1.5 hidden sm:inline">Remove</span>
-      </Button>
+      <div className="flex shrink-0 items-center gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onRefresh}
+          disabled={isRefreshing}
+          aria-label={`Refresh ${name}`}
+        >
+          <RefreshCw className={`size-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+          <span className="ml-1.5 hidden sm:inline">Refresh</span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onRemove}
+          disabled={isRemoving}
+          className="text-destructive hover:text-destructive"
+          aria-label={`Remove ${name}`}
+        >
+          <Trash2 className="size-3.5" />
+          <span className="ml-1.5 hidden sm:inline">Remove</span>
+        </Button>
+      </div>
     </div>
   );
 }
@@ -166,15 +212,53 @@ export function MarketplaceSourcesView() {
   const { data: sources, isLoading } = useMarketplaceSources();
   const addSource = useAddMarketplaceSource();
   const removeSource = useRemoveMarketplaceSource();
+  const refreshSource = useRefreshMarketplaceSource();
   const [dialogOpen, setDialogOpen] = useState(false);
+  // Why a source's packages didn't load, by source name. Kept only for this
+  // visit: the server fetches on add and on refresh, and says why at the time.
+  const [listingNotes, setListingNotes] = useState<Record<string, string>>({});
 
+  const setListingNote = (name: string, note: string | null) => {
+    setListingNotes(({ [name]: _dropped, ...rest }) => (note ? { ...rest, [name]: note } : rest));
+  };
+
+  // Adding a source fetches its listing once (DOR-2304). A failed fetch still
+  // saved the source, so the dialog closes either way and the row says what
+  // happened — the same outcome `dorkos marketplace add` prints.
   const handleAdd = (name: string, source: string) => {
     addSource.mutate(
       { name, source, enabled: true },
       {
-        onSuccess: () => setDialogOpen(false),
+        onSuccess: (added) => {
+          setDialogOpen(false);
+          if (added.listing.fetched) {
+            setListingNote(added.name, null);
+            toast.success(`Added ${added.name}. ${packagesReady(added.listing.packageCount)}`);
+          } else {
+            setListingNote(
+              added.name,
+              `Added, but its packages didn't load: ${sentence(added.listing.reason)} Try Refresh.`
+            );
+          }
+        },
       }
     );
+  };
+
+  const handleRefresh = (name: string) => {
+    refreshSource.mutate(name, {
+      onSuccess: (refreshed) => {
+        setListingNote(name, null);
+        toast.success(`Refreshed ${name}. ${packagesReady(refreshed.marketplace.plugins.length)}`);
+      },
+      onError: (err) => {
+        setListingNote(name, `Its packages didn't load: ${sentence(err.message)} Try Refresh.`);
+      },
+    });
+  };
+
+  const handleRemove = (name: string) => {
+    removeSource.mutate(name, { onSuccess: () => setListingNote(name, null) });
   };
 
   // Closing the dialog drops the last refusal with it — reopening to try again
@@ -240,7 +324,10 @@ export function MarketplaceSourcesView() {
               source={s.source}
               enabled={s.enabled}
               addedAt={s.addedAt}
-              onRemove={() => removeSource.mutate(s.name)}
+              listingNote={listingNotes[s.name] ?? null}
+              onRefresh={() => handleRefresh(s.name)}
+              isRefreshing={refreshSource.isPending && refreshSource.variables === s.name}
+              onRemove={() => handleRemove(s.name)}
               isRemoving={removeSource.isPending}
             />
           ))}

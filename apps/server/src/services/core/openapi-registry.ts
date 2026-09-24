@@ -2302,7 +2302,9 @@ const MarketplaceSourceSchema = z.object({
 
 /**
  * How the one listing fetch `POST /api/marketplace/sources` makes after saving
- * went (DOR-2304). Mirrors `SourceListingOutcome` in `@dorkos/shared`.
+ * went (DOR-2304). Hand-mirrors `SourceListingOutcome` in
+ * `@dorkos/shared/marketplace-schemas`, the way every marketplace schema in
+ * this file mirrors its interface: that module is interfaces-only by design.
  */
 const SourceListingOutcomeSchema = z
   .discriminatedUnion('fetched', [
@@ -2310,8 +2312,10 @@ const SourceListingOutcomeSchema = z
     z.object({ fetched: z.literal(false), reason: z.string() }),
   ])
   .describe(
-    "The first fetch of the new source's listing. `fetched: false` never undoes the add: the " +
-      'source is saved, `reason` says why the listing is not there yet, and a refresh tries again.'
+    "The first fetch of the new source's listing. `fetched: true` means fetched just now from " +
+      'this source, never an older cached copy. `fetched: false` never undoes the add: the ' +
+      'source is saved, `reason` says in plain words why the listing is not there yet (including ' +
+      'a source added with `enabled: false`, which is not fetched), and a refresh tries again.'
   );
 
 const AddedMarketplaceSourceSchema = MarketplaceSourceSchema.extend({
@@ -2447,8 +2451,8 @@ registry.registerPath({
     'an approval is refused with 403, which includes one presenting an agent identity, one ' +
     'presenting an approval token, and (with local login on) one with no signed-in identity. ' +
     'There is no approval that unlocks it. After saving, the server fetches the new ' +
-    "source's listing once, the same way the refresh route does; a failed fetch is reported " +
-    'in `listing` and never fails the add.',
+    "source's listing once, the same way the refresh route does but without falling back to a " +
+    'cached copy; a failed fetch is reported in `listing` and never fails the add.',
   request: {
     body: {
       content: { 'application/json': { schema: AddMarketplaceSourceBodySchema } },
@@ -2483,7 +2487,8 @@ registry.registerPath({
     'Only the person running DorkOS may remove a package source. Any caller that could not ' +
     'decide an approval is refused with 403, which includes one presenting an agent identity, ' +
     'one presenting an approval token, and (with local login on) one with no signed-in ' +
-    'identity. There is no approval that unlocks it.',
+    "identity. There is no approval that unlocks it. The source's cached listing is removed " +
+    'with it, so a later source given the same name starts clean.',
   request: {
     params: z.object({ name: z.string() }),
   },

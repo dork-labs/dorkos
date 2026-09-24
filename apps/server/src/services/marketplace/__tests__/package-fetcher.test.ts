@@ -374,6 +374,67 @@ describe('PackageFetcher', () => {
       timeout.mockRestore();
     });
 
+    it('with staleFallback off, rethrows instead of serving the cached copy (DOR-2304)', async () => {
+      // Purpose: "fetched" must mean fetched now. Adding a source asks for a
+      // fresh fetch, and an old copy on disk is not an answer to that.
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+      const cache = buildCacheMock({
+        readMarketplace: vi.fn().mockResolvedValue({
+          json: buildMarketplaceJson('dorkos-community'),
+          fetchedAt: new Date(),
+          stale: false,
+        } satisfies CachedMarketplace),
+      });
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+      await expect(
+        fetcher.fetchMarketplaceJson(buildSource(), { staleFallback: false })
+      ).rejects.toThrow(/network down/);
+      expect(cache.readMarketplace).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [404, 'Not Found', "there's no marketplace listing at that address"],
+      [
+        500,
+        'Internal Server Error',
+        'the marketplace server answered with an error (500 Internal Server Error)',
+      ],
+    ])('says what an HTTP %i means in plain words', async (status, statusText, reason) => {
+      // Purpose: the reason reaches a person (the add response, the CLI,
+      // refresh), so it reads as a sentence rather than a status line.
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status, statusText }));
+      const cache = buildCacheMock({ readMarketplace: vi.fn().mockResolvedValue(null) });
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+      await expect(fetcher.fetchMarketplaceJson(buildSource())).rejects.toThrow(reason);
+    });
+
+    it.each([
+      ['ENOTFOUND', "couldn't find a server at that address"],
+      ['EAI_AGAIN', "couldn't find a server at that address"],
+      ['ECONNREFUSED', 'the server at that address refused the connection'],
+      ['ECONNRESET', 'the connection to the marketplace server was cut off'],
+      ['EFOOBAR', "couldn't reach the marketplace server (EFOOBAR)"],
+    ])('unwraps a network failure coded %s into plain words', async (code, reason) => {
+      // Purpose: undici's bare "fetch failed" hides the one useful fact, which
+      // sits on `cause.code`.
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockRejectedValue(
+            new TypeError('fetch failed', { cause: Object.assign(new Error(code), { code }) })
+          )
+      );
+      const cache = buildCacheMock({ readMarketplace: vi.fn().mockResolvedValue(null) });
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+      const failure = fetcher.fetchMarketplaceJson(buildSource());
+      await expect(failure).rejects.toThrow(reason);
+      await expect(failure).rejects.not.toThrow(/fetch failed/);
+    });
+
     it('rethrows when both network fetch and stale cache fail', async () => {
       const fetchMock = vi.fn().mockRejectedValue(new Error('network down'));
       vi.stubGlobal('fetch', fetchMock);

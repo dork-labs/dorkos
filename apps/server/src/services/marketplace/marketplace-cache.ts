@@ -267,6 +267,25 @@ export class MarketplaceCache {
   }
 
   /**
+   * Forget one marketplace's cached `marketplace.json`. No-op when nothing is
+   * cached under that name.
+   *
+   * A listing is keyed by the source's NAME, not its address, so a listing
+   * that outlives its source is inherited by the next source given that name:
+   * its old packages would be listed, resolved and installed from a source
+   * that never published them (DOR-2304). Removing a source calls this, and
+   * adding one calls it again before the first fetch, to clear what removals
+   * made before this method existed left on disk.
+   *
+   * @param marketplaceName - The configured marketplace identifier.
+   * @throws {PathEscapeError} When the name would place the directory outside
+   *   the cache.
+   */
+  async removeMarketplace(marketplaceName: string): Promise<void> {
+    await rm(this.marketplaceDir(marketplaceName), { recursive: true, force: true });
+  }
+
+  /**
    * Get a cached package tree by name, commit and subfolder, and stamp it as
    * used so a sweep leaves it alone while the caller reads it.
    *

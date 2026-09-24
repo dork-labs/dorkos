@@ -97,6 +97,29 @@ describe('MarketplaceCache', () => {
     });
   });
 
+  describe('removeMarketplace', () => {
+    it("forgets one marketplace's listing and leaves the others", async () => {
+      // Purpose: a removed source's listing must not outlive it, or a new
+      // source added under the same name inherits the old packages (DOR-2304).
+      await cache.writeMarketplace('gone', buildMarketplaceJson());
+      await cache.writeMarketplace('kept', buildMarketplaceJson());
+
+      await cache.removeMarketplace('gone');
+
+      expect(await cache.readMarketplace('gone')).toBeNull();
+      expect(await cache.readMarketplace('kept')).not.toBeNull();
+    });
+
+    it('is a no-op for a marketplace with nothing cached', async () => {
+      await expect(cache.removeMarketplace('never-cached')).resolves.toBeUndefined();
+    });
+
+    it('refuses a name that would reach outside the cache', async () => {
+      // Purpose: this is an rm(recursive) on a caller-supplied name.
+      await expect(cache.removeMarketplace('../../escape')).rejects.toThrow(PathEscapeError);
+    });
+  });
+
   describe('TTL', () => {
     it('returns stale=true once Date.now() advances beyond ttlMs', async () => {
       vi.useFakeTimers();

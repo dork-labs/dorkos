@@ -436,13 +436,31 @@ describe('Marketplace Routes', () => {
         source: 'https://example.com/fresh',
         enabled: true,
       });
+      // "fetched" must mean fetched now, never an old copy served from disk.
+      expect(fetcher.fetchMarketplaceJson.mock.calls[0][1]).toEqual({ staleFallback: false });
+    });
+
+    it('does not fetch a source added turned off, and says so', async () => {
+      // Purpose: a source added disabled is one the operator chose not to use
+      // yet, so DorkOS does not reach out to it.
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'parked', source: 'https://example.com/parked', enabled: false });
+
+      expect(res.status).toBe(201);
+      expect(res.body.enabled).toBe(false);
+      expect(res.body.listing).toEqual({
+        fetched: false,
+        reason: "it was added turned off, so DorkOS didn't fetch its listing",
+      });
+      expect(fetcher.fetchMarketplaceJson).not.toHaveBeenCalled();
     });
 
     it('keeps the source when the fetch fails, and says why the listing is not there yet', async () => {
       // Purpose: a server that is down right now must not cost the operator
       // the add — the source is saved and a refresh can try again later.
       fetcher.fetchMarketplaceJson.mockRejectedValueOnce(
-        new Error('marketplace.json fetch failed: 404 Not Found')
+        new Error("there's no marketplace listing at that address")
       );
 
       const res = await request(fixtureServer)
@@ -453,7 +471,7 @@ describe('Marketplace Routes', () => {
       expect(res.body.name).toBe('offline');
       expect(res.body.listing).toEqual({
         fetched: false,
-        reason: 'marketplace.json fetch failed: 404 Not Found',
+        reason: "there's no marketplace listing at that address",
       });
       const list = await request(fixtureServer).get('/api/marketplace/sources');
       expect(list.body.sources.map((s: { name: string }) => s.name)).toContain('offline');
@@ -522,6 +540,36 @@ describe('Marketplace Routes', () => {
         expect(cached?.json.plugins.map((p) => p.name)).toEqual(['sample-plugin']);
       });
 
+      it("never reports an old source's cached listing as the new one's (DOR-2304)", async () => {
+        // Purpose: listings are cached by NAME. A cache left behind by a source
+        // removed before removal cleared it must not pass for the new source's
+        // listing — neither as `fetched: true` nor to a later install.
+        await cache.writeMarketplace('mine', {
+          name: 'mine',
+          owner: { name: 'Old owner' },
+          plugins: ['old-a', 'old-b', 'old-c'].map((name) => ({
+            name,
+            source: `./plugins/${name}`,
+          })),
+        });
+        expect((await cache.readMarketplace('mine'))?.json.plugins).toHaveLength(3);
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue(new Response('nope', { status: 404, statusText: 'Not Found' }))
+        );
+
+        const res = await request(fixtureServer)
+          .post('/api/marketplace/sources')
+          .send({ name: 'mine', source: 'https://github.com/new/other' });
+
+        expect(res.status).toBe(201);
+        expect(res.body.listing).toEqual({
+          fetched: false,
+          reason: "there's no marketplace listing at that address",
+        });
+        expect(await cache.readMarketplace('mine')).toBeNull();
+      });
+
       it('gives up after the marketplace timeout and still saves the source', async () => {
         // Purpose: the add waits no longer than refresh does (DOR-2194), and a
         // silent server surfaces as a plain reason rather than a failed add.
@@ -550,6 +598,31 @@ describe('Marketplace Routes', () => {
   });
 
   describe('DELETE /sources/:name', () => {
+    it("forgets the removed source's listing, so a new source by that name starts clean (DOR-2304)", async () => {
+      // Purpose: listings are cached by name; one that outlives its source
+      // would be listed and installed from as if the next source published it.
+      await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'removable', source: 'https://example.com/r' });
+      const listing = {
+        name: 'cached',
+        owner: { name: 'Owner' },
+        plugins: [{ name: 'a', source: './plugins/a' }],
+      };
+      await cache.writeMarketplace('removable', listing);
+      await cache.writeMarketplace('bystander', listing);
+      expect(await cache.readMarketplace('removable')).not.toBeNull();
+      updateFlow.clearMemos.mockClear();
+
+      const res = await request(fixtureServer).delete('/api/marketplace/sources/removable');
+
+      expect(res.status).toBe(204);
+      expect(await cache.readMarketplace('removable')).toBeNull();
+      expect(await cache.readMarketplace('bystander')).not.toBeNull();
+      // The update check remembers each source's listing for a minute too.
+      expect(updateFlow.clearMemos).toHaveBeenCalledTimes(1);
+    });
+
     it('removes a source and returns 204', async () => {
       await request(fixtureServer)
         .post('/api/marketplace/sources')

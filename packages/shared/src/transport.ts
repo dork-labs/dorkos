@@ -165,6 +165,7 @@ import type {
   MarketplaceSource,
   AddSourceInput,
   AddedMarketplaceSource,
+  RefreshedMarketplaceSource,
   InstalledShapeSummary,
   ApplyShapeResult,
   ForkShapeResult,
@@ -2390,6 +2391,13 @@ export interface Transport
    * @param input - Source name, URL, and optional enabled flag.
    */
   addMarketplaceSource(input: AddSourceInput): Promise<AddedMarketplaceSource>;
+
+  /**
+   * Fetch a source's listing again, the way `dorkos marketplace refresh` does.
+   *
+   * @param name - Source name. Will be URL-encoded.
+   */
+  refreshMarketplaceSource(name: string): Promise<RefreshedMarketplaceSource>;
 
   /**
    * Remove a configured marketplace source by name.
