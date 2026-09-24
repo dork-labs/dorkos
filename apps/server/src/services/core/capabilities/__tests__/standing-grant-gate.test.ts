@@ -47,6 +47,7 @@ function capabilityAt(tier: CapabilityTier) {
     title: `Demo ${tier}`,
     description: 'A demonstration capability used by the standing-permission tests.',
     tier,
+    area: null,
     input: z.object({ name: z.string() }),
     output: z.unknown(),
     surfaces: { mcp: { toolName: `demo_${tier}`, servers: ['external'] } },
@@ -111,6 +112,7 @@ describe('the tier gate and a standing permission', () => {
     options: { identity?: AgentIdentity } = {}
   ): TierEnforcementDecision {
     return enforceCapabilityTier({
+      permission: null,
       action: capabilityAt(tier),
       input: INPUT,
       ...(options.identity ? { identity: options.identity } : {}),

@@ -64,6 +64,13 @@ export const FORMS_SECTIONS: PlaygroundSection[] = [
     keywords: ['segmented', 'toggle', 'switch', 'radio', 'choice', 'trust', 'thumb', 'slide'],
   },
   {
+    id: 'permissionstateswitch',
+    title: 'PermissionStateSwitch',
+    page: 'forms',
+    category: 'Primitives',
+    keywords: ['permission', 'blocked', 'ask', 'allowed', 'area', 'floor', 'switch'],
+  },
+  {
     id: 'label',
     title: 'Label',
     page: 'forms',

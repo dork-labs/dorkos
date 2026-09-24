@@ -1911,7 +1911,8 @@
             "type": "string",
             "enum": [
               "agent",
-              "task"
+              "task",
+              "room"
             ]
           },
           "label": {
@@ -6625,6 +6626,9 @@
           "enabledToolGroups": {
             "$ref": "#/components/schemas/EnabledToolGroups"
           },
+          "permissions": {
+            "$ref": "#/components/schemas/AgentPermissions"
+          },
           "tierCeiling": {
             "type": "string",
             "enum": [
@@ -6780,13 +6784,46 @@
           },
           "adapter": {
             "type": "boolean"
-          },
-          "roomsManage": {
-            "type": "boolean"
           }
         },
         "default": {},
-        "description": "Per-agent tool groups. The four domain keys (tasks, relay, mesh, adapter) are documentation settings: undefined = inherit global default, and off means the agent is not told about the group, not that the tools are blocked. Binding tools follow adapter toggle. Trace tools follow relay toggle. roomsManage is different: it is a per-agent grant the server enforces, and absent means off with no global default. Only a person sets any of the five: the agent-reachable write path refuses this object outright."
+        "description": "Per-agent tool groups. The four domain keys (tasks, relay, mesh, adapter) are documentation settings: undefined = inherit global default, and off means the agent is not told about the group, not that the tools are blocked. Binding tools follow adapter toggle. Trace tools follow relay toggle. Only a person sets any of the four: the agent-reachable write path refuses this object outright."
+      },
+      "AgentPermissions": {
+        "type": "object",
+        "properties": {
+          "areas": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PermissionState"
+            }
+          },
+          "actions": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PermissionState"
+            }
+          },
+          "filesAndCommands": {
+            "$ref": "#/components/schemas/PermissionStop"
+          }
+        }
+      },
+      "PermissionState": {
+        "type": "string",
+        "enum": [
+          "blocked",
+          "ask",
+          "allowed"
+        ]
+      },
+      "PermissionStop": {
+        "type": "string",
+        "enum": [
+          "ask",
+          "act",
+          "autonomy"
+        ]
       },
       "ManagedMcpServer": {
         "type": "object",
@@ -7033,6 +7070,9 @@
               },
               "enabledToolGroups": {
                 "$ref": "#/components/schemas/EnabledToolGroups"
+              },
+              "permissions": {
+                "$ref": "#/components/schemas/AgentPermissions"
               },
               "tierCeiling": {
                 "type": "string",
@@ -8080,6 +8120,708 @@
           }
         }
       },
+      "PermissionsResponse": {
+        "type": "object",
+        "properties": {
+          "preset": {
+            "$ref": "#/components/schemas/PermissionPreset"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/PermissionOverrides"
+          },
+          "changeCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "areas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionAreaEntry"
+            }
+          },
+          "exceptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionException"
+            }
+          },
+          "agentCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "preset",
+          "defaults",
+          "changeCount",
+          "areas",
+          "exceptions",
+          "agentCount"
+        ]
+      },
+      "PermissionPreset": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "careful",
+          "balanced",
+          "full",
+          null
+        ]
+      },
+      "PermissionOverrides": {
+        "type": "object",
+        "properties": {
+          "areas": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PermissionState"
+            },
+            "default": {}
+          },
+          "actions": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PermissionState"
+            },
+            "default": {}
+          }
+        }
+      },
+      "PermissionAreaEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/PermissionAreaId"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "state",
+              "trust-stop"
+            ]
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionActionEntry"
+            }
+          },
+          "resolved": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "$ref": "#/components/schemas/PermissionState"
+              },
+              "source": {
+                "$ref": "#/components/schemas/PermissionSource"
+              },
+              "layer": {
+                "type": "string",
+                "enum": [
+                  "agent",
+                  "default",
+                  "floor"
+                ]
+              }
+            },
+            "required": [
+              "state",
+              "source",
+              "layer"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "description",
+          "floor",
+          "kind",
+          "actions",
+          "resolved"
+        ]
+      },
+      "PermissionAreaId": {
+        "type": "string",
+        "enum": [
+          "rooms",
+          "tasks",
+          "agents",
+          "messages",
+          "connections",
+          "packages",
+          "settings",
+          "safety",
+          "permissions",
+          "reach"
+        ]
+      },
+      "PermissionActionEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "observe",
+              "act",
+              "destructive"
+            ]
+          },
+          "resolved": {
+            "$ref": "#/components/schemas/ResolvedPermission"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "tier",
+          "resolved"
+        ]
+      },
+      "ResolvedPermission": {
+        "type": "object",
+        "properties": {
+          "area": {
+            "$ref": "#/components/schemas/PermissionAreaId"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PermissionState"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PermissionSource"
+          },
+          "layer": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "default",
+              "floor"
+            ]
+          },
+          "destructiveAsk": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "area",
+          "state",
+          "source",
+          "layer"
+        ]
+      },
+      "PermissionSource": {
+        "type": "string",
+        "enum": [
+          "agent-action",
+          "agent-area",
+          "default-action",
+          "default-area",
+          "preset",
+          "unchanged",
+          "floor",
+          "inactive"
+        ]
+      },
+      "PermissionException": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "area": {
+            "$ref": "#/components/schemas/PermissionAreaId"
+          },
+          "action": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PermissionState"
+          }
+        },
+        "required": [
+          "agentId",
+          "agentName",
+          "area",
+          "state"
+        ]
+      },
+      "SetPermissionPresetBody": {
+        "type": "object",
+        "properties": {
+          "preset": {
+            "$ref": "#/components/schemas/PermissionPreset"
+          },
+          "applyToAgents": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 500
+          },
+          "surface": {
+            "$ref": "#/components/schemas/PermissionSurface"
+          }
+        },
+        "required": [
+          "preset",
+          "surface"
+        ]
+      },
+      "PermissionSurface": {
+        "type": "string",
+        "enum": [
+          "settings",
+          "agent-page",
+          "control-center",
+          "request-card",
+          "first-run",
+          "agent-request",
+          "api",
+          "cli",
+          "upgrade",
+          "undo",
+          "file-edit"
+        ]
+      },
+      "PatchPermissionDefaultsBody": {
+        "type": "object",
+        "properties": {
+          "areas": {
+            "type": "object",
+            "additionalProperties": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/PermissionState"
+                },
+                {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              ]
+            }
+          },
+          "actions": {
+            "type": "object",
+            "additionalProperties": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/PermissionState"
+                },
+                {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              ]
+            }
+          },
+          "applyToAgents": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 500
+          },
+          "surface": {
+            "$ref": "#/components/schemas/PermissionSurface"
+          }
+        },
+        "required": [
+          "surface"
+        ]
+      },
+      "PermissionHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionHistoryEntry"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "PermissionHistoryEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string"
+          },
+          "actorLabel": {
+            "type": "string"
+          },
+          "actorDetail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "changes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "target": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "default"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "agent"
+                              ]
+                            },
+                            "agentId": {
+                              "type": "string"
+                            },
+                            "agentPath": {
+                              "type": "string"
+                            },
+                            "agentName": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "agentId",
+                            "agentPath",
+                            "agentName"
+                          ]
+                        }
+                      ]
+                    },
+                    "key": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "preset"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "area"
+                              ]
+                            },
+                            "area": {
+                              "$ref": "#/components/schemas/PermissionAreaId"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "area"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "action"
+                              ]
+                            },
+                            "action": {
+                              "type": "string"
+                            },
+                            "area": {
+                              "$ref": "#/components/schemas/PermissionAreaId"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "action",
+                            "area"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "files"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ]
+                        }
+                      ]
+                    },
+                    "before": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "after": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "target",
+                    "key",
+                    "before",
+                    "after"
+                  ]
+                }
+              },
+              "surface": {
+                "$ref": "#/components/schemas/PermissionSurface"
+              },
+              "attribution": {
+                "$ref": "#/components/schemas/PermissionAttribution"
+              },
+              "approvalId": {
+                "type": "string"
+              },
+              "undoOf": {
+                "type": "string"
+              },
+              "presetSnapshot": {
+                "type": "object",
+                "properties": {
+                  "preset": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "defaults": {
+                    "$ref": "#/components/schemas/PermissionOverrides"
+                  },
+                  "trustStop": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "preset",
+                  "defaults",
+                  "trustStop"
+                ]
+              }
+            },
+            "required": [
+              "changes",
+              "surface",
+              "attribution"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "occurredAt",
+          "actorLabel",
+          "actorDetail",
+          "summary",
+          "metadata"
+        ]
+      },
+      "PermissionAttribution": {
+        "type": "string",
+        "enum": [
+          "signed-in",
+          "local-trust",
+          "agent-request-approved",
+          "upgrade",
+          "outside"
+        ]
+      },
+      "AgentPermissionsResponse": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "overrides": {
+            "$ref": "#/components/schemas/AgentPermissions"
+          },
+          "areas": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/PermissionAreaEntry"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "inherited": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "$ref": "#/components/schemas/PermissionState"
+                        },
+                        "source": {
+                          "$ref": "#/components/schemas/PermissionSource"
+                        },
+                        "layer": {
+                          "type": "string",
+                          "enum": [
+                            "agent",
+                            "default",
+                            "floor"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "source",
+                        "layer"
+                      ]
+                    },
+                    "changedOutsideAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "inherited",
+                    "changedOutsideAt"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "agentId",
+          "agentName",
+          "overrides",
+          "areas"
+        ]
+      },
+      "PatchAgentPermissionsBody": {
+        "type": "object",
+        "properties": {
+          "areas": {
+            "type": "object",
+            "additionalProperties": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/PermissionState"
+                },
+                {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              ]
+            }
+          },
+          "actions": {
+            "type": "object",
+            "additionalProperties": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/PermissionState"
+                },
+                {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              ]
+            }
+          },
+          "surface": {
+            "$ref": "#/components/schemas/PermissionSurface"
+          }
+        },
+        "required": [
+          "surface"
+        ]
+      },
       "StandingPermissionsResponse": {
         "type": "object",
         "properties": {
@@ -8966,7 +9708,8 @@
           "bridge_second_agent_refused",
           "bridge_disconnected",
           "bridge_agent_swapped",
-          "bridge_history_note"
+          "bridge_history_note",
+          "room_archived"
         ]
       },
       "RoomMoment": {
@@ -49434,6 +50177,366 @@
         }
       }
     },
+    "/api/permissions": {
+      "get": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Read what agents may do by default",
+        "description": "The preset, the changes a person made on top of it, every area with its actions and the state each resolves to for everyone, and the agents that are set differently.",
+        "responses": {
+          "200": {
+            "description": "The default layer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/permissions/preset": {
+      "put": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Choose a preset",
+        "description": "Sets the preset every area starts from and clears the changes on top of the old one. `applyToAgents` also clears those agents' own settings, so they follow the new preset. Records one `permission.changed` Activity event.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPermissionPresetBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The preset changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": {}
+                      }
+                    },
+                    "permissions": {
+                      "$ref": "#/components/schemas/PermissionsResponse"
+                    }
+                  },
+                  "required": [
+                    "changes",
+                    "permissions"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused: an unknown area or action (`UNKNOWN_AREA`, `UNKNOWN_ACTION`), an action with no area (`ACTION_HAS_NO_AREA`), or Allowed on a floor area (`FLOOR_NEVER_ALLOWED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: only a person can change permissions. A caller presenting an agent identity (`AGENT_CANNOT_DECIDE`) or an approval token (`REQUESTER_CANNOT_DECIDE`) is refused in every posture, and with login on a per-user API key is refused (`operator_cookie_required`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/permissions/defaults": {
+      "patch": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Change what agents may do by default",
+        "description": "Sets areas and single actions to Blocked, Ask or Allowed for everyone; `null` removes a change. `applyToAgents` removes those agents' own settings for the same keys in the same write. Records one `permission.changed` Activity event naming every agent touched.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchPermissionDefaultsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The defaults changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": {}
+                      }
+                    },
+                    "permissions": {
+                      "$ref": "#/components/schemas/PermissionsResponse"
+                    }
+                  },
+                  "required": [
+                    "changes",
+                    "permissions"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused: an unknown area or action (`UNKNOWN_AREA`, `UNKNOWN_ACTION`), an action with no area (`ACTION_HAS_NO_AREA`), or Allowed on a floor area (`FLOOR_NEVER_ALLOWED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: only a person can change permissions. A caller presenting an agent identity (`AGENT_CANNOT_DECIDE`) or an approval token (`REQUESTER_CANNOT_DECIDE`) is refused in every posture, and with login on a per-user API key is refused (`operator_cookie_required`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/permissions/history": {
+      "get": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Read the permission history",
+        "description": "Every permission change, newest first, with who made it. With `agentId`, the changes that touched that agent, bulk changes included.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "before",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permission changes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionHistoryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/permissions": {
+      "get": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Read one agent's permissions",
+        "description": "The agent's resolved state per area and per action, where each came from, and what it would be without the agent's own settings.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent's permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPermissionsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such agent (`UNKNOWN_AGENT`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Change one agent's permissions",
+        "description": "Sets this agent's own areas and actions; `null` puts one back to the default. Records one `permission.changed` Activity event.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAgentPermissionsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The agent's permissions changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": {}
+                      }
+                    },
+                    "permissions": {
+                      "$ref": "#/components/schemas/AgentPermissionsResponse"
+                    }
+                  },
+                  "required": [
+                    "changes",
+                    "permissions"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused: an unknown area or action (`UNKNOWN_AREA`, `UNKNOWN_ACTION`), an action with no area (`ACTION_HAS_NO_AREA`), or Allowed on a floor area (`FLOOR_NEVER_ALLOWED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: only a person can change permissions. A caller presenting an agent identity (`AGENT_CANNOT_DECIDE`) or an approval token (`REQUESTER_CANNOT_DECIDE`) is refused in every posture, and with login on a per-user API key is refused (`operator_cookie_required`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such agent (`UNKNOWN_AGENT`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/approvals/grants": {
       "get": {
         "tags": [
@@ -56309,6 +57412,15 @@
           {
             "schema": {
               "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "resourceId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "format": "date-time"
             },
             "required": false,
@@ -57059,11 +58171,11 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "description": "Return only capabilities behind this per-agent grant, e.g. roomsManage — the ones a person has to switch on for an agent before they run at all. Exact match, case-sensitive, and it narrows like the two filters above."
+              "description": "Return only capabilities in this permission area, e.g. 'rooms' — the ones a person can set to Blocked, Ask, or Allowed together. Exact match, case-sensitive, and it narrows like the two filters above."
             },
             "required": false,
-            "description": "Return only capabilities behind this per-agent grant, e.g. roomsManage — the ones a person has to switch on for an agent before they run at all. Exact match, case-sensitive, and it narrows like the two filters above.",
-            "name": "toolGroup",
+            "description": "Return only capabilities in this permission area, e.g. 'rooms' — the ones a person can set to Blocked, Ask, or Allowed together. Exact match, case-sensitive, and it narrows like the two filters above.",
+            "name": "area",
             "in": "query"
           },
           {
@@ -57073,10 +58185,10 @@
                 "compact",
                 "full"
               ],
-              "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, and to full only when a domain, query or toolGroup filter narrows the catalog to 8 matches or fewer. A broad filter stays compact — ask for full detail explicitly if you want it."
+              "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, and to full only when a domain, query or area filter narrows the catalog to 8 matches or fewer. A broad filter stays compact — ask for full detail explicitly if you want it."
             },
             "required": false,
-            "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, and to full only when a domain, query or toolGroup filter narrows the catalog to 8 matches or fewer. A broad filter stays compact — ask for full detail explicitly if you want it.",
+            "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, and to full only when a domain, query or area filter narrows the catalog to 8 matches or fewer. A broad filter stays compact — ask for full detail explicitly if you want it.",
             "name": "detail",
             "in": "query"
           },
@@ -57326,8 +58438,11 @@
                                   }
                                 }
                               },
-                              "toolGroup": {
-                                "type": "string"
+                              "area": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -57337,7 +58452,8 @@
                               "tier",
                               "inputSchema",
                               "outputSchema",
-                              "surfaces"
+                              "surfaces",
+                              "area"
                             ]
                           }
                         }

@@ -137,6 +137,9 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // outcome and costs one dialog.
   'ui.fullPowerDecidedAt',
   'ui.fullPowerChoice',
+  // Bookkeeping for the one-shot permission upgrade sweep: which server version
+  // already ran it. It grants nothing and no gate reads it.
+  'permissions.upgradeSweptVersion',
   // How loud DorkOS is, and how long before it tries a louder channel. No data
   // moves on any of these: the sounds and the browser notification are this
   // machine talking to the person at it, and `phoneAfterMinutes` cannot deliver
@@ -259,6 +262,12 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
  * what they set.
  */
 export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
+  // No permission preset chosen: every action keeps exactly the behavior it had
+  // before permissions existed, which grants nothing new (Rooms stays Blocked),
+  // and the person's own defaults start empty (spec `agent-permissions`).
+  'permissions.preset': null,
+  'permissions.defaults.areas': {},
+  'permissions.defaults.actions': {},
   // Public exposure starts off, with no hostname, token, or edge passcode.
   'tunnel.enabled': false,
   // The external A2A surface starts unmounted, so no agent outside DorkOS can

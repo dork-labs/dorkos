@@ -56,10 +56,10 @@ export const APPROVAL_SUBJECT_LABEL_MAX_LENGTH = 60;
  * an id, which is the exact defect this field exists to fix.
  *
  * So adding one is two edits, not one: the name here AND its resolver at boot.
- * Rooms and connections are the obvious next two — `connectors.execute_destructive`
- * shows a person two opaque ids today — and neither is listed until it is wired.
+ * Rooms are wired (spec `agent-permissions`). Connections are the obvious next — `connectors.execute_destructive`
+ * shows a person two opaque ids today — and it is not listed until it is wired.
  */
-export const APPROVAL_SUBJECT_KINDS = ['agent', 'task'] as const;
+export const APPROVAL_SUBJECT_KINDS = ['agent', 'task', 'room'] as const;
 
 /** What kind of thing an approval acts on. */
 export type ApprovalSubjectKind = (typeof APPROVAL_SUBJECT_KINDS)[number];

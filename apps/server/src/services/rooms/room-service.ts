@@ -299,6 +299,10 @@ export class RoomService {
   ): RoomWithRoster {
     return this.parts.updates.updateRoomFromTool(roomId, callerAuthorId, patch);
   }
+  /** Put a channel away as an agent. See {@link RoomUpdates.archiveRoomFromTool}. */
+  archiveRoomFromTool(roomId: string, callerAuthorId: string): RoomWithRoster {
+    return this.parts.updates.archiveRoomFromTool(roomId, callerAuthorId);
+  }
   /** Add a member, operator-only. See {@link RoomMembership.addMember}. */
   addMember(roomId: string, viewerAuthorId: string, input: AddMemberInput): RoomRosterEntry {
     return this.parts.membership.addMember(roomId, viewerAuthorId, input);

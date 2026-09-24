@@ -14,6 +14,7 @@ import { CAPABILITY_TIERS, type CapabilityTier } from './capabilities.js';
 import { EFFORT_LEVELS } from './constants.js';
 import { SOUL_MAX_CHARS, NOPE_MAX_CHARS, MEMORY_MAX_CHARS } from './convention-files.js';
 import { WorkspaceProviderTypeSchema } from './workspace.js';
+import { AgentPermissionsSchema } from './permissions/permission-schemas.js';
 
 extendZodWithOpenApiOnce();
 
@@ -113,11 +114,6 @@ export type AgentBehavior = z.infer<typeof AgentBehaviorSchema>;
 /**
  * Per-agent tool group settings.
  *
- * **This object now holds two kinds of key, and they do different things.** Read
- * which kind you are looking at before reasoning about what a value means.
- *
- * ## The four documentation keys — `tasks`, `relay`, `mesh`, `adapter`
- *
  * `undefined` means "inherit global default". Explicit `true`/`false` overrides
  * the global setting.
  *
@@ -140,28 +136,12 @@ export type AgentBehavior = z.infer<typeof AgentBehaviorSchema>;
  * Steering an agent is still the PERSON's call, so all four are operator-only on
  * the agent-reachable write path (`agent-write-policy.ts`): a per-agent value
  * beats the global `agentContext.*` switch, so an agent that could write one
- * could undo a narrowing the person had made to its own context (DOR-1506). The
- * operator's `PATCH /api/mesh/agents/:id` is the one way in, for these and for
- * the grant below.
+ * could undo a narrowing the person had made to its own context (DOR-1506).
  *
- * ## The grant key — `roomsManage`
- *
- * A different mechanism wearing the same object. It is a per-agent grant the
- * server's capability choke point reads on every call: a capability that declares
- * this group is REFUSED unless the calling agent holds it, and the agent is told
- * to ask the person who runs the install.
- *
- * Two consequences follow, and both differ from the four keys above:
- *
- * - `undefined` means OFF, never "inherit". There is no global twin, on purpose —
- *   a second, weaker path to the same grant would be a way around the first.
- * - Writing it is refused for a HARDER reason than the four above: those protect
- *   a person's narrowing, this one is the grant the choke point enforces, so an
- *   agent that could set it could turn its own filter off and the filter would be
- *   theatre.
- *
- * A new key here belongs with the four unless a capability declares it as a
- * `toolGroup`; see the server's `capability-definition.ts` before adding one.
+ * The fifth key this object used to hold, `roomsManage`, was a per-agent grant
+ * the capability gate enforced. It is now the Rooms area of the agent's
+ * `permissions` (spec `agent-permissions`); a manifest file that still carries
+ * it is folded on read by {@link foldLegacyPermissionFields}.
  */
 export const EnabledToolGroupsSchema = z
   .object({
@@ -169,14 +149,6 @@ export const EnabledToolGroupsSchema = z
     relay: z.boolean().optional(),
     mesh: z.boolean().optional(),
     adapter: z.boolean().optional(),
-    /**
-     * Whether this agent may manage rooms — create them, change who is in them,
-     * rename them, leave them.
-     *
-     * The grant key, not a documentation key: absent means off, and the capability
-     * gate refuses the call rather than merely leaving it undescribed.
-     */
-    roomsManage: z.boolean().optional(),
   })
   .default({})
   .openapi('EnabledToolGroups', {
@@ -185,9 +157,8 @@ export const EnabledToolGroupsSchema = z
       'documentation settings: undefined = inherit global default, and off means the agent ' +
       'is not told about the group, not that the tools are blocked. ' +
       'Binding tools follow adapter toggle. Trace tools follow relay toggle. ' +
-      'roomsManage is different: it is a per-agent grant the server enforces, and absent ' +
-      'means off with no global default. Only a person sets any of the five: the ' +
-      'agent-reachable write path refuses this object outright.',
+      'Only a person sets any of the four: the agent-reachable write path refuses ' +
+      'this object outright.',
   });
 
 export type EnabledToolGroups = z.infer<typeof EnabledToolGroupsSchema>;
@@ -556,6 +527,17 @@ export const AgentManifestSchema = z
       example: 'acme-corp',
     }),
     enabledToolGroups: EnabledToolGroupsSchema,
+    // What this agent may do, where it differs from everyone else (spec
+    // `agent-permissions` D4). Absent = inherit every area from the defaults.
+    //
+    // Deliberately NOT `.catch(undefined)`, on the `tierCeiling`/`mcpServers`
+    // reasoning below: an unparseable security control must be loud. Forward
+    // compatibility comes from its string keys instead: an area a newer build
+    // knows still parses here, and the resolver ignores it.
+    //
+    // Never writable through the generic agent PATCH: `UpdateAgentRequestSchema`
+    // does not pick it, and the permission routes are the one way in.
+    permissions: AgentPermissionsSchema.optional(),
     // The most this agent is ever allowed to do, carried onto every token minted
     // for it and enforced at the capability gate (`tier-enforcement.ts`). Absent
     // means `destructive` — no extra limit — which is what every manifest
@@ -609,6 +591,74 @@ export const AgentManifestSchema = z
   .openapi('AgentManifest');
 
 export type AgentManifest = z.infer<typeof AgentManifestSchema>;
+
+/** True for a plain JSON object (not an array, not null). */
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Fold the retired per-agent permission fields of a raw manifest into its
+ * `permissions` object. Permanent: marketplace packages and copied or restored
+ * `.dork/agent.json` files carry the old fields for as long as they exist, and a
+ * manifest read is the one seam every one of them passes (spec
+ * `agent-permissions` D13).
+ *
+ * Folds PER KEY, never gated on `permissions` being absent: each legacy key is
+ * folded whenever it is present, and fills its area only when that area is not
+ * already set (an explicit `permissions` value wins). Gating the whole fold on
+ * "permissions absent" would make a later fold skip every agent that already
+ * gained a `permissions` object.
+ *
+ * Phase 1 folds `enabledToolGroups.roomsManage` only: `true` becomes Rooms
+ * Allowed, `false` becomes Rooms Blocked (the agent Tools tab spread the whole
+ * object, so an explicit `false` is a person's decision), and the key is removed.
+ * A value that is not a boolean was never valid and is dropped as absent.
+ *
+ * @param raw - A manifest as parsed from JSON, before schema validation.
+ * @returns The same value with the legacy keys folded; anything that is not a
+ *   manifest-shaped object is returned untouched for the schema to reject.
+ */
+export function foldLegacyPermissionFields(raw: unknown): unknown {
+  if (!isJsonObject(raw)) return raw;
+  const groups = raw.enabledToolGroups;
+  if (!isJsonObject(groups) || !Object.prototype.hasOwnProperty.call(groups, 'roomsManage')) {
+    return raw;
+  }
+  const { roomsManage, ...restGroups } = groups;
+  const out: Record<string, unknown> = { ...raw };
+  if (Object.keys(restGroups).length === 0) delete out.enabledToolGroups;
+  else out.enabledToolGroups = restGroups;
+
+  if (typeof roomsManage !== 'boolean') return out;
+  // A `permissions` value that is not an object is left for the schema to reject
+  // loudly rather than being replaced.
+  if (out.permissions !== undefined && !isJsonObject(out.permissions)) return out;
+  const permissions = (out.permissions as Record<string, unknown> | undefined) ?? {};
+  if (permissions.areas !== undefined && !isJsonObject(permissions.areas)) return out;
+  const areas = (permissions.areas as Record<string, unknown> | undefined) ?? {};
+  if (Object.prototype.hasOwnProperty.call(areas, 'rooms')) return out;
+  out.permissions = {
+    ...permissions,
+    areas: { ...areas, rooms: roomsManage ? 'allowed' : 'blocked' },
+  };
+  return out;
+}
+
+/**
+ * {@link AgentManifestSchema} as it applies to a manifest read from a FILE: the
+ * retired permission fields are folded first ({@link foldLegacyPermissionFields}).
+ *
+ * A separate schema rather than a preprocess on `AgentManifestSchema` itself,
+ * because that schema is embedded in MCP tool schemas and extended, picked and
+ * made partial elsewhere: a preprocess has none of those methods, and JSON
+ * Schema generation cannot represent a transform (the `workspace` catch note
+ * above is the same hazard). Every file read goes through this one.
+ */
+export const AgentManifestFileSchema = z.preprocess(
+  foldLegacyPermissionFields,
+  AgentManifestSchema
+);
 
 /**
  * What a manifest PATCH may carry.
@@ -840,6 +890,8 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   model: true,
   effort: true,
   account: true,
+  // `permissions` is deliberately NOT picked: the generic agent PATCH can never
+  // write a permission. The permission routes are the one way in.
   enabledToolGroups: true,
   tierCeiling: true,
 })

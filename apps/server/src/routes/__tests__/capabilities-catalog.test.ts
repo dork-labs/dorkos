@@ -81,9 +81,9 @@ describe('GET /api/capabilities/catalog', () => {
     expect(res.body.detail).toBe('full');
   });
 
-  it('toolGroup filter reaches the query schema rather than being ignored', async () => {
-    // The cockpit's two Tools tabs ask this route for the tools behind a grant
-    // (DOR-1611). An unrecognized query parameter is DROPPED by the schema
+  it('area filter reaches the query schema rather than being ignored', async () => {
+    // A reader asks this route for the tools in one permission area. An
+    // unrecognized query parameter is DROPPED by the schema
     // rather than refused, so a parameter that never landed would come back as
     // the whole unfiltered catalog and look like a working request — which is
     // exactly what happened before it was wired.
@@ -93,11 +93,11 @@ describe('GET /api/capabilities/catalog', () => {
     expect(all.body.total).toBeGreaterThan(1);
 
     const res = await request(fixtureTarget.mount(buildApp())).get(
-      '/api/capabilities/catalog?toolGroup=roomsManage'
+      '/api/capabilities/catalog?area=rooms'
     );
     expect(res.status).toBe(200);
     // No `roomDeps` here, so the rooms domain is not composed and nothing in
-    // THIS registry declares a grant. Zero is the discriminating answer: an
+    // THIS registry is in the Rooms area. Zero is the discriminating answer: an
     // ignored parameter would have returned every capability there is.
     expect(res.body.total).toBe(0);
   });

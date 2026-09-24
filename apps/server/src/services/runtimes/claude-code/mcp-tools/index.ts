@@ -288,13 +288,17 @@ function withToolExposure(tools: SdkMcpTool[], alwaysLoaded: ReadonlySet<string>
  *   the marketplace surface is unavailable (relay disabled / not yet wired)
  * @param registry - The shared boot-composed capability registry. When omitted,
  *   one is composed on the spot from `deps` + `marketplaceDeps`.
+ * @param hiddenToolNames - Tools this agent is not shown because their
+ *   permission resolves to Blocked (spec `agent-permissions` D15). Left out of
+ *   the list only; the gate refuses a Blocked call whatever the list says.
  */
 export function createDorkOsToolServer(
   deps: McpToolDeps,
   session?: McpToolSession & Pick<import('../agent-types.js').AgentSession, 'connectorTurn'>,
   sessionId?: string,
   marketplaceDeps?: MarketplaceMcpDeps,
-  registry?: CapabilityRegistry
+  registry?: CapabilityRegistry,
+  hiddenToolNames: ReadonlySet<string> = new Set()
 ) {
   // Operator + marketplace + self-description tools, all generated from the
   // Capability Registry (shared boot instance, or composed on the spot).
@@ -359,7 +363,7 @@ export function createDorkOsToolServer(
         ...(hold ? { hold } : {}),
       }),
       ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveCapabilityContext, hold),
-    ],
+    ].filter((tool) => !hiddenToolNames.has(tool.name)),
   });
 
   if (session?.connectorTurn) {

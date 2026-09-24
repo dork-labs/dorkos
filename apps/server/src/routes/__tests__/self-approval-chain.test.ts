@@ -81,6 +81,7 @@ const UNINSTALL = defineCapability({
   title: 'Uninstall a package',
   description: 'A destructive capability standing in for marketplace.uninstall.',
   tier: 'destructive',
+  area: null,
   input: z.object({ name: z.string() }),
   output: z.unknown(),
   surfaces: { mcp: { toolName: 'demo_uninstall', servers: ['external'] } },

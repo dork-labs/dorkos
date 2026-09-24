@@ -18,7 +18,7 @@
  * write half is now `applyRoomPatch`, which asks nothing about the caller, and
  * three callers sit above it — `updateRoom` (operator-only, what the routes and
  * the community adapter use), `updateRoomFromTool` (an agent renaming a channel
- * or writing a topic, reachable only from the `roomsManage` capability verbs),
+ * or writing a topic, reachable only from the Rooms-area capability verbs),
  * and `adoptExistingDm`'s un-archive (no check, by design).
  *
  * **Two field refusals survive on the tool path**, because being an agent on the
@@ -291,8 +291,8 @@ export class RoomAuthority {
    * out of a room, in any shape.
    *
    * **It does not decide the GRANT either, and the HTTP surface is why that
-   * matters.** `roomsManage` is enforced at `registry.invoke` and nowhere else,
-   * so it gates the five agent-facing TOOLS. The two HTTP roster routes
+   * matters.** The Rooms permission is resolved at `registry.invoke` and nowhere
+   * else, so it gates the agent-facing TOOLS. The two HTTP roster routes
    * (`POST /api/rooms/:id/members`, `DELETE /api/rooms/:id/members/:authorId`)
    * resolve their caller from `X-DorkOS-Agent` and never pass that choke point —
    * so for one commit, when this check replaced `requireOperator` on

@@ -126,6 +126,23 @@ import type {
   StandingPermissionsResponse,
 } from './approval-schemas.js';
 import type {
+  AgentPermissionsResponse,
+  PatchAgentPermissionsBody,
+  PatchPermissionDefaultsBody,
+  PermissionChange,
+  PermissionHistoryResponse,
+  PermissionsResponse,
+  SetPermissionPresetBody,
+} from './permissions/index.js';
+
+/** What every permission write answers with: the changes and the fresh view. */
+export interface PermissionWriteResult<T> {
+  /** Every change the write made (empty when nothing moved). */
+  changes: PermissionChange[];
+  /** The permissions as they stand after the write. */
+  permissions: T;
+}
+import type {
   DeletePushSubscriptionResponse,
   ListNotificationsQuery,
   ListNotificationsResponse,
@@ -1549,28 +1566,24 @@ export interface Transport
   /**
    * Read the Capability Registry's self-description catalog.
    *
-   * The one place the cockpit can learn what a capability DECLARES — including
-   * the per-agent `toolGroup` a grant-bearing capability carries (DOR-1611). The
-   * Tools tabs read the tool names behind a grant from here rather than from a
-   * hand-kept list, because three hand-kept copies of that same fact all drifted
-   * once already (DOR-499) and a fourth would have no better odds.
+   * The one place a client can learn what a capability DECLARES, including the
+   * permission `area` each one belongs to (spec `agent-permissions` D2).
    *
    * **Narrow it, always, when you know what you are after.** The catalog is
-   * paginated and served COMPACT by default — no surfaces and no `toolGroup` —
-   * so an unfiltered read is both large and missing the field this exists for.
-   * `toolGroup` is the filter the cockpit uses: a handful of matches come back
-   * in full, in one page, with the tool names on them.
+   * paginated and served COMPACT by default — no surfaces and no `area` — so an
+   * unfiltered read is both large and missing the fields this exists for.
+   * `area` is the filter: a handful of matches come back in full, in one page.
    *
    * Deliberately NOT the per-runtime capability matrix next door
    * ({@link Transport.getCapabilities}), which answers a different question — what
    * a RUNTIME can do — and shares only a word.
    *
-   * @param opts.toolGroup - Return only the capabilities behind this per-agent
-   *   grant. Omit for the whole catalog.
+   * @param opts.area - Return only the capabilities in this permission area.
+   *   Omit for the whole catalog.
    * @returns The catalog: the matching capabilities, with a stable
    *   `catalogVersion` content hash safe to cache on.
    */
-  getCapabilityCatalog(opts?: { toolGroup?: string }): Promise<CapabilityCatalog>;
+  getCapabilityCatalog(opts?: { area?: string }): Promise<CapabilityCatalog>;
   /**
    * Get capabilities for all registered runtimes.
    *
@@ -2468,6 +2481,66 @@ export interface Transport
    * @param grantId - The permission's id, from {@link listStandingPermissions}.
    */
   revokeStandingPermission(grantId: string): Promise<RevokeStandingPermissionResponse>;
+
+  // --- Permissions (spec `agent-permissions`) ---
+
+  /**
+   * What agents may do by default: the preset, the changes on top of it, every
+   * area with its actions, and the agents that are set differently.
+   */
+  getPermissions(): Promise<PermissionsResponse>;
+
+  /**
+   * One agent's permissions: its resolved state per area and action, where each
+   * came from, and what it would inherit without its own settings.
+   *
+   * @param agentId - The agent's id.
+   */
+  getAgentPermissions(agentId: string): Promise<AgentPermissionsResponse>;
+
+  /**
+   * Choose a preset. Clears the changes on top of the old one; `applyToAgents`
+   * also clears those agents' own settings. Only a person can call this.
+   *
+   * @param body - The preset, the agents to bring along, and where it came from.
+   */
+  setPermissionPreset(
+    body: SetPermissionPresetBody
+  ): Promise<PermissionWriteResult<PermissionsResponse>>;
+
+  /**
+   * Change the defaults; `null` removes a change. `applyToAgents` removes those
+   * agents' own settings for the same keys. Only a person can call this.
+   *
+   * @param body - The changes, the agents to bring along, and where it came from.
+   */
+  patchPermissionDefaults(
+    body: PatchPermissionDefaultsBody
+  ): Promise<PermissionWriteResult<PermissionsResponse>>;
+
+  /**
+   * Change one agent's own settings; `null` puts one back to the default. Only a
+   * person can call this.
+   *
+   * @param agentId - The agent's id.
+   * @param body - The changes and where they came from.
+   */
+  patchAgentPermissions(
+    agentId: string,
+    body: PatchAgentPermissionsBody
+  ): Promise<PermissionWriteResult<AgentPermissionsResponse>>;
+
+  /**
+   * The permission history, newest first; with `agentId`, the changes that
+   * touched that agent.
+   *
+   * @param query - Optional agent, cursor and page size.
+   */
+  getPermissionHistory(query?: {
+    agentId?: string;
+    before?: string;
+    limit?: number;
+  }): Promise<PermissionHistoryResponse>;
 
   // --- The Inbox (spec `notification-system`) ---
 

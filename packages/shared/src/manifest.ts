@@ -9,7 +9,11 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { AgentManifestSchema, AgentWorkspaceBindingSchema } from './mesh-schemas.js';
+import {
+  AgentManifestFileSchema,
+  AgentManifestSchema,
+  AgentWorkspaceBindingSchema,
+} from './mesh-schemas.js';
 import { CONVENTION_DIR } from './convention-files.js';
 import type { AgentManifest } from './mesh-schemas.js';
 import type { Logger } from './logger.js';
@@ -61,7 +65,7 @@ export async function readManifest(
     return null;
   }
 
-  const result = AgentManifestSchema.safeParse(parsed);
+  const result = AgentManifestFileSchema.safeParse(parsed);
   if (!result.success) {
     logger.warn(
       `[manifest] ${manifestPath} failed schema validation: ${JSON.stringify(result.error.issues)}`
@@ -158,7 +162,7 @@ export async function probeManifest(projectPath: string): Promise<ManifestProbe>
     return { state: 'unreadable', detail: err instanceof Error ? err.message : String(err) };
   }
 
-  const result = AgentManifestSchema.safeParse(parsed);
+  const result = AgentManifestFileSchema.safeParse(parsed);
   if (!result.success) {
     return { state: 'unreadable', detail: JSON.stringify(result.error.issues) };
   }

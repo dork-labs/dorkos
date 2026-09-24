@@ -97,6 +97,7 @@ describe('enforceCapabilityTier', () => {
   /** Run the gate over a tier, ceiling, and optional token. */
   function enforce(tier: CapabilityTier, ceiling: CapabilityTier, approvalToken?: string) {
     return enforceCapabilityTier({
+      permission: null,
       action: capabilityAt(tier),
       input: INPUT,
       identity: identityWith(ceiling),
@@ -108,6 +109,7 @@ describe('enforceCapabilityTier', () => {
   /** Run the gate with NO identity — the shape of `env -u DORKOS_AGENT_TOKEN …`. */
   function enforceAnonymous(tier: CapabilityTier, approvalToken?: string) {
     return enforceCapabilityTier({
+      permission: null,
       action: capabilityAt(tier),
       input: INPUT,
       ...(approvalToken ? { approvalToken } : {}),
@@ -266,6 +268,7 @@ describe('enforceCapabilityTier', () => {
 
     it('states the retry channel of the surface the call arrived on', () => {
       const decision = enforceCapabilityTier({
+        permission: null,
         action: capabilityAt('destructive'),
         input: INPUT,
         identity: identityWith('destructive'),
@@ -315,6 +318,7 @@ describe('enforceCapabilityTier', () => {
     it('refuses a granted token presented with DIFFERENT arguments', () => {
       const token = grantedToken();
       const decision = enforceCapabilityTier({
+        permission: null,
         action: capabilityAt('destructive'),
         // The same package, but no longer purging — a materially different effect.
         input: { name: 'sentry-monitor', purge: false },
@@ -407,6 +411,7 @@ describe('enforceCapabilityTier', () => {
       // connected cockpit — and `GET /api/approvals/pending` is readable by agents.
       const live = 'f3a9c1d47b8e5026aa11bb22cc33dd44';
       enforceCapabilityTier({
+        permission: null,
         action: capabilityAt('destructive'),
         input: { name: live, purge: true, confirmationToken: live },
         retryChannel: 'http-header',
@@ -422,6 +427,7 @@ describe('enforceCapabilityTier', () => {
       // a Set's contents — two different Sets used to hash IDENTICALLY. A field that
       // looks bound while being ignored is worse than no approval, so refuse.
       const decision = enforceCapabilityTier({
+        permission: null,
         action: capabilityAt('destructive'),
         input: { name: 'x', when: new Date(0) },
         retryChannel: 'http-header',

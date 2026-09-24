@@ -13,6 +13,7 @@ import {
   FlaskConical,
   Bell,
   MessagesSquare,
+  KeyRound,
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
@@ -22,6 +23,7 @@ import { AppearanceResetAction, AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
 import { NotificationsTab } from './tabs/NotificationsTab';
 import { RoomsTab } from './tabs/RoomsTab';
+import { PermissionsTab } from './tabs/PermissionsTab';
 import { RuntimesTab } from './runtimes/RuntimesTab';
 import { ServerTab } from './ServerTab';
 import { ToolsResetAction, ToolsTab } from './ToolsTab';
@@ -30,6 +32,9 @@ import { RemoteAccessTab } from './RemoteAccessTab';
 import { PrivacyTab } from './PrivacyTab';
 import { DangerZoneTab } from './DangerZoneTab';
 import { ExperimentsTab } from './ExperimentsTab';
+
+/** Tabs the Obsidian embed leaves out; see the comment in {@link SettingsDialog}. */
+const EMBED_HIDDEN_TABS: ReadonlySet<SettingsTab> = new Set(['remote-access', 'permissions']);
 
 const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
   // "You" names what used to be an unlabelled run of four tabs above the first
@@ -70,6 +75,15 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     icon: Wrench,
     component: ToolsTab,
     actions: <ToolsResetAction />,
+    group: 'Agents & sessions',
+  },
+  {
+    // What agents may do, for everyone (spec `agent-permissions`). First in the
+    // group because it is the answer to "why did my agent ask / refuse".
+    id: 'permissions',
+    label: 'Permissions',
+    icon: KeyRound,
+    component: PermissionsTab,
     group: 'Agents & sessions',
   },
   {
@@ -164,12 +178,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { activeTab: urlTab } = useSettingsDeepLink();
 
   // Remote access is a tunnel into this machine from somewhere else, which the
-  // Obsidian embed cannot open — the panel there would render nothing at all. A
-  // tab that shows an empty panel is worse than no tab.
+  // Obsidian embed cannot open — the panel there would render nothing at all.
+  // Permissions are managed in the DorkOS app, and the embed's transport
+  // refuses them, so that panel could only ever show an error. A tab that shows
+  // an empty or broken panel is worse than no tab.
   const tabs = useMemo(
     () =>
       getPlatform().isEmbedded
-        ? SETTINGS_TABS.filter((tab) => tab.id !== 'remote-access')
+        ? SETTINGS_TABS.filter((tab) => !EMBED_HIDDEN_TABS.has(tab.id))
         : SETTINGS_TABS,
     []
   );

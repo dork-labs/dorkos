@@ -797,6 +797,16 @@ export const CONFIG_WRITE_POLICY = {
   // marker exists to prevent, reachable in one patch.
   'approvals.standingGrantsVoidBefore': 'operator-only',
 
+  // What agents may do (spec `agent-permissions` D10). `operator-only` is the
+  // SECOND line here, not the first: the generic config writers refuse every
+  // `permissions.*` key outright and point at the permission routes, because a
+  // permission change must carry a person's yes AND an audit event, and only
+  // the permission service writes both. The upgrade marker is machine-managed.
+  'permissions.preset': 'operator-only',
+  'permissions.defaults.areas': 'operator-only',
+  'permissions.defaults.actions': 'operator-only',
+  'permissions.upgradeSweptVersion': 'operator-only',
+
   // The credential and the identity of the account link.
   'cloud.instanceToken': 'operator-only',
   'cloud.instanceName': 'operator-only',
@@ -1034,6 +1044,13 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // writing it is how the asking stops.
       'ui.fullPowerDecidedAt',
       'ui.fullPowerChoice',
+      // What agents may do without asking. Refused on this route before this
+      // table is read (see `USE_PERMISSIONS_API`); listed so the stake sentence
+      // is right if that refusal is ever reached around.
+      'permissions.preset',
+      'permissions.defaults.areas',
+      'permissions.defaults.actions',
+      'permissions.upgradeSweptVersion',
     ],
   },
   {

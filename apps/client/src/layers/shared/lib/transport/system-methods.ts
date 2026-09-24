@@ -416,21 +416,21 @@ export function createSystemMethods(baseUrl: string) {
       return fetchJSON(baseUrl, '/capabilities');
     },
 
-    async getCapabilityCatalog(opts?: { toolGroup?: string }): Promise<CapabilityCatalog> {
+    async getCapabilityCatalog(opts?: { area?: string }): Promise<CapabilityCatalog> {
       // One segment deeper than the runtime matrix above, which already claims
       // the bare `/capabilities` path for a different question entirely.
       //
       // **Both query parameters are load-bearing, and the bare path is a trap.**
       // This route serves the AGENT-facing projection: paginated at 50, sorted
       // by id, and COMPACT unless asked otherwise — and a compact entry is
-      // `{id, title, tier, summary}`, with no surfaces and no `toolGroup` at
+      // `{id, title, tier, summary}`, with no surfaces and no `area` at
       // all. So an unfiltered read answers this question with an empty result
       // rather than an error, which is the shape of bug that ships green.
       // `detail=full` is what carries the fields, and the filter is what keeps
       // the page small enough to be one request.
       // `limit` asks for the ceiling because the page is bounded at 50, and the
       // check below is louder than a short list on purpose: every reader here
-      // DERIVES something from the whole set — the tools behind a grant, and a
+      // DERIVES something from the whole set — the tools in an area, and a
       // count beside them — so a dropped tail renders a wrong number with
       // nothing failing. If it ever throws, follow `nextCursor` rather than
       // raising the ceiling again.
@@ -438,7 +438,7 @@ export function createSystemMethods(baseUrl: string) {
         detail: 'full',
         limit: String(MAX_CAPABILITY_LIMIT),
       });
-      if (opts?.toolGroup) params.set('toolGroup', opts.toolGroup);
+      if (opts?.area) params.set('area', opts.area);
       const page = await fetchJSON<{
         catalogVersion: string;
         generatedAt: string;

@@ -49,6 +49,7 @@ function domain(
         title: 'Sign in',
         description: 'Begin signing in.',
         tier: 'act',
+        area: null,
         input: z.object({ agentId: z.string(), name: z.string() }),
         output: z.object({
           flowId: z.string(),
@@ -72,6 +73,7 @@ function domain(
         title: 'Poll sign-in',
         description: 'Check a sign-in.',
         tier: 'act',
+        area: null,
         input: z.object({ flowId: z.string() }),
         output: z.object({ status: z.enum(['pending', 'connected', 'failed']) }),
         surfaces: { mcp: { toolName: 'fake_poll', servers: ['in-session', 'external'] } },
@@ -83,6 +85,7 @@ function domain(
         title: 'Plain',
         description: 'Declares no card.',
         tier: 'act',
+        area: null,
         input: z.object({ agentId: z.string(), name: z.string() }),
         output: z.object({ message: z.string() }),
         surfaces: { mcp: { toolName: 'fake_plain', servers: ['in-session', 'external'] } },

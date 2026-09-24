@@ -52,6 +52,8 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // because the table is total by type. 400 for the same reason — a direct
   // message is the wrong kind of room to ask this of, and no retry fixes it.
   TOOL_LEAVE_NOT_IN_DM: 400,
+  TOOL_ARCHIVE_NOT_IN_DM: 400,
+  TOOL_ARCHIVE_BRIDGED: 400,
   // The `update_room` twin, mapped for the same reason the two above are: the
   // table is total by type. 400 because a direct message is the wrong kind of
   // room to ask this of, and no retry fixes it.

@@ -80,6 +80,12 @@ export function createCapabilityAttributionObserver(
         ...(context.approval?.via === 'standing-grant'
           ? { grantId: context.approval.grantId }
           : {}),
+        // The third proof: the action's permission is set to Allowed, so it ran
+        // without a card. The source names the layer a person set it at (spec
+        // `agent-permissions` D6).
+        ...(context.approval?.via === 'permission'
+          ? { permissionSource: context.approval.source }
+          : {}),
       },
     });
   };

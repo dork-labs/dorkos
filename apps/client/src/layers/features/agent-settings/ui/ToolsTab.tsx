@@ -23,7 +23,6 @@ import { toolNamesForDomain, type ToolDomainKey } from '@dorkos/shared/mcp-tool-
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
-import { useToolNamesForGroup } from '@/layers/entities/capability';
 import { useUpdateAgent as useUpdateMeshAgent } from '@/layers/entities/mesh';
 import { agentKeys } from '@/layers/entities/agent';
 import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
@@ -153,107 +152,21 @@ interface ToolsTabProps {
   projectPath: string;
 }
 
+/** The four documentation keys this tab writes, and nothing else. */
+const TOOL_DOMAIN_KEYS: readonly ToolDomainKey[] = ['tasks', 'relay', 'mesh', 'adapter'];
+
 /**
- * The one group that is a LOCK rather than a hint (DOR-1611).
+ * Copy only the four documentation keys out of a stored `enabledToolGroups`, so
+ * a write never carries a key this tab does not own.
  *
- * Its own card, visually apart from the four above it, because merging them
- * would make one paragraph describe two different mechanisms — and the whole
- * point of this row is that it does not behave like its neighbours.
- *
- * **Written through the operator's route, never the agent self-edit route.**
- * `PATCH /api/agents/current` REFUSES this field by design: a grant the governed
- * agent can set for itself is not a grant. The app is the person, so it uses
- * `PATCH /api/mesh/agents/:id`, which is the only way in.
- *
- * **Rendered whatever the runtime is.** The four toggles above hide when a
- * runtime cannot consume in-session MCP, because there is nothing to describe to
- * it. This one still applies: a Codex or OpenCode agent reaches these same
- * capabilities over the external MCP server, and the grant is enforced there too.
- *
- * **And it refreshes what it invalidated.** The `agent` this card renders is
- * read through `useCurrentAgent`, and without a sweep of that cache the switch
- * flipped, the server stored it, and the next render put it straight back where
- * it was: a save that looked like a refusal. `useUpdateAgent` now sweeps the
- * `['agents']` prefix itself, at mutation level, so that half survives even a
- * closed panel (DOR-1736); the pair below is kept because the roster key is one
- * the hook cannot know about, and `agentKeys.all` beside it is what this card's
- * own test pins. The keys are the ones `useProfileAgent` clears for the same
- * reason.
+ * @param groups - The agent's stored groups.
  */
-function ManageRoomsCard({
-  agent,
-  supportsDorkTools,
-}: {
-  agent: AgentManifest;
-  supportsDorkTools: boolean;
-}) {
-  const tools = useToolNamesForGroup('roomsManage');
-  const updateAgent = useUpdateMeshAgent();
-  const queryClient = useQueryClient();
-  const granted = agent.enabledToolGroups?.roomsManage === true;
-
-  const onToggle = useCallback(
-    (value: boolean) => {
-      updateAgent.mutate(
-        {
-          id: agent.id,
-          updates: {
-            enabledToolGroups: { ...(agent.enabledToolGroups ?? {}), roomsManage: value },
-          },
-        },
-        {
-          // `onSettled`, not `onSuccess`: the switch is fully controlled by the
-          // manifest, so a re-read is the only thing that ever moves it — and
-          // after a REFUSED write it is the only thing that proves it did not.
-          onSettled: () => {
-            void queryClient.invalidateQueries({ queryKey: agentKeys.all });
-            void queryClient.invalidateQueries({ queryKey: TEAM_ROSTER_KEY });
-          },
-        }
-      );
-    },
-    [agent.id, agent.enabledToolGroups, queryClient, updateAgent]
-  );
-
-  return (
-    <FieldCard>
-      <FieldCardContent className="space-y-3">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">Manage rooms</span>
-              {tools.length > 0 ? <ToolCountBadge tools={tools} /> : null}
-            </div>
-            <p className="text-muted-foreground text-sm">
-              Let this agent create channels and direct messages, add and remove members, rename a
-              channel, and leave a channel.
-            </p>
-          </div>
-          <Switch
-            checked={granted}
-            onCheckedChange={onToggle}
-            disabled={updateAgent.isPending}
-            aria-label="Manage rooms"
-          />
-        </div>
-        <p className="text-muted-foreground text-sm">
-          <span className="text-foreground font-medium">This switch is a lock, not a hint.</span>{' '}
-          Unlike the groups above, turning it off blocks the calls: the agent is refused, and told
-          to ask you. It is off until you turn it on, and only you can change it. The agent cannot
-          turn it on for itself.
-        </p>
-        <p className="text-muted-foreground text-sm">
-          It can never remove you from a room, and any room holding two agents holds you too.
-        </p>
-        {supportsDorkTools ? null : (
-          <p className="text-muted-foreground text-sm">
-            This agent’s runtime reaches these over the external MCP server rather than in-session,
-            and the switch applies there just the same.
-          </p>
-        )}
-      </FieldCardContent>
-    </FieldCard>
-  );
+function pickToolGroups(groups: EnabledToolGroups | undefined): EnabledToolGroups {
+  const next: EnabledToolGroups = {};
+  for (const key of TOOL_DOMAIN_KEYS) {
+    if (groups?.[key] !== undefined) next[key] = groups[key];
+  }
+  return next;
 }
 
 /**
@@ -272,9 +185,10 @@ function ManageRoomsCard({
  * its own. The app is the person, so it uses `PATCH /api/mesh/agents/:id`
  * and can set any rung.
  *
- * The two invalidations are the ones `ManageRoomsCard` explains: this card's
- * `agent` comes from `useCurrentAgent`, and without a sweep of that cache the
- * select would snap back after a successful save.
+ * The two invalidations are there because this card's `agent` comes from
+ * `useCurrentAgent`, and without a sweep of that cache the select would snap
+ * back after a successful save. `useUpdateAgent` sweeps the `['agents']`
+ * prefix itself (DOR-1736); the roster key is one the hook cannot know about.
  */
 function TierCeilingCard({ agent }: { agent: AgentManifest }) {
   const updateAgent = useUpdateMeshAgent();
@@ -324,9 +238,9 @@ function TierCeilingCard({ agent }: { agent: AgentManifest }) {
         </p>
         {/* Said plainly rather than left for someone to discover: the cap holds
             on the path an agent is meant to use, and an agent with a terminal
-            can step off that path. Same residual, and same remedy, as the grant
-            below — see `contributing/agent-operator-surface.md`. A limit whose
-            edge is unstated reads as a sandbox, and this is not one. */}
+            can step off that path. Same residual, and same remedy, as an agent's
+            permissions — see `contributing/agent-operator-surface.md`. A limit
+            whose edge is unstated reads as a sandbox, and this is not one. */}
         <p className="text-muted-foreground text-sm">
           This covers what the agent asks DorkOS to do. An agent that can run terminal commands can
           still act outside DorkOS. Turn on Require login, in Settings under Access, to close that
@@ -357,8 +271,7 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
   const supportsDorkTools = caps?.supportsMcp ?? true;
 
   // **Written through the operator's route, never the agent self-edit route**
-  // (DOR-1506) — the same split `TierCeilingCard` and `ManageRoomsCard` below
-  // already use, now covering all five keys of the object.
+  // (DOR-1506) — the same split `TierCeilingCard` below already uses.
   //
   // `PATCH /api/agents/current` refuses every one of them: a per-agent value
   // BEATS the global `agentContext.*` switch (`resolveToolConfig`), and those
@@ -366,11 +279,14 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
   // let an agent undo a narrowing the person had made to its own tool context.
   // The app is the person, so it uses `PATCH /api/mesh/agents/:id`.
   //
-  // The whole stored object is sent, `roomsManage` included: the operator's
-  // route carries the grant, and `deepMerge` is not in play here — the manifest
-  // update REPLACES `enabledToolGroups`, so dropping the key would clear it.
+  // Built from the four documentation keys ONLY. The manifest update REPLACES
+  // `enabledToolGroups` (`deepMerge` is not in play), so every key the person
+  // set is sent; the retired `roomsManage` key is never sent, because it is the
+  // Rooms permission now and the operator's route refuses it (spec
+  // `agent-permissions` D10). `pickToolGroups` is what guarantees that even for
+  // a stale object still carrying it.
   //
-  // The two invalidations are the ones `ManageRoomsCard` explains: the `agent`
+  // The two invalidations are the ones `TierCeilingCard` explains: the `agent`
   // this tab renders comes from `useCurrentAgent`, so without a sweep of that
   // cache a saved toggle snaps straight back.
   const writeToolGroups = useCallback(
@@ -390,14 +306,14 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
 
   const handleToolGroupChange = useCallback(
     (key: ToolDomainKey, value: boolean) => {
-      writeToolGroups({ ...(agent.enabledToolGroups ?? {}), [key]: value });
+      writeToolGroups({ ...pickToolGroups(agent.enabledToolGroups), [key]: value });
     },
     [agent.enabledToolGroups, writeToolGroups]
   );
 
   const handleToolGroupReset = useCallback(
     (key: ToolDomainKey) => {
-      const next = { ...(agent.enabledToolGroups ?? {}) };
+      const next = pickToolGroups(agent.enabledToolGroups);
       delete next[key];
       writeToolGroups(next);
     },
@@ -486,13 +402,10 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
         </FieldCard>
       )}
 
-      {/* Outside the runtime branch above, deliberately: the cap and the grant
-          are enforced for every runtime, including the ones that cannot take
-          DorkOS tools in-session and reach them over the external MCP server
-          instead. */}
+      {/* Outside the runtime branch above, deliberately: the cap is enforced
+          for every runtime, including the ones that cannot take DorkOS tools
+          in-session and reach them over the external MCP server instead. */}
       <TierCeilingCard agent={agent} />
-
-      <ManageRoomsCard agent={agent} supportsDorkTools={supportsDorkTools} />
 
       <AgentMcpServers agent={agent} projectPath={projectPath} />
     </div>

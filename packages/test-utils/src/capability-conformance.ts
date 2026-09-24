@@ -35,6 +35,11 @@
  *   display field, and is not secret-shaped. It is the escape from the summary's
  *   per-value clamp (DOR-1698), and every way of misdeclaring it is silent at
  *   runtime — a wrong path renders an empty block where the whole decision belongs;
+ * - every capability declares a permission `area`, and an area-less one says why
+ *   in a non-empty `areaNote`. Every capability WITH an area declares
+ *   `approvalDisplayFields` (a person may set its area to Ask, so any of them can
+ *   raise a card), and one whose card would show an opaque id declares
+ *   `approvalSubject` for it (the DOR-1929 rule);
  * - no two capabilities collide on an `http` method+path (the reverse-direction
  *   OpenAPI collision guard) and the projected route set is order-independent;
  * - the docs-projection registry exposes the SAME `http` surface set as the boot
@@ -167,14 +172,19 @@ export interface ConformanceCapability {
    */
   input?: unknown;
   /**
-   * The per-agent grant this capability requires, when it declares one.
+   * The permission area this capability belongs to, or `null` when its tier
+   * alone decides (spec `agent-permissions` D2).
    *
-   * Typed as a bare string rather than the server's `CapabilityToolGroup` union,
-   * so this suite stays free of a `@dorkos/server` import and does not have to be
-   * edited every time a group is added. The check derives its subjects from
-   * whichever capabilities carry it.
+   * Typed as a bare string rather than the server's area union, so this suite
+   * stays free of a `@dorkos/server` import. Optional here only so a malformed
+   * entry can be REPORTED rather than rejected by the compiler: the server's
+   * own definition type requires it.
    */
-  toolGroup?: string;
+  area?: string | null;
+  /** Why an area-less capability has no switch. Required whenever `area` is `null`. */
+  areaNote?: string;
+  /** Which input field names the target, and which registry names it. */
+  approvalSubject?: { field: string; kind: string };
 }
 
 /**
@@ -209,30 +219,9 @@ export interface ConformanceRegistry {
    *
    * @param id - The capability id to invoke.
    * @param input - Raw input; parsed against the capability's input schema.
-   * @param context - Optional invocation context. Only the calling identity is
-   *   modelled here, and only because the tool-group check has to ask the
-   *   IDENTIFIED question as well as the anonymous one — "an agent that named
-   *   itself and holds no grant is refused" is the sentence the product makes,
-   *   and an anonymous refusal does not prove it. Deliberately narrower than the
-   *   server's own context type, which this package must not import.
    * @returns The capability's plain output.
    */
-  invoke(id: string, input: unknown, context?: ConformanceInvocationContext): Promise<unknown>;
-}
-
-/** The slice of an invocation context the conformance checks supply. */
-export interface ConformanceInvocationContext {
-  /** The calling agent, when a check drives an identified caller. */
-  identity?: {
-    /** The agent's project directory — what a grant is keyed on. */
-    agentPath: string;
-    /** Human-facing name, as a refusal would report it. */
-    displayName: string;
-    /** The caller's tier ceiling. `destructive` means "no extra restriction". */
-    tierCeiling: CapabilityTier;
-    /** When the identity was minted, ISO-8601. */
-    createdAt: string;
-  };
+  invoke(id: string, input: unknown): Promise<unknown>;
 }
 
 /**
@@ -547,6 +536,59 @@ export function checkCapabilityConformance(
     }
   }
 
+  // ── Scope add (1d): every action has an area, or says why it has none ─────
+  //
+  // The area is what the permission gate resolves (spec `agent-permissions`
+  // D2), so "no area" has to be a recorded decision rather than a missing line.
+  // An action WITH an area can raise a card under Ask, whatever its tier, so its
+  // card fields are chosen the same way a destructive one's are.
+  for (const cap of caps) {
+    if (cap.area === undefined) {
+      add(
+        'permission-area',
+        `capability "${cap.id}" declares no permission area — set \`area\` to one, or to null ` +
+          `with an \`areaNote\` saying why it is always allowed`
+      );
+      continue;
+    }
+    if (cap.area === null) {
+      if (!cap.areaNote || cap.areaNote.trim().length === 0) {
+        add(
+          'permission-area',
+          `capability "${cap.id}" has no permission area and no areaNote saying why it is always allowed`
+        );
+      }
+      continue;
+    }
+    if (cap.tier === 'observe') continue;
+    if (!cap.approvalDisplayFields || cap.approvalDisplayFields.length === 0) {
+      add(
+        'permission-area',
+        `capability "${cap.id}" is in the "${cap.area}" area, so a person can set it to Ask and it ` +
+          `raises a card — but it declares no approvalDisplayFields for that card`
+      );
+      continue;
+    }
+    for (const field of cap.approvalDisplayFields) {
+      const leaf = field.split('.').pop() ?? field;
+      if (isSecretInputKey(leaf)) {
+        add(
+          'permission-area',
+          `capability "${cap.id}" declares "${field}" in approvalDisplayFields, and that name says ` +
+            `its value is credential material — a declared field is shown verbatim`
+        );
+      }
+      const opaqueId = leaf === 'id' || leaf.endsWith('Id');
+      if (opaqueId && cap.approvalSubject?.field !== field) {
+        add(
+          'permission-area',
+          `capability "${cap.id}" shows "${field}" on its card, which is an opaque id, but declares ` +
+            `no approvalSubject naming it — the card would ask a person about a string of letters`
+        );
+      }
+    }
+  }
+
   // ── Scope add (2): OpenAPI reverse collision + deterministic ordering ────
   const bootKeys = httpKeys(caps);
   const seen = new Set<string>();
@@ -680,156 +722,6 @@ export async function checkRegistryGateConformance(
 }
 
 /**
- * Whether a refusal payload is the tool-group gate's, in the shape a caller has
- * to be able to act on: refused, un-approvable, and carrying a sentence.
- *
- * `approvable: false` is the load-bearing field. A refusal that claimed a person
- * could unlock it would send a model round the approval loop forever for a switch
- * only the operator can flip, in a place the model cannot reach.
- *
- * @param payload - The refusal payload from the gate.
- * @returns True when it is a well-formed `tool_group_disabled` denial.
- */
-function isToolGroupDenial(payload: unknown): boolean {
-  if (!payload || typeof payload !== 'object') return false;
-  const p = payload as Record<string, unknown>;
-  return (
-    p.status === 'denied' &&
-    p.reason === 'tool_group_disabled' &&
-    p.approvable === false &&
-    typeof p.message === 'string' &&
-    p.message.length > 0
-  );
-}
-
-/**
- * The two callers every grant-bearing capability is driven as, both holding no
- * grant.
- *
- * The anonymous row alone proves a WEAKER sentence than the product makes. "A
- * caller that named nobody is refused" would still be true of a gate that keyed
- * on identity PRESENCE and waved every named agent through — which is the exact
- * shape of the defect this boundary exists to prevent. The identified row is
- * what pins the sentence the spec actually promises: an agent that named itself
- * and does not hold the grant is refused too.
- */
-const TOOL_GROUP_CALLERS: readonly {
-  label: string;
-  context: ConformanceInvocationContext | undefined;
-}[] = [
-  { label: 'unidentified caller', context: undefined },
-  {
-    label: 'identified agent holding no grant',
-    context: {
-      identity: {
-        agentPath: '/conformance/agents/ungranted',
-        displayName: 'Ungranted',
-        // `destructive` is "no extra restriction", so a refusal here cannot be
-        // the TIER gate answering by accident — it has to be the group gate.
-        tierCeiling: 'destructive',
-        createdAt: '2026-01-01T00:00:00.000Z',
-      },
-    },
-  },
-];
-
-/**
- * Prove that every capability declaring a per-agent tool group is REFUSED when the
- * caller does not hold it, through the only path any surface can use to run one
- * (DOR-1611).
- *
- * Derived from the registry, exactly like {@link checkRegistryGateConformance} and
- * for the same reason: a hand-listed set of tool names can only fail for a name
- * somebody already added, and this repo has twice shipped a hole that was simply
- * never on the list. Every capability carrying a `toolGroup` is driven through
- * `registry.invoke` with no trusted marker, as BOTH an anonymous caller and an
- * identified agent holding no grant — see {@link TOOL_GROUP_CALLERS} for why one
- * row proves a weaker sentence than the product makes — and must come back
- * refused each time. A capability that gains a group tomorrow is covered the day
- * it declares one.
- *
- * **What this does NOT catch, corrected here after a mutation proved the claim
- * false** (DOR-1611 review). This comment used to say a capability that silently
- * LOST its group was "covered by the structural surface checks". It is not, and
- * the shape of the check is why: the subject set is DERIVED from the declarations
- * it is checking, so deleting a `toolGroup` removes the capability from the set
- * rather than failing anything. Deleting `rooms.create`'s group and running the
- * whole conformance suite is GREEN. Nothing structural notices either — a
- * `toolGroup` is not a surface, so `checkSurfaceConformance` never looks at it.
- *
- * The guard that does catch it is the declaration snapshot in
- * `apps/server/src/services/rooms/__tests__/room-capabilities.test.ts`, which
- * pins each verb's `group` by name and goes red on a removal. This check and that
- * one answer different questions — "is a declared grant enforced" versus "is the
- * grant still declared" — and only the pair covers the field. Do not restate the
- * claim above without re-running the mutation.
- *
- * "No side effect" needs no separate probe: a refusal is a REJECTION, so the
- * handler never ran. A gate that returned the right payload after doing the damage
- * would have to resolve, and would fail this check.
- *
- * **An empty subject set is not flagged here**, unlike the destructive check.
- * The two are in different places in their lives: the registry has always carried
- * a `destructive` capability, so an empty set there means the check went blind,
- * whereas this mechanism ships one release BEFORE the first capability declares a
- * group and an empty set is the honest state of the world. That is the whole
- * reason `checkToolGroupGateConformance` is exported: this suite's own tests seed
- * a registry that DOES declare one and prove the check goes red, so its ability to
- * fail is demonstrated rather than assumed.
- *
- * @param registry - The composed registry under test.
- * @param sampleInputs - Per-capability sample input, keyed by capability id.
- * @returns Every violation found.
- */
-export async function checkToolGroupGateConformance(
-  registry: ConformanceRegistry,
-  sampleInputs: Record<string, unknown> = {}
-): Promise<ConformanceViolation[]> {
-  const violations: ConformanceViolation[] = [];
-  const add = (detail: string): void => void violations.push({ check: 'tool-group-gate', detail });
-
-  const gated = registry.capabilities.filter((cap) => cap.toolGroup !== undefined);
-
-  for (const cap of gated) {
-    for (const caller of TOOL_GROUP_CALLERS) {
-      let thrown: unknown;
-      let refused = false;
-      try {
-        await registry.invoke(cap.id, sampleInputs[cap.id] ?? {}, caller.context);
-      } catch (err) {
-        thrown = err;
-        refused = true;
-      }
-
-      if (!refused) {
-        add(
-          `${cap.id} (${caller.label}): registry.invoke RAN a capability behind the ` +
-            `"${cap.toolGroup}" grant for a caller holding no grant — the tool-group gate is not ` +
-            `inside invoke, so every surface that calls it is ungated`
-        );
-        continue;
-      }
-      if (!isGateRefusal(thrown)) {
-        add(
-          `${cap.id} (${caller.label}): registry.invoke rejected, but not with a gate refusal — ` +
-            `got ${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : String(thrown)}`
-        );
-        continue;
-      }
-      if (!isToolGroupDenial(thrown.decision.payload)) {
-        add(
-          `${cap.id} (${caller.label}): the gate refused but its payload is not a structured ` +
-            `tool_group_disabled denial (status: 'denied', reason: 'tool_group_disabled', ` +
-            `approvable: false, message), got ${JSON.stringify(thrown.decision.payload)}`
-        );
-      }
-    }
-  }
-
-  return violations;
-}
-
-/**
  * Run the requester-cannot-decide probe and return all violations (empty means the
  * decide endpoint refused the requester and left the approval alone). Separated and
  * exported like the gate checker so a seeded bypass can be shown to FAIL it.
@@ -897,6 +789,7 @@ const CHECK_GROUPS = [
   'read-only-carve-out',
   'tier-carve-out',
   'approval-card-fields',
+  'permission-area',
   'openapi-collision',
   'docs-boot-parity',
 ] as const;
@@ -945,13 +838,6 @@ export function capabilityConformance(
         ).map((v) => v.detail);
         expect(details, details.join('\n')).toEqual([]);
       });
-
-      it('tool-group-gate: registry.invoke refuses every capability behind a grant', async () => {
-        const details = (
-          await checkToolGroupGateConformance(registry, fixtures.sampleInputs ?? {})
-        ).map((v) => v.detail);
-        expect(details, details.join('\n')).toEqual([]);
-      });
     });
 
     describe('invoke against fixtures', () => {
@@ -974,14 +860,16 @@ export function capabilityConformance(
           // here: the gate inside `invoke` refuses it, which is the whole point of
           // DOR-467 and is asserted properly in the destructive-gate check above.
           //
-          // A capability behind a per-agent tool group is the same story one gate
-          // earlier: a conformance invocation carries no identity, so it holds no
-          // grant and is refused before its handler is reached (DOR-1611). Its
-          // refusal is asserted properly in the tool-group-gate check above.
+          // A capability with a permission area is the same story: whether this
+          // anonymous invocation runs depends on the install's permission
+          // defaults, and a Blocked or Ask default refuses it before its handler
+          // is reached. The gate itself is proved at its three choke points
+          // (`tier-enforcement.test.ts`, spec `agent-permissions` D6).
           const ok =
             error === undefined ||
             isCapabilityToolError(error) ||
-            ((cap.tier === 'destructive' || cap.toolGroup !== undefined) && isGateRefusal(error));
+            ((cap.tier === 'destructive' || (cap.area !== null && cap.area !== undefined)) &&
+              isGateRefusal(error));
           expect(ok, error instanceof Error ? error.message : String(error)).toBe(true);
         });
       }

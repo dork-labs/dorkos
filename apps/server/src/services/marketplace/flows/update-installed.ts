@@ -63,10 +63,11 @@ export interface ReinstallGateInput {
 }
 
 /**
- * Ask whether one reinstall may run. Returns `undefined` to allow it, or the
- * surface's refusal, which ends the whole batch before anything runs.
+ * Ask whether one reinstall may run. Resolves `undefined` to allow it, or the
+ * surface's refusal, which ends the whole batch before anything runs. Async
+ * because the capability gate reads the caller's permissions fresh.
  */
-export type ReinstallGate<R> = (input: ReinstallGateInput) => R | undefined;
+export type ReinstallGate<R> = (input: ReinstallGateInput) => Promise<R | undefined>;
 
 /**
  * The installations one update request covers, from ONE scan: the requested
@@ -148,7 +149,7 @@ export async function applyInstalledUpdates<R>(
     const key = `${name}\n${projectPath ?? ''}`;
     if (asked.has(key)) continue;
     asked.add(key);
-    const refused = gate({ name, ...(projectPath !== undefined && { projectPath }) });
+    const refused = await gate({ name, ...(projectPath !== undefined && { projectPath }) });
     if (refused !== undefined) return { refused };
   }
 

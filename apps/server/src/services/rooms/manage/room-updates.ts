@@ -23,6 +23,8 @@ import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
+import type { RoomSystemPosts } from '../messages/room-system-posts.js';
+import { buildRoomArchivedNotice } from '../notices/notice-copy.js';
 
 /**
  * The fields of an update that only the install's OWNER may send (DOR-1429).
@@ -45,16 +47,19 @@ export class RoomUpdates {
   private readonly store: RoomStore;
   private readonly bridges: BridgeStore;
   private readonly triggers: RoomTriggerDispatcher;
+  private readonly authors: RoomCore['authors'];
 
   constructor(
     core: RoomCore,
     private readonly visibility: RoomVisibility,
     private readonly authority: RoomAuthority,
-    private readonly projection: RoomProjection
+    private readonly projection: RoomProjection,
+    private readonly systemPosts: RoomSystemPosts
   ) {
     this.store = core.store;
     this.bridges = core.bridges;
     this.triggers = core.triggers;
+    this.authors = core.authors;
   }
 
   /**
@@ -132,7 +137,7 @@ export class RoomUpdates {
    * two field refusals below are the whole of what an agent has to clear, and a
    * branch inside the public method would leave that narrowness one boolean away
    * from every caller that arrives later. This one is reachable only from the
-   * rooms capability domain, itself gated on the `roomsManage` grant at
+   * rooms capability domain, itself gated on the Rooms permission at
    * `registry.invoke` — no route calls it.
    *
    * **`archived` is not on the signature, and the type is the point.** Putting a
@@ -154,6 +159,65 @@ export class RoomUpdates {
     this.authority.requireSystemRoomWritable(room, callerAuthorId, patch);
     this.authority.requireDmTitleWritable(room, callerAuthorId, patch);
     return this.applyRoomPatch(room, callerAuthorId, patch);
+  }
+
+  /**
+   * Put a channel away as an AGENT on its roster — the agent-facing half of
+   * archiving (spec `agent-permissions` D12, DOR-2094).
+   *
+   * **A second, dedicated method rather than a flag on
+   * {@link updateRoomFromTool}**, for the reason that method keeps `archived`
+   * off its signature: no future caller gets archive by setting a field. This
+   * one is reachable only from the `rooms.archive` capability, which sits in the
+   * Rooms permission area — no route calls it.
+   *
+   * Archiving is a flag, not a delete: the room leaves every list, what it was
+   * waiting for ends, and the person brings it back from the room's settings
+   * (`PATCH /api/rooms/:id` with `archived: false`).
+   *
+   * Refused for a direct message (it stays until the person archives it, the
+   * `leave_room` rule), for the install's home channel (the
+   * `requireSystemRoomWritable` rule), and for a channel connected to an outside
+   * chat, whose archive is the disconnect the person makes from Connections —
+   * archiving it here would leave the bridge row believing it is still live.
+   *
+   * @param roomId - The channel to archive; the caller must be on its roster.
+   * @param callerAuthorId - The agent asking, already resolved.
+   * @returns The archived room with its roster.
+   * @throws {RoomError} `ROOM_NOT_FOUND` when the caller is not a member,
+   *   `TOOL_ARCHIVE_NOT_IN_DM` for anything that is not a channel, `SYSTEM_ROOM`
+   *   for the home channel, and `TOOL_ARCHIVE_BRIDGED` for a bridged one.
+   */
+  archiveRoomFromTool(roomId: string, callerAuthorId: string): RoomWithRoster {
+    const { room } = this.visibility.requireMemberRoom(roomId, callerAuthorId);
+    // `!== 'channel'`, never `=== 'dm'`: an unrecognized kind takes the
+    // narrower branch (`.claude/rules/room-conduct.md`).
+    if (room.kind !== 'channel') {
+      throw new RoomError(
+        'TOOL_ARCHIVE_NOT_IN_DM',
+        'A direct message stays until the person archives it.'
+      );
+    }
+    this.authority.requireSystemRoomWritable(room, callerAuthorId, { archived: true });
+    if (this.bridges.findBridgeByRoom(roomId)) {
+      throw new RoomError(
+        'TOOL_ARCHIVE_BRIDGED',
+        'This channel is connected to an outside chat. The person disconnects it from Connections.'
+      );
+    }
+    // Already away: nothing to write, and no second notice.
+    if (room.archived) return this.projection.withRoster(room, callerAuthorId);
+    const name = this.displayNameOf(callerAuthorId);
+    // The archive first, the notice after: a notice written first would stay
+    // in the log saying the room was archived when the archive then failed.
+    const archived = this.applyRoomPatch(room, callerAuthorId, { archived: true });
+    this.systemPosts.postArchivedNotice(roomId, buildRoomArchivedNotice(name, callerAuthorId));
+    return archived;
+  }
+
+  /** A member's display name, as the room's notices name them. */
+  private displayNameOf(authorId: string): string {
+    return this.authors.getById(authorId)?.displayName ?? 'An agent';
   }
 
   /**

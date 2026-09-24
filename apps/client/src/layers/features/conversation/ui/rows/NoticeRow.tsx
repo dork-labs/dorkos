@@ -15,6 +15,7 @@
  * @module features/conversation/ui/rows/NoticeRow
  */
 import {
+  Archive,
   CircleSlash,
   CircleStop,
   Gauge,
@@ -94,6 +95,9 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   // from `agent_gone` because the remedy is different — that one is missing from
   // the machine, this one is only missing from the room.
   agent_left: { Icon: UserMinus, tone: 'text-status-warning' },
+  // An agent put the channel away. Cool: nothing is broken and nothing is lost —
+  // archiving is a flag the person can undo.
+  room_archived: { Icon: Archive },
   // The conversation is pinned to a program that is not running here, so no
   // answer comes until somebody turns it back on or re-adds the agent. Warm,
   // and a plug rather than `agent_gone`'s missing-person mark: the agent is

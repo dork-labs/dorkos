@@ -353,12 +353,12 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
    * @param input - The effect's arguments, parsed against that capability's schema.
    * @returns What the gate decided. Proceed only on `allowed`.
    */
-  const authorize = (
+  const authorize = async (
     req: Request,
     res: Response,
     id: string,
     input: unknown
-  ): TierEnforcementDecision => {
+  ): Promise<TierEnforcementDecision> => {
     const registry = capabilityRegistry();
     if (!registry) {
       // Fail closed: with no registry there is no tier to read and nobody to ask,
@@ -852,7 +852,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       // today and no approval card appears for a person clicking Install. It is
       // gated anyway so the route answers to the capability's declared tier
       // rather than to nothing: raise that tier and this route follows.
-      const decision = authorize(req, res, 'marketplace.install', {
+      const decision = await authorize(req, res, 'marketplace.install', {
         name: req.params.name,
         ...(parsed.data.marketplace !== undefined && { marketplace: parsed.data.marketplace }),
         ...(parsed.data.projectPath !== undefined && { projectPath: parsed.data.projectPath }),
@@ -914,7 +914,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       // approval a person grants here binds to the same hash `dorkos call
       // marketplace.uninstall` would produce: a token minted on one surface is
       // honored on the other, and neither can be replayed for a different action.
-      const decision = authorize(req, res, 'marketplace.uninstall', {
+      const decision = await authorize(req, res, 'marketplace.uninstall', {
         name: req.params.name,
         ...parsed.data,
       });
@@ -982,7 +982,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       // is authorized as `marketplace.install` rather than under an id of its own
       // — with the scope the reinstall touches, so an approval binds to it.
       if (parsed.data.apply) {
-        const decision = authorize(req, res, 'marketplace.install', {
+        const decision = await authorize(req, res, 'marketplace.install', {
           name,
           ...(touched !== undefined && { projectPath: touched }),
         });
@@ -1063,8 +1063,8 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
           names: parsed.data.names,
           installPaths: parsed.data.installPaths,
         },
-        (input) => {
-          const decision = authorize(req, res, 'marketplace.install', input);
+        async (input) => {
+          const decision = await authorize(req, res, 'marketplace.install', input);
           return decision.outcome === 'allowed' ? undefined : decision;
         }
       );

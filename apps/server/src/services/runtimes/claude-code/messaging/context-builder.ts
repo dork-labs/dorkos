@@ -669,7 +669,7 @@ export interface SystemPromptAppend {
 export async function buildSystemPromptAppend(
   cwd: string,
   toolConfig?: ResolvedToolConfig,
-  options: { agentSession?: boolean } = {}
+  options: { agentSession?: boolean; blockedAreaLines?: string } = {}
 ): Promise<SystemPromptAppend> {
   const agentSession = options.agentSession ?? false;
 
@@ -715,6 +715,10 @@ export async function buildSystemPromptAppend(
     tasksBlock,
     marketplaceBlock,
     roomBlock,
+    // One line per Blocked permission area, telling the agent the area exists and
+    // how to get it (spec `agent-permissions` D15). Empty when nothing is blocked.
+    // Part of the digested tool docs, so a change relaunches a warm session.
+    options.blockedAreaLines ?? '',
     uiBlock,
     genUiBlock,
   ];

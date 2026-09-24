@@ -13,6 +13,7 @@ import {
 import { cn } from '@/layers/shared/lib';
 import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
 import { useSetOpenMesh } from '@/layers/entities/mesh';
+import { useSetPermission } from '@/layers/entities/permissions';
 
 /** Props for {@link FullPowerDoor}. */
 export interface FullPowerDoorProps {
@@ -85,7 +86,10 @@ const FULL_POWER_POINTS: ReadonlyArray<{ lead: string; rest: string }> = [
  *    requests would race and the stop could land first and bounce. This mirrors
  *    `confirmAutonomy` in `features/settings/model/use-trust-stop-writes` — which
  *    cannot be imported across feature model boundaries, so the one-patch shape
- *    is re-created and pinned by a test here.
+ *    is re-created and pinned by a test here. Then `PUT /api/permissions/preset`
+ *    with Full power (spec `agent-permissions` D5), so what agents may do
+ *    follows the answer on every install; a failure here reports like a config
+ *    failure and the mesh step never fires.
  * 2. `PUT /api/mesh/topology/access` `* → * allow`, via `useSetOpenMesh`.
  *
  * ## Standing grants ride only when Require login is on
@@ -110,8 +114,8 @@ const FULL_POWER_POINTS: ReadonlyArray<{ lead: string; rest: string }> = [
  *
  * ## Keep asking me first / Customize…
  *
- * Both record `{ fullPowerDecidedAt, fullPowerChoice: 'supervised' }` and nothing
- * else — no stop, no grants, no mesh. Customize… (shown only when the host passes
+ * Both record `{ fullPowerDecidedAt, fullPowerChoice: 'supervised' }` and the
+ * Careful permission preset, and nothing else — no stop, no grants, no mesh. Customize… (shown only when the host passes
  * `onCustomize`) then opens the power surface so the person can pick specifics;
  * moving to full power later from there is a normal, supported path. Dismissing
  * the dialog (the X) writes nothing, and the moment re-arbitrates on the next
@@ -121,6 +125,7 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
   const { data: config } = useConfig();
   const updateConfig = useUpdateConfig();
   const setOpenMesh = useSetOpenMesh();
+  const setPermission = useSetPermission({ kind: 'default' });
   const queryClient = useQueryClient();
 
   // Standing grants are login-gated on the server and inert without login, so
@@ -131,7 +136,8 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
   const [configError, setConfigError] = useState<string | null>(null);
   const [meshFailed, setMeshFailed] = useState(false);
 
-  const busy = submitting || updateConfig.isPending || setOpenMesh.isPending;
+  const busy =
+    submitting || updateConfig.isPending || setOpenMesh.isPending || setPermission.isPending;
 
   // Invalidate the whole `config` PREFIX, not just this surface's key: the
   // status bar, the sidebar badges and `useFeatureEnabled` read config off a
@@ -158,6 +164,11 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
         runtimes: { defaultTrustStop: 'autonomy' },
         ...(loginOn ? { approvals: { standingGrants: true } } : {}),
       });
+      // Step 1b — the permission preset, so what agents may do follows the
+      // answer on EVERY install, not only on the ones a config migration mapped
+      // at upgrade (spec `agent-permissions` D5). Idempotent: a retry after a
+      // failure here re-chooses the same preset and records nothing new.
+      await setPermission.mutateAsync({ kind: 'preset', preset: 'full', surface: 'first-run' });
     } catch (err) {
       // Step 2 never fires when step 1 fails.
       setConfigError(describeWriteFailure(err));
@@ -176,7 +187,7 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
     }
     setSubmitting(false);
     onClose();
-  }, [loginOn, updateConfig, setOpenMesh, refreshConfigReaders, onClose]);
+  }, [loginOn, updateConfig, setPermission, setOpenMesh, refreshConfigReaders, onClose]);
 
   const recordSupervised = useCallback(async (): Promise<boolean> => {
     setConfigError(null);
@@ -185,6 +196,9 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
       await updateConfig.mutateAsync({
         ui: { fullPowerDecidedAt: new Date().toISOString(), fullPowerChoice: 'supervised' },
       });
+      // The careful answer's preset: agents ask before arranging rooms (the one
+      // area on the new model so far).
+      await setPermission.mutateAsync({ kind: 'preset', preset: 'careful', surface: 'first-run' });
     } catch (err) {
       setConfigError(describeWriteFailure(err));
       setSubmitting(false);
@@ -193,7 +207,7 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
     refreshConfigReaders();
     setSubmitting(false);
     return true;
-  }, [updateConfig, refreshConfigReaders]);
+  }, [updateConfig, setPermission, refreshConfigReaders]);
 
   const decline = useCallback(async () => {
     if (await recordSupervised()) onClose();

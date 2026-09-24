@@ -40,16 +40,20 @@ import { abortSignalOf } from '../capabilities/index.js';
  * @param context - Optional request-scoped context. HTTP servers are rebuilt per
  *   request, so this carries the calling agent's resolved identity and every
  *   tool handler registered here invokes under it.
+ * @param hiddenToolNames - Tools the caller is not shown because their
+ *   permission resolves to Blocked (spec `agent-permissions` D15). Left out of
+ *   the list only; the gate refuses a Blocked call whatever the list says.
  */
 export function registerCapabilitiesAsMcpTools(
   server: McpServer,
   registry: CapabilityRegistry,
   transport: McpServerId = 'external',
-  context?: CapabilityInvocationContext
+  context?: CapabilityInvocationContext,
+  hiddenToolNames: ReadonlySet<string> = new Set()
 ): void {
   for (const capability of capabilitiesForMcpServer(registry, transport)) {
     const mcp = capability.surfaces.mcp;
-    if (!mcp) continue;
+    if (!mcp || hiddenToolNames.has(mcp.toolName)) continue;
     server.registerTool(
       mcp.toolName,
       {

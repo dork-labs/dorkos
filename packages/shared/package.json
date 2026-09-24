@@ -185,6 +185,10 @@
       "types": "./src/permission-semantics.ts",
       "default": "./dist/permission-semantics.js"
     },
+    "./permissions": {
+      "types": "./src/permissions/index.ts",
+      "default": "./dist/permissions/index.js"
+    },
     "./command-intents": {
       "types": "./src/command-intents.ts",
       "default": "./dist/command-intents.js"

@@ -199,6 +199,15 @@ import type {
 } from '@dorkos/shared/marketplace-schemas';
 import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import type {
+  AgentPermissionsResponse,
+  PatchAgentPermissionsBody,
+  PatchPermissionDefaultsBody,
+  PermissionHistoryResponse,
+  PermissionsResponse,
+  SetPermissionPresetBody,
+} from '@dorkos/shared/permissions';
+import type { PermissionWriteResult } from '@dorkos/shared/transport';
+import type {
   CloudCreditsStatus,
   CloudLinkStatus,
   CloudLinkSummary,
@@ -568,6 +577,51 @@ export const approvalStubs = {
 
   async revokeStandingPermission(_grantId: string): Promise<RevokeStandingPermissionResponse> {
     throw new Error('Approvals are not supported in Obsidian plugin mode.');
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Permission stubs (spec `agent-permissions`)
+// ---------------------------------------------------------------------------
+
+/** What every permission call in the embed answers with. */
+const PERMISSIONS_IN_APP = 'Permissions are managed in the DorkOS app, not the Obsidian plugin.';
+
+/**
+ * Embedded mode runs no agent-facing capability surface, so there is nothing
+ * for a permission to govern here; the DorkOS app is where they are set.
+ *
+ * @internal
+ */
+export const permissionStubs = {
+  async getPermissions(): Promise<PermissionsResponse> {
+    throw new Error(PERMISSIONS_IN_APP);
+  },
+  async getAgentPermissions(_agentId: string): Promise<AgentPermissionsResponse> {
+    throw new Error(PERMISSIONS_IN_APP);
+  },
+  async setPermissionPreset(
+    _body: SetPermissionPresetBody
+  ): Promise<PermissionWriteResult<PermissionsResponse>> {
+    throw new Error(PERMISSIONS_IN_APP);
+  },
+  async patchPermissionDefaults(
+    _body: PatchPermissionDefaultsBody
+  ): Promise<PermissionWriteResult<PermissionsResponse>> {
+    throw new Error(PERMISSIONS_IN_APP);
+  },
+  async patchAgentPermissions(
+    _agentId: string,
+    _body: PatchAgentPermissionsBody
+  ): Promise<PermissionWriteResult<AgentPermissionsResponse>> {
+    throw new Error(PERMISSIONS_IN_APP);
+  },
+  async getPermissionHistory(_query?: {
+    agentId?: string;
+    before?: string;
+    limit?: number;
+  }): Promise<PermissionHistoryResponse> {
+    return { items: [], nextCursor: null };
   },
 };
 

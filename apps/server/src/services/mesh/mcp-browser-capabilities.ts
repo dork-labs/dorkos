@@ -32,6 +32,8 @@ export const mcpBrowserCapabilities: CapabilityDefinition[] = [
       'need is missing, only the operator can fix it, by running the returned loginCommand ' +
       'with the site in a terminal; never ask them for a password.',
     tier: 'observe',
+    area: null,
+    areaNote: 'reading',
     input: z.object({}),
     output: AgentBrowserPresetSchema,
     // No MCP surface, on purpose: the list of sites is the shape of the

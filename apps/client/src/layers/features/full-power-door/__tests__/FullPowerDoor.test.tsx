@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 import { useSetOpenMesh } from '@/layers/entities/mesh';
+import { useSetPermission } from '@/layers/entities/permissions';
 import { Dialog, DialogContent } from '@/layers/shared/ui';
 
 import { FullPowerDoor } from '../ui/FullPowerDoor';
@@ -23,9 +24,11 @@ vi.mock('@/layers/entities/config', async (importOriginal) => {
   return { ...actual, useConfig: vi.fn(), useUpdateConfig: vi.fn() };
 });
 vi.mock('@/layers/entities/mesh', () => ({ useSetOpenMesh: vi.fn() }));
+vi.mock('@/layers/entities/permissions', () => ({ useSetPermission: vi.fn() }));
 
 const configMutateAsync = vi.fn();
 const meshMutateAsync = vi.fn();
+const presetMutateAsync = vi.fn();
 const onClose = vi.fn();
 const onCustomize = vi.fn();
 
@@ -54,6 +57,14 @@ function setMutations({ configPending = false, meshPending = false } = {}) {
     error: null,
     reset: vi.fn(),
   } as unknown as ReturnType<typeof useSetOpenMesh>);
+  vi.mocked(useSetPermission).mockReturnValue({
+    mutate: vi.fn(),
+    mutateAsync: presetMutateAsync,
+    isPending: false,
+    isError: false,
+    error: null,
+    reset: vi.fn(),
+  } as unknown as ReturnType<typeof useSetPermission>);
 }
 
 /** The door as the host mounts it — inside the rail's dialog, with a live client. */
@@ -84,6 +95,7 @@ describe('FullPowerDoor', () => {
   beforeEach(() => {
     configMutateAsync.mockReset().mockResolvedValue(undefined);
     meshMutateAsync.mockReset().mockResolvedValue(undefined);
+    presetMutateAsync.mockReset().mockResolvedValue(undefined);
     onClose.mockReset();
     onCustomize.mockReset();
     setLogin(false); // Require login off — the default install
@@ -245,6 +257,54 @@ describe('FullPowerDoor', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
+  it('accept also chooses the Full power permission preset, before the mesh opens', async () => {
+    // So DorkBot's create_room runs on a fresh install that answered the door,
+    // not only on an upgraded one the config migration mapped (spec
+    // `agent-permissions` D5).
+    const user = userEvent.setup();
+    renderDoor();
+
+    await user.click(screen.getByRole('button', { name: ACCEPT }));
+
+    await waitFor(() =>
+      expect(presetMutateAsync).toHaveBeenCalledWith({
+        kind: 'preset',
+        preset: 'full',
+        surface: 'first-run',
+      })
+    );
+    expect(presetMutateAsync.mock.invocationCallOrder[0]).toBeLessThan(
+      meshMutateAsync.mock.invocationCallOrder[0]!
+    );
+  });
+
+  it('reports a preset write failure like a config failure, and never opens the mesh', async () => {
+    presetMutateAsync.mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    renderDoor();
+
+    await user.click(screen.getByRole('button', { name: ACCEPT }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(meshMutateAsync).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('decline chooses the Careful permission preset', async () => {
+    const user = userEvent.setup();
+    renderDoor();
+
+    await user.click(screen.getByRole('button', { name: DECLINE }));
+
+    await waitFor(() =>
+      expect(presetMutateAsync).toHaveBeenCalledWith({
+        kind: 'preset',
+        preset: 'careful',
+        surface: 'first-run',
+      })
+    );
+  });
+
   it('decline records supervised and writes NOTHING else', async () => {
     const user = userEvent.setup();
     renderDoor();
@@ -280,6 +340,7 @@ describe('FullPowerDoor', () => {
 
     expect(configMutateAsync).not.toHaveBeenCalled();
     expect(meshMutateAsync).not.toHaveBeenCalled();
+    expect(presetMutateAsync).not.toHaveBeenCalled();
   });
 
   it('disables every action while a write is in flight', () => {

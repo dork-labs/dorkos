@@ -434,6 +434,7 @@ describe('isError round-trip through the registry', () => {
           title: 'Always fails',
           description: 'Test capability that surfaces an isError result.',
           tier: 'observe',
+          area: null,
           input: z.object({}),
           output: z.unknown(),
           surfaces: { mcp: { toolName: 'synthetic_fails', servers: ['external'] } },

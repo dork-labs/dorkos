@@ -631,6 +631,16 @@ It seeds a **top-level** section, unlike every `ui.*` body in the table above, s
 
 **The per-browser chime it replaces is not migrated here.** `dorkos-enable-notification-sound` lives in a browser's `localStorage`, which the server cannot read, so the cockpit imports it on first read instead. See [notifications](#notifications) above.
 
+### Shipped migrations: permissions
+
+One body landed with agent permissions (spec `agent-permissions`):
+
+| Version  | Body                           | Effect                                                                                                                                                                                                                                                                                                                 |
+| -------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0.83.0` | `seedPermissionPresetFromDoor` | Reads the Full-power door's answer (`ui.fullPowerChoice`) and writes the matching preset: `full` becomes `full`, `supervised` becomes `careful`. An install that never answered keeps `preset: null`, which resolves every action exactly as before permissions existed. A preset already chosen is never overwritten. |
+
+The per-agent half of the upgrade is not a config migration, because it lives in each agent's `.dork/agent.json`: the boot-time sweep (`services/core/permissions/permission-upgrade-sweep.ts`) folds the retired `enabledToolGroups.roomsManage` into `permissions.areas.rooms`, records one Activity event per agent it changed, and stamps `permissions.upgradeSweptVersion` so it runs once per server version.
+
 ### Interaction with `/system:release`
 
 The `/system:release` command includes a **config schema migration drift** check in Phase 2. When it detects that `packages/shared/src/config-schema.ts` or `apps/server/src/services/core/config-manager.ts` changed since the last tag without a matching migration entry at the target version, it offers three paths:
@@ -1069,6 +1079,18 @@ These can be configured globally in Settings > Tools tab, or per-agent via the a
 dorkos config set agentContext.relayTools false
 dorkos config set agentContext.tasksTools false
 ```
+
+### permissions
+
+What agents may do: each action is Blocked, Ask or Allowed. The schema and the resolver live in `@dorkos/shared/permissions`; the user guide is `docs/guides/permissions.mdx`.
+
+| Key                               | Type                                        | Default | Description                                                                                                      |
+| --------------------------------- | ------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------- |
+| `permissions.preset`              | `'careful' \| 'balanced' \| 'full' \| null` | `null`  | The starting point for every area. `null` means not chosen yet: every action keeps its pre-permissions behavior. |
+| `permissions.defaults`            | `{ areas, actions }`                        | empty   | The person's own defaults over the preset, by area or by single action.                                          |
+| `permissions.upgradeSweptVersion` | `string \| null`                            | `null`  | The server version whose upgrade sweep has run. Bookkeeping only.                                                |
+
+**None of these is written through `PATCH /api/config` or `dorkos config set`.** The generic config writers refuse `permissions.*` with `USE_PERMISSIONS_API`, because every permission change has to record who made it. Use Settings → Permissions, or `PUT /api/permissions/preset` and `PATCH /api/permissions/defaults`. Per-agent settings live in the agent's `.dork/agent.json` under `permissions` and are written only through `PATCH /api/agents/:id/permissions`.
 
 ### runtimes
 

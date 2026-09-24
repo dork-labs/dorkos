@@ -47,6 +47,7 @@ import {
   type CapabilityHoldSession,
 } from './capability-approval-hold.js';
 import { projectInSessionCard } from './in-session-card.js';
+import { canRaiseApproval } from './permission-enforcement.js';
 import type { ApprovalService } from '../approvals/index.js';
 
 /**
@@ -106,7 +107,9 @@ export function capabilitiesForMcpServer(
  * capability declares `input` as a `z.object(...)`, so its `.shape` is the same
  * field map the phase-1 descriptors passed straight to `registerTool` / `tool`.
  *
- * A `destructive` capability gains one extra advertised argument,
+ * A capability that can raise an approval card (`destructive`, or an `act`
+ * capability with a permission area, which a person may set to Ask) gains one
+ * extra advertised argument,
  * `approvalToken`, which is how a retry carries the approval a person granted
  * (spec `agent-trust` §3.2). It is deliberately NOT part of the capability's own
  * input schema: the approval binds to a hash of the input, so a token carried
@@ -123,7 +126,7 @@ export function capabilitiesForMcpServer(
  */
 export function capabilityInputShape(capability: CapabilityDefinition): z.ZodRawShape {
   const shape = (capability.input as z.ZodObject<z.ZodRawShape>).shape;
-  if (capability.tier !== 'destructive') return portableInputShape(shape);
+  if (!canRaiseApproval(capability)) return portableInputShape(shape);
   return portableInputShape({ ...shape, ...approvalTokenArgument() });
 }
 
@@ -360,11 +363,11 @@ export async function invokeCapabilityAsMcpResult(
   signal?: AbortSignal
 ): Promise<CallToolResult> {
   const capability = registry.get(id);
-  // Only a destructive tool advertises `approvalToken`, so only a destructive
+  // Only a tool that can raise a card advertises `approvalToken`, so only such a
   // call has one to lift off — anything else gets its arguments through untouched
   // rather than silently losing a field of that name.
   const { approvalToken, input } =
-    capability?.tier === 'destructive'
+    capability && canRaiseApproval(capability)
       ? splitApprovalToken(args)
       : { approvalToken: undefined, input: args };
 

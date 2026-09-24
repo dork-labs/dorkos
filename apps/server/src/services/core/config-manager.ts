@@ -3310,6 +3310,41 @@ export function seedCommunityNavigationPrefs(store: {
   });
 }
 
+/**
+ * Carry the first-run power choice into the permission preset (spec
+ * `agent-permissions` D13, phase 1): `ui.fullPowerChoice: 'full'` becomes
+ * `permissions.preset: 'full'`, `'supervised'` becomes `'careful'`, and an
+ * unanswered door leaves the preset `null` (Unchanged, today's behaviour).
+ *
+ * `permissions` is a new TOP-LEVEL section, so conf's shallow pre-migration
+ * defaults merge has already written it by the time this runs: there is no
+ * absence case to guard. It never replaces a preset that is already set, so a
+ * re-run, or a door answered through the permission routes first, is left
+ * alone. It does not touch any trust stop; that coupling is later work.
+ *
+ * Runs before the Activity service exists, so it records nothing; the boot-time
+ * permission upgrade sweep writes the audit event for its effect.
+ *
+ * @param store - The conf migration store.
+ */
+export function seedPermissionPresetFromDoor(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object' || Array.isArray(ui)) return;
+  const choice = (ui as Record<string, unknown>).fullPowerChoice;
+  const preset = choice === 'full' ? 'full' : choice === 'supervised' ? 'careful' : null;
+  if (preset === null) return;
+  const stored = store.get('permissions');
+  const section =
+    stored && typeof stored === 'object' && !Array.isArray(stored)
+      ? (stored as Record<string, unknown>)
+      : { preset: null, defaults: { areas: {}, actions: {} }, upgradeSweptVersion: null };
+  if (section.preset !== null && section.preset !== undefined) return;
+  store.set('permissions', { ...section, preset });
+}
+
 export const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -4048,6 +4083,16 @@ export const CONFIG_MIGRATIONS = {
     set: (key: string, value: unknown) => void;
   }) => {
     seedCommunityNavigationPrefs(store);
+  },
+  // 0.82.0 has merged, so 0.83.0 is the next key. Disjoint from every other key
+  // here: it writes one leaf of the new top-level `permissions` section, which
+  // nothing above touches, and only READS `ui.fullPowerChoice`, which `'0.67.0'`
+  // seeded.
+  '0.83.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    seedPermissionPresetFromDoor(store);
   },
 } as const;
 

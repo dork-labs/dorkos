@@ -1,4 +1,5 @@
 import path from 'path';
+import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
@@ -200,6 +201,18 @@ import { setAgentPathLookup } from './services/mesh/agent-path-lookup.js';
 import { createA2aRouter } from './routes/a2a.js';
 import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { createAgentsRouter } from './routes/agents.js';
+import { createPermissionsRouter } from './routes/permissions.js';
+import { resolveToolVisibilityFor } from './services/runtimes/shared/permission-tool-filter.js';
+import { composeCapabilityRegistryForDocs } from './services/core/self-description/dorkos-registry.js';
+import {
+  PermissionObserver,
+  createPermissionService,
+  observedPermissionReader,
+  permissionActions,
+  readAgentPermissionsFromManifest,
+  readRawManifestFile,
+  runPermissionUpgradeSweep,
+} from './services/core/permissions/index.js';
 import { createTeamRouter } from './routes/team.js';
 import { createProfileRouter } from './routes/profile.js';
 import { createSearchRouter } from './routes/search.js';
@@ -320,8 +333,7 @@ import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.j
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
   initCapabilityTierGate,
-  initToolGroupGate,
-  manifestToolGroupGrants,
+  initPermissionGate,
   type CapabilityRegistry,
 } from './services/core/capabilities/index.js';
 import {
@@ -904,6 +916,30 @@ async function start() {
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
+  // Records a change to an agent's permissions that was made by editing its
+  // settings file rather than through DorkOS. The last-seen values live in
+  // DorkOS's own data directory, never the agent's.
+  const permissionObserver = new PermissionObserver({
+    snapshotFile: path.join(dorkHome, 'permissions', 'observed-agent-permissions.json'),
+    agentAt: (agentPath) => {
+      const agent = meshCore?.listWithPaths().find((a) => a.projectPath === agentPath);
+      return agent ? { id: agent.id, name: agent.displayName || agent.name } : undefined;
+    },
+    // The whole static catalog, not the live registry: this is built before the
+    // live registry is composed, and every action's area is fixed in code.
+    read: readAgentPermissionsFromManifest,
+    areaOfAction: (() => {
+      let areas: Map<string, PermissionAreaId | null> | undefined;
+      return (actionId: string) => {
+        areas ??= new Map(
+          permissionActions(composeCapabilityRegistryForDocs()).map((a) => [a.id, a.area])
+        );
+        return areas.get(actionId);
+      };
+    })(),
+    activity: activityService,
+    logger,
+  });
   const retentionDays = env.DORKOS_ACTIVITY_RETENTION_DAYS ?? 30;
   try {
     const pruned = await activityService.prune(retentionDays);
@@ -1910,6 +1946,42 @@ async function start() {
       await ensureDorkBot(meshCore, dorkHome);
     } catch (err) {
       logger.warn('[Mesh] Failed to ensure DorkBot system agent', logError(err));
+    }
+
+    // The permission upgrade sweep (spec `agent-permissions` D13): once per server
+    // version, after the mesh and Activity are up, write folded manifests back
+    // and record what the upgrade changed. Non-fatal: a failure costs the audit
+    // line, never the boot, and the fold still happens on every read.
+    try {
+      const mesh = meshCore;
+      await runPermissionUpgradeSweep({
+        version: SERVER_VERSION,
+        config: {
+          get: () => configManager.get('permissions'),
+          set: (next) => configManager.set('permissions', next),
+        },
+        agents: () =>
+          mesh.listWithPaths().map((a) => ({
+            id: a.id,
+            name: a.name,
+            ...(a.displayName ? { displayName: a.displayName } : {}),
+            projectPath: a.projectPath,
+          })),
+        readRawManifest: readRawManifestFile,
+        writeFolded: async (agentId, fields) => {
+          const write = async () => {
+            await mesh.update(agentId, fields);
+          };
+          const agentPath = mesh.listWithPaths().find((a) => a.id === agentId)?.projectPath;
+          // The sweep's own write is not an outside change.
+          if (agentPath) await permissionObserver.writing(agentPath, fields.permissions, write);
+          else await write();
+        },
+        activity: activityService,
+        logger,
+      });
+    } catch (err) {
+      logger.warn('[Permissions] Upgrade sweep failed', logError(err));
     }
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();
@@ -3104,7 +3176,7 @@ async function start() {
       // the caller resolution to the owner's left 712 tests green.
       listVisibleRooms: (caller) => visibleRoomsForCaller(roomService, caller),
     };
-    claudeRuntime.setMcpServerFactory((session, sessionId) =>
+    claudeRuntime.setMcpServerFactory((session, sessionId, launch) =>
       // Managed servers first and `dorkos` last so it can never be shadowed —
       // the ordering guarantee lives in `mergeSessionMcpServers`
       // (spec `mcp-server-management` §6).
@@ -3126,7 +3198,8 @@ async function start() {
           session,
           sessionId,
           marketplaceMcpDeps,
-          capabilityRegistry
+          capabilityRegistry,
+          launch?.hiddenToolNames
         ),
       })
     );
@@ -3149,7 +3222,7 @@ async function start() {
     requireMcpEnabled,
     createMcpAuth({ surface: 'mcp' }),
     mcpRateLimiter,
-    createMcpRouter((caller) => {
+    createMcpRouter(async (caller) => {
       if (!claudeRuntime || !mcpToolDeps) {
         throw new Error(
           'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
@@ -3158,13 +3231,21 @@ async function start() {
       // The server is rebuilt per request, so who is calling — the agent that
       // presented a token, the person the auth middleware verified, or neither
       // — is captured by the capability tool handlers it registers.
+      //
+      // What a Blocked permission hides from this caller (spec
+      // `agent-permissions` D15): its own settings when it identified itself,
+      // the install's defaults when it did not.
+      const visibility = await resolveToolVisibilityFor(caller.identity?.agentPath, {
+        inactive: Boolean(caller.identity?.inactive),
+      });
       return createExternalMcpServer(
         mcpToolDeps,
         marketplaceMcpDeps,
         capabilityRegistry,
         caller.identity,
         caller.userId,
-        caller.agentIdentityPresented
+        caller.agentIdentityPresented,
+        visibility.hiddenToolNames
       );
     })
   );
@@ -3752,6 +3833,25 @@ async function start() {
   if (agentMcpOAuthService) {
     app.use('/api/agents/mcp-oauth', createMcpOAuthRouter(agentMcpOAuthService));
   }
+
+  // Permissions (spec `agent-permissions` D10): the one way in for what agents
+  // may do. Mounted at `/api` BEFORE the agents router so
+  // `/api/agents/:id/permissions` reaches it first. The registry is read lazily:
+  // it is composed after the routes are mounted.
+  app.use(
+    '/api',
+    createPermissionsRouter({
+      permissions: createPermissionService({
+        config: configManager,
+        mesh: () => meshCore,
+        registry: () => capabilityRegistry,
+        activity: activityService,
+        observer: permissionObserver,
+      }),
+      activity: activityService,
+    })
+  );
+  mountedRouters.push('permissions');
 
   // Always mounted — not behind any feature flag.
   // ADR-0043: pass meshCore (when available) so writes sync to Mesh DB cache.
@@ -4375,6 +4475,13 @@ async function start() {
       const task = taskStore?.getTask(id);
       return task ? (task.displayName ?? task.name) : undefined;
     },
+    // What a person calls the room: `#slug` for a channel, the title otherwise,
+    // the same rule the client's `roomDisplayTitle` follows.
+    room: (id) => {
+      const room = roomStore.getRoom(id);
+      if (!room) return undefined;
+      return room.kind === 'channel' && room.slug ? `#${room.slug}` : room.title;
+    },
   });
   initCapabilityTierGate({
     approvals: approvalService,
@@ -4388,16 +4495,18 @@ async function start() {
       findLive: (agentPath, capabilityId) => approvalGrantService.findLive(agentPath, capabilityId),
     },
   });
-  // Arm the per-agent tool-group gate beside it (spec `rooms-management-tools`,
-  // DOR-1611). It runs in the same choke point, one step earlier, and answers a
-  // different question: not "is this caller restricted" but "does this caller hold
-  // this grant". Unwired it refuses every capability that declares a group, so an
-  // omission here fails closed. The audit hook is the SAME observer the tier gate
-  // uses, so a refusal shows up in the Activity feed as `capability.denied` — the
-  // operator sees what an agent tried and did not get.
-  initToolGroupGate({
-    grants: manifestToolGroupGrants(),
-    onAttempt: createCapabilityGateAuditObserver(activityService),
+  // Wire the permission half of the same gate (spec `agent-permissions` D6):
+  // the live `permissions` config section, read per call like everything else
+  // this gate decides on. The agent's own overrides are read fresh off its
+  // manifest file by the default source.
+  initPermissionGate({
+    readConfig: () => configManager.get('permissions'),
+    // Fresh off the manifest on every call, and compared with the last value
+    // DorkOS saw, so an edit made outside DorkOS is recorded (not blocked).
+    readAgentPermissions: observedPermissionReader(permissionObserver),
+    // The tool-list builders hide an action whose permission is Blocked; they
+    // read this catalog, per build, off the composed registry.
+    listActions: () => permissionActions(capabilityRegistry),
   });
   if (connectorRuntimePrincipals) {
     const agentScopedRuntimePrincipals = new AgentIdentitySnapshotPrincipalPort({
@@ -4412,7 +4521,17 @@ async function start() {
       agentServerFactory: async (principal) => {
         const identity = await agentScopedRuntimePrincipals.identityFor(principal);
         if (!identity) return null;
-        return createAgentRuntimeMcpServer(capabilityRegistry!, principal, identity);
+        // What a Blocked permission hides from this agent (spec
+        // `agent-permissions` D15), read fresh for this turn.
+        const visibility = await resolveToolVisibilityFor(identity.agentPath, {
+          inactive: Boolean(identity.inactive),
+        });
+        return createAgentRuntimeMcpServer(
+          capabilityRegistry!,
+          principal,
+          identity,
+          visibility.hiddenToolNames
+        );
       },
     });
     for (const runtime of runtimeRegistry.listRuntimes()) {

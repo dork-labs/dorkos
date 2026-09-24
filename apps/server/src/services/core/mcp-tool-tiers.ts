@@ -70,9 +70,17 @@
  * @module services/core/mcp-tool-tiers
  */
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import type { McpToolGroupName } from '@dorkos/shared/mcp-tool-groups';
 import type { ApprovalSubjectDeclaration } from './approvals/index.js';
 import type { GatedAction } from './capabilities/tier-enforcement.js';
+import { AREA_PENDING_PHASE_3 } from './capabilities/capability-definition.js';
+
+/**
+ * The `areaNote` of a hand-registered tool that never takes a permission area:
+ * it only reads what DorkOS itself is, so there is nothing to switch off.
+ */
+const ALWAYS_ON = 'always on';
 
 /** One tool's tier declaration. */
 export interface McpToolTier {
@@ -81,6 +89,14 @@ export interface McpToolTier {
    * stops and asks; see the module TSDoc for how to choose.
    */
   tier: CapabilityTier;
+  /**
+   * The permission area this tool belongs to, or `null` when its tier alone
+   * decides (spec `agent-permissions` D2). Required, so a tool cannot be added
+   * without somebody deciding it.
+   */
+  area: PermissionAreaId | null;
+  /** Why a tool with `area: null` has no switch. Required whenever `area` is `null`. */
+  areaNote?: string;
   /**
    * Human-facing title, written for the person reading an approval card or a
    * refusal in their Activity feed — not for the model, which reads the tool's own
@@ -124,51 +140,128 @@ export interface McpToolTier {
  */
 export const MCP_TOOL_TIERS = {
   // ── Core ────────────────────────────────────────────────────────────────
-  ping: { tier: 'observe', title: 'Check that DorkOS is answering' },
-  get_server_info: { tier: 'observe', title: 'Read server information' },
-  get_session_count: { tier: 'observe', title: "Count an agent's sessions" },
-  get_agent: { tier: 'observe', title: "Read an agent's setup file" },
+  ping: {
+    tier: 'observe',
+    area: null,
+    areaNote: ALWAYS_ON,
+    title: 'Check that DorkOS is answering',
+  },
+  get_server_info: {
+    tier: 'observe',
+    area: null,
+    areaNote: ALWAYS_ON,
+    title: 'Read server information',
+  },
+  get_session_count: {
+    tier: 'observe',
+    area: null,
+    areaNote: ALWAYS_ON,
+    title: "Count an agent's sessions",
+  },
+  get_agent: {
+    tier: 'observe',
+    area: null,
+    areaNote: ALWAYS_ON,
+    title: "Read an agent's setup file",
+  },
 
   // ── Tasks ───────────────────────────────────────────────────────────────
-  tasks_list: { tier: 'observe', title: 'List scheduled tasks' },
+  tasks_list: {
+    tier: 'observe',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'List scheduled tasks',
+  },
   // Creates the schedule already parked at `pending_approval`, so a person has to
   // approve it before it ever runs. A second card here would ask the same question
   // twice.
-  tasks_create: { tier: 'act', title: 'Create a scheduled task' },
+  tasks_create: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Create a scheduled task',
+  },
   // Can overwrite a schedule's prompt and cron with no history, which is real. The
   // answer to "no history" is an audit trail, not a card on every edit.
-  tasks_update: { tier: 'act', title: 'Change a scheduled task' },
+  tasks_update: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Change a scheduled task',
+  },
   // `deleteTask` is a bare DELETE with no trash and no undo (`tasks/task-store.ts`).
   // The person rebuilds the prompt, the schedule, and the timezone from memory.
   tasks_delete: {
     tier: 'destructive',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
     title: 'Delete a scheduled task',
     approvalDisplayFields: ['id'],
     // Without this the card said `id: "01K…"`, which names nothing a person
     // recognizes — the same defect `mesh_unregister` was reported for.
     approvalSubject: { field: 'id', kind: 'task' },
   },
-  tasks_get_run_history: { tier: 'observe', title: "Read a scheduled task's run history" },
+  tasks_get_run_history: {
+    tier: 'observe',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: "Read a scheduled task's run history",
+  },
 
   // ── Relay: messaging ────────────────────────────────────────────────────
-  relay_send: { tier: 'act', title: 'Send a message to another agent' },
+  relay_send: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Send a message to another agent',
+  },
   // Not `observe`: `ack: true` DESTROYS each acknowledged message. It unlinks the
   // payload file from the maildir (`packages/relay/src/maildir-store.ts`), leaving
   // only the index row, so later reads come back with `payload: null`. It stays
   // `act` for the same reason `relay_unregister_endpoint` does — this is the
   // ordinary way a caller drains its own inbox, and a card on every drain is the
   // fastest way to teach someone to stop reading cards.
-  relay_inbox: { tier: 'act', title: 'Read and clear the message inbox' },
-  relay_list_endpoints: { tier: 'observe', title: 'List message endpoints' },
-  relay_register_endpoint: { tier: 'act', title: 'Create a message endpoint' },
-  relay_send_and_wait: { tier: 'act', title: 'Send a message and wait for the reply' },
-  relay_send_async: { tier: 'act', title: 'Send a message without waiting' },
+  relay_inbox: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Read and clear the message inbox',
+  },
+  relay_list_endpoints: {
+    tier: 'observe',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'List message endpoints',
+  },
+  relay_register_endpoint: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Create a message endpoint',
+  },
+  relay_send_and_wait: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Send a message and wait for the reply',
+  },
+  relay_send_async: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Send a message without waiting',
+  },
   // This one deletes a maildir, undelivered messages and all. It is still `act`,
   // and deliberately: it is the documented last step of every async send, so the
   // tool's own description tells the agent to call it on each `done: true`. A card
   // in front of routine cleanup is the fastest way to teach someone to stop reading
   // cards.
-  relay_unregister_endpoint: { tier: 'act', title: 'Remove a message endpoint' },
+  relay_unregister_endpoint: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Remove a message endpoint',
+  },
   // In-session only, and the two destinations it can reach are gated
   // differently — which is why this comment says what is true rather than "it
   // is consent-gated".
@@ -183,33 +276,108 @@ export const MCP_TOOL_TIERS = {
   // deliveries (`specs/proactive-agent-dms` G1); until it ships, `act` is the
   // right tier for the same reason it is on every other send tool, not because
   // something upstream already asked.
-  relay_notify_user: { tier: 'act', title: 'Send the person a message' },
+  relay_notify_user: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Send the person a message',
+  },
 
   // ── Relay: chat connections ─────────────────────────────────────────────
-  relay_list_adapters: { tier: 'observe', title: 'List chat connections' },
-  relay_enable_adapter: { tier: 'act', title: 'Turn a chat connection on' },
-  relay_disable_adapter: { tier: 'act', title: 'Turn a chat connection off' },
-  relay_reload_adapters: { tier: 'act', title: 'Reload chat connections' },
+  relay_list_adapters: {
+    tier: 'observe',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'List chat connections',
+  },
+  relay_enable_adapter: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Turn a chat connection on',
+  },
+  relay_disable_adapter: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Turn a chat connection off',
+  },
+  relay_reload_adapters: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Reload chat connections',
+  },
 
   // ── Relay: traces and counters ──────────────────────────────────────────
-  relay_get_trace: { tier: 'observe', title: 'Read a message trace' },
-  relay_get_metrics: { tier: 'observe', title: 'Read messaging counters' },
+  relay_get_trace: {
+    tier: 'observe',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Read a message trace',
+  },
+  relay_get_metrics: {
+    tier: 'observe',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Read messaging counters',
+  },
 
   // ── Chat routes ─────────────────────────────────────────────────────────
-  binding_list: { tier: 'observe', title: 'List chat routes' },
-  binding_create: { tier: 'act', title: 'Create a chat route' },
+  binding_list: {
+    tier: 'observe',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'List chat routes',
+  },
+  binding_create: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Create a chat route',
+  },
   // Settings, not content: five fields the cockpit can put back in under a minute,
   // and no messages are lost with it.
-  binding_delete: { tier: 'act', title: 'Remove a chat route' },
+  binding_delete: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Remove a chat route',
+  },
   // In-session only.
-  binding_list_sessions: { tier: 'observe', title: 'List active chat sessions' },
+  binding_list_sessions: {
+    tier: 'observe',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'List active chat sessions',
+  },
 
   // ── Mesh ────────────────────────────────────────────────────────────────
   // Not `observe`: the scan auto-imports every agent file it walks past.
-  mesh_discover: { tier: 'act', title: 'Scan for agents' },
-  mesh_register: { tier: 'act', title: 'Register an agent' },
-  mesh_list: { tier: 'observe', title: 'List registered agents' },
-  mesh_deny: { tier: 'act', title: 'Block a path from future scans' },
+  mesh_discover: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Scan for agents',
+  },
+  mesh_register: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Register an agent',
+  },
+  mesh_list: {
+    tier: 'observe',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'List registered agents',
+  },
+  mesh_deny: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Block a path from future scans',
+  },
   // Worse than its name: it deletes the agent's `.dork/agent.json` from disk, tears
   // down its Relay endpoint (which removes that endpoint's maildir), and cascades
   // into disabling the agent's scheduled tasks. One call, three kinds of the
@@ -217,6 +385,8 @@ export const MCP_TOOL_TIERS = {
   // saying out loud that it knew.
   mesh_unregister: {
     tier: 'destructive',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
     // The title is the sentence a person reads before clicking Allow, so it says
     // "turns off" rather than "deletes": the task cascade sets `enabled: false,
     // status: 'paused'`, it does not remove the schedules. Overstating the loss on
@@ -228,22 +398,67 @@ export const MCP_TOOL_TIERS = {
     // four irreversible deletions they had no way to tell apart.
     approvalSubject: { field: 'agentId', kind: 'agent' },
   },
-  mesh_status: { tier: 'observe', title: 'Read mesh health' },
-  mesh_inspect: { tier: 'observe', title: 'Inspect one agent' },
-  mesh_query_topology: { tier: 'observe', title: 'Read the agent network layout' },
+  mesh_status: {
+    tier: 'observe',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Read mesh health',
+  },
+  mesh_inspect: {
+    tier: 'observe',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Inspect one agent',
+  },
+  mesh_query_topology: {
+    tier: 'observe',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Read the agent network layout',
+  },
 
   // ── Agents ──────────────────────────────────────────────────────────────
-  create_agent: { tier: 'act', title: 'Create a new agent workspace' },
+  create_agent: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Create a new agent workspace',
+  },
 
   // ── Extensions ──────────────────────────────────────────────────────────
-  get_extension_api: { tier: 'observe', title: 'Read the extension API reference' },
-  list_extensions: { tier: 'observe', title: 'List extensions' },
-  get_extension_errors: { tier: 'observe', title: 'Read extension errors' },
+  get_extension_api: {
+    tier: 'observe',
+    area: null,
+    areaNote: ALWAYS_ON,
+    title: 'Read the extension API reference',
+  },
+  list_extensions: { tier: 'observe', area: null, areaNote: ALWAYS_ON, title: 'List extensions' },
+  get_extension_errors: {
+    tier: 'observe',
+    area: null,
+    areaNote: ALWAYS_ON,
+    title: 'Read extension errors',
+  },
   // Cannot clobber: the scaffolder throws when the directory already exists, so
   // this only ever writes into a fresh one.
-  create_extension: { tier: 'act', title: 'Scaffold a new extension' },
-  reload_extensions: { tier: 'act', title: 'Reload extensions' },
-  test_extension: { tier: 'act', title: 'Compile and test an extension' },
+  create_extension: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Scaffold a new extension',
+  },
+  reload_extensions: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Reload extensions',
+  },
+  test_extension: {
+    tier: 'act',
+    area: null,
+    areaNote: AREA_PENDING_PHASE_3,
+    title: 'Compile and test an extension',
+  },
 
   // ── The app and its preview ─────────────────────────────────────────────
   // Nothing here any more. `control_ui`, `get_ui_state` and every `browser_*`
@@ -329,6 +544,7 @@ export function gatedActionForMcpTool(toolName: string): GatedAction {
     id: toolName,
     title: declared.title,
     tier: declared.tier,
+    area: declared.area,
     ...(declared.approvalDisplayFields
       ? { approvalDisplayFields: declared.approvalDisplayFields }
       : {}),

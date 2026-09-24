@@ -162,6 +162,10 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   transcript holds the earlier messages); the pointer-less variant when the
  *   bridge starts fresh. Either way the room log does NOT gain the old messages,
  *   and the notice says so — the platform gives bots no history to import.
+ * - `room_archived` — an agent put this channel away with `archive_room` (spec
+ *   `agent-permissions` D12). Written just before the archive lands, because an
+ *   archived room takes no new entries; it names who did it and says the person
+ *   can bring the room back.
  *
  * **This four-code addition is the one non-additive change in the whole
  * chats-as-channels feature (spec §11.2, A11.1).** Widening an enum is not
@@ -194,6 +198,7 @@ export const RoomNoticeCodeSchema = z
     'bridge_disconnected',
     'bridge_agent_swapped',
     'bridge_history_note',
+    'room_archived',
   ])
   .openapi('RoomNoticeCode');
 

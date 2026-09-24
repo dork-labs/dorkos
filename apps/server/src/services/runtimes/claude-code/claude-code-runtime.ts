@@ -85,7 +85,7 @@ import type { SessionAttachmentStore } from '../../session/attachments/index.js'
 import { SessionPumpRegistry } from './sessions/session-pump-registry.js';
 import { CommandRegistryService } from './tooling/command-registry.js';
 import { executeSdkQuery } from './messaging/message-sender.js';
-import type { MessageSenderOpts } from './messaging/message-sender-shared.js';
+import type { McpServerFactory, MessageSenderOpts } from './messaging/message-sender-shared.js';
 import { PersistentDispatch } from './sessions/persistent-dispatch.js';
 import { watchSessionList } from './sessions/session-list-watcher.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
@@ -182,8 +182,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private claudeCliPath: string | undefined;
 
   // Injected dependencies
-  private mcpServerFactory:
-    ((session: AgentSession, sessionId: string) => Record<string, McpServerConfig>) | null = null;
+  private mcpServerFactory: McpServerFactory | null = null;
   private meshCore: AgentRegistryPort | null = null;
   /** Internal connector tool boundary, installed after boot opens its listener. */
   private connectorRuntimeTools: ConnectorRuntimeTools | undefined;
@@ -421,9 +420,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** Register a factory that creates fresh MCP tool server configs per query() call. */
-  setMcpServerFactory(
-    factory: (session: AgentSession, sessionId: string) => Record<string, McpServerConfig>
-  ): void {
+  setMcpServerFactory(factory: McpServerFactory): void {
     this.mcpServerFactory = factory;
   }
 
