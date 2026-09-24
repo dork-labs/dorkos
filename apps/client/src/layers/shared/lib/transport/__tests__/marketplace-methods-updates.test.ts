@@ -69,7 +69,10 @@ describe('createMarketplaceMethods().applyMarketplaceUpdates', () => {
     const fetchMock = answerWithResult();
 
     await createMarketplaceMethods('/api').applyMarketplaceUpdates({
-      installPaths: ['/home/.dork/plugins/flow', '/work/alpha/.dork/plugins/flow'],
+      targets: [
+        { installPath: '/home/.dork/plugins/flow' },
+        { installPath: '/work/alpha/.dork/plugins/flow' },
+      ],
     });
 
     const [url, init] = fetchMock.mock.calls[0];
@@ -90,7 +93,9 @@ describe('createMarketplaceMethods().applyMarketplaceUpdates', () => {
     ) as unknown as typeof fetch;
 
     await expect(
-      createMarketplaceMethods('/api').applyMarketplaceUpdates({ installPaths: ['/nope'] })
+      createMarketplaceMethods('/api').applyMarketplaceUpdates({
+        targets: [{ installPath: '/nope' }],
+      })
     ).rejects.toThrow(/not installed/);
   });
 });
@@ -104,7 +109,7 @@ describe('embedded mode', () => {
 
   it('refuses to apply', async () => {
     await expect(
-      marketplaceStubs.applyMarketplaceUpdates({ installPaths: ['/x'] })
+      marketplaceStubs.applyMarketplaceUpdates({ targets: [{ installPath: '/x' }] })
     ).rejects.toThrow(/not supported in embedded mode/);
   });
 });

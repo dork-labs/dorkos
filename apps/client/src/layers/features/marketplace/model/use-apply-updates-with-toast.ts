@@ -9,11 +9,11 @@
  *
  * @module features/marketplace/model/use-apply-updates-with-toast
  */
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 
 import { humanizePackageName } from '@/layers/shared/lib';
-import { useApplyUpdates } from '@/layers/entities/marketplace';
+import { settleAppliedCheck, useApplyUpdates } from '@/layers/entities/marketplace';
 import type {
   InstallationUpdateCheck,
   InstallationUpdatesResult,
@@ -40,7 +40,8 @@ function installationLabel({ installation }: StaleInstallation): string {
 /** Describe one installation's outcome. */
 function describeOne(label: string, check: InstallationUpdateCheck | undefined): ApplyOutcomeToast {
   if (check?.applied) {
-    const version = formatCheckVersion(check.applied.version, check.latestVersionSource);
+    const settled = settleAppliedCheck(check);
+    const version = formatCheckVersion(settled.installedVersion, settled.installedVersionSource);
     return { kind: 'success', message: `Updated ${label} to ${version}` };
   }
   if (check?.applyError) {
@@ -99,34 +100,64 @@ function showOutcome(outcome: ApplyOutcomeToast, toastId: string | number): void
   toast[outcome.kind](outcome.message, { id: toastId });
 }
 
+/** The server's code for a batch that would need a person to approve each install. */
+const BATCH_NEEDS_APPROVAL = 'batch_update_needs_approval';
+
+/**
+ * Why a refused or failed apply failed, in a person's words. The one refusal
+ * with its own code gets a sentence of its own; the server's message names an
+ * API route, which is not something a person can act on.
+ */
+function describeFailure(err: unknown): string {
+  if ((err as { code?: unknown } | null)?.code === BATCH_NEEDS_APPROVAL) {
+    return 'Each of these installs needs your approval first, and DorkOS can’t ask for it here.';
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
 /**
  * Apply updates to exactly the given installations, with toasts.
  *
- * `apply(stale)` sends those installations' `installPaths` and nothing else, so
- * "Update all" reinstalls what its confirm step showed and a row's Update
- * reinstalls that row. An empty list sends nothing.
+ * `apply(stale)` sends those installations and nothing else, so "Update all"
+ * reinstalls what its confirm step showed and a row's Update reinstalls that
+ * row. An empty list sends nothing, and an installation already being updated
+ * from this hook is left out, so a double click never sends a second apply.
+ *
+ * Each apply owns its toast through its own `mutateAsync` promise, which
+ * settles however many applies overlap and whether or not this component is
+ * still mounted. (Per-call `mutate(…, { onSuccess })` callbacks run only for
+ * the latest call on a mounted observer, which left earlier toasts spinning.)
+ * The failure toast is reported here, once; the mutation opts out of the
+ * shared one.
  */
 export function useApplyUpdatesWithToast() {
-  const { mutate } = useApplyUpdates();
+  const { mutateAsync } = useApplyUpdates();
+  // Held in a ref, not state: a second click lands before any re-render.
+  const inFlight = useRef(new Set<string>());
 
   const apply = useCallback(
     (stale: readonly StaleInstallation[]) => {
-      const [first, ...rest] = stale.map(({ check }) => check.installPath);
+      const fresh = stale.filter(({ check }) => !inFlight.current.has(check.installPath));
+      const [first, ...rest] = fresh.map(({ check }) => ({ installPath: check.installPath }));
       if (first === undefined) return;
-      const toastId = toast.loading(
-        stale.length === 1
-          ? `Updating ${installationLabel(stale[0]!)}…`
-          : `Updating ${stale.length} packages…`
-      );
-      mutate(
-        { installPaths: [first, ...rest] },
-        {
-          onSuccess: (result) => showOutcome(describeOutcome(stale, result), toastId),
-          onError: (err) => toast.error(`Update failed: ${err.message}`, { id: toastId }),
-        }
-      );
+      const paths = fresh.map(({ check }) => check.installPath);
+      for (const path of paths) inFlight.current.add(path);
+
+      const label = fresh.length === 1 ? installationLabel(fresh[0]!) : `${fresh.length} packages`;
+      const toastId = toast.loading(`Updating ${label}…`);
+      mutateAsync({ targets: [first, ...rest] })
+        .then((result) => showOutcome(describeOutcome(fresh, result), toastId))
+        .catch((err: unknown) =>
+          toast.error(`Couldn’t update ${label}`, {
+            id: toastId,
+            description: describeFailure(err),
+          })
+        )
+        .finally(() => {
+          for (const path of paths) inFlight.current.delete(path);
+        });
     },
-    [mutate]
+    [mutateAsync]
   );
 
   return { apply };

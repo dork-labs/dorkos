@@ -589,18 +589,30 @@ export interface InstallationUpdateCheck extends UpdateCheckResult {
 }
 
 /**
+ * One installation an apply is asked to update, as a check reported it.
+ *
+ * An object rather than a bare path so a later binding can travel with its
+ * installation (DOR-2306 will bind each apply to the disclosure a person saw
+ * for that installation's new version).
+ */
+export interface ApplyUpdateTarget {
+  /** The installation, exactly as a check reported it. */
+  installPath: string;
+}
+
+/**
  * Options for `POST /api/marketplace/updates`, which always applies: the
  * transport sends `apply: true` itself.
  *
- * `installPaths` is required and non-empty, so a client can only ever apply
- * the installations a check reported and a person confirmed, never an
- * unnamed "update everything". The route's `names` filter is left out on
- * purpose: no client surface selects by name.
+ * `targets` is required and non-empty, so a client can only ever apply the
+ * installations a check reported and a person confirmed, never an unnamed
+ * "update everything". The route's `names` filter is left out on purpose: no
+ * client surface selects by name.
  */
 export interface ApplyUpdatesOptions {
-  /** The installations to update, exactly as a check reported them. */
-  installPaths: [string, ...string[]];
-  /** The project whose view the paths came from; omit for the every-scope view. */
+  /** The installations to update. */
+  targets: [ApplyUpdateTarget, ...ApplyUpdateTarget[]];
+  /** The project whose view the targets came from; omit for the every-scope view. */
   projectPath?: string;
 }
 

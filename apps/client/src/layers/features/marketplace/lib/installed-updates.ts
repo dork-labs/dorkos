@@ -66,12 +66,41 @@ export function indexChecks(
   return new Map((checks ?? []).map((check) => [check.installPath, check]));
 }
 
+/** A version as written, without a leading `v`, for comparing two spellings. */
+function bareVersion(version: string): string {
+  return version.startsWith('v') ? version.slice(1) : version;
+}
+
+/**
+ * The row's check, if it still describes what the row lists.
+ *
+ * A check answers for the version installed when it ran. If the package was
+ * updated since (from the CLI, an agent, another window), the listed version
+ * moved on and the old answer would offer an update that already happened, so
+ * it no longer counts. Only a declared version (`installedVersionSource:
+ * 'package'`) is the listing's own version; a marketplace entry's version or a
+ * commit is not what the list shows, so those checks cannot be compared and
+ * stand until the next check.
+ *
+ * @param pkg - The row.
+ * @param checks - The check's answer, indexed by {@link indexChecks}.
+ */
+export function currentCheckFor(
+  pkg: InstalledPackage,
+  checks: ReadonlyMap<string, InstallationUpdateCheck>
+): InstallationUpdateCheck | undefined {
+  const check = checks.get(pkg.installPath);
+  if (!check) return undefined;
+  if (check.installedVersionSource !== 'package') return check;
+  return bareVersion(check.installedVersion) === bareVersion(pkg.version) ? check : undefined;
+}
+
 /**
  * Where one row stands. An installation being reinstalled says so first; any
  * other row reads as pending while a check is running (an earlier answer may
  * be out of date, and a check can wait behind another scan); otherwise the
- * row's own check decides, and a row with no check is `unchecked`, never
- * current.
+ * row's own check decides ({@link currentCheckFor}), and a row with no check
+ * that still describes it is `unchecked`, never current.
  *
  * @param pkg - The row.
  * @param checks - The check's answer, indexed by {@link indexChecks}.
@@ -82,7 +111,7 @@ export function rowUpdateState(
   checks: ReadonlyMap<string, InstallationUpdateCheck>,
   flags: RowUpdateFlags
 ): RowUpdateState {
-  const check = checks.get(pkg.installPath);
+  const check = currentCheckFor(pkg, checks);
   if (flags.applying.has(pkg.installPath)) return { kind: 'applying', check };
   if (flags.isChecking) return { kind: 'checking' };
   if (!check) return { kind: 'unchecked' };
@@ -90,9 +119,10 @@ export function rowUpdateState(
 }
 
 /**
- * Count where the listed installations stand. Only rows still in the list
- * count, so an uninstalled package drops out as soon as the list refreshes,
- * with no new check.
+ * Count where the listed installations stand. Only rows still in the list,
+ * with a check that still describes them ({@link currentCheckFor}), count, so
+ * an uninstalled or since-updated package drops out as soon as the list
+ * refreshes, with no new check.
  *
  * @param installed - The rows, in the order they are shown.
  * @param checks - The check's answer, indexed by {@link indexChecks}.
@@ -103,7 +133,7 @@ export function summarizeUpdates(
 ): UpdatesSummary {
   const summary: UpdatesSummary = { available: [], current: 0, unknown: 0 };
   for (const pkg of installed) {
-    const check = checks.get(pkg.installPath);
+    const check = currentCheckFor(pkg, checks);
     if (check?.status === 'update-available') summary.available.push({ installation: pkg, check });
     else if (check?.status === 'current') summary.current += 1;
     else if (check?.status === 'unknown') summary.unknown += 1;

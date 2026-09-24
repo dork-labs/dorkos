@@ -513,10 +513,97 @@ describe('InstalledPackagesView', () => {
 
       for (const name of ['Reviewer', 'Formatter']) {
         const button = within(row(name)).getByRole('button', { name: `Updating ${name}` });
-        expect(button).toBeDisabled();
+        // aria-disabled, not disabled: a disabled button drops keyboard focus.
+        expect(button).toHaveAttribute('aria-disabled', 'true');
       }
       expect(within(row('Reviewer')).getByText('Updating to v1.3.0…')).toBeInTheDocument();
-      // No second batch while one is running.
+    });
+
+    it('does nothing when an installation being updated is pressed again', async () => {
+      // Purpose: the button stays focusable while updating, so pressing it
+      // must not start a second update.
+      const user = userEvent.setup();
+      showRows([REVIEWER], [staleCheck(REVIEWER, '1.3.0')], { applying: [REVIEWER.installPath] });
+
+      render(<InstalledPackagesView />);
+      await user.click(screen.getByRole('button', { name: 'Updating Reviewer' }));
+
+      expect(applyUpdates).not.toHaveBeenCalled();
+    });
+
+    it('moves focus to the row’s status line when its Update button leaves', async () => {
+      // Purpose: once the package is current its Update button is gone; a
+      // keyboard user who pressed it must land on "Up to date", not the page.
+      const user = userEvent.setup();
+      showRows([REVIEWER], [staleCheck(REVIEWER, '1.3.0')]);
+      const { rerender } = render(<InstalledPackagesView />);
+      await user.click(screen.getByRole('button', { name: /^update reviewer/i }));
+      expect(screen.getByRole('button', { name: /^update reviewer/i })).toHaveFocus();
+
+      showRows([REVIEWER], [makeCheck(REVIEWER)]);
+      rerender(<InstalledPackagesView />);
+
+      const status = within(row('Reviewer')).getByTestId('installation-update-status');
+      expect(status).toHaveFocus();
+      expect(status).toHaveTextContent('Up to date');
+    });
+
+    it('leaves focus alone when the person has moved on', async () => {
+      const user = userEvent.setup();
+      showRows([REVIEWER], [staleCheck(REVIEWER, '1.3.0')]);
+      const { rerender } = render(<InstalledPackagesView />);
+      await user.click(screen.getByRole('button', { name: /^update reviewer/i }));
+      await user.tab();
+      const moved = document.activeElement;
+
+      showRows([REVIEWER], [makeCheck(REVIEWER)]);
+      rerender(<InstalledPackagesView />);
+
+      expect(document.activeElement).toBe(moved);
+    });
+
+    it('never takes focus from an element that holds it', () => {
+      // Purpose: a blur can arrive without saying where focus went (a window
+      // switch, an iframe); if focus is somewhere real when the button leaves,
+      // it stays there.
+      showRows([REVIEWER], [staleCheck(REVIEWER, '1.3.0')]);
+      const { rerender } = render(<InstalledPackagesView />);
+      const checkAgain = screen.getByRole('button', { name: 'Check again' });
+      checkAgain.focus();
+      // The Update button saw a focus whose blur never said where it went.
+      fireEvent.focus(screen.getByRole('button', { name: /^update reviewer/i }));
+
+      showRows([REVIEWER], [makeCheck(REVIEWER)]);
+      rerender(<InstalledPackagesView />);
+
+      expect(checkAgain).toHaveFocus();
+    });
+
+    it('offers no summary actions while a check is running', () => {
+      // Purpose: nothing to act on until the answer lands.
+      showRows([REVIEWER], [staleCheck(REVIEWER, '1.3.0')], { isChecking: true });
+
+      render(<InstalledPackagesView />);
+
+      expect(screen.queryByRole('button', { name: /check again/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /update all/i })).not.toBeInTheDocument();
+    });
+
+    it('holds "Check again" while an update is being applied', () => {
+      // Purpose: a check during a reinstall could read a half-installed folder.
+      showRows([REVIEWER], [staleCheck(REVIEWER, '1.3.0')], { applying: [REVIEWER.installPath] });
+
+      render(<InstalledPackagesView />);
+
+      expect(screen.getByRole('button', { name: 'Check again' })).toBeDisabled();
+    });
+
+    it('offers no "Update all" beside a failed check, whatever an older answer said', () => {
+      // Purpose: with the check failed, no answer is current enough to act on.
+      showRows([REVIEWER], [staleCheck(REVIEWER, '1.3.0')], { error: new Error('offline') });
+
+      render(<InstalledPackagesView />);
+
       expect(screen.queryByRole('button', { name: /update all/i })).not.toBeInTheDocument();
     });
 
@@ -661,6 +748,39 @@ describe('InstalledPackagesView', () => {
 
       expect(applyUpdates).not.toHaveBeenCalled();
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('stays in place, unavailable, while its updates run', async () => {
+      // Purpose: the dialog returns focus to "Update all…" when it closes, so
+      // the button must still be there; pressing it meanwhile opens nothing.
+      const user = userEvent.setup();
+      showRows([REVIEWER, FORMATTER, FLOW_ON_ALPHA], CHECKS, {
+        applying: [REVIEWER.installPath, FLOW_ON_ALPHA.installPath],
+      });
+
+      render(<InstalledPackagesView />);
+      const button = screen.getByRole('button', { name: 'Update all…' });
+      expect(button).toHaveAttribute('aria-disabled', 'true');
+      await user.click(button);
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('moves focus to the summary when nothing is left to update', async () => {
+      // Purpose: after the batch lands "Update all…" leaves; focus goes to the
+      // line that now says everything is up to date.
+      const user = userEvent.setup();
+      showRows([REVIEWER, FORMATTER], [staleCheck(REVIEWER, '1.3.0'), makeCheck(FORMATTER)]);
+      const { rerender } = render(<InstalledPackagesView />);
+      screen.getByRole('button', { name: 'Update all…' }).focus();
+      await user.keyboard('{Escape}');
+      expect(screen.getByRole('button', { name: 'Update all…' })).toHaveFocus();
+
+      showRows([REVIEWER, FORMATTER], [makeCheck(REVIEWER), makeCheck(FORMATTER)]);
+      rerender(<InstalledPackagesView />);
+
+      expect(screen.getByRole('status')).toHaveFocus();
+      expect(screen.getByRole('status')).toHaveTextContent('All packages are up to date.');
     });
 
     it('is not offered when nothing needs updating', () => {

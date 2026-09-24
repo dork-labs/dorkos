@@ -96,12 +96,19 @@ export function createMarketplaceMethods(baseUrl: string) {
       return fetchJSON<InstallationUpdatesResult>(baseUrl, `/marketplace/updates${qs}`);
     },
 
-    applyMarketplaceUpdates(opts: ApplyUpdatesOptions): Promise<InstallationUpdatesResult> {
+    applyMarketplaceUpdates({
+      targets,
+      projectPath,
+    }: ApplyUpdatesOptions): Promise<InstallationUpdatesResult> {
       // `apply: true` is the route's literal switch: a POST without it is
       // refused, so an empty or mistyped body can never reinstall anything.
       return fetchJSON<InstallationUpdatesResult>(baseUrl, '/marketplace/updates', {
         method: 'POST',
-        body: JSON.stringify({ apply: true, ...opts }),
+        body: JSON.stringify({
+          apply: true,
+          installPaths: targets.map((target) => target.installPath),
+          ...(projectPath !== undefined && { projectPath }),
+        }),
       });
     },
 

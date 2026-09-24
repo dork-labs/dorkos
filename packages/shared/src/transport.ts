@@ -2327,8 +2327,8 @@ export interface Transport
    * the scope it is installed in. An installation that is already current is
    * left alone; one that fails carries `applyError` while the rest continue.
    *
-   * @param opts - The installations to update (at least one), and the project
-   *   whose view they came from, if any.
+   * @param opts - The installations to update (at least one target), and the
+   *   project whose view they came from, if any.
    */
   applyMarketplaceUpdates(opts: ApplyUpdatesOptions): Promise<InstallationUpdatesResult>;
 

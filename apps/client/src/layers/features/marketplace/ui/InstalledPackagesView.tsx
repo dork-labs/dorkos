@@ -9,6 +9,7 @@ import { useAppStore } from '@/layers/shared/model';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { useApplyUpdatesWithToast } from '../model/use-apply-updates-with-toast';
 import { useInstalledUpdatesView } from '../model/use-installed-updates-view';
+import { useFocusRescue, type FocusRescue } from '../model/use-focus-rescue';
 import {
   formatCheckVersion,
   installationPlace,
@@ -22,7 +23,7 @@ import { PackageEmptyState } from './PackageEmptyState';
 import { PackageErrorState } from './PackageErrorState';
 import { InstalledUpdatesSummary } from './InstalledUpdatesSummary';
 import { InstallationUpdateStatus } from './InstallationUpdateStatus';
-import { UpdateAllDialog } from './UpdateAllDialog';
+import { ConfirmUpdatesDialog } from './ConfirmUpdatesDialog';
 
 // ---------------------------------------------------------------------------
 // Package row sub-component
@@ -45,40 +46,44 @@ interface PackageRowProps {
 
 /**
  * The row's Update button. It exists only when there is something to install,
- * and names the version it installs, so it can never be a blind guess; while
- * this installation is being updated it stays in place, disabled.
+ * and names the version it installs, so it can never be a blind guess. While
+ * this installation is being updated it stays the same element, marked
+ * `aria-disabled` rather than `disabled`, so a keyboard user who pressed it
+ * keeps focus on it instead of being dropped to the page.
  */
 function UpdateButton({
   state,
   label,
   onClick,
+  focusProps,
 }: {
   state: RowUpdateState;
   /** "Reviewer" or "Reviewer on Alpha", for the accessible name. */
   label: string;
   onClick: () => void;
+  /** From the row's focus rescue, so leaving does not drop focus. */
+  focusProps: FocusRescue<HTMLDivElement>['controlProps'];
 }) {
-  if (state.kind === 'applying') {
-    return (
-      <Button size="sm" variant="outline" disabled aria-label={`Updating ${label}`}>
-        <RefreshCw className="mr-1 size-3 animate-spin motion-reduce:animate-none" aria-hidden />
-        Updating…
-      </Button>
-    );
-  }
-  if (state.kind !== 'update-available') return null;
+  if (state.kind !== 'update-available' && state.kind !== 'applying') return null;
+  const applying = state.kind === 'applying';
   const { check } = state;
-  const from = formatCheckVersion(check.installedVersion, check.installedVersionSource);
-  const to = formatCheckVersion(check.latestVersion, check.latestVersionSource);
+  const from = check && formatCheckVersion(check.installedVersion, check.installedVersionSource);
+  const to = check && formatCheckVersion(check.latestVersion, check.latestVersionSource);
   return (
     <Button
       size="sm"
       variant="outline"
-      onClick={onClick}
-      aria-label={`Update ${label} from ${from} to ${to}`}
+      aria-disabled={applying || undefined}
+      className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+      onClick={applying ? undefined : onClick}
+      aria-label={applying ? `Updating ${label}` : `Update ${label} from ${from} to ${to}`}
+      {...focusProps}
     >
-      <RefreshCw className="mr-1 size-3" aria-hidden />
-      Update to {to}
+      <RefreshCw
+        className={`mr-1 size-3 ${applying ? 'animate-spin motion-reduce:animate-none' : ''}`}
+        aria-hidden
+      />
+      {applying ? 'Updating…' : `Update to ${to}`}
     </Button>
   );
 }
@@ -108,6 +113,11 @@ function PackageRow({
     : null;
   const agent = installationPlace(installation);
   const label = agent ? `${displayName} on ${agent}` : displayName;
+  // When Update leaves (the package is now current), focus goes to the line
+  // that says so rather than to the page.
+  const { targetRef: rescueTarget, controlProps: rescueProps } = useFocusRescue<HTMLDivElement>(
+    updateState.kind === 'update-available' || updateState.kind === 'applying'
+  );
 
   return (
     <div className="bg-card flex flex-col gap-3 rounded-xl border p-4 @2xl:flex-row @2xl:items-center @2xl:justify-between @2xl:gap-4 @2xl:p-6">
@@ -146,7 +156,12 @@ function PackageRow({
           )}
           {formattedDate && <span>Installed {formattedDate}</span>}
         </div>
-        <div className="mt-1.5">
+        <div
+          ref={rescueTarget}
+          tabIndex={-1}
+          data-testid="installation-update-status"
+          className="focus-visible:ring-ring/50 mt-1.5 rounded-sm outline-none focus-visible:ring-2"
+        >
           <InstallationUpdateStatus state={updateState} />
         </div>
         {/* A package whose npm libraries did not install is on disk and usable
@@ -185,7 +200,12 @@ function PackageRow({
           </Button>
         )}
 
-        <UpdateButton state={updateState} label={label} onClick={onUpdateClick} />
+        <UpdateButton
+          state={updateState}
+          label={label}
+          onClick={onUpdateClick}
+          focusProps={rescueProps}
+        />
 
         <Button
           size="sm"
@@ -356,7 +376,7 @@ export function InstalledPackagesView() {
         })}
       </div>
 
-      <UpdateAllDialog
+      <ConfirmUpdatesDialog
         stale={confirmingUpdate}
         onCancel={() => setConfirmingUpdate(null)}
         onConfirm={handleConfirmUpdateAll}

@@ -1,6 +1,6 @@
 /**
- * Showcases for the Installed view's update states and the "Update all"
- * confirm step. Each state seeds its own `QueryClient` with the installed list
+ * Showcases for the Installed view's update states and the confirm step for
+ * updates. Each state seeds its own `QueryClient` with the installed list
  * and the update check, so no section asks the server.
  *
  * @module dev/showcases/MarketplaceUpdateShowcases
@@ -15,7 +15,7 @@ import { IsolatedQueryProvider } from './marketplace-query-provider';
 // The barrel first, then the leaves it does not carry — see the import rule in
 // `.claude/skills/maintaining-dev-playground/SKILL.md`.
 import { InstalledPackagesView } from '@/layers/features/marketplace';
-import { UpdateAllDialog } from '@/layers/features/marketplace/ui/UpdateAllDialog';
+import { ConfirmUpdatesDialog } from '@/layers/features/marketplace/ui/ConfirmUpdatesDialog';
 import { indexChecks, summarizeUpdates } from '@/layers/features/marketplace/lib/installed-updates';
 import { marketplaceKeys } from '@/layers/entities/marketplace';
 import type { InstallationUpdateCheck } from '@dorkos/shared/marketplace-schemas';
@@ -104,31 +104,40 @@ export function InstalledPackagesViewShowcase() {
   );
 }
 
-/** The "Update all" confirm step, opened on demand over the mock stale set. */
-export function UpdateAllDialogShowcase() {
+/** The confirm step for updates, over the mock stale set or over just one of it. */
+export function ConfirmUpdatesDialogShowcase() {
   const stale = summarizeUpdates(
     MOCK_INSTALLED_FOR_UPDATES,
     indexChecks(MOCK_UPDATE_CHECKS)
   ).available;
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<'all' | 'one' | null>(null);
 
   return (
     <PlaygroundSection
-      title="UpdateAllDialog"
-      description="Confirm step before Update all: every installation it will touch, where it lives, and its version change. A drawer on phones."
+      title="ConfirmUpdatesDialog"
+      description="Confirm step before updating: every installation it will touch, where it lives, and its version change. Confirms any list, one included. A drawer on phones."
     >
       <ShowcaseDemo>
-        <button
-          type="button"
-          className="bg-card hover:bg-accent rounded-md border px-4 py-2 text-sm font-medium"
-          onClick={() => setOpen(true)}
-        >
-          Open with {stale.length} stale installations →
-        </button>
-        <UpdateAllDialog
-          stale={open ? stale : null}
-          onCancel={() => setOpen(false)}
-          onConfirm={() => setOpen(false)}
+        <div className="flex gap-3">
+          <button
+            type="button"
+            className="bg-card hover:bg-accent rounded-md border px-4 py-2 text-sm font-medium"
+            onClick={() => setOpen('all')}
+          >
+            Open with {stale.length} stale installations →
+          </button>
+          <button
+            type="button"
+            className="bg-card hover:bg-accent rounded-md border px-4 py-2 text-sm font-medium"
+            onClick={() => setOpen('one')}
+          >
+            Open with one →
+          </button>
+        </div>
+        <ConfirmUpdatesDialog
+          stale={open === 'all' ? stale : open === 'one' ? stale.slice(1, 2) : null}
+          onCancel={() => setOpen(null)}
+          onConfirm={() => setOpen(null)}
         />
       </ShowcaseDemo>
     </PlaygroundSection>

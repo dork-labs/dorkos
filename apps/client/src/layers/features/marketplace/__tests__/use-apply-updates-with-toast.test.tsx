@@ -1,9 +1,11 @@
 /**
  * @vitest-environment jsdom
  *
- * Direct unit tests for `useApplyUpdatesWithToast`. Mocks only `useApplyUpdates`
- * and `sonner`, and drives the mutation's per-call callbacks by hand, so each
- * outcome's toast is pinned exactly.
+ * Direct unit tests for `useApplyUpdatesWithToast`. Mocks `useApplyUpdates` and
+ * `sonner`, and settles each apply's `mutateAsync` promise by hand, so each
+ * outcome's toast is pinned exactly. The lifecycle cases (overlapping applies,
+ * unmounting mid-apply) run against the real mutation in
+ * `use-apply-updates-with-toast.lifecycle.test.tsx`.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
@@ -22,9 +24,10 @@ import { useApplyUpdatesWithToast } from '../model/use-apply-updates-with-toast'
 // Mocks
 // ---------------------------------------------------------------------------
 
-vi.mock('@/layers/entities/marketplace', () => ({
-  useApplyUpdates: vi.fn(),
-}));
+vi.mock('@/layers/entities/marketplace', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/marketplace')>();
+  return { settleAppliedCheck: actual.settleAppliedCheck, useApplyUpdates: vi.fn() };
+});
 
 const toastMock = vi.hoisted(() => ({
   loading: vi.fn(() => 'toast-id'),
@@ -35,7 +38,17 @@ const toastMock = vi.hoisted(() => ({
 
 vi.mock('sonner', () => ({ toast: toastMock }));
 
-const mutate = vi.fn();
+/** Each apply's promise, settled by the test. */
+let pending: Array<{
+  resolve: (r: InstallationUpdatesResult) => void;
+  reject: (e: unknown) => void;
+}> = [];
+const mutateAsync = vi.fn(
+  () =>
+    new Promise<InstallationUpdatesResult>((resolve, reject) => {
+      pending.push({ resolve, reject });
+    })
+);
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -91,25 +104,22 @@ function stale(check: InstallationUpdateCheck): StaleInstallation {
 }
 
 /** Run `apply` for these checks' rows and settle it with `result` (or an error). */
-function runApply(
+async function runApply(
   checks: InstallationUpdateCheck[],
-  outcome: { result: InstallationUpdatesResult } | { error: Error }
+  outcome: { result: InstallationUpdatesResult } | { error: unknown }
 ) {
   const { result } = renderHook(() => useApplyUpdatesWithToast());
   act(() => result.current.apply(checks.map(stale)));
-  const [, callbacks] = mutate.mock.calls[0] as [
-    unknown,
-    { onSuccess: (r: InstallationUpdatesResult) => void; onError: (e: Error) => void },
-  ];
-  act(() => {
-    if ('result' in outcome) callbacks.onSuccess(outcome.result);
-    else callbacks.onError(outcome.error);
+  await act(async () => {
+    if ('result' in outcome) pending[0]!.resolve(outcome.result);
+    else pending[0]!.reject(outcome.error);
   });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(useApplyUpdates).mockReturnValue({ mutate } as unknown as ReturnType<
+  pending = [];
+  vi.mocked(useApplyUpdates).mockReturnValue({ mutateAsync } as unknown as ReturnType<
     typeof useApplyUpdates
   >);
 });
@@ -126,10 +136,12 @@ describe('useApplyUpdatesWithToast', () => {
 
     act(() => result.current.apply([makeCheck(), FLOW].map(stale)));
 
-    expect(mutate).toHaveBeenCalledWith(
-      { installPaths: ['/home/.dork/agents/reviewer', '/home/.dork/plugins/flow'] },
-      expect.any(Object)
-    );
+    expect(mutateAsync).toHaveBeenCalledWith({
+      targets: [
+        { installPath: '/home/.dork/agents/reviewer' },
+        { installPath: '/home/.dork/plugins/flow' },
+      ],
+    });
     expect(toastMock.loading).toHaveBeenCalledWith('Updating 2 packages…');
   });
 
@@ -139,12 +151,12 @@ describe('useApplyUpdatesWithToast', () => {
 
     act(() => result.current.apply([]));
 
-    expect(mutate).not.toHaveBeenCalled();
+    expect(mutateAsync).not.toHaveBeenCalled();
     expect(toastMock.loading).not.toHaveBeenCalled();
   });
 
-  it('reports one applied update with its new version and place', () => {
-    runApply([ALPHA], { result: { checks: [applied(ALPHA)] } });
+  it('reports one applied update with its new version and place', async () => {
+    await runApply([ALPHA], { result: { checks: [applied(ALPHA)] } });
 
     expect(toastMock.loading).toHaveBeenCalledWith('Updating Reviewer on Alpha…');
     expect(toastMock.success).toHaveBeenCalledWith('Updated Reviewer on Alpha to v1.3.0', {
@@ -152,17 +164,17 @@ describe('useApplyUpdatesWithToast', () => {
     });
   });
 
-  it('reports one failed reinstall with the reason', () => {
-    runApply([makeCheck()], { result: { checks: [makeCheck({ applyError: 'disk full' })] } });
+  it('reports one failed reinstall with the reason', async () => {
+    await runApply([makeCheck()], { result: { checks: [makeCheck({ applyError: 'disk full' })] } });
 
     expect(toastMock.error).toHaveBeenCalledWith('Couldn’t update Reviewer: disk full', {
       id: 'toast-id',
     });
   });
 
-  it('says so when the package turned out to be up to date already', () => {
+  it('says so when the package turned out to be up to date already', async () => {
     // Purpose: the click did something visible even though nothing changed.
-    runApply([makeCheck()], {
+    await runApply([makeCheck()], {
       result: { checks: [makeCheck({ status: 'current', hasUpdate: false })] },
     });
 
@@ -171,9 +183,9 @@ describe('useApplyUpdatesWithToast', () => {
     });
   });
 
-  it('warns, with the reason, when the package could not be checked', () => {
+  it('warns, with the reason, when the package could not be checked', async () => {
     // Purpose: an unknown answer is never reported as up to date.
-    runApply([makeCheck()], {
+    await runApply([makeCheck()], {
       result: {
         checks: [
           makeCheck({
@@ -192,15 +204,17 @@ describe('useApplyUpdatesWithToast', () => {
     );
   });
 
-  it('reports several applied updates as one count', () => {
-    runApply([makeCheck(), FLOW], { result: { checks: [applied(makeCheck()), applied(FLOW)] } });
+  it('reports several applied updates as one count', async () => {
+    await runApply([makeCheck(), FLOW], {
+      result: { checks: [applied(makeCheck()), applied(FLOW)] },
+    });
 
     expect(toastMock.success).toHaveBeenCalledWith('Updated 2 packages', { id: 'toast-id' });
   });
 
-  it('warns when only some of several were applied, and points at the rows', () => {
+  it('warns when only some of several were applied, and points at the rows', async () => {
     // Purpose: a partial batch is not a success; each row carries its reason.
-    runApply([makeCheck(), FLOW], {
+    await runApply([makeCheck(), FLOW], {
       result: { checks: [applied(makeCheck()), { ...FLOW, applyError: 'disk full' }] },
     });
 
@@ -210,8 +224,8 @@ describe('useApplyUpdatesWithToast', () => {
     );
   });
 
-  it('reports an error when none of several were applied', () => {
-    runApply([makeCheck(), FLOW], {
+  it('reports an error when none of several were applied', async () => {
+    await runApply([makeCheck(), FLOW], {
       result: {
         checks: [
           { ...makeCheck(), applyError: 'disk full' },
@@ -226,9 +240,9 @@ describe('useApplyUpdatesWithToast', () => {
     );
   });
 
-  it('counts only the failures when some of several failed and none applied', () => {
+  it('counts only the failures when some of several failed and none applied', async () => {
     // Purpose: a package that was already current is not a failure.
-    runApply([makeCheck(), FLOW], {
+    await runApply([makeCheck(), FLOW], {
       result: {
         checks: [
           { ...makeCheck(), applyError: 'disk full' },
@@ -243,8 +257,8 @@ describe('useApplyUpdatesWithToast', () => {
     );
   });
 
-  it('says so when several turned out to be up to date already', () => {
-    runApply([makeCheck(), FLOW], {
+  it('says so when several turned out to be up to date already', async () => {
+    await runApply([makeCheck(), FLOW], {
       result: {
         checks: [
           { ...makeCheck(), status: 'current', hasUpdate: false },
@@ -258,9 +272,9 @@ describe('useApplyUpdatesWithToast', () => {
     });
   });
 
-  it('warns when several changed nothing for mixed reasons', () => {
+  it('warns when several changed nothing for mixed reasons', async () => {
     // Purpose: a batch that updated nothing must not read as a success.
-    runApply([makeCheck(), FLOW], {
+    await runApply([makeCheck(), FLOW], {
       result: {
         checks: [
           { ...makeCheck(), status: 'current', hasUpdate: false },
@@ -275,11 +289,54 @@ describe('useApplyUpdatesWithToast', () => {
     );
   });
 
-  it('reports a refused or failed request with the server’s message', () => {
-    runApply([makeCheck()], { error: new Error('Package not installed: reviewer') });
+  it('reports a failed request once, in the house form, with the reason under it', async () => {
+    await runApply([makeCheck()], { error: new Error('Package not installed: reviewer') });
 
-    expect(toastMock.error).toHaveBeenCalledWith('Update failed: Package not installed: reviewer', {
+    expect(toastMock.error).toHaveBeenCalledTimes(1);
+    expect(toastMock.error).toHaveBeenCalledWith('Couldn’t update Reviewer', {
       id: 'toast-id',
+      description: 'Package not installed: reviewer',
     });
+  });
+
+  it('explains a batch that needs approval in plain words, with no API route', async () => {
+    // Purpose: the server's message names an API route, which a person cannot
+    // act on; the refusal's code gets a sentence of its own.
+    const refusal = Object.assign(
+      new Error('Update them one at a time with POST /api/marketplace/packages/:name/update.'),
+      { code: 'batch_update_needs_approval', status: 403 }
+    );
+    await runApply([makeCheck(), FLOW], { error: refusal });
+
+    const [headline, options] = toastMock.error.mock.calls[0] as unknown as [
+      string,
+      { description: string },
+    ];
+    expect(headline).toBe('Couldn’t update 2 packages');
+    expect(options.description).toBe(
+      'Each of these installs needs your approval first, and DorkOS can’t ask for it here.'
+    );
+    expect(options.description).not.toMatch(/\/api\//);
+  });
+
+  it('ignores a second apply for an installation already being updated', async () => {
+    // Purpose: a double click must not send the same reinstall twice.
+    const { result } = renderHook(() => useApplyUpdatesWithToast());
+
+    act(() => result.current.apply([stale(makeCheck())]));
+    act(() => result.current.apply([stale(makeCheck())]));
+    // A batch naming it plus another sends only the other.
+    act(() => result.current.apply([stale(makeCheck()), stale(FLOW)]));
+
+    expect(mutateAsync).toHaveBeenCalledTimes(2);
+    expect(mutateAsync).toHaveBeenLastCalledWith({
+      targets: [{ installPath: '/home/.dork/plugins/flow' }],
+    });
+    expect(toastMock.loading).toHaveBeenCalledTimes(2);
+
+    // Once it settles, it can be applied again.
+    await act(async () => pending[0]!.resolve({ checks: [] }));
+    act(() => result.current.apply([stale(makeCheck())]));
+    expect(mutateAsync).toHaveBeenCalledTimes(3);
   });
 });

@@ -9,7 +9,7 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Sources: MarketplaceShowcases — PackageCard, PackageTypeBadge, PackageGrid,
  * FeaturedRail, PackageDetailSheet, InstallConfirmationDialog,
- * PermissionPreviewSection, InstalledPackagesView, UpdateAllDialog, MarketplaceSourcesView,
+ * PermissionPreviewSection, InstalledPackagesView, ConfirmUpdatesDialog, MarketplaceSourcesView,
  * MarketplaceToolbar, MarketplaceSidebar, Package Primitives.
  */
 export const MARKETPLACE_SECTIONS: PlaygroundSection[] = [
@@ -70,8 +70,8 @@ export const MARKETPLACE_SECTIONS: PlaygroundSection[] = [
     keywords: ['installed', 'packages', 'view', 'uninstall', 'update', 'manage', 'outdated'],
   },
   {
-    id: 'updatealldialog',
-    title: 'UpdateAllDialog',
+    id: 'confirmupdatesdialog',
+    title: 'ConfirmUpdatesDialog',
     page: 'marketplace',
     category: 'Marketplace',
     keywords: ['update', 'all', 'confirm', 'dialog', 'installed', 'outdated', 'version'],

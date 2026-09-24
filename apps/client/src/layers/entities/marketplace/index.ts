@@ -30,7 +30,11 @@ export type { InstallPackageArgs } from './model/use-install-package';
 export { useUninstallPackage } from './model/use-uninstall-package';
 export type { UninstallPackageArgs } from './model/use-uninstall-package';
 
-export { useApplyUpdates, useApplyingInstallPaths } from './model/use-apply-updates';
+export {
+  settleAppliedCheck,
+  useApplyUpdates,
+  useApplyingInstallPaths,
+} from './model/use-apply-updates';
 
 export { useAddMarketplaceSource } from './model/use-add-marketplace-source';
 

@@ -83,6 +83,53 @@ describe('rowUpdateState', () => {
   });
 });
 
+describe('a check the listed version has moved past', () => {
+  it('no longer counts once the package was updated elsewhere', () => {
+    // Purpose: updated from the CLI, an agent or another window, the row lists
+    // the new version; the old check would offer an update that already
+    // happened, so the row is unchecked and it leaves the count.
+    const row = makeInstalled('/a');
+    const checks = indexChecks([
+      makeCheck('/a', 'update-available', {
+        installedVersion: '0.7.1',
+        installedVersionSource: 'package',
+      }),
+    ]);
+
+    expect(rowUpdateState(row, checks, NOT_BUSY)).toEqual({ kind: 'unchecked' });
+    expect(summarizeUpdates([row], checks).available).toEqual([]);
+  });
+
+  it('still counts when only the spelling differs', () => {
+    const checks = indexChecks([
+      makeCheck('/a', 'update-available', {
+        installedVersion: 'v0.7.2',
+        installedVersionSource: 'package',
+      }),
+    ]);
+
+    expect(rowUpdateState(makeInstalled('/a'), checks, NOT_BUSY).kind).toBe('update-available');
+  });
+
+  it('keeps a check whose installed side is a commit or an index entry', () => {
+    // Purpose: those versions are not what the list shows ("0.0.0" or the
+    // manifest's), so a mismatch there says nothing about staleness.
+    const checks = indexChecks([
+      makeCheck('/a', 'current', {
+        installedVersion: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
+        installedVersionSource: 'commit',
+      }),
+      makeCheck('/b', 'update-available', {
+        installedVersion: '2.0.0',
+        installedVersionSource: 'index',
+      }),
+    ]);
+
+    expect(rowUpdateState(makeInstalled('/a'), checks, NOT_BUSY).kind).toBe('current');
+    expect(rowUpdateState(makeInstalled('/b'), checks, NOT_BUSY).kind).toBe('update-available');
+  });
+});
+
 describe('summarizeUpdates', () => {
   it('counts only installations still in the list, in list order', () => {
     // Purpose: an uninstalled package drops out of the count as soon as the

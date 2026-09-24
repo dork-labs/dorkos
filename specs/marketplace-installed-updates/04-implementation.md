@@ -28,3 +28,7 @@ linear-issue: DOR-2196
 ## Proof
 
 Screenshots of every state from the real app (server + Vite from the worktree, `/api/marketplace/installed` and `/api/marketplace/updates` answered by Playwright) are in the worktree's gitignored `.temp/shots/`.
+
+## Review round 1
+
+All findings adopted; see the spec's review log. In code: each apply chains its own `mutateAsync` (`use-apply-updates-with-toast.ts`, lifecycle tests against the real mutation), the mutation sets `meta.suppressErrorToast`, a ref-held in-flight set drops repeat applies, `currentCheckFor` ignores checks the listed version has moved past, the view marks the check stale when the installed list changes and hides checks after a failed re-check, `useFocusRescue` keeps focus when Update / Update all leave, `settleAppliedCheck` settles at `applied.version` and the apply waits for the installed list, `batch_update_needs_approval` gets a plain sentence, the product shot waits for the settled summary, and `ApplyUpdatesOptions.targets` plus `ConfirmUpdatesDialog` (renamed from `UpdateAllDialog`, any list including one) prepare DOR-2306. The install-flow integration test now renders inside a `QueryClientProvider`, which the view hook's stale-marking needs.

@@ -55,21 +55,26 @@ Measured against `origin/main` at `a875cc496`:
 `marketplace-schemas.ts` gains the apply body's client-side shape:
 
 ```ts
+/** One installation an apply is asked to update, as a check reported it. */
+export interface ApplyUpdateTarget {
+  installPath: string;
+}
+
 /** Options for `POST /api/marketplace/updates`, which always applies. */
 export interface ApplyUpdatesOptions {
-  /** The installations to update, as a check reported them. At least one. */
-  installPaths: [string, ...string[]];
-  /** The project whose view the paths came from; omit for the every-scope view. */
+  /** The installations to update. At least one. */
+  targets: [ApplyUpdateTarget, ...ApplyUpdateTarget[]];
+  /** The project whose view the targets came from; omit for the every-scope view. */
   projectPath?: string;
 }
 ```
 
-`installPaths` is required and non-empty, so the app can never send an unnamed "update everything". `names` (which the route also accepts) is left out: no client consumer needs it.
+`targets` is required and non-empty, so the app can never send an unnamed "update everything". Each target is an object rather than a bare path so a per-installation binding can travel with it later (DOR-2306: the disclosure a person saw for that installation's new version); the transport sends the wire's `installPaths` from them. `names` (which the route also accepts) is left out: no client consumer needs it.
 
 `Transport`:
 
 - **Add** `checkMarketplaceUpdates(projectPath?: string): Promise<InstallationUpdatesResult>` → `GET /marketplace/updates[?projectPath=]`.
-- **Add** `applyMarketplaceUpdates(opts: ApplyUpdatesOptions): Promise<InstallationUpdatesResult>` → `POST /marketplace/updates` with `{ apply: true, ...opts }`.
+- **Add** `applyMarketplaceUpdates(opts: ApplyUpdatesOptions): Promise<InstallationUpdatesResult>` → `POST /marketplace/updates` with `{ apply: true, installPaths, projectPath? }`.
 - **Remove** `updateMarketplacePackage`. After this change nothing in the client calls it. The server route stays for the CLI and MCP.
 
 Implementations: `HttpTransport` (`marketplace-methods.ts`); the embedded stubs answer the check with `{ checks: [] }` (as `listInstalledPackages` answers `[]`) and throw on apply; `createMockTransport` gets `vi.fn()`s, the check resolving `{ checks: [] }`.
@@ -90,7 +95,7 @@ Implementations: `HttpTransport` (`marketplace-methods.ts`); the embedded stubs 
 ```ts
 export type RowUpdateState =
   | { kind: 'checking' }
-  | { kind: 'applying'; check: InstallationUpdateCheck }
+  | { kind: 'applying'; check?: InstallationUpdateCheck }
   | { kind: 'update-available'; check: InstallationUpdateCheck }
   | { kind: 'current'; check: InstallationUpdateCheck }
   | { kind: 'unknown'; check: InstallationUpdateCheck }
@@ -123,7 +128,7 @@ export function installationPlace(i: {
 }): string | null;
 ```
 
-- Precedence in `rowUpdateState`: `applying` (this `installPath` is in flight) → `checking` (a check request is in flight) → the row's check by status → `unchecked` (no check for this row: a failed request, or a row installed after the last check).
+- Precedence in `rowUpdateState`: `applying` (this `installPath` is in flight) → `checking` (a check request is in flight) → the row's check by status → `unchecked` (no check that still describes this row: a failed request, a row installed after the last check, or a check the listed version has moved past; see the review log).
 - `summarizeUpdates` joins by `installPath` and counts only rows in the installed list. The tab count is `available.length`.
 - `formatCheckVersion`: a `commit` version shows as its first 7 characters; anything else gets a `v` prefix unless it already has one.
 - `installationPlace` moves the view's `agentLabel` here unchanged (agent name, else the project folder's name, `null` for a global installation), so rows, the dialog and toasts name a place the same way.
@@ -131,18 +136,19 @@ export function installationPlace(i: {
 ### 4. Feature model
 
 - `useInstalledUpdatesView()` (`model/use-installed-updates.ts`): reads `useInstalledPackages()` and `useInstalledUpdates(undefined, { enabled: installedCount > 0 })`, and returns `{ checks, summary, isChecking, error, recheck }`. `Marketplace` and `InstalledPackagesView` both call it; TanStack dedupes the one query.
-- `useApplyUpdatesWithToast()` (`model/use-apply-updates-with-toast.ts`, replaces `use-update-with-toast.ts`): `apply(checks: InstallationUpdateCheck[])` sends `{ installPaths }` and drives one loading toast, replaced in place by:
+- `useApplyUpdatesWithToast()` (`model/use-apply-updates-with-toast.ts`, replaces `use-update-with-toast.ts`): `apply(stale: StaleInstallation[])` sends those installations as `targets` and drives one loading toast per apply, replaced in place by the outcome. Each apply owns its toast through its own `mutateAsync` promise, which settles however many applies overlap and whether or not the view is still mounted (per-call `mutate(…, { onSuccess })` callbacks run only for the latest call on a mounted observer). An installation already being applied from this hook is left out of a second apply, so a double click sends one request. The mutation opts out of the shared failure toast (`meta.suppressErrorToast`), so a failure is reported once, here:
 
-| Outcome                   | Toast                                                                 |
-| ------------------------- | --------------------------------------------------------------------- |
-| one installation, applied | success: "Updated Reviewer to v1.3.0" (" on Alpha" for an agent's)    |
-| one, `applyError`         | error: "Couldn't update Reviewer: <reason>"                           |
-| one, now `current`        | success: "Reviewer is already up to date"                             |
-| one, now `unknown`        | warning: "Couldn't check Reviewer for updates: <note>"                |
-| several, all applied      | success: "Updated 3 packages"                                         |
-| several, some applied     | warning: "Updated 2 of 3 packages. Each package shows what happened." |
-| several, none applied     | error: "Couldn't update 3 packages. Each package shows why."          |
-| the request failed        | error: "Update failed: <message>"                                     |
+| Outcome                                  | Toast                                                                                                                                                      |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| one installation, applied                | success: "Updated Reviewer to v1.3.0" (" on Alpha" for an agent's)                                                                                         |
+| one, `applyError`                        | error: "Couldn't update Reviewer: <reason>"                                                                                                                |
+| one, now `current`                       | success: "Reviewer is already up to date"                                                                                                                  |
+| one, now `unknown`                       | warning: "Couldn't check Reviewer for updates: <note>"                                                                                                     |
+| several, all applied                     | success: "Updated 3 packages"                                                                                                                              |
+| several, some applied                    | warning: "Updated 2 of 3 packages. Each package shows what happened."                                                                                      |
+| several, none applied                    | error: "Couldn't update 3 packages. Each package shows why."                                                                                               |
+| the request failed                       | error: "Couldn’t update Reviewer" / "Couldn’t update 3 packages", the server's reason beneath                                                              |
+| refused as `batch_update_needs_approval` | the same headline, with "Each of these installs needs your approval first, and DorkOS can’t ask for it here." beneath (no API route in person-facing copy) |
 
 ### 5. The view (`ui/InstalledPackagesView.tsx`)
 
@@ -156,7 +162,7 @@ export function installationPlace(i: {
 | none, some unknown | "No updates found." plus the same sentences                                              | "Check again"                          |
 | all current        | check icon, "All packages are up to date."                                               | "Check again"                          |
 
-Counts use "package" for one and "packages" for several, and count installations (a package on two agents is two rows). The details are whole sentences rather than " · " fragments, so they read the same beside the headline or wrapped under it on a phone. While an apply is in flight, "Update all…" is hidden and "Check again" is disabled. A result with no answer for any listed row says "These packages haven't been checked for updates yet."
+Counts use "package" for one and "packages" for several, and count installations (a package on two agents is two rows). The details are whole sentences rather than " · " fragments, so they read the same beside the headline or wrapped under it on a phone. While an apply is in flight, "Update all…" stays mounted but `aria-disabled` (the dialog returns focus to it), and "Check again" is disabled. When "Update all…" leaves because nothing is left to update, focus moves to the summary line (`tabIndex={-1}`). While a check runs, the summary offers no actions. After a failed check, no earlier answer is shown: rows read as unchecked and the count disappears. A result with no answer for any listed row says "These packages haven't been checked for updates yet."
 
 **Row** (`PackageRow`): the existing badges and metadata stay. A status line joins the metadata column:
 
@@ -164,7 +170,7 @@ Counts use "package" for one and "packages" for several, and count installations
 | ------------------ | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `checking`         | spinner, "Checking for updates…" (muted)                                                     | none                                                                                      |
 | `update-available` | arrow icon, "Update available: v1.2.0 → v1.3.0" (`status-info-fg`); a `note` below it, muted | "Update to v1.3.0" (outline), aria-label "Update Reviewer on Alpha from v1.2.0 to v1.3.0" |
-| `applying`         | spinner, "Updating to v1.3.0…"                                                               | disabled, "Updating…"                                                                     |
+| `applying`         | spinner, "Updating to v1.3.0…"                                                               | the same button, `aria-disabled`, "Updating…" (keeps focus; pressing it does nothing)     |
 | `current`          | check icon, "Up to date" (muted); a `note` after it, muted                                   | none                                                                                      |
 | `unknown`          | help icon, "Couldn't check for updates: <note>" (muted)                                      | none                                                                                      |
 | `unchecked`        | nothing                                                                                      | none                                                                                      |
@@ -173,7 +179,7 @@ An `applyError` on a row that is still `update-available` adds an error line, "C
 
 **Layout:** the list is a container-query context. A row stacks (metadata, then actions) until the list itself is `@2xl` (42rem) wide, and sits side by side from there; actions wrap. The container, not the viewport, decides, because the app sidebar leaves a tablet only ~450px of content width. Row padding is `p-4` while stacked.
 
-**Confirm step** (new `ui/UpdateAllDialog.tsx`, a `ResponsiveDialog`, so a drawer on phones): "Update all…" snapshots `summary.available` and opens it.
+**Confirm step** (new `ui/ConfirmUpdatesDialog.tsx`, a `ResponsiveDialog`, so a drawer on phones): a general confirm for any list of installations, one included ("Update Reviewer?" / "Update 3 packages?"). "Update all…" snapshots `summary.available` and opens it. A row's Update still applies directly; DOR-2306 will route a row through this dialog when its new version declares effects, with the disclosure placed under that item (each item is a column with room for it).
 
 - Title: "Update 3 packages?" (singular for one).
 - Description: "DorkOS replaces each package below with its newest version, in the same place it is installed now."
@@ -184,7 +190,7 @@ An `applyError` on a row that is still `update-available` adds an error line, "C
 
 ### 6. Playground
 
-`InstalledPackagesViewShowcase` gains seeded states: updates available (with an unknown and a current row, and an `applyError` row), all up to date, checking (a query that never settles), and the check failing. `UpdateAllDialog` gets its own section. The mocks add checks for `MOCK_INSTALLED_PACKAGES`.
+`InstalledPackagesViewShowcase` gains seeded states: updates available (with an unknown and a current row, and an `applyError` row), all up to date, checking (a query that never settles), and the check failing. `ConfirmUpdatesDialog` gets its own section, with a many and a one variant. The mocks add checks for `MOCK_INSTALLED_PACKAGES`.
 
 ## User Experience
 
@@ -195,7 +201,7 @@ Kai opens the Marketplace on Browse. The Installed tab reads "Installed 2". He o
 Each test carries a purpose comment and must be able to fail.
 
 - **`lib/installed-updates.test.ts`:** row-state precedence (applying over checking over status; no check → `unchecked`); the summary counts only rows still installed and keeps list order; `formatCheckVersion` for semver, a leading `v`, and a commit SHA; `installationPlace` for global, a named agent and a bare path.
-- **`entities/marketplace` hooks:** `useInstalledUpdates` calls `checkMarketplaceUpdates` once and never when disabled; `useApplyUpdates` sends `{ installPaths }`, patches an applied check to `current` at the latest version, stores a returned `applyError` and an `unknown` as returned, and invalidates installed and commands; `useApplyingInstallPaths` holds two concurrent applies' paths; install marks the check stale without refetching.
+- **`entities/marketplace` hooks:** `useInstalledUpdates` calls `checkMarketplaceUpdates` once and never when disabled; `useApplyUpdates` sends `{ targets }`, patches an applied check to `current` at the version installed, opts out of the shared failure toast, stays pending until the installed list refreshes, stores a returned `applyError` and an `unknown` as returned, and invalidates installed and commands; `useApplyingInstallPaths` holds two concurrent applies' paths; install marks the check stale without refetching.
 - **Transport:** `HttpTransport` hits `GET /marketplace/updates` (with `?projectPath=` when given) and `POST /marketplace/updates` with `{ apply: true, installPaths }`.
 - **`use-apply-updates-with-toast.test.tsx`:** each toast in §4's table.
 - **`InstalledPackagesView.test.tsx`:**
@@ -247,6 +253,21 @@ All three ship in one PR with this spec.
 3. ~~Should the dialog stay open until the batch finishes?~~ (RESOLVED)
    **Answer:** No. It closes on confirm; each row shows its own progress and one toast reports the result.
    **Rationale:** The list itself is the progress view, and a modal held open over it hides it.
+
+### Review log
+
+**Round 1 (independent, 2026-09-24):** two high findings reproduced; all findings adopted.
+
+- The outcome toast rode per-call `mutate` callbacks, which TanStack runs only for the latest call on a mounted observer: overlapping row applies, or leaving the view mid-apply, left a loading toast spinning. Each apply now chains its own `mutateAsync`; regression tests run the real mutation (`use-apply-updates-with-toast.lifecycle.test.tsx`).
+- A failed apply showed two error toasts (the shared `MutationCache` handler and the per-call one). The mutation now sets `meta.suppressErrorToast`; the feature hook owns the one failure toast, in the house "Couldn’t update …" form.
+- A double click sent two applies; a ref-held in-flight set drops the repeat.
+- A check can go stale behind the installed list (an update from the CLI, an agent, another window). `currentCheckFor` ignores a check whose declared installed version (`installedVersionSource: 'package'`) no longer matches the listed version; an index- or commit-sourced version is not what the list shows and cannot be compared. The view also marks the check stale (no refetch) whenever the installed list changes.
+- Focus: the row's Update button is one element through "Updating…" (`aria-disabled`, not `disabled`), and when it leaves, focus moves to the row's status line; "Update all…" stays mounted during an apply and hands focus to the summary line when it leaves. Focus is only moved when it fell to the page.
+- A failed re-check no longer shows the earlier answer (decision: ignore it; an answer that failed to refresh is not current).
+- An applied check settles at `applied.version` (the latest side's source when it matches, else `package`), and the apply stays pending until the installed list shows the new versions, so a row goes straight from "Updating…" to "Up to date".
+- `batch_update_needs_approval` gets a plain sentence.
+- The `marketplace-installed` product shot waits for the summary's settled headline.
+- Prepared for DOR-2306: `ApplyUpdatesOptions.targets` (objects, not paths) and the general `ConfirmUpdatesDialog`.
 
 ## Related ADRs
 

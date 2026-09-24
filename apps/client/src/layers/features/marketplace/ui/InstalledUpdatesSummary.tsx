@@ -9,6 +9,7 @@
 import { CircleCheck, RefreshCw } from 'lucide-react';
 import { Button, Spinner } from '@/layers/shared/ui';
 import type { UpdatesSummary } from '../lib/installed-updates';
+import { useFocusRescue } from '../model/use-focus-rescue';
 
 interface InstalledUpdatesSummaryProps {
   summary: UpdatesSummary;
@@ -16,7 +17,7 @@ interface InstalledUpdatesSummaryProps {
   isChecking: boolean;
   /** The check request itself failed. */
   error: Error | null;
-  /** An update is being applied; checking again or starting another batch waits for it. */
+  /** An update is being applied: "Check again" waits for it, and "Update all…" is unavailable. */
   isApplying: boolean;
   /** Open the confirm step for every stale installation. */
   onUpdateAll: () => void;
@@ -79,11 +80,22 @@ export function InstalledUpdatesSummary({
 }: InstalledUpdatesSummaryProps) {
   const { headline, allCurrent } = describeSummary(summary);
   const details = allCurrent ? [] : detailSentences(summary);
-  const canUpdateAll = !isChecking && !isApplying && !error && summary.available.length > 0;
+  // "Update all…" stays mounted while an apply runs (marked `aria-disabled`), so
+  // the dialog can hand focus back to it; when nothing is left to update it
+  // leaves, and focus moves to the line that says so.
+  const showUpdateAll = !isChecking && !error && summary.available.length > 0;
+  const { targetRef: rescueTarget, controlProps: rescueProps } =
+    useFocusRescue<HTMLParagraphElement>(showUpdateAll);
 
   return (
     <div className="bg-muted/40 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-xl px-4 py-3">
-      <p role="status" aria-live="polite" className="min-w-0 text-sm">
+      <p
+        ref={rescueTarget}
+        tabIndex={-1}
+        role="status"
+        aria-live="polite"
+        className="focus-visible:ring-ring/50 min-w-0 rounded-sm text-sm outline-none focus-visible:ring-2"
+      >
         {isChecking ? (
           <span className="text-muted-foreground flex items-center gap-2">
             <Spinner size="xs" />
@@ -114,8 +126,14 @@ export function InstalledUpdatesSummary({
             <RefreshCw className="mr-1 size-3" aria-hidden />
             {error ? 'Try again' : 'Check again'}
           </Button>
-          {canUpdateAll && (
-            <Button size="sm" onClick={onUpdateAll}>
+          {showUpdateAll && (
+            <Button
+              size="sm"
+              aria-disabled={isApplying || undefined}
+              className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+              onClick={isApplying ? undefined : onUpdateAll}
+              {...rescueProps}
+            >
               Update all…
             </Button>
           )}

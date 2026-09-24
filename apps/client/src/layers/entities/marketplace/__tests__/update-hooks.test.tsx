@@ -15,9 +15,11 @@ import type {
 } from '@dorkos/shared/marketplace-schemas';
 import {
   marketplaceKeys,
+  settleAppliedCheck,
   useApplyUpdates,
   useApplyingInstallPaths,
   useInstallPackage,
+  useInstalledPackages,
   useInstalledUpdates,
 } from '../index';
 
@@ -155,11 +157,15 @@ describe('useApplyUpdates', () => {
     const { wrapper } = setup(transport);
 
     const { result } = renderHook(() => useApplyUpdates(), { wrapper });
-    act(() => result.current.mutate({ installPaths: [GLOBAL_PATH, ALPHA_PATH] }));
+    act(() =>
+      result.current.mutate({
+        targets: [{ installPath: GLOBAL_PATH }, { installPath: ALPHA_PATH }],
+      })
+    );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(transport.applyMarketplaceUpdates).toHaveBeenCalledWith({
-      installPaths: [GLOBAL_PATH, ALPHA_PATH],
+      targets: [{ installPath: GLOBAL_PATH }, { installPath: ALPHA_PATH }],
     });
   });
 
@@ -179,7 +185,7 @@ describe('useApplyUpdates', () => {
     const updates = renderHook(() => useInstalledUpdates(), { wrapper });
     await waitFor(() => expect(updates.result.current.isSuccess).toBe(true));
     const apply = renderHook(() => useApplyUpdates(), { wrapper });
-    act(() => apply.result.current.mutate({ installPaths: [GLOBAL_PATH] }));
+    act(() => apply.result.current.mutate({ targets: [{ installPath: GLOBAL_PATH }] }));
     await waitFor(() => expect(apply.result.current.isSuccess).toBe(true));
 
     const [patched, untouched] = cachedChecks(queryClient);
@@ -198,6 +204,49 @@ describe('useApplyUpdates', () => {
     expect(transport.checkMarketplaceUpdates).toHaveBeenCalledTimes(1);
   });
 
+  it('records the version the reinstall actually installed, not the one the check named', () => {
+    // Purpose: a commit-identified latest whose manifest declares a version
+    // installs that version; the row must show what is on disk, and say where
+    // the version came from, so it joins the installed list's version.
+    const check = makeCheck({
+      latestVersion: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
+      latestVersionSource: 'commit',
+    });
+
+    const settled = settleAppliedCheck({ ...check, applied: makeInstallResult('0.8.0') });
+
+    expect(settled).toMatchObject({
+      status: 'current',
+      installedVersion: '0.8.0',
+      installedVersionSource: 'package',
+    });
+    // When the reinstall installed exactly what the check named, that side's
+    // source describes it.
+    expect(
+      settleAppliedCheck({
+        ...check,
+        latestVersion: '0.8.0',
+        latestVersionSource: 'index',
+        applied: makeInstallResult('0.8.0'),
+      })
+    ).toMatchObject({ installedVersion: '0.8.0', installedVersionSource: 'index' });
+  });
+
+  it('leaves the failure report to its caller, so a failure is toasted once', async () => {
+    // Purpose: the shared MutationCache toasts every failure unless a mutation
+    // opts out; the apply's caller already replaces its own loading toast.
+    const transport = createMockTransport();
+    vi.mocked(transport.applyMarketplaceUpdates).mockRejectedValue(new Error('nope'));
+    const { queryClient, wrapper } = setup(transport);
+
+    const { result } = renderHook(() => useApplyUpdates(), { wrapper });
+    act(() => result.current.mutate({ targets: [{ installPath: GLOBAL_PATH }] }));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    const [mutation] = queryClient.getMutationCache().getAll();
+    expect(mutation!.meta).toEqual({ suppressErrorToast: true });
+  });
+
   it('keeps a failed reinstall on its row, still offering the update', async () => {
     // Purpose: a failure must stay visible on the installation it belongs to.
     const transport = createMockTransport();
@@ -210,7 +259,7 @@ describe('useApplyUpdates', () => {
     const updates = renderHook(() => useInstalledUpdates(), { wrapper });
     await waitFor(() => expect(updates.result.current.isSuccess).toBe(true));
     const apply = renderHook(() => useApplyUpdates(), { wrapper });
-    act(() => apply.result.current.mutate({ installPaths: [GLOBAL_PATH] }));
+    act(() => apply.result.current.mutate({ targets: [{ installPath: GLOBAL_PATH }] }));
     await waitFor(() => expect(apply.result.current.isSuccess).toBe(true));
 
     expect(cachedChecks(queryClient)[0]).toMatchObject({
@@ -236,7 +285,7 @@ describe('useApplyUpdates', () => {
     const updates = renderHook(() => useInstalledUpdates(), { wrapper });
     await waitFor(() => expect(updates.result.current.isSuccess).toBe(true));
     const apply = renderHook(() => useApplyUpdates(), { wrapper });
-    act(() => apply.result.current.mutate({ installPaths: [GLOBAL_PATH] }));
+    act(() => apply.result.current.mutate({ targets: [{ installPath: GLOBAL_PATH }] }));
     await waitFor(() => expect(apply.result.current.isSuccess).toBe(true));
 
     expect(cachedChecks(queryClient)[0]).toEqual(fresh);
@@ -253,13 +302,38 @@ describe('useApplyUpdates', () => {
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
 
     const { result } = renderHook(() => useApplyUpdates(), { wrapper });
-    act(() => result.current.mutate({ installPaths: [GLOBAL_PATH] }));
+    act(() => result.current.mutate({ targets: [{ installPath: GLOBAL_PATH }] }));
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: marketplaceKeys.installed() });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: marketplaceKeys.installedDetail('flow') });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: marketplaceKeys.packageDetail('flow') });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['commands'] });
+  });
+
+  it('stays pending until the installed list shows the new versions', async () => {
+    // Purpose: between the patched check (new version) and a list that has not
+    // refreshed (old version), the row would read as unchecked; holding the
+    // apply until the list lands keeps it on "Updating…" instead.
+    const transport = createMockTransport();
+    const listed = deferred<never[]>();
+    vi.mocked(transport.listInstalledPackages)
+      .mockResolvedValueOnce([])
+      .mockReturnValueOnce(listed.promise);
+    vi.mocked(transport.applyMarketplaceUpdates).mockResolvedValue({
+      checks: [makeCheck({ applied: makeInstallResult('0.7.3') })],
+    });
+    const { wrapper } = setup(transport);
+
+    const list = renderHook(() => useInstalledPackages(), { wrapper });
+    await waitFor(() => expect(list.result.current.isSuccess).toBe(true));
+    const apply = renderHook(() => useApplyUpdates(), { wrapper });
+    act(() => apply.result.current.mutate({ targets: [{ installPath: GLOBAL_PATH }] }));
+
+    await waitFor(() => expect(transport.listInstalledPackages).toHaveBeenCalledTimes(2));
+    expect(apply.result.current.isPending).toBe(true);
+    await act(async () => listed.resolve([]));
+    await waitFor(() => expect(apply.result.current.isSuccess).toBe(true));
   });
 
   it('leaves the command registry alone when nothing was applied', async () => {
@@ -272,7 +346,7 @@ describe('useApplyUpdates', () => {
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
 
     const { result } = renderHook(() => useApplyUpdates(), { wrapper });
-    act(() => result.current.mutate({ installPaths: [GLOBAL_PATH] }));
+    act(() => result.current.mutate({ targets: [{ installPath: GLOBAL_PATH }] }));
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['commands'] });
@@ -298,8 +372,8 @@ describe('useApplyingInstallPaths', () => {
     const applying = renderHook(() => useApplyingInstallPaths(), { wrapper });
     const a = renderHook(() => useApplyUpdates(), { wrapper });
     const b = renderHook(() => useApplyUpdates(), { wrapper });
-    act(() => a.result.current.mutate({ installPaths: [GLOBAL_PATH] }));
-    act(() => b.result.current.mutate({ installPaths: [ALPHA_PATH] }));
+    act(() => a.result.current.mutate({ targets: [{ installPath: GLOBAL_PATH }] }));
+    act(() => b.result.current.mutate({ targets: [{ installPath: ALPHA_PATH }] }));
 
     await waitFor(() =>
       expect([...applying.result.current].sort()).toEqual([GLOBAL_PATH, ALPHA_PATH].sort())
