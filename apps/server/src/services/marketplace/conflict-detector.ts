@@ -11,11 +11,7 @@
  */
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-  PACKAGE_TEXT_MAX_BYTES,
-  readPackageFileWithin,
-  readTextFileWithin,
-} from '@dorkos/shared/bounded-read';
+import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
 import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
@@ -403,8 +399,10 @@ export class ConflictDetector {
     const extensionIds = await listSubdirectories(extensionsDir);
     const records: ExtensionRecord[] = [];
     for (const extensionId of extensionIds) {
-      const manifestPath = join(extensionsDir, extensionId, 'extension.json');
-      const bindings = await readSlotBindings(manifestPath);
+      const bindings = await readSlotBindings(
+        packageRoot,
+        join('.dork', 'extensions', extensionId, 'extension.json')
+      );
       records.push({ packageName, extensionId, bindings });
     }
     return records;
@@ -520,12 +518,21 @@ function dropSelfInstall<T extends { kind: InstallRootDir; packageName: string }
 
 /**
  * Read an `extension.json` and pull `.slots[]` entries. Coerces non-numeric
- * priority to `0` and silently drops malformed entries.
+ * priority to `0` and silently drops malformed entries. The file is read
+ * inside the package, never through a symbolic link (DOR-2319).
+ *
+ * @param packageRoot - The package root.
+ * @param manifestPath - The `extension.json`, relative to `packageRoot`.
  */
-async function readSlotBindings(manifestPath: string): Promise<SlotBinding[]> {
+async function readSlotBindings(packageRoot: string, manifestPath: string): Promise<SlotBinding[]> {
   let raw: string;
   try {
-    raw = await readTextFileWithin(manifestPath, PACKAGE_TEXT_MAX_BYTES, 'The manifest');
+    raw = await readPackageFileWithin(
+      packageRoot,
+      manifestPath,
+      PACKAGE_TEXT_MAX_BYTES,
+      "The extension's extension.json"
+    );
   } catch {
     return [];
   }

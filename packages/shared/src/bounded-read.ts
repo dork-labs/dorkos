@@ -25,7 +25,7 @@
  * @module shared/bounded-read
  */
 import { constants } from 'node:fs';
-import { lstat, open, type FileHandle } from 'node:fs/promises';
+import { lstat, open, realpath, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 
 /**
@@ -155,6 +155,19 @@ export async function readTextFileWithin(
 }
 
 /**
+ * Points in {@link readPackageFileWithin} a test can act at, to reproduce a
+ * tree changing under the reader. Never set outside tests.
+ *
+ * @internal
+ */
+export const readPackageFileHooks: {
+  /** Runs after the link checks and before the file is opened. */
+  beforeOpen?: () => Promise<void>;
+  /** Runs after the file is opened and before it is checked. */
+  afterOpen?: () => Promise<void>;
+} = {};
+
+/**
  * Read a text file inside a package, within `maxBytes`, refusing every
  * symbolic link on the way: any directory between `root` and the file, and
  * the file itself. A package is someone else's tree, and staging drops its
@@ -193,15 +206,42 @@ export async function readPackageFileWithin(
     // Throws ENOENT/ENOTDIR as-is, so a missing file still reads as missing.
     if ((await lstat(current)).isSymbolicLink()) throw linked();
   }
+  await readPackageFileHooks.beforeOpen?.();
   let handle: FileHandle;
   try {
     handle = await open(current, READ_NOFOLLOW_FLAGS);
   } catch (err) {
-    // A link swapped in after the check above.
+    // A link swapped in for the file after the check above.
     if ((err as NodeJS.ErrnoException).code === 'ELOOP') throw linked();
     throw err;
   }
   try {
+    await readPackageFileHooks.afterOpen?.();
+    // The checks above and the open are separate steps, and a directory on
+    // the way could have been swapped for a link between them. So confirm
+    // what was opened: the path must still resolve inside the package, and
+    // to the very file the handle holds. Node has no `openat`, so a tree
+    // that is swapped and swapped back between the open and these checks
+    // could still slip through; that needs the tree to be changing while
+    // DorkOS reads it, which a package on disk cannot do on its own.
+    const [opened, atPath, realRoot, realFile] = await Promise.all([
+      handle.stat(),
+      lstat(current),
+      realpath(root),
+      realpath(current),
+    ]);
+    const fromRoot = path.relative(realRoot, realFile);
+    if (
+      opened.dev !== atPath.dev ||
+      opened.ino !== atPath.ino ||
+      path.isAbsolute(fromRoot) ||
+      fromRoot === '..' ||
+      fromRoot.startsWith(`..${path.sep}`)
+    ) {
+      throw new UnsafeFileError(
+        `${what} changed while DorkOS was reading it, so DorkOS will not read it.`
+      );
+    }
     return await readOpenedWithin(handle, maxBytes, what);
   } finally {
     await handle.close();

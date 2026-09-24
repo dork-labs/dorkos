@@ -83,6 +83,7 @@ function previewDeclaring(overrides: Partial<PermissionPreview> = {}): Permissio
     monitors: [],
     executables: [],
     skillTools: [],
+    skippedLinks: [],
     unreadableDeclarations: [],
     schedules: [],
     secrets: [],
@@ -397,6 +398,7 @@ describe('createUpdateHandler', () => {
     // Purpose: an unreadable declaration would vanish from a card that lists
     // what runs, and the person would approve it unseen.
     declares.alpha = previewDeclaring({
+      skippedLinks: [],
       unreadableDeclarations: [{ path: '.lsp.json', kind: 'lsp-server', entry: 'odd' }],
     });
 

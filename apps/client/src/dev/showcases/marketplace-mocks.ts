@@ -175,6 +175,7 @@ export const MOCK_PERMISSION_PREVIEW_MINIMAL: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
   schedules: [
@@ -229,6 +230,7 @@ export const MOCK_PERMISSION_PREVIEW_FULL: PermissionPreview = {
   skillTools: [
     { source: 'skills/deploy/SKILL.md', skill: 'deploy', tools: ['Bash(kubectl:*)', 'Read'] },
   ],
+  skippedLinks: [],
   unreadableDeclarations: [{ path: '.mcp.json', kind: 'mcp-server', entry: 'legacy' }],
   npmDependencies: [
     { name: 'zod', range: '^4.3.6' },
@@ -283,6 +285,7 @@ export const MOCK_PERMISSION_PREVIEW_BLOCKING: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
   schedules: [],
@@ -573,6 +576,7 @@ export const MOCK_PERMISSION_PREVIEW_MANY_FILES: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
   schedules: [],
@@ -597,6 +601,7 @@ export const MOCK_PERMISSION_PREVIEW_ESCAPES: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
   schedules: [],

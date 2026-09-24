@@ -350,6 +350,17 @@ function formatEffects(
     });
   }
 
+  // Shortcuts in the package are not installed (DOR-2319); say which, so a
+  // skill folder is not silently missing afterwards.
+  for (const link of preview.skippedLinks) {
+    rows.push({
+      icon: 'alert-triangle',
+      label: "Part of this package won't be installed",
+      description: link.message,
+      severity: 'warning' satisfies PermissionSeverity,
+    });
+  }
+
   return rows;
 }
 

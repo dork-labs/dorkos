@@ -137,4 +137,32 @@ describe('a package that links to a host file (DOR-2319)', () => {
         preview.unreadableDeclarations.some((d) => d.path === 'hooks/hooks.json')
     ).toBe(true);
   });
+
+  // Purpose: a linked skill folder, as some official plugins ship, is named
+  // in the preview rather than silently missing once installed.
+  it('names each shortcut in the preview', async () => {
+    const shared = path.join(root, 'shared', 'neon-postgres');
+    await mkdir(shared, { recursive: true });
+    await writeFile(path.join(shared, 'SKILL.md'), '---\nname: neon-postgres\n---\n');
+    await mkdir(path.join(packagePath, 'skills'), { recursive: true });
+    await symlink(shared, path.join(packagePath, 'skills', 'neon-postgres'));
+
+    const preview = await previewBuilder().build(packagePath, {
+      schemaVersion: 1,
+      name: 'linky',
+      version: '1.0.0',
+      type: 'plugin',
+      description: 'x',
+      tags: [],
+      layers: [],
+      requires: [],
+      schedules: [],
+    } as never);
+
+    expect(preview.skippedLinks).toContainEqual({
+      path: 'skills/neon-postgres',
+      message:
+        "skills/neon-postgres is a shortcut to a folder outside the package, so it won't be installed.",
+    });
+  });
 });

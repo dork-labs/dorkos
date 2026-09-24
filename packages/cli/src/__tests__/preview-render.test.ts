@@ -21,6 +21,7 @@ function makePreview(overrides: Partial<PreviewPayload> = {}): PreviewPayload {
     monitors: [],
     executables: [],
     skillTools: [],
+    skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],
@@ -111,6 +112,7 @@ describe('renderPreview', () => {
           lspServers: [{ name: 'go', command: 'gopls', args: ['serve'] }],
           monitors: [{ name: 'deploy', command: './poll.sh', when: 'always' }],
           executables: ['git'],
+          skippedLinks: [],
           unreadableDeclarations: [{ path: '.mcp.json', kind: 'mcp-server', entry: 'odd' }],
         })
       )
@@ -238,5 +240,22 @@ describe('renderPreview', () => {
     expect(out).not.toContain('Commands this package declares:');
     expect(out).not.toContain('Commands we could not read:');
     expect(out).not.toContain('Scheduled jobs:');
+  });
+});
+
+describe('renderPreview shortcuts (DOR-2319)', () => {
+  // Purpose: the terminal preview names each shortcut that won't be installed.
+  it('lists each skipped shortcut', () => {
+    const message =
+      "skills/neon-postgres is a shortcut to a folder outside the package, so it won't be installed.";
+    const out = stripAnsi(
+      renderPreview(
+        'linky',
+        '1.0.0',
+        makePreview({ skippedLinks: [{ path: 'skills/neon-postgres', message }] })
+      )
+    );
+    expect(out).toContain("Shortcuts that won't be installed:");
+    expect(out).toContain(message);
   });
 });

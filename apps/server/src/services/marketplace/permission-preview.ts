@@ -16,6 +16,7 @@ import { join, relative } from 'node:path';
 import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { EFFECT_BEARING_PATHS, PackageTypeSchema } from '@dorkos/marketplace';
+import { describePackageLink, findPackageLinks } from '@dorkos/marketplace/package-links';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema, hasSchedule } from '@dorkos/skills';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
@@ -459,6 +460,7 @@ export class PermissionPreviewBuilder {
       monitors: [],
       executables: [],
       skillTools: [],
+      skippedLinks: [],
       unreadableDeclarations: [],
       schedules: [],
       secrets: [],
@@ -477,6 +479,13 @@ export class PermissionPreviewBuilder {
     }));
 
     Object.assign(preview, await readRunnableDeclarations(packagePath));
+
+    // Staging drops every shortcut, so each one is named rather than a skill
+    // folder silently missing once installed (DOR-2319).
+    preview.skippedLinks = (await findPackageLinks(packagePath)).map((link) => ({
+      path: link.path,
+      message: describePackageLink(link),
+    }));
 
     preview.schedules = [
       ...(await readTaskSkills(packagePath)),

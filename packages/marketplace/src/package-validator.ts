@@ -35,6 +35,7 @@ import {
   UnsafeFileError,
   readPackageFileWithin,
 } from '@dorkos/shared/bounded-read';
+import { describePackageLink, findPackageLinks } from './package-links.js';
 import { requiresClaudePlugin } from './package-types.js';
 import { parseMarketplaceJson, parseDorkosSidecar } from './marketplace-json-parser.js';
 import { validateAgainstCcSchema } from './cc-validator.js';
@@ -417,6 +418,17 @@ async function validatePackageFiles(
     await checkVersionAgreement(packagePath, manifest.version, issues);
   }
 
+  // 4b. Every shortcut (symbolic link) in the package: staging drops them, so
+  //     each is said out loud rather than silently missing once installed.
+  for (const link of await findPackageLinks(packagePath)) {
+    issues.push({
+      level: 'warning',
+      code: 'LINK_SKIPPED',
+      message: describePackageLink(link),
+      path: link.path,
+    });
+  }
+
   // 5. Validate any bundled SKILL.md files
   for (const dir of SKILL_SOURCE_DIRS) {
     const fullDir = path.join(packagePath, dir);
@@ -427,16 +439,9 @@ async function validatePackageFiles(
     }
     // A skill directory reached through a symbolic link is not the package's
     // own: staging drops the link, and following it could read files outside
-    // the package (DOR-2319).
-    if (await reachedThroughLink(packagePath, dir)) {
-      issues.push({
-        level: 'error',
-        code: 'FILE_REFUSED',
-        message: `The package's ${dir} is reached through a symbolic link, which DorkOS does not follow inside a package.`,
-        path: dir,
-      });
-      continue;
-    }
+    // the package. It is never read; the LINK_SKIPPED warning below says it
+    // will not be installed (DOR-2319).
+    if (await reachedThroughLink(packagePath, dir)) continue;
     await validateSkillsInDirectory(fullDir, packagePath, issues);
   }
 

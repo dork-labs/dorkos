@@ -9,6 +9,7 @@ import {
   PACKAGE_TEXT_MAX_BYTES,
   TooLargeError,
   UnsafeFileError,
+  readPackageFileHooks,
   readPackageFileWithin,
   readResponseTextWithin,
   readTextFileWithin,
@@ -240,5 +241,61 @@ describe('readPackageFileWithin', () => {
     await expect(
       readPackageFileWithin(pkg, 'skills/a/SKILL.md', 1024, 'The SKILL.md')
     ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+describe('readPackageFileWithin while the tree changes (DOR-2319)', () => {
+  let pkg: string;
+  let outside: string;
+
+  beforeEach(async () => {
+    pkg = path.join(dir, 'pkg');
+    outside = path.join(dir, 'outside');
+    await mkdir(path.join(pkg, 'skills', 'a'), { recursive: true });
+    await writeFile(path.join(pkg, 'skills', 'a', 'SKILL.md'), 'inside');
+    await mkdir(outside);
+    await writeFile(path.join(outside, 'SKILL.md'), 'host-secret-2b61');
+  });
+
+  afterEach(() => {
+    delete readPackageFileHooks.beforeOpen;
+    delete readPackageFileHooks.afterOpen;
+  });
+
+  // Purpose: a directory swapped for a link out of the package after the
+  // link checks but before the open is caught after the open, and the
+  // outside file's text is never returned.
+  it('refuses a directory swapped for a link before the open', async () => {
+    readPackageFileHooks.beforeOpen = async () => {
+      await rm(path.join(pkg, 'skills', 'a'), { recursive: true });
+      await symlink(outside, path.join(pkg, 'skills', 'a'));
+    };
+    const error = await readPackageFileWithin(pkg, 'skills/a/SKILL.md', 1024, 'The SKILL.md').catch(
+      (err: unknown) => err
+    );
+    expect(error).toBeInstanceOf(UnsafeFileError);
+    expect((error as Error).message).toBe(
+      'The SKILL.md changed while DorkOS was reading it, so DorkOS will not read it.'
+    );
+  });
+
+  // Purpose: a file replaced after it was opened is caught by comparing the
+  // opened file with what the path now names.
+  it('refuses a file replaced after the open', async () => {
+    readPackageFileHooks.afterOpen = async () => {
+      await rm(path.join(pkg, 'skills', 'a', 'SKILL.md'));
+      await writeFile(path.join(pkg, 'skills', 'a', 'SKILL.md'), 'replaced');
+    };
+    await expect(
+      readPackageFileWithin(pkg, 'skills/a/SKILL.md', 1024, 'The SKILL.md')
+    ).rejects.toThrow('changed while DorkOS was reading it');
+  });
+
+  // Purpose: with no change, the checks pass and the file reads.
+  it('reads an unchanged file', async () => {
+    readPackageFileHooks.beforeOpen = async () => {};
+    expect(await readPackageFileWithin(pkg, 'skills/a/SKILL.md', 1024, 'The SKILL.md')).toBe(
+      'inside'
+    );
   });
 });

@@ -393,6 +393,7 @@ const LocalPermissionPreviewSchema = z.object({
       entry: z.string().optional(),
     })
   ),
+  skippedLinks: z.array(z.object({ path: z.string(), message: z.string() })),
   schedules: z.array(
     z.object({
       name: z.string(),

@@ -292,6 +292,7 @@ function buildEmptyPreview(overrides: Partial<PermissionPreview> = {}): Permissi
     monitors: [],
     executables: [],
     skillTools: [],
+    skippedLinks: [],
     unreadableDeclarations: [],
     schedules: [],
     secrets: [],
@@ -1210,6 +1211,7 @@ describe('UpdateFlow', () => {
       ctx.installer.preview.mockResolvedValue({
         preview: buildEmptyPreview({
           unreadableHooks: [{ path: 'hooks/hooks.json', event: 'Stop' }],
+          skippedLinks: [],
           unreadableDeclarations: [{ path: '.mcp.json', kind: 'mcp-server', entry: 'odd' }],
         }),
       });

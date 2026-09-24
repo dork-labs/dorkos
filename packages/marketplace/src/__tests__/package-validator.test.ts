@@ -1161,16 +1161,41 @@ describe('symbolic links in a package (DOR-2319)', () => {
   });
 
   // Purpose: a skill directory that is itself a link out of the package is
-  // refused before anything under it is read.
-  it('refuses a skills directory that is a symbolic link', async () => {
+  // never read, and the person is told it will not be installed.
+  it('skips a skills directory that is a symbolic link, with a warning', async () => {
     const { pkg, host } = await packageAndHostFile();
     const elsewhere = path.join(path.dirname(host), 'elsewhere');
     await writeText(path.join(elsewhere, 'a', 'SKILL.md'), `---\nname: ${SECRET}\n---\n`);
     await fs.rm(path.join(pkg, 'skills'), { recursive: true });
     await fs.symlink(elsewhere, path.join(pkg, 'skills'));
     const result = await validatePackage(pkg);
-    expect(result.ok).toBe(false);
-    expect(result.issues.some((i) => i.path === 'skills' && i.code === 'FILE_REFUSED')).toBe(true);
+    expect(result.issues).toContainEqual({
+      level: 'warning',
+      code: 'LINK_SKIPPED',
+      message: "skills is a shortcut to a folder outside the package, so it won't be installed.",
+      path: 'skills',
+    });
     expect(JSON.stringify(result)).not.toContain(SECRET);
+  });
+
+  // Purpose: a linked skill folder inside a real skills directory (as some
+  // official plugins ship) is named in a warning, not dropped silently.
+  it('warns about a linked skill folder', async () => {
+    const { pkg, host } = await packageAndHostFile();
+    const shared = path.join(path.dirname(host), 'shared', 'neon-postgres');
+    await writeText(
+      path.join(shared, 'SKILL.md'),
+      '---\nname: neon-postgres\ndescription: x\n---\n'
+    );
+    await fs.symlink(shared, path.join(pkg, 'skills', 'neon-postgres'));
+    const result = await validatePackage(pkg);
+    expect(result.ok).toBe(true);
+    expect(result.issues).toContainEqual({
+      level: 'warning',
+      code: 'LINK_SKIPPED',
+      message:
+        "skills/neon-postgres is a shortcut to a folder outside the package, so it won't be installed.",
+      path: 'skills/neon-postgres',
+    });
   });
 });
