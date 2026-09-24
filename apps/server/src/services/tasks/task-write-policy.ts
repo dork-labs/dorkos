@@ -65,7 +65,8 @@
  *   where the risk lives: `TaskStore.upsertFromFile` refuses a file-declared
  *   `bypassPermissions` and logs the downgrade, so **a file can never INTRODUCE
  *   one**. A file may only KEEP a bypass already in the row, and only while that
- *   row is `active` AND still holds the same prompt and cron the file carries —
+ *   row is `active` AND still holds the same prompt, cron and timezone the file
+ *   carries —
  *   so **a kept bypass is bound to an un-retired task doing the work a person
  *   approved**, never to a path. Rewriting the body under a kept grant clamps;
  *   dropping a file back where a paused task's row still sits clamps. Only a

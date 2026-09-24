@@ -586,6 +586,65 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
     vi.restoreAllMocks();
     expect(store.getTask(id)!.status).toBe('active');
   });
+
+  it('keeps a person’s live schedule live when the sync parks it mid-edit', async () => {
+    // Purpose: the second half of the re-assert — the edit form sends fields
+    // and no `status`, so a lost race must not disarm a schedule the person
+    // was only editing. Pinned beside the agent case below so gating on the
+    // caller cannot quietly drop the person's half.
+    const filePath = await writeBlockSkill('racy-edit', "  cron: '0 9 * * *'");
+    const id = seedParked('racy-edit', filePath, '0 9 * * *');
+    store.updateTask(id, { status: 'active' });
+
+    const realUpdate = store.updateTask.bind(store);
+    let raced = false;
+    vi.spyOn(store, 'updateTask').mockImplementation(
+      (taskId, data, options?: UpdateTaskOptions) => {
+        if (!raced) {
+          raced = true;
+          realUpdate(taskId, { status: 'pending_approval' });
+        }
+        return realUpdate(taskId, data, options ?? { timingLandsOn: 'file' });
+      }
+    );
+
+    const res = await request(fixtureServer).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    vi.restoreAllMocks();
+    expect(store.getTask(id)!.status).toBe('active');
+  });
+
+  it('leaves the park standing when the caller is an agent (DOR-2307 review)', async () => {
+    // Purpose: re-asserting `active` after the race is the person finishing
+    // their own write. For an agent it would re-arm a schedule the sync just
+    // parked over the agent's own edit — and `updateTask` with `status:
+    // 'active'` records a fresh approval for content nobody has read.
+    const filePath = await writeBlockSkill('racy-agent', "  cron: '0 9 * * *'");
+    const id = seedParked('racy-agent', filePath, '0 9 * * *');
+    store.updateTask(id, { status: 'active' });
+
+    const realUpdate = store.updateTask.bind(store);
+    let raced = false;
+    vi.spyOn(store, 'updateTask').mockImplementation(
+      (taskId, data, options?: UpdateTaskOptions) => {
+        if (!raced) {
+          raced = true;
+          realUpdate(taskId, { status: 'pending_approval' });
+        }
+        return realUpdate(taskId, data, options ?? { timingLandsOn: 'file' });
+      }
+    );
+
+    const res = await request(fixtureServer)
+      .patch(`/api/tasks/${id}`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ cron: '0 21 * * *' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    vi.restoreAllMocks();
+    expect(store.getTask(id)!.status).toBe('pending_approval');
+  });
 });
 
 /**

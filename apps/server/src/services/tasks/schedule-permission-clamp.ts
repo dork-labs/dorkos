@@ -165,8 +165,8 @@ export function upgradeLegacyContentKey(key: string, timezone: string): string |
  *   so the row and its grant outlive the file. Without this, anything that can
  *   later write that path resurrects the task — `upsertFromFile` un-pauses a
  *   returning file by design — and inherits the bypass.
- * - **Unchanged content.** The row's prompt and cron are overwritten from the
- *   file on every sync. Without this, an attacker keeps `permissions:
+ * - **Unchanged content.** The row's prompt, cron and timezone are overwritten
+ *   from the file on every sync. Without this, an attacker keeps `permissions:
  *   bypassPermissions` in the frontmatter and swaps the body: same path, same
  *   grant, entirely different instructions, running unattended at the next tick.
  *
@@ -268,8 +268,8 @@ export interface FileArmVerdict {
  *   active` (that transition IS the approval, `task-write-policy.ts`), and
  *   every later sync of identical content finds an active row at a matching key
  *   and leaves it alone.
- * - **Editing the file re-parks it.** A changed prompt or cron is a different
- *   piece of work, and nobody has read this one.
+ * - **Editing the file re-parks it.** A changed prompt, cron or timezone is a
+ *   different piece of work, and nobody has read this one.
  * - **Schedules that were already live stay live.** A row an older build wrote
  *   as `active` holds a grant for its own content the moment this ships, so
  *   upgrading does not re-park every schedule an alpha user already has. No

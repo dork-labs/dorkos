@@ -512,16 +512,20 @@ export function createTasksRouter(
     // edited parked with nothing anywhere saying why (DOR-1485 review, I2).
     //
     // `updateTask` cannot fix this on its own: it only lifts `paused`, because
-    // `pending_approval` is deliberately a person's gate to clear. Here we know
-    // a person IS the caller and exactly what they asked for, so re-stating it
-    // is not overriding the gate — it is finishing the write that opened it.
+    // `pending_approval` is deliberately a person's gate to clear. So this runs
+    // for a TRUSTED caller only — a person, and exactly what they asked for —
+    // where re-stating it is not overriding the gate but finishing the write
+    // that opened it. For an agent the park the sync just made is the right
+    // answer, and re-stating `active` would re-arm it with a fresh approval
+    // (`updateTask` records one on `active`) for content nobody has read.
     // The status the caller is entitled to end up at: the one they asked for,
     // or — when they only edited fields and the schedule was already live — the
     // one it already had. The second half is the case a first pass missed: the
     // cockpit's edit form sends a prompt and no `status`, so a lost race
     // disarmed a running schedule with nothing anywhere saying why.
-    const intendedStatus =
-      data.status ?? (changesFile && existing.status === 'active' ? 'active' : undefined);
+    const intendedStatus = trusted
+      ? (data.status ?? (changesFile && existing.status === 'active' ? 'active' : undefined))
+      : undefined;
     if (intendedStatus !== undefined && updated.status !== intendedStatus) {
       updated = store.updateTask(req.params.id, { status: intendedStatus }) ?? updated;
     }

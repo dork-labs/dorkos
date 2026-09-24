@@ -26,7 +26,8 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   /**
    * A person's own timezone for a package's schedule, beside
    * {@link cronOverride} and for the same reason. NULL means "the file's
-   * timezone". Not part of the approval key, exactly as `timezone` is not.
+   * timezone". Part of the approval key when set, as the timezone that runs
+   * (DOR-2307).
    */
   timezoneOverride: text('timezone_override'),
   prompt: text('prompt').notNull(),

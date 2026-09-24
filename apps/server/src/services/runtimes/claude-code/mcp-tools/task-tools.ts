@@ -111,7 +111,7 @@ export const PARKED_SCHEDULE_NOTE =
  * loud.
  */
 export const REAPPROVAL_NOTE =
-  'This edit changed what the schedule DOES, so the person has to approve it again. Within a ' +
+  'This edit changed what the schedule does or when it runs, so the person has to approve it again. Within a ' +
   'few minutes DorkOS will stop the schedule and put it back in front of them — your change is ' +
   'saved, it just will not run until they say yes. Tell them so in your reply: name the ' +
   'scheduled task and say it is waiting on them. Do not end the turn as if the work were done.';

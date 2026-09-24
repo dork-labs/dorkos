@@ -168,8 +168,8 @@ async function readExtensionManifests(
  * ## The one case this under-reports, said rather than papered over
  *
  * `upsertFromFile` lets a file KEEP a `bypassPermissions` the schedule row
- * already holds, when the row is active and its prompt and cron still match the
- * file. So re-installing a package over a task whose bypass a person raised
+ * already holds, when the row is active and its prompt, cron and timezone still
+ * match the file. So re-installing a package over a task whose bypass a person raised
  * themselves, with byte-identical content, keeps that bypass while this preview
  * says `acceptEdits`.
  *

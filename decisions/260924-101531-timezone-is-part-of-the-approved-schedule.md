@@ -34,4 +34,6 @@ Approvals recorded under the old key are moved over once, at boot, before any wa
 ### Negative
 
 - Editing only the timezone in a schedule's file by hand now parks it for approval, as editing its cron always has.
+- Going back to an older build parks every approved schedule: that build computes the two-part key, and no stored key matches it any more.
+- The timezone is compared as written, so a change between two spellings of the same zone (an alias, or a difference in case) parks the schedule even though its run times do not move. That errs toward asking a person, and is left as it is.
 - If an agent changed a schedule's timezone before this shipped, the upgrade carries the approval over to that timezone. The old key never recorded which timezone was approved, so there is no way to tell.
