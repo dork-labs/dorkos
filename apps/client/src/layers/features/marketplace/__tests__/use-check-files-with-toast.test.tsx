@@ -1,19 +1,19 @@
 /**
  * @vitest-environment jsdom
  *
- * `usePrepareWithToast` (DOR-2320): one toast, loading then the server's own
+ * `useCheckFilesWithToast` (DOR-2320): one toast, loading then the server's own
  * sentence; a package that could not be prepared is a warning, a failed
  * request an error.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import type { PrepareResult } from '@dorkos/shared/marketplace-schemas';
-import { usePreparePackage } from '@/layers/entities/marketplace';
+import type { CheckFilesResult } from '@dorkos/shared/marketplace-schemas';
+import { useCheckPackageFiles } from '@/layers/entities/marketplace';
 
-import { usePrepareWithToast } from '../model/use-prepare-with-toast';
+import { useCheckFilesWithToast } from '../model/use-check-files-with-toast';
 
 vi.mock('@/layers/entities/marketplace', () => ({
-  usePreparePackage: vi.fn(),
+  useCheckPackageFiles: vi.fn(),
 }));
 
 const mockLoading = vi.fn(() => 'toast-1');
@@ -30,25 +30,25 @@ vi.mock('sonner', () => ({
   },
 }));
 
-type Callbacks = { onSuccess?: (r: PrepareResult) => void; onError?: (e: Error) => void };
+type Callbacks = { onSuccess?: (r: CheckFilesResult) => void; onError?: (e: Error) => void };
 
 /** Make the base mutation call back with `settle` as soon as it is called. */
 function answer(settle: (cb: Callbacks) => void) {
   const mutate = vi.fn((_args: unknown, cb: Callbacks) => settle(cb));
-  vi.mocked(usePreparePackage).mockReturnValue({ mutate } as unknown as ReturnType<
-    typeof usePreparePackage
+  vi.mocked(useCheckPackageFiles).mockReturnValue({ mutate } as unknown as ReturnType<
+    typeof useCheckPackageFiles
   >);
   return mutate;
 }
 
 beforeEach(() => vi.clearAllMocks());
 
-describe('usePrepareWithToast', () => {
+describe('useCheckFilesWithToast', () => {
   // Purpose: a prepared package gets a success toast with the server's
   // sentence, replacing the loading toast that named the package and place.
   it('replaces the loading toast with the success sentence', () => {
     const mutate = answer((cb) => cb.onSuccess?.({ outcome: 'rebuilt', message: 'Done.' }));
-    const { result } = renderHook(() => usePrepareWithToast());
+    const { result } = renderHook(() => useCheckFilesWithToast());
 
     act(() =>
       result.current.mutate({ name: 'flow', options: { installRoot: '/x' }, where: 'Alpha' })
@@ -63,7 +63,7 @@ describe('usePrepareWithToast', () => {
   // carrying what to do, never a success.
   it.each(['mismatch', 'fetch-failed', 'no-source'] as const)('warns on %s', (outcome) => {
     answer((cb) => cb.onSuccess?.({ outcome, message: 'Why not.' }));
-    const { result } = renderHook(() => usePrepareWithToast());
+    const { result } = renderHook(() => useCheckFilesWithToast());
 
     act(() => result.current.mutate({ name: 'flow' }));
 
@@ -74,7 +74,7 @@ describe('usePrepareWithToast', () => {
   // Purpose: a failed request is an error that names the package.
   it('reports a failed request as an error', () => {
     answer((cb) => cb.onError?.(new Error('server down')));
-    const { result } = renderHook(() => usePrepareWithToast());
+    const { result } = renderHook(() => useCheckFilesWithToast());
 
     act(() => result.current.mutate({ name: 'flow' }));
 

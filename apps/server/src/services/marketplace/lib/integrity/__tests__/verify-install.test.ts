@@ -234,7 +234,7 @@ describe('verifyInstall', () => {
         last: {
           outcome: 'fetch-failed',
           message:
-            "Couldn't fetch the version flow was installed from (offline). Try again when you're online.",
+            "Couldn't fetch the version of flow you installed (offline). Try again when you're online.",
         },
       },
     });

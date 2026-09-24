@@ -173,12 +173,23 @@ export async function runMarketplaceInstalled(args: MarketplaceInstalledArgs): P
   const older = packages.filter(
     (p) => p.integrity?.status === 'unknown' && p.integrity.reason === 'no-record'
   );
+  const checkable = older.filter(
+    (p) => p.integrity?.status === 'unknown' && p.integrity.check?.source !== 'local'
+  );
+  const fromFolder = older.filter((p) => !checkable.includes(p));
   if (older.length > 0) {
     console.log('');
-    console.log(
-      'unknown: installed by an older DorkOS, which did not record its files. ' +
-        `Run 'dorkos marketplace prepare ${older[0].name}' to record them.`
-    );
+    console.log('unknown: installed by an older DorkOS, which did not record its files.');
+    if (checkable.length > 0) {
+      console.log(
+        `  Run 'dorkos marketplace check-files ${checkable[0].name}' so updates keep your edits.`
+      );
+    }
+    if (fromFolder.length > 0) {
+      console.log(
+        `  ${fromFolder.map((p) => p.name).join(', ')}: installed from a folder on this computer; reinstall to keep your edits on update.`
+      );
+    }
   }
   if (packages.some((p) => p.linked)) {
     console.log('');

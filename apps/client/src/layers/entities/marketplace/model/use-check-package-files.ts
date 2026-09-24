@@ -1,14 +1,14 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
-import type { PrepareOptions, PrepareResult } from '@dorkos/shared/marketplace-schemas';
+import type { CheckFilesOptions, CheckFilesResult } from '@dorkos/shared/marketplace-schemas';
 import { marketplaceKeys } from '../api/query-keys';
 
-/** Arguments passed to the prepare mutation. */
-export interface PreparePackageArgs {
+/** Arguments passed to the check-files mutation. */
+export interface CheckPackageFilesArgs {
   /** Installed package name. */
   name: string;
-  /** The one installation to prepare, and its scope. */
-  options?: PrepareOptions;
+  /** The one installation to check, and its scope. */
+  options?: CheckFilesOptions;
 }
 
 /**
@@ -17,11 +17,11 @@ export interface PreparePackageArgs {
  * server writes only on an exact match and otherwise says why; either way the
  * verified list is refreshed so the row shows where it stands now.
  */
-export function usePreparePackage() {
+export function useCheckPackageFiles() {
   const transport = useTransport();
   const queryClient = useQueryClient();
-  return useMutation<PrepareResult, Error, PreparePackageArgs>({
-    mutationFn: ({ name, options }) => transport.prepareMarketplacePackage(name, options),
+  return useMutation<CheckFilesResult, Error, CheckPackageFilesArgs>({
+    mutationFn: ({ name, options }) => transport.checkPackageFiles(name, options),
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: marketplaceKeys.integrity() });
     },

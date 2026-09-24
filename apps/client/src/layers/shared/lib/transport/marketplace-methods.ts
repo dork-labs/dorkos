@@ -15,8 +15,8 @@ import type {
   InstallResult,
   UninstallOptions,
   ListInstalledOptions,
-  PrepareOptions,
-  PrepareResult,
+  CheckFilesOptions,
+  CheckFilesResult,
   UninstallResult,
   ApplyUpdatesOptions,
   InstallationUpdatesResult,
@@ -150,10 +150,10 @@ export function createMarketplaceMethods(baseUrl: string) {
       ).then((r) => r.packages);
     },
 
-    prepareMarketplacePackage(name: string, opts?: PrepareOptions): Promise<PrepareResult> {
-      return fetchJSON<PrepareResult>(
+    checkPackageFiles(name: string, opts?: CheckFilesOptions): Promise<CheckFilesResult> {
+      return fetchJSON<CheckFilesResult>(
         baseUrl,
-        `/marketplace/packages/${encodeURIComponent(name)}/prepare`,
+        `/marketplace/packages/${encodeURIComponent(name)}/check-files`,
         { method: 'POST', body: JSON.stringify(opts ?? {}) }
       );
     },

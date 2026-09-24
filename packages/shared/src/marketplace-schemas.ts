@@ -797,11 +797,11 @@ export interface UninstallOptions {
   projectPath?: string;
 }
 
-/** Options for {@link Transport.prepareMarketplacePackage} (DOR-2320). */
-export interface PrepareOptions {
+/** Options for {@link Transport.checkPackageFiles} (DOR-2320). */
+export interface CheckFilesOptions {
   /** Project path, for an installation scoped to a project or an agent. */
   projectPath?: string;
-  /** The one installation to prepare, as the installed list names it (`installPath`). */
+  /** The one installation to check, as the installed list names it (`installPath`). */
   installRoot?: string;
 }
 
@@ -809,7 +809,7 @@ export interface PrepareOptions {
  * What preparing a package an older DorkOS installed did (DOR-2320): only
  * `rebuilt` wrote anything, and `message` says the outcome in one sentence.
  */
-export interface PrepareResult {
+export interface CheckFilesResult {
   outcome: 'rebuilt' | 'not-needed' | 'no-source' | 'fetch-failed' | 'mismatch';
   message: string;
 }

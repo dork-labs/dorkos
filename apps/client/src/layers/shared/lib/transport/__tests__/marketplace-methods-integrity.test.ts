@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PrepareResult } from '@dorkos/shared/marketplace-schemas';
+import type { CheckFilesResult } from '@dorkos/shared/marketplace-schemas';
 
 import { createMarketplaceMethods } from '../marketplace-methods';
 import { marketplaceStubs } from '../../embedded-mode-stubs';
@@ -40,19 +40,19 @@ describe('createMarketplaceMethods().listInstalledPackages (DOR-2197)', () => {
   });
 });
 
-describe('createMarketplaceMethods().prepareMarketplacePackage (DOR-2320)', () => {
+describe('createMarketplaceMethods().checkPackageFiles (DOR-2320)', () => {
   // Purpose: the action POSTs the one installation the row names, and returns
   // the server's outcome and sentence untouched.
   it('POSTs the installation to prepare and returns what happened', async () => {
-    const result: PrepareResult = { outcome: 'rebuilt', message: 'DorkOS now knows.' };
+    const result: CheckFilesResult = { outcome: 'rebuilt', message: 'DorkOS now knows.' };
     const fetchMock = answerWith(result);
 
-    const answer = await createMarketplaceMethods('/api').prepareMarketplacePackage('flow', {
+    const answer = await createMarketplaceMethods('/api').checkPackageFiles('flow', {
       installRoot: '/home/.dork/plugins/flow',
     });
 
     expect(answer).toEqual(result);
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/marketplace/packages/flow/prepare');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/marketplace/packages/flow/check-files');
     expect(fetchMock.mock.calls[0][1]?.method).toBe('POST');
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
       installRoot: '/home/.dork/plugins/flow',
@@ -61,7 +61,7 @@ describe('createMarketplaceMethods().prepareMarketplacePackage (DOR-2320)', () =
 
   // Purpose: embedded mode has no marketplace, so preparing is refused plainly.
   it('is refused in embedded mode', async () => {
-    await expect(marketplaceStubs.prepareMarketplacePackage('flow')).rejects.toThrow(
+    await expect(marketplaceStubs.checkPackageFiles('flow')).rejects.toThrow(
       /not supported in embedded mode/
     );
   });

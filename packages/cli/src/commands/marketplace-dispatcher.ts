@@ -48,8 +48,9 @@ Packages:
   uninstall <name>            Remove an installed package
   installed                   List what is installed, and where
                                 (--verify: whether files changed since)
-  prepare <name>              Record the files of a package an older
-                                DorkOS installed
+  check-files <name>          Compare a package an older DorkOS installed
+                                with the version you installed, so updates
+                                keep your edits
   outdated                    List only the packages that have an update
                                 (exits 1 when any do, for scripts)
   held-back                   List global packages held back from sessions,
@@ -187,21 +188,23 @@ Examples:
   dorkos marketplace installed --project .
   dorkos marketplace installed --verify
 `,
-  prepare: `
-Usage: dorkos marketplace prepare <name> [options]
+  'check-files': `
+Usage: dorkos marketplace check-files <name> [options]
 
-Record which files belong to a package an older DorkOS installed, so updates
-and uninstalls can tell its files from yours. DorkOS fetches the exact version
-the package was installed from and records it only when every installed file
-still matches it; otherwise it changes nothing and says why.
+Compares this package with the version you installed, so updates keep your edits.
+
+A package an older DorkOS installed has no record of which files are its own.
+This fetches the exact version you installed and records its files, only when
+every installed file still matches that version. Otherwise it changes nothing
+and says why.
 
 Options:
       --project <path>  The project the package is installed in
       --json            Print the answer as JSON
 
 Examples:
-  dorkos marketplace prepare flow
-  dorkos marketplace prepare flow --project .
+  dorkos marketplace check-files flow
+  dorkos marketplace check-files flow --project .
 `,
   outdated: `
 Usage: dorkos marketplace outdated [options]
@@ -232,7 +235,7 @@ Examples:
 
 /** Every subcommand, in the order the one-line usage names them. */
 const SUBCOMMANDS =
-  'install|update|uninstall|installed|outdated|held-back|prepare|add|remove|list|refresh|validate';
+  'install|update|uninstall|installed|outdated|held-back|check-files|add|remove|list|refresh|validate';
 
 /**
  * Dispatch a `dorkos marketplace <subcommand>` invocation.
@@ -292,10 +295,10 @@ export async function runMarketplaceDispatcher(
         await import('./marketplace-installed.js');
       return await runMarketplaceInstalled(parseMarketplaceInstalledArgs(subArgs));
     }
-    if (subcommand === 'prepare') {
-      const { runMarketplacePrepare, parseMarketplacePrepareArgs } =
-        await import('./marketplace-prepare.js');
-      return await runMarketplacePrepare(parseMarketplacePrepareArgs(subArgs));
+    if (subcommand === 'check-files') {
+      const { runMarketplaceCheckFiles, parseMarketplaceCheckFilesArgs } =
+        await import('./marketplace-check-files.js');
+      return await runMarketplaceCheckFiles(parseMarketplaceCheckFilesArgs(subArgs));
     }
     if (subcommand === 'add') {
       const { runMarketplaceAdd, parseMarketplaceAddArgs } = await import('./marketplace-add.js');

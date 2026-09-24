@@ -21648,7 +21648,7 @@
         }
       }
     },
-    "/api/marketplace/packages/{name}/prepare": {
+    "/api/marketplace/packages/{name}/check-files": {
       "post": {
         "tags": [
           "Marketplace"

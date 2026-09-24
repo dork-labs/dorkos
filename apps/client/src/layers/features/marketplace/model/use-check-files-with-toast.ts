@@ -1,33 +1,33 @@
 /**
  * Prepare-with-toast for a package an older DorkOS installed (DOR-2320).
  *
- * Wraps `usePreparePackage` and says what happened in one toast: a loading
+ * Wraps `useCheckPackageFiles` and says what happened in one toast: a loading
  * toast while the server fetches the version the package was installed from,
  * then the server's own sentence. A package that could not be prepared
  * (changed files, no network, installed from a local folder) is a warning, not
  * an error: nothing broke, and the sentence says what to do.
  *
- * @module features/marketplace/model/use-prepare-with-toast
+ * @module features/marketplace/model/use-check-files-with-toast
  */
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 
 import { humanizePackageName } from '@/layers/shared/lib';
-import { usePreparePackage, type PreparePackageArgs } from '@/layers/entities/marketplace';
+import { useCheckPackageFiles, type CheckPackageFilesArgs } from '@/layers/entities/marketplace';
 
-/** {@link PreparePackageArgs} plus a display-only place label ("Alpha") for the toast. */
-export type PrepareWithToastArgs = PreparePackageArgs & { where?: string };
+/** {@link CheckPackageFilesArgs} plus a display-only place label ("Alpha") for the toast. */
+export type CheckFilesWithToastArgs = CheckPackageFilesArgs & { where?: string };
 
 /**
- * `usePreparePackage` with its toast. Mutation state passes through unchanged,
+ * `useCheckPackageFiles` with its toast. Mutation state passes through unchanged,
  * so a row can show its own busy state.
  */
-export function usePrepareWithToast() {
-  const prepare = usePreparePackage();
+export function useCheckFilesWithToast() {
+  const prepare = useCheckPackageFiles();
   const { mutate: baseMutate } = prepare;
 
   const mutate = useCallback(
-    ({ where, ...args }: PrepareWithToastArgs) => {
+    ({ where, ...args }: CheckFilesWithToastArgs) => {
       const subject = where
         ? `${humanizePackageName(args.name)} on ${where}`
         : humanizePackageName(args.name);

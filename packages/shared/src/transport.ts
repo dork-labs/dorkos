@@ -159,8 +159,8 @@ import type {
   InstallResult,
   UninstallOptions,
   ListInstalledOptions,
-  PrepareOptions,
-  PrepareResult,
+  CheckFilesOptions,
+  CheckFilesResult,
   UninstallResult,
   ApplyUpdatesOptions,
   InstallationUpdatesResult,
@@ -2380,9 +2380,9 @@ export interface Transport
    * only when that commit matches the installed files byte for byte.
    *
    * @param name - Installed package name. Will be URL-encoded.
-   * @param opts - The installation to prepare (`installRoot`) and its scope.
+   * @param opts - The installation to check (`installRoot`) and its scope.
    */
-  prepareMarketplacePackage(name: string, opts?: PrepareOptions): Promise<PrepareResult>;
+  checkPackageFiles(name: string, opts?: CheckFilesOptions): Promise<CheckFilesResult>;
 
   /**
    * List every installation of a single package across all scopes (global +

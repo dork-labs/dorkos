@@ -2806,7 +2806,7 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
-  path: '/api/marketplace/packages/{name}/prepare',
+  path: '/api/marketplace/packages/{name}/check-files',
   tags: ['Marketplace'],
   summary: 'Prepare a package an older DorkOS installed',
   description:

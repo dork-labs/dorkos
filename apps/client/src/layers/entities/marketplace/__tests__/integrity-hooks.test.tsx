@@ -9,7 +9,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
-import { marketplaceKeys, useInstalledIntegrity, usePreparePackage } from '../index';
+import { marketplaceKeys, useInstalledIntegrity, useCheckPackageFiles } from '../index';
 
 function setup(transport: Transport) {
   const queryClient = new QueryClient({
@@ -57,19 +57,19 @@ describe('useInstalledIntegrity (DOR-2197)', () => {
   });
 });
 
-describe('usePreparePackage (DOR-2320)', () => {
+describe('useCheckPackageFiles (DOR-2320)', () => {
   // Purpose: preparing names the one installation, and refreshes the verified
   // list afterwards so the row stops saying it needs preparing.
   it('prepares the installation and refreshes its integrity', async () => {
     const transport = createMockTransport({
-      prepareMarketplacePackage: vi
+      checkPackageFiles: vi
         .fn()
         .mockResolvedValue({ outcome: 'rebuilt', message: 'DorkOS now knows.' }),
     });
     const { queryClient, wrapper } = setup(transport);
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
 
-    const { result } = renderHook(() => usePreparePackage(), { wrapper });
+    const { result } = renderHook(() => useCheckPackageFiles(), { wrapper });
     await act(async () => {
       await result.current.mutateAsync({
         name: 'flow',
@@ -77,7 +77,7 @@ describe('usePreparePackage (DOR-2320)', () => {
       });
     });
 
-    expect(transport.prepareMarketplacePackage).toHaveBeenCalledWith('flow', {
+    expect(transport.checkPackageFiles).toHaveBeenCalledWith('flow', {
       installRoot: '/home/.dork/plugins/flow',
     });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: marketplaceKeys.integrity() });

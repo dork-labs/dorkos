@@ -296,9 +296,9 @@ export function checkInstalledPackages(input: InstalledPackagesInput): CheckResu
     .join(' ');
   const fix = [
     changed.length > 0 &&
-      'An update replaces the changed files and saves your copies beside them. See which files with:\n  dorkos marketplace installed --verify',
+      'An update replaces files you edited and keeps your copies, keeps files you added, and puts back files you removed. See which files with:\n  dorkos marketplace installed --verify',
     older.length > 0 &&
-      `Record an older install's files with:\n  dorkos marketplace prepare ${older[0]}`,
+      `Compare an older install with the version you installed, so updates keep your edits:\n  dorkos marketplace check-files ${older[0]}`,
   ]
     .filter(Boolean)
     .join('\n');

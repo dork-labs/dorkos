@@ -20,7 +20,7 @@ import { useAppStore } from '@/layers/shared/model';
 
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { useApplyUpdatesWithToast } from '../model/use-apply-updates-with-toast';
-import { usePrepareWithToast } from '../model/use-prepare-with-toast';
+import { useCheckFilesWithToast } from '../model/use-check-files-with-toast';
 import {
   useInstalledUpdatesView,
   type InstalledUpdatesView,
@@ -47,8 +47,8 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useInstalledIntegrity: vi.fn(),
 }));
 
-vi.mock('../model/use-prepare-with-toast', () => ({
-  usePrepareWithToast: vi.fn(),
+vi.mock('../model/use-check-files-with-toast', () => ({
+  useCheckFilesWithToast: vi.fn(),
 }));
 
 vi.mock('@/layers/entities/shapes', () => ({
@@ -68,7 +68,7 @@ vi.mock('../model/use-installed-updates-view', () => ({
 }));
 
 const uninstallMutate = vi.fn();
-const prepareMutate = vi.fn();
+const checkFilesMutate = vi.fn();
 
 /** Set what verification says about each installation, by installPath (DOR-2197). */
 function setIntegrity(byPath: Record<string, InstallIntegrity> = {}) {
@@ -77,12 +77,12 @@ function setIntegrity(byPath: Record<string, InstallIntegrity> = {}) {
   } as unknown as ReturnType<typeof useInstalledIntegrity>);
 }
 
-function setPrepareState(state: { isPending?: boolean; variables?: { name: string } } = {}) {
-  vi.mocked(usePrepareWithToast).mockReturnValue({
-    mutate: prepareMutate,
+function setCheckFilesState(state: { isPending?: boolean; variables?: { name: string } } = {}) {
+  vi.mocked(useCheckFilesWithToast).mockReturnValue({
+    mutate: checkFilesMutate,
     isPending: state.isPending ?? false,
     variables: state.variables,
-  } as unknown as ReturnType<typeof usePrepareWithToast>);
+  } as unknown as ReturnType<typeof useCheckFilesWithToast>);
 }
 const applyUpdates = vi.fn();
 const recheck = vi.fn();
@@ -230,7 +230,7 @@ describe('InstalledPackagesView', () => {
     vi.mocked(useApplyUpdatesWithToast).mockReturnValue({ apply: applyUpdates });
     setShapesState();
     setIntegrity();
-    setPrepareState();
+    setCheckFilesState();
     useAppStore.setState({ shapeSwitcherOpen: false, shapeSwitcherFocus: null });
   });
 
@@ -1044,7 +1044,7 @@ describe('InstalledPackagesView', () => {
         'Installed by an older DorkOS, so DorkOS can’t tell its files from yours yet.'
       );
       await user.click(screen.getByRole('button', { name: 'Prepare Flow on Alpha' }));
-      expect(prepareMutate).toHaveBeenCalledWith({
+      expect(checkFilesMutate).toHaveBeenCalledWith({
         name: 'flow',
         options: { installRoot: onAlpha.installPath, projectPath: '/work/alpha' },
         where: 'Alpha',
@@ -1056,7 +1056,7 @@ describe('InstalledPackagesView', () => {
     it('shows Prepare as busy while that installation is being prepared', () => {
       showRows([FLOW], [makeCheck(FLOW)]);
       setIntegrity({ [FLOW.installPath]: { status: 'unknown', reason: 'no-record' } });
-      setPrepareState({ isPending: true, variables: { name: 'flow' } });
+      setCheckFilesState({ isPending: true, variables: { name: 'flow' } });
 
       render(<InstalledPackagesView />);
 

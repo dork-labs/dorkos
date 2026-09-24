@@ -221,11 +221,11 @@ describe('checkInstalledPackages (DOR-2197)', () => {
     expect(result.label).toBe('3 installed packages need a look');
     expect(result.detail).toContain('Changed since install: flow.');
     expect(result.detail).toContain('Installed by an older DorkOS: old, older.');
-    expect(result.fix).toContain('dorkos marketplace prepare old');
+    expect(result.fix).toContain('dorkos marketplace check-files old');
     expect(result.detail).not.toMatch(/\//);
   });
 
-  // Purpose: only changed packages means no prepare advice.
+  // Purpose: only changed packages means no check-files advice.
   it('gives the update advice alone when nothing is an older install', () => {
     const result = checkInstalledPackages({
       installs: [
@@ -236,6 +236,6 @@ describe('checkInstalledPackages (DOR-2197)', () => {
       ],
     });
     expect(result.label).toBe('1 installed package changed since install');
-    expect(result.fix).not.toContain('prepare');
+    expect(result.fix).not.toContain('check-files');
   });
 });

@@ -162,7 +162,16 @@ describe('runMarketplaceInstalled', () => {
               customized: [],
             },
           },
-          { ...GLOBAL_FLOW, name: 'old', integrity: { status: 'unknown', reason: 'no-record' } },
+          {
+            ...GLOBAL_FLOW,
+            name: 'old',
+            integrity: { status: 'unknown', reason: 'no-record', check: { source: 'fetchable' } },
+          },
+          {
+            ...GLOBAL_FLOW,
+            name: 'from-folder',
+            integrity: { status: 'unknown', reason: 'no-record', check: { source: 'local' } },
+          },
         ],
       })
     );
@@ -176,7 +185,10 @@ describe('runMarketplaceInstalled', () => {
     expect(out).toMatch(/flow\s+0\.7\.3\s+plugin\s+global\s+as installed/);
     expect(out).toMatch(/Alpha\s+changed \(3\)/);
     expect(out).toMatch(/old\s.*\s+unknown/);
-    expect(out).toMatch(/dorkos marketplace prepare old/);
+    expect(out).toMatch(/dorkos marketplace check-files old/);
+    // A package installed from a folder has nothing to compare with: reinstall.
+    expect(out).toMatch(/from-folder.*reinstall/i);
+    expect(out).not.toMatch(/check-files from-folder/);
   });
 
   it('explains a linked install beneath the table', async () => {

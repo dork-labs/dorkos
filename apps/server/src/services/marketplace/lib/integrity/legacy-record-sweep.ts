@@ -9,7 +9,7 @@
  * one at a time, so most legacy installs have an exact record long before
  * anything needs one. An install it cannot rebuild (offline, installed from a
  * local folder, or edited) is left exactly as it was, and is retried at the
- * next boot or by the "Prepare" action.
+ * next boot or by the "Check files" action.
  *
  * @module services/marketplace/lib/integrity/legacy-record-sweep
  */

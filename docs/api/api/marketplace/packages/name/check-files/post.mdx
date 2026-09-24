@@ -25,7 +25,7 @@ export default function Layout(props) {
   return (
     <>
       {props.children}
-      <Comp document="../../docs/api/openapi.json" operations={[{"path":"/api/marketplace/packages/{name}/prepare","method":"post"}]} showDescription />
+      <Comp document="../../docs/api/openapi.json" operations={[{"path":"/api/marketplace/packages/{name}/check-files","method":"post"}]} showDescription />
     </>
   );
 }

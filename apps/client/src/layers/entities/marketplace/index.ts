@@ -31,8 +31,8 @@ export type { InstallPackageArgs } from './model/use-install-package';
 export { useUninstallPackage } from './model/use-uninstall-package';
 export type { UninstallPackageArgs } from './model/use-uninstall-package';
 
-export { usePreparePackage } from './model/use-prepare-package';
-export type { PreparePackageArgs } from './model/use-prepare-package';
+export { useCheckPackageFiles } from './model/use-check-package-files';
+export type { CheckPackageFilesArgs } from './model/use-check-package-files';
 
 export {
   settleAppliedCheck,

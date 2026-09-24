@@ -1828,7 +1828,7 @@ describe('Marketplace Routes', () => {
     });
   });
 
-  describe('POST /packages/:name/prepare (DOR-2320)', () => {
+  describe('POST /packages/:name/check-files (DOR-2320)', () => {
     const SHA = 'b'.repeat(40);
     const SHIPPED = {
       '.dork/manifest.json':
@@ -1879,13 +1879,14 @@ describe('Marketplace Routes', () => {
       serveCommit();
 
       const res = await request(fixtureServer)
-        .post('/api/marketplace/packages/old-plugin/prepare')
+        .post('/api/marketplace/packages/old-plugin/check-files')
         .send({});
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({
         outcome: 'rebuilt',
-        message: "DorkOS now knows which of old-plugin's files are yours.",
+        message:
+          'Checked old-plugin. Its files match the version you installed, so updates will keep your edits.',
       });
       expect(existsSync(join(root, '.dork', 'installed-files.json'))).toBe(true);
     });
@@ -1899,27 +1900,27 @@ describe('Marketplace Routes', () => {
           legacyInstall({ ...SHIPPED, 'skills/a/SKILL.md': 'edited' });
           serveCommit();
         },
-        "Some of old-plugin's files differ from the version it was installed from, so DorkOS can't tell yours from the package's. Its next update sorts this out, keeping your copies.",
+        "Some of old-plugin's files differ from the version you installed, so DorkOS can't tell your edits from the package's files. Its next update still keeps your copies.",
       ],
       [
         'fetch-failed',
         () => {
           legacyInstall();
         },
-        "Couldn't fetch the version old-plugin was installed from (no network in tests). Try again when you're online.",
+        "Couldn't fetch the version of old-plugin you installed (no network in tests). Try again when you're online.",
       ],
       [
         'no-source',
         () => {
           legacyInstall(SHIPPED, { commitSha: undefined, sourceKey: undefined });
         },
-        "old-plugin was installed from a folder on this computer, so DorkOS can't fetch the version it came from. Reinstall it to start tracking its files.",
+        "old-plugin was installed from a folder on this computer, so there's no version to compare it with. Reinstall it so updates keep your edits.",
       ],
     ])('answers %s and writes nothing', async (outcome, setup, message) => {
       setup();
 
       const res = await request(fixtureServer)
-        .post('/api/marketplace/packages/old-plugin/prepare')
+        .post('/api/marketplace/packages/old-plugin/check-files')
         .send({});
 
       expect(res.status).toBe(200);
@@ -1930,17 +1931,17 @@ describe('Marketplace Routes', () => {
     });
 
     // Purpose: an install that already has a record needs nothing.
-    it('says a recorded install needs no preparing', async () => {
+    it('says a recorded install needs no checking', async () => {
       const root = legacyInstall();
       writeFileSync(join(root, '.dork', 'installed-files.json'), '{}');
 
       const res = await request(fixtureServer)
-        .post('/api/marketplace/packages/old-plugin/prepare')
+        .post('/api/marketplace/packages/old-plugin/check-files')
         .send({});
 
       expect(res.body).toEqual({
         outcome: 'not-needed',
-        message: "old-plugin doesn't need preparing.",
+        message: "old-plugin's files are already checked.",
       });
       expect(fetcher.fetchAtCommit).not.toHaveBeenCalled();
     });
@@ -1954,12 +1955,12 @@ describe('Marketplace Routes', () => {
       writeTree(elsewhere, SHIPPED);
 
       const refused = await request(fixtureServer)
-        .post('/api/marketplace/packages/old-plugin/prepare')
+        .post('/api/marketplace/packages/old-plugin/check-files')
         .send({ installRoot: elsewhere });
       expect(refused.status).toBe(404);
 
       const named = await request(fixtureServer)
-        .post('/api/marketplace/packages/old-plugin/prepare')
+        .post('/api/marketplace/packages/old-plugin/check-files')
         .send({ installRoot: root });
       expect(named.body.outcome).toBe('rebuilt');
     });
@@ -1976,7 +1977,7 @@ describe('Marketplace Routes', () => {
     // before anything is looked up or fetched.
     it.each(['..%2F..%2Fvictim', 'Old-Plugin'])('refuses the name %s with 400', async (raw) => {
       const res = await request(fixtureServer)
-        .post(`/api/marketplace/packages/${raw}/prepare`)
+        .post(`/api/marketplace/packages/${raw}/check-files`)
         .send({});
       expect(res.status).toBe(400);
       expect(fetcher.fetchAtCommit).not.toHaveBeenCalled();

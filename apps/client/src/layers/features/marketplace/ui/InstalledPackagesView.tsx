@@ -27,7 +27,7 @@ import { humanizePackageName } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { useApplyUpdatesWithToast } from '../model/use-apply-updates-with-toast';
-import { usePrepareWithToast } from '../model/use-prepare-with-toast';
+import { useCheckFilesWithToast } from '../model/use-check-files-with-toast';
 import { useInstalledUpdatesView } from '../model/use-installed-updates-view';
 import { useFocusRescue, type FocusRescue } from '../model/use-focus-rescue';
 import {
@@ -61,9 +61,9 @@ interface PackageRowProps {
   /** Whether its files still match what was installed, once verification answers. */
   integrity?: InstallIntegrity;
   /** This installation is being prepared (DOR-2320). */
-  isPreparing: boolean;
+  isCheckingFiles: boolean;
   /** Record the files of an installation an older DorkOS made. */
-  onPrepareClick: () => void;
+  onCheckFilesClick: () => void;
   /** Open the Shape switcher to apply this Shape (Shapes only). */
   onApplyClick: () => void;
   /** Update this installation (offered only when an update is available). */
@@ -167,8 +167,8 @@ function PackageRow({
   isUninstalling,
   updateState,
   integrity,
-  isPreparing,
-  onPrepareClick,
+  isCheckingFiles,
+  onCheckFilesClick,
   onApplyClick,
   onUpdateClick,
   onUninstallClick,
@@ -300,12 +300,12 @@ function PackageRow({
           <Button
             size="sm"
             variant="outline"
-            onClick={onPrepareClick}
-            disabled={isPreparing}
-            aria-label={isPreparing ? `Preparing ${label}` : `Prepare ${label}`}
+            onClick={onCheckFilesClick}
+            disabled={isCheckingFiles}
+            aria-label={isCheckingFiles ? `Preparing ${label}` : `Prepare ${label}`}
           >
             <FileCheck2 className="mr-1 size-3" aria-hidden />
-            {isPreparing ? 'Preparing…' : 'Prepare'}
+            {isCheckingFiles ? 'Preparing…' : 'Prepare'}
           </Button>
         )}
 
@@ -381,7 +381,7 @@ export function InstalledPackagesView() {
   // Whether each installation's files still match what was installed
   // (DOR-2197): one verified request beside the list, never one per row.
   const { data: integrityByPath } = useInstalledIntegrity();
-  const prepare = usePrepareWithToast();
+  const prepare = useCheckFilesWithToast();
 
   // Track which installation (by installPath — unique per scope, unlike the
   // package name) is in the confirm-uninstall window.
@@ -453,7 +453,7 @@ export function InstalledPackagesView() {
     apply(stale);
   }
 
-  function handlePrepareClick(pkg: InstalledPackage) {
+  function handleCheckFilesClick(pkg: InstalledPackage) {
     prepare.mutate({
       name: pkg.name,
       options: {
@@ -465,7 +465,7 @@ export function InstalledPackagesView() {
   }
 
   /** Whether the in-flight prepare targets this exact installation. */
-  function isPreparing(pkg: InstalledPackage): boolean {
+  function isCheckingFiles(pkg: InstalledPackage): boolean {
     return (
       prepare.isPending &&
       prepare.variables?.name === pkg.name &&
@@ -512,8 +512,8 @@ export function InstalledPackagesView() {
                 isUninstalling={isUninstalling(pkg)}
                 updateState={updateState}
                 integrity={integrityByPath?.get(pkg.installPath)}
-                isPreparing={isPreparing(pkg)}
-                onPrepareClick={() => handlePrepareClick(pkg)}
+                isCheckingFiles={isCheckingFiles(pkg)}
+                onCheckFilesClick={() => handleCheckFilesClick(pkg)}
                 onApplyClick={() => openShapeSwitcherToShape(pkg.name)}
                 onUpdateClick={() => {
                   if (updateState.kind !== 'update-available') return;
