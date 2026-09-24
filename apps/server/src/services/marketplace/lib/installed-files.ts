@@ -556,6 +556,7 @@ export function planCarryOver(input: CarryOverInput): CarryOverPlan {
 
   type Decision =
     | { kind: 'carry'; path: string }
+    | { kind: 'carry-identity'; path: string }
     | { kind: 'carry-saved'; path: string; notice?: PackageFileNotice['outcome'] }
     | { kind: 'save-new'; path: string; pending?: string }
     | { kind: 'drop'; path: string }
@@ -585,7 +586,7 @@ export function planCarryOver(input: CarryOverInput): CarryOverPlan {
     }
     if (identityFiles.includes(p) || p === UNINSTALLED_AGENT_PATH) {
       // The agent's own: carried as-is; a shipped copy only seeds an absent file.
-      if (entry) decisions.push({ kind: 'carry', path: p });
+      if (entry) decisions.push({ kind: 'carry-identity', path: p });
       continue;
     }
     const recorded = p in oldFiles;
@@ -637,7 +638,12 @@ export function planCarryOver(input: CarryOverInput): CarryOverPlan {
   // lands on something another step writes.
   const fixed = new Set<string>();
   for (const d of decisions) {
-    if (d.kind === 'carry' || d.kind === 'save-new' || d.kind === 'kept-no-longer-shipped')
+    if (
+      d.kind === 'carry' ||
+      d.kind === 'carry-identity' ||
+      d.kind === 'save-new' ||
+      d.kind === 'kept-no-longer-shipped'
+    )
       fixed.add(d.path);
   }
   for (const u of unitDirs) fixed.add(u);
@@ -714,6 +720,21 @@ export function planCarryOver(input: CarryOverInput): CarryOverPlan {
       case 'drop':
         plan.actions.push({ kind: 'drop', path: d.path });
         break;
+      case 'carry-identity': {
+        // Identity files are never recorded, so a shipped seed is not in
+        // `newFiles`; it is still only a seed, and the agent's own file
+        // replaces it. Only a directory (or a file ancestor) there is a clash.
+        const k = staged.kindOf(d.path);
+        if (blockingAncestor(d.path) === undefined && (k === 'missing' || k === 'file')) {
+          plan.actions.push({ kind: 'carry', path: d.path });
+          break;
+        }
+        fixed.delete(d.path);
+        const savedAs = saveTarget(d.path, '.dork-old');
+        plan.actions.push({ kind: 'carry-as', path: d.path, savedAs });
+        plan.notices.push({ path: d.path, outcome: 'replaced-edit', savedAs });
+        break;
+      }
       case 'carry':
       case 'kept-no-longer-shipped': {
         if (!(d.path in newFiles) && collides(d.path, 'file')) {

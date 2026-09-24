@@ -632,6 +632,35 @@ describe('planCarryOver', () => {
     expect(p.notices).toEqual([]);
   });
 
+  // Purpose (code review 1): identity files are never recorded, so the staged
+  // seed is not "in newFiles"; the agent's live copy must still replace it,
+  // never be set aside as a collision (which overwrote SOUL.md on every update).
+  it("replaces an unrecorded staged seed with the agent's own identity file", () => {
+    const agent = { package: { name: 'a', type: 'agent' as const } };
+    const seeds = ['.dork/SOUL.md', '.dork/MEMORY.md', '.dork/agent.json'];
+    const staged: StagedFacts = {
+      kindOf: (p) => (seeds.includes(p) ? 'file' : p === '.dork' ? 'dir' : 'missing'),
+    };
+    const manifest = { '.dork/manifest.json': H('man') };
+    const p = plan({
+      rOld: record(manifest, agent),
+      rNew: record(manifest, agent),
+      live: liveScan({
+        ...manifest,
+        '.dork/SOUL.md': H('mine'),
+        '.dork/MEMORY.md': H('m'),
+        '.dork/agent.json': H('id'),
+      }),
+      staged,
+    });
+    expect(p.actions).toEqual([
+      { kind: 'carry', path: '.dork/MEMORY.md' },
+      { kind: 'carry', path: '.dork/SOUL.md' },
+      { kind: 'carry', path: '.dork/agent.json' },
+    ]);
+    expect(p.notices).toEqual([]);
+  });
+
   // A root with no record and no identity (a pre-change uninstall's leftovers): all the person's.
   it('treats every file as the person’s when the root has neither record nor identity', () => {
     const p = plan({

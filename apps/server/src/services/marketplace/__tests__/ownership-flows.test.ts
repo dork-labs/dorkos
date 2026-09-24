@@ -171,6 +171,39 @@ describe('agent identity across sources (DOR-2245 §8)', () => {
   });
 });
 
+describe('an agent package that ships identity seeds (code review 1)', () => {
+  // Purpose: a package shipping SOUL.md, MEMORY.md and agent.json seeds must
+  // never overwrite the agent's own copies on update, nor set them aside.
+  it("keeps the agent's SOUL.md, MEMORY.md and agent.json across an update", async () => {
+    const source = path.join(dorkHome, 'src', 'valid-agent');
+    await cp(path.join(FIXTURES_DIR, 'valid-agent'), source, { recursive: true });
+    await put(source, '.dork/SOUL.md', 'shipped v1');
+    await put(source, '.dork/MEMORY.md', 'shipped memory v1');
+    await initBoundary(path.dirname(dorkHome));
+    try {
+      const harness = buildInstallerForTests(dorkHome);
+      const { installPath: root } = await harness.installer.install({ name: source });
+      const agentJson = '{"id":"01MINE"}';
+      await put(root, '.dork/agent.json', agentJson);
+      await put(root, '.dork/SOUL.md', 'mine');
+      await put(root, '.dork/MEMORY.md', 'my notes');
+      await put(source, '.dork/SOUL.md', 'shipped v2');
+      await put(source, '.dork/MEMORY.md', 'shipped memory v2');
+      await put(source, '.dork/agent.json', '{"id":"01SHIPPED"}');
+
+      await harness.installer.update({ name: source });
+
+      expect(await readFile(path.join(root, '.dork', 'SOUL.md'), 'utf8')).toBe('mine');
+      expect(await readFile(path.join(root, '.dork', 'MEMORY.md'), 'utf8')).toBe('my notes');
+      expect(await readFile(path.join(root, '.dork', 'agent.json'), 'utf8')).toBe(agentJson);
+      const saved = (await readdir(path.join(root, '.dork'))).filter((n) => n.includes('.dork-'));
+      expect(saved).toEqual([]);
+    } finally {
+      await initBoundary(FIXTURES_DIR);
+    }
+  });
+});
+
 describe('an install made before records existed (DOR-2245 §9)', () => {
   // Purpose: the legacy path. With no record and no fetchable commit (a local
   // install), a reinstall keeps the person's file, replaces the package's own
