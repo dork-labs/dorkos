@@ -223,4 +223,70 @@ describe('community startup config', () => {
         .hostLinks.reportAbuseUrl
     ).toBe('https://example.com/report?form=1');
   });
+
+  it('reads OpenID Connect settings all or none, with a default label and scopes', () => {
+    // Purpose: fails if a partial issuer pair starts half-configured, or the defaults drift.
+    expect(parseConfig(valid).oidc).toBeNull();
+    const oidc = {
+      COMMUNITY_OIDC_ISSUER_URL: 'https://id.example.com/realms/team/',
+      COMMUNITY_OIDC_CLIENT_ID: 'community',
+      COMMUNITY_OIDC_CLIENT_SECRET: 'secret',
+    };
+    expect(parseConfig({ ...valid, ...oidc }).oidc).toEqual({
+      issuer: 'https://id.example.com/realms/team',
+      clientId: 'community',
+      clientSecret: 'secret',
+      label: 'Single sign-on',
+      scopes: ['openid', 'email', 'profile'],
+    });
+    expect(
+      parseConfig({
+        ...valid,
+        ...oidc,
+        COMMUNITY_OIDC_LABEL: '  Example Workspace  ',
+        COMMUNITY_OIDC_SCOPES: 'openid email',
+      }).oidc
+    ).toMatchObject({ label: 'Example Workspace', scopes: ['openid', 'email'] });
+    // Compose passes unset variables as empty strings.
+    expect(
+      parseConfig({
+        ...valid,
+        COMMUNITY_OIDC_ISSUER_URL: '',
+        COMMUNITY_OIDC_CLIENT_ID: '',
+        COMMUNITY_OIDC_CLIENT_SECRET: '',
+        COMMUNITY_OIDC_LABEL: '',
+        COMMUNITY_OIDC_SCOPES: '',
+      }).oidc
+    ).toBeNull();
+    expect(
+      parseConfig({ ...valid, ...oidc, COMMUNITY_OIDC_ISSUER_URL: 'http://localhost:9000' }).oidc
+        ?.issuer
+    ).toBe('http://localhost:9000');
+  });
+
+  it('refuses an incomplete, non-HTTPS or malformed OpenID Connect setting', () => {
+    // Purpose: fails if the issuer can be plain HTTP off loopback, carry credentials, or if a
+    // missing piece, a label outside 1 to 40 characters, or scopes without openid pass.
+    const oidc = {
+      COMMUNITY_OIDC_ISSUER_URL: 'https://id.example.com',
+      COMMUNITY_OIDC_CLIENT_ID: 'community',
+      COMMUNITY_OIDC_CLIENT_SECRET: 'secret',
+    };
+    for (const env of [
+      { COMMUNITY_OIDC_ISSUER_URL: oidc.COMMUNITY_OIDC_ISSUER_URL },
+      { ...oidc, COMMUNITY_OIDC_CLIENT_SECRET: undefined },
+      { COMMUNITY_OIDC_LABEL: 'Orphan label' },
+      { ...oidc, COMMUNITY_OIDC_ISSUER_URL: 'http://id.example.com' },
+      { ...oidc, COMMUNITY_OIDC_ISSUER_URL: 'https://user:pass@id.example.com' },
+      { ...oidc, COMMUNITY_OIDC_ISSUER_URL: 'https://id.example.com/?tenant=1' },
+      { ...oidc, COMMUNITY_OIDC_ISSUER_URL: 'not a url' },
+      { ...oidc, COMMUNITY_OIDC_LABEL: 'x'.repeat(41) },
+      { ...oidc, COMMUNITY_OIDC_LABEL: '   ' },
+      { ...oidc, COMMUNITY_OIDC_SCOPES: 'email profile' },
+      { ...oidc, COMMUNITY_OIDC_SCOPES: 'openid "email"' },
+    ])
+      expect(() => parseConfig({ ...valid, ...env }), JSON.stringify(env)).toThrow(
+        /COMMUNITY_OIDC/u
+      );
+  });
 });

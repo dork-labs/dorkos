@@ -60,6 +60,40 @@ https://community.example.com/api/auth/callback/github
 
 Use the same origin for `COMMUNITY_PUBLIC_URL`. Do not register a preview, internal, or local address as a production callback. Changing the public address requires updating these callbacks before people can sign in again.
 
+## Optional single sign-on (OpenID Connect)
+
+You can let people sign in through your own OpenID Connect provider, beside email and password. Set all three of these, or none:
+
+| Setting                        | Must be                                                                           |
+| ------------------------------ | --------------------------------------------------------------------------------- |
+| `COMMUNITY_OIDC_ISSUER_URL`    | The issuer's `https://` address (`http://` only on localhost)                     |
+| `COMMUNITY_OIDC_CLIENT_ID`     | The client ID your provider gave this Community                                   |
+| `COMMUNITY_OIDC_CLIENT_SECRET` | That client's secret                                                              |
+| `COMMUNITY_OIDC_LABEL`         | Optional. The button text, 1 to 40 characters. Default: "Single sign-on"          |
+| `COMMUNITY_OIDC_SCOPES`        | Optional. Space-separated, must include `openid`. Default: `openid email profile` |
+
+Register this redirect URI with your provider. The service also prints it when it starts:
+
+```text
+https://community.example.com/api/auth/callback/oidc
+```
+
+The service reads `<issuer>/.well-known/openid-configuration` the first time someone uses the button, not at startup, so a provider outage never stops the Community. That document must name exactly the issuer you set, and every address in it must be `https://`. If the provider does not answer within 10 seconds, or the document fails those checks, the button says single sign-on is unavailable, and the service asks again 30 seconds later. Sign-in uses PKCE, and every sign-in needs an ID token signed with the provider's published keys. People sign in only through the provider's own page; the service never accepts an ID token handed to it directly.
+
+Single sign-on changes nothing about who may join. A new account still needs an invitation or an owner claim link. The provider must say the email address is verified (`email_verified: true`), or sign-in is refused. Some providers, such as Microsoft Entra ID, leave that claim out, and their sign-ins are refused. If someone's email already belongs to an account here, single sign-on does not attach to it on its own: they sign in with their password, then choose **Link** under Settings, Account.
+
+The Community does not check email addresses when someone signs up with a password. So a person holding an invitation could create a password account with someone else's email, and the real owner of that email would then be refused by single sign-on. If that happens, and the password account has not joined any community, remove it with this command, then ask the real owner to sign in again:
+
+```bash
+docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/host/release-unverified-account.js <email>
+```
+
+It removes the account only if its email was never verified, it signs in only with a password, it has no membership in any community (current or ended), it is not in the middle of joining one, and it has never operated this host. If it is joining right now, wait 10 minutes and run it again. If the account has already joined a community, this command keeps it: the person can erase their own membership or account, or the community's owner can remove them, and then the account can be released. Otherwise it changes nothing and says why. The host audit log records that it ran, without the email address.
+
+Email and password sign-in always stays on. Someone who joined through single sign-on can add a password (at least 12 characters) under Settings, Account, within five minutes of signing in, so they can still get in when your provider is down. Exporting, leaving, transferring ownership, and other careful actions still ask for a password. Until someone adds one, those actions say "Set a password in your account to do this." Confirming these actions through your provider instead is planned as a separate change.
+
+To turn single sign-on off, unset the variables. Accounts made through it stay, and can sign in with a password if they added one.
+
 ## Optional terms, privacy, and report links
 
 If other people sign up on your Community, you can link your own terms, privacy notice, and a way to report abuse. Each link is optional. Leave one unset and nothing shows for it.

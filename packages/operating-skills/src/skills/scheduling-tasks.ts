@@ -7,7 +7,8 @@ export const schedulingTasks: OperatingSkill = {
   description:
     'Use when scheduling recurring work, creating or editing a task, running a task now, ' +
     'or checking whether past task runs succeeded. Covers cron schedules, the task approval ' +
-    'gate, and reading run history.',
+    'gate, scheduling for an agent installed from the marketplace, retiming or copying a ' +
+    "package's own schedule, and reading run history.",
   body: `# Scheduling tasks
 
 ${TOOL_NAME_NOTE}
@@ -17,12 +18,10 @@ DorkOS runs tasks in the background; you set them up and read their history.
 
 The \`tasks_*\` tools are registered straight onto the MCP server, so they do NOT
 appear in \`dorkos capabilities\` and \`dorkos call\` cannot reach them. The CLI
-covers only part of the surface: \`dorkos task list|create|trigger|runs\` exist,
-and there is NO \`dorkos task update\` or \`dorkos task delete\`. So a session
-without the \`tasks_*\` tools (Codex, OpenCode) can read, create, and run tasks,
-but cannot edit, disable, or delete one. If the user asks for that from such a
-session, say plainly that it has to be done from the DorkOS Tasks page or a
-Claude Code session, rather than reaching for a command that does not exist.
+has \`dorkos task list|create|trigger|runs\` and NO \`update\` or \`delete\`. So a
+session without the \`tasks_*\` tools (Codex, OpenCode) can read, create, and run
+tasks, but not edit, disable, or delete one: say it has to be done from the
+DorkOS Tasks page or a Claude Code session, not from a command that does not exist.
 
 ## List tasks and their runs
 
@@ -44,8 +43,7 @@ Read current state before changing anything:
   --target <agent-id-or-global> [--cron <expr>] [--timezone <tz>]
   [--runtime <id>] [--model <id>] [--effort <level>]\`.
 
-Only the CLI can create a manual-only task: omit \`--cron\` and trigger it by hand.
-The tool requires a cron expression.
+Only the CLI can create a manual-only task (omit \`--cron\`); the tool requires a cron.
 
 ### Where it runs, and on what
 
@@ -73,11 +71,10 @@ goes back to following its agent. Omitting a field leaves it as it was.
 \`reason\` is required and it is not the description. The description says what the
 task does; the reason says why it should exist at all, addressed to the person who
 has to approve it. All they see is your sentence, your name, and the times the
-cron would actually fire, so a blank or padded reason is a task they will reject.
-Write the sentence you would say out loud: "You asked me to keep an eye on the
-overnight builds, and this checks them at 7am so the summary is waiting for you."
-
-An empty or whitespace-only reason is refused and nothing is created.
+cron would actually fire, so a blank or padded reason is a task they will reject
+(an empty one is refused). Write the sentence you would say out loud: "You asked
+me to keep an eye on the overnight builds, and this checks them at 7am so the
+summary is waiting for you."
 
 ### Say where it lives, too
 
@@ -85,11 +82,13 @@ An empty or whitespace-only reason is refused and nothing is created.
 task under yourself, so it lives in your folder and its runs happen there against
 your files, or \`"global"\` for a task that belongs to no agent. A task
 filed in the wrong place runs against the wrong files, so DorkOS will not guess.
-An agent it has never heard of is refused and nothing is created.
+An agent it has never heard of is refused and nothing is created. Under an agent
+installed from the marketplace, your task stays through the package's updates; it
+is refused (\`schedule_package_owned\`) if the package uses that name itself, or if
+the package came from an older DorkOS (it works after the package's next update).
 
-Where a task lives is decided once, when you create it. \`tasks_update\` cannot move
-it: send \`target\` or \`agentId\` there and DorkOS refuses the whole call. To move a
-task, delete it and create it again with the target you want.
+Where a task lives is decided once. \`tasks_update\` refuses \`target\` or
+\`agentId\` (the whole call); to move a task, delete it and create it again.
 
 ### The approval gate
 
@@ -101,25 +100,33 @@ Moving a task to \`active\` IS that approval, so it is not yours to do:
 \`tasks_update\` refuses \`status\` and changes nothing else in the same call.
 
 **Editing an approved task sends it back for approval.** The user approved the
-\`prompt\` and the \`cron\`; change either and DorkOS stops the task within minutes
-and asks them again. Your edit is saved, it just waits, and the reply says so with
+\`prompt\`, the \`cron\` and the \`timezone\` together, since a new timezone moves
+when it runs. Change any of the three and DorkOS stops the task at once and asks
+them again. Your edit is saved, it just waits, and the reply says so with
 \`needsReapproval: true\`. Name the task and tell the user it is waiting on them.
 Every other field is free, \`enabled\` included: that is how you turn a task on or off.
 
-This is the tasks scheduler's own gate, and it covers both moments. It is not the
-capability approval flow in operating-dorkos: there is no \`approvalToken\` to retry
-with, and nothing for you to do except tell the user and wait. Deleting a task runs
-the other kind of gate; see below.
+This is the tasks scheduler's own gate, not the capability approval flow in
+operating-dorkos: there is no \`approvalToken\`, only telling the user and waiting.
 
 ## Edit or disable a task (tools only, no CLI)
 
-Both of these are MCP tools with no \`dorkos task\` equivalent. Without the
-\`tasks_*\` tools in your session there is no way to do either.
+Both are MCP tools with no \`dorkos task\` equivalent, so without them, neither.
 
 - Tool: \`tasks_update\` with the schedule \`id\` and any of \`name\`, \`prompt\`, \`cron\`,
   \`enabled\` (true/false to turn it on or off), \`timezone\`, \`maxRuntime\`
   (e.g. \`"5m"\`, \`"1h"\`), \`runtime\`, \`model\`, \`effort\` (\`null\` clears any of the
   last three; see "Where it runs, and on what" above).
+
+A schedule that came with an installed package can only be turned on or off, or
+given a new \`cron\` or \`timezone\`; any other change is refused
+(\`schedule_package_owned\`). DorkOS keeps the new timing itself, leaves the
+package's files alone, and keeps it through the package's updates. Send
+\`resetTiming: true\`, on its own, to put it back on the package's timing. A change
+to when an approved schedule runs stops it at once until the user approves it again.
+To change what it does, the user can press **Make my own copy** on it in DorkOS: a
+new schedule for the same agent, filled in, and by default the package's one off.
+Packages installed by an older DorkOS don't offer it yet.
 
 - \`tasks_delete\` removes a task permanently, and it is \`destructive\` tier. It does
   NOT run until a person approves it: the first call comes back with the
@@ -132,26 +139,20 @@ Both of these are MCP tools with no \`dorkos task\` equivalent. Without the
 
 Do not send \`permissionMode\` or \`status\` to \`tasks_create\` or \`tasks_update\`. A
 task runs later with nobody watching, so how much it may do without asking, and
-whether it is approved to run at all, are the user's choice, not yours. If you
-send either one, DorkOS refuses the whole call and changes nothing at all, not
-even the other fields. Send your other changes without it, and tell the user to
-open the task in DorkOS if they want those changed.
+whether it may run at all, are the user's choice. Either one makes DorkOS refuse
+the whole call, other fields included; send the rest without it, and tell the
+user to open the task in DorkOS for those.
 
 ## Run a task now
 
-- CLI: \`dorkos task trigger <id>\` starts a run immediately and returns a run id.
-- Use this to test a task, or to run an on-demand (cron-less) task.
+\`dorkos task trigger <id>\` starts a run now (to test one, or run a cron-less one).
 
 ## Cron quick reference
 
-\`minute hour day-of-month month day-of-week\`. Examples:
-
-- \`0 2 * * *\`: every day at 02:00.
-- \`0 9 * * 1\`: every Monday at 09:00.
-- \`*/15 * * * *\`: every 15 minutes.
-
-Always pass the user's timezone when the time of day matters; cron with no
-timezone runs in the server's zone.
+\`minute hour day-of-month month day-of-week\`. Examples: \`0 2 * * *\` every day
+at 02:00, \`0 9 * * 1\` every Monday at 09:00, \`*/15 * * * *\` every 15 minutes.
+Pass the user's timezone when the time of day matters; without one, it runs in the
+server's zone.
 
 ## Reading run results
 

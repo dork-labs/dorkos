@@ -1540,6 +1540,7 @@ async function start() {
       getRemoteCommunityAdapter(communityRef, ownerAuthorId),
     resolveConnectionAccess: async (communityRef, ownerAuthorId) =>
       (await getRemotePairingService().status(communityRef, ownerAuthorId)).access,
+    readOnlyConnections: () => getRemoteConnectionStore().readOnlyConnections(),
     resolveLocalAgentAuthor: (localAgentId) =>
       resolveRemoteLocalAgent(localAgentId)?.authorId ?? null,
     isReady: () => meshStartupReconciled && meshCore !== undefined,

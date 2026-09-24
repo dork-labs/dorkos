@@ -805,7 +805,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     try {
       const oauthPage = await oauth.newPage();
       await oauthPage.route('**/auth-options', (route) =>
-        route.fulfill({ json: { google: true, github: false } })
+        route.fulfill({ json: { google: true, github: false, oidc: null } })
       );
       let callbackUrl = '';
       await oauthPage.route('**/api/auth/sign-in/social', async (route) => {

@@ -92,11 +92,14 @@ async function assertAdmissionOpen(
 }
 
 /**
- * Keep the closed and full reasons visible, so a person learns before signing up that they
- * cannot join; hide every other invitation failure.
+ * Keep the closed, full, and held reasons visible, so a person learns before signing up that
+ * they cannot join yet; hide every other invitation failure. Each is reached only after the
+ * link's signature checks out.
  */
 function invitationRefusal(error: ApiError): ApiError {
-  return error instanceof AdmissionClosed || error.code === 'MEMBER_LIMIT_REACHED'
+  return error instanceof AdmissionClosed ||
+    error.code === 'MEMBER_LIMIT_REACHED' ||
+    error.code === 'COMMUNITY_HELD'
     ? error
     : invalidInvitation();
 }
@@ -145,7 +148,6 @@ async function validInvite(
   lock = false
 ) {
   const tenant = await resolveCommunityContext(c, client);
-  if (lock) await lockActiveCommunity(client as PoolClient, tenant.communityId);
   const community = await client.query<{ id: string; name: string }>(
     'SELECT id,name FROM communities WHERE id=$1',
     [tenant.communityId]
@@ -154,6 +156,9 @@ async function validInvite(
   if (!communityId) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
   const signed = inspectInvite(token, communityId, config);
   if (!signed) throw new ApiError(403, 'FORBIDDEN', 'This invitation is invalid or expired.');
+  // After the signature, so only a genuine link learns the community is on hold. A hold keeps
+  // the invitation: it waits, and works after release if it has not expired.
+  if (lock) await lockActiveCommunity(client as PoolClient, communityId);
   // Only a link genuinely signed for this community learns that it is closed; a made-up token
   // gets the same public failure whether the community is open or closed.
   await assertAdmissionOpen(client, communityId, lock);
@@ -185,7 +190,7 @@ async function validInvite(
   if (!invite || signed.expiresAt.getTime() !== invite.expires_at.getTime()) {
     throw new ApiError(403, 'FORBIDDEN', 'This invitation is invalid or expired.');
   }
-  return { invite, communityName: community.rows[0].name };
+  return { invite, communityName: community.rows[0].name, held: tenant.lifecycle === 'held' };
 }
 
 /** Register signed invite issuance, preview, preflight, revocation and atomic redemption. */
@@ -240,7 +245,8 @@ export function registerInviteRoutes(
   app.get('/invites', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const invites = await transaction(pool, async (client) => {
-      await requireLiveRole(client, actor, ['owner', 'admin']);
+      // A hold keeps invitations; reading and revoking them is not growth.
+      await requireLiveRole(client, actor, ['owner', 'admin'], { allowHeld: true });
       const result = await client.query<InviteRow>(
         'SELECT * FROM invites WHERE community_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100',
         [actor.community_id]
@@ -253,7 +259,7 @@ export function registerInviteRoutes(
   app.delete('/invites/:id', async (c) => {
     const actor = await requireMember(c, auth, pool);
     await transaction(pool, async (client) => {
-      await requireLiveRole(client, actor, ['owner', 'admin']);
+      await requireLiveRole(client, actor, ['owner', 'admin'], { allowHeld: true });
       const updated = await client.query(
         'UPDATE invites SET revoked_at=COALESCE(revoked_at,now()) WHERE id=$1 AND community_id=$2 RETURNING id',
         [c.req.param('id'), actor.community_id]
@@ -272,7 +278,7 @@ export function registerInviteRoutes(
     const { token } = await readJson(c, CommunityWireInviteTokenRequestSchema);
     limitPreviewIdentity(token);
     try {
-      const { invite, communityName } = await validInvite(c, pool, token, config);
+      const { invite, communityName, held } = await validInvite(c, pool, token, config);
       if (invite.use_count >= invite.seat_limit) throw invalidInvitation();
       await assertMemberRoom(pool, invite.community_id, {
         lock: false,
@@ -282,6 +288,7 @@ export function registerInviteRoutes(
         communityName,
         inviterName: invite.issuer_name,
         channelName: invite.channel_name,
+        held,
       });
     } catch (error) {
       if (error instanceof ApiError) throw invitationRefusal(error);
@@ -343,7 +350,8 @@ export function registerInviteRoutes(
     const pending = admissionCookie(c, config);
     const session = await auth.api.getSession({ headers: c.req.raw.headers });
     const tenant = await resolveCommunityContext(c, pool);
-    // A hold ends every join attempt; say why rather than that it expired.
+    // A hold pauses every join attempt without ending it: say why, and the same attempt
+    // completes after release if it has not expired.
     if (tenant.lifecycle === 'held') throw communityHeld();
     const result = await pool.query<{
       expires_at: Date;

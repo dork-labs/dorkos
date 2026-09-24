@@ -1219,6 +1219,36 @@ export interface MarketplaceSource {
 }
 
 /**
+ * How the most recent attempt to fetch a source's listing went, as the server
+ * recorded it (DOR-2324). Every door that fetches a listing feeds it: adding
+ * the source, a refresh, the browse list, the update check. It lives on the
+ * server, so it survives a reload and every window agrees.
+ *
+ * - `never`: not fetched yet (or the cache was cleared).
+ * - `fetched`: the last attempt worked.
+ * - `failed`: the last attempt failed and there is no copy to show.
+ * - `stale`: the last attempt failed; an older copy, from `copyFetchedAt`, is
+ *   still what is listed.
+ */
+export type SourceLastFetch =
+  | { state: 'never' }
+  | { state: 'fetched'; checkedAt: string; packageCount: number }
+  | { state: 'failed'; checkedAt: string; reason: string }
+  | {
+      state: 'stale';
+      checkedAt: string;
+      reason: string;
+      copyFetchedAt: string;
+      packageCount: number;
+    };
+
+/** A configured source as `GET /api/marketplace/sources` lists it. */
+export interface ListedMarketplaceSource extends MarketplaceSource {
+  /** How the most recent fetch of its listing went. */
+  lastFetch: SourceLastFetch;
+}
+
+/**
  * Request body for `POST /api/marketplace/sources`.
  *
  * Mirrors `AddSourceBodySchema` in `apps/server/src/routes/marketplace.ts`.

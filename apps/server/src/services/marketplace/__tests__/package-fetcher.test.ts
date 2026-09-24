@@ -38,12 +38,14 @@ function buildCacheMock(overrides?: {
   materializePackage?: ReturnType<typeof vi.fn>;
   readMarketplace?: ReturnType<typeof vi.fn>;
   writeMarketplace?: ReturnType<typeof vi.fn>;
+  writeFetchStatus?: ReturnType<typeof vi.fn>;
 }): MarketplaceCache {
   return {
     getPackage: overrides?.getPackage ?? vi.fn().mockResolvedValue(null),
     materializePackage: overrides?.materializePackage ?? vi.fn(),
     readMarketplace: overrides?.readMarketplace ?? vi.fn().mockResolvedValue(null),
     writeMarketplace: overrides?.writeMarketplace ?? vi.fn().mockResolvedValue(undefined),
+    writeFetchStatus: overrides?.writeFetchStatus ?? vi.fn().mockResolvedValue(undefined),
   } as unknown as MarketplaceCache;
 }
 
@@ -100,6 +102,12 @@ function buildSource(overrides?: Partial<MarketplaceSource>): MarketplaceSource 
     ...overrides,
   };
 }
+
+let workDirForStatus: string | undefined;
+afterEach(async () => {
+  if (workDirForStatus) await rm(workDirForStatus, { recursive: true, force: true });
+  workDirForStatus = undefined;
+});
 
 describe('PackageFetcher', () => {
   afterEach(() => {
@@ -433,6 +441,85 @@ describe('PackageFetcher', () => {
       const failure = fetcher.fetchMarketplaceJson(buildSource());
       await expect(failure).rejects.toThrow(reason);
       await expect(failure).rejects.not.toThrow(/fetch failed/);
+    });
+
+    describe('records how each fetch went (DOR-2324)', () => {
+      // Purpose: every door that fetches a listing (add, refresh, browse, the
+      // update check) comes through here, so this is where the last outcome is
+      // written down for GET /sources to report.
+      it('records a fetched listing', async () => {
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue(new Response(JSON.stringify(buildMarketplaceJson())))
+        );
+        const cache = buildCacheMock();
+        const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+        await fetcher.fetchMarketplaceJson(buildSource());
+
+        expect(cache.writeFetchStatus).toHaveBeenCalledWith('dorkos-community', {
+          startedAt: expect.any(String),
+          checkedAt: expect.any(String),
+          ok: true,
+          packageCount: buildMarketplaceJson().plugins.length,
+        });
+      });
+
+      it('records a failure with its reason, even when an old copy is served', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 404 })));
+        const cache = buildCacheMock({
+          readMarketplace: vi.fn().mockResolvedValue({
+            json: buildMarketplaceJson(),
+            fetchedAt: new Date(),
+            stale: false,
+          }),
+        });
+        const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+        await fetcher.fetchMarketplaceJson(buildSource());
+
+        expect(cache.writeFetchStatus).toHaveBeenCalledWith('dorkos-community', {
+          startedAt: expect.any(String),
+          checkedAt: expect.any(String),
+          ok: false,
+          reason: "there's no marketplace listing at that address",
+        });
+      });
+
+      it('records a local folder that has no listing', async () => {
+        workDirForStatus = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-status-'));
+        const cache = buildCacheMock();
+        const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+        await expect(
+          fetcher.fetchMarketplaceJson(
+            buildSource({ name: 'local', source: pathToFileURL(workDirForStatus).href })
+          )
+        ).rejects.toThrow();
+
+        expect(cache.writeFetchStatus).toHaveBeenCalledWith('local', {
+          startedAt: expect.any(String),
+          checkedAt: expect.any(String),
+          ok: false,
+          reason: "there's no marketplace listing in that folder",
+        });
+      });
+
+      it('still answers when the record cannot be written', async () => {
+        // Purpose: the record is bookkeeping; it must never cost a listing.
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue(new Response(JSON.stringify(buildMarketplaceJson())))
+        );
+        const cache = buildCacheMock({
+          writeFetchStatus: vi.fn().mockRejectedValue(new Error('disk full')),
+        });
+        const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+        await expect(fetcher.fetchMarketplaceJson(buildSource())).resolves.toMatchObject({
+          name: 'dorkos-community',
+        });
+      });
     });
 
     it('rethrows when both network fetch and stale cache fail', async () => {

@@ -351,6 +351,7 @@ describe('renderSourcesTable', () => {
   it('renders header + rows aligned to widest cell', () => {
     const table = renderSourcesTable([SOURCE_FIXTURE_A, SOURCE_FIXTURE_B]);
     const lines = table.split('\n');
+    // A server older than DOR-2324 sends no lastFetch: no empty PACKAGES column.
     expect(lines[0]).toMatch(/^NAME\s+SOURCE\s+ENABLED$/);
     expect(lines[1]).toContain('dorkos-community');
     expect(lines[1]).toContain('https://github.com/dorkos/marketplace');
@@ -376,6 +377,65 @@ describe('renderSourcesTable', () => {
     expect(lines[1]).toMatch(/https:\/\/example\.com\/a+\.\.\./);
     const truncatedSegment = lines[1].match(/https:\/\/example\.com\/a+\.\.\./);
     expect(truncatedSegment?.[0].length).toBeLessThanOrEqual(sourceCellMaxWidth);
+  });
+  it("shows how each source's last fetch went, and why one failed (DOR-2324)", () => {
+    // Purpose: the terminal tells the same story as the app's rows: packages
+    // ready, never loaded, or an older copy still listed, with the reason.
+    const when = new Date('2026-09-20T08:00:00.000Z').toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+    const table = renderSourcesTable([
+      {
+        ...SOURCE_FIXTURE_A,
+        name: 'ok',
+        lastFetch: { state: 'fetched', checkedAt: 'x', packageCount: 12 },
+      },
+      {
+        ...SOURCE_FIXTURE_A,
+        name: 'one',
+        lastFetch: { state: 'fetched', checkedAt: 'x', packageCount: 1 },
+      },
+      { ...SOURCE_FIXTURE_A, name: 'new', lastFetch: { state: 'never' } },
+      {
+        ...SOURCE_FIXTURE_A,
+        name: 'broken',
+        lastFetch: {
+          state: 'failed',
+          checkedAt: 'x',
+          reason: "there's no marketplace listing at that address",
+        },
+      },
+      {
+        ...SOURCE_FIXTURE_A,
+        name: 'old',
+        lastFetch: {
+          state: 'stale',
+          checkedAt: 'x',
+          reason: 'the server at that address refused the connection',
+          copyFetchedAt: '2026-09-20T08:00:00.000Z',
+          packageCount: 3,
+        },
+      },
+      { ...SOURCE_FIXTURE_A, name: 'legacy' },
+    ]);
+    const row = (name: string) => table.split('\n').find((l) => l.startsWith(`${name} `)) ?? '';
+
+    expect(table.split('\n')[0]).toMatch(/^NAME\s+SOURCE\s+ENABLED\s+PACKAGES$/);
+    expect(row('ok')).toMatch(/12 packages$/);
+    expect(row('one')).toMatch(/1 package$/);
+    expect(row('new')).toMatch(/not fetched yet$/);
+    expect(row('broken')).toMatch(/didn't load$/);
+    expect(row('old')).toMatch(/3 packages \(older copy\)$/);
+    expect(row('legacy')).toMatch(/yes$/);
+    expect(table).toContain(
+      "broken: its packages didn't load: there's no marketplace listing at that address. " +
+        'Run `dorkos marketplace refresh broken` to try again.'
+    );
+    expect(table).toContain(
+      "old: couldn't fetch its listing: the server at that address refused the connection. " +
+        `Still listing the copy from ${when}.`
+    );
   });
 });
 

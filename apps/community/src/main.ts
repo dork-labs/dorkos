@@ -4,6 +4,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
 import { createCommunityApp } from './app.js';
 import { parseConfig } from './config.js';
+import { oidcCallbackUrl } from './oidc.js';
 import { migrate } from './migrate.js';
 import { createSignalHandler, createStop } from './shutdown.js';
 import { reservedBoundShortNames, shortNameHoldKey } from './host/short-names.js';
@@ -70,6 +71,11 @@ const shortNameHolds = {
   cooloffDays: config.limits.shortNameCooloffDays,
 };
 const server = serve({ fetch: app.fetch, port: config.port });
+if (config.oidc)
+  // Discovery waits for the first sign-in, so this line is the only startup trace of the issuer.
+  console.info(
+    `Community single sign-on: register ${oidcCallbackUrl(config.publicUrl)} as the redirect URI`
+  );
 const cleanup = setInterval(() => {
   void sweepExpiredAttachments(pool, blobStore).catch((error: unknown) => {
     console.error(

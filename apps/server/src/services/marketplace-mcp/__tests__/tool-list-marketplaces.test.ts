@@ -1,10 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Logger } from '@dorkos/shared/logger';
 import type { MarketplaceJson } from '@dorkos/marketplace';
+import type { SourceLastFetch } from '@dorkos/shared/marketplace-schemas';
 
 import type { MarketplaceSource } from '../../marketplace/types.js';
 import { createListMarketplacesHandler } from '../tool-list-marketplaces.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
+
+/** The last-fetch state of a source the cache holds nothing for. */
+const NEVER: SourceLastFetch = { state: 'never' };
 
 /** Build a logger whose every method is a `vi.fn()` spy. */
 function buildLogger(): Logger {
@@ -48,6 +52,7 @@ function buildDeps(opts: {
   list: MarketplaceSource[];
   fetchImpl?: (source: MarketplaceSource) => Promise<MarketplaceJson>;
   logger?: Logger;
+  cache?: MarketplaceMcpDeps['cache'];
 }): {
   deps: MarketplaceMcpDeps;
   list: ReturnType<typeof vi.fn>;
@@ -68,7 +73,13 @@ function buildDeps(opts: {
       fetchMarketplaceJson,
     } as unknown as MarketplaceMcpDeps['fetcher'],
     installer: {} as MarketplaceMcpDeps['installer'],
-    cache: {} as MarketplaceMcpDeps['cache'],
+    cache:
+      opts.cache ??
+      ({
+        readFetchStatus: vi.fn(async () => null),
+        readMarketplaceFetchedAt: vi.fn(async () => null),
+        readMarketplace: vi.fn(async () => null),
+      } as unknown as MarketplaceMcpDeps['cache']),
     uninstallFlow: {} as MarketplaceMcpDeps['uninstallFlow'],
     updateFlow: {} as MarketplaceMcpDeps['updateFlow'],
     confirmationProvider: {} as MarketplaceMcpDeps['confirmationProvider'],
@@ -82,7 +93,13 @@ function buildDeps(opts: {
 
 /** Parse the JSON `text` payload out of an MCP tool result. */
 function parseResult(result: { content: { type: 'text'; text: string }[] }): {
-  sources: { name: string; source: string; enabled: boolean; packageCount: number }[];
+  sources: {
+    name: string;
+    source: string;
+    enabled: boolean;
+    packageCount: number;
+    lastFetch: SourceLastFetch;
+  }[];
 } {
   expect(result.content).toHaveLength(1);
   const block = result.content[0];
@@ -126,6 +143,7 @@ describe('createListMarketplacesHandler', () => {
         source: source.source,
         enabled: true,
         packageCount: 3,
+        lastFetch: NEVER,
       },
     ]);
   });
@@ -160,18 +178,21 @@ describe('createListMarketplacesHandler', () => {
         source: community.source,
         enabled: true,
         packageCount: 5,
+        lastFetch: NEVER,
       },
       {
         name: 'personal',
         source: personal.source,
         enabled: true,
         packageCount: 1,
+        lastFetch: NEVER,
       },
       {
         name: 'archived',
         source: disabled.source,
         enabled: false,
         packageCount: 9,
+        lastFetch: NEVER,
       },
     ]);
   });
@@ -197,8 +218,8 @@ describe('createListMarketplacesHandler', () => {
     const payload = parseResult(result);
 
     expect(payload.sources).toEqual([
-      { name: 'good', source: good.source, enabled: true, packageCount: 2 },
-      { name: 'broken', source: broken.source, enabled: true, packageCount: 0 },
+      { name: 'good', source: good.source, enabled: true, packageCount: 2, lastFetch: NEVER },
+      { name: 'broken', source: broken.source, enabled: true, packageCount: 0, lastFetch: NEVER },
     ]);
     expect(logger.warn).toHaveBeenCalledTimes(1);
     const warnCall = (logger.warn as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -206,6 +227,43 @@ describe('createListMarketplacesHandler', () => {
     expect(warnCall?.[1]).toMatchObject({
       marketplace: 'broken',
       error: 'network down',
+    });
+  });
+
+  it("says how each source's last fetch went, so a count of 0 is never ambiguous (DOR-2324)", async () => {
+    // Purpose: `packageCount: 0` means both "an empty marketplace" and "the
+    // fetch failed"; `lastFetch` is what tells an agent which.
+    const broken = buildSource({ name: 'broken' });
+    const cache = {
+      readFetchStatus: vi.fn(async () => ({
+        startedAt: '2026-09-24T10:00:00.000Z',
+        checkedAt: '2026-09-24T10:00:01.000Z',
+        ok: false,
+        reason: "couldn't find a server at that address",
+      })),
+      readMarketplaceFetchedAt: vi.fn(async () => null),
+      readMarketplace: vi.fn(async () => null),
+    } as unknown as MarketplaceMcpDeps['cache'];
+    const { deps } = buildDeps({
+      list: [broken],
+      fetchImpl: async () => {
+        throw new Error("couldn't find a server at that address");
+      },
+      cache,
+    });
+
+    const payload = parseResult(await createListMarketplacesHandler(deps)());
+
+    expect(payload.sources[0]).toEqual({
+      name: 'broken',
+      source: broken.source,
+      enabled: true,
+      packageCount: 0,
+      lastFetch: {
+        state: 'failed',
+        checkedAt: '2026-09-24T10:00:01.000Z',
+        reason: "couldn't find a server at that address",
+      },
     });
   });
 });

@@ -11,6 +11,7 @@ import { createPasswordConfirmation } from './password-confirmation.js';
 // cannot: a burst held open inside verifyPassword shows the check and the spend are one step.
 
 const RIGHT = 'right-password';
+const NO_PASSWORD = 'oidc-only-account';
 
 function harness(ceiling = 2) {
   const spent = new Map<string, number>();
@@ -36,6 +37,7 @@ function harness(ceiling = 2) {
       spent.set(key, (spent.get(key) ?? 0) + 1);
     },
     refund: (key) => spent.set(key, (spent.get(key) ?? 1) - 1),
+    hasPassword: async (account) => account !== NO_PASSWORD,
   });
   const context = { req: { raw: { headers: new Headers() } } } as unknown as Context;
   return {
@@ -64,6 +66,18 @@ async function outcome(attempt: Promise<void>) {
 }
 
 describe('createPasswordConfirmation', () => {
+  it('tells an account without a password to set one, without checking or spending', async () => {
+    // Purpose: fails if an OIDC-only account hears "that password is not right" for a password
+    // it never had, or if that refusal spends the per-account guess budget.
+    const { confirm, checked } = harness(1);
+    for (let attempt = 0; attempt < 3; attempt += 1)
+      expect(await outcome(confirm(NO_PASSWORD, RIGHT))).toBe('403 PASSWORD_REQUIRED');
+    expect(checked).toEqual([]);
+    await expect(confirm(NO_PASSWORD, RIGHT)).rejects.toThrow(
+      'Set a password in your account to do this.'
+    );
+  });
+
   it('refunds a correct password, so the right one never spends the budget', async () => {
     const { confirm } = harness();
     for (let attempt = 0; attempt < 5; attempt++)

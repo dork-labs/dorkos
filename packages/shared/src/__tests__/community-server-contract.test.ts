@@ -105,14 +105,29 @@ describe('community server port additions', () => {
   });
 
   it('keeps HTTP conversation DTOs strict and free of private fields', () => {
-    expect(CommunityWireAuthOptionsSchema.parse({ google: false, github: true })).toEqual({
-      google: false,
-      github: true,
-    });
+    expect(
+      CommunityWireAuthOptionsSchema.parse({ google: false, github: true, oidc: null })
+    ).toEqual({ google: false, github: true, oidc: null });
+    expect(
+      CommunityWireAuthOptionsSchema.parse({
+        google: false,
+        github: false,
+        oidc: { label: 'Example sign-in' },
+      }).oidc
+    ).toEqual({ label: 'Example sign-in' });
+    // Only the button text crosses the wire: never the issuer, client ID or secret.
+    expect(
+      CommunityWireAuthOptionsSchema.safeParse({
+        google: false,
+        github: false,
+        oidc: { label: 'Example sign-in', clientId: 'private' },
+      }).success
+    ).toBe(false);
     expect(
       CommunityWireAuthOptionsSchema.safeParse({
         google: true,
         github: false,
+        oidc: null,
         clientSecret: 'private',
       }).success
     ).toBe(false);

@@ -12,6 +12,8 @@ import {
 import { EncryptedFileCredentialStore } from '../../../core/credential-provider.js';
 import {
   RemoteCommunityPairingService,
+  RemoteCommunityLookupRateLimitedError,
+  RemoteCommunityNameNotFoundError,
   RemoteCommunitySelectionRequiredError,
   RemoteCommunityUpgradeRequiredError,
   RemotePairingBusyError,
@@ -32,6 +34,10 @@ import {
   PinnedHttpError,
   PinnedOriginError,
 } from '../pinned-origin.js';
+import {
+  READ_ONLY_RECHECK_MS,
+  RemoteRoomSubscriptionRuntime,
+} from '../remote-room-subscription-runtime.js';
 
 let server: Server;
 let redirectedServer: Server;
@@ -52,6 +58,8 @@ let rejectedStatus = 403;
 let rejectedPath: string | undefined;
 /** What the host says to `/me/host-access`; `undefined` models a host built before it (404). */
 let hostAccessAnswer: { status: number; body: unknown } | undefined;
+/** What `/me/connection-access` reports: `archived` models a host hold, as installations see it. */
+let accessLifecycle: 'active' | 'archived' = 'active';
 const token = 'private-pairing-bearer-should-never-appear-in-dto';
 const remoteCommunityId = randomUUID();
 const secondRemoteCommunityId = randomUUID();
@@ -71,6 +79,11 @@ let threadsAnswer: 'counts' | 404 = 'counts';
 let accessGate: Promise<void> | undefined;
 /** How many access re-checks reached the fake Community. */
 let accessRequests = 0;
+/**
+ * How the fake host answers `GET /api/v1/community-names/:name`: a JSON body, `redirect` for a
+ * 301 to another host, or nothing (the host's single `404` for every unresolvable name).
+ */
+const shortNameAnswers = new Map<string, unknown>();
 
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'community-pairing-'));
@@ -91,6 +104,23 @@ beforeAll(async () => {
       res.statusCode = status;
       res.end(JSON.stringify(value));
     };
+    const nameLookup = /^\/api\/v1\/community-names\/([^/]+)$/.exec(req.url ?? '');
+    if (nameLookup) {
+      const answer = shortNameAnswers.get(nameLookup[1]);
+      if (answer === 'rate-limited') {
+        send({ code: 'RATE_LIMITED', message: 'Slow down.' }, 429);
+      } else if (answer === 'redirect') {
+        res.statusCode = 301;
+        res.setHeader('location', `${redirectedOrigin}/api/v1/community-names/${nameLookup[1]}`);
+        res.end();
+      } else if (answer === undefined) {
+        send({ code: 'NOT_FOUND', message: 'No community at this address.' }, 404);
+      } else {
+        res.setHeader('cache-control', 'no-store');
+        send(answer);
+      }
+      return;
+    }
     if (redirect) {
       res.statusCode = 302;
       res.setHeader('location', `${redirectedOrigin}/private`);
@@ -182,13 +212,15 @@ beforeAll(async () => {
       res.statusCode = 204;
       res.end();
     } else if (req.url === `${qualified}/me/connection-access`) {
+      const live = accessLifecycle === 'active';
+      const capabilities = { read: true, post: live, enrollAgent: live, stream: live };
       send({
         access: {
           state: 'verified',
-          effective: { read: true, post: true, enrollAgent: true, stream: true },
+          effective: capabilities,
           lastKnown: {
-            lifecycle: 'active',
-            capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+            lifecycle: accessLifecycle,
+            capabilities,
             verifiedAt: new Date().toISOString(),
           },
         },
@@ -867,6 +899,52 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       pollCount = 0;
     }
   });
+  it('learns a released hold for a member-only connection through the release check (AC-8)', async () => {
+    // Purpose: fails if the five-minute check does not reach the real pairing service and
+    // store, so a member-only connection kept its read-only access after the host released.
+    approved = true;
+    const store = new RemoteConnectionStore(directory);
+    const service = new RemoteCommunityPairingService(store);
+    const owner = 'release-check-owner';
+    const started = await service.start(owner, origin, 'Member-only install');
+    expect((await service.poll(started.connection.ref, owner)).status).toBe('connected');
+    approved = false;
+    const lifecycle = async () =>
+      (await store.list(owner)).find((row) => row.ref === started.connection.ref)?.access?.lastKnown
+        ?.lifecycle;
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const runtime = new RemoteRoomSubscriptionRuntime({
+      bridge: {} as never,
+      enrollments: { activeConnections: () => [] } as never,
+      adapters: vi.fn(),
+      resolveConnectionAccess: async (ref, ownerKey) =>
+        (await service.status(ref, ownerKey)).access,
+      readOnlyConnections: () => store.readOnlyConnections(),
+      resolveLocalAgentAuthor: () => null,
+      isReady: () => false,
+    });
+    try {
+      accessLifecycle = 'archived';
+      await service.status(started.connection.ref, owner);
+      expect(await lifecycle()).toBe('archived');
+      runtime.start();
+      // The host releases the hold; nobody opens the connection's status.
+      accessLifecycle = 'active';
+      await vi.advanceTimersByTimeAsync(READ_ONLY_RECHECK_MS - 1);
+      expect(await lifecycle()).toBe('archived');
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.waitFor(async () => expect(await lifecycle()).toBe('active'));
+      expect(
+        (await store.list(owner)).find((row) => row.ref === started.connection.ref)?.access
+      ).toMatchObject({ state: 'verified', effective: { post: true, stream: true } });
+    } finally {
+      runtime.stop();
+      vi.useRealTimers();
+      accessLifecycle = 'active';
+      await service.disconnect(started.connection.ref, owner);
+    }
+  });
+
   describe('disconnect revokes the grant on the Community', () => {
     async function connected(owner: string) {
       approved = true;
@@ -1237,10 +1315,155 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     redirect = false;
   });
 
+  describe('short-name links', () => {
+    const lookups = () =>
+      requests.filter((request) => request.path.startsWith('/api/v1/community-names/'));
+    const pairingStarts = () =>
+      requests.filter((request) => request.path.endsWith('/pairings/start'));
+
+    // Purpose: a /<name> link resolves through the host lookup (lower-cased) and then pairs
+    // exactly as the canonical /c/<uuid> link does; the connection keeps only the UUID.
+    it('resolves /Acme through the lookup and connects to the UUID it names', async () => {
+      shortNameAnswers.set('acme', { communityId: remoteCommunityId, shortName: 'acme' });
+      requests.length = 0;
+      try {
+        const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+        const started = await service.start('name-owner', `${origin}/Acme`, 'Named install');
+        expect(lookups().map((request) => request.path)).toEqual(['/api/v1/community-names/acme']);
+        expect(requests.map((request) => request.path)).toEqual([
+          '/api/v1/community-names/acme',
+          `${qualified}/community`,
+          `${qualified}/pairings/start`,
+        ]);
+        expect(started.connection).toMatchObject({ remoteCommunityId, pinnedOrigin: origin });
+        expect(JSON.stringify(started.connection)).not.toContain('acme');
+        expect(started.approvalUrl).toContain(`/c/${remoteCommunityId}/pairing`);
+      } finally {
+        shortNameAnswers.clear();
+      }
+    });
+
+    // Purpose: a retired name answers with the current name; the connection still keys on the
+    // UUID, so which community it talks to never depends on the name.
+    it('connects through a retired name to the same UUID', async () => {
+      shortNameAnswers.set('old-acme', {
+        communityId: secondRemoteCommunityId,
+        shortName: 'new-acme',
+      });
+      try {
+        const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+        const started = await service.start('name-owner', `${origin}/old-acme`, 'Renamed');
+        expect(started.connection).toMatchObject({ remoteCommunityId: secondRemoteCommunityId });
+      } finally {
+        shortNameAnswers.clear();
+      }
+    });
+
+    // Purpose: an unknown name is its own error, and nothing is started on the host.
+    it('reports an unknown name without starting a pairing', async () => {
+      requests.length = 0;
+      const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+      await expect(
+        service.start('name-owner', `${origin}/nobody-here`, 'Unknown')
+      ).rejects.toBeInstanceOf(RemoteCommunityNameNotFoundError);
+      expect(pairingStarts()).toEqual([]);
+    });
+
+    // Purpose: a host rate limit on the lookup is its own error, and nothing is started.
+    it('reports a rate-limited lookup without starting a pairing', async () => {
+      shortNameAnswers.set('busy-club', 'rate-limited');
+      requests.length = 0;
+      try {
+        const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+        await expect(
+          service.start('name-owner', `${origin}/busy-club`, 'Limited')
+        ).rejects.toBeInstanceOf(RemoteCommunityLookupRateLimitedError);
+        expect(pairingStarts()).toEqual([]);
+      } finally {
+        shortNameAnswers.clear();
+      }
+    });
+
+    // Purpose: a lookup answer that is not exactly one canonical UUID is refused before any
+    // tenant call, so a hostile host cannot steer the connection with a crafted id.
+    it('refuses a lookup that answers a malformed UUID', async () => {
+      const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+      for (const answer of [
+        { communityId: 'not-a-uuid', shortName: 'acme' },
+        { communityId: remoteCommunityId.toUpperCase(), shortName: 'acme' },
+        { communityId: '00000000-0000-0000-0000-000000000000', shortName: 'acme' },
+        { communityId: remoteCommunityId, shortName: 'acme', extra: true },
+        { shortName: 'acme' },
+        [remoteCommunityId],
+      ]) {
+        shortNameAnswers.set('acme', answer);
+        requests.length = 0;
+        await expect(
+          service.start('name-owner', `${origin}/acme`, 'Malformed'),
+          JSON.stringify(answer)
+        ).rejects.toMatchObject({ code: 'REMOTE_RESPONSE' });
+        expect(requests.map((request) => request.path)).toEqual(['/api/v1/community-names/acme']);
+      }
+      shortNameAnswers.clear();
+    });
+
+    // Purpose: the lookup never follows a redirect, so a host cannot send the resolution (or
+    // the connection) to another host.
+    it('does not follow a redirect from the lookup', async () => {
+      shortNameAnswers.set('acme', 'redirect');
+      const before = redirectedRequests;
+      try {
+        const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+        await expect(
+          service.start('name-owner', `${origin}/acme`, 'Redirected')
+        ).rejects.toMatchObject({ status: 301 });
+        expect(redirectedRequests).toBe(before);
+      } finally {
+        shortNameAnswers.clear();
+      }
+    });
+
+    // Purpose: every shape the spec names. /Acme is lower-cased; a trailing slash, a deeper
+    // path, a percent-encoded spelling and a reserved name are refused before any request.
+    it('accepts only the exact /<name> shape', () => {
+      expect(parseCommunityLink(`${origin}/Acme`)).toEqual({
+        origin: new URL(origin),
+        communityId: null,
+        shortName: 'acme',
+      });
+      expect(parseCommunityLink('https://community.example/my-club-2')).toEqual({
+        origin: new URL('https://community.example'),
+        communityId: null,
+        shortName: 'my-club-2',
+      });
+      for (const invalid of [
+        `${origin}/acme/`,
+        `${origin}/acme/x`,
+        `${origin}/%61cme`,
+        `${origin}/api`,
+        `${origin}/API`,
+        `${origin}/settings`,
+        `${origin}/ab`,
+        `${origin}/1acme`,
+        `${origin}/acme-`,
+        `${origin}/ac--me`,
+        `${origin}/${'a'.repeat(33)}`,
+        `${origin}/acme?x=1`,
+        `${origin}/acme#top`,
+        'https://owner:secret@community.example/acme',
+        'http://community.example/acme',
+      ]) {
+        expect(() => parseCommunityLink(invalid), invalid).toThrow(PinnedOriginError);
+      }
+      expect(() => parseCommunityOrigin(`${origin}/acme`)).toThrow(PinnedOriginError);
+    });
+  });
+
   it('separates a canonical tenant link from its pinned socket origin', () => {
     expect(parseCommunityLink(`${origin}/c/${remoteCommunityId}`)).toEqual({
       origin: new URL(origin),
       communityId: remoteCommunityId,
+      shortName: null,
     });
     expect(communityApiPath(remoteCommunityId, '/api/v1/channels/room?cursor=opaque')).toBe(
       `/api/v1/communities/${remoteCommunityId}/channels/room?cursor=opaque`

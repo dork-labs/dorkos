@@ -407,15 +407,28 @@ export class PackageFetcher {
     source: MarketplaceSource,
     options: { staleFallback?: boolean } = {}
   ): Promise<MarketplaceJson> {
+    const startedAt = new Date().toISOString();
     if (isFileUrl(source.source)) {
-      return this.readLocalMarketplaceJson(source);
+      try {
+        const json = await this.readLocalMarketplaceJson(source);
+        await this.recordFetch(source.name, startedAt, json);
+        return json;
+      } catch (err) {
+        await this.recordFetch(source.name, startedAt, err);
+        throw err;
+      }
     }
     const url = resolveMarketplaceJsonUrl(source.source);
     try {
       const json = await this.fetchAndParseMarketplaceJson(url, source.name);
       await this.cache.writeMarketplace(source.name, json);
+      await this.recordFetch(source.name, startedAt, json);
       return json;
     } catch (err) {
+      // Recorded as a failure even when an old copy is served below: the
+      // record is about THIS attempt, and GET /sources pairs it with the
+      // cached copy's own date to say "still showing the copy from …".
+      await this.recordFetch(source.name, startedAt, err);
       // Surface the attempted URL alongside the marketplace name so it's
       // obvious from the log whether the failure is a wrong URL (404 on a
       // typo'd org) or a genuine upstream outage.
@@ -426,6 +439,41 @@ export class PackageFetcher {
       });
       if (options.staleFallback === false) throw err;
       return this.serveStaleMarketplace(source.name, err);
+    }
+  }
+
+  /**
+   * Write down how an attempt to fetch a listing went (DOR-2324), for
+   * `GET /sources` to report. Best effort: a record that cannot be written is
+   * logged and never costs the caller its listing.
+   *
+   * @param marketplaceName - The source's name.
+   * @param startedAt - When the attempt started; decides which record is newer.
+   * @param outcome - The listing fetched, or the error the attempt failed with.
+   */
+  private async recordFetch(
+    marketplaceName: string,
+    startedAt: string,
+    outcome: MarketplaceJson | unknown
+  ): Promise<void> {
+    const checkedAt = new Date().toISOString();
+    try {
+      await this.cache.writeFetchStatus(
+        marketplaceName,
+        isFetchedListing(outcome)
+          ? { startedAt, checkedAt, ok: true, packageCount: outcome.plugins.length }
+          : {
+              startedAt,
+              checkedAt,
+              ok: false,
+              reason: outcome instanceof Error ? outcome.message : String(outcome),
+            }
+      );
+    } catch (err) {
+      this.logger.debug('package-fetcher: could not record the fetch outcome', {
+        marketplaceName,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -755,6 +803,16 @@ export class PackageFetcher {
     });
     return `tmp-${Date.now()}`;
   }
+}
+
+/** True when a recorded outcome is a fetched listing rather than an error. */
+function isFetchedListing(outcome: unknown): outcome is MarketplaceJson {
+  return (
+    typeof outcome === 'object' &&
+    outcome !== null &&
+    !(outcome instanceof Error) &&
+    Array.isArray((outcome as { plugins?: unknown }).plugins)
+  );
 }
 
 /** True for a filesystem error that just means "no file there". */

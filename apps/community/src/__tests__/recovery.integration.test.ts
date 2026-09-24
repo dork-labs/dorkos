@@ -275,12 +275,46 @@ describe('offline member recovery', () => {
     ).not.toBeNull();
   });
 
+  it('removes Google, GitHub and single sign-on links by default, and records it', async () => {
+    // Purpose: fails if recovery after a takeover leaves a linked outside account able to walk
+    // straight back in, or if the removal is not in the community's audit log.
+    await pool.query(
+      `INSERT INTO account(id,"accountId","providerId","userId") VALUES('oidc-owner','issuer-subject','oidc','owner')`
+    );
+    await recoverPassword(pool, 'owner@example.test', 'unlinked-password-123');
+    expect(
+      (await pool.query(`SELECT "providerId" FROM account WHERE "userId"='owner'`)).rows
+    ).toEqual([{ providerId: 'credential' }]);
+    // One row in every community the account belongs to, naming only the provider removed.
+    const memberships = await pool.query<{ id: string }>(
+      `SELECT id FROM members WHERE user_id='owner' ORDER BY id`
+    );
+    const audit = await pool.query<{ subject_id: string; changed_fields: string[] }>(
+      `SELECT subject_id,changed_fields FROM audit_events
+       WHERE action='member.sign_in_links_removed' ORDER BY subject_id`
+    );
+    expect(audit.rows).toEqual(
+      memberships.rows.map((row) => ({ subject_id: row.id, changed_fields: ['oidc'] }))
+    );
+    expect(audit.rows.map((row) => row.subject_id)).toContain(ownerId);
+    expect((await signIn('owner@example.test', 'unlinked-password-123')).status).toBe(200);
+    await recoverPassword(pool, 'owner@example.test', 'new-password-456');
+  });
+
+  it('refuses a recovery password shorter than 12 characters', async () => {
+    // Purpose: fails if offline recovery sets a password the sign-up form would refuse.
+    await expect(recoverPassword(pool, 'owner@example.test', 'eleven-char')).rejects.toThrow(
+      'Use a password with 12 to 128 characters'
+    );
+  });
+
   it('can add a password to an existing OAuth-only member without changing their identity', async () => {
     await pool.query('DELETE FROM account WHERE "userId"=\'other\'');
     await pool.query(
       `INSERT INTO account(id,"accountId","providerId","userId") VALUES('oauth-other','external-account','github','other')`
     );
-    await recoverPassword(pool, 'other@example.test', 'oauth-recovery-123');
+    // An owner who only forgot the password keeps their GitHub link.
+    await recoverPassword(pool, 'other@example.test', 'oauth-recovery-123', { keepLinked: true });
     expect(
       (await pool.query(`SELECT "accountId","providerId" FROM account WHERE id='oauth-other'`))
         .rows[0]

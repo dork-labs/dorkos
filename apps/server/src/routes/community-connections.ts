@@ -36,6 +36,8 @@ import {
 import {
   RemoteCommunityPairingService,
   RemotePairingBusyError,
+  RemoteCommunityLookupRateLimitedError,
+  RemoteCommunityNameNotFoundError,
   RemoteCommunitySelectionRequiredError,
   RemoteCommunityUpgradeRequiredError,
 } from '../services/communities/remote/pairing-service.js';
@@ -90,6 +92,16 @@ function failure(res: Response, error: unknown): void {
     res.status(409).json({
       code: 'COMMUNITY_SELECTION_REQUIRED',
       error: 'Choose a specific community from this host and use its community link.',
+    });
+  } else if (error instanceof RemoteCommunityNameNotFoundError) {
+    res.status(404).json({
+      code: 'COMMUNITY_NAME_NOT_FOUND',
+      error: 'No community at this address. Check the link and try again.',
+    });
+  } else if (error instanceof RemoteCommunityLookupRateLimitedError) {
+    res.status(429).json({
+      code: 'COMMUNITY_LOOKUP_RATE_LIMITED',
+      error: 'Too many lookups — try again in a minute.',
     });
   } else if (error instanceof RemoteCommunityUpgradeRequiredError) {
     res.status(426).json({
