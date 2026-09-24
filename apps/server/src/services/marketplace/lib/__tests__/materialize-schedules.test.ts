@@ -58,6 +58,22 @@ function manifest(schedules: Record<string, unknown>[]): MarketplacePackageManif
   return parsed.data;
 }
 
+/**
+ * Both placements an install makes, in its order: `skillRef` blocks into the
+ * package's tree (the staged tree, in a real install), then inline schedules.
+ * These tests are about what each schedule becomes, so they run both.
+ */
+async function materializeBothForms(
+  opts: Omit<Parameters<typeof materializePackageSchedules>[0], 'forms'>
+): Promise<Awaited<ReturnType<typeof materializePackageSchedules>>> {
+  const refs = await materializePackageSchedules({ ...opts, forms: 'skillRef' });
+  const inline = await materializePackageSchedules({ ...opts, forms: 'inline' });
+  return {
+    generatedPaths: [...refs.generatedPaths, ...inline.generatedPaths],
+    warnings: [...refs.warnings, ...inline.warnings],
+  };
+}
+
 /** Write a skill the package "ships" into its install root. */
 async function shipSkill(name: string, frontmatter: string, body: string): Promise<string> {
   const dir = path.join(installPath, 'skills', name);
@@ -77,7 +93,7 @@ async function readSkill(
 
 describe('inline declarations generate a skill file', () => {
   it('writes the schedule block, the body, and the provenance stamp', async () => {
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([
         {
           name: 'Nightly Tidy',
@@ -112,7 +128,7 @@ describe('inline declarations generate a skill file', () => {
   });
 
   it('writes ONLY author-typed fields — no schema defaults leak into the file', async () => {
-    await materializePackageSchedules({
+    await materializeBothForms({
       manifest: manifest([
         {
           name: 'plain',
@@ -142,7 +158,7 @@ describe('inline declarations generate a skill file', () => {
   });
 
   it('maps startEnabled onto schedule.enabled', async () => {
-    await materializePackageSchedules({
+    await materializeBothForms({
       manifest: manifest([
         {
           name: 'eager',
@@ -170,7 +186,7 @@ describe('inline declarations generate a skill file', () => {
   });
 
   it('writes enabled: false explicitly, because absence would mean armed', async () => {
-    await materializePackageSchedules({
+    await materializeBothForms({
       manifest: manifest([{ name: 'idle', description: 'Stays off.', prompt: 'Go.' }]),
       installPath,
       dorkHome,
@@ -186,7 +202,7 @@ describe('inline declarations generate a skill file', () => {
   });
 
   it('generates into the global skills root when the install is not project-scoped', async () => {
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([{ name: 'global-tick', description: 'Everywhere.', prompt: 'Tick.' }]),
       installPath,
       dorkHome,
@@ -197,7 +213,7 @@ describe('inline declarations generate a skill file', () => {
   });
 
   it('clamps a bypassPermissions request and says so', async () => {
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([
         {
           name: 'greedy',
@@ -220,7 +236,7 @@ describe('inline declarations generate a skill file', () => {
   });
 
   it('warns about the retired startDisabled without letting it decide anything', async () => {
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([
         {
           name: 'stale-key',
@@ -254,7 +270,7 @@ describe('skillRef declarations inject into the shipped skill', () => {
       '# Daily report\n\nGather yesterday and summarize it.'
     );
 
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([{ skillRef: 'daily-report', cron: '0 9 * * 1-5' }]),
       installPath,
       dorkHome,
@@ -305,7 +321,7 @@ describe('skillRef declarations inject into the shipped skill', () => {
       'Body.'
     );
 
-    await materializePackageSchedules({
+    await materializeBothForms({
       manifest: manifest([{ skillRef: 'exotic' }]),
       installPath,
       dorkHome,
@@ -340,7 +356,7 @@ describe('skillRef declarations inject into the shipped skill', () => {
       'Body.'
     );
 
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([{ skillRef: 'tuned', cron: '0 9 * * *' }]),
       installPath,
       dorkHome,
@@ -357,7 +373,7 @@ describe('skillRef declarations inject into the shipped skill', () => {
     await shipSkill('steady', ['name: steady', 'description: Unchanged.'].join('\n'), 'Body.');
     const decl = manifest([{ skillRef: 'steady', cron: '0 9 * * *' }]);
 
-    await materializePackageSchedules({
+    await materializeBothForms({
       manifest: decl,
       installPath,
       dorkHome,
@@ -365,7 +381,7 @@ describe('skillRef declarations inject into the shipped skill', () => {
       logger,
     });
     // Second pass: a reinstall of the same version must not invent a warning.
-    const again = await materializePackageSchedules({
+    const again = await materializeBothForms({
       manifest: decl,
       installPath,
       dorkHome,
@@ -385,7 +401,7 @@ describe('skillRef declarations inject into the shipped skill', () => {
       'utf-8'
     );
 
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([{ skillRef: 'nested-skill' }]),
       installPath,
       dorkHome,
@@ -422,7 +438,7 @@ describe('the skills root is never the target', () => {
         schedules: [{ name, description: 'd', prompt: 'p' }],
       } as unknown as MarketplacePackageManifest;
 
-      const result = await materializePackageSchedules({
+      const result = await materializeBothForms({
         manifest: raw,
         installPath,
         dorkHome,
@@ -451,7 +467,7 @@ describe('an occupied directory is never replaced', () => {
     await writeFile(path.join(target, 'draft.md'), 'my draft', 'utf-8');
     await writeFile(path.join(target, 'notes.txt'), 'my notes', 'utf-8');
 
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([{ name: 'nightly', description: 'Package version.', prompt: 'Go.' }]),
       installPath,
       dorkHome,
@@ -471,7 +487,7 @@ describe('an occupied directory is never replaced', () => {
     await mkdir(target, { recursive: true });
     await writeFile(path.join(target, 'readme.md'), 'reference', 'utf-8');
 
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([{ name: 'nightly', description: 'd', prompt: 'p' }]),
       installPath,
       dorkHome,
@@ -487,7 +503,7 @@ describe('an occupied directory is never replaced', () => {
     const target = path.join(projectPath, '.agents', 'skills', 'nightly');
     await mkdir(target, { recursive: true });
 
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([{ name: 'nightly', description: 'd', prompt: 'p' }]),
       installPath,
       dorkHome,
@@ -509,7 +525,7 @@ describe('an occupied directory is never replaced', () => {
     const link = path.join(skillsRoot, 'nightly');
     await symlink(path.join(root, 'no-such-target'), link);
 
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([{ name: 'nightly', description: 'd', prompt: 'p' }]),
       installPath,
       dorkHome,
@@ -530,7 +546,7 @@ describe('an occupied directory is never replaced', () => {
     const broken = '---\nname: [unclosed\n  bad: : :\n---\nbody\n';
     await writeFile(path.join(target, 'SKILL.md'), broken, 'utf-8');
 
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([{ name: 'nightly', description: 'd', prompt: 'p' }]),
       installPath,
       dorkHome,
@@ -567,7 +583,7 @@ describe('a shape is never materialized here', () => {
       ],
     });
 
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: shape,
       installPath,
       dorkHome,
@@ -587,7 +603,7 @@ describe('collisions and failures', () => {
     const mine = '---\nname: nightly-tidy\ndescription: Mine, not the package.\n---\n\nMy body.\n';
     await writeFile(path.join(existingDir, 'SKILL.md'), mine, 'utf-8');
 
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([
         { name: 'nightly-tidy', description: 'The package version.', prompt: 'Package prompt.' },
       ]),
@@ -605,7 +621,7 @@ describe('collisions and failures', () => {
 
   it('overwrites its own earlier generated file on reinstall', async () => {
     const decl = [{ name: 'tick', description: 'v1', prompt: 'v1 prompt' }];
-    await materializePackageSchedules({
+    await materializeBothForms({
       manifest: manifest(decl),
       installPath,
       dorkHome,
@@ -613,7 +629,7 @@ describe('collisions and failures', () => {
       logger,
     });
 
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([{ name: 'tick', description: 'v2', prompt: 'v2 prompt' }]),
       installPath,
       dorkHome,
@@ -630,7 +646,7 @@ describe('collisions and failures', () => {
   });
 
   it('leaves no partial directory when a skillRef target vanished after validation', async () => {
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([{ skillRef: 'never-shipped' }]),
       installPath,
       dorkHome,
@@ -647,7 +663,7 @@ describe('collisions and failures', () => {
   });
 
   it('places the entries it can when a sibling entry fails', async () => {
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([
         { skillRef: 'never-shipped' },
         { name: 'survivor', description: 'Should still land.', prompt: 'Go.' },
@@ -679,7 +695,7 @@ describe('collisions and failures', () => {
       schedules: [{ name: 'bare', description: 'No defaults applied.', prompt: 'Go.' }],
     } as unknown as MarketplacePackageManifest;
 
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: raw,
       installPath,
       dorkHome,
@@ -699,7 +715,7 @@ describe('collisions and failures', () => {
   });
 
   it('does nothing at all for a package that declares no schedules', async () => {
-    const result = await materializePackageSchedules({
+    const result = await materializeBothForms({
       manifest: manifest([]),
       installPath,
       dorkHome,
@@ -709,5 +725,52 @@ describe('collisions and failures', () => {
 
     expect(result).toEqual({ generatedPaths: [], warnings: [] });
     await expect(readdir(path.join(projectPath, '.agents'))).rejects.toThrow();
+  });
+});
+
+describe('each call places only its own form (DOR-2318)', () => {
+  // Purpose: a skillRef block is written into the staged tree before the
+  // installed-files record, and inline schedules after activation. Each call
+  // must place only its own form, or one is written twice or into the wrong tree.
+  it('writes skillRef blocks only with forms: skillRef, and inline skills only with forms: inline', async () => {
+    const shipped = await shipSkill(
+      'steady',
+      'name: steady\ndescription: A shipped skill.',
+      'Body.'
+    );
+    const decl = manifest([
+      { skillRef: 'steady', cron: '0 9 * * *' },
+      {
+        name: 'Inline One',
+        description: 'An inline schedule.',
+        prompt: 'Do it.',
+        cron: '0 3 * * *',
+      },
+    ]);
+    const inlineDir = path.join(projectPath, '.agents', 'skills', 'inline-one');
+
+    const refs = await materializePackageSchedules({
+      manifest: decl,
+      installPath,
+      dorkHome,
+      projectPath,
+      logger,
+      forms: 'skillRef',
+    });
+    expect(refs.generatedPaths).toEqual([]);
+    expect((await readSkill(shipped)).data.schedule).toBeDefined();
+    await expect(readFile(path.join(inlineDir, 'SKILL.md'), 'utf-8')).rejects.toThrow();
+
+    await writeFile(shipped, '---\nname: steady\ndescription: A shipped skill.\n---\n\nBody.\n');
+    const inline = await materializePackageSchedules({
+      manifest: decl,
+      installPath,
+      dorkHome,
+      projectPath,
+      logger,
+      forms: 'inline',
+    });
+    expect(inline.generatedPaths).toEqual([inlineDir]);
+    expect((await readSkill(shipped)).data.schedule).toBeUndefined();
   });
 });

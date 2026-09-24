@@ -31,7 +31,13 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
-import { AGENT_IDENTITY_FILES, isReservedPackagePath, type PackageType } from '@dorkos/marketplace';
+import {
+  AGENT_IDENTITY_FILES,
+  isReservedPackagePath,
+  MarketplacePackageManifestSchema,
+  type MarketplacePackageManifest,
+  type PackageType,
+} from '@dorkos/marketplace';
 import { readInstallMetadataStrict, type InstallMetadata } from '../installed-metadata.js';
 import type { PackageFetcher } from '../package-fetcher.js';
 import { isFullCommitSha } from './git-tree.js';
@@ -44,6 +50,7 @@ import {
   writeInstalledFiles,
   type InstalledFiles,
 } from './installed-files.js';
+import { materializePackageSchedules } from './materialize-schedules.js';
 import { stagePackageContents } from './stage-package.js';
 
 /** Share of present recorded files that may differ before a rebuild is rejected. */
@@ -122,6 +129,7 @@ export async function rebuildInstalledFiles(
         });
         oldTree = path.join(scratch, 'old');
         await stagePackageContents(fetched.path, oldTree, deps.logger);
+        await injectInstalledSchedules(oldTree, deps.logger);
       } catch (err) {
         deps.logger.warn('[marketplace/legacy-record] could not fetch the installed commit', {
           installRoot,
@@ -177,6 +185,34 @@ export async function rebuildInstalledFiles(
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
+}
+
+/**
+ * Write the old version's `skillRef` schedules into its fetched tree, as its
+ * install did into the installed copy, so the rebuilt record holds each
+ * scheduled `SKILL.md` as installed rather than calling it the person's edit
+ * (DOR-2318). A tree with no readable manifest, or no such schedules, is left
+ * as fetched.
+ */
+async function injectInstalledSchedules(tree: string, logger: Logger): Promise<void> {
+  let manifest: MarketplacePackageManifest;
+  try {
+    const parsed = MarketplacePackageManifestSchema.safeParse(
+      JSON.parse(await readFile(fsPath(tree, '.dork/manifest.json'), 'utf-8'))
+    );
+    if (!parsed.success) return;
+    manifest = parsed.data;
+  } catch {
+    return;
+  }
+  await materializePackageSchedules({
+    manifest,
+    installPath: tree,
+    forms: 'skillRef',
+    // Only inline schedules use a skills root, and this call places none.
+    dorkHome: tree,
+    logger,
+  });
 }
 
 /**

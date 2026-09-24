@@ -6,7 +6,8 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { noopLogger } from '@dorkos/shared/logger';
@@ -148,6 +149,47 @@ describe('rebuildInstalledFiles', () => {
       expect(Object.keys(record.files)).not.toContain('f2.md');
     }
   );
+
+  // Purpose (DOR-2318): a legacy install's scheduled SKILL.md carries the block
+  // its install wrote in. The rebuilt record must hold that file as installed,
+  // or the first update calls it the person's edit.
+  it('rebuilds a skillRef-scheduled SKILL.md as installed, block included', async () => {
+    const manifest = JSON.stringify({
+      schemaVersion: 1,
+      name: 'flow',
+      version: '0.7.3',
+      type: 'skill-pack',
+      description: 'A skill pack with a scheduled skill',
+      schedules: [{ skillRef: 'tick', cron: '0 3 * * *' }],
+    });
+    const raw = '---\nname: tick\ndescription: Tick.\n---\n\nTick.\n';
+    const shipped = { '.dork/manifest.json': manifest, 'skills/tick/SKILL.md': raw };
+    const root = await legacyInstall(shipped);
+    // What the old install left: the same skill, with the schedule written in.
+    const installedTree = await tree(shipped);
+    const { materializePackageSchedules } = await import('../materialize-schedules.js');
+    const { MarketplacePackageManifestSchema } = await import('@dorkos/marketplace');
+    await materializePackageSchedules({
+      manifest: MarketplacePackageManifestSchema.parse(JSON.parse(manifest)),
+      installPath: installedTree,
+      forms: 'skillRef',
+      dorkHome: installedTree,
+      logger: noopLogger,
+    });
+    const injected = await readFile(path.join(installedTree, 'skills', 'tick', 'SKILL.md'), 'utf8');
+    expect(injected).toMatch(/schedule:/);
+    await put(root, 'skills/tick/SKILL.md', injected);
+
+    const record = await rebuildInstalledFiles(root, {
+      fetcher: fetcherFor(await tree(shipped)),
+      logger: noopLogger,
+    });
+
+    expect(record.inferred).toBeUndefined();
+    expect(record.files['skills/tick/SKILL.md']).toBe(
+      `sha256:${createHash('sha256').update(injected).digest('hex')}`
+    );
+  });
 
   // Purpose: exactly 10% is still trusted (the rule is "more than 10%").
   it('accepts a rebuild at exactly 10% mismatches', async () => {

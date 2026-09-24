@@ -200,6 +200,11 @@ export interface InstallOwnershipContext {
   source?: RecordSource;
   /** Rebuild a legacy install's record; `null` when none can be rebuilt. */
   rebuildLegacy?: (liveRoot: string, stagedTree: string) => Promise<InstalledFiles | null>;
+  /**
+   * Finish the staged tree before its installed-files record is computed, so
+   * the record holds every file as installed (DOR-2318: `skillRef` schedules).
+   */
+  prepareStaged?: (stagingDir: string) => Promise<void>;
 }
 
 /**

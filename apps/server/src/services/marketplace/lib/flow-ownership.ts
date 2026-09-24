@@ -70,6 +70,7 @@ export function flowOwnership(
     },
     userEditable: manifest.userEditable ?? [],
     ...(req.ownership?.rebuildLegacy && { rebuildLegacy: req.ownership.rebuildLegacy }),
+    ...(req.ownership?.prepareStaged && { prepareStaged: req.ownership.prepareStaged }),
     onNotices: (n, w) => {
       notices = n;
       warnings = w;

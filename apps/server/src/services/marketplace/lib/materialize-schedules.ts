@@ -61,8 +61,20 @@ const GLOBAL_SKILLS_DIR = 'skills';
 export interface MaterializeSchedulesOptions {
   /** The validated manifest whose `schedules[]` are being materialized. */
   manifest: MarketplacePackageManifest;
-  /** Absolute path to the package's install root (where its shipped skills now live). */
+  /**
+   * The package tree whose shipped skills a `skillRef` block is written into.
+   * For `forms: 'skillRef'` this is the STAGED tree, before its installed-files
+   * record is computed, so the record holds each scheduled `SKILL.md` exactly as
+   * installed (DOR-2318). For `forms: 'inline'` it is the activated install root.
+   */
   installPath: string;
+  /**
+   * Which declarations to place: `skillRef` blocks go into the package's own
+   * files, so they are written into the staged tree; `inline` ones generate
+   * skills outside the install root, after activation. Each warning is said by
+   * the call that places its schedule, so none is said twice.
+   */
+  forms: 'skillRef' | 'inline';
   /** The DorkOS data directory — the global skills root's parent. */
   dorkHome: string;
   /** The project this install is scoped to, when it is scoped to one. */
@@ -76,9 +88,10 @@ export interface MaterializeSchedulesResult {
    * Absolute paths of the skill DIRECTORIES generated for inline declarations.
    *
    * Recorded in the package's install-metadata sidecar so uninstall can remove
-   * them. Only inline entries appear here: a `skillRef` block is written inside
-   * the package's own install root, which uninstall removes wholesale, so there
-   * is nothing extra to track and nothing of the person's to avoid deleting.
+   * them. Only inline entries appear here: a `skillRef` block is written into
+   * the package's own staged tree before its installed-files record is
+   * computed, so the scheduled SKILL.md is a recorded package file that
+   * uninstall removes like any other (DOR-2318).
    */
   generatedPaths: string[];
   /** One sentence per schedule that could not be placed, or that needs saying. */
@@ -115,6 +128,7 @@ export async function materializePackageSchedules(
   const packageName = opts.manifest.name;
 
   for (const [index, schedule] of schedules.entries()) {
+    if ((schedule.skillRef ? 'skillRef' : 'inline') !== opts.forms) continue;
     const label = scheduleDisplayName(schedule, index);
 
     // A manifest written against the pre-DOR-607 schema still parses: zod would
@@ -142,8 +156,10 @@ export async function materializePackageSchedules(
         // parsing and re-emitting it, which preserves the frontmatter's keys and
         // values but not its exact text — comments go, anchors resolve, scalars
         // may be re-quoted. That is fine for a file inside the package's own
-        // install root, which is regenerated from the source package on every
-        // reinstall and which nobody hand-edits. Point this at a skills root and
+        // staged tree, which is regenerated from the source package on every
+        // reinstall and whose installed copy the installed-files record then
+        // vouches for, so a person's edit to it is seen and kept on the next
+        // update (DOR-2245, DOR-2318). Point this at a skills root and
         // it would quietly reformat a file somebody maintains. Nothing enforces
         // the invariant; this is the only place it is decided.
         const replaced = await injectScheduleIntoShippedSkill(

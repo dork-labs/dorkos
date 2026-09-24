@@ -12,7 +12,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initBoundary } from '../../../lib/boundary.js';
+import { noopLogger } from '@dorkos/shared/logger';
 import { buildInstallerForTests } from './installer-harness.js';
+import { UninstallFlow } from '../flows/uninstall.js';
 import { readInstalledFiles } from '../lib/installed-files.js';
 
 const FIXTURES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'fixtures');
@@ -336,5 +338,82 @@ describe('an install made before records existed (DOR-2245 §9)', () => {
     expect(result.fileNotices ?? []).toEqual([]);
     expect(result.warnings.join(' ')).toMatch(/Kept 1 item .*: config\. /);
     expect((await readInstalledFiles(root))?.inferred).toBeUndefined();
+  });
+});
+
+describe('a schedule declared by skillRef (DOR-2318)', () => {
+  /** A skill pack whose manifest schedules its own `analyzer` skill. */
+  async function scheduledSource(): Promise<string> {
+    const source = path.join(dorkHome, 'src', 'valid-skill-pack');
+    await cp(path.join(FIXTURES_DIR, 'valid-skill-pack'), source, { recursive: true });
+    const manifestPath = path.join(source, '.dork', 'manifest.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ ...manifest, schedules: [{ skillRef: 'analyzer', cron: '0 3 * * *' }] })
+    );
+    await initBoundary(path.dirname(dorkHome));
+    return source;
+  }
+  const skill = 'skills/analyzer/SKILL.md';
+  afterEach(async () => {
+    await initBoundary(FIXTURES_DIR);
+  });
+
+  // Purpose: the schedule is written into the shipped SKILL.md. The record must
+  // hold that file as installed, or every update calls it an edit and saves a
+  // stray .dork-old.
+  it('records the scheduled SKILL.md as installed, so an untouched update reports nothing', async () => {
+    const source = await scheduledSource();
+    const harness = buildInstallerForTests(dorkHome);
+    const { installPath: root } = await harness.installer.install({ name: source });
+    expect(await readFile(path.join(root, skill), 'utf8')).toMatch(/schedule:/);
+
+    const result = await harness.installer.update({ name: source });
+
+    expect(result.fileNotices ?? []).toEqual([]);
+    expect(await readdir(path.join(root, 'skills', 'analyzer'))).toEqual(['SKILL.md']);
+    expect(await readFile(path.join(root, skill), 'utf8')).toMatch(/schedule:/);
+  });
+
+  // Purpose: an uninstall removes the scheduled SKILL.md like any package file;
+  // left behind, it would keep its schedule block with no package around it.
+  it('is removed by an uninstall', async () => {
+    const source = await scheduledSource();
+    const harness = buildInstallerForTests(dorkHome);
+    const { installPath: root } = await harness.installer.install({ name: source });
+
+    const result = await new UninstallFlow({
+      dorkHome,
+      extensionManager: {
+        disable: async () => undefined,
+        forgetRunApproval: async () => undefined,
+      },
+      adapterManager: { removeAdapter: async () => undefined },
+      logger: noopLogger,
+    }).uninstall({ name: 'valid-skill-pack' });
+
+    await expect(stat(path.join(root, skill))).rejects.toThrow();
+    expect(result.preservedData).toEqual([]);
+  });
+
+  // Purpose: a schedule the person tuned by hand is still their edit: the update
+  // restores the package's schedule and saves their copy beside it.
+  it("still reports a person's edit to the schedule", async () => {
+    const source = await scheduledSource();
+    const harness = buildInstallerForTests(dorkHome);
+    const { installPath: root } = await harness.installer.install({ name: source });
+    const installed = await readFile(path.join(root, skill), 'utf8');
+    const tuned = installed.replace('0 3 * * *', '0 5 * * *');
+    expect(tuned).not.toBe(installed);
+    await writeFile(path.join(root, skill), tuned);
+
+    const result = await harness.installer.update({ name: source });
+
+    expect(result.fileNotices).toEqual([
+      { path: skill, outcome: 'replaced-edit', savedAs: `${skill}.dork-old` },
+    ]);
+    expect(await readFile(path.join(root, `${skill}.dork-old`), 'utf8')).toBe(tuned);
+    expect(await readFile(path.join(root, skill), 'utf8')).toBe(installed);
   });
 });
