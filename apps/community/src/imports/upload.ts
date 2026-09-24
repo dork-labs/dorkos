@@ -101,26 +101,44 @@ export async function receiveArchive(
  */
 export class UploadSlots {
   private used = 0;
+  private reserved = 0;
 
   constructor(private readonly limit: number) {}
 
-  /** Take a slot, or refuse with `429` before the body is read. */
-  take(): () => void {
+  /** Temporary bytes the uploads now in flight may still need. */
+  get reservedBytes(): number {
+    return this.reserved;
+  }
+
+  /**
+   * Take a slot for an upload of `bytes`, reserving twice that much temporary space, or refuse
+   * with `429` before the body is read.
+   */
+  take(bytes: number): () => void {
     if (this.used >= this.limit)
       throw new ApiError(429, 'RATE_LIMITED', 'Too many exports are uploading. Try again soon.');
     this.used++;
+    this.reserved += bytes * 2;
     let released = false;
     return () => {
       if (released) return;
       released = true;
       this.used--;
+      this.reserved -= bytes * 2;
     };
   }
 }
 
-/** Refuse an upload the temporary folder has no room for: it needs twice its size. */
-export async function assertTempSpace(bytes: number, free = freeTempBytes): Promise<void> {
-  if ((await free()) < bytes * 2)
+/**
+ * Refuse an upload the temporary folder has no room for: it needs twice its size, beyond what
+ * the other uploads in flight (`othersReserved`) may still write.
+ */
+export async function assertTempSpace(
+  bytes: number,
+  free: () => Promise<number> = freeTempBytes,
+  othersReserved = 0
+): Promise<void> {
+  if ((await free()) - othersReserved < bytes * 2)
     throw new ApiError(503, 'UNAVAILABLE', 'This server has no room for that export right now.');
 }
 
@@ -149,15 +167,24 @@ export async function acquireUploadLease(pool: Pool, importId: string): Promise<
   return leased.rows[0].upload_lease_token;
 }
 
-/** Extend an upload lease this request holds. */
-export async function renewUploadLease(pool: Pool, importId: string, token: string) {
-  await pool.query(
+/** Extend an upload lease this request holds; false when it no longer holds it. */
+export async function renewUploadLease(
+  pool: Pool,
+  importId: string,
+  token: string
+): Promise<boolean> {
+  const renewed = await pool.query(
     `UPDATE community_imports
      SET upload_lease_until=now() + ($3 * interval '1 millisecond')
      WHERE id=$1 AND upload_lease_token=$2`,
     [importId, token, IMPORT_UPLOAD_LEASE_MS]
   );
+  return renewed.rowCount === 1;
 }
+
+/** The refusal an upload gets when its lease was lost to another upload of the same import. */
+export const leaseLost = () =>
+  new ApiError(409, 'STATE_CONFLICT', 'This export is already being uploaded.');
 
 /** Give an upload lease back, if this request still holds it. */
 export async function releaseUploadLease(pool: Pool, importId: string, token: string) {

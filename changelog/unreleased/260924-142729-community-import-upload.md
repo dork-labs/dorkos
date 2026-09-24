@@ -2,6 +2,7 @@
 covers:
   - 'feat(community): start an import and upload an owner export to a new community (DOR-2258)'
   - 'fix(community): bound export uploads by lease, slots, space, and idle time (DOR-2258)'
+  - 'fix(community): count in-flight uploads against free space and time-limit JSON bodies (DOR-2258)'
 ---
 
 ### Added

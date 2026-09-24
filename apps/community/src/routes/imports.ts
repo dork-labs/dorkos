@@ -24,6 +24,7 @@ import {
   acquireUploadLease,
   archiveInvalid,
   assertTempSpace,
+  leaseLost,
   receiveArchive,
   releaseUploadLease,
   renewUploadLease,
@@ -276,10 +277,14 @@ export function registerImportRoutes(
     if (!c.req.raw.body) throw archiveInvalid('Send the export as the request body.');
 
     // Everything that can refuse happens before a byte of the body is read.
-    const releaseSlot = uploadSlots.take();
+    const releaseSlot = uploadSlots.take(declared.bytes);
     let lease: string | null = null;
     try {
-      await assertTempSpace(declared.bytes, freeTempBytes);
+      await assertTempSpace(
+        declared.bytes,
+        freeTempBytes,
+        uploadSlots.reservedBytes - declared.bytes * 2
+      );
       lease = await acquireUploadLease(pool, importId);
       const leaseToken = lease;
       let renewedAt = Date.now();
@@ -289,11 +294,11 @@ export function registerImportRoutes(
         onProgress: async () => {
           if (Date.now() - renewedAt < IMPORT_UPLOAD_LEASE_MS / 4) return;
           renewedAt = Date.now();
-          await renewUploadLease(pool, importId, leaseToken);
+          if (!(await renewUploadLease(pool, importId, leaseToken))) throw leaseLost();
         },
       });
       try {
-        return await storeArchive(c, importId, uploader, declared, received);
+        return await storeArchive(c, importId, uploader, declared, received, leaseToken);
       } finally {
         await rm(received.directory, { recursive: true, force: true });
       }
@@ -309,11 +314,22 @@ export function registerImportRoutes(
     importId: string,
     uploader: Uploader,
     declared: { bytes: number; sha256: string },
-    received: ReceivedArchive
+    received: ReceivedArchive,
+    leaseToken: string
   ): Promise<Response> {
     const reservation = await transaction(pool, (client) =>
       reserveImportBlob(client, importId, 'import_staging', 'awaiting_upload')
     );
+    // Storing a large export can outlast the lease, so it is renewed while the put runs; if
+    // another upload took it meanwhile, this one stops.
+    const lost = new AbortController();
+    const renewal = setInterval(() => {
+      void renewUploadLease(pool, importId, leaseToken)
+        .then((held) => {
+          if (!held) lost.abort();
+        })
+        .catch(() => undefined);
+    }, IMPORT_UPLOAD_LEASE_MS / 4);
     let stored: StoredBlob;
     try {
       stored = await blobStore.put({
@@ -322,15 +338,18 @@ export function registerImportRoutes(
         displayName: 'community-import.zip',
         maxBytes: declared.bytes,
         kind: 'export',
-        signal: managedBlobWriteSignal(),
+        signal: AbortSignal.any([managedBlobWriteSignal(), lost.signal]),
       });
     } catch (error) {
       await discardManagedBlob(pool, blobStore, reservation).catch(() => undefined);
+      if (lost.signal.aborted) throw leaseLost();
       console.error(
         'Community import upload could not be stored',
         error instanceof Error ? error.name : 'unknown'
       );
       throw new ApiError(503, 'UNAVAILABLE', 'The export could not be stored. Try again.');
+    } finally {
+      clearInterval(renewal);
     }
     const outcome = await transaction(pool, async (client) => {
       const current = await loadImport(client, importId, 'FOR UPDATE');
