@@ -783,6 +783,20 @@ describe('InstalledPackagesView', () => {
       expect(screen.getByRole('status')).toHaveTextContent('All packages are up to date.');
     });
 
+    it('confirms a single installation by name and place', async () => {
+      // Purpose: the confirm step is general (DOR-2306 routes one row through
+      // it); with one installation it names it instead of counting.
+      const user = userEvent.setup();
+      showRows([FLOW_ON_ALPHA], [staleCheck(FLOW_ON_ALPHA, '0.7.3')]);
+
+      render(<InstalledPackagesView />);
+      await user.click(screen.getByRole('button', { name: 'Update all…' }));
+
+      const dialog = await screen.findByRole('dialog', { name: 'Update Flow on Alpha?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Update Flow on Alpha' }));
+      expect(applyUpdates).toHaveBeenCalledTimes(1);
+    });
+
     it('is not offered when nothing needs updating', () => {
       showRows([FORMATTER], [makeCheck(FORMATTER)]);
 
