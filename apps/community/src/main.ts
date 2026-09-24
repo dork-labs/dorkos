@@ -16,6 +16,8 @@ import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './deletion-worker.js';
 import { ERASURE_POLL_MS, pruneErasureRequests, sweepErasures } from './erasure/worker.js';
 import { sweepExpiredPairings } from './routes/pairings.js';
+import { createEvidenceSink, FileSystemEvidenceSink } from './takedown/evidence/sink.js';
+import { sweepTakedownEvidence } from './takedown/worker.js';
 
 const config = parseConfig(process.env);
 await migrate(config.databaseUrl);
@@ -26,6 +28,10 @@ pool.on('error', (error: Error & { code?: string }) => {
   console.error('Community database connection lost', error.code ?? error.name);
 });
 const blobStore = createBlobStore(config);
+const evidenceSink = createEvidenceSink(config.evidence);
+// A write that stopped midway leaves a temporary file in the evidence folder; remove the old ones.
+// They are the only files the server ever deletes there.
+if (evidenceSink instanceof FileSystemEvidenceSink) await evidenceSink.sweepTemporaryFiles();
 const app = createCommunityApp({ config, pool, blobStore });
 const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
 app.use('/assets/*', serveStatic({ root: staticRoot }));
@@ -145,6 +151,26 @@ const erasures = setInterval(() => {
     });
 }, ERASURE_POLL_MS);
 erasures.unref();
-const onSignal = createSignalHandler(createStop({ server, pool, timers: [cleanup, erasures] }));
+let copyingEvidence = false;
+const takedownEvidence = setInterval(() => {
+  if (copyingEvidence) return;
+  copyingEvidence = true;
+  void sweepTakedownEvidence(pool, blobStore, evidenceSink, {
+    alertHours: config.limits.takedownEvidenceAlertHours,
+  })
+    .catch((error: unknown) => {
+      console.error(
+        'Community takedown evidence unavailable',
+        error instanceof Error ? error.name : 'unknown'
+      );
+    })
+    .finally(() => {
+      copyingEvidence = false;
+    });
+}, 15_000);
+takedownEvidence.unref();
+const onSignal = createSignalHandler(
+  createStop({ server, pool, timers: [cleanup, erasures, takedownEvidence] })
+);
 process.on('SIGINT', onSignal);
 process.on('SIGTERM', onSignal);

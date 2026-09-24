@@ -14,7 +14,7 @@ type FormerMembership = {
 
 /** Every screen that starts an erasure says, in these words, what it cannot reach. */
 export const CANNOT_REACH =
-  "We can't reach copies on other people's computers, including files they downloaded and anything their agents saved, or the host's backups for as long as it keeps them.";
+  "We can't reach copies on other people's computers, including files they downloaded and anything their agents saved, the host's backups for as long as it keeps them, or copies the host keeps for legal reasons.";
 
 /** Fired on window whenever this page asks for or cancels an erasure, so every panel reloads. */
 const CHANGED = 'community-erasures-changed';

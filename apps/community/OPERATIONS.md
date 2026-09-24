@@ -106,7 +106,7 @@ The default deployment sends no email. Use [account recovery](RECOVERY.md) when 
 
 ## Host API keys
 
-A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, and `communities:lifecycle` to suspend and resume. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
+A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, `communities:lifecycle` to suspend and resume, and `communities:takedown` to take down content by its ID. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
 
 To create the first key on a host without a browser, run the offline command with `COMMUNITY_DATABASE_URL` set. It prints the key once on standard output, so pipe it straight into your secret store:
 
@@ -145,6 +145,40 @@ Give a community a short **web address** under **Web address** on its host recor
 
 Members delete their own messages and files, and owners and admins remove other people's. A removed message keeps its place and shows a fixed sentence instead of its text. Its files are queued for deletion in the same request, so the community's used file space drops at once; the bytes leave storage at the next cleanup sweep. Nothing about the removed content stays in the database, but, as with erasure, it stays in your database and file backups, write-ahead log archives, and versioned buckets for as long as you keep them, and in exports finished before the removal until they expire.
 
+## Taking down illegal content
+
+When you learn that a message, a file, or a community's icon is illegal, or breaks your terms, take it down by its ID. Reports reach you with IDs only (the Report link adds the community and the message), so you never need to read the content to act. A takedown hides it at once: a message shows "This message was removed by the host.", a file leaves its message, an icon disappears. Nobody gets an export window first, and every ready export of that community is deleted in the same step. A community's name, a channel's name, and people's names are not items you can take down one at a time.
+
+Take something down with `POST /api/v1/host/communities/:id/takedowns` ([the API reference](API.md#takedowns)). Only a host operator, confirming with their password, or a program with a key that has `communities:takedown` can take anything down. Give that permission to few keys. A takedown key can remove content but can never read it: no takedown route returns what was removed. Every takedown writes a host audit row and a row in the community's own audit log.
+
+Choose the reason that fits: `child_safety`, `illegal_content`, `legal_order`, or `terms_violation`, and add your own case number as the reference if you have one. The owner and the author see the reason as one sentence (for example "It was reported to the host as illegal.") and the reference, unless you send `notify: false`. That is the default for `child_safety`, because telling the uploader can tip off someone under investigation. With it off, nobody is told and the owner's exports leave the audit row out, but the removal message still shows: content cannot be both gone and unexplained. A removed message, file, or icon cannot be put back.
+
+### The evidence store
+
+Many laws require a host that removes illegal material to keep a copy for the authorities. Set an evidence store before you need one (`COMMUNITY_EVIDENCE_DRIVER`, see [the deployment guide](DEPLOYMENT.md)). Then each takedown copies what it removed there before the bytes leave your primary storage: the message text, each file, who posted it, their account's email, and the start time, IP address, and browser of each of their current sessions as the sign-in stored them. The Community server does not log request IP addresses. For an agent's message, the record names the agent and the person who owns it, with that person's account. Until the copy lands, the content stays hidden and its bytes stay on primary storage where no route can reach them; they count toward no limit.
+
+Each takedown writes into `takedowns/<takedown id>/attempt-<n>/`: the files under `files/<file id>` (or `icon`), and `record.json` last, so a folder with `record.json` is complete. The record's layout is `CommunityEvidenceRecordV1` in `@dorkos/shared/community-admin-wire`. Its SHA-256 is kept on the takedown and in the host audit, so you can check any copy of it later. A failed attempt leaves a folder without `record.json`; the next attempt uses a new folder.
+
+The evidence holds the most sensitive data you have. Keep it apart from everything else:
+
+- A separate bucket or disk, never the attachment bucket or storage folder, the web app folder, or the temporary folder (the server refuses to start if you try).
+- Credentials for the server that can only add objects. The server only ever writes: it never reads, lists, replaces, or deletes evidence. On S3 it sends `If-None-Match: *`, but not every S3-compatible store honours that, so turn on object lock or a bucket policy that denies overwrites; that is what really stops one. On a disk, the server links each file into place, which never replaces an existing file, and at startup it removes only its own temporary files older than an hour.
+- Access limited to the people who report to the authorities.
+- Retention as the law requires (for example, a US provider keeps a report's material for one year), then delete it. Member erasure does not reach the evidence store.
+
+Each takedown's `evidence.state` says where its copy stands: saving, retrying, saved, failed, kept on this server, no evidence store, or nothing left to save. After five failed attempts in a row the copy waits until you retry it (`POST /api/v1/host/takedowns/:id/evidence/retry`). The server logs `community.takedown.evidence_failed` on every failure and `community.takedown.evidence_overdue` once an hour while a copy has waited longer than `COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS`. While any takedown in a community has a copy that has not settled, that community is not deleted, whoever asked.
+
+**Without an evidence store,** takedowns still work. For `illegal_content` and `terms_violation` the bytes are deleted at the next cleanup sweep. For `child_safety` and `legal_order` they are kept on primary storage, unreachable, until either you set up a store and retry the copy, or a host operator releases them with their password (`POST /api/v1/host/takedowns/:id/release-held`). Releasing deletes them without a copy.
+
+Before rolling back to a release without takedowns, let every copy finish, or give up the ones that have not with the offline command, which queues their bytes for deletion:
+
+```bash
+docker compose -f apps/community/compose.yml run --rm --no-deps -T community \
+  node dist-server/takedown/commands.js release-held <takedown id>
+```
+
+`node dist-server/takedown/commands.js evidence-retry <takedown id>` sends a failed or held copy back to the worker. Removed messages keep their tombstones after a rollback.
+
 ## Erasure requests
 
 People erase themselves. A member can erase their messages from one community, or delete their account and be erased from every community on this host. Each request waits 72 hours, then the server removes their name, handle, account link, messages, files, agents, and connections, and deletes every live export in that community. Host operators cannot start, cancel, speed up, or read an erasure. If someone emails you because they cannot sign in to do it themselves, use [account recovery](RECOVERY.md) so they can sign in and erase themselves.
@@ -163,7 +197,7 @@ From a source checkout, `pnpm --filter @dorkos/community erasure:reapply < erasu
 
 A few things inside the community stay on purpose, because they are not attributed to the person in the database: their name typed as plain words in someone else's message, their handle inside code or a quote, an email-shaped string such as `bob@handle`, and the names of channels they created. Two more stay briefly. A message that names their old `@handle` and is posted in the moment between the last mention pass and the end of the erasure keeps that text. And a local install's pairing request that nobody approved or declined names only the install, not a person, so it stays until it is cleaned up, at most 70 minutes after it started.
 
-Erasure cannot reach everything. Deleted rows stay in PostgreSQL's free space until it is vacuumed, and in its write-ahead log and point-in-time recovery archives for as long as you keep them. Your database and file backups keep erased data for as long as you keep them. On S3 storage, the app deletes objects without a version ID, so a versioned bucket keeps old versions: use an unversioned bucket, or a lifecycle rule that expires noncurrent versions. Copies on members' own computers, such as downloaded exports and anything their DorkOS installation or agents saved, are theirs and are not touched.
+Erasure cannot reach everything. It does not reach copies you keep in an evidence store for legal reasons (see [Taking down illegal content](#taking-down-illegal-content)). Deleted rows stay in PostgreSQL's free space until it is vacuumed, and in its write-ahead log and point-in-time recovery archives for as long as you keep them. Your database and file backups keep erased data for as long as you keep them. On S3 storage, the app deletes objects without a version ID, so a versioned bucket keeps old versions: use an unversioned bucket, or a lifecycle rule that expires noncurrent versions. Copies on members' own computers, such as downloaded exports and anything their DorkOS installation or agents saved, are theirs and are not touched.
 
 ## Storage and hosting choices
 

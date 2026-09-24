@@ -11,6 +11,7 @@ import {
   primaryKey,
   check,
   foreignKey,
+  jsonb,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -213,7 +214,7 @@ export const hostApiKeys = pgTable(
     check('host_api_keys_secret_hash', sql`${table.secretHash} ~ '^[a-f0-9]{64}$'`),
     check(
       'host_api_keys_scopes',
-      sql`cardinality(${table.scopes}) BETWEEN 1 AND 4 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import']::text[]`
+      sql`cardinality(${table.scopes}) BETWEEN 1 AND 5 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:takedown']::text[]`
     ),
     check(
       'host_api_keys_issuer',
@@ -244,6 +245,8 @@ export const hostAuditEvents = pgTable(
     priorState: text('prior_state'),
     nextState: text('next_state'),
     changedFields: text('changed_fields').array().notNull().default([]),
+    /** SHA-256 of a takedown's record.json, on its `takedown.evidence_stored` row (0017). */
+    evidenceRecordSha256: text('evidence_record_sha256'),
     createdAt: time('created_at'),
   },
   (table) => [
@@ -256,7 +259,11 @@ export const hostAuditEvents = pgTable(
     check('host_audit_events_changed_fields', sql`cardinality(${table.changedFields}) <= 16`),
     check(
       'host_audit_events_actor_kind',
-      sql`${table.actorKind} IN ('person','api_key','offline')`
+      sql`${table.actorKind} IN ('person','api_key','offline','system')`
+    ),
+    check(
+      'host_audit_events_evidence_record_sha256',
+      sql`${table.evidenceRecordSha256} ~ '^[a-f0-9]{64}$'`
     ),
     check(
       'host_audit_events_actor',
@@ -1039,16 +1046,16 @@ export const managedBlobs = pgTable(
     check('managed_blobs_key', sql`${table.blobKey} ~ '^[a-f0-9]{64}$'`),
     check(
       'managed_blobs_state',
-      sql`${table.state} IN ('reserved','stored','committed','pending_delete')`
+      sql`${table.state} IN ('reserved','stored','committed','pending_delete','evidence_hold')`
     ),
     check('managed_blobs_lifecycle_version', sql`${table.communityLifecycleVersion} > 0`),
     check(
       'managed_blobs_stored_metadata',
-      sql`(${table.state} = 'reserved' AND ${table.byteSize} IS NULL AND ${table.checksum} IS NULL AND ${table.storedAt} IS NULL) OR (${table.state} IN ('stored','committed') AND ${table.byteSize} IS NOT NULL AND ${table.byteSize} > 0 AND ${table.checksum} IS NOT NULL AND ${table.storedAt} IS NOT NULL) OR (${table.state} = 'pending_delete' AND ((${table.byteSize} IS NULL AND ${table.checksum} IS NULL AND ${table.storedAt} IS NULL) OR (${table.byteSize} IS NOT NULL AND ${table.byteSize} > 0 AND ${table.checksum} IS NOT NULL AND ${table.storedAt} IS NOT NULL)))`
+      sql`(${table.state} = 'reserved' AND ${table.byteSize} IS NULL AND ${table.checksum} IS NULL AND ${table.storedAt} IS NULL) OR (${table.state} IN ('stored','committed','evidence_hold') AND ${table.byteSize} IS NOT NULL AND ${table.byteSize} > 0 AND ${table.checksum} IS NOT NULL AND ${table.storedAt} IS NOT NULL) OR (${table.state} = 'pending_delete' AND ((${table.byteSize} IS NULL AND ${table.checksum} IS NULL AND ${table.storedAt} IS NULL) OR (${table.byteSize} IS NOT NULL AND ${table.byteSize} > 0 AND ${table.checksum} IS NOT NULL AND ${table.storedAt} IS NOT NULL)))`
     ),
     check(
       'managed_blobs_commit_timestamp',
-      sql`(${table.state} <> 'committed' OR ${table.committedAt} IS NOT NULL) AND (${table.committedAt} IS NULL OR ${table.state} IN ('committed','pending_delete'))`
+      sql`(${table.state} <> 'committed' OR ${table.committedAt} IS NOT NULL) AND (${table.committedAt} IS NULL OR ${table.state} IN ('committed','pending_delete','evidence_hold'))`
     ),
   ]
 );
@@ -1230,6 +1237,8 @@ export const auditEvents = pgTable(
     priorState: text('prior_state'),
     nextState: text('next_state'),
     changedFields: text('changed_fields').array().notNull().default([]),
+    /** A host takedown the host chose not to tell the owner about; owner exports leave it out. */
+    withheld: boolean('withheld').notNull().default(false),
     createdAt: time('created_at'),
   },
   (table) => [
@@ -1239,7 +1248,7 @@ export const auditEvents = pgTable(
       columns: [table.communityId, table.actorMemberId],
       foreignColumns: [members.communityId, members.id],
     }),
-    check('audit_events_actor_kind', sql`${table.actorKind} IN ('member','system')`),
+    check('audit_events_actor_kind', sql`${table.actorKind} IN ('member','system','host')`),
     check('audit_events_changed_fields', sql`cardinality(${table.changedFields}) <= 16`),
   ]
 );
@@ -1423,3 +1432,126 @@ export const releasedShortNames = pgTable(
     check('released_short_names_name_hmac_check', sql`${table.nameHmac} ~ '^[a-f0-9]{64}$'`),
   ]
 );
+
+/**
+ * One host takedown: ids, reasons, and states only (0017). No foreign key to communities, so the
+ * record outlives a deleted community.
+ */
+export const communityTakedowns = pgTable(
+  'community_takedowns',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id').notNull(),
+    targetKind: text('target_kind').notNull(),
+    entryId: uuid('entry_id'),
+    attachmentId: uuid('attachment_id'),
+    channelId: uuid('channel_id'),
+    /** The member the content counts as: its author, or its author agent's owner. */
+    subjectMemberId: uuid('subject_member_id'),
+    category: text('category').notNull(),
+    reference: text('reference'),
+    notify: boolean('notify').notNull(),
+    actorKind: text('actor_kind').notNull(),
+    actorUserId: text('actor_user_id').references(() => users.id),
+    actorApiKeyId: uuid('actor_api_key_id').references(() => hostApiKeys.id),
+    idempotencyKey: text('idempotency_key').notNull(),
+    payloadHash: text('payload_hash').notNull(),
+    state: text('state').notNull().default('active'),
+    evidenceState: text('evidence_state').notNull(),
+    evidenceLocation: text('evidence_location'),
+    evidenceRecordSha256: text('evidence_record_sha256'),
+    evidenceAttempts: integer('evidence_attempts').notNull().default(0),
+    evidenceFailures: integer('evidence_failures').notNull().default(0),
+    evidenceAlertedAt: timestamp('evidence_alerted_at', { withTimezone: true }),
+    priorState: jsonb('prior_state'),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    lastErrorClass: text('last_error_class'),
+    createdAt: time('created_at'),
+    reversedAt: timestamp('reversed_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('community_takedowns_idempotency').on(
+      table.actorKind,
+      sql`COALESCE(${table.actorUserId}, ${table.actorApiKeyId}::text)`,
+      table.idempotencyKey
+    ),
+    index('community_takedowns_created_idx').on(table.createdAt.desc(), table.id.desc()),
+    index('community_takedowns_community_idx').on(
+      table.communityId,
+      table.createdAt.desc(),
+      table.id.desc()
+    ),
+    index('community_takedowns_due_idx')
+      .on(table.nextAttemptAt)
+      .where(sql`${table.evidenceState} IN ('pending','retrying')`),
+    index('community_takedowns_unsettled_idx')
+      .on(table.communityId)
+      .where(sql`${table.evidenceState} IN ('pending','retrying','failed','held_on_primary')`),
+    check(
+      'community_takedowns_target_kind_check',
+      sql`${table.targetKind} IN ('entry','attachment','icon','community')`
+    ),
+    check(
+      'community_takedowns_category_check',
+      sql`${table.category} IN ('child_safety','illegal_content','legal_order','terms_violation')`
+    ),
+    check(
+      'community_takedowns_reference_check',
+      sql`${table.reference} ~ '^[A-Za-z0-9._:-]{1,64}$'`
+    ),
+    check('community_takedowns_actor_kind_check', sql`${table.actorKind} IN ('person','api_key')`),
+    check(
+      'community_takedowns_idempotency_key_check',
+      sql`char_length(${table.idempotencyKey}) BETWEEN 1 AND 200`
+    ),
+    check('community_takedowns_payload_hash_check', sql`${table.payloadHash} ~ '^[a-f0-9]{64}$'`),
+    check('community_takedowns_state_check', sql`${table.state} IN ('active','reversed')`),
+    check(
+      'community_takedowns_evidence_state_check',
+      sql`${table.evidenceState} IN ('pending','retrying','stored','failed','not_configured','nothing_to_preserve','held_on_primary')`
+    ),
+    check(
+      'community_takedowns_evidence_record_sha256_check',
+      sql`${table.evidenceRecordSha256} ~ '^[a-f0-9]{64}$'`
+    ),
+    check('community_takedowns_evidence_attempts_check', sql`${table.evidenceAttempts} >= 0`),
+    check('community_takedowns_evidence_failures_check', sql`${table.evidenceFailures} >= 0`),
+    check(
+      'community_takedowns_last_error_class_check',
+      sql`${table.lastErrorClass} ~ '^[A-Z][A-Z0-9_]{0,63}$'`
+    ),
+    check(
+      'community_takedowns_target',
+      sql`(${table.targetKind} = 'entry' AND ${table.entryId} IS NOT NULL AND ${table.attachmentId} IS NULL) OR (${table.targetKind} = 'attachment' AND ${table.attachmentId} IS NOT NULL) OR (${table.targetKind} IN ('icon','community') AND ${table.entryId} IS NULL AND ${table.attachmentId} IS NULL)`
+    ),
+    check(
+      'community_takedowns_actor',
+      sql`(${table.actorKind} = 'person') = (${table.actorUserId} IS NOT NULL) AND (${table.actorKind} = 'api_key') = (${table.actorApiKeyId} IS NOT NULL)`
+    ),
+    check(
+      'community_takedowns_reversal',
+      sql`(${table.state} = 'reversed') = (${table.reversedAt} IS NOT NULL)`
+    ),
+    check(
+      'community_takedowns_evidence_stored',
+      sql`(${table.evidenceState} = 'stored') = (${table.evidenceRecordSha256} IS NOT NULL) AND (${table.evidenceState} = 'stored') = (${table.evidenceLocation} IS NOT NULL)`
+    ),
+    check(
+      'community_takedowns_evidence_due',
+      sql`${table.evidenceState} NOT IN ('pending','retrying') OR ${table.nextAttemptAt} IS NOT NULL`
+    ),
+  ]
+);
+
+/**
+ * A takedown's evidence record and held blobs, as they were at the takedown, until the copy
+ * lands in the evidence store or a host operator releases them (0017).
+ */
+export const takedownEvidenceStaging = pgTable('takedown_evidence_staging', {
+  takedownId: uuid('takedown_id')
+    .primaryKey()
+    .references(() => communityTakedowns.id, { onDelete: 'cascade' }),
+  record: jsonb('record').notNull(),
+  blobKeys: text('blob_keys').array().notNull(),
+});

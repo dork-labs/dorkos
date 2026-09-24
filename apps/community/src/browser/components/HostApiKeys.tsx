@@ -4,7 +4,11 @@ import { describeReauthenticationError } from '../account-controls.js';
 import { FocusDialog } from './CommunityAdministration.js';
 
 type Scope =
-  'communities:read' | 'communities:write' | 'communities:lifecycle' | 'communities:import';
+  | 'communities:read'
+  | 'communities:write'
+  | 'communities:lifecycle'
+  | 'communities:import'
+  | 'communities:takedown';
 type HostApiKey = {
   id: string;
   label: string;
@@ -37,6 +41,12 @@ const SCOPES: { scope: Scope; label: string; detail: string }[] = [
     scope: 'communities:lifecycle',
     label: 'Suspend and resume',
     detail: 'Suspend a community or resume it.',
+  },
+  {
+    scope: 'communities:takedown',
+    label: 'Take down content',
+    detail:
+      'Remove one message, file, or icon by its id, for example after a legal report. It never sees what it removes.',
   },
 ];
 

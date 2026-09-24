@@ -286,6 +286,17 @@ export const CommunityAdminDeletionStatusSchema = z.strictObject({
   requestedBy: z.enum(['owner', 'host']).nullable(),
   /** Where a cancel of a pending deletion returns the community. */
   returnsTo: z.enum(['archived', 'suspended', 'held']).nullable(),
+  /**
+   * Why the host removed the whole community, when it did and chose to say so. Always null
+   * until whole-community takedowns ship.
+   */
+  takedown: z
+    .strictObject({
+      category: z.enum(['child_safety', 'illegal_content', 'legal_order', 'terms_violation']),
+      reference: z.string().nullable(),
+      createdAt: timestamp,
+    })
+    .nullable(),
 });
 
 /** Host API key scopes. Host authority only; no scope reaches community content. */
@@ -294,6 +305,7 @@ export const CommunityAdminHostApiKeyScopeSchema = z.enum([
   'communities:write',
   'communities:lifecycle',
   'communities:import',
+  'communities:takedown',
 ]);
 
 /** Host API key projection. Never carries the secret or its hash. */
@@ -301,7 +313,7 @@ export const CommunityAdminHostApiKeySchema = z.strictObject({
   id,
   label: z.string().trim().min(1).max(80),
   prefix: z.string().regex(/^dkh_[A-Za-z0-9_-]{6}$/),
-  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(4),
+  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(5),
   issuedVia: z.enum(['browser', 'command']),
   /** The issuing host operator's display name; null for a key issued by the offline command. */
   issuedByOperator: z.string().min(1).nullable(),
@@ -317,7 +329,7 @@ export const CommunityAdminHostApiKeyListSchema = z.strictObject({
 /** Issue a host API key. Needs a host operator's session and password; a key cannot issue keys. */
 export const CommunityAdminHostApiKeyIssueRequestSchema = z.strictObject({
   label: z.string().trim().min(1).max(80),
-  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(4),
+  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(5),
   expiresInDays: z.int().min(1).max(365).nullable(),
   password: z.string().min(1),
 });
@@ -334,3 +346,186 @@ export const CommunityAdminHostApiKeySecretResponseSchema = z.strictObject({
 });
 /** Revocation takes no input; it cannot be undone. */
 export const CommunityAdminHostApiKeyRevokeRequestSchema = z.strictObject({});
+
+/** Why the host removed something. Shown to the owner and author as one plain sentence. */
+export const CommunityAdminTakedownCategorySchema = z.enum([
+  'child_safety',
+  'illegal_content',
+  'legal_order',
+  'terms_violation',
+]);
+/** The host's own case number for a takedown. Never free text. */
+const takedownReference = z.string().regex(/^[A-Za-z0-9._:-]{1,64}$/);
+/**
+ * Take down one message, one file, the community's icon, or the whole community, by id.
+ *
+ * A person (host operator session) must send `password`; a key must not. When `notify` is
+ * omitted it is false for `child_safety` (telling the uploader can tip off someone under
+ * investigation) and true for every other category; the response carries the value used.
+ */
+export const CommunityAdminTakedownRequestSchema = z.strictObject({
+  idempotencyKey: z.string().min(1).max(200),
+  target: z.discriminatedUnion('kind', [
+    z.strictObject({ kind: z.literal('entry'), entryId: id }),
+    z.strictObject({ kind: z.literal('attachment'), attachmentId: id }),
+    z.strictObject({ kind: z.literal('icon') }),
+    z.strictObject({
+      kind: z.literal('community'),
+      lifecycleVersion: version,
+      confirmIdSuffix: z.string().length(8),
+    }),
+  ]),
+  category: CommunityAdminTakedownCategorySchema,
+  reference: takedownReference.nullable(),
+  notify: z.boolean().optional(),
+  password: z.string().min(1).optional(),
+});
+/** Where a takedown's evidence copy stands. */
+export const CommunityAdminTakedownEvidenceStateSchema = z.enum([
+  'pending',
+  'retrying',
+  'stored',
+  'failed',
+  'not_configured',
+  'nothing_to_preserve',
+  /** `child_safety` or `legal_order` with no evidence store: bytes kept until released. */
+  'held_on_primary',
+]);
+/** A takedown as host authority sees it: ids and states only, never content. */
+export const CommunityAdminTakedownSchema = z.strictObject({
+  id,
+  communityId: id,
+  target: z.discriminatedUnion('kind', [
+    z.strictObject({ kind: z.literal('entry'), entryId: id }),
+    z.strictObject({ kind: z.literal('attachment'), attachmentId: id, entryId: id.nullable() }),
+    z.strictObject({ kind: z.literal('icon') }),
+    z.strictObject({ kind: z.literal('community') }),
+  ]),
+  category: CommunityAdminTakedownCategorySchema,
+  reference: z.string().nullable(),
+  notify: z.boolean(),
+  actor: z.strictObject({ kind: z.enum(['person', 'api_key']), id: z.string() }),
+  state: z.enum(['active', 'reversed']),
+  evidence: z.strictObject({
+    state: CommunityAdminTakedownEvidenceStateSchema,
+    /** SHA-256 of `record.json`, once stored. */
+    recordSha256: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .nullable(),
+    /** `takedowns/<id>/attempt-<n>/` once stored. */
+    location: z.string().nullable(),
+    attempts: z.int().nonnegative(),
+    /** Unsettled for longer than the host's alert hours. */
+    overdue: z.boolean(),
+  }),
+  deleteAfter: timestamp.nullable(),
+  createdAt: timestamp,
+  reversedAt: timestamp.nullable(),
+});
+/** One takedown, as create, replay, read, reverse, retry, and release answer. */
+export const CommunityAdminTakedownResponseSchema = z.strictObject({
+  takedown: CommunityAdminTakedownSchema,
+});
+/** One page of takedowns, newest first. Pass `nextAfter` as `after` for the next page. */
+export const CommunityAdminTakedownListSchema = z.strictObject({
+  takedowns: z.array(CommunityAdminTakedownSchema),
+  nextAfter: id.nullable(),
+  /** Whether this host has an evidence store, so the host page can warn when it has none. */
+  evidenceStore: z.boolean(),
+});
+/** Reverse a community takedown within its window. A person sends `password`. */
+export const CommunityAdminTakedownReverseRequestSchema = z.strictObject({
+  lifecycleVersion: version,
+  password: z.string().min(1).optional(),
+});
+/** Try a failed or held evidence copy again. Takes no input. */
+export const CommunityAdminTakedownEvidenceRetryRequestSchema = z.strictObject({});
+/** Release bytes held on this server to deletion. A person only, with their password. */
+export const CommunityAdminTakedownReleaseHeldRequestSchema = z.strictObject({
+  password: z.string().min(1).optional(),
+});
+
+const evidenceSession = z.strictObject({
+  createdAt: timestamp,
+  ipAddress: z.string().nullable(),
+  userAgent: z.string().nullable(),
+});
+/** An account as the evidence record names it: what the sign-in stored, nothing more. */
+const evidenceAccount = z.strictObject({
+  id: z.string(),
+  email: z.string(),
+  createdAt: timestamp,
+  sessions: z.array(evidenceSession),
+});
+const evidenceFile = z.strictObject({
+  id,
+  name: z.string(),
+  contentType: z.string(),
+  byteSize: z.int().positive(),
+  uploadedAt: timestamp,
+  uploaderMemberId: id.nullable(),
+  uploaderAgentId: id.nullable(),
+  /** Relative to the attempt folder. */
+  path: z.string(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+/**
+ * `record.json`, the last file of a complete evidence attempt in the host's evidence store.
+ * The server writes it and never reads it back; it is here so a host's own tooling can parse it.
+ */
+export const CommunityEvidenceRecordV1Schema = z.strictObject({
+  version: z.literal(1),
+  takedown: z.strictObject({
+    id,
+    createdAt: timestamp,
+    actor: z.strictObject({
+      kind: z.enum(['person', 'api_key']),
+      id: z.string(),
+      /** The operator's display name, for a person. */
+      name: z.string().nullable(),
+    }),
+    category: CommunityAdminTakedownCategorySchema,
+    reference: z.string().nullable(),
+    notify: z.boolean(),
+  }),
+  server: z.strictObject({ publicUrl: z.string(), version: z.string() }),
+  community: z.strictObject({ id, name: z.string(), lifecycle: CommunityAdminLifecycleSchema }),
+  channel: z.strictObject({ id, name: z.string() }).nullable(),
+  entry: z
+    .strictObject({
+      id,
+      seq: z.int().positive(),
+      createdAt: timestamp,
+      text: z.string(),
+      parentEntryId: id.nullable(),
+      threadRootEntryId: id.nullable(),
+      mentionIds: z.array(id),
+      contentAlreadyRemoved: z.boolean(),
+    })
+    .nullable(),
+  author: z
+    .strictObject({
+      memberId: id,
+      displayName: z.string(),
+      handle: z.string(),
+      role: z.enum(['owner', 'admin', 'member']),
+      kind: z.enum(['human', 'agent']),
+      /** For an agent: the agent itself. Its owner is `memberId`. */
+      agent: z.strictObject({ id, displayName: z.string(), handle: z.string() }).nullable(),
+    })
+    .nullable(),
+  /** The author's account, or for an agent its owner's; null when it was already erased. */
+  account: evidenceAccount.nullable(),
+  files: z.array(evidenceFile),
+  icon: z
+    .strictObject({
+      contentType: z.string(),
+      byteSize: z.int().positive(),
+      path: z.string(),
+      sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .nullable(),
+  notes: z.array(z.string()),
+});

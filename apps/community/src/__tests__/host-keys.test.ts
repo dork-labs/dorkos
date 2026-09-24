@@ -30,6 +30,13 @@ describe('parseHostKeyCommand', () => {
     });
   });
 
+  // Purpose: fails if the offline command cannot issue the takedown scope a host needs first.
+  it('issues the takedown scope', () => {
+    expect(
+      parseHostKeyCommand(['issue', '--label', 'Reports', '--scope', 'communities:takedown'])
+    ).toMatchObject({ scopes: ['communities:takedown'] });
+  });
+
   it('parses list and revoke', () => {
     expect(parseHostKeyCommand(['list'])).toEqual({ kind: 'list' });
     expect(parseHostKeyCommand(['revoke', 'A0000000-0000-4000-8000-000000000000'])).toEqual({

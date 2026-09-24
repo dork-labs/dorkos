@@ -10,7 +10,8 @@ import { MANAGED_BLOB_RESERVATION_TTL_MS } from './managed-blobs.js';
  * retries remain eligible forever at the one-hour cap.
  */
 export function cleanupBackoffSql(
-  attemptsColumn: 'attempts' | 'pending_blob_deletions.attempts' | 'cleanup_attempts'
+  attemptsColumn:
+    'attempts' | 'pending_blob_deletions.attempts' | 'cleanup_attempts' | 'evidence_failures'
 ): string {
   return `LEAST(interval '1 hour', interval '1 minute' * power(2, LEAST(${attemptsColumn}, 6)))`;
 }

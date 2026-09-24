@@ -149,7 +149,7 @@ async function snapshot(pool: PoolClient, member: Member, scope: 'personal' | 'o
     ? await pool.query(
         `SELECT id,community_id,actor_member_id,actor_kind,action,subject_id,
                 prior_state,next_state,changed_fields,created_at
-         FROM audit_events WHERE community_id=$1 ORDER BY created_at,id LIMIT $2`,
+         FROM audit_events WHERE community_id=$1 AND NOT withheld ORDER BY created_at,id LIMIT $2`,
         [member.community_id, MAX_ROWS + 1]
       )
     : { rows: [] };

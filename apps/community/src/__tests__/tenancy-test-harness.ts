@@ -57,6 +57,8 @@ export async function startTenancyHarness(
     hooks?: Parameters<typeof createCommunityApp>[0]['hooks'];
     /** Another BlobStore (S3) instead of the fixture's own folder. */
     blobStore?: BlobStore;
+    /** More settings, such as an evidence store, parsed with the rest. */
+    env?: Record<string, string>;
   } = {}
 ): Promise<TenancyHarness> {
   const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
@@ -84,6 +86,7 @@ export async function startTenancyHarness(
     COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE: 100,
     COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE: options.hostKeyAttemptsPerMinute ?? 100,
     COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE: options.reauthAttemptsPerMinute ?? 20,
+    ...options.env,
   });
   const blobStore = options.blobStore ?? new FileSystemBlobStore(storagePath);
   const app = createCommunityApp({

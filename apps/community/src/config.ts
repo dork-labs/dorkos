@@ -3,7 +3,10 @@ import {
   COMMUNITY_RESERVED_SHORT_NAMES,
   COMMUNITY_SHORT_NAME_PATTERN,
 } from '@dorkos/shared/community-admin-wire';
-import { isAbsolute } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseCommunityReportMailto } from '@dorkos/shared/community-wire';
 
 const integer = (name: string, fallback: number, ceiling: number) =>
@@ -39,6 +42,60 @@ function hostLink(name: string, value: string | undefined, allowMailto = false):
   throw new Error(`${name} must be ${allowed}`);
 }
 
+/** The directory the server serves its web app from (`main.ts`), from `src/` or `dist-server/`. */
+const SERVED_WEB_APP_DIRECTORY = fileURLToPath(new URL('../dist/', import.meta.url));
+
+/**
+ * A path with every symbolic link resolved, for as much of it as exists, so `/tmp/x` and
+ * `/private/tmp/x` compare equal on a host where one links to the other.
+ */
+function realPath(path: string): string {
+  const absolute = resolve(path);
+  let existing = absolute;
+  const rest: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync.native(existing), ...rest.reverse());
+    } catch {
+      const parent = dirname(existing);
+      if (parent === existing) return absolute;
+      rest.push(basename(existing));
+      existing = parent;
+    }
+  }
+}
+
+/** Whether `child` is `parent` or sits anywhere inside it. */
+function within(child: string, parent: string): boolean {
+  const path = relative(parent, child);
+  return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path));
+}
+
+/** Whether two directories are the same, or one contains the other. */
+function directoriesOverlap(a: string, b: string): boolean {
+  for (const left of new Set([resolve(a), realPath(a)])) {
+    for (const right of new Set([resolve(b), realPath(b)])) {
+      if (within(left, right) || within(right, left)) return true;
+    }
+  }
+  return false;
+}
+
+/** Refuse an S3 endpoint that is not HTTPS (or HTTP on localhost) or that carries credentials. */
+function checkS3Endpoint(name: string, value: string | undefined): void {
+  if (!value) return;
+  const endpoint = new URL(value);
+  if (
+    endpoint.protocol !== 'https:' &&
+    !(endpoint.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(endpoint.hostname))
+  ) {
+    throw new Error(`${name} must use HTTPS, or HTTP on localhost`);
+  }
+  if (endpoint.username || endpoint.password) {
+    throw new Error(`${name} must not contain credentials`);
+  }
+}
+
 const schema = z.object({
   COMMUNITY_DATABASE_URL: z.url().startsWith('postgres'),
   COMMUNITY_AUTH_SECRET: z.string().min(32),
@@ -67,6 +124,37 @@ const schema = z.object({
   COMMUNITY_S3_ENDPOINT: z.url().optional(),
   COMMUNITY_S3_ACCESS_KEY_ID: z.string().min(1).optional(),
   COMMUNITY_S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  // The evidence store: a second, independent place takedowns copy removed content to. The
+  // server only ever writes there. Unset means no evidence store.
+  COMMUNITY_EVIDENCE_DRIVER: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.enum(['filesystem', 's3']).optional()
+  ),
+  COMMUNITY_EVIDENCE_PATH: optionalText,
+  COMMUNITY_EVIDENCE_S3_BUCKET: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().min(3).max(63).optional()
+  ),
+  COMMUNITY_EVIDENCE_S3_REGION: optionalText,
+  COMMUNITY_EVIDENCE_S3_ENDPOINT: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.url().optional()
+  ),
+  COMMUNITY_EVIDENCE_S3_ACCESS_KEY_ID: optionalText,
+  COMMUNITY_EVIDENCE_S3_SECRET_ACCESS_KEY: optionalText,
+  COMMUNITY_EVIDENCE_S3_PREFIX: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z
+      .string()
+      .regex(/^(?!\/)(?!.*\/\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._/-]{1,200}$/)
+      .optional()
+  ),
+  // How long a takedown's evidence may stay unsaved before the worker logs a warning each hour.
+  COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS: integer(
+    'COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS',
+    6,
+    168
+  ),
   COMMUNITY_PORT: integer('COMMUNITY_PORT', 6481, 65535),
   COMMUNITY_TEST_RUNTIME: z.enum(['true', 'false']).default('false'),
   COMMUNITY_POSTS_PER_TEN_MINUTES: integer('COMMUNITY_POSTS_PER_TEN_MINUTES', 120, 1000),
@@ -207,18 +295,7 @@ export function parseConfig(env: Record<string, unknown>) {
         'COMMUNITY_S3_ACCESS_KEY_ID and COMMUNITY_S3_SECRET_ACCESS_KEY must be set together'
       );
     }
-    if (value.COMMUNITY_S3_ENDPOINT) {
-      const endpoint = new URL(value.COMMUNITY_S3_ENDPOINT);
-      if (
-        endpoint.protocol !== 'https:' &&
-        !(endpoint.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(endpoint.hostname))
-      ) {
-        throw new Error('COMMUNITY_S3_ENDPOINT must use HTTPS, or HTTP on localhost');
-      }
-      if (endpoint.username || endpoint.password) {
-        throw new Error('COMMUNITY_S3_ENDPOINT must not contain credentials');
-      }
-    }
+    checkS3Endpoint('COMMUNITY_S3_ENDPOINT', value.COMMUNITY_S3_ENDPOINT);
     return {
       kind: 's3' as const,
       bucket: value.COMMUNITY_S3_BUCKET,
@@ -226,6 +303,69 @@ export function parseConfig(env: Record<string, unknown>) {
       endpoint: value.COMMUNITY_S3_ENDPOINT,
       accessKeyId: value.COMMUNITY_S3_ACCESS_KEY_ID,
       secretAccessKey: value.COMMUNITY_S3_SECRET_ACCESS_KEY,
+    };
+  })();
+  const evidence = (() => {
+    const driver = value.COMMUNITY_EVIDENCE_DRIVER;
+    if (!driver) {
+      const stray = Object.keys(value).find(
+        (name) => name.startsWith('COMMUNITY_EVIDENCE_') && value[name as keyof typeof value]
+      );
+      if (stray) throw new Error(`${stray} is set, but COMMUNITY_EVIDENCE_DRIVER is not`);
+      return null;
+    }
+    if (driver === 'filesystem') {
+      const directory = value.COMMUNITY_EVIDENCE_PATH;
+      if (!directory || !isAbsolute(directory)) {
+        throw new Error(
+          'COMMUNITY_EVIDENCE_PATH must be an absolute path for a filesystem evidence store'
+        );
+      }
+      // Evidence must never be where the server serves, stages, or stores anything else: a
+      // served folder would publish it, and a store or temporary folder may be swept.
+      const forbidden = [
+        ...(storage.kind === 'filesystem' ? [['COMMUNITY_STORAGE_PATH', storage.directory]] : []),
+        ['the web app folder', SERVED_WEB_APP_DIRECTORY],
+        ['the temporary folder (where file stores stage their uploads)', tmpdir()],
+      ];
+      for (const [name, path] of forbidden) {
+        if (directoriesOverlap(directory, path)) {
+          throw new Error(`COMMUNITY_EVIDENCE_PATH must not be, contain, or sit inside ${name}`);
+        }
+      }
+      return { kind: 'filesystem' as const, directory: resolve(directory) };
+    }
+    if (!value.COMMUNITY_EVIDENCE_S3_BUCKET || !value.COMMUNITY_EVIDENCE_S3_REGION) {
+      throw new Error(
+        'COMMUNITY_EVIDENCE_S3_BUCKET and COMMUNITY_EVIDENCE_S3_REGION are required for an S3 evidence store'
+      );
+    }
+    if (
+      Boolean(value.COMMUNITY_EVIDENCE_S3_ACCESS_KEY_ID) !==
+      Boolean(value.COMMUNITY_EVIDENCE_S3_SECRET_ACCESS_KEY)
+    ) {
+      throw new Error(
+        'COMMUNITY_EVIDENCE_S3_ACCESS_KEY_ID and COMMUNITY_EVIDENCE_S3_SECRET_ACCESS_KEY must be set together'
+      );
+    }
+    checkS3Endpoint('COMMUNITY_EVIDENCE_S3_ENDPOINT', value.COMMUNITY_EVIDENCE_S3_ENDPOINT);
+    if (
+      storage.kind === 's3' &&
+      storage.bucket === value.COMMUNITY_EVIDENCE_S3_BUCKET &&
+      (storage.endpoint ?? '') === (value.COMMUNITY_EVIDENCE_S3_ENDPOINT ?? '')
+    ) {
+      throw new Error(
+        'The evidence store must be a different bucket from COMMUNITY_S3_BUCKET, or on a different endpoint'
+      );
+    }
+    return {
+      kind: 's3' as const,
+      bucket: value.COMMUNITY_EVIDENCE_S3_BUCKET,
+      region: value.COMMUNITY_EVIDENCE_S3_REGION,
+      endpoint: value.COMMUNITY_EVIDENCE_S3_ENDPOINT,
+      accessKeyId: value.COMMUNITY_EVIDENCE_S3_ACCESS_KEY_ID,
+      secretAccessKey: value.COMMUNITY_EVIDENCE_S3_SECRET_ACCESS_KEY,
+      prefix: value.COMMUNITY_EVIDENCE_S3_PREFIX,
     };
   })();
   const hostLinks = {
@@ -243,6 +383,8 @@ export function parseConfig(env: Record<string, unknown>) {
     bootstrapSecret: value.COMMUNITY_BOOTSTRAP_SECRET,
     publicUrl: publicUrl.origin,
     storage,
+    /** Where takedowns copy removed content, outside the API; null when the host set none. */
+    evidence,
     port: value.COMMUNITY_PORT,
     testRuntime: value.COMMUNITY_TEST_RUNTIME === 'true',
     /** Where each completed erasure's id-only line is also appended, outside the database. */
@@ -287,6 +429,7 @@ export function parseConfig(env: Record<string, unknown>) {
       hostDeletionNoticeDays: value.COMMUNITY_HOST_DELETION_NOTICE_DAYS,
       shortNameCooloffDays: value.COMMUNITY_SHORT_NAME_COOLOFF_DAYS,
       nameLookupsPerMinute: value.COMMUNITY_NAME_LOOKUPS_PER_MINUTE,
+      takedownEvidenceAlertHours: value.COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS,
     },
   };
 }

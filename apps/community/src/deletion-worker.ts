@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { transaction } from './data.js';
 import { releaseCommunityShortNames, type ShortNameHolds } from './host/short-names.js';
 import { BlobStoreError, reconcileTenantNamespace, type BlobStore } from './storage/index.js';
+import { UNSETTLED_EVIDENCE_SQL } from './takedown/takedowns.js';
 
 const DELETE_BATCH = 25;
 const MISSING_DELETION_INVENTORY_SQL = `
@@ -72,11 +73,14 @@ export async function sweepCommunityDeletions(
   if (!Number.isInteger(blobBatchSize) || blobBatchSize < 1 || blobBatchSize > 100)
     throw new Error('Invalid community deletion batch size');
   const job = await transaction(pool, async (client) => {
+    // A takedown's preserved material is never destroyed by a deletion racing it, whoever asked
+    // for the deletion: the job waits until every takedown's evidence has settled.
     const selected = await client.query<{ community_id: string }>(
-      `SELECT community_id
-       FROM community_deletion_jobs
-       WHERE delete_after<=now() AND next_attempt_at<=now()
-       ORDER BY next_attempt_at,community_id
+      `SELECT j.community_id
+       FROM community_deletion_jobs j
+       WHERE j.delete_after<=now() AND j.next_attempt_at<=now()
+         AND NOT ${UNSETTLED_EVIDENCE_SQL.replaceAll('$1', 'j.community_id')}
+       ORDER BY j.next_attempt_at,j.community_id
        LIMIT 1`
     );
     const candidate = selected.rows[0];
@@ -100,6 +104,12 @@ export async function sweepCommunityDeletions(
     );
     const row = lockedJob.rows[0];
     if (!row) return null;
+    // Rechecked under the community lock. A takedown holds that lock too, and refuses once a
+    // deletion has left `waiting`, so no takedown can start after this claim commits.
+    if (
+      (await client.query(`SELECT 1 WHERE ${UNSETTLED_EVIDENCE_SQL}`, [row.community_id])).rowCount
+    )
+      return null;
     if (
       community.rows[0]?.lifecycle !== 'deletion_pending' ||
       community.rows[0].lifecycle_version !== row.lifecycle_version

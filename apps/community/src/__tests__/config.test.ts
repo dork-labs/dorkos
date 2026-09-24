@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseConfig } from '../config.js';
 import { createBlobStore, FileSystemBlobStore, S3BlobStore } from '../storage/index.js';
 
@@ -222,5 +225,112 @@ describe('community startup config', () => {
       parseConfig({ ...valid, COMMUNITY_REPORT_ABUSE_URL: 'https://example.com/report?form=1' })
         .hostLinks.reportAbuseUrl
     ).toBe('https://example.com/report?form=1');
+  });
+
+  it('has no evidence store unless the host names a driver, and refuses stray evidence settings', () => {
+    // Purpose: fails if a half-configured evidence store is silently ignored.
+    expect(parseConfig(valid).evidence).toBeNull();
+    expect(parseConfig({ ...valid, COMMUNITY_EVIDENCE_DRIVER: '' }).evidence).toBeNull();
+    expect(() => parseConfig({ ...valid, COMMUNITY_EVIDENCE_PATH: '/srv/evidence' })).toThrow(
+      'COMMUNITY_EVIDENCE_PATH is set, but COMMUNITY_EVIDENCE_DRIVER is not'
+    );
+    expect(
+      parseConfig({
+        ...valid,
+        COMMUNITY_EVIDENCE_DRIVER: 'filesystem',
+        COMMUNITY_EVIDENCE_PATH: '/srv/evidence',
+      }).evidence
+    ).toEqual({ kind: 'filesystem', directory: '/srv/evidence' });
+    expect(parseConfig(valid).limits.takedownEvidenceAlertHours).toBe(6);
+    expect(() => parseConfig({ ...valid, COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS: '0' })).toThrow();
+    expect(() =>
+      parseConfig({ ...valid, COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS: '169' })
+    ).toThrow();
+  });
+
+  it('keeps a filesystem evidence store apart from everything the server serves, stores, or stages', async () => {
+    // Purpose (AC-14): fails if evidence could land where it is served, swept, or staged: the
+    // primary store, the web app folder, or the temporary folder, whether equal, containing, or
+    // inside, and even through a symbolic link.
+    const evidence =
+      (path: string, storage = '/srv/data/blobs') =>
+      () =>
+        parseConfig({
+          ...valid,
+          COMMUNITY_STORAGE_PATH: storage,
+          COMMUNITY_EVIDENCE_DRIVER: 'filesystem',
+          COMMUNITY_EVIDENCE_PATH: path,
+        });
+    expect(evidence('evidence')).toThrow('COMMUNITY_EVIDENCE_PATH must be an absolute path');
+    for (const path of ['/srv/data/blobs', '/srv/data/blobs/evidence', '/srv/data', '/'])
+      expect(evidence(path), path).toThrow('COMMUNITY_STORAGE_PATH');
+    const served = fileURLToPath(new URL('../../dist/', import.meta.url));
+    for (const path of [served, join(served, 'evidence'), join(served, '..')])
+      expect(evidence(path), path).toThrow('the web app folder');
+    expect(evidence(join(tmpdir(), 'evidence'))).toThrow('the temporary folder');
+    expect(evidence('/srv/evidence')).not.toThrow();
+    // A link that points into the temporary folder is still inside it.
+    const outside = await mkdtemp(join(fileURLToPath(new URL('../../', import.meta.url)), '.cfg-'));
+    try {
+      await symlink(tmpdir(), join(outside, 'link'));
+      expect(evidence(join(outside, 'link', 'evidence'))).toThrow('the temporary folder');
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('requires a separate bucket, or another endpoint, for an S3 evidence store', () => {
+    // Purpose (AC-14): fails if evidence could be written into the primary bucket.
+    const s3 = {
+      ...valid,
+      COMMUNITY_STORAGE_DRIVER: 's3',
+      COMMUNITY_S3_BUCKET: 'primary',
+      COMMUNITY_S3_REGION: 'auto',
+      COMMUNITY_S3_ENDPOINT: 'https://s3.example.com',
+      COMMUNITY_EVIDENCE_DRIVER: 's3',
+      COMMUNITY_EVIDENCE_S3_REGION: 'auto',
+    };
+    expect(() =>
+      parseConfig({
+        ...s3,
+        COMMUNITY_EVIDENCE_S3_BUCKET: 'primary',
+        COMMUNITY_EVIDENCE_S3_ENDPOINT: 'https://s3.example.com',
+      })
+    ).toThrow('different bucket');
+    expect(
+      parseConfig({
+        ...s3,
+        COMMUNITY_EVIDENCE_S3_BUCKET: 'primary',
+        COMMUNITY_EVIDENCE_S3_ENDPOINT: 'https://evidence.example.com',
+      }).evidence
+    ).toMatchObject({ kind: 's3', bucket: 'primary', endpoint: 'https://evidence.example.com' });
+    expect(
+      parseConfig({
+        ...s3,
+        COMMUNITY_EVIDENCE_S3_BUCKET: 'evidence',
+        COMMUNITY_EVIDENCE_S3_ENDPOINT: 'https://s3.example.com',
+        COMMUNITY_EVIDENCE_S3_PREFIX: 'host-a/takedowns',
+      }).evidence
+    ).toMatchObject({ bucket: 'evidence', prefix: 'host-a/takedowns' });
+    expect(() => parseConfig({ ...s3, COMMUNITY_EVIDENCE_S3_BUCKET: undefined })).toThrow(
+      'COMMUNITY_EVIDENCE_S3_BUCKET'
+    );
+    for (const prefix of ['/abs', 'a//b', 'a/../b', '..', 'a/./b', 'has space'])
+      expect(
+        () =>
+          parseConfig({
+            ...s3,
+            COMMUNITY_EVIDENCE_S3_BUCKET: 'evidence',
+            COMMUNITY_EVIDENCE_S3_PREFIX: prefix,
+          }),
+        prefix
+      ).toThrow('COMMUNITY_EVIDENCE_S3_PREFIX');
+    expect(() =>
+      parseConfig({
+        ...s3,
+        COMMUNITY_EVIDENCE_S3_BUCKET: 'evidence',
+        COMMUNITY_EVIDENCE_S3_ENDPOINT: 'http://evidence.example.com',
+      })
+    ).toThrow('COMMUNITY_EVIDENCE_S3_ENDPOINT must use HTTPS');
   });
 });

@@ -817,6 +817,42 @@ export const CommunityWireOwnerErasureListResponseSchema = z.strictObject({
   erasures: z.array(CommunityWireOwnerErasureSchema),
 });
 
+/** Why the host removed something, as the takedown categories name it. */
+export const CommunityWireTakedownCategorySchema = z.enum([
+  'child_safety',
+  'illegal_content',
+  'legal_order',
+  'terms_violation',
+]);
+/** The one plain sentence each takedown category shows the owner and the author. */
+export const COMMUNITY_TAKEDOWN_CATEGORY_SENTENCES: Record<
+  z.infer<typeof CommunityWireTakedownCategorySchema>,
+  string
+> = {
+  child_safety: 'It was removed to protect children.',
+  illegal_content: 'It was reported to the host as illegal.',
+  legal_order: 'The host received a legal order to remove it.',
+  terms_violation: "It broke the host's terms.",
+};
+/**
+ * One thing the host removed from this community, as the owner, an admin, or its author sees
+ * it. Ids, the reason, and when: never what it said.
+ */
+export const CommunityWireTakedownNoticeSchema = z.strictObject({
+  id,
+  targetKind: z.enum(['entry', 'attachment', 'icon']),
+  entryId: id.nullable(),
+  attachmentId: id.nullable(),
+  channelId: id.nullable(),
+  category: CommunityWireTakedownCategorySchema,
+  reference: z.string().nullable(),
+  createdAt: timestamp,
+});
+/** The host's takedowns in this community the caller may see, newest first. */
+export const CommunityWireTakedownNoticeListResponseSchema = z.strictObject({
+  takedowns: z.array(CommunityWireTakedownNoticeSchema),
+});
+
 /** Stable error codes for expected authorization, state and quota refusals. */
 export const CommunityWireErrorCodeSchema = z.enum([
   'REAUTH_REQUIRED',

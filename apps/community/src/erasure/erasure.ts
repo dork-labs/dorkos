@@ -3,6 +3,7 @@ import { appendFile } from 'node:fs/promises';
 import type { Pool, PoolClient } from 'pg';
 import {
   bumpContentVersion,
+  deleteReadyExports,
   eraseEntries,
   queueBlobs,
   recordRedactions,
@@ -265,18 +266,12 @@ async function eraseFiles(target: Target): Promise<void> {
 
 async function deleteExports(target: Target): Promise<void> {
   await withMember(target, async (client) => {
-    // Every live archive in the community holds this person's data. The rows go too: an
-    // archive row that still names its blob would keep the cleanup sweep from deleting it.
-    const deleted = await client.query<{ blob_key: string }>(
-      'DELETE FROM export_archives WHERE community_id=$1 AND deleted_at IS NULL RETURNING blob_key',
-      [target.communityId]
-    );
-    await queueBlobs(
-      client,
-      target.communityId,
-      deleted.rows.map((row) => row.blob_key)
-    );
+    // The version first, as every content change takes it: an export commit waits on it, so no
+    // archive can commit between this delete and the bump, and a takedown (which bumps and then
+    // deletes exports) never waits on this in the opposite order. Every live archive in the
+    // community holds this person's data.
     await bumpContentVersion(client, target.communityId);
+    await deleteReadyExports(client, target.communityId);
   });
 }
 

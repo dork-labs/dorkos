@@ -19,7 +19,8 @@ interface ManagedRow {
   blob_key: string;
   community_id: string;
   purpose: Purpose | 'legacy_cleanup';
-  state: 'reserved' | 'stored' | 'committed' | 'pending_delete';
+  // `evidence_hold` bytes are owned and left alone: no reference names them, and none is needed.
+  state: 'reserved' | 'stored' | 'committed' | 'pending_delete' | 'evidence_hold';
   byte_size: string | null;
   checksum: string | null;
   lease_expired: boolean;

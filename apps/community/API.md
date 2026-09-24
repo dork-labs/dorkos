@@ -39,6 +39,7 @@ The authoritative request fields and response schemas are in the shared package.
 | Exports              | `POST /api/v1/me/export`, `/api/v1/owner/export`; `GET /api/v1/exports/:id`                                                             | Create and download a private ZIP archive                                   |
 | Erasure              | `GET /api/v1/account/former-memberships`; `GET`, `POST /api/v1/account/erasures`; `POST /api/v1/account/erasures/:id/cancel`            | A person erases one membership, or deletes their account, after 72 hours    |
 | Completed erasures   | `GET /api/v1/owner/erasures`                                                                                                            | The owner sees which members finished erasing themselves, by member ID      |
+| Host takedowns       | `GET /api/v1/takedowns`                                                                                                                 | Why the host removed something: the owner and admins, and its author        |
 
 Owner/admin powers do not bypass private-channel membership. Only the owner can promote another administrator or transfer ownership. Transfer requires password confirmation. An owner must transfer before leaving.
 
@@ -58,6 +59,7 @@ Host routes manage communities as records. They never return channels, messages,
 | Web addresses       | `GET /api/v1/host/short-names/:name`, `GET /api/v1/host/communities/:id/short-names`; `PUT /api/v1/host/communities/:id/short-name`; `DELETE /api/v1/host/communities/:id/short-names/:name`, `DELETE /api/v1/host/short-name-holds/:name` | `communities:read` to read, `communities:write` to change |
 | Limits and usage    | `PUT /api/v1/host/communities/:id/limits`, `PUT /api/v1/host/communities/:id/members/:memberId/limits`; `GET /api/v1/host/communities/:id/usage`, `GET /api/v1/host/usage?after=<id>&limit=<1-100>`                                        | `communities:write` to set, `communities:read` to read    |
 | API keys            | `GET`, `POST /api/v1/host/api-keys`; `POST /api/v1/host/api-keys/:id/rotate`, `/revoke`                                                                                                                                                    | session only                                              |
+| Takedowns           | `POST /api/v1/host/communities/:id/takedowns`; `GET /api/v1/host/takedowns?communityId=&after=&limit=`, `GET /api/v1/host/takedowns/:id`; `POST /api/v1/host/takedowns/:id/reverse`, `/evidence/retry`, `/release-held`                    | `communities:takedown`; `release-held` is session only    |
 
 A key is `dkh_` followed by 43 random characters. The server keeps only its SHA-256 hash, so the full key is shown once, in the response that creates it, with `Cache-Control: no-store`. The first 10 characters are kept as a `prefix` so people can tell keys apart.
 
@@ -98,6 +100,38 @@ A community may have one **short name**, so people can open it at `/<name>` inst
 
 When a request carries an `Authorization` header, a host route considers only the key and ignores any session cookie. A missing, unknown, revoked, or expired key is `401 UNAUTHENTICATED`; each failure counts against the caller's address (`COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`, then `429`). A key without the route's permission is `403 FORBIDDEN`. Every community route refuses a `dkh_` bearer with `401` before it looks at anything else. A revocation that lands while a request waits for a community is honored: the request fails with `401` and changes nothing. Each host change writes one host audit row naming the person, the key, or the offline command, with the names of the changed fields and never their values.
 
+### Takedowns
+
+A takedown removes one message, one file, or a community's icon by its ID, at once, when the host learns it is illegal or breaks the host's terms. It never returns what it removed: every request, response, and error carries IDs, reasons, and states only. When the host has an evidence store, the server copies what it removed there first, outside the API (see [the operations guide](OPERATIONS.md#taking-down-illegal-content)).
+
+`POST /api/v1/host/communities/:id/takedowns` takes (`CommunityAdminTakedownRequestSchema`):
+
+- `idempotencyKey`, 1 to 200 characters. A replay by the same person or key with the same request returns the first takedown with `200`; the same key with a different request is `409 IDEMPOTENCY_CONFLICT`. Keys belong to their actor, so two operators or two keys never collide.
+- `target`: `{ "kind": "entry", "entryId" }`, `{ "kind": "attachment", "attachmentId" }`, or `{ "kind": "icon" }`. An ID from another community is `404`, the same as an unknown one. `{ "kind": "community", … }` is `409` until whole-community takedowns ship. Names (the community's, a channel's, a member's or agent's) are not content items and cannot be taken down by ID.
+- `category`: `child_safety`, `illegal_content`, `legal_order`, or `terms_violation`.
+- `reference`: the host's own case number (`[A-Za-z0-9._:-]`, 1 to 64 characters), or `null`. Never free text.
+- `notify`: whether the owner and the author are told. When left out it is `false` for `child_safety` and `true` otherwise; the response says which was used.
+- `password`: a host operator's current password, required from a person (`403 REAUTH_REQUIRED` without it, `403 REAUTH_FAILED` when wrong) and refused from a key (`400`).
+
+It answers `201 { "takedown": … }` (`CommunityAdminTakedownSchema`). It works in every lifecycle except an unclaimed community (`409`: abandon it instead) and a community whose deletion has already started (`409`). In one transaction, a message shows `This message was removed by the host.` with no mentions and no files (a message its author or an admin already removed is relabelled to that sentence; an erased message stays erased), a file leaves its message, or the icon is cleared. Every ready export in the community is deleted. `GET /api/v1/attachments/:id` and `GET /api/v1/icon` answer `404`, and the change joins the redaction feed. It writes a host audit row (`takedown.create`) and a community audit row (`entry.takedown`, `attachment.takedown`, or `icon.takedown`) with no member.
+
+The takedown's `evidence.state` says where the copy stands:
+
+| State                 | Meaning                                                                                                    |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `pending`, `retrying` | The server holds the bytes and is copying them to the evidence store                                       |
+| `stored`              | The copy landed; `location` is its folder and `recordSha256` the SHA-256 of its `record.json`              |
+| `failed`              | Five attempts in a row failed; `POST …/evidence/retry` tries again                                         |
+| `held_on_primary`     | No evidence store, and the category is `child_safety` or `legal_order`: the bytes stay here until released |
+| `not_configured`      | No evidence store: the bytes were queued for deletion at once, or released                                 |
+| `nothing_to_preserve` | The content was already removed or erased                                                                  |
+
+`overdue` is `true` once the copy has stayed unsettled longer than `COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS`. `GET /api/v1/host/takedowns` lists takedowns newest first (`limit` 1 to 100, default 50; pass `nextAfter` as `after`), optionally in one community, and says whether the host has an evidence store (`evidenceStore`). `POST …/evidence/retry` with `{}` sends a `failed` or `held_on_primary` copy back to the worker; without an evidence store it is `409`. `POST …/release-held` with the operator's `password` gives up a `held_on_primary` copy: the bytes are queued for deletion and the state becomes `not_configured`. A key is refused with `403`. `POST …/reverse` answers `409` for a message, file, or icon: its content is gone.
+
+While any takedown in a community has a copy `pending`, `retrying`, `failed`, or `held_on_primary`, the community is not deleted, whoever asked for the deletion. Held bytes count toward no limit; usage shows them with the pending-delete bytes.
+
+**Notices.** `GET /api/v1/takedowns` (also tenant-qualified) lists, newest first, the takedowns in the community with `notify: true` that the caller may see: all of them for the owner and admins, and for anyone else those of their own or their agents' messages and files. Each is IDs, the `category`, the `reference`, and the time (`CommunityWireTakedownNoticeListResponseSchema`); `COMMUNITY_TAKEDOWN_CATEGORY_SENTENCES` gives each category's sentence. A takedown with `notify: false` is never listed, and its community audit row is `withheld`: owner exports leave it out. `GET /api/v1/owner/deletion` carries `takedown`, which is `null` until whole-community takedowns ship.
+
 ## Erase a membership or an account
 
 Only the person can ask, from their own signed-in browser session. Every erasure route refuses a bearer credential with `403`, and host authority has no erasure route. `POST /api/v1/account/erasures` takes `{ "kind": "membership", "communityId", "password" }` or `{ "kind": "account", "confirmEmail", "password" }`. An account with a password must send it. An account that signs in only through Google or GitHub sends no password, and its session must be less than 5 minutes old, or the answer is `403 REAUTH_REQUIRED`. A repeat while a request is open returns that request with `200`.
@@ -112,11 +146,11 @@ When it runs, the person's messages and their agents' messages stay in place wit
 
 The message stays in its place. It keeps its ID, sequence number, thread links, author, and time, so replies, threads, and cursors keep working. Its text becomes one fixed sentence, and its mentions and files go:
 
-| Removed by                   | Text                                             |
-| ---------------------------- | ------------------------------------------------ |
-| its author, or their agent   | `This message was deleted.`                      |
-| the owner or an admin        | `This message was removed by a community admin.` |
-| the host (takedown, planned) | `This message was removed by the host.`          |
+| Removed by                 | Text                                             |
+| -------------------------- | ------------------------------------------------ |
+| its author, or their agent | `This message was deleted.`                      |
+| the owner or an admin      | `This message was removed by a community admin.` |
+| the host (a takedown)      | `This message was removed by the host.`          |
 
 Removing one file takes it out of its message and keeps the text and the other files. A message with no text and no file left becomes `This message was deleted.` (or the admin sentence). The file's bytes are queued for deletion in the same request, so they stop counting against the community's storage limit at once, and `GET /api/v1/attachments/:id` answers `404`. The wire shape is unchanged: a removed message is an ordinary entry whose text is one of the sentences above.
 

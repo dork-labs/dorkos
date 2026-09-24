@@ -17,7 +17,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "db:migrate": "tsx src/migrate.ts",
-    "erasure:reapply": "tsx src/erasure/reapply.ts"
+    "erasure:reapply": "tsx src/erasure/reapply.ts",
+    "takedowns:evidence-retry": "tsx src/takedown/commands.ts evidence-retry",
+    "takedowns:release-held": "tsx src/takedown/commands.ts release-held"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1135.0",

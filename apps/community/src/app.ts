@@ -36,6 +36,8 @@ import { registerShortNameRoutes } from './routes/short-names.js';
 import { callerAddress } from './caller-address.js';
 import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
+import { registerHostTakedownRoutes } from './routes/host-takedowns.js';
+import { registerTakedownNoticeRoutes } from './routes/takedown-notices.js';
 import { registerHostLinkRoutes } from './routes/host-links.js';
 import { createHostAuthority } from './host/authority.js';
 import { registerAdministrationRoutes } from './routes/administration.js';
@@ -63,6 +65,8 @@ export function createCommunityApp({
     /** The clock host API key expiry is judged by. Tests move it; production uses the wall clock. */
     now?: () => Date;
     afterExportSnapshot?: () => Promise<void>;
+    /** Runs inside a takedown after the community row is locked, before the actor recheck. */
+    afterTakedownCommunityLock?: () => Promise<void>;
   };
   blobStore?: BlobStore;
 }) {
@@ -313,6 +317,14 @@ export function createCommunityApp({
     limitLookup: (c) => limitAttempts(`name-lookup:${peer(c)}`, config.limits.nameLookupsPerMinute),
   });
   registerHostKeyRoutes(hostApi, { pool, auth, authority, now, confirmPassword });
+  registerHostTakedownRoutes(hostApi, {
+    pool,
+    config,
+    authority,
+    now,
+    confirmPassword,
+    hooks: { afterCommunityLock: hooks?.afterTakedownCommunityLock },
+  });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   app.route('/api/v1', hostApi);
 
@@ -392,6 +404,7 @@ export function createCommunityApp({
   registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword, hooks });
   registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
   registerOwnerErasureRoutes(communityApi, { pool, auth });
+  registerTakedownNoticeRoutes(communityApi, { pool, auth });
   app.route('/api/v1', communityApi);
   app.route('/api/v1/communities/:communityId', communityApi);
   return app;
