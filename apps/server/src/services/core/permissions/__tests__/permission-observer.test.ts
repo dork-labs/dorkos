@@ -36,14 +36,26 @@ describe('PermissionObserver', () => {
     return (await listPermissionHistory(world.activity, { agentId: 'agent-ana', limit: 50 })).items;
   }
 
+  /** The id registered at `agentPath`; a test re-registers by changing it. */
+  let registeredId = 'agent-ana';
+  let activity: { emit: (event: never) => Promise<void> };
+  const snapshotDir = () => path.join(root, 'dork-home', 'permissions');
+
   function newObserver() {
     return new PermissionObserver({
-      snapshotFile: path.join(root, 'dork-home', 'permissions', 'observed.json'),
-      agentAt: (p) => (p === agentPath ? { id: 'agent-ana', name: 'Ana' } : undefined),
+      snapshotFile: path.join(snapshotDir(), 'observed.json'),
+      agentAt: (p) => (p === agentPath ? { id: registeredId, name: 'Ana' } : undefined),
       areaOfAction: (id) => (id.startsWith('rooms.') ? 'rooms' : null),
-      activity: world.activity,
+      activity: { emit: (event) => activity.emit(event as never) },
       logger: { warn: () => {} },
     });
+  }
+
+  /** A promise and the function that settles it. */
+  function deferred<T = void>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
   }
 
   beforeEach(() => {
@@ -67,6 +79,8 @@ describe('PermissionObserver', () => {
       })
     );
     world = createPermissionWorld({ preset: 'careful' });
+    registeredId = 'agent-ana';
+    activity = world.activity;
     observer = newObserver();
     read = observedPermissionReader(observer);
     service = new PermissionService({
@@ -82,7 +96,11 @@ describe('PermissionObserver', () => {
     });
   });
 
-  afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+  afterEach(() => {
+    fs.chmodSync(root, 0o755);
+    if (fs.existsSync(snapshotDir())) fs.chmodSync(snapshotDir(), 0o755);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
 
   it('seeds silently on the first read, and records nothing while the file is unchanged', async () => {
     await read(agentPath);
@@ -120,6 +138,19 @@ describe('PermissionObserver', () => {
       },
     });
     expect(events[0]!.actorDetail).toMatch(/settings file was edited directly/);
+  });
+
+  it('records an edit once when two observations of it land at the same moment', async () => {
+    await read(agentPath);
+    const edited = async () => ({ areas: { rooms: 'allowed' as const } });
+
+    await Promise.all([
+      observer.readObserved(agentPath, edited),
+      observer.readObserved(agentPath, edited),
+      observer.readObserved(agentPath, edited),
+    ]);
+
+    expect(await history()).toHaveLength(1);
   });
 
   it("does not report DorkOS's own write as an outside change", async () => {
@@ -162,5 +193,95 @@ describe('PermissionObserver', () => {
     );
     const after = await service.getAgent('agent-ana');
     expect(after.areas.find((a) => a.id === 'rooms')?.changedOutsideAt).toBeNull();
+  });
+
+  it('never takes a read that started before a DorkOS write for an outside edit', async () => {
+    await read(agentPath);
+
+    // A read takes its ticket and sees the OLD file, but is held back until a
+    // DorkOS write has fully landed. Then it finishes with the stale value.
+    const stale = deferred<AgentPermissions | undefined>();
+    const inFlight = observer.readObserved(agentPath, () => stale.promise);
+    await service.setAgent(
+      'agent-ana',
+      { areas: { rooms: 'ask' }, surface: 'agent-page' },
+      { attribution: 'local-trust', actorType: 'user', actorLabel: 'Someone on this computer' }
+    );
+    stale.resolve({ areas: { rooms: 'blocked' } });
+    await inFlight;
+    // And a fresh read of the real file afterwards.
+    await read(agentPath);
+
+    const events = await history();
+    expect(events.map((e) => e.metadata.attribution)).toEqual(['local-trust']);
+    expect((await service.getAgent('agent-ana')).areas[0]!.changedOutsideAt).toBeNull();
+  });
+
+  it('still records the change when the last-seen record cannot be saved', async () => {
+    await read(agentPath);
+    fs.chmodSync(snapshotDir(), 0o555);
+    editFile({ areas: { rooms: 'allowed' } });
+
+    await read(agentPath);
+    await read(agentPath);
+
+    const events = await history();
+    expect(events).toHaveLength(1);
+    expect(events[0]!.metadata.attribution).toBe('outside');
+  });
+
+  it('keeps the change pending, not absorbed, while its event cannot be written', async () => {
+    await read(agentPath);
+    editFile({ areas: { rooms: 'allowed' } });
+    activity = {
+      emit: async () => {
+        throw new Error('the database went away');
+      },
+    };
+    await read(agentPath);
+    expect(await history()).toEqual([]);
+
+    activity = world.activity;
+    await read(agentPath);
+    expect((await history()).map((e) => e.metadata.attribution)).toEqual(['outside']);
+  });
+
+  it('starts fresh for an agent registered anew at an old folder', async () => {
+    await read(agentPath);
+    editFile({ areas: { rooms: 'allowed' } });
+    registeredId = 'agent-new';
+
+    await read(agentPath);
+
+    const all = await listPermissionHistory(world.activity, { limit: 50 });
+    expect(all.items).toEqual([]);
+  });
+
+  it("does not hold one agent's reads behind another's", async () => {
+    const otherPath = path.join(root, 'bo');
+    const multi = new PermissionObserver({
+      snapshotFile: path.join(snapshotDir(), 'multi.json'),
+      agentAt: (p) =>
+        p === agentPath
+          ? { id: 'agent-ana', name: 'Ana' }
+          : p === otherPath
+            ? { id: 'agent-bo', name: 'Bo' }
+            : undefined,
+      areaOfAction: () => 'rooms',
+      activity: world.activity,
+      logger: { warn: () => {} },
+    });
+    const slow = deferred();
+    // Ana's write is stuck; Bo's read must not wait for it.
+    const stuck = multi.writing(agentPath, undefined, () => slow.promise);
+    const bo = multi.readObserved(otherPath, async () => undefined);
+    const winner = await Promise.race([
+      bo.then(() => 'bo'),
+      stuck.then(() => 'ana'),
+      new Promise((r) => setTimeout(() => r('timed out'), 1000)),
+    ]);
+    slow.resolve();
+    await stuck;
+    expect(winner).toBe('bo');
   });
 });

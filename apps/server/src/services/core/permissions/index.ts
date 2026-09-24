@@ -86,11 +86,7 @@ export interface PermissionServiceWiring {
 export function observedPermissionReader(
   observer: PermissionObserver
 ): (agentPath: string) => Promise<AgentPermissions | undefined> {
-  return async (agentPath) => {
-    const permissions = await readAgentPermissionsFromManifest(agentPath);
-    await observer.observe(agentPath, permissions);
-    return permissions;
-  };
+  return (agentPath) => observer.readObserved(agentPath, readAgentPermissionsFromManifest);
 }
 
 /**

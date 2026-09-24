@@ -11,6 +11,7 @@ covers:
   - 'feat: record permission changes made outside DorkOS'
   - 'fix(rooms): post the archive notice only once the archive lands'
   - 'fix(client): stack a permission row by its own width, not the screen'
+  - 'fix(server): never report a stale read as a change made outside DorkOS'
 ---
 
 ### Added
