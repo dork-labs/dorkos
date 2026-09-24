@@ -98,7 +98,7 @@ function navigationState(ownerKey: string) {
  * restores: a write's real reply, landing in the query cache, used to race
  * the timeline and land it at the end instead of the remembered row.
  */
-async function mockCommunitySwitcher(page: Page) {
+async function mockCommunitySwitcher(page: Page, overrides: Record<string, unknown> = {}) {
   await page.route('**/api/community-connections**', async (route) => {
     const method = route.request().method();
     const path = new URL(route.request().url()).pathname;
@@ -109,7 +109,7 @@ async function mockCommunitySwitcher(page: Page) {
     }
     if (method !== 'GET') return route.continue();
     if (path === '/api/community-connections') {
-      await route.fulfill({ json: { connections: [connection] } });
+      await route.fulfill({ json: { connections: [{ ...connection, ...overrides }] } });
       return;
     }
     if (path === '/api/community-connections/navigation') {
@@ -429,6 +429,8 @@ test('Joining with an invitation opens the link on the Community’s site, not a
   await expect(add).toBeFocused();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('menuitem', { name: 'Connect a community' })).toBeFocused();
+  // Alpha's host has not said this person runs it, so there is no way to create one.
+  await expect(page.locator('[data-menu-item-id^="add-community-create"]')).toHaveCount(0);
   await page.keyboard.press('ArrowDown');
   await expect(page.getByRole('menuitem', { name: 'Join with an invitation…' })).toBeFocused();
   await page.keyboard.press('Enter');
@@ -444,6 +446,57 @@ test('Joining with an invitation opens the link on the Community’s site, not a
   expect((await opened).url()).toBe(link);
   await expect(field).toBeHidden();
   await expect(page).not.toHaveURL(/\/connections/);
+});
+
+test('A host operator can create a community on their own host, by keyboard and on a phone', async ({
+  page,
+}) => {
+  await mockCommunitySwitcher(page, { hostOperator: true });
+  await stubCommunitySite(page);
+  await page.goto('/tasks');
+  await new BasePage(page).waitForAppReady();
+  await page.getByTestId('sidebar-header-block').focus();
+  await page.keyboard.press('Meta+Shift+K');
+  await expect(page.getByRole('menuitemradio', { name: /Your team|’s team/ })).toBeFocused();
+  const add = page.locator('[data-menu-item-id="add-community"]');
+  for (
+    let step = 0;
+    step < 4 && !(await add.evaluate((el) => el === document.activeElement));
+    step++
+  )
+    await page.keyboard.press('ArrowDown');
+  await expect(add).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('menuitem', { name: 'Connect a community' })).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('menuitem', { name: 'Join with an invitation…' })).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  const create = page.getByRole('menuitem', {
+    name: /^Create a community….*, opens on alpha\.example\.test$/,
+  });
+  await expect(create).toBeFocused();
+  const opened = page.context().waitForEvent('page');
+  await page.keyboard.press('Enter');
+  // The host's own administration page, which signs the person in and checks
+  // host authority again before creating anything.
+  const hostPage = await opened;
+  expect(hostPage.url()).toBe('https://alpha.example.test/host');
+  await hostPage.close();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/tasks');
+  await new BasePage(page).waitForAppReady();
+  await page.getByTestId('sidebar-header-block').click();
+  const group = page.getByRole('group').filter({
+    has: page.locator('[data-menu-group-id="add-community"]'),
+  });
+  const row = group.getByRole('menuitem', {
+    name: /^Create a community….*, opens on alpha\.example\.test$/,
+  });
+  await row.scrollIntoViewIfNeeded();
+  await expect(row).toBeVisible();
+  const box = await row.boundingBox();
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
 });
 
 test('Community actions fit the 390px phone sheet', async ({ page }, testInfo) => {

@@ -18,6 +18,15 @@
       "project": "Marketplace Package Management"
     },
     {
+      "id": "260923-162659",
+      "slug": "marketplace-update-all",
+      "title": "Check and apply updates across every installed package in one request",
+      "created": "2026-09-23",
+      "status": "implemented",
+      "project": "Marketplace Package Management",
+      "linearIssue": "DOR-2194"
+    },
+    {
       "id": "260923-122229",
       "slug": "marketplace-version-truth",
       "title": "Know when a marketplace package has a new version",
@@ -3113,7 +3122,7 @@
       "slug": "community-membership-journeys",
       "title": "Community membership journey and handoff contract",
       "created": "2026-09-20",
-      "status": "specified",
+      "status": "implemented",
       "project": "Community Membership Journeys",
       "linearIssue": "DOR-2179"
     },

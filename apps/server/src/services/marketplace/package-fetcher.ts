@@ -143,6 +143,14 @@ export interface FetcherDeps {
 }
 
 /**
+ * How long a marketplace server gets to answer a `marketplace.json` request.
+ * A bare `fetch` has no deadline, so one slow server could hold an update-check
+ * slot (and a CLI waiting on it) for minutes; this matches `git ls-remote`'s
+ * 15-second limit, and a stale cached copy still answers when it runs out.
+ */
+export const MARKETPLACE_JSON_TIMEOUT_MS = 15_000;
+
+/**
  * Fetch marketplace packages and marketplace.json documents, caching
  * everything on disk via {@link MarketplaceCache}. Pure coordination —
  * delegates git to the injected {@link GitTreeSource} and HTTP fetches to the
@@ -539,7 +547,18 @@ export class PackageFetcher {
     url: string,
     marketplaceName: string
   ): Promise<MarketplaceJson> {
-    const response = await fetch(url);
+    let response: Response;
+    try {
+      response = await fetch(url, { signal: AbortSignal.timeout(MARKETPLACE_JSON_TIMEOUT_MS) });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'TimeoutError') {
+        throw new Error(
+          `the marketplace server didn't answer within ${MARKETPLACE_JSON_TIMEOUT_MS / 1000} seconds`,
+          { cause: err }
+        );
+      }
+      throw err;
+    }
     if (!response.ok) {
       throw new Error(`marketplace.json fetch failed: ${response.status} ${response.statusText}`);
     }

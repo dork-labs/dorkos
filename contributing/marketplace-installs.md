@@ -178,7 +178,7 @@ Advisory by default. See [ADR-0233](../decisions/0233-marketplace-update-is-advi
 
 The question it answers is "what would installing this package right now give me?", read by Claude Code's own version rule ([ADR 260923-122615](../decisions/260923-122615-package-version-resolved-like-an-install.md)). A package's version is, in order: the `version` it declares (`plugin.json`, else `.dork/manifest.json`, via `readDeclaredVersion`), else its marketplace entry's `version`, else the commit it was fetched at (`resolvePackageVersion` in `@dorkos/marketplace`). Our own marketplace sets no entry `version`, so the entry step is for third-party marketplaces.
 
-1. **Enumerate installs** in the request's scope (a project's roots first, then `dorkHome`). Each install is read through the installed scanner's `readInstalledIdentity`, the same reader the Installed list uses. It never gates on validity, so Claude-Code-only installs and installs whose version files disagree are checked too. Its `.dork/install-metadata.json` sidecar supplies `commitSha`, `entryVersion` and `sourceKey`.
+1. **Take the installations from one scan.** The flow does not walk install roots itself. It checks `InstallationRecord`s from the installed scanner's `scanInstallationRecords(dorkHome, view)`, the same walk the Installed list is a view of. The view is `{ agents }` (every scope: global, then each registered agent's project, one record per installation) or `{ projectPath }` (that project's merged view, where a project install shadows a global one in the same root). Each record carries the listing's `InstalledPackage`, the install root it was found in, the declared version (`readDeclaredVersion`), and the `.dork/install-metadata.json` sidecar with `commitSha`, `entryVersion` and `sourceKey`. The identity read never gates on validity, so Claude-Code-only installs and installs whose version files disagree are checked too.
 2. **Find where it would be reinstalled from.** A direct install (`name@url`, `github:`; no `installedFrom`) is checked against its own recorded source. Anything else searches marketplaces: `installedFrom` first if enabled, then every enabled source. The MATCHED source's name is what the installer receives, never `installedFrom` blindly.
 3. **Ask the installer** (`MarketplaceInstaller.resolveLatest`). It reuses the install pipeline (resolve → stage into the SHA-keyed cache → `validatePackage`), with one short-circuit: when **all three** of these equal what the install recorded, the package is `unchanged` and nothing is staged or cloned:
    - the same `sourceKey` (clone URL, subpath, effective ref, normalized by `sourceKeyOf`);
@@ -192,18 +192,29 @@ The question it answers is "what would installing this package right now give me
    - `current` when equal, or when the marketplace is on an older version (with a `rollback` note: a downgrade is never offered as an update);
    - `unknown`, with a `note` saying why: the source could not be reached, no enabled marketplace lists the package, the new version can't be installed, the install records no version at all, or a named package is not installed in this scope.
 
-   Nothing is dropped, and an `unknown` check is never reported as current. `hasUpdate` is kept and always equals `status === 'update-available'`. The route answers 404 for a name installed in no scope at all, since it can see every scope and the flow cannot.
+   Nothing is dropped, and an `unknown` check is never reported as current. `hasUpdate` is kept and always equals `status === 'update-available'`.
 
-5. **If and only if `apply: true` was set**, reinstall every `update-available` package through the injected `InstallerLike.update()`. The installer handles uninstall-without-purge → reinstall, which preserves `.dork/data/` and `.dork/secrets.json` across versions, and runs the full install pipeline, validation included. It installs with `force: true`, so conflicts are detected but do not block the reinstall. An apply never runs on `unknown` or `current`.
+5. **If and only if `apply: true` was set**, reinstall every `update-available` installation through the injected `InstallerLike.update()`, **in the scope the installation was found in**: its project for a project or agent install, none for a global one ([ADR 260923-163034](../decisions/260923-163034-updates-are-per-installation-in-their-own-scope.md)). It also passes the exact install root the check resolved (`InstallRequest.installRoot`), which `update()` and the uninstall flow use to narrow their by-name probe, so a plugin and an agent sharing a name never have the wrong one replaced. It never uses the scope the request named, because the installer uninstalls by probing project roots then global ones, and reinstalls into whatever `projectPath` it is given. Before DOR-2194 an apply passed the request's `projectPath`, so updating a global package with `--project` deleted the global install and reinstalled it into the project. The installer handles uninstall-without-purge → reinstall, which preserves `.dork/data/` and `.dork/secrets.json` across versions, and runs the full install pipeline, validation included. It installs with `force: true`, so conflicts are detected but do not block the reinstall. An apply never runs on `unknown` or `current`.
 
-**Memos.** `UpdateFlow` is one instance per server and holds two memos for 60 seconds (`UPDATE_MEMO_TTL_MS`): the commit lookup per (clone URL, ref) and the marketplace index per source. The CLI sends one request per package, so a per-run memo would never span packages. Each stores the in-flight promise, so concurrent checks share one lookup, and a failure or placeholder commit is dropped as soon as it settles. Both are cleared after every apply and by `POST /sources/:name/refresh` (`dorkos marketplace refresh`). The honest claim is "shared within one CLI run or UI burst": without a refresh, a push from the last minute can still read as current.
+**Two doors.**
+
+- `UpdateFlow.run({ name, installation, apply? })` is the per-package route's (`POST /packages/:name/update`). The route scans the global scope plus the project's merged view and resolves the installation with `pickInstallation` (the project's own first), so it can authorize and notify with the scope the reinstall actually touches — none for a global installation. `run` returns `{ checks, applied }`. A name missing from its scope is one `unknown` check ("not installed in this scope"). The route answers 404 for a name installed in no scope at all, since it can see every scope and the flow cannot. A failed reinstall throws, so the route maps it to a status.
+- `UpdateFlow.checkInstallations({ installations, apply? })` is the all-packages door's (`GET` / `POST /updates`). The caller scans once and hands the records in. That is why `marketplace_list_installed { checkUpdates }` (DOR-2195) can list and check from one walk. It returns `{ checks: InstallationUpdateCheck[] }`: one entry per installation, in scan order, each with the installation's identity in the installed list's own field names (`installPath`, `type`, `scope`, `agentPath`, `agentId`, `agentName`). `installPath` is the join key, the same one the Installed view keys rows on. After an apply, an entry carries `applied` (the `InstallResult`) or `applyError` (why it failed). `selectInstallations(records, { names, installPaths })` narrows a scan: `names` to every installation of those packages, `installPaths` to exactly the installations a check reported (what a confirm step showed). Any unmatched name or path throws `PackageNotInstalledForUpdateError`, whose 404 body carries `packageNames` and `installPaths`, before anything runs. A symlinked install (a working copy linked into place; the record's `linked`) is checked as `unknown` with "linked install — update its source instead" and never reinstalled.
+
+The door's orchestration lives in `flows/update-installed.ts` so the HTTP route and the MCP tools share it: `scanUpdateView`, `callerSpelling`, `checkInstalledUpdates`, and `applyInstalledUpdates(deps, request, gate)`, where only the permission step (a `ReinstallGate`) is surface-specific. `GET /installed?projectPath` scans at the same canonical path, so its rows and these checks join on `installPath` even through a symlinked project.
+
+**Cost and ordering.** Every check, from either door and any number of concurrent requests, takes a slot from one FIFO semaphore on the `UpdateFlow` instance: at most `UPDATE_CHECK_CONCURRENCY` (4) run at once across the whole server. Results come back in scan order. A check that throws becomes that installation's `unknown` ("couldn't check this package: …") and releases its slot, so it can neither fail the request nor stall the queue. Each check's remote work is bounded by the fetcher's own timeouts (`ls-remote`, clone). A slow or unreachable repository holds only its own slot and ends as that installation's `unknown`, so a slow agent scope never blocks the rest. Because the memo stores in-flight promises, concurrent checks of one repository share one index fetch and one `ls-remote`, including a failing one, which a sequential run would repeat. Concurrent staging of the same `<name>@<sha>` is safe because `MarketplaceCache.materializePackage` dedupes in-flight clones and renames atomically; keep that true when changing the cache. Applies run one at a time, in order. A failed reinstall is recorded on its installation, the rest carry on, and the memos are cleared at the end either way.
+
+**Authorizing a batch.** When `marketplace.install`'s tier could ask a person (above `act`) and the caller is not trusted, the batch is refused with a 403 `batch_update_needs_approval` before any gate call, so no approval request nobody could redeem is raised. Otherwise `POST /updates` authorizes every reinstall as `marketplace.install`, with the per-package route's input shape (`{ name, projectPath? }`, the caller's own spelling for the requested project), before any network work. It stops at the first refusal, with nothing run. A batch cannot carry one approval token per package, which is why the approval case is refused up front. The route then fires `onPluginsChanged` once per `applied`, with that installation's project (none for a global one).
+
+**Memos.** `UpdateFlow` is one instance per server and holds two memos for 60 seconds (`UPDATE_MEMO_TTL_MS`): the commit lookup per (clone URL, ref) and the marketplace index per source. A named `dorkos update <name>` and the app's per-row Update send one request per package, so a per-request memo would never span them. Each stores the in-flight promise, so concurrent checks share one lookup, and a failure or placeholder commit is dropped as soon as it settles. Both are cleared after every apply and by `POST /sources/:name/refresh` (`dorkos marketplace refresh`). The honest claim is "shared within one CLI run or UI burst": without a refresh, a push from the last minute can still read as current.
 
 **Known limits.**
 
 - Each check that observes a new marketplace commit stages one cache entry per installed package from that repository. The cache's retention owner (section 8) removes the superseded ones after the check, so this no longer accumulates.
 - A direct install (`name@url`, `github:`) is always fetched from the default branch today: neither form can carry a ref or subpath, so its recorded `sourceKey` is always `ref: 'HEAD'` (`'main'` in sidecars written before DOR-2248, which `resolvedFromSourceKey` reads as `HEAD` and `matchesRecordedKey` accepts against `HEAD`), `subpath: ''`, and applying an update reinstalls from the same place. If install requests gain a structured source, apply must carry the recorded key too. A direct install recorded before `sourceKey` existed is checked against the default branch, and its check says so in `note`.
 
-The update flow never touches disk on its own. Anything that mutates state lives inside the installer's transaction.
+The update flow never changes an installed package on its own. Anything that mutates installed state lives inside the installer's transaction. A check may stage a new version into the package cache, as the per-package advisory always has.
 
 ## 5. Transaction lifecycle
 
@@ -566,23 +577,25 @@ If the new type introduces its own collision class (e.g. theme IDs must be globa
 
 All endpoints mount under `/api/marketplace/*`. The router factory is `createMarketplaceRouter(deps)` in `apps/server/src/routes/marketplace.ts`. Every response is JSON.
 
-| Method | Path                        | Body                         | Response                                                                                                         |
-| ------ | --------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| GET    | `/sources`                  | —                            | `{ sources: MarketplaceSource[] }`                                                                               |
-| POST   | `/sources`                  | `{ name, source, enabled? }` | `MarketplaceSource` (201)                                                                                        |
-| DELETE | `/sources/:name`            | —                            | 204                                                                                                              |
-| POST   | `/sources/:name/refresh`    | —                            | `{ marketplace: MarketplaceJson, fetchedAt }`                                                                    |
-| GET    | `/installed`                | `?projectPath=<path>`        | `{ packages: InstalledPackage[] }` — cross-scope by default; see §16                                             |
-| GET    | `/installed/:name`          | —                            | `{ installations: InstalledPackage[] }` — one per scope; see §16                                                 |
-| GET    | `/cache`                    | —                            | `{ marketplaces, packages, totalSizeBytes, cleanup: { paused, reason, since } }`                                 |
-| DELETE | `/cache`                    | —                            | 204                                                                                                              |
-| POST   | `/cache/prune`              | — (no options)               | `{ removed: [{ packageName, commitSha, path, lastUsedAt }], freedBytes }`; 503 when it cannot read every install |
-| GET    | `/packages`                 | —                            | `{ packages: AggregatedPackage[] }`                                                                              |
-| GET    | `/packages/:name`           | `?marketplace=<name>`        | `{ manifest, packagePath, preview }`                                                                             |
-| POST   | `/packages/:name/preview`   | `InstallRequestBody`         | `{ preview, manifest, packagePath }`                                                                             |
-| POST   | `/packages/:name/install`   | `InstallRequestBody`         | `InstallResult`                                                                                                  |
-| POST   | `/packages/:name/uninstall` | `{ purge?, projectPath? }`   | `UninstallResult`                                                                                                |
-| POST   | `/packages/:name/update`    | `{ apply?, projectPath? }`   | `UpdateResult`                                                                                                   |
+| Method | Path                        | Body                                                   | Response                                                                                                         |
+| ------ | --------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| GET    | `/sources`                  | —                                                      | `{ sources: MarketplaceSource[] }`                                                                               |
+| POST   | `/sources`                  | `{ name, source, enabled? }`                           | `MarketplaceSource` (201)                                                                                        |
+| DELETE | `/sources/:name`            | —                                                      | 204                                                                                                              |
+| POST   | `/sources/:name/refresh`    | —                                                      | `{ marketplace: MarketplaceJson, fetchedAt }`                                                                    |
+| GET    | `/installed`                | `?projectPath=<path>`                                  | `{ packages: InstalledPackage[] }` — cross-scope by default; see §16                                             |
+| GET    | `/installed/:name`          | —                                                      | `{ installations: InstalledPackage[] }` — one per scope; see §16                                                 |
+| GET    | `/cache`                    | —                                                      | `{ marketplaces, packages, totalSizeBytes, cleanup: { paused, reason, since } }`                                 |
+| DELETE | `/cache`                    | —                                                      | 204                                                                                                              |
+| POST   | `/cache/prune`              | — (no options)                                         | `{ removed: [{ packageName, commitSha, path, lastUsedAt }], freedBytes }`; 503 when it cannot read every install |
+| GET    | `/packages`                 | —                                                      | `{ packages: AggregatedPackage[] }`                                                                              |
+| GET    | `/packages/:name`           | `?marketplace=<name>`                                  | `{ manifest, packagePath, preview }`                                                                             |
+| POST   | `/packages/:name/preview`   | `InstallRequestBody`                                   | `{ preview, manifest, packagePath }`                                                                             |
+| POST   | `/packages/:name/install`   | `InstallRequestBody`                                   | `InstallResult`                                                                                                  |
+| POST   | `/packages/:name/uninstall` | `{ purge?, projectPath? }`                             | `UninstallResult`                                                                                                |
+| POST   | `/packages/:name/update`    | `{ apply?, projectPath? }`                             | `UpdateResult`                                                                                                   |
+| GET    | `/updates`                  | `?projectPath=<path>`                                  | `{ checks: InstallationUpdateCheck[] }` — advisory, one per installation                                         |
+| POST   | `/updates`                  | `{ apply: true, names?, installPaths?, projectPath? }` | `{ checks: InstallationUpdateCheck[] }` — with `applied` / `applyError`                                          |
 
 Where `InstallRequestBody` is:
 
@@ -598,14 +611,17 @@ Where `InstallRequestBody` is:
 
 Error mapping is centralised in `mapErrorToStatus()`:
 
-| Error class                | HTTP status |
-| -------------------------- | ----------- |
-| `InvalidPackageError`      | 400         |
-| `ConflictError`            | 409         |
-| `PackageNotInstalledError` | 404         |
-| `PackageNotFoundError`     | 404         |
-| `MarketplaceNotFoundError` | 404         |
-| (anything else)            | 500         |
+| Error class                                     | HTTP status |
+| ----------------------------------------------- | ----------- |
+| `InvalidPackageError`                           | 400         |
+| `ConflictError`                                 | 409         |
+| `PackageNotInstalledError`                      | 404         |
+| `PackageNotInstalledForUpdateError`             | 404         |
+| `GitRefNotFoundError`, `GitCommitNotFoundError` | 404         |
+| `GitRemoteUnreachableError`, `GitFetchError`    | 502         |
+| `PackageNotFoundError`                          | 404         |
+| `MarketplaceNotFoundError`                      | 404         |
+| (anything else)                                 | 500         |
 
 SSE streaming for clone progress is planned (the spec mentions it following the `discovery/scan` pattern) but deliberately not shipped with this spec — a half-implemented SSE is worse than a unary JSON response that works. A follow-up `POST /packages/:name/install/stream` variant will land in a dedicated task. The current `POST /packages/:name/install` handler has a `// TODO` marker for the wiring point.
 
@@ -636,7 +652,7 @@ dorkos uninstall --project ./apps/web <name>  # Project-local uninstall
 dorkos update                                 # Notify of all available updates
 dorkos update <name>                          # Notify of update for specific package
 dorkos update --apply <name>                  # Actually update (advisory off)
-dorkos update --apply                         # Apply every available update (iterates installed list)
+dorkos update --apply                         # Apply every available update (one request)
 
 # Marketplace source management
 dorkos marketplace add <url> [--name=<n>]     # Add a marketplace source
@@ -657,7 +673,7 @@ dorkos cache clear -y                         # Wipe the entire cache (requires 
 
 `dorkos marketplace add <url>` derives a default name from the URL's last path segment (minus `.git`); pass `--name` as the explicit escape hatch. `dorkos marketplace refresh` without a name iterates every configured source via `Promise.allSettled`, so a single failing source never aborts the batch.
 
-`dorkos update` without a package name lists installs across every scope (forwarding `--project` when given) and checks each one in the scope it was found in, so an agent's install is checked with that agent's directory as its project. A server error for one package prints as `could not check` and the run continues. There is no `update-all` endpoint on the server yet (DOR-2194).
+`dorkos update` without a package name is one request to the all-packages door: `GET /updates` to check, `POST /updates { apply: true }` with `--apply`, forwarding `--project` either way. A line for a non-global installation names where it lives (`flow [Alpha]  0.7.2 → 0.7.3`), so the same package in two places reads as two lines. `--apply` lists what it reinstalled and what it could not, and exits 1 when anything failed. A named `dorkos update <name>` still uses the per-package route.
 
 ## 12. Telemetry hook
 

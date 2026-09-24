@@ -1,7 +1,7 @@
 ---
 id: 260916-210003
 title: Remote agent output uses a transactional local outbox and remote confirmation
-status: draft
+status: accepted
 created: 2026-09-16
 spec: community-server
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from `community-server` specification)
+Accepted.
 
 ## Context
 

@@ -8,6 +8,7 @@ import { test, expect, type BrowserContext, type Page, type Route } from '@playw
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
+import { interceptNext } from '@dorkos/test-utils/playwright-routes';
 import { createCommunityApp } from '../src/app.js';
 import { parseConfig } from '../src/config.js';
 import { migrate } from '../src/migrate.js';
@@ -70,19 +71,9 @@ async function createPendingCommunity(page: Page, name: string) {
   return { link, secret: new URL(link).hash.slice('#claim='.length) };
 }
 
-/**
- * Intercept the next owner-claim request once, then step aside for good.
- *
- * Deliberately not `{ times: 1 }`: when that exhausts, Playwright turns interception off while
- * the page's very next request is already in flight, and that request can hang forever.
- */
+/** Intercept the next owner-claim request once, then let later ones reach the server. */
 function interceptNextClaim(page: Page, handle: (route: Route) => Promise<void>) {
-  let used = false;
-  return page.route('**/api/v1/owner-claims/claim', async (route) => {
-    if (used) return route.fallback();
-    used = true;
-    await handle(route);
-  });
+  return interceptNext(page, '**/api/v1/owner-claims/claim', handle);
 }
 
 /** Record every request URL and referrer so a test can prove the secret never left the page. */
