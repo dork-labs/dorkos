@@ -1,7 +1,8 @@
 /**
  * Read what a Claude Code plugin's skills and commands can run, for the
  * permission preview: the `hooks` and the `allowed-tools` in each one's
- * frontmatter (DOR-2195).
+ * frontmatter (DOR-2195), and the shell commands its text runs when it is used,
+ * `` !`cmd` `` and ```` ```! ```` blocks (DOR-2327, `@dorkos/skills/shell-commands`).
  *
  * A skill is invoked by the model on the strength of its description, not only
  * by name, so a skill described as "use for every task" is in play all the time.
@@ -26,7 +27,8 @@
 import { lstat, readdir } from 'node:fs/promises';
 import { basename, dirname, join, normalize, posix } from 'node:path';
 import { parseFrontmatter } from '@dorkos/skills/frontmatter';
-import type { PreviewSkillTools } from '../types.js';
+import type { PreviewSkillCommand, PreviewSkillTools } from '../types.js';
+import { findSkillShellCommands } from '@dorkos/skills/shell-commands';
 import { collectHooks, type PackageHooks } from './package-hooks.js';
 import { readPackageText } from './package-declarations.js';
 import { EFFECT_BEARING_PATHS } from '@dorkos/marketplace';
@@ -35,6 +37,8 @@ import { EFFECT_BEARING_PATHS } from '@dorkos/marketplace';
 export interface PackageSkills extends PackageHooks {
   /** Every skill or command that lets the agent use tools without asking. */
   skillTools: PreviewSkillTools[];
+  /** Every shell command a skill's or command's text runs when it is used (DOR-2327). */
+  skillCommands: PreviewSkillCommand[];
 }
 
 /** How deep a skills or commands folder is walked; deeper trees are unusual. */
@@ -147,6 +151,16 @@ function skillNameOf(path: string, data: Record<string, unknown>): string {
   return basename(path) === 'SKILL.md' ? basename(dirname(path)) : basename(path, '.md');
 }
 
+/** The shell commands a skill's or command's text runs, tagged with the file. */
+function commandsOf(
+  path: string,
+  data: Record<string, unknown>,
+  text: string
+): PreviewSkillCommand[] {
+  const skill = skillNameOf(path, data);
+  return findSkillShellCommands(text).map((found) => ({ source: path, skill, ...found }));
+}
+
 /** `allowed-tools`, as a string list or a comma/space-separated string. */
 function toolsOf(value: unknown): string[] {
   if (Array.isArray(value)) return value.filter((t): t is string => typeof t === 'string');
@@ -175,7 +189,7 @@ export async function readPackageSkills(
   pluginJson: Record<string, unknown> | undefined,
   agentWorkspace = false
 ): Promise<PackageSkills> {
-  const out: PackageSkills = { hooks: [], unreadable: [], skillTools: [] };
+  const out: PackageSkills = { hooks: [], unreadable: [], skillTools: [], skillCommands: [] };
   for (const path of await skillFilesOf(packagePath, pluginJson, agentWorkspace)) {
     const read = await readPackageText(packagePath, path);
     if (read.kind === 'absent') continue;
@@ -188,8 +202,12 @@ export async function readPackageSkills(
       data = parseFrontmatter(read.text).data;
     } catch {
       out.unreadable.push({ path });
+      // The file is not approvable either way, but the card still shows what
+      // its text would run.
+      out.skillCommands.push(...commandsOf(path, {}, read.text));
       continue;
     }
+    out.skillCommands.push(...commandsOf(path, data, read.text));
     if (data.hooks !== undefined) collectHooks(data.hooks, path, out, path);
     const tools = toolsOf(data['allowed-tools']);
     if (tools.length > 0)

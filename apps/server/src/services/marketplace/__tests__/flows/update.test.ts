@@ -292,6 +292,7 @@ function buildEmptyPreview(overrides: Partial<PermissionPreview> = {}): Permissi
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
     skippedLinks: [],
     unreadableDeclarations: [],
     schedules: [],

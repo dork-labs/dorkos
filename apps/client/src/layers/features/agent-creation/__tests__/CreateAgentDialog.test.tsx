@@ -939,6 +939,7 @@ describe('CreateAgentDialog', () => {
         monitors: [],
         executables: [],
         skillTools: [],
+        skillCommands: [],
         skippedLinks: [],
         unreadableDeclarations: [],
         schedules: [schedule],

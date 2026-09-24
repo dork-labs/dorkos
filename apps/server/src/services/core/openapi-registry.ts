@@ -386,6 +386,20 @@ const LocalPermissionPreviewSchema = z.object({
   skillTools: z.array(
     z.object({ source: z.string(), skill: z.string(), tools: z.array(z.string()) })
   ),
+  skillCommands: z
+    .array(
+      z.object({
+        source: z.string(),
+        skill: z.string(),
+        form: z.enum(['inline', 'block']),
+        command: z.string(),
+      })
+    )
+    .describe(
+      "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a " +
+        'fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads ' +
+        'the skill, before the model sees it.'
+    ),
   unreadableDeclarations: z.array(
     z.object({
       path: z.string(),

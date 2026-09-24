@@ -142,6 +142,7 @@ describe('useApplyUpdatesWithToast', () => {
       monitors: [],
       executables: [],
       skillTools: [],
+      skillCommands: [],
     };
     act(() =>
       result.current.apply(

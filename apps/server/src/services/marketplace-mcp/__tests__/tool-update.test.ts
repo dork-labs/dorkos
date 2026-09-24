@@ -83,6 +83,7 @@ function previewDeclaring(overrides: Partial<PermissionPreview> = {}): Permissio
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
     skippedLinks: [],
     unreadableDeclarations: [],
     schedules: [],

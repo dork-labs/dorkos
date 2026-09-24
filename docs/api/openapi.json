@@ -19416,6 +19416,37 @@
                             ]
                           }
                         },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command"
+                            ]
+                          },
+                          "description": "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads the skill, before the model sees it."
+                        },
                         "unreadableDeclarations": {
                           "type": "array",
                           "items": {
@@ -19610,6 +19641,7 @@
                         "monitors",
                         "executables",
                         "skillTools",
+                        "skillCommands",
                         "unreadableDeclarations",
                         "skippedLinks",
                         "schedules",
@@ -19817,6 +19849,36 @@
                               "tools"
                             ]
                           }
+                        },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command"
+                            ]
+                          }
                         }
                       },
                       "required": [
@@ -19826,7 +19888,8 @@
                         "lspServers",
                         "monitors",
                         "executables",
-                        "skillTools"
+                        "skillTools",
+                        "skillCommands"
                       ]
                     },
                     "contentHash": {
@@ -20104,6 +20167,36 @@
                             "tools"
                           ]
                         }
+                      },
+                      "skillCommands": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string"
+                            },
+                            "skill": {
+                              "type": "string"
+                            },
+                            "form": {
+                              "type": "string",
+                              "enum": [
+                                "inline",
+                                "block"
+                              ]
+                            },
+                            "command": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "skill",
+                            "form",
+                            "command"
+                          ]
+                        }
                       }
                     },
                     "required": [
@@ -20113,7 +20206,8 @@
                       "lspServers",
                       "monitors",
                       "executables",
-                      "skillTools"
+                      "skillTools",
+                      "skillCommands"
                     ],
                     "description": "Install only: the preview's `disclosed`, sent back untouched. The install refuses a package that now runs anything else (409 `disclosure_changed`)."
                   },
@@ -20333,6 +20427,37 @@
                             ]
                           }
                         },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command"
+                            ]
+                          },
+                          "description": "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads the skill, before the model sees it."
+                        },
                         "unreadableDeclarations": {
                           "type": "array",
                           "items": {
@@ -20527,6 +20652,7 @@
                         "monitors",
                         "executables",
                         "skillTools",
+                        "skillCommands",
                         "unreadableDeclarations",
                         "skippedLinks",
                         "schedules",
@@ -20771,6 +20897,36 @@
                               "tools"
                             ]
                           }
+                        },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command"
+                            ]
+                          }
                         }
                       },
                       "required": [
@@ -20780,7 +20936,8 @@
                         "lspServers",
                         "monitors",
                         "executables",
-                        "skillTools"
+                        "skillTools",
+                        "skillCommands"
                       ],
                       "description": "What the package runs on its own, in the form an install is held to: send it back as `approvedDisclosure`."
                     },
@@ -21057,6 +21214,36 @@
                             "tools"
                           ]
                         }
+                      },
+                      "skillCommands": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string"
+                            },
+                            "skill": {
+                              "type": "string"
+                            },
+                            "form": {
+                              "type": "string",
+                              "enum": [
+                                "inline",
+                                "block"
+                              ]
+                            },
+                            "command": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "skill",
+                            "form",
+                            "command"
+                          ]
+                        }
                       }
                     },
                     "required": [
@@ -21066,7 +21253,8 @@
                       "lspServers",
                       "monitors",
                       "executables",
-                      "skillTools"
+                      "skillTools",
+                      "skillCommands"
                     ],
                     "description": "Install only: the preview's `disclosed`, sent back untouched. The install refuses a package that now runs anything else (409 `disclosure_changed`)."
                   },
@@ -21384,6 +21572,37 @@
                             ]
                           }
                         },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command"
+                            ]
+                          },
+                          "description": "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads the skill, before the model sees it."
+                        },
                         "unreadableDeclarations": {
                           "type": "array",
                           "items": {
@@ -21578,6 +21797,7 @@
                         "monitors",
                         "executables",
                         "skillTools",
+                        "skillCommands",
                         "unreadableDeclarations",
                         "skippedLinks",
                         "schedules",
@@ -22310,6 +22530,36 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command"
+                                  ]
+                                }
                               }
                             },
                             "required": [
@@ -22319,7 +22569,8 @@
                               "lspServers",
                               "monitors",
                               "executables",
-                              "skillTools"
+                              "skillTools",
+                              "skillCommands"
                             ],
                             "description": "On every update-available check: what the new version runs on its own. An apply sends it back untouched."
                           },
@@ -22527,6 +22778,36 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command"
+                                  ]
+                                }
                               }
                             },
                             "required": [
@@ -22536,7 +22817,8 @@
                               "lspServers",
                               "monitors",
                               "executables",
-                              "skillTools"
+                              "skillTools",
+                              "skillCommands"
                             ],
                             "description": "What the installed version runs now; null when it could not be read."
                           }
@@ -22817,6 +23099,36 @@
                                   "tools"
                                 ]
                               }
+                            },
+                            "skillCommands": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "source": {
+                                    "type": "string"
+                                  },
+                                  "skill": {
+                                    "type": "string"
+                                  },
+                                  "form": {
+                                    "type": "string",
+                                    "enum": [
+                                      "inline",
+                                      "block"
+                                    ]
+                                  },
+                                  "command": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "source",
+                                  "skill",
+                                  "form",
+                                  "command"
+                                ]
+                              }
                             }
                           },
                           "required": [
@@ -22826,7 +23138,8 @@
                             "lspServers",
                             "monitors",
                             "executables",
-                            "skillTools"
+                            "skillTools",
+                            "skillCommands"
                           ]
                         },
                         "contentHash": {
@@ -23234,6 +23547,36 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command"
+                                  ]
+                                }
                               }
                             },
                             "required": [
@@ -23243,7 +23586,8 @@
                               "lspServers",
                               "monitors",
                               "executables",
-                              "skillTools"
+                              "skillTools",
+                              "skillCommands"
                             ],
                             "description": "On every update-available check: what the new version runs on its own. An apply sends it back untouched."
                           },
@@ -23451,6 +23795,36 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command"
+                                  ]
+                                }
                               }
                             },
                             "required": [
@@ -23460,7 +23834,8 @@
                               "lspServers",
                               "monitors",
                               "executables",
-                              "skillTools"
+                              "skillTools",
+                              "skillCommands"
                             ],
                             "description": "What the installed version runs now; null when it could not be read."
                           }
@@ -23863,6 +24238,36 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command"
+                                  ]
+                                }
                               }
                             },
                             "required": [
@@ -23872,7 +24277,8 @@
                               "lspServers",
                               "monitors",
                               "executables",
-                              "skillTools"
+                              "skillTools",
+                              "skillCommands"
                             ]
                           },
                           "bindsTo": {
@@ -24177,6 +24583,36 @@
                             "tools"
                           ]
                         }
+                      },
+                      "skillCommands": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string"
+                            },
+                            "skill": {
+                              "type": "string"
+                            },
+                            "form": {
+                              "type": "string",
+                              "enum": [
+                                "inline",
+                                "block"
+                              ]
+                            },
+                            "command": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "skill",
+                            "form",
+                            "command"
+                          ]
+                        }
                       }
                     },
                     "required": [
@@ -24186,7 +24622,8 @@
                       "lspServers",
                       "monitors",
                       "executables",
-                      "skillTools"
+                      "skillTools",
+                      "skillCommands"
                     ]
                   },
                   "bindsTo": {

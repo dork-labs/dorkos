@@ -85,6 +85,7 @@ describe('createMarketplaceMethods().applyMarketplaceUpdates', () => {
       monitors: [],
       executables: [],
       skillTools: [],
+      skillCommands: [],
     };
     const targets = [
       {

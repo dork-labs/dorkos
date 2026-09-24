@@ -39,6 +39,7 @@ function runs(command: string) {
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
   };
 }
 

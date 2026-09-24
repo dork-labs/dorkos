@@ -229,6 +229,7 @@ describe('updatesNotAsShown', () => {
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
   });
   const update = (
     installPath: string,

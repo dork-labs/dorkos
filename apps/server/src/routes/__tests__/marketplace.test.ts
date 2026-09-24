@@ -232,6 +232,7 @@ function buildEmptyPermissionPreview(): PermissionPreview {
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
     skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
@@ -1563,6 +1564,7 @@ describe('Marketplace Routes', () => {
         monitors: [],
         executables: [],
         skillTools: [],
+        skillCommands: [],
       });
       expect(res.body.contentHash).toBe(await packageContentHash(pkgDir));
       expect(installer.preview.mock.calls[0][0]).toEqual({
@@ -1621,6 +1623,7 @@ describe('Marketplace Routes', () => {
       monitors: [],
       executables: [],
       skillTools: [],
+      skillCommands: [],
     };
 
     it('holds the install to what the person was shown, and settles it with that, after it landed', async () => {
@@ -2586,6 +2589,7 @@ describe('Marketplace Routes', () => {
       monitors: [],
       executables: [],
       skillTools: [],
+      skillCommands: [],
     });
 
     /** What the check reports now, per installation: version 2.0.0, running `echo hi`. */

@@ -32,7 +32,11 @@
  * plugin skills), so those hooks are bound with the plugin's own, each tagged
  * with its `source`, and each skill's `allowed-tools` (the tools it may use
  * without a prompt) is bound as `skillTools`. The skill's body is prose and is
- * out, like any file.
+ * out, like any file, EXCEPT the shell commands written into it: Claude Code
+ * runs `` !`cmd` `` and a ```` ```! ```` block while it loads the skill, before
+ * the model sees it (and OpenCode runs the inline form in the command wrappers
+ * Harness Sync writes for it). Those are bound as `skillCommands` (DOR-2327,
+ * `@dorkos/skills/shell-commands`).
  *
  * Agents are out with evidence: Claude Code ignores `hooks`, `mcpServers` and
  * `permissionMode` in a plugin agent's frontmatter (plugins reference, "not
@@ -99,6 +103,7 @@ import {
   describeScheduleArrival,
   describeSchedulePermissionMode,
   revealHiddenCharacters,
+  skillCommandKind,
 } from '@dorkos/shared/marketplace-schemas';
 import { quoteSummaryValue } from '../core/approvals/index.js';
 import type {
@@ -107,6 +112,7 @@ import type {
   DisclosedMcpServer,
   DisclosedProgram,
   DisclosedSchedule,
+  DisclosedSkillCommand,
 } from '@dorkos/shared/marketplace-schemas';
 import type { PermissionPreview } from './types.js';
 
@@ -116,6 +122,7 @@ export type {
   DisclosedMcpServer,
   DisclosedProgram,
   DisclosedSchedule,
+  DisclosedSkillCommand,
   DisclosedSkillTools,
 } from '@dorkos/shared/marketplace-schemas';
 
@@ -166,6 +173,14 @@ export const DisclosedEffectsSchema = z.object({
   skillTools: z.array(
     z.object({ source: z.string(), skill: z.string(), tools: z.array(z.string()) })
   ),
+  skillCommands: z.array(
+    z.object({
+      source: z.string(),
+      skill: z.string(),
+      form: z.enum(['inline', 'block']),
+      command: z.string(),
+    })
+  ),
 }) satisfies z.ZodType<DisclosedEffects>;
 
 /**
@@ -176,7 +191,14 @@ export const DisclosedEffectsSchema = z.object({
  */
 export type DisclosureSource = Pick<
   PermissionPreview,
-  'hooks' | 'schedules' | 'mcpServers' | 'lspServers' | 'monitors' | 'executables' | 'skillTools'
+  | 'hooks'
+  | 'schedules'
+  | 'mcpServers'
+  | 'lspServers'
+  | 'monitors'
+  | 'executables'
+  | 'skillTools'
+  | 'skillCommands'
 >;
 
 /**
@@ -260,6 +282,16 @@ export function disclosedEffectsOf(preview: DisclosureSource | undefined): Discl
     skillTools: preview.skillTools
       .map((entry) => ({ source: entry.source, skill: entry.skill, tools: entry.tools }))
       .sort((a, b) => a.source.localeCompare(b.source)),
+    // By file, and within one file in document order (a stable sort keeps
+    // it): they run in that order when the skill loads.
+    skillCommands: preview.skillCommands
+      .map((entry) => ({
+        source: entry.source,
+        skill: entry.skill,
+        form: entry.form,
+        command: entry.command,
+      }))
+      .sort((a, b) => a.source.localeCompare(b.source)),
   };
 }
 
@@ -300,6 +332,20 @@ function describeHooks(hooks: DisclosedHook[]): string {
   const rest = hooks.length - NAMED_COMMAND_LIMIT;
   const tail = rest > 0 ? `, and ${rest} more` : '';
   return `${hooks.length === 1 ? '1 shell command' : `${hooks.length} shell commands`} (${named}${tail})`;
+}
+
+/** Render the skill-text commands part of {@link describeDisclosedEffects}, or nothing. */
+function describeSkillCommands(commands: DisclosedSkillCommand[]): string {
+  if (commands.length === 0) return '';
+  const named = commands
+    .slice(0, NAMED_COMMAND_LIMIT)
+    .map((entry) => quoteSummaryValue(entry.command))
+    .join(', ');
+  const rest = commands.length - NAMED_COMMAND_LIMIT;
+  const tail = rest > 0 ? `, and ${rest} more` : '';
+  const count =
+    commands.length === 1 ? '1 command a skill runs' : `${commands.length} commands skills run`;
+  return `, and ${count} when it is used (${named}${tail})`;
 }
 
 /** Render the schedule half of {@link describeDisclosedEffects}. */
@@ -345,7 +391,7 @@ export function describeDisclosedEffects(effects: DisclosedEffects | null): stri
     effects.skillTools.length === 0
       ? ''
       : `, and ${effects.skillTools.length} ${effects.skillTools.length === 1 ? 'skill that uses' : 'skills that use'} tools without asking`;
-  return `${describeHooks(effects.hooks)}, ${describeSchedules(effects.schedules)} and ${describeMcpServers(effects.mcpServers)}${rest}${tools}`;
+  return `${describeHooks(effects.hooks)}, ${describeSchedules(effects.schedules)} and ${describeMcpServers(effects.mcpServers)}${rest}${tools}${describeSkillCommands(effects.skillCommands)}`;
 }
 
 /**
@@ -353,6 +399,11 @@ export function describeDisclosedEffects(effects: DisclosedEffects | null): stri
  * direction-changing character shown, so it cannot forge the text around it.
  */
 const whole = (value: string): string => revealHiddenCharacters(JSON.stringify(value));
+
+/** `the skill "x"` for a `SKILL.md`, `the command "x"` for a command file. */
+function describeSkillOf(entry: DisclosedSkillCommand): string {
+  return `the ${skillCommandKind(entry.source)} ${whole(entry.skill)}`;
+}
 
 /**
  * Every line an approval card's detail shows for one disclosure: each command
@@ -377,6 +428,10 @@ export function describeEffectsInFull(effects: DisclosedEffects | null, where: s
     ...effects.skillTools.map(
       (entry) =>
         `  skill ${whole(entry.skill)} (${whole(entry.source)}) may use without asking: ${entry.tools.map(whole).join(', ')}`
+    ),
+    ...effects.skillCommands.map(
+      (entry) =>
+        `  runs ${whole(entry.command)} when ${describeSkillOf(entry)} is used (${whole(entry.source)})`
     ),
     ...effects.schedules.map(
       (job) =>

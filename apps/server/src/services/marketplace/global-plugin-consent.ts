@@ -128,6 +128,7 @@ const NOTHING: DisclosedEffects = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
 };
 
 /**

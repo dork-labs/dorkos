@@ -133,6 +133,7 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
     skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
@@ -156,6 +157,7 @@ function makeDetail(overrides: Partial<MarketplacePackageDetail> = {}): Marketpl
       monitors: [],
       executables: [],
       skillTools: [],
+      skillCommands: [],
     },
     contentHash: 'sha256:staged',
     manifest: {

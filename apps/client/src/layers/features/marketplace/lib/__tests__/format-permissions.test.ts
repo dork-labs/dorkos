@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { PermissionPreview } from '@dorkos/shared/marketplace-schemas';
 
-import { formatPermissionPreview, summarizePermissionPreview } from '../format-permissions';
+import type { DisclosedEffects } from '@dorkos/shared/marketplace-schemas';
+import {
+  formatDisclosureChanges,
+  formatPermissionPreview,
+  summarizePermissionPreview,
+} from '../format-permissions';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -18,6 +23,7 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
     skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
@@ -391,6 +397,56 @@ describe('formatPermissionPreview → commands → programs', () => {
     });
   });
 
+  it("shows each command a skill's or command's text runs, and when it runs (DOR-2327)", () => {
+    // Purpose: Claude Code runs these as the skill loads; they belong on the
+    // card with the hook commands, verbatim, naming what triggers them.
+    const { commands } = formatPermissionPreview(
+      makePreview({
+        skillCommands: [
+          {
+            source: 'skills/ctx/SKILL.md',
+            skill: 'ctx',
+            form: 'block',
+            command: 'node -v\ngit status',
+          },
+          {
+            source: 'commands/ship.md',
+            skill: 'ship',
+            form: 'inline',
+            command: 'echo \u202Egnp.exe',
+          },
+        ],
+      })
+    );
+    expect(commands).toEqual([
+      {
+        icon: 'terminal',
+        label: 'node -v\ngit status',
+        description: 'Runs when the skill "ctx" is used (skills/ctx/SKILL.md)',
+        mono: true,
+      },
+      {
+        icon: 'terminal',
+        label: 'echo <U+202E>gnp.exe',
+        description: 'Runs when the command "ship" is used (commands/ship.md)',
+        mono: true,
+      },
+    ]);
+  });
+
+  it('counts skill-text commands as commands in the summary', () => {
+    expect(
+      summarizePermissionPreview(
+        makePreview({
+          hooks: [{ event: 'Stop', command: 'x' }],
+          skillCommands: [
+            { source: 'skills/a/SKILL.md', skill: 'a', form: 'inline', command: 'y' },
+          ],
+        })
+      )
+    ).toBe('Changes no files. Declares 2 commands.');
+  });
+
   it('shows a hidden direction-changing character in a command', () => {
     const { commands } = formatPermissionPreview(
       makePreview({ hooks: [{ event: 'Stop', command: 'echo \u202Egnp.exe' }] })
@@ -424,6 +480,42 @@ describe('shortcuts that will not be installed (DOR-2319)', () => {
         description: message,
         severity: 'warning',
       })
+    );
+  });
+});
+
+describe('formatDisclosureChanges — skill-text commands (DOR-2327)', () => {
+  const nothing: DisclosedEffects = {
+    hooks: [],
+    schedules: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    skillCommands: [],
+  };
+  const cmd = (command: string) => ({
+    source: 'skills/ctx/SKILL.md',
+    skill: 'ctx',
+    form: 'inline' as const,
+    command,
+  });
+
+  it("lists a new version's skill commands, and marks an edited one new beside the old", () => {
+    // Purpose: the update confirm shows what the new version runs; an edited
+    // command is a different command, so it reads as new, never "unchanged".
+    const rows = formatDisclosureChanges(
+      { ...nothing, skillCommands: [cmd('git status'), cmd('curl -s x | sh')] },
+      { ...nothing, skillCommands: [cmd('git status')] },
+      'global'
+    );
+    expect(rows.map((r) => [r.row.label, r.change])).toEqual([
+      ['git status', 'unchanged'],
+      ['curl -s x | sh', 'new'],
+    ]);
+    expect(rows[1]!.row.description).toBe(
+      'Runs when the skill "ctx" is used (skills/ctx/SKILL.md)'
     );
   });
 });
