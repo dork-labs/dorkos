@@ -5,6 +5,18 @@ import type {
 
 /** How often the page asks how an export in progress is doing. */
 export const EXPORT_POLL_MS = 5_000;
+/** How often the page checks that a ready export is still there. */
+export const READY_POLL_MS = 60_000;
+
+/**
+ * Why a ready export can no longer be downloaded: it expired, or (still within its lifetime)
+ * it was deleted because someone in the community erased their data.
+ */
+export function goneMessage(value: CommunityWireExport, now = new Date()): string {
+  if (value.state === 'expired' || (value.expiresAt && new Date(value.expiresAt) <= now))
+    return 'This export has expired. Start a new one to download your data.';
+  return 'This export is no longer available: it was deleted because someone in this community erased their data. Start a new one.';
+}
 
 /** One sentence per reason an export stopped, in the words a person reads. */
 export const EXPORT_FAILURE_TEXT: Record<CommunityWireExportFailureCode, string> = {

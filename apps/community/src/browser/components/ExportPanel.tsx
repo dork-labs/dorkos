@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Download, Shield, X } from 'lucide-react';
 import type { CommunityWireExport } from '@dorkos/shared/community-wire';
-import { request, tenantApiPath } from '../api.js';
+import { RequestError, request, tenantApiPath } from '../api.js';
 import { describeReauthenticationError } from '../account-controls.js';
 import {
   availableUntil,
@@ -10,6 +10,8 @@ import {
   EXPORT_POLL_MS,
   exportInProgress,
   formatSize,
+  goneMessage,
+  READY_POLL_MS,
 } from '../exports.js';
 
 type Props = {
@@ -32,6 +34,7 @@ export function ExportPanel({ scope, idPrefix }: Props) {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [gone, setGone] = useState('');
 
   const load = useCallback(async () => {
     const body = await request<{ exports: CommunityWireExport[] }>('/api/v1/exports');
@@ -44,19 +47,60 @@ export function ExportPanel({ scope, idPrefix }: Props) {
 
   const id = current?.id;
   const inProgress = exportInProgress(current);
+  const ready = current?.state === 'ready';
+
+  /**
+   * Read the export again. A ready one that has since expired, or was deleted by someone's
+   * erasure, is replaced by a sentence saying so. Returns whether it can still be downloaded.
+   */
+  const refresh = useCallback(async (): Promise<boolean> => {
+    if (!current) return false;
+    try {
+      const body = await request<{ export: CommunityWireExport }>(`/api/v1/exports/${current.id}`);
+      if (current.state === 'ready' && body.export.state !== 'ready') {
+        setGone(goneMessage(body.export));
+        setCurrent(null);
+        return false;
+      }
+      setCurrent(body.export);
+      return body.export.state === 'ready';
+    } catch (cause) {
+      if (cause instanceof RequestError && cause.status === 404 && current.state === 'ready') {
+        setGone(goneMessage(current));
+        setCurrent(null);
+      }
+      return false;
+    }
+  }, [current]);
+
+  // Ask about an export in progress every five seconds, and once a minute check that a ready
+  // one is still there.
   useEffect(() => {
-    if (!inProgress || !id) return;
-    const timer = window.setInterval(() => {
-      void request<{ export: CommunityWireExport }>(`/api/v1/exports/${id}`)
-        .then((body) => setCurrent(body.export))
-        .catch(() => undefined);
-    }, EXPORT_POLL_MS);
+    if ((!inProgress && !ready) || !id) return;
+    const timer = window.setInterval(
+      () => void refresh(),
+      inProgress ? EXPORT_POLL_MS : READY_POLL_MS
+    );
     return () => window.clearInterval(timer);
-  }, [id, inProgress]);
+  }, [id, inProgress, ready, refresh]);
+
+  /** Check the export is still there before the browser starts downloading it. */
+  async function downloadIfStillReady(event: React.MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault();
+    const link = event.currentTarget;
+    if (!(await refresh())) return;
+    const anchor = document.createElement('a');
+    anchor.href = link.href;
+    anchor.download = link.download;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+  }
 
   async function start() {
     setBusy(true);
     setError('');
+    setGone('');
     try {
       const body = await request<{ export: CommunityWireExport }>(
         owner ? '/api/v1/owner/export' : '/api/v1/me/export',
@@ -127,6 +171,7 @@ export function ExportPanel({ scope, idPrefix }: Props) {
             className="button primary"
             href={tenantApiPath(`/api/v1/exports/${current.id}/archive`)}
             download={fileName}
+            onClick={(event) => void downloadIfStillReady(event)}
           >
             <Download size={16} /> Download
             {current.byteSize !== null ? ` (${formatSize(current.byteSize)})` : ''}
@@ -138,6 +183,11 @@ export function ExportPanel({ scope, idPrefix }: Props) {
             </p>
           )}
         </div>
+      )}
+      {gone && (
+        <p className="notice" role="status">
+          {gone}
+        </p>
       )}
       {current?.state === 'failed' && current.failureCode && (
         <p className="notice error" role="alert">

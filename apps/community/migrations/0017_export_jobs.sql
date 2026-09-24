@@ -8,7 +8,6 @@ ALTER TABLE export_archives
   ADD COLUMN state text NOT NULL DEFAULT 'ready',
   -- max(seq) per exported channel at the start; later messages are not exported.
   ADD COLUMN watermark jsonb,
-  ADD COLUMN start_redaction_id bigint,
   ADD COLUMN last_checked_redaction_id bigint,
   ADD COLUMN verified_content_version bigint,
   ADD COLUMN rebuild_passes integer NOT NULL DEFAULT 0,
@@ -18,7 +17,12 @@ ALTER TABLE export_archives
   -- Every data segment is written; what is left is the check, the collections and the tail.
   ADD COLUMN data_complete boolean NOT NULL DEFAULT false,
   ADD COLUMN lease_until timestamptz,
+  -- Every claim adds one; each write checks it, so a worker whose job was reclaimed writes nothing.
   ADD COLUMN attempts integer NOT NULL DEFAULT 0,
+  -- Claims that ended in an unexpected error; a job fails once it reaches five.
+  ADD COLUMN failures integer NOT NULL DEFAULT 0,
+  -- When a worker last took the job; the least recently served job is claimed first.
+  ADD COLUMN claimed_at timestamptz,
   ADD COLUMN next_attempt_at timestamptz NOT NULL DEFAULT now(),
   ADD COLUMN deadline_at timestamptz,
   ADD COLUMN ready_at timestamptz,
@@ -40,6 +44,7 @@ ALTER TABLE export_archives
   ADD CONSTRAINT export_archives_failure CHECK ((state = 'failed') = (failure_code IS NOT NULL)),
   ADD CONSTRAINT export_archives_failure_code CHECK (failure_code ~ '^[A-Z][A-Z0-9_]{0,63}$'),
   ADD CONSTRAINT export_archives_rebuild_passes CHECK (rebuild_passes >= 0),
+  ADD CONSTRAINT export_archives_failures CHECK (failures >= 0),
   ADD CONSTRAINT export_archives_progress CHECK (progress_done >= 0 AND (progress_total IS NULL OR progress_total >= 0));
 
 -- One job in progress per community (owner) and per member (personal). A ready archive that has
@@ -48,7 +53,7 @@ CREATE UNIQUE INDEX export_archives_open_owner_unique ON export_archives(communi
   WHERE scope = 'owner' AND state IN ('queued','building');
 CREATE UNIQUE INDEX export_archives_open_personal_unique ON export_archives(requester_member_id)
   WHERE scope = 'personal' AND state IN ('queued','building');
-CREATE INDEX export_archives_due_idx ON export_archives(next_attempt_at, created_at)
+CREATE INDEX export_archives_due_idx ON export_archives(claimed_at NULLS FIRST, created_at)
   WHERE state IN ('queued','building');
 CREATE INDEX export_archives_requester_idx
   ON export_archives(community_id, requester_member_id, created_at DESC);

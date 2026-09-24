@@ -24,20 +24,20 @@ export interface ExportRow {
   progress_done: string;
   progress_total: string | null;
   watermark: Record<string, number> | null;
-  start_redaction_id: string | null;
   last_checked_redaction_id: string | null;
   verified_content_version: string | null;
   rebuild_passes: number;
   data_complete: boolean;
   attempts: number;
+  failures: number;
   deadline_at: Date | null;
 }
 
 /** The `export_archives` columns every read selects. */
 export const EXPORT_COLUMNS = `id,community_id,requester_member_id,scope,format_version,state,blob_key,
   byte_size::text,created_at,ready_at,expires_at,deleted_at,failure_code,progress_done::text,
-  progress_total::text,watermark,start_redaction_id::text,last_checked_redaction_id::text,
-  verified_content_version::text,rebuild_passes,data_complete,attempts,deadline_at`;
+  progress_total::text,watermark,last_checked_redaction_id::text,
+  verified_content_version::text,rebuild_passes,data_complete,attempts,failures,deadline_at`;
 
 /** Failure codes the wire names; anything else recorded reads as a storage failure. */
 const WIRE_FAILURES = new Set<string>([
@@ -119,4 +119,59 @@ export async function endExportJob(
   if (!row) return false;
   await dropSegments(client, exportId, row.community_id);
   return true;
+}
+
+/**
+ * Delete every ready archive of a community, queueing its blobs first (a version 2 archive's
+ * segments cascade away with the row, so their keys are read before it goes). Erasure and host
+ * takedowns use this: a ready archive holds content they must remove.
+ */
+export async function deleteReadyExports(client: PoolClient, communityId: string): Promise<void> {
+  const ready = await client.query<{ id: string; blob_key: string | null }>(
+    `SELECT id,blob_key FROM export_archives
+     WHERE community_id=$1 AND state='ready' AND deleted_at IS NULL FOR UPDATE`,
+    [communityId]
+  );
+  const ids = ready.rows.map((row) => row.id);
+  if (!ids.length) return;
+  const segments = await client.query<{ blob_key: string }>(
+    'SELECT blob_key FROM export_segments WHERE community_id=$1 AND export_id=ANY($2::uuid[])',
+    [communityId, ids]
+  );
+  await queueBlobs(client, communityId, [
+    ...ready.rows.flatMap((row) => (row.blob_key ? [row.blob_key] : [])),
+    ...segments.rows.map((row) => row.blob_key),
+  ]);
+  await client.query('DELETE FROM export_archives WHERE community_id=$1 AND id=ANY($2::uuid[])', [
+    communityId,
+    ids,
+  ]);
+}
+
+/**
+ * Send every job of a community that is still being prepared back to the start: queue the
+ * segments it wrote, forget what it covered, and make it `queued` again. The change of state
+ * fences a worker still running it, whose next write finds the job no longer its own.
+ */
+export async function restartExportJobs(client: PoolClient, communityId: string): Promise<void> {
+  const open = await client.query<{ id: string }>(
+    `SELECT id FROM export_archives
+     WHERE community_id=$1 AND state IN ('queued','building') FOR UPDATE`,
+    [communityId]
+  );
+  for (const job of open.rows) {
+    await dropSegments(client, job.id, communityId);
+    await client.query(
+      'DELETE FROM export_archive_channels WHERE export_archive_id=$1 AND community_id=$2',
+      [job.id, communityId]
+    );
+  }
+  await client.query(
+    `UPDATE export_archives
+     SET state='queued',lease_until=NULL,next_attempt_at=now(),watermark=NULL,
+         last_checked_redaction_id=NULL,verified_content_version=NULL,rebuild_passes=0,
+         progress_done=0,progress_total=NULL,data_complete=false
+     WHERE community_id=$1 AND id=ANY($2::uuid[])`,
+    [communityId, open.rows.map((row) => row.id)]
+  );
 }

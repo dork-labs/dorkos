@@ -1,5 +1,9 @@
 import type { Pool, PoolClient } from 'pg';
-import { encodeEntriesIndex } from '../archive/zip-format.js';
+import {
+  decodeEntriesIndex,
+  encodeEntriesIndex,
+  type ZipEntryRecord,
+} from '../archive/zip-format.js';
 import { writeZipSegment, type ZipEntryInput } from '../archive/zip64-writer.js';
 import { transaction } from '../data.js';
 import {
@@ -21,7 +25,7 @@ export const EXPORT_LEASE_MS = 5 * 60 * 1000;
 /** Rebuild passes (rewrites after content changed) a job may make before it gives up. */
 export const MAX_REBUILD_PASSES = 5;
 /** Claims that ended in an unexpected error before the job fails as a storage failure. */
-export const MAX_EXPORT_ATTEMPTS = 5;
+export const MAX_EXPORT_FAILURES = 5;
 /** The `export_segment` put kind's ceiling; every segment stays below it. */
 export const SEGMENT_CEILING = 1024 * 1024 * 1024;
 /** Room kept under the ceiling for the estimate's error and the unit that crosses a target. */
@@ -65,7 +69,19 @@ export interface ExportWorkerOptions {
   /** The clock leases, deadlines and lifetimes are judged by. Defaults to the wall clock. */
   now?: () => Date;
   hooks?: ExportWorkerHooks;
+  /**
+   * How long a job runs before it steps aside for a job of another community that is waiting.
+   * Defaults to {@link EXPORT_SLICE_MS}.
+   */
+  sliceMs?: number;
 }
+
+/**
+ * A job gives up its place after this long when another community's job is waiting, and
+ * carries on from its last segment when its turn comes round again, so one long export cannot
+ * hold every export on a host back.
+ */
+export const EXPORT_SLICE_MS = 10 * 60 * 1000;
 
 /** The job ended while this worker held it: cancelled, or claimed by another worker. */
 export class JobLostError extends Error {
@@ -95,7 +111,6 @@ export interface SegmentRow {
   first_seq: string | null;
   last_channel_id: string | null;
   last_seq: string | null;
-  entries_index: Buffer;
   content_digest: string;
   entry_count: number;
   file_count: number;
@@ -126,7 +141,7 @@ export class ExportJob {
   scope!: EntryScope;
 
   constructor(
-    options: ExportWorkerOptions,
+    readonly options: ExportWorkerOptions,
     public job: ExportRow,
     readonly now: () => Date
   ) {
@@ -142,6 +157,7 @@ export class ExportJob {
     return Math.min(this.settings.segmentBytes, SEGMENT_CEILING - SEGMENT_HEADROOM);
   }
 
+  /** Extend the lease; the job is lost when it is no longer building under this claim. */
   async renewLease(client: Pick<Pool | PoolClient, 'query'> = this.pool): Promise<void> {
     const renewed = await client.query(
       `UPDATE export_archives SET lease_until=$3::timestamptz + $4 * interval '1 millisecond'
@@ -152,7 +168,6 @@ export class ExportJob {
   }
 
   /** Lock the job row for this claim inside a commit transaction. */
-
   async lockJob(client: PoolClient): Promise<void> {
     const locked = await client.query(
       `SELECT 1 FROM export_archives WHERE id=$1 AND state='building' AND attempts=$2 FOR UPDATE`,
@@ -174,7 +189,6 @@ export class ExportJob {
   }
 
   /** Count one rebuild pass, or fail the job when it has made them all. */
-
   async countPass(): Promise<void> {
     const counted = await this.pool.query<{ rebuild_passes: number }>(
       `UPDATE export_archives SET rebuild_passes=rebuild_passes+1
@@ -190,10 +204,11 @@ export class ExportJob {
     throw new JobFailedError('EXPORT_CONTENT_CHANGING');
   }
 
+  /** This export's committed segments (without their central-directory rows), in order. */
   async segments(kind?: SegmentRow['kind']): Promise<SegmentRow[]> {
     const result = await this.pool.query<SegmentRow>(
       `SELECT segment_no,kind,blob_key,byte_size::text,first_channel_id,first_seq::text,
-              last_channel_id,last_seq::text,entries_index,content_digest,entry_count,file_count
+              last_channel_id,last_seq::text,content_digest,entry_count,file_count
        FROM export_segments WHERE export_id=$1 AND community_id=$2 AND ($3::text IS NULL OR kind=$3)
        ORDER BY segment_no`,
       [this.job.id, this.job.community_id, kind ?? null]
@@ -201,7 +216,15 @@ export class ExportJob {
     return result.rows;
   }
 
-  /** Write data segments from the last committed one until every exported message is written. */
+  /** One segment's central-directory rows, read when the tail reaches that segment. */
+  async entriesOf(segmentNo: number): Promise<ZipEntryRecord[]> {
+    const result = await this.pool.query<{ entries_index: Buffer }>(
+      'SELECT entries_index FROM export_segments WHERE export_id=$1 AND community_id=$2 AND segment_no=$3',
+      [this.job.id, this.job.community_id, segmentNo]
+    );
+    if (!result.rows[0]) throw new JobLostError();
+    return decodeEntriesIndex(result.rows[0].entries_index);
+  }
 
   /**
    * Reserve a blob, write one segment's entries into it, and commit the blob with the caller's
@@ -251,6 +274,7 @@ export class ExportJob {
     });
   }
 
+  /** Discard a blob that did not commit; a failure to queue it is logged, not thrown. */
   async discard(reservation: ManagedBlobReservation, stored?: StoredBlob): Promise<void> {
     await discardManagedBlob(this.pool, this.blobStore, reservation, stored).catch(
       (error: unknown) => {

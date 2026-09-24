@@ -145,9 +145,9 @@ describe('consistency and rebuilds', () => {
     ).toBe('Bob Renamed');
   });
 
-  // Purpose (AC-6): a removal in an early segment and an erasure touching a later one rebuild
-  // only what they changed. Fails if the job restarts from scratch (segments 2 and 4 would get
-  // new blobs), keeps the old text, or counts more than one rebuild pass.
+  // Purpose (AC-6): removals in an early segment and a later one rebuild only what they changed.
+  // Fails if the job restarts from scratch (segments 2 and 4 would get new blobs), keeps the old
+  // text, or counts more than one rebuild pass.
   it('rewrites only the segment a removal changed, in one pass', async () => {
     const community = await exportCommunity(h, operatorCookie, 'Rebuild Place');
     const xena = await exportMember(h, community, 'Xena Rebuild');
@@ -180,7 +180,11 @@ describe('consistency and rebuilds', () => {
             200,
             'remove m1'
           );
-          expect(await erase(community, xena.memberId)).toBe('erased');
+          await expectStatus(
+            await removeEntry(community, m3.id, community.owner.cookie),
+            200,
+            'remove m3 as a moderator'
+          );
         },
       },
     });
@@ -200,11 +204,54 @@ describe('consistency and rebuilds', () => {
       text: 'This message was deleted.',
     });
     expect(entries.get(m2.id)?.removal).toBeNull();
-    expect(entries.get(m3.id)).toMatchObject({
-      removal: 'erased',
-      text: 'This message was erased.',
-    });
+    expect(entries.get(m3.id)?.removal).toBe('moderator');
     expect(entries.get(m4.id)?.removal).toBeNull();
+  });
+
+  // Purpose (review decision): an erasure while a job is being prepared sends it back to the
+  // start, so segments written before the erasure (holding the person's words) are queued for
+  // deletion at once instead of sitting in storage until the job's deadline. Fails if a
+  // pre-erasure segment survives, or the finished archive holds the person as they were.
+  it('restarts a job an erasure interrupts, dropping the segments it wrote', async () => {
+    const community = await exportCommunity(h, operatorCookie, 'Restart Erase Place');
+    const xena = await exportMember(h, community, 'Xena Restart');
+    await seedEntries(h, community, {
+      authorMemberId: xena.memberId,
+      count: 3,
+      textOf: long('xena'),
+    });
+    const requested = await requestOwnerExport(h, community);
+    let before: string[] = [];
+    await runExport(h, {
+      segmentBytes: ONE_MESSAGE,
+      hooks: {
+        afterSegment: async ({ kind, segmentNo }) => {
+          if (kind !== 'data' || segmentNo !== 2 || before.length) return;
+          before = (await segmentsOf(h, requested.export.id)).map((segment) => segment.blob_key);
+          expect(await erase(community, xena.memberId)).toBe('erased');
+        },
+      },
+    });
+    expect(before).toHaveLength(2);
+    const reset = await h.pool.query(
+      'SELECT state,data_complete,watermark FROM export_archives WHERE id=$1',
+      [requested.export.id]
+    );
+    expect(reset.rows[0]).toEqual({ state: 'queued', data_complete: false, watermark: null });
+    expect(await segmentsOf(h, requested.export.id)).toEqual([]);
+    const states = await h.pool.query(
+      'SELECT DISTINCT state FROM managed_blobs WHERE blob_key=ANY($1::text[])',
+      [before]
+    );
+    expect(states.rows).toEqual([{ state: 'pending_delete' }]);
+    expect(await runExport(h, { segmentBytes: ONE_MESSAGE })).toBe(requested.export.id);
+    expect(await jobRow(h, requested.export.id)).toMatchObject({ state: 'ready' });
+    const archive = await openArchive(await downloadArchive(h, community, requested.export.id));
+    expect(archive.rows<{ removal: string | null }>('entries').map((row) => row.removal)).toEqual([
+      'erased',
+      'erased',
+      'erased',
+    ]);
     expect(
       archive
         .rows<{ id: string; display_name: string }>('members')
@@ -467,7 +514,7 @@ describe('the tail commit keeps erasure’s guarantee', () => {
 describe('jobs, erasure, access and deadlines', () => {
   // Purpose (AC-10b): an erasure completes while an owner export is building (the husk step
   // does not wait on a job in progress), deletes a ready export with every segment queued, and
-  // the building job rebuilds to include the husk. Fails if the erasure loops on the job, or a
+  // the building job starts again and includes the husk. Fails if the erasure loops on the job, or a
   // ready export (or one of its blobs) survives.
   it('completes an erasure while an export builds and deletes the ready one', async () => {
     const community = await exportCommunity(h, operatorCookie, 'Husk Place');
@@ -500,6 +547,8 @@ describe('jobs, erasure, access and deadlines', () => {
       },
     });
     expect(outcome).toBe('erased');
+    // The erasure sent the building job back to the start; it runs again from nothing.
+    expect(await runExport(h, { segmentBytes: ONE_MESSAGE })).toBe(owner.export.id);
     expect(
       (await h.pool.query('SELECT 1 FROM export_archives WHERE id=$1', [personal.export.id]))
         .rowCount

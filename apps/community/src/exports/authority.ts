@@ -3,8 +3,11 @@ import type { Pool, PoolClient } from 'pg';
 /** Who an export is for: one member's own data, or the whole community for its owner. */
 export type ExportScope = 'personal' | 'owner';
 
-/** Lifecycles in which an owner may export. A personal export needs an active community. */
-export const OWNER_EXPORT_LIFECYCLES = ['active', 'archived'] as const;
+/**
+ * Lifecycles in which an owner may export: a host hold keeps the owner's way out open. A personal
+ * export needs an active community.
+ */
+export const OWNER_EXPORT_LIFECYCLES = ['active', 'archived', 'held'] as const;
 
 type Queryable = Pick<Pool | PoolClient, 'query'>;
 

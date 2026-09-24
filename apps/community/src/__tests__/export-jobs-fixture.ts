@@ -235,6 +235,7 @@ export function runExport(
     ttlHours?: number;
     now?: () => Date;
     hooks?: ExportWorkerHooks;
+    sliceMs?: number;
     blobStore?: BlobStore;
     pool?: TenancyHarness['pool'];
   } = {}
@@ -249,6 +250,7 @@ export function runExport(
     },
     now: options.now,
     hooks: options.hooks,
+    sliceMs: options.sliceMs,
   });
 }
 

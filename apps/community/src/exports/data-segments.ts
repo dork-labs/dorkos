@@ -415,6 +415,9 @@ export async function* dataSegmentEntries(
     };
   }
 
+  // The attachments file exists exactly when the segment has files, so the manifest can name it
+  // from the segment's file count. Files that all vanished since the check are a change.
+  if (hasFiles.rowCount && tally.fileCount === 0) throw new SegmentChangedError();
   const written = createHash('sha256');
   for await (const page of entryPages<{ id: string; channel_id: string; seq: string }>(
     db,

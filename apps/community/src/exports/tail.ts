@@ -1,5 +1,5 @@
 import type { CommunityExportManifestV2 } from '@dorkos/shared/community-wire';
-import { decodeEntriesIndex, encodeEntriesIndex } from '../archive/zip-format.js';
+import { encodeEntriesIndex } from '../archive/zip-format.js';
 import {
   writeZipTail,
   type ZipEntryInput,
@@ -20,7 +20,7 @@ import {
   type CollectionFile,
   type CollectionTallies,
 } from './collections.js';
-import { SegmentChangedError } from './data-segments.js';
+import { fileNumber, SegmentChangedError } from './data-segments.js';
 import { JobFailedError, type ExportJob } from './job.js';
 import { dropSegments } from './store.js';
 
@@ -31,6 +31,11 @@ const COLLECTION_FILE_BYTES = 64 * 1024 * 1024;
  * Write every collection file into collection segments after the last data segment, from one
  * `REPEATABLE READ` transaction, so names, roles and memberships are as of now and agree with
  * each other. Collection and tail segments from an earlier pass (or claim) are queued first.
+ *
+ * The transaction stays open while the collection segments upload. That holds one connection
+ * per running export (the pool grows with `COMMUNITY_EXPORT_CONCURRENCY`, in main.ts) and one
+ * snapshot; an exported snapshot (`pg_export_snapshot`) would not shorten either, since the
+ * transaction that exports it must stay open for as long as others import it.
  */
 export async function writeCollections(job: ExportJob): Promise<Collected> {
   await transaction(job.pool, async (client) => {
@@ -126,15 +131,21 @@ export async function writeCollections(job: ExportJob): Promise<Collected> {
  * commit after it waits until the archive is ready. Returns true once ready.
  */
 export async function writeTail(job: ExportJob, collected: Collected): Promise<boolean> {
+  // Only sizes and counts here: each segment's central-directory rows are read when the tail
+  // reaches it, so memory holds one segment's rows at a time however large the archive is.
   const all = await job.segments();
   const layouts: ZipSegmentLayout[] = all.map((segment) => ({
     byteSize: Number(segment.byte_size),
-    entries: decodeEntriesIndex(segment.entries_index),
+    entries: async function* () {
+      yield* await job.entriesOf(segment.segment_no);
+    },
   }));
   const data = all.filter((segment) => segment.kind === 'data');
-  const dataNames = data.flatMap((segment) =>
-    decodeEntriesIndex(segment.entries_index).map((entry) => entry.name)
-  );
+  // Data segment n holds entries/n.ndjson, and attachments/n.ndjson exactly when it has files.
+  const entryFiles = data.map((segment) => `entries/${fileNumber(segment.segment_no)}.ndjson`);
+  const attachmentFiles = data
+    .filter((segment) => segment.file_count > 0)
+    .map((segment) => `attachments/${fileNumber(segment.segment_no)}.ndjson`);
   const { community, tallies } = collected;
   const icon =
     community.icon_blob_key && community.icon_byte_size && community.icon_checksum
@@ -176,8 +187,8 @@ export async function writeTail(job: ExportJob, collected: Collected): Promise<b
       channelMembers: tallies.channelMembers.files,
       agentChannelMembers: tallies.agentChannelMembers.files,
       auditEvents: tallies.auditEvents.files,
-      entries: dataNames.filter((name) => name.startsWith('entries/')),
-      attachments: dataNames.filter((name) => name.startsWith('attachments/')),
+      entries: entryFiles,
+      attachments: attachmentFiles,
     },
     counts: {
       channels: tallies.channels.count,

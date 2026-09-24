@@ -965,7 +965,6 @@ export const exportArchives = pgTable(
     state: text('state').notNull().default('ready'),
     /** max(seq) per exported channel when the job started. */
     watermark: jsonb('watermark'),
-    startRedactionId: bigint('start_redaction_id', { mode: 'number' }),
     lastCheckedRedactionId: bigint('last_checked_redaction_id', { mode: 'number' }),
     verifiedContentVersion: bigint('verified_content_version', { mode: 'number' }),
     rebuildPasses: integer('rebuild_passes').notNull().default(0),
@@ -974,6 +973,8 @@ export const exportArchives = pgTable(
     dataComplete: boolean('data_complete').notNull().default(false),
     leaseUntil: timestamp('lease_until', { withTimezone: true }),
     attempts: integer('attempts').notNull().default(0),
+    failures: integer('failures').notNull().default(0),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
     nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
     deadlineAt: timestamp('deadline_at', { withTimezone: true }),
     readyAt: timestamp('ready_at', { withTimezone: true }),
@@ -1010,6 +1011,7 @@ export const exportArchives = pgTable(
     ),
     check('export_archives_failure_code', sql`${table.failureCode} ~ '^[A-Z][A-Z0-9_]{0,63}$'`),
     check('export_archives_rebuild_passes', sql`${table.rebuildPasses} >= 0`),
+    check('export_archives_failures', sql`${table.failures} >= 0`),
     check(
       'export_archives_progress',
       sql`${table.progressDone} >= 0 AND (${table.progressTotal} IS NULL OR ${table.progressTotal} >= 0)`
@@ -1025,7 +1027,7 @@ export const exportArchives = pgTable(
       .on(table.requesterMemberId)
       .where(sql`${table.scope} = 'personal' AND ${table.state} IN ('queued','building')`),
     index('export_archives_due_idx')
-      .on(table.nextAttemptAt, table.createdAt)
+      .on(table.claimedAt.asc().nullsFirst(), table.createdAt)
       .where(sql`${table.state} IN ('queued','building')`),
     index('export_archives_requester_idx').on(
       table.communityId,
@@ -1185,6 +1187,8 @@ export const communityDeletionJobs = pgTable(
     state: text('state').notNull().default('waiting'),
     deleteAfter: timestamp('delete_after', { withTimezone: true }).notNull(),
     attempts: integer('attempts').notNull().default(0),
+    failures: integer('failures').notNull().default(0),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
     nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull(),
     lastErrorClass: text('last_error_class'),
     createdAt: time('created_at'),
@@ -1224,6 +1228,8 @@ export const communityDeletionBlobProgress = pgTable(
     blobKey: text('blob_key').notNull(),
     state: text('state').notNull().default('pending'),
     attempts: integer('attempts').notNull().default(0),
+    failures: integer('failures').notNull().default(0),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
     nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
     lastErrorClass: text('last_error_class'),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -1425,6 +1431,8 @@ export const erasureRequests = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true }),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     attempts: integer('attempts').notNull().default(0),
+    failures: integer('failures').notNull().default(0),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
     nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull(),
     lastErrorClass: text('last_error_class'),
   },

@@ -9,6 +9,7 @@ import {
 } from '../content-removal.js';
 import { transaction } from '../data.js';
 import { ERASED_ENTRY_TEXT } from '../content/tombstones.js';
+import { deleteReadyExports, restartExportJobs } from '../exports/store.js';
 import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../mentions.js';
 import { remove } from '../routes/members.js';
 
@@ -264,30 +265,14 @@ async function eraseFiles(target: Target): Promise<void> {
 
 async function deleteExports(target: Target): Promise<void> {
   await withMember(target, async (client) => {
-    // Every ready archive in the community holds this person's data. The rows go too: an
-    // archive row that still names its blob would keep the cleanup sweep from deleting it. A
-    // version 2 archive's blobs are its segments, which cascade away with the row, so their
-    // keys are read and queued first. Jobs still in progress are left to their rebuild, which
-    // sees this erasure's redaction rows and version bumps before it can commit.
-    const ready = await client.query<{ id: string; blob_key: string | null }>(
-      `SELECT id,blob_key FROM export_archives
-       WHERE community_id=$1 AND state='ready' AND deleted_at IS NULL FOR UPDATE`,
-      [target.communityId]
-    );
-    const ids = ready.rows.map((row) => row.id);
-    const segments = await client.query<{ blob_key: string }>(
-      'SELECT blob_key FROM export_segments WHERE community_id=$1 AND export_id=ANY($2::uuid[])',
-      [target.communityId, ids]
-    );
-    await queueBlobs(client, target.communityId, [
-      ...ready.rows.flatMap((row) => (row.blob_key ? [row.blob_key] : [])),
-      ...segments.rows.map((row) => row.blob_key),
-    ]);
-    await client.query('DELETE FROM export_archives WHERE community_id=$1 AND id=ANY($2::uuid[])', [
-      target.communityId,
-      ids,
-    ]);
+    // Bump first: an export whose final commit holds the content version FOR SHARE finishes
+    // before this goes on, so the ready archive it makes is deleted just below rather than
+    // slipping in after the select.
     await bumpContentVersion(client, target.communityId);
+    await deleteReadyExports(client, target.communityId);
+    // A job still being prepared holds the person's data in segments it already wrote. It
+    // starts again from nothing rather than carrying them until its deadline.
+    await restartExportJobs(client, target.communityId);
   });
 }
 
@@ -464,6 +449,12 @@ async function applyHusk(
     const member = await lockMember(client, target);
     if (!member) return 'gone';
     if (member.erased_at) return 'already-erased';
+    // Bump before the leftover check, not after it: the bump takes the content version's lock,
+    // so an export whose final commit holds it FOR SHARE either commits first (and the check
+    // below sees its ready archive, so this goes round again) or waits and then sees the husk.
+    // Bumping only at the end left a window where an export read the member as they were,
+    // committed ready after the check, and outlived the erasure.
+    await bumpContentVersion(client, target.communityId);
     const leftover = await client.query(
       `SELECT 1 WHERE $3::boolean
          OR EXISTS (SELECT 1 FROM entries WHERE ${AUTHORED_ENTRY})
@@ -515,8 +506,6 @@ async function applyHusk(
          AND state IN ('scheduled','running')`,
       [target.communityId, target.memberId]
     );
-    // The husk changes the owner export, so an export snapshotted before this cannot commit.
-    await bumpContentVersion(client, target.communityId);
     await target.options.hooks?.inBatch?.('seal');
     // Journal before commit: a completed erasure never lacks its line. A line whose commit then
     // fails only asks erasure:reapply to finish an erasure the worker is retrying anyway.

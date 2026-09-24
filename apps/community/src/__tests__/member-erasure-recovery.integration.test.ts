@@ -308,26 +308,39 @@ describe('files and export races (AC-4)', () => {
     expect(exported.entries.every((row) => row.removal === 'erased')).toBe(true);
   });
 
-  // Purpose (AC-4): the seal bumps the content version in its own transaction, so an export
-  // whose final commit waits on it goes round again and holds the husk. Fails if the tail
-  // commits the member as they were before the seal.
-  it('rebuilds an export whose commit waits on the seal, because the seal bumps in its own transaction', async () => {
-    const s = await scene('sealrace');
-    await requestErasure(s.p.cookie, s.communityId);
+  // Purpose (AC-4, review finding): the husk step takes the content version's lock before it
+  // checks for leftover exports, so an export cannot read the member as they were, commit ready
+  // after that check, and outlive the erasure. The husk is held just after its check (its
+  // handle row is locked); the export must wait for it and then export the husk. With the bump
+  // at the end of the husk step instead, the export commits the member's real name here.
+  it('makes an export wait for the husk, so it never commits the member as they were', async () => {
+    const s = await scene('huskrace');
     const exportId = await ownerExport(s);
+    const blocker = await h.pool.connect();
     let job: Promise<string[]> | undefined;
-    await runErasures(h.pool, hoursFromNow(73), {
-      hooks: {
-        inBatch: async (step) => {
-          if (step !== 'seal' || job) return;
-          job = drainExports(h.pool, h.blobStore);
-          await waitForLockWaiters(h, 1, 'community_content_versions');
-        },
-      },
-    });
-    expect(await job!).toEqual([exportId]);
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query(
+        'SELECT 1 FROM community_handles WHERE community_id=$1 AND member_id=$2 FOR UPDATE',
+        [s.communityId, s.p.memberId]
+      );
+      const erasing = eraseMembership(h.pool, s.communityId, s.p.memberId, {
+        log: () => undefined,
+      });
+      await waitForLockWaiters(h, 1, 'community_handles');
+      job = drainExports(h.pool, h.blobStore);
+      await waitForLockWaiters(h, 1, 'community_content_versions');
+      await blocker.query('COMMIT');
+      expect(await erasing).toBe('erased');
+    } finally {
+      await blocker.query('ROLLBACK').catch(() => undefined);
+      blocker.release();
+    }
+    expect(await job).toContain(exportId);
+    // The erasure's export step sent the job back to the start; run it to the end.
+    await drainExports(h.pool, h.blobStore);
     const exported = await exportedPerson(s, exportId, s.p.memberId);
-    expect(exported.member).toMatchObject({ display_name: 'Erased member' });
+    expect(exported.member).toMatchObject({ display_name: 'Erased member', email: null });
   });
 
   it('refuses an upload that started before the erasure and committed after it', async () => {

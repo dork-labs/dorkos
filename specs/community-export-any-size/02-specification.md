@@ -194,7 +194,7 @@ stateDiagram-v2
 - **Deadline.** `COMMUNITY_EXPORT_MAX_HOURS` (default 24, range 1 to 168) from claim. Past it: `failed` with `EXPORT_TIMED_OUT`.
 - **Ready.** `ready_at = now()`, `expires_at = now() + COMMUNITY_EXPORT_TTL_HOURS` (default 24, range 1 to 168), `byte_size` = the sum of segment sizes, and the tenant audit row `export.create` as today.
 - **Cancel.** `POST /exports/:id/cancel` by the requester, in `queued` or `building`: `cancelled`, segments queued for deletion.
-- **Sweep.** The existing `sweepExpiredExports` handles `ready` rows whose `expires_at` passed, queueing every segment (and version 1's single `blob_key`), and `failed`/`cancelled` rows older than a day. Exports stay exempt from the storage limit (host-operator P2); their bytes still appear in host usage as export bytes.
+- **Sweep.** The existing `sweepExpiredExports` handles `ready` rows whose `expires_at` passed, queueing every segment (and version 1's single `blob_key`), and `failed`/`cancelled` rows 7 days after they ended (the segments of a failed or cancelled job are queued the moment it ends; the row stays so `GET /exports` can show what happened for the 7 days it lists ended exports). Exports stay exempt from the storage limit (host-operator P2); their bytes still appear in host usage as export bytes.
 
 ### Routes and wire
 

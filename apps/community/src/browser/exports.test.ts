@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { CommunityWireExport } from '@dorkos/shared/community-wire';
-import { availableUntil, currentExport, exportInProgress, formatSize } from './exports.js';
+import {
+  availableUntil,
+  currentExport,
+  exportInProgress,
+  formatSize,
+  goneMessage,
+} from './exports.js';
 
 const base: CommunityWireExport = {
   id: 'e1',
@@ -48,5 +54,14 @@ describe('export panel helpers', () => {
 
   it('says until when a ready export is available', () => {
     expect(availableUntil(base.expiresAt!, 'en-GB')).toMatch(/^Available until .*25.*\.$/);
+  });
+
+  // Purpose: a ready export that disappears is explained: expired when its time has passed,
+  // otherwise deleted by an erasure (the only other way a ready export goes).
+  it('says why a ready export is gone', () => {
+    const now = new Date('2026-09-24T12:00:00.000Z');
+    expect(goneMessage({ ...base, state: 'expired' }, now)).toMatch(/expired/);
+    expect(goneMessage({ ...base, expiresAt: '2026-09-24T11:00:00.000Z' }, now)).toMatch(/expired/);
+    expect(goneMessage(base, now)).toMatch(/erased their data/);
   });
 });

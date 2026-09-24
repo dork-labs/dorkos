@@ -322,6 +322,15 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     const settingsExport = ownerPage.waitForEvent('download');
     await settingsDownload.click();
     expect((await settingsExport).suggestedFilename()).toBe('community-export.zip');
+    // An erasure deletes ready exports; the panel checks before downloading and says why.
+    await pool.query(
+      "DELETE FROM export_archives WHERE scope='owner' AND state='ready' AND community_id IN (SELECT community_id FROM members)"
+    );
+    await settingsDownload.click();
+    await expect(exportPanel.getByRole('status')).toContainText(
+      'deleted because someone in this community erased their data'
+    );
+    await expect(exportPanel.getByRole('button', { name: 'Export this community' })).toBeVisible();
     await ownerPage.setViewportSize({ width: 390, height: 844 });
     await ownerPage.getByRole('button', { name: 'Schedule deletion' }).click();
     const deletionDialog = ownerPage.getByRole('dialog', {

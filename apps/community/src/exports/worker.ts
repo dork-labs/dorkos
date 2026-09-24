@@ -17,7 +17,8 @@ import {
   ExportJob,
   JobFailedError,
   JobLostError,
-  MAX_EXPORT_ATTEMPTS,
+  EXPORT_SLICE_MS,
+  MAX_EXPORT_FAILURES,
   rangeOf,
   type ExportWorkerOptions,
   type SegmentRow,
@@ -27,7 +28,8 @@ import { writeCollections, writeTail } from './tail.js';
 
 export {
   EXPORT_LEASE_MS,
-  MAX_EXPORT_ATTEMPTS,
+  EXPORT_SLICE_MS,
+  MAX_EXPORT_FAILURES,
   MAX_REBUILD_PASSES,
   type ExportWorkerHooks,
   type ExportWorkerOptions,
@@ -36,20 +38,34 @@ export {
 
 const HEARTBEAT_MS = 60 * 1000;
 
+function logUnavailable(exportId: string, cause: unknown): void {
+  console.error('Community export state could not be recorded', {
+    exportId,
+    error: cause instanceof Error ? cause.name : 'unknown',
+  });
+}
+
 /**
  * Claim one due job: queued, or building with an expired lease (its worker died). The claim
  * moves it to `building`, takes a lease, and starts its deadline on the first claim.
  */
 async function claimExport(options: ExportWorkerOptions, now: Date): Promise<ExportRow | null> {
+  // The least recently served job first, so jobs take turns; and one job per community at a
+  // time, so a community's second export waits for its first instead of taking another slot.
   const claimed = await options.pool.query<ExportRow>(
     `UPDATE export_archives
-     SET state='building',attempts=attempts+1,lease_until=$1::timestamptz + $2 * interval '1 millisecond',
+     SET state='building',attempts=attempts+1,claimed_at=$1,
+         lease_until=$1::timestamptz + $2 * interval '1 millisecond',
          deadline_at=COALESCE(deadline_at,$1::timestamptz + $3 * interval '1 hour')
      WHERE id=(
-       SELECT id FROM export_archives
-       WHERE state IN ('queued','building') AND next_attempt_at<=$1
-         AND (lease_until IS NULL OR lease_until<$1)
-       ORDER BY next_attempt_at,created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
+       SELECT e.id FROM export_archives e
+       WHERE e.state IN ('queued','building') AND e.next_attempt_at<=$1
+         AND (e.lease_until IS NULL OR e.lease_until<$1)
+         AND NOT EXISTS (
+           SELECT 1 FROM export_archives other
+           WHERE other.community_id=e.community_id AND other.id<>e.id
+             AND other.state='building' AND other.lease_until>=$1)
+       ORDER BY e.claimed_at NULLS FIRST,e.created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
      RETURNING ${EXPORT_COLUMNS}`,
     [now, EXPORT_LEASE_MS, options.settings.maxHours]
   );
@@ -87,9 +103,17 @@ export function startExportWorker(
         const job = await claimExport(options, now());
         if (!job) return;
         running++;
-        void new ExportRun(options, job, now).execute().finally(() => {
-          running--;
-        });
+        void new ExportRun(options, job, now)
+          .execute()
+          .catch((error: unknown) => {
+            console.error(
+              'Community export worker unavailable',
+              error instanceof Error ? error.name : 'unknown'
+            );
+          })
+          .finally(() => {
+            running--;
+          });
       }
     })()
       .catch((error: unknown) => {
@@ -106,10 +130,16 @@ export function startExportWorker(
   return timer;
 }
 
-/** One claimed job, run by this worker until it ends or is lost. */
-
-/** One claimed job, run by this worker until it ends or is lost. */
+/** One claimed job, run by this worker until it ends, is lost, or steps aside. */
 class ExportRun extends ExportJob {
+  /** When this claim started, for the time slice. */
+  private readonly claimedAt = this.now().getTime();
+
+  /**
+   * Run the job. Never rejects: every outcome (ready, failed, lost, stepped aside, retried
+   * later) is recorded, and a database that is gone at that moment is logged, not thrown, so a
+   * worker stopping with the process leaves only a lease to expire.
+   */
   async execute(): Promise<void> {
     const heartbeat = setInterval(() => {
       void this.renewLease().catch(() => undefined);
@@ -117,7 +147,7 @@ class ExportRun extends ExportJob {
     heartbeat.unref();
     try {
       await this.start();
-      await this.writeDataSegments();
+      if ((await this.writeDataSegments()) === 'yielded') return;
       await this.finish();
     } catch (error) {
       if (error instanceof JobLostError) return;
@@ -130,19 +160,42 @@ class ExportRun extends ExportJob {
             this.now(),
             this.fence
           )
-        );
+        ).catch((cause: unknown) => logUnavailable(this.job.id, cause));
         return;
       }
-      await this.retryLater(error);
+      await this.retryLater(error).catch((cause: unknown) => logUnavailable(this.job.id, cause));
     } finally {
       clearInterval(heartbeat);
     }
   }
 
-  // --- Job state ---------------------------------------------------------------------------
+  /**
+   * After a segment: past its time slice with another community's job waiting, the job gives
+   * up its lease (not counted as a failure) so the other can run, and resumes later.
+   */
+  private async stepAside(): Promise<boolean> {
+    const slice = this.options.sliceMs ?? EXPORT_SLICE_MS;
+    if (this.now().getTime() - this.claimedAt < slice) return false;
+    const waiting = await this.pool.query(
+      `SELECT 1 FROM export_archives
+       WHERE state IN ('queued','building') AND community_id<>$1 AND next_attempt_at<=$2
+         AND (lease_until IS NULL OR lease_until<$2) LIMIT 1`,
+      [this.job.community_id, this.now()]
+    );
+    if (!waiting.rowCount) return false;
+    const released = await this.pool.query(
+      `UPDATE export_archives SET lease_until=NULL
+       WHERE id=$1 AND state='building' AND attempts=$2`,
+      [this.job.id, this.fence]
+    );
+    if (released.rowCount !== 1) throw new JobLostError();
+    return true;
+  }
 
-  /** Extend the lease; the job is lost when it is no longer building under this claim. */
-
+  /**
+   * An unexpected error: count a failure and retry later with backoff, or fail the job as a
+   * storage failure after {@link MAX_EXPORT_FAILURES}.
+   */
   private async retryLater(error: unknown): Promise<void> {
     console.error('Community export attempt failed', {
       exportId: this.job.id,
@@ -153,7 +206,16 @@ class ExportRun extends ExportJob {
             ? error.name
             : 'unknown',
     });
-    if (this.fence >= MAX_EXPORT_ATTEMPTS) {
+    // Failures are counted apart from claims, so a job that steps aside or outlives a restart
+    // is not failed for it.
+    const counted = await this.pool.query<{ failures: number }>(
+      `UPDATE export_archives SET failures=failures+1
+       WHERE id=$1 AND state='building' AND attempts=$2 RETURNING failures`,
+      [this.job.id, this.fence]
+    );
+    const failures = counted.rows[0]?.failures;
+    if (failures === undefined) return;
+    if (failures >= MAX_EXPORT_FAILURES) {
       await transaction(this.pool, (client) =>
         endExportJob(
           client,
@@ -162,20 +224,18 @@ class ExportRun extends ExportJob {
           this.now(),
           this.fence
         )
-      ).catch(() => undefined);
+      );
       return;
     }
-    // One minute, doubling per attempt, at most half an hour. The lease is released so the
+    // One minute, doubling per failure, at most half an hour. The lease is released so the
     // retry can be claimed as soon as it is due.
-    const delay = Math.min(60_000 * 2 ** (this.fence - 1), 30 * 60_000);
-    await this.pool
-      .query(
-        `UPDATE export_archives SET lease_until=NULL,
-           next_attempt_at=$3::timestamptz + $4 * interval '1 millisecond'
-         WHERE id=$1 AND state='building' AND attempts=$2`,
-        [this.job.id, this.fence, this.now(), delay]
-      )
-      .catch(() => undefined);
+    const delay = Math.min(60_000 * 2 ** (failures - 1), 30 * 60_000);
+    await this.pool.query(
+      `UPDATE export_archives SET lease_until=NULL,
+         next_attempt_at=$3::timestamptz + $4 * interval '1 millisecond'
+       WHERE id=$1 AND state='building' AND attempts=$2`,
+      [this.job.id, this.fence, this.now(), delay]
+    );
   }
 
   /**
@@ -257,7 +317,7 @@ class ExportRun extends ExportJob {
         );
       }
       await client.query(
-        `UPDATE export_archives SET watermark=$2,start_redaction_id=$3,last_checked_redaction_id=$3,
+        `UPDATE export_archives SET watermark=$2,last_checked_redaction_id=$3,
            verified_content_version=$4,progress_total=$5
          WHERE id=$1`,
         [
@@ -276,8 +336,12 @@ class ExportRun extends ExportJob {
     this.job.verified_content_version = started.version;
   }
 
-  private async writeDataSegments(): Promise<void> {
-    if (this.job.data_complete) return;
+  /**
+   * Write data segments from the last committed one until every exported message is written,
+   * stepping aside between segments when the job's time slice is over and another waits.
+   */
+  private async writeDataSegments(): Promise<'done' | 'yielded'> {
+    if (this.job.data_complete) return 'done';
     const written = await this.segments('data');
     let cursor = written.length ? rangeOf(written[written.length - 1]).last : START_CURSOR;
     let segmentNo = written.length + 1;
@@ -288,12 +352,14 @@ class ExportRun extends ExportJob {
       await this.writeDataSegment(segmentNo, range, false);
       cursor = range.last;
       segmentNo++;
+      if (await this.stepAside()) return 'yielded';
     }
     await this.pool.query(
       `UPDATE export_archives SET data_complete=true WHERE id=$1 AND state='building' AND attempts=$2`,
       [this.job.id, this.fence]
     );
     this.job.data_complete = true;
+    return 'done';
   }
 
   /**

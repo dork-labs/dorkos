@@ -21,7 +21,13 @@ import { sweepExpiredPairings } from './routes/pairings.js';
 
 const config = parseConfig(process.env);
 await migrate(config.databaseUrl);
-const pool = new Pool({ connectionString: config.databaseUrl });
+// Each running export holds one connection for its collection read (one REPEATABLE READ
+// snapshot) and briefly a second to commit a segment, so the pool grows with export concurrency
+// and requests keep the ten connections they had before.
+const pool = new Pool({
+  connectionString: config.databaseUrl,
+  max: 10 + 2 * config.exports.concurrency,
+});
 // A database restart or failover drops idle connections. The pool has already discarded the
 // broken one and opens a fresh one for the next query, so log it rather than crash the server.
 pool.on('error', (error: Error & { code?: string }) => {
