@@ -289,7 +289,9 @@ export const marketplaceDomain: CapabilityDomain = {
       title: 'Uninstall package',
       description:
         'Uninstall a previously installed marketplace package. Requires user confirmation. ' +
-        'By default, preserves .dork/data/ and .dork/secrets.json. Pass purge:true to remove them.',
+        'By default, keeps the files you and your agents added or changed; purge:true removes them. ' +
+        'Uninstalling an agent package removes the agent from the team (rooms, schedules, sign-ins, access), ' +
+        'and reinstalling does not restore that.',
       tier: 'destructive',
       area: null,
       areaNote: AREA_PENDING_PHASE_3,

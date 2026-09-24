@@ -5,8 +5,9 @@
  * each one right now would give, and returns the comparison without touching
  * any installed package. When `apply` is set, the flow delegates reinstallation
  * of every installation with an update to an injected {@link InstallerLike},
- * which runs the uninstall-without-purge → install pattern that preserves
- * `.dork/data/` and `.dork/secrets.json` (ADR-0233).
+ * which uninstalls as the first half of a replace and reinstalls, keeping the
+ * files the person and their agents added or changed (ADR-0233, amended by
+ * ADR 260923-163513).
  *
  * Two doors lead here, and both check {@link InstallationRecord}s from the
  * installed scanner's one walk rather than walking install roots themselves:

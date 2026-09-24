@@ -17,11 +17,14 @@
  *
  * @module services/marketplace-mcp/tool-uninstall
  */
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { z } from 'zod';
 import { PackageNameSchema } from '@dorkos/marketplace';
 
 import { PackageNotInstalledError, type UninstallResult } from '../marketplace/flows/uninstall.js';
 import { BoundaryError, validateBoundary } from '../../lib/boundary.js';
+import { locateInstallRoot } from '../marketplace/lib/locate-install.js';
 
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
 import type { MarketplaceConfirmationContext } from './confirmation-provider.js';
@@ -40,7 +43,7 @@ export const UninstallInputSchema = {
   purge: z
     .boolean()
     .optional()
-    .describe('Also remove .dork/data/ and .dork/secrets.json (default false)'),
+    .describe('Also remove the files you and your agents added or changed (default false)'),
   projectPath: z.string().optional().describe('Project-local uninstall path (defaults to global)'),
   confirmationToken: z
     .string()
@@ -140,11 +143,15 @@ export function createUninstallHandler(deps: MarketplaceMcpDeps) {
     // confirmation request, so the approval is bound to this exact effect —
     // notably `purge`, the difference between a reversible uninstall and one
     // that deletes the package's saved data and secrets.
+    // The card has to say what removing an AGENT package takes away (DOR-2245),
+    // so the request names the installed package's type when it can.
+    const installedType = await installedPackageType(deps.dorkHome, args.name, projectPath);
     const confirmationRequest = {
       packageName: args.name,
       marketplace: 'installed',
       operation: 'uninstall' as const,
       purge: args.purge ?? false,
+      ...(installedType === 'agent' && { packageType: 'agent' }),
       ...(args.projectPath !== undefined && { projectPath: args.projectPath }),
       ...(context?.requestedBy ? { requestedBy: context.requestedBy } : {}),
     };
@@ -221,4 +228,30 @@ export function createUninstallHandler(deps: MarketplaceMcpDeps) {
       preservedPaths: result.preservedData ?? [],
     });
   };
+}
+
+/**
+ * The type of the installed package an uninstall would remove, or `undefined`
+ * when it is not found or its manifest cannot be read. Only used to word the
+ * approval card.
+ *
+ * @param dorkHome - Resolved DorkOS data directory.
+ * @param name - The package name.
+ * @param projectPath - The project scope, when one was named.
+ */
+async function installedPackageType(
+  dorkHome: string,
+  name: string,
+  projectPath: string | undefined
+): Promise<string | undefined> {
+  const root = await locateInstallRoot({ dorkHome, name, ...(projectPath && { projectPath }) });
+  if (!root) return undefined;
+  try {
+    const manifest = JSON.parse(
+      await readFile(path.join(root, '.dork', 'manifest.json'), 'utf-8')
+    ) as { type?: unknown };
+    return typeof manifest.type === 'string' ? manifest.type : undefined;
+  } catch {
+    return undefined;
+  }
 }

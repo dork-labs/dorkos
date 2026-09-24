@@ -25,9 +25,9 @@ import type { InstallationRecord, PackageScope } from '../installed-scanner.js';
  */
 export interface InstallerLike {
   /**
-   * Update an installed package by uninstalling (without purging
-   * `.dork/data/` or `.dork/secrets.json`) and reinstalling fresh.
-   * Preserves user secrets and persisted state across version bumps.
+   * Update an installed package: uninstall it as the first half of a replace
+   * and reinstall, keeping the files the person and their agents added or
+   * changed (DOR-2245).
    */
   update(req: InstallRequest): Promise<InstallResult>;
   /**
