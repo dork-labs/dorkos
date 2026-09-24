@@ -169,6 +169,15 @@ Content here.
 **Skill directories scanned by validator (in order):**
 `skills/`, `tasks/`, `commands/`, `.claude/skills/`, `.claude/commands/`, `.dork/tasks/`
 
+## Where a package keeps its state
+
+DorkOS records every file an install puts in the package's folder and replaces or removes only those; everything else is the person's and survives update, reinstall and uninstall (DOR-2245).
+
+- Write state to `${CLAUDE_PLUGIN_DATA}` (the install's own `.dork/data`, one per install), in commands, hooks, or via the environment variable. Never write into files the package ships: an edited shipped file is replaced on update and the person's copy saved as `<file>.dork-old`.
+- A shipped default meant to be edited goes in `userEditable` in `.dork/manifest.json` (exact paths or `dir/**`); then the person's copy stays and a changed default is saved as `<file>.dork-new`. Set `minDorkosVersion` when relying on it. Nothing that decides what the package runs can be `userEditable` (hooks, `.mcp.json`, `.lsp.json`, monitors, `bin/`, extensions, tasks, skills, commands, subagents (`agents/`), output styles, `package.json`, or a path plugin.json declares one at): the schema and `validatePackage` refuse it (`EFFECT_BEARING_PATHS`, `USER_EDITABLE_EFFECT_PATH`).
+- Never ship `.dork/data/`, `.dork/secrets.json`, `.dork/install-metadata.json`, `.dork/installed-files.json`, `.dork/uninstalled-agent.json`, or `*.dork-old` / `*.dork-new`: `validatePackage` refuses them (`RESERVED_PATH_SHIPPED`).
+- An agent package's `.dork/agent.json`, `SOUL.md`, `NOPE.md` and `MEMORY.md` are the agent's: a shipped copy only seeds an install where the file is absent.
+
 ## Validation
 
 ```bash

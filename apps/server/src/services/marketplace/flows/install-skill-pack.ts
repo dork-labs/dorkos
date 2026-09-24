@@ -20,6 +20,7 @@ import { atomicMove } from '../lib/atomic-move.js';
 import { installRootDirForType } from '../lib/install-roots.js';
 import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
 import { stagePackageContents } from '../lib/stage-package.js';
+import { flowOwnership } from '../lib/flow-ownership.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -62,14 +63,16 @@ export class SkillPackInstallFlow {
     // Filled during `stage` by the npm dependency step; read after the
     // transaction commits, so a rolled-back install reports nothing.
     const warnings: string[] = [];
+    const { ownership, finish } = flowOwnership(manifest, opts);
     await runTransaction({
       name: `install-skill-pack-${manifest.name}`,
       target: installRoot,
       stage: (staging) =>
         stageSkillPack(packagePath, staging.path, installRoot, warnings, this.deps.logger),
       activate: (staging) => activateSkillPack(staging.path, installRoot),
+      ownership,
     });
-    return buildInstallResult(manifest, installRoot, warnings);
+    return finish(buildInstallResult(manifest, installRoot, warnings));
   }
 }
 
@@ -203,6 +206,26 @@ async function findSkillFiles(root: string): Promise<string[]> {
 function isUnderNodeModules(relativeDir: string): boolean {
   if (relativeDir === '') return false;
   return relativeDir.split(path.sep).includes('node_modules');
+}
+
+/**
+ * Every `SKILL.md` under a package that DorkOS's parser rejects, one sentence
+ * each (outside `node_modules`). Content-only, so the installer runs it before
+ * an update's uninstall half (DOR-2245).
+ *
+ * @param packagePath - A package tree, staged or at its source.
+ * @returns One problem per rejected file; empty when all parse.
+ */
+export async function skillFileProblems(packagePath: string): Promise<string[]> {
+  const problems: string[] = [];
+  for (const absFile of await findSkillFiles(packagePath)) {
+    try {
+      await validateSkillFile(absFile);
+    } catch (err) {
+      problems.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  return problems;
 }
 
 /**

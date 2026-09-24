@@ -3,8 +3,8 @@
  * `dorkos uninstall <name>`).
  *
  * Calls `POST /api/marketplace/packages/:name/uninstall` and prints a
- * one-line summary. Defaults preserve `.dork/data/` and
- * `.dork/secrets.json`; pass `--purge` to remove them too.
+ * one-line summary. By default the files you and your agents added or
+ * changed are kept; pass `--purge` to remove them too.
  *
  * Removing a package cannot be undone, so the route gates it (DOR-467): a caller
  * that is not the person at the keyboard — an agent, which carries
@@ -22,7 +22,7 @@ import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 export interface UninstallArgs {
   /** Package name to uninstall. */
   name: string;
-  /** Remove preserved data and secrets in addition to package files. */
+  /** Also remove the files you and your agents added or changed. */
   purge?: boolean;
   /** Absolute project path for project-local uninstalls, resolved against the caller's cwd. */
   projectPath?: string;
@@ -36,7 +36,22 @@ interface UninstallResultBody {
   packageName: string;
   removedFiles: number;
   preservedData: string[];
+  /** Set when an agent package's agent was removed from the team (DOR-2245). */
+  agentRemoved?: { id: string; directoryDenied: boolean; removed: string[] };
+  warnings?: string[];
 }
+
+/** How each thing removing an agent takes away is said to a person. */
+const REMOVAL_WORDS: Record<string, string> = {
+  'relay-endpoint': 'its message address',
+  rooms: 'its rooms',
+  'schedules-paused': 'its schedules (paused)',
+  'task-roots': 'its scheduled task folders',
+  'mcp-sign-ins': 'its sign-ins',
+  'identity-tokens': 'its access tokens',
+  'community-enrollments': 'its community memberships',
+  'connection-access': 'its connection access',
+};
 
 /**
  * The tier gate's "a person has to approve this first" answer, returned instead
@@ -138,11 +153,23 @@ export async function runUninstall(args: UninstallArgs): Promise<number> {
 
     console.log(`Uninstalled ${result.packageName} (${result.removedFiles} entries removed)`);
     if (!args.purge && result.preservedData.length > 0) {
-      console.log('Preserved:');
+      console.log('Kept the files you and your agents added or changed:');
       for (const path of result.preservedData) {
         console.log(`  ${path}`);
       }
     }
+    if (result.agentRemoved) {
+      const taken = result.agentRemoved.removed.map((r) => REMOVAL_WORDS[r] ?? r).join(', ');
+      console.log(
+        `Removed the agent from your team. That also took away ${taken}; reinstalling does not bring them back.`
+      );
+      if (result.agentRemoved.directoryDenied) {
+        console.log(
+          'Its folder is blocked from your team because git tracks its settings file, so the file was left in place.'
+        );
+      }
+    }
+    for (const warning of result.warnings ?? []) console.log(warning);
     return 0;
   } catch (err) {
     if (err instanceof ApiError) {

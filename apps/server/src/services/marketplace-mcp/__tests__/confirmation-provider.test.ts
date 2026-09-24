@@ -92,6 +92,22 @@ describe('TokenConfirmationProvider', () => {
       }
     });
 
+    // Purpose (DOR-2245): the card for an agent package says what removal takes
+    // away and that a reinstall does not restore it; other packages do not.
+    it('tells the person what uninstalling an agent package takes away', async () => {
+      await provider.requestInstallConfirmation(
+        buildRequest({ operation: 'uninstall', packageType: 'agent', purge: false })
+      );
+      await provider.requestInstallConfirmation(
+        buildRequest({ operation: 'uninstall', purge: false })
+      );
+      const [agent, plugin] = approvals.listPending().map((p) => p.summary);
+      expect(agent).toMatch(/removes the agent from your team/);
+      expect(agent).toMatch(/reinstalling does not restore them/);
+      expect(agent).toMatch(/keeping the files you and your agents added or changed/);
+      expect(plugin).not.toMatch(/team/);
+    });
+
     it('issues a unique token for each request', async () => {
       const a = await provider.requestInstallConfirmation(buildRequest());
       const b = await provider.requestInstallConfirmation(buildRequest());

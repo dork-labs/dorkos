@@ -258,16 +258,13 @@ describe('PluginInstallFlow', () => {
     const result = await flow.install(pkgPath, manifest, {});
 
     expect(result.ok).toBe(true);
-    // New package present, previous contents replaced.
+    // New package present. `old.txt`, which no install recorded, is a person's
+    // file and is kept (DOR-2245).
     expect(await pathExists(path.join(installRoot, '.dork', 'manifest.json'))).toBe(true);
-    expect(await pathExists(path.join(installRoot, 'old.txt'))).toBe(false);
-    // No leftover backup sibling under plugins/.
+    expect(await pathExists(path.join(installRoot, 'old.txt'))).toBe(true);
+    // No leftover backup or staging sibling under plugins/ (staging is a sibling now).
     const pluginEntries = await readdir(path.join(deps.dorkHome, 'plugins'));
-    expect(pluginEntries.some((e) => e.includes('.dorkos-bak-'))).toBe(false);
-
-    const stagingPrefix = 'dorkos-install-install-plugin-overwrite-plugin-';
-    const tmpEntries = await readdir(tmpdir());
-    expect(tmpEntries.some((e) => e.startsWith(stagingPrefix))).toBe(false);
+    expect(pluginEntries).toEqual(['overwrite-plugin']);
   });
 
   it('disables extensions the reinstalled version dropped and keeps the ones it retains', async () => {

@@ -253,7 +253,7 @@ describe('ShapeInstallFlow', () => {
     // transaction's own moves (target → backup, backup → target) call through
     // to the real implementation so the restore path actually runs.
     vi.mocked(atomicMove).mockImplementation((source, dest) => {
-      if (dest === installRoot && source.includes('dorkos-install-')) {
+      if (dest === installRoot && source.includes('.dorkos-stage-')) {
         throw new Error('boom: rename failed');
       }
       return realAtomicMove(source, dest);

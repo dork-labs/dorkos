@@ -20,6 +20,7 @@ import { atomicMove } from '../lib/atomic-move.js';
 import { installRootDirForType } from '../lib/install-roots.js';
 import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
 import { stagePackageContents } from '../lib/stage-package.js';
+import { flowOwnership } from '../lib/flow-ownership.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -74,9 +75,10 @@ export class AdapterInstallFlow {
   async install(
     packagePath: string,
     manifest: AdapterPackageManifest,
-    opts: Pick<InstallRequest, 'projectPath'>
+    opts: Pick<InstallRequest, 'projectPath' | 'ownership'>
   ): Promise<InstallResult> {
     const { dorkHome, adapterManager, logger } = this.deps;
+    const { ownership, finish } = flowOwnership(manifest, opts);
     const installPath = path.join(dorkHome, installRootDirForType(manifest.type), manifest.name);
 
     logger.info('[marketplace/install-adapter] starting', {
@@ -108,11 +110,12 @@ export class AdapterInstallFlow {
         await registerAdapterWithCompensation(adapterManager, manifest, installPath, logger);
         return { installPath };
       },
+      ownership,
     });
 
     logger.info('[marketplace/install-adapter] success', { name: manifest.name });
 
-    return {
+    return finish({
       ok: true,
       packageName: manifest.name,
       version: manifest.version,
@@ -125,7 +128,7 @@ export class AdapterInstallFlow {
         ...dependencyWarnings,
       ],
       dependencyWarnings: [...dependencyWarnings],
-    };
+    });
   }
 }
 

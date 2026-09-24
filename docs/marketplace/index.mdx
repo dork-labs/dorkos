@@ -198,6 +198,15 @@ To add the package to another scope (for example, you have it globally and want 
   caveat applies.
 </Callout>
 
+## What updating, reinstalling and uninstalling keep
+
+A package's folder can hold your own files as well as the package's: settings you filled in, notes, a folder an agent works in. DorkOS keeps track of which files the package itself put there, and only ever replaces or removes those.
+
+- **Updating or reinstalling** keeps every file you or your agents added. The package's own files are swapped for the new version's.
+- **If you changed one of the package's own files**, the new version replaces it and your copy is saved next to it with `.dork-old` on the end, for example `SKILL.md.dork-old`. Some packages mark a file as yours to edit, such as a settings file. For those, your copy stays, and if the package changed its default, the new default is saved next to it with `.dork-new` on the end. The update tells you about each of these.
+- **Uninstalling** keeps the files you and your agents added or changed and lists them. Installing the package again later picks them up. `dorkos uninstall <name> --purge` deletes them too.
+- **Uninstalling a marketplace agent** also removes that agent from your team, as removing any agent does. Its rooms, schedules, sign-ins, access tokens, community memberships and connection access go with it. Its memory and persona files stay in its folder. Reinstalling the same package brings back the agent's identity, but not those things; you set them up again.
+
 ## When a new plugin switches on in a chat that's already open
 
 Installing a plugin doesn't interrupt anything. Chats that aren't open pick it up the next time you send a message. Chats that are already running usually pick it up right away, and you'll see the new commands without doing anything.

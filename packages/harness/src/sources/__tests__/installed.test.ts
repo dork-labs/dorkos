@@ -91,12 +91,14 @@ describe('scanInstalledPlugins', () => {
         name: 'alpha',
         sourceDir: '.dork/plugins/my-plugin/skills/alpha',
         usesPluginRoot: false,
+        usesPluginData: false,
         hasSchedule: false,
       },
       {
         name: 'beta',
         sourceDir: '.dork/plugins/my-plugin/.dork/tasks/beta',
         usesPluginRoot: false,
+        usesPluginData: false,
         hasSchedule: false,
       },
     ]);
@@ -113,6 +115,7 @@ describe('scanInstalledPlugins', () => {
         name: 'gamma',
         sourceDir: `${globalPlugin}/skills/gamma`,
         usesPluginRoot: false,
+        usesPluginData: false,
         hasSchedule: false,
         linkedInDorkHome: false,
       },
@@ -192,6 +195,7 @@ describe('scanInstalledPlugins', () => {
         name: 'alpha',
         sourceDir: '.dork/plugins/my-plugin/skills/alpha',
         usesPluginRoot: false,
+        usesPluginData: false,
         hasSchedule: false,
       },
     ]);

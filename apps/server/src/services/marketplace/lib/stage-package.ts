@@ -31,11 +31,20 @@
  * reaches disk. The USER's own `~/.npmrc` is untouched; that is where
  * private-registry auth lives.
  *
+ * And one family of paths (DOR-2245): the ones DorkOS keeps for the person or
+ * the installer (`isReservedPackagePath`): the package's data directory, its
+ * secrets file, the installer's records, and `.dork-old` / `.dork-new` copies.
+ * Validation refuses a package that ships one; stripping here is the defence
+ * that also covers the legacy-record rebuild, which stages an old tree that
+ * was never validated against that rule. A reserved directory is dropped as
+ * one subtree.
+ *
  * @module services/marketplace/lib/stage-package
  */
 import { cp, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
+import { isReservedPackagePath } from '@dorkos/marketplace';
 import { PACKAGE_NPMRC } from './npm-dependencies.js';
 
 /**
@@ -70,6 +79,13 @@ export async function stagePackageContents(
       if (src === rootNpmrc) {
         logger.warn(
           `[marketplace/stage] Stripped the package's own ${PACKAGE_NPMRC}: it can redirect or escape an npm install, and nothing a package needs at runtime lives in it.`
+        );
+        return false;
+      }
+      const rel = path.relative(source, src).split(path.sep).join('/');
+      if (rel !== '' && isReservedPackagePath(rel)) {
+        logger.warn(
+          `[marketplace/stage] Stripped reserved path from package: ${rel} (DorkOS keeps it for the person or the installer)`
         );
         return false;
       }

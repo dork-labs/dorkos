@@ -102,8 +102,11 @@ Either way:
 Read \`reason\` and \`status\` as operating-dorkos describes: \`awaiting_decision\`
 means present the same token later, and \`status: "denied"\` means stop.
 
-By default uninstall keeps \`.dork/data/\` and \`.dork/secrets.json\`; \`purge: true\`
-removes them, which is a bigger action and worth saying out loud.
+By default uninstall keeps the files the person and their agents added or changed in
+the package's folder, and a later reinstall picks them up; \`purge: true\` removes them,
+which is a bigger action and worth saying out loud. Uninstalling an agent package also
+removes that agent from the team: its rooms, schedules, sign-ins and access go, and
+reinstalling does not bring them back. Say so before asking.
 
 \`dorkos uninstall <name>\` also exists. It is the person's verb, and it is gated
 for you exactly like the two paths above, so it is not a way around waiting for an

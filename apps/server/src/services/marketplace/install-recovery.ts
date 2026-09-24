@@ -16,6 +16,8 @@
  * | `absent`         | an empty file (`.absent`)       | fresh install started, never committed       | remove whatever the install left at target   |
  * | `committed`      | the old contents (`.committed`) | the new install is whole; this is leftovers  | delete it                                    |
  * | `legacy-backup`  | old contents, no owner in name  | written before these records existed         | restore only if the target is missing        |
+ * | `stage`          | a staging dir (`.dorkos-stage-`) | an install staging beside its target         | delete it (DOR-2245)                         |
+ * | `uninstall`      | moved package files + a journal | an in-place uninstall (`.dorkos-uninstall-`) | roll back or finish by its journal (DOR-2245) |
  *
  * The commit point is one atomic step: renaming `backup` to `committed`, or
  * unlinking the `absent` marker. Anything the transaction had not committed is
@@ -99,7 +101,14 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
+import { AGENT_MANIFEST_PATH } from '@dorkos/marketplace';
+import {
+  MARKETPLACE_BACKUP_DIR_MARKER,
+  MARKETPLACE_STAGE_DIR_MARKER,
+  MARKETPLACE_UNINSTALL_DIR_MARKER,
+} from '@dorkos/shared/marketplace-schemas';
+import { isInstallWhole } from './lib/installed-files.js';
+import { finishUninstall, readJournal, rollBackUninstall } from './lib/uninstall-journal.js';
 import { atomicMove } from './lib/atomic-move.js';
 import {
   assessRecordOwner,
@@ -114,7 +123,15 @@ import {
  * What a transaction record says about its target — see the table in the
  * module header.
  */
-export type InstallRecordKind = 'backup' | 'absent' | 'committed' | 'legacy-backup';
+export type InstallRecordKind =
+  | 'backup'
+  | 'absent'
+  | 'committed'
+  | 'legacy-backup'
+  /** A staging directory beside the target (DOR-2245): only copies and new package files. */
+  | 'stage'
+  /** An in-place uninstall's sibling (DOR-2245): settled by its journal. */
+  | 'uninstall';
 
 /** What recovering one unfinished record did. */
 export type RecordOutcome =
@@ -289,7 +306,56 @@ const INSTALL_RECORD_POLICIES: readonly InstallRecordPolicy[] = [
       },
     },
   },
+  {
+    // DOR-2245: an install stages beside its target. A crash-left staging dir
+    // holds only clones of the person's files and new package files; the live
+    // target was only ever read, so it is always safe to delete.
+    kind: 'stage',
+    marker: MARKETPLACE_STAGE_DIR_MARKER,
+    owned: true,
+    suffix: '',
+    recovery: { phase: 'finished' },
+  },
+  {
+    // DOR-2245: an in-place uninstall's sibling, settled by the journal it
+    // carries. Not committed: every move goes back (identity files first).
+    // Committed: the uninstall is finished. No readable journal: nothing proves
+    // what it holds, so it is kept and reported, never deleted.
+    kind: 'uninstall',
+    marker: MARKETPLACE_UNINSTALL_DIR_MARKER,
+    owned: true,
+    suffix: '',
+    recovery: {
+      phase: 'unfinished',
+      recover: async (target, record) => {
+        const journal = await readJournal(record.path);
+        if (!journal || path.resolve(journal.root) !== path.resolve(target)) return 'kept';
+        if (journal.phase === 'committed') {
+          await finishUninstall(record.path, journal);
+          return 'rolled-forward';
+        }
+        // An agent the uninstall already took off the team gets its manifest
+        // back here, and whoever settled registers it again (see
+        // `restoredAnAgent`).
+        await rollBackUninstall(record.path, journal);
+        await restoreParkedAgent(target);
+        return 'rolled-back';
+      },
+    },
+  },
 ];
+
+/**
+ * After an uninstall rolls back: put a parked `agent.json` back when none is
+ * there, and drop the parked copy.
+ */
+async function restoreParkedAgent(target: string): Promise<void> {
+  const parked = path.join(target, '.dork', 'uninstalled-agent.json');
+  const manifest = path.join(target, '.dork', 'agent.json');
+  if (!(await pathExists(parked))) return;
+  if (!(await pathExists(manifest))) await rename(parked, manifest);
+  else await rm(parked, { force: true });
+}
 
 /** The policy row for `kind`. */
 function policyFor(kind: InstallRecordKind): InstallRecordPolicy {
@@ -462,11 +528,15 @@ export async function discardSupersededRecords(
  * {@link InstallRecoveryReport.inFlight}).
  *
  * @param target - Absolute path of the install target.
+ * @param opts - `ignore`: record paths to leave alone (a transaction's own staging dir).
  * @returns What was settled, kept and discarded.
  * @throws When an unfinished record cannot be settled.
  */
-export async function recoverInterruptedInstall(target: string): Promise<InstallRecoveryReport> {
-  const records = await listInstallRecords(target);
+export async function recoverInterruptedInstall(
+  target: string,
+  opts: { ignore?: ReadonlySet<string> } = {}
+): Promise<InstallRecoveryReport> {
+  const records = (await listInstallRecords(target)).filter((r) => !opts.ignore?.has(r.path));
   const report: InstallRecoveryReport = {
     settled: [],
     kept: [],
@@ -483,6 +553,14 @@ export async function recoverInterruptedInstall(target: string): Promise<Install
     records.filter((r) => policyFor(r.kind).recovery.phase === phase);
 
   for (const record of inPhase('finished')) {
+    // DOR-2245: a committed backup is leftovers only if the live install is
+    // whole by its own installed-files record. When a recorded file is
+    // missing, the leftover is kept and reported, never restored over the
+    // target (which may hold the person's newer files).
+    if (record.kind === 'committed' && (await isInstallWhole(target)) === 'broken') {
+      report.kept.push(record);
+      continue;
+    }
     try {
       await discardCommittedRecord(record);
       report.discarded.push(record);
@@ -503,14 +581,42 @@ export async function recoverInterruptedInstall(target: string): Promise<Install
 }
 
 /**
+ * Whether settling `target` rolled back an interrupted agent uninstall and put
+ * its `agent.json` back (DOR-2245). That uninstall had already taken the agent
+ * off the team, so whoever settled must register it again: the startup sweep
+ * once Mesh is up, an in-lock settle through its agent registry.
+ *
+ * @param target - The install target that was settled.
+ * @param report - What {@link recoverInterruptedInstall} did there.
+ */
+export async function restoredAnAgent(
+  target: string,
+  report: Pick<InstallRecoveryReport, 'settled'>
+): Promise<boolean> {
+  const rolledBack = report.settled.some(
+    (s) => s.record.kind === 'uninstall' && s.outcome === 'rolled-back'
+  );
+  if (!rolledBack) return false;
+  const stats = await lstat(path.join(target, ...AGENT_MANIFEST_PATH.split('/'))).catch(() => null);
+  return stats?.isFile() ?? false;
+}
+
+/**
  * Why recovery kept `record`, in words for a log line.
  *
  * @param record - A record from {@link InstallRecoveryReport.kept}.
  */
 export function keptReason(record: InstallRecord): string {
-  return record.kind === 'legacy-backup'
-    ? 'the record predates commit records, so nothing proves which copy is whole'
-    : 'the target was made after the interrupted install, so it is not the install to undo';
+  switch (record.kind) {
+    case 'legacy-backup':
+      return 'the record predates commit records, so nothing proves which copy is whole';
+    case 'committed':
+      return 'the install is missing files its record lists, so its previous copy was kept rather than deleted';
+    case 'uninstall':
+      return 'the interrupted uninstall has no readable journal, so nothing proves what it holds';
+    default:
+      return 'the target was made after the interrupted install, so it is not the install to undo';
+  }
 }
 
 /**

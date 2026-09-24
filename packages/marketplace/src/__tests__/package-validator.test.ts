@@ -397,6 +397,136 @@ describe('validatePackage', () => {
     });
   });
 
+  describe('USER_EDITABLE_EFFECT_PATH (DOR-2245 delta review 2)', () => {
+    async function writePlugin(pkg: string, userEditable: string[], pluginJson: object) {
+      await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
+        schemaVersion: 1,
+        name: path.basename(pkg),
+        version: '1.0.0',
+        type: 'plugin',
+        description: 'A plugin used to test userEditable against declared paths',
+        license: 'MIT',
+        userEditable,
+      });
+      await writeJson(path.join(pkg, '.claude-plugin', 'plugin.json'), {
+        name: path.basename(pkg),
+        version: '1.0.0',
+        ...pluginJson,
+      });
+    }
+
+    // Purpose: plugin.json can move hooks, servers and commands anywhere; a
+    // userEditable entry reaching a path it declares is refused like a default.
+    it.each([
+      [{ hooks: './custom/hooks.json' }, 'custom/**'],
+      [{ mcpServers: './servers.json' }, 'servers.json'],
+      [{ commands: ['./cmds'] }, 'cmds/**'],
+      [{ skills: './my-skills' }, 'my-skills/a/SKILL.md'],
+      [{ experimental: { monitors: './watch/m.json' } }, 'watch/**'],
+      [{ agents: ['./subagents'] }, 'subagents/**'],
+      [{ outputStyles: './styles' }, 'styles/terse.md'],
+    ])(
+      'refuses userEditable reaching a path plugin.json declares (%j)',
+      async (pluginJson, pattern) => {
+        const pkg = path.join(await tempDir(), 'declared');
+        await writePlugin(pkg, [pattern], pluginJson);
+
+        const result = await validatePackage(pkg);
+
+        expect(result.issues.filter((i) => i.code === 'USER_EDITABLE_EFFECT_PATH')).toHaveLength(1);
+        expect(result.ok).toBe(false);
+      }
+    );
+
+    // Purpose: an editable path beside the declared ones stays allowed.
+    it('allows userEditable that reaches none of the declared paths', async () => {
+      const pkg = path.join(await tempDir(), 'fine');
+      await writePlugin(pkg, ['config/**'], { hooks: './custom/hooks.json' });
+
+      const result = await validatePackage(pkg);
+
+      expect(result.issues.filter((i) => i.code === 'USER_EDITABLE_EFFECT_PATH')).toEqual([]);
+    });
+  });
+
+  describe('RESERVED_PATH_SHIPPED (DOR-2245)', () => {
+    async function writeAgent(pkg: string): Promise<void> {
+      await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
+        schemaVersion: 1,
+        name: path.basename(pkg),
+        version: '1.0.0',
+        type: 'agent',
+        description: 'An agent package used to test reserved paths',
+        license: 'MIT',
+      });
+    }
+
+    // Purpose: every kind of reserved path is refused once, naming the file, so a
+    // package can never ship over a person's data or the installer's records.
+    it.each([
+      '.dork/data/seed.json',
+      '.dork/secrets.json',
+      '.dork/install-metadata.json',
+      '.dork/installed-files.json',
+      '.dork/uninstalled-agent.json',
+      'notes/readme.md.dork-old',
+      'config/defaults.json.dork-new.2',
+    ])('refuses a package shipping %s', async (reserved) => {
+      const pkg = path.join(await tempDir(), 'reserver');
+      await writeAgent(pkg);
+      await writeText(path.join(pkg, ...reserved.split('/')), 'x');
+
+      const result = await validatePackage(pkg);
+
+      expect(result.ok).toBe(false);
+      const found = result.issues.filter((i) => i.code === 'RESERVED_PATH_SHIPPED');
+      expect(found).toHaveLength(1);
+      expect(found[0]).toMatchObject({ level: 'error', path: reserved });
+    });
+
+    // Purpose (code review 2): on a case-insensitive volume these ARE the
+    // reserved paths, so a case variant is refused like the real name.
+    it.each(['.dork/Secrets.json', '.dork/Data/seed.json'])(
+      'refuses a package shipping the case variant %s',
+      async (reserved) => {
+        const pkg = path.join(await tempDir(), 'case-reserver');
+        await writeAgent(pkg);
+        await writeText(path.join(pkg, ...reserved.split('/')), 'x');
+
+        const result = await validatePackage(pkg);
+
+        expect(result.issues.filter((i) => i.code === 'RESERVED_PATH_SHIPPED')).toHaveLength(1);
+      }
+    );
+
+    // Purpose: near-miss names and anything under node_modules stay allowed.
+    it('allows near-miss names and ignores node_modules', async () => {
+      const pkg = path.join(await tempDir(), 'nearmiss');
+      await writeAgent(pkg);
+      await writeText(path.join(pkg, '.dork', 'database.json'), 'x');
+      await writeText(path.join(pkg, 'x.dork-older'), 'x');
+      await writeText(path.join(pkg, 'node_modules', 'dep', 'notes.md.dork-old'), 'x');
+
+      const result = await validatePackage(pkg);
+
+      expect(result.issues.filter((i) => i.code === 'RESERVED_PATH_SHIPPED')).toEqual([]);
+    });
+
+    // Purpose: an INSTALLED root legitimately holds the installer's own records,
+    // and the installed scanner validates installed roots; it must not flag them.
+    it("does not report the installer's own files when validating an installed tree", async () => {
+      const pkg = path.join(await tempDir(), 'installed');
+      await writeAgent(pkg);
+      await writeText(path.join(pkg, '.dork', 'install-metadata.json'), '{}');
+      await writeText(path.join(pkg, '.dork', 'installed-files.json'), '{}');
+      await writeText(path.join(pkg, '.dork', 'data', 'state.json'), '{}');
+
+      const result = await validatePackage(pkg, { tree: 'installed' });
+
+      expect(result.issues.filter((i) => i.code === 'RESERVED_PATH_SHIPPED')).toEqual([]);
+    });
+  });
+
   describe('PACKAGED_MCP_SERVERS_FORBIDDEN', () => {
     async function writeAgentPackage(
       pkg: string,

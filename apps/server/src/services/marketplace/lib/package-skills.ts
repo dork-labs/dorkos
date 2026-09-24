@@ -29,6 +29,7 @@ import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import type { PreviewSkillTools } from '../types.js';
 import { collectHooks, type PackageHooks } from './package-hooks.js';
 import { readPackageText } from './package-declarations.js';
+import { EFFECT_BEARING_PATHS } from '@dorkos/marketplace';
 
 /** What {@link readPackageSkills} found. */
 export interface PackageSkills extends PackageHooks {
@@ -101,14 +102,16 @@ async function skillFilesOf(
     else add(await filesUnder(packagePath, path, keep));
   };
 
-  add(await filesUnder(packagePath, 'skills', isSkill));
-  const rootSkill = await readPackageText(packagePath, 'SKILL.md');
-  if (rootSkill.kind !== 'absent') files.add('SKILL.md');
+  add(await filesUnder(packagePath, EFFECT_BEARING_PATHS.skills, isSkill));
+  const rootSkill = await readPackageText(packagePath, EFFECT_BEARING_PATHS.rootSkill);
+  if (rootSkill.kind !== 'absent') files.add(EFFECT_BEARING_PATHS.rootSkill);
   for (const path of listOf(pluginJson?.skills)) await fromPath(path, isSkill);
 
   // `commands` in plugin.json replaces the default folder.
   const commandPaths =
-    pluginJson?.commands !== undefined ? listOf(pluginJson.commands) : ['commands'];
+    pluginJson?.commands !== undefined
+      ? listOf(pluginJson.commands)
+      : [EFFECT_BEARING_PATHS.commands];
   for (const path of commandPaths) await fromPath(path, isMarkdown);
 
   return [...files];

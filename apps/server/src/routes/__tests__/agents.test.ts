@@ -36,6 +36,10 @@ vi.mock('@dorkos/shared/convention-files', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@dorkos/shared/convention-files')>()),
   readConventionFile: (...args: unknown[]) => mockReadConventionFile(...args),
   writeConventionFile: (...args: unknown[]) => mockWriteConventionFile(...args),
+  writeConventionFileIfAbsent: async (...args: unknown[]) => {
+    mockWriteConventionFile(...args);
+    return true;
+  },
   buildSoulContent: vi.fn(
     (traitBlock: string, prose: string) =>
       `<!-- TRAITS:START -->\n${traitBlock}\n<!-- TRAITS:END -->\n\n${prose}`
@@ -49,6 +53,10 @@ vi.mock('@dorkos/shared/convention-files', async (importOriginal) => ({
 vi.mock('@dorkos/shared/convention-files-io', () => ({
   readConventionFile: (...args: unknown[]) => mockReadConventionFile(...args),
   writeConventionFile: (...args: unknown[]) => mockWriteConventionFile(...args),
+  writeConventionFileIfAbsent: async (...args: unknown[]) => {
+    mockWriteConventionFile(...args);
+    return true;
+  },
 }));
 
 vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({

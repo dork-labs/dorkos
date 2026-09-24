@@ -21,8 +21,13 @@ vi.mock('@dorkos/shared/convention-files', async (importOriginal) => ({
 }));
 
 const mockWriteConventionFile = vi.fn();
+// The creator writes convention files only where absent (DOR-2245); the mock
+// records those writes under the same spy the assertions below read.
 vi.mock('@dorkos/shared/convention-files-io', () => ({
-  writeConventionFile: (...args: unknown[]) => mockWriteConventionFile(...args),
+  writeConventionFileIfAbsent: async (...args: unknown[]) => {
+    mockWriteConventionFile(...args);
+    return true;
+  },
 }));
 
 vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({

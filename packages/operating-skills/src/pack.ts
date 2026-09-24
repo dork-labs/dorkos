@@ -260,8 +260,14 @@ export interface OperatingSkill {
  *   gained `marketplace_update` and `marketplace_list_installed { checkUpdates }`,
  *   and a page that says nothing about either leaves an agent telling a person to
  *   open the app to update a stale plugin, which is the gap the tools close.
+ * - 26: uninstall keeps what the person added (DOR-2245). `using-the-marketplace`
+ *   said an uninstall keeps `.dork/data/` and `.dork/secrets.json`; it now keeps
+ *   every file the person or their agents added or changed, and uninstalling an
+ *   agent package removes the agent from the team, which a reinstall does not
+ *   restore. An agent seeded at 25 would tell a person their added files are
+ *   deleted, and would not warn them before removing an agent.
  */
-export const OPERATING_SKILLS_VERSION = 25;
+export const OPERATING_SKILLS_VERSION = 26;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

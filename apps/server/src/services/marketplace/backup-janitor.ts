@@ -50,6 +50,7 @@ import {
   keptReason,
   parseInstallRecordName,
   recoverInterruptedInstall,
+  restoredAnAgent,
 } from './install-recovery.js';
 import { withInstallTargetLock } from './transaction.js';
 
@@ -63,6 +64,12 @@ export interface InstallSweepSummary {
   discarded: number;
   /** Targets left alone because another live process may be mid-install on them. */
   inFlightTargets: string[];
+  /**
+   * Agent folders whose interrupted uninstall was rolled back with their
+   * `agent.json` in place again (DOR-2245). Recovery runs before Mesh starts,
+   * so the caller registers these agents again once it has.
+   */
+  restoredAgentRoots: string[];
 }
 
 /**
@@ -127,7 +134,13 @@ export async function recoverInterruptedInstalls(
   dirs: readonly string[],
   logger: Logger
 ): Promise<InstallSweepSummary> {
-  const summary: InstallSweepSummary = { settled: 0, kept: 0, discarded: 0, inFlightTargets: [] };
+  const summary: InstallSweepSummary = {
+    settled: 0,
+    kept: 0,
+    discarded: 0,
+    inFlightTargets: [],
+    restoredAgentRoots: [],
+  };
   for (const dir of new Set(dirs)) {
     const targets = await findTargetsWithRecords(dir, logger);
     await settleTargets(targets, summary, logger);
@@ -158,6 +171,7 @@ export function retryInFlightTargetsLater(
       kept: 0,
       discarded: 0,
       inFlightTargets: [],
+      restoredAgentRoots: [],
     };
     settleTargets(targets, summary, logger)
       .then(() => onDone(summary))
@@ -226,6 +240,7 @@ async function settleTargets(
           `[marketplace/backup-janitor] settled an interrupted install at ${target} (${record.kind}: ${outcome})`
         );
       }
+      if (await restoredAnAgent(target, report)) summary.restoredAgentRoots.push(target);
       for (const record of report.kept) {
         summary.kept++;
         logger.warn(

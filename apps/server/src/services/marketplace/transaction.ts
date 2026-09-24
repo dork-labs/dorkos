@@ -109,16 +109,17 @@
  * rename that writes this transaction's record: two servers would have to
  * both check the same project's same package within that gap.
  *
- * ## The update window belongs to DOR-2245
+ * ## The person's files (DOR-2245)
  *
- * `MarketplaceInstaller.update()` is an uninstall, a removal of the data-only
- * install root, then an install. The uninstall stages the live install (and
- * the preserved `.dork/data/` and secrets) under the system temp directory,
- * where no record describes it, so a crash between the uninstall and this
- * transaction's commit still loses the package and leaves that data only in
- * the temp directory. Crash recovery here covers installs, not that window;
- * DOR-2245 replaces the temp-dir uninstall with an in-place one that writes a
- * journal recovery can finish.
+ * A transaction given `ownership` records which files it installed
+ * (`.dork/installed-files.json`, written into the staged tree so it activates
+ * with the package) and keeps everything else. It stages beside the target
+ * (`<target>.dorkos-stage-…`, same filesystem), and before the target is moved
+ * aside it clones the person's files from the live target into the staged
+ * tree (`./lib/carry-over.ts`): the live target is only read, so a crash or a
+ * failed activation restores it untouched. After activation and before the
+ * commit, a late-write pass brings over anything written into the old install
+ * while this ran; a failure there rolls back like any activate failure.
  *
  * ## What a rollback does not undo
  *
@@ -137,10 +138,27 @@
  * @module services/marketplace/transaction
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { lstat, mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { withFileLock } from '@dorkos/shared/atomic-write';
+import {
+  MARKETPLACE_STAGE_DIR_MARKER,
+  type PackageFileNotice,
+} from '@dorkos/shared/marketplace-schemas';
+import { carryPersonFiles, lateWritePass, type CarryResult } from './lib/carry-over.js';
+import {
+  computeInstalledFiles,
+  readInstalledFiles,
+  sameSource,
+  writeInstalledFiles,
+  type InstalledFiles,
+  type RecordIdentity,
+} from './lib/installed-files.js';
+import { isReservedPackagePath } from '@dorkos/marketplace';
+import { hasPackageIdentity } from './lib/locate-install.js';
+import { currentRecordOwner, formatRecordOwner } from './lib/record-owner.js';
 import {
   beginInstallRecord,
   commitInstallRecord,
@@ -148,6 +166,7 @@ import {
   discardSupersededRecords,
   keptReason,
   recoverInterruptedInstall,
+  restoredAnAgent,
   rollBackInstallRecord,
   settleableBy,
   type InstallRecord,
@@ -182,6 +201,32 @@ export interface TransactionOptions<T> {
   stage: (staging: { path: string }) => Promise<void>;
   /** Perform the activation step (e.g. atomic rename onto `target`). */
   activate: (staging: { path: string }) => Promise<T>;
+  /**
+   * Record which files this install put in `target`, and keep everything
+   * else (DOR-2245, ADR 260923-163513). Every marketplace install flow passes
+   * it; the Shape fork does not, because a fork is the person's own copy.
+   */
+  ownership?: TransactionOwnership;
+}
+
+/** See {@link TransactionOptions.ownership}. */
+export interface TransactionOwnership {
+  /** Who is installing: written into the record. */
+  identity: RecordIdentity;
+  /** The package's `userEditable` list (empty when it declares none). */
+  userEditable: readonly string[];
+  /**
+   * Rebuild the record of a live install that has a package identity but no
+   * record (one made before records existed). Runs on the live root before
+   * anything moves. `null` when no record can be rebuilt; the install then
+   * keeps nothing it cannot prove is the person's (see the spec §9).
+   */
+  rebuildLegacy?: (liveRoot: string, stagedTree: string) => Promise<InstalledFiles | null>;
+  /**
+   * Told, once the install has committed, what happened to files the person
+   * may have changed, and any warning to show. Flows copy both onto their result.
+   */
+  onNotices?: (notices: PackageFileNotice[], warnings: string[]) => void;
 }
 
 /**
@@ -356,12 +401,19 @@ async function runTransactionUnlocked<T>(opts: TransactionOptions<T>): Promise<T
   // on top of one it could not roll back, or one another live process owns.
   await settleInterruptedInstall(opts.target);
 
-  const stagingDir = await mkdtemp(path.join(tmpdir(), `${STAGING_DIR_PREFIX}${opts.name}-`));
+  const stagingDir = opts.ownership
+    ? await makeSiblingStagingDir(opts.target)
+    : await mkdtemp(path.join(tmpdir(), `${STAGING_DIR_PREFIX}${opts.name}-`));
 
   // Phase 1: stage. No record is written yet, so a stage failure leaves the
-  // target untouched and only the staging dir needs cleaning up.
+  // target untouched and only the staging dir needs cleaning up. With
+  // ownership, the installed-files record is written into the staged tree and
+  // the person's files are carried over from the live target, which is only
+  // read (DOR-2245).
+  let carried: CarriedOver | undefined;
   try {
     await opts.stage({ path: stagingDir });
+    if (opts.ownership) carried = await prepareOwnership(stagingDir, opts.target, opts.ownership);
   } catch (err) {
     await runStageFailureCleanup(stagingDir);
     throw err;
@@ -375,7 +427,10 @@ async function runTransactionUnlocked<T>(opts: TransactionOptions<T>): Promise<T
   let record: InstallRecord;
   let superseded: InstallRecord[];
   try {
-    superseded = (await settleInterruptedInstall(opts.target)).kept;
+    // Our own staging dir sits beside the target with a record's name; the
+    // second check must not settle it out from under this transaction.
+    superseded = (await settleInterruptedInstall(opts.target, { ignore: new Set([stagingDir]) }))
+      .kept;
     record = await _internal.beginRecord(opts.target);
   } catch (err) {
     await runStageFailureCleanup(stagingDir);
@@ -386,8 +441,25 @@ async function runTransactionUnlocked<T>(opts: TransactionOptions<T>): Promise<T
   // before re-raising the original error.
   let result: T;
   let committed: InstallRecord | undefined;
+  const lateNotices: PackageFileNotice[] = [];
   try {
     result = await opts.activate({ path: stagingDir });
+    // The package's own data directory, `${CLAUDE_PLUGIN_DATA}` (ADR
+    // 260923-163515). Created here, once for every flow; kept or carried as
+    // the person's from then on.
+    if (opts.ownership) await mkdir(path.join(opts.target, '.dork', 'data'), { recursive: true });
+    // Before the commit, so a failure here rolls back and loses nothing: the
+    // backup still holds whatever was written during the update.
+    if (carried?.carry && record.kind === 'backup') {
+      lateNotices.push(
+        ...(await lateWritePass({
+          backupRoot: record.path,
+          targetRoot: opts.target,
+          snapshot: carried.carry.snapshot,
+          ownedPaths: carried.ownedPaths,
+        }))
+      );
+    }
     committed = await _internal.commitRecord(record);
   } catch (err) {
     await runRollback(stagingDir, opts.target, record);
@@ -395,7 +467,119 @@ async function runTransactionUnlocked<T>(opts: TransactionOptions<T>): Promise<T
   }
   await runSuccessCleanup(stagingDir, committed);
   await releaseSupersededRecords(superseded);
+  if (carried && opts.ownership?.onNotices) {
+    opts.ownership.onNotices(
+      [...(carried.carry?.plan.notices ?? []), ...lateNotices],
+      carried.warnings
+    );
+  }
   return result;
+}
+
+/** What {@link prepareOwnership} carried, for the late-write pass and the report. */
+interface CarriedOver {
+  /** The carry-over, when there was a live install to carry from. */
+  carry?: CarryResult;
+  /** Owned paths of the old and new records. */
+  ownedPaths: string[];
+  /** Warnings for the result (a changed source, an unprovable legacy install). */
+  warnings: string[];
+}
+
+/**
+ * Stage beside the target rather than under `os.tmpdir()`: the same
+ * filesystem, so activation is a true rename and the person's carried files
+ * never pass through a RAM-backed `/tmp` (DOR-2245). Named with the record
+ * stamp DOR-2273's recovery reads (`<createdAt>-<owner>-<uuid>`), so a
+ * crash-left one is recognised and cleaned.
+ *
+ * @internal
+ */
+async function makeSiblingStagingDir(target: string): Promise<string> {
+  await mkdir(path.dirname(target), { recursive: true });
+  const stamp = `${Date.now()}-${formatRecordOwner(currentRecordOwner())}-${randomUUID()}`;
+  const dir = `${target}${MARKETPLACE_STAGE_DIR_MARKER}${stamp}`;
+  await mkdir(dir);
+  return dir;
+}
+
+/**
+ * Write the staged tree's installed-files record, and carry the person's files
+ * over from the live target when there is one (spec §4 steps 2-4). A linked
+ * install (the target is a symlink to a working copy, DOR-2194) is never
+ * walked: nothing is carried out of a developer's tree.
+ *
+ * @internal
+ */
+async function prepareOwnership(
+  stagingDir: string,
+  target: string,
+  ownership: TransactionOwnership
+): Promise<CarriedOver> {
+  const rNew = await computeInstalledFiles(stagingDir, {
+    identity: ownership.identity,
+    userEditable: ownership.userEditable,
+    npmRan: await exists(path.join(stagingDir, 'node_modules')),
+  });
+  const warnings: string[] = [];
+  let carry: CarryResult | undefined;
+  let rOld: InstalledFiles | null = null;
+
+  const live = await lstat(target).catch(() => undefined);
+  if (live?.isDirectory()) {
+    rOld = await readInstalledFiles(target);
+    const oldHasIdentity = await hasPackageIdentity(target);
+    if (rOld === null && oldHasIdentity && ownership.rebuildLegacy) {
+      rOld = await ownership.rebuildLegacy(target, stagingDir);
+    }
+    if (rOld === null && oldHasIdentity) {
+      warnings.push(
+        'This install was made before DorkOS recorded which files a package installed, so files you added to it could not be told apart and were not kept.'
+      );
+    } else {
+      carry = await carryPersonFiles({ liveRoot: target, stagingDir, rOld, oldHasIdentity, rNew });
+    }
+    if (rOld?.inferred && carry) {
+      const kept = carry.plan.actions
+        .filter(
+          (a) =>
+            (a.kind === 'carry' || a.kind === 'carry-dir') &&
+            !(a.path in rNew.files) &&
+            !isReservedPackagePath(a.path)
+        )
+        .map((a) => a.path);
+      if (kept.length > 0) {
+        const shown = kept.slice(0, 10).join(', ');
+        warnings.push(
+          `Kept ${kept.length} item${kept.length === 1 ? '' : 's'} this package's new version doesn't include, because DorkOS couldn't tell whether you added ${kept.length === 1 ? 'it' : 'them'}: ${shown}${kept.length > 10 ? ', …' : ''}. Delete any you don't need.`
+        );
+      }
+    }
+    const oldSource = rOld?.package.source;
+    const newSource = ownership.identity.source;
+    if (oldSource && newSource && !sameSource(oldSource, newSource) && carry) {
+      warnings.push(
+        `Files kept from the earlier ${ownership.identity.name} (from ${describeSource(oldSource)}) are now available to this one (from ${describeSource(newSource)}).`
+      );
+    }
+  }
+  await writeInstalledFiles(stagingDir, rNew);
+  return {
+    ...(carry && { carry }),
+    ownedPaths: [...(rOld?.ownedPaths ?? []), ...rNew.ownedPaths],
+    warnings,
+  };
+}
+
+/** A recorded source, as a person reads it. */
+function describeSource(source: NonNullable<RecordIdentity['source']>): string {
+  if ('localPath' in source) return source.localPath;
+  return source.subpath === '' ? source.cloneUrl : `${source.cloneUrl} (${source.subpath})`;
+}
+
+/** Whether `target` exists. */
+async function exists(target: string): Promise<boolean> {
+  return (await lstat(target).catch(() => undefined)) !== undefined;
 }
 
 /** What {@link settleInterruptedInstall} leaves for its caller. */
@@ -407,6 +591,13 @@ export interface SettledInstallTarget {
    * target has finished.
    */
   kept: InstallRecord[];
+  /**
+   * Settling rolled back an interrupted agent uninstall and put its
+   * `agent.json` back ({@link restoredAnAgent}); the caller registers the agent
+   * again. An agent install does so by adopting it; the uninstall flow through
+   * its agent registry.
+   */
+  restoredAgent: boolean;
 }
 
 /**
@@ -420,15 +611,19 @@ export interface SettledInstallTarget {
  * this process is still writing the records it reads.
  *
  * @param target - Absolute path of the install target.
+ * @param opts - `ignore`: record paths to leave alone (this transaction's own staging dir).
  * @returns The records recovery kept, for the caller to release once its
  *   change finishes.
  * @throws When an interrupted install cannot be undone, or when another
  *   running DorkOS app may be mid-install on `target`; nothing was changed.
  */
-export async function settleInterruptedInstall(target: string): Promise<SettledInstallTarget> {
+export async function settleInterruptedInstall(
+  target: string,
+  opts: { ignore?: ReadonlySet<string> } = {}
+): Promise<SettledInstallTarget> {
   let report;
   try {
-    report = await recoverInterruptedInstall(target);
+    report = await recoverInterruptedInstall(target, opts);
   } catch (err) {
     throw new Error(
       `An earlier install at ${target} was interrupted and could not be undone, so nothing was changed: ${errMessage(err)}`,
@@ -457,7 +652,7 @@ export async function settleInterruptedInstall(target: string): Promise<SettledI
       `[marketplace/transaction] failed to remove finished install leftovers ${record.path}: ${errMessage(error)}`
     );
   }
-  return { kept: report.kept };
+  return { kept: report.kept, restoredAgent: await restoredAnAgent(target, report) };
 }
 
 /**

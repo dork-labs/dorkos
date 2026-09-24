@@ -16,7 +16,11 @@ import {
   TRAIT_SECTION_END,
   CONVENTION_FILES,
 } from '../convention-files.js';
-import { readConventionFile, writeConventionFile } from '../convention-files-io.js';
+import {
+  readConventionFile,
+  writeConventionFile,
+  writeConventionFileIfAbsent,
+} from '../convention-files-io.js';
 
 describe('convention-files', () => {
   describe('constants', () => {
@@ -159,6 +163,52 @@ describe('convention-files', () => {
 
       const content = await fs.readFile(path.join(projectDir, '.dork', 'SOUL.md'), 'utf-8');
       expect(content).toBe('hello world');
+    });
+
+    // Purpose (DOR-2245): a marketplace agent's persona and memory are the
+    // agent's; the scaffold may seed a missing file but never replace one.
+    it('writeConventionFileIfAbsent writes a missing file and reports it', async () => {
+      const projectDir = await makeTempDir();
+      await fs.mkdir(path.join(projectDir, '.dork'), { recursive: true });
+
+      expect(await writeConventionFileIfAbsent(projectDir, 'MEMORY.md', 'seed')).toBe(true);
+      expect(await fs.readFile(path.join(projectDir, '.dork', 'MEMORY.md'), 'utf-8')).toBe('seed');
+    });
+
+    it('writeConventionFileIfAbsent leaves an existing file byte-identical', async () => {
+      const projectDir = await makeTempDir();
+      const file = path.join(projectDir, '.dork', 'SOUL.md');
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, 'my edited persona', 'utf-8');
+
+      expect(await writeConventionFileIfAbsent(projectDir, 'SOUL.md', 'default')).toBe(false);
+      expect(await fs.readFile(file, 'utf-8')).toBe('my edited persona');
+    });
+
+    // Purpose: an empty file is still the agent's (an emptied memory is a choice).
+    it('writeConventionFileIfAbsent leaves an existing empty file alone', async () => {
+      const projectDir = await makeTempDir();
+      const file = path.join(projectDir, '.dork', 'MEMORY.md');
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, '', 'utf-8');
+
+      expect(await writeConventionFileIfAbsent(projectDir, 'MEMORY.md', 'seed')).toBe(false);
+      expect(await fs.readFile(file, 'utf-8')).toBe('');
+    });
+
+    // Purpose: two concurrent seeders write once, and the file holds one of them whole.
+    it('writeConventionFileIfAbsent writes once under concurrent calls', async () => {
+      const projectDir = await makeTempDir();
+      await fs.mkdir(path.join(projectDir, '.dork'), { recursive: true });
+
+      const results = await Promise.all([
+        writeConventionFileIfAbsent(projectDir, 'NOPE.md', 'first'),
+        writeConventionFileIfAbsent(projectDir, 'NOPE.md', 'second'),
+      ]);
+
+      expect(results.filter(Boolean)).toHaveLength(1);
+      const content = await fs.readFile(path.join(projectDir, '.dork', 'NOPE.md'), 'utf-8');
+      expect(['first', 'second']).toContain(content);
     });
 
     it('readConventionFile reads from {projectPath}/.dork/{filename}', async () => {

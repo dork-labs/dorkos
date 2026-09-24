@@ -75,6 +75,15 @@ export const AGENTS_SKILLS_DIR = '.agents/skills';
  */
 export const CLAUDE_PLUGIN_ROOT_TOKEN = '${CLAUDE_PLUGIN_ROOT}';
 
+/**
+ * The substitution token Claude Code expands to a plugin's persistent data
+ * directory. DorkOS resolves it to the install's own `.dork/data` (one per
+ * install, so a project-scoped plugin keeps per-project state; ADR
+ * 260923-163515). Like the root token, it is rewritten in projected commands and
+ * hooks, and flagged in a projected skill that still carries it.
+ */
+export const CLAUDE_PLUGIN_DATA_TOKEN = '${CLAUDE_PLUGIN_DATA}';
+
 /** How much of a skills directory {@link scanSkillDirs} should report. */
 export interface ScanSkillDirsOptions {
   /**

@@ -44,13 +44,23 @@ function buildRepoWithPathlessHookPlugin(hookCommand = 'npx prettier --check .')
   return repoRoot;
 }
 
-/** All Stop hook command strings currently in the repo's settings.local.json. */
-function stopCommands(repoRoot: string): string[] {
+/** All Stop hook command strings in the repo's settings.local.json, exactly as written. */
+function rawStopCommands(repoRoot: string): string[] {
   const raw = readFileSync(join(repoRoot, '.claude', 'settings.local.json'), 'utf8');
   const settings = JSON.parse(raw) as {
     hooks?: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
   };
   return (settings.hooks?.Stop ?? []).flatMap((g) => g.hooks.map((h) => h.command));
+}
+
+/**
+ * The same commands with DorkOS's plugin-env prefix removed (DOR-2245), so a
+ * test reads the package's own command. A user hook never carries the prefix.
+ */
+function stopCommands(repoRoot: string): string[] {
+  return rawStopCommands(repoRoot).map((c) =>
+    c.startsWith('export CLAUDE_PLUGIN_ROOT=') ? c.slice(c.indexOf('; ') + 2) : c
+  );
 }
 
 describe('managed settings hooks: explicit sentinel ownership (review blocker 1)', () => {
@@ -65,6 +75,34 @@ describe('managed settings hooks: explicit sentinel ownership (review blocker 1)
 
     const copies = stopCommands(repo).filter((c) => c.includes('npx prettier'));
     expect(copies).toHaveLength(1);
+  });
+
+  // Purpose (DOR-2245): a hook DorkOS wrote before the env prefix existed is
+  // recognised by its ownership sentinel and replaced on the next sync, never
+  // kept beside the new, prefixed copy.
+  it('replaces an older unprefixed managed hook instead of adding a second copy', () => {
+    repo = buildRepoWithPathlessHookPlugin();
+    mkdirSync(join(repo, '.claude'), { recursive: true });
+    writeFileSync(
+      join(repo, '.claude', 'settings.local.json'),
+      JSON.stringify({
+        hooks: {
+          Stop: [
+            {
+              _dorkosHarness: 'tidy',
+              hooks: [{ type: 'command', command: 'npx prettier --check .' }],
+            },
+          ],
+        },
+      })
+    );
+
+    const result = applyPlan(repo, project(repo), { sweepOrphans: true });
+
+    expect(result.conflicts).toEqual([]);
+    const copies = rawStopCommands(repo).filter((c) => c.includes('npx prettier'));
+    expect(copies).toHaveLength(1);
+    expect(copies[0]).toMatch(/^export CLAUDE_PLUGIN_ROOT=/);
   });
 
   it('HK-06, AP-01: converges: --check reports clean immediately after apply', () => {

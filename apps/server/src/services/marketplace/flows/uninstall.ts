@@ -8,36 +8,66 @@
  * `dorkHome`, or a project's own `.dork/`. Probing the project scope for
  * `plugins/` alone is what left every project-scoped agent installable but not
  * removable (DOR-994).
- * The flow is rollback-safe: the package is moved to a temporary staging
- * directory first, side-effects (extension disable, adapter removal, active-
- * Shape deactivation) run against the live (now-empty) location, and only after
- * every step succeeds is the staging directory permanently removed. Any thrown
- * error during the side-effect phase restores the package from staging back to
- * its original install path.
+ * **In place, and only the package's files (DOR-2245).** An install records
+ * which files it put in its root (`.dork/installed-files.json`). An uninstall
+ * moves only the files that record proves are the package's (listed, reached
+ * through real directories, bytes unchanged), plus the installer-owned paths,
+ * into a sibling `<root>.dorkos-uninstall-<createdAt>-<owner>-<uuid>` on the same
+ * filesystem. The person's files never move. Everything is journaled before it
+ * happens (`../lib/uninstall-journal.ts`): the package identity files move
+ * last, side effects run from inputs captured before anything moved, a
+ * `committed` phase is written, and only then is the sibling deleted and the
+ * record pruned to what the person kept. A failure before the commit renames
+ * every move back, identity files first; a crash is settled the same way by
+ * recovery. `purge: true` removes the whole root once the uninstall commits.
  *
- * Concurrency: this flow does not use `runTransaction`, but it does take the
- * same per-target lock (`withInstallTargetLock`), because it has the same
- * destructive pair — move the install root aside, restore that copy on failure
- * — and therefore the same way of stepping on a concurrent install (DOR-711).
+ * An agent package's agent leaves the team as the last side effect (its
+ * `agent.json` parked as `.dork/uninstalled-agent.json` first), unless the
+ * uninstall is the first half of an update (`replacing`).
  *
- * Data preservation: when `purge` is false (the default), the contents of
- * `<installRoot>/.dork/data/` and `<installRoot>/.dork/secrets.json` are
- * copied back into the live install location after the package files have
- * been removed. With `purge: true`, those paths are removed along with
- * everything else.
+ * A linked install (the root is a symlink to a developer's working copy,
+ * DOR-2194) is removed by removing the link; nothing inside it is touched.
+ *
+ * Concurrency: this flow takes the same per-target lock as the install engine
+ * (`withInstallTargetLock`, DOR-711).
  *
  * @module services/marketplace/flows/uninstall
  */
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
-import { atomicMove } from '../lib/atomic-move.js';
-import { tmpdir } from 'node:os';
+import { copyFile, lstat, readFile, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
-import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace';
+import { isManifestGitTracked } from '@dorkos/mesh';
+import type { AgentRemovedSummary } from '@dorkos/shared/marketplace-schemas';
+import {
+  AGENT_MANIFEST_PATH,
+  CLAUDE_PLUGIN_MANIFEST_PATH,
+  INSTALL_METADATA_POSIX_PATH,
+  PACKAGE_MANIFEST_PATH,
+  UNINSTALLED_AGENT_PATH,
+} from '@dorkos/marketplace';
 import type { MarketplacePackageManifest, PackageType } from '@dorkos/marketplace';
-import { installRootCandidates, type InstallRootCandidate } from '../lib/locate-install.js';
+import {
+  hasPackageIdentity,
+  installRootCandidates,
+  type InstallRootCandidate,
+} from '../lib/locate-install.js';
 import { assertPackageName } from '../lib/package-paths.js';
 import { readInstallMetadata } from '../installed-metadata.js';
+import {
+  isProvenPackageFile,
+  readInstalledFiles,
+  scanTree,
+  type InstalledFiles,
+} from '../lib/installed-files.js';
+import {
+  createUninstallSibling,
+  finishUninstall,
+  journaledMove,
+  returnStrays,
+  rollBackUninstall,
+  writeJournal,
+  type UninstallJournal,
+} from '../lib/uninstall-journal.js';
 import { hasInstallRecords, type InstallRecord } from '../install-recovery.js';
 import {
   releaseSupersededRecords,
@@ -45,32 +75,38 @@ import {
   withInstallTargetLock,
 } from '../transaction.js';
 
-/** Staging directory prefix used by the uninstall flow. */
-const STAGING_DIR_PREFIX = 'dorkos-uninstall-';
+/** Everything removing an agent from the team takes away (the unregister cascade). */
+const AGENT_REMOVAL_EFFECTS: AgentRemovedSummary['removed'] = [
+  'relay-endpoint',
+  'rooms',
+  'schedules-paused',
+  'task-roots',
+  'mcp-sign-ins',
+  'identity-tokens',
+  'community-enrollments',
+  'connection-access',
+];
 
-/** Subdirectory containing package data preserved across reinstalls. */
-const DATA_SUBPATH = path.join('.dork', 'data');
-
-/** Path to the package secrets file relative to the install root. */
-const SECRETS_SUBPATH = path.join('.dork', 'secrets.json');
+/** Package identity files: always the package's, moved last, restored first. */
+const IDENTITY_FILES = [PACKAGE_MANIFEST_PATH, CLAUDE_PLUGIN_MANIFEST_PATH];
 
 /** A request to uninstall a marketplace package. */
 export interface UninstallRequest {
   /** Package name to uninstall. */
   name: string;
-  /** Remove `.dork/data/` and `.dork/secrets.json` in addition to package files. */
+  /** Also remove the files you and your agents added or changed. */
   purge?: boolean;
   /** Project path for project-local uninstalls. */
   projectPath?: string;
   /**
-   * Internal (installer-only): set `false` to keep `ui.shapes.active` intact
-   * when this flow removes the active Shape. The installer's `update()` sets
-   * it because its uninstall is the first half of a replace — the same Shape
-   * lands back at the same path moments later — not a removal. Defaults to
-   * `true`; the HTTP route's body schema does not expose this field, so
-   * external callers always get the honest clear-on-remove behavior.
+   * Internal (installer-only): this removal is the first half of a replace
+   * (the installer's `update()`), not a removal. It keeps `ui.shapes.active`
+   * intact and leaves an agent package's agent registered, because the same
+   * package lands back at the same path moments later. The HTTP route's body
+   * schema does not expose it, so external callers always get the full
+   * removal.
    */
-  deactivateShape?: boolean;
+  replacing?: boolean;
   /**
    * Internal (installer-only): the exact install root to remove, when the
    * caller already resolved which installation it means — the installer's
@@ -84,10 +120,35 @@ export interface UninstallRequest {
 export interface UninstallResult {
   ok: boolean;
   packageName: string;
-  /** Number of top-level entries removed from the install root. */
+  /** Number of entries moved out of the install root (a whole directory counts once). */
   removedFiles: number;
-  /** Absolute paths preserved on disk because `purge` was false. */
+  /**
+   * Absolute paths kept on disk because `purge` was false: the files you and
+   * your agents added or changed, collapsed to the highest directory whose
+   * whole contents were kept.
+   */
   preservedData: string[];
+  /** Set when uninstalling an agent package removed the agent from the team. */
+  agentRemoved?: AgentRemovedSummary;
+  /** Non-fatal notes: cleanup the recovery sweep will finish, files moved back. */
+  warnings?: string[];
+}
+
+/**
+ * The agent-registry surface the uninstall flow uses to take an uninstalled
+ * agent package's agent off the team, and to put it back when the uninstall
+ * rolls back after that step.
+ */
+export interface UninstallAgentRegistry {
+  /**
+   * Unregister the agent registered at `projectPath` (the full cascade).
+   *
+   * @returns Its id and whether its manifest was kept and the folder denied, or
+   *   `null` when no agent is registered there.
+   */
+  unregisterAtPath(projectPath: string): Promise<{ id: string; directoryDenied: boolean } | null>;
+  /** Register the agent at `projectPath` again from its `agent.json`. */
+  restoreAtPath(projectPath: string): Promise<void>;
 }
 
 /**
@@ -149,7 +210,22 @@ export interface UninstallFlowDeps {
   shapeDeactivator?: UninstallShapeDeactivator;
   /** Deletes a removed Shape's schedules; omit when the caller does not manage Shapes. */
   shapeScheduleTeardown?: UninstallShapeScheduleTeardown;
+  /** Takes an uninstalled agent package's agent off the team; omit when mesh is off. */
+  agentRegistry?: UninstallAgentRegistry;
+  /**
+   * Rebuild the installed-files record of an install made before records
+   * existed (spec §9); `null` when none can be rebuilt.
+   */
+  rebuildLegacy?: (installRoot: string) => Promise<InstalledFiles | null>;
   logger: Logger;
+}
+
+/** The side-effect inputs, captured from the live root before anything moves. */
+interface SideEffectInputs {
+  /** Bundled extension ids (`.dork/extensions/<id>/`). */
+  extensionIds: string[];
+  /** Skill directories this install generated for its schedules. */
+  generatedSchedulePaths: string[];
 }
 
 /** Thrown when {@link UninstallFlow.uninstall} cannot find the requested package. */
@@ -260,29 +336,216 @@ export class UninstallFlow {
     const settled = await this.settleAndReread(probed);
     if (!settled) return undefined;
     const { located, kept } = settled;
-    const stagingDir = await mkdtemp(path.join(tmpdir(), `${STAGING_DIR_PREFIX}${req.name}-`));
-    const stagingPath = path.join(stagingDir, 'pkg');
+    const root = located.installRoot;
 
-    try {
-      await atomicMove(located.installRoot, stagingPath);
-    } catch (err) {
-      await rm(stagingDir, { recursive: true, force: true });
-      throw err;
-    }
-
-    try {
-      const removedFiles = await this.countTopLevelEntries(stagingPath);
-      await this.runSideEffects(stagingPath, located, req);
-      const preservedData = req.purge
-        ? []
-        : await this.restorePreservedData(stagingPath, located.installRoot);
-      await rm(stagingDir, { recursive: true, force: true });
+    const inputs = await this.captureSideEffectInputs(root);
+    if ((await lstat(root)).isSymbolicLink()) {
+      // A linked install: the tree is a developer's own; remove the link only.
+      await this.runSideEffects(inputs, located, req);
+      await unlink(root);
       await releaseSupersededRecords(kept);
-      return { ok: true, packageName: req.name, removedFiles, preservedData };
+      return { ok: true, packageName: req.name, removedFiles: 1, preservedData: [] };
+    }
+
+    const record = await this.recordFor(root);
+    const sibling = await createUninstallSibling(root);
+    const journal: UninstallJournal = {
+      version: 1,
+      root,
+      package: { name: req.name, type: located.inferredType },
+      moves: [],
+      phase: 'moving',
+    };
+    const warnings: string[] = [];
+    let agentRemoved: AgentRemovedSummary | undefined;
+    try {
+      await writeJournal(sibling, journal);
+      for (const move of await this.planMoves(root, record, { sibling, journal })) {
+        await journaledMove({ root, sibling, journal, move });
+      }
+      journal.phase = 'side-effects';
+      await writeJournal(sibling, journal);
+      agentRemoved = await this.runSideEffects(inputs, located, req, { root, sibling, journal });
+      for (const stray of await returnStrays({ root, sibling, journal })) {
+        warnings.push(
+          `${stray.path} was written while the uninstall ran and was kept at ${stray.landedAt}.`
+        );
+      }
+      journal.phase = 'committed';
+      await writeJournal(sibling, journal);
     } catch (err) {
-      await this.rollbackFromStaging(stagingPath, located.installRoot, stagingDir);
+      await this.rollBack(sibling, journal);
       throw err;
     }
+
+    // Committed: the uninstall is decided. A failure from here on is logged and
+    // left for recovery to finish; it never rolls back a torn-down package.
+    let preservedData: string[] = [];
+    try {
+      if (req.purge) {
+        await rm(sibling, { recursive: true, force: true });
+        await rm(root, { recursive: true, force: true });
+      } else {
+        await finishUninstall(sibling, journal);
+        preservedData = await keptEntries(root);
+      }
+    } catch (err) {
+      this.deps.logger.warn('[marketplace/uninstall] cleanup after the uninstall failed', {
+        root,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      warnings.push('Some cleanup did not finish; DorkOS will finish it the next time it starts.');
+    }
+    await releaseSupersededRecords(kept);
+    return {
+      ok: true,
+      packageName: req.name,
+      removedFiles: journal.moves.length,
+      preservedData,
+      ...(agentRemoved && { agentRemoved }),
+      ...(warnings.length > 0 && { warnings }),
+    };
+  }
+
+  /**
+   * The root's installed-files record, rebuilt for an install made before
+   * records existed, or `null` when none can be had (the legacy fallback).
+   *
+   * @internal
+   */
+  private async recordFor(root: string): Promise<InstalledFiles | null> {
+    const record = await readInstalledFiles(root, this.deps.logger);
+    if (record || !this.deps.rebuildLegacy) return record;
+    return this.deps.rebuildLegacy(root);
+  }
+
+  /**
+   * What to move into the sibling, in order: record-proven package files
+   * (whole directories when everything in them is the package's), the
+   * installer-owned paths, then the identity files last. With no record (the
+   * legacy fallback), only the installer-owned paths and the identity files
+   * move: everything else is kept, since nothing proves it is the package's.
+   *
+   * @internal
+   */
+  private async planMoves(
+    root: string,
+    record: InstalledFiles | null,
+    journaled: { sibling: string; journal: UninstallJournal }
+  ): Promise<{ path: string; unitFiles?: string[] }[]> {
+    const ownedPaths = record?.ownedPaths ?? ['node_modules'];
+    const installerFiles = [INSTALL_METADATA_POSIX_PATH];
+    const skip = (p: string): boolean =>
+      IDENTITY_FILES.includes(p) ||
+      installerFiles.includes(p) ||
+      ownedPaths.some((o) => p === o || p.startsWith(`${o}/`));
+    const scan = await scanTree(root, { skip });
+    const proven = new Set<string>();
+    if (record) {
+      for (const p of Object.keys(record.files)) {
+        if (skip(p)) continue;
+        if (await isProvenPackageFile(root, p, record)) proven.add(p);
+      }
+    }
+    // Whole directories whose every entry is a proven package file move as one unit.
+    const units: string[] = [];
+    for (const dir of [...scan.dirs].sort()) {
+      if (units.some((u) => dir.startsWith(`${u}/`))) continue;
+      const inside = [...scan.entries.keys()].filter((p) => p.startsWith(`${dir}/`));
+      const hasSubdirOnlyWithoutFiles = [...scan.dirs].some(
+        (d) =>
+          d.startsWith(`${dir}/`) && ![...scan.entries.keys()].some((p) => p.startsWith(`${d}/`))
+      );
+      if (inside.length > 0 && !hasSubdirOnlyWithoutFiles && inside.every((p) => proven.has(p))) {
+        units.push(dir);
+      }
+    }
+    const moves: { path: string; unitFiles?: string[] }[] = [];
+    for (const unit of units) {
+      moves.push({
+        path: unit,
+        unitFiles: [...proven]
+          .filter((p) => p.startsWith(`${unit}/`))
+          .map((p) => p.slice(unit.length + 1)),
+      });
+    }
+    for (const p of [...proven].sort()) {
+      if (!units.some((u) => p.startsWith(`${u}/`))) moves.push({ path: p });
+    }
+    for (const p of [...ownedPaths, ...installerFiles, ...IDENTITY_FILES]) {
+      if ((await lstat(path.join(root, ...p.split('/'))).catch(() => undefined)) !== undefined) {
+        moves.push({ path: p });
+      }
+    }
+    // An identity file always leaves with the package, but one the person
+    // edited is theirs too: a copy stays behind as `.dork-old`, as an update does.
+    if (record) {
+      for (const p of IDENTITY_FILES) {
+        if (!(p in record.files) || (await isProvenPackageFile(root, p, record))) continue;
+        const abs = path.join(root, ...p.split('/'));
+        if (!(await pathExists(abs))) continue;
+        let saved = `${abs}.dork-old`;
+        for (let n = 2; await pathExists(saved); n++) saved = `${abs}.dork-old.${n}`;
+        // Journaled before it is written, so a rollback removes it.
+        const rel = path.relative(root, saved).split(path.sep).join('/');
+        journaled.journal.savedCopies = [...(journaled.journal.savedCopies ?? []), rel];
+        await writeJournal(journaled.sibling, journaled.journal);
+        await copyFile(abs, saved);
+      }
+    }
+    return moves;
+  }
+
+  /**
+   * Undo an uncommitted uninstall: every journaled move back, identity files
+   * first, and, when the agent was already taken off the team, its manifest
+   * restored and the agent registered again. Logged, never thrown, so it
+   * cannot mask the original error.
+   *
+   * @internal
+   */
+  private async rollBack(sibling: string, journal: UninstallJournal): Promise<void> {
+    try {
+      await rollBackUninstall(sibling, journal);
+      if (journal.agentUnregistered) {
+        const parked = path.join(journal.root, ...UNINSTALLED_AGENT_PATH.split('/'));
+        const manifest = path.join(journal.root, ...AGENT_MANIFEST_PATH.split('/'));
+        if (!(await pathExists(manifest)) && (await pathExists(parked))) {
+          await copyFile(parked, manifest);
+        }
+        await rm(parked, { force: true });
+        await this.deps.agentRegistry?.restoreAtPath(journal.root);
+      }
+    } catch (rollbackErr) {
+      this.deps.logger.warn(
+        `[marketplace/uninstall] rollback of ${journal.root} did not finish; recovery will retry: ${
+          rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)
+        }`
+      );
+    }
+  }
+
+  /**
+   * Capture what the side effects need from the live root, before anything
+   * moves: an extension whose files the person edited is still disabled and
+   * its approval still forgotten (DOR-516), and the generated-schedule receipt
+   * is read while it is still in place.
+   *
+   * @internal
+   */
+  private async captureSideEffectInputs(root: string): Promise<SideEffectInputs> {
+    const extensionIds: string[] = [];
+    try {
+      for (const entry of await readdir(path.join(root, '.dork', 'extensions'), {
+        withFileTypes: true,
+      })) {
+        if (entry.isDirectory()) extensionIds.push(entry.name);
+      }
+    } catch {
+      // No bundled extensions.
+    }
+    const metadata = await readInstallMetadata(root);
+    return { extensionIds, generatedSchedulePaths: metadata?.generatedSchedulePaths ?? [] };
   }
 
   /**
@@ -300,8 +563,12 @@ export class UninstallFlow {
   private async settleAndReread(
     probed: LocatedPackage
   ): Promise<{ located: LocatedPackage; kept: InstallRecord[] } | undefined> {
-    const { kept } = await settleInterruptedInstall(probed.installRoot);
-    if (!(await pathExists(probed.installRoot))) return undefined;
+    const { kept, restoredAgent } = await settleInterruptedInstall(probed.installRoot);
+    // An earlier uninstall of this agent, interrupted after it left the team,
+    // was just rolled back: register it again, as startup recovery does, so
+    // this uninstall takes it off the team with the full cascade.
+    if (restoredAgent) await this.deps.agentRegistry?.restoreAtPath(probed.installRoot);
+    if (!(await hasPackageIdentity(probed.installRoot))) return undefined;
     const manifest = await readManifestIfPresent(probed.installRoot);
     return {
       located: {
@@ -341,8 +608,10 @@ export class UninstallFlow {
     const candidates = this.candidatePaths(req);
     for (const candidate of candidates) {
       if (skip.has(candidate.installRoot)) continue;
+      // A root holding only files an earlier uninstall kept is not an install
+      // (DOR-2245); records beside a target still are, so recovery settles them.
       const present =
-        (await pathExists(candidate.installRoot)) ||
+        (await hasPackageIdentity(candidate.installRoot)) ||
         (await hasInstallRecords(candidate.installRoot));
       if (!present) continue;
       const manifest = await readManifestIfPresent(candidate.installRoot);
@@ -395,10 +664,11 @@ export class UninstallFlow {
    * @internal
    */
   private async runSideEffects(
-    stagingPath: string,
+    inputs: SideEffectInputs,
     located: LocatedPackage,
-    req: UninstallRequest
-  ): Promise<void> {
+    req: UninstallRequest,
+    journaled?: { root: string; sibling: string; journal: UninstallJournal }
+  ): Promise<AgentRemovedSummary | undefined> {
     const type = located.inferredType;
     // Only these two types walk `.dork/extensions/`. `shape` and `adapter` packages
     // may carry that directory too, and the asymmetry looks like an oversight, so:
@@ -416,23 +686,64 @@ export class UninstallFlow {
     // to read `manifest.extensions` instead of only `activates`. Adding the call
     // now would be dead code that reads like coverage.
     if (type === 'plugin' || type === 'skill-pack') {
-      await this.disableBundledExtensions(stagingPath);
+      await this.disableBundledExtensions(inputs.extensionIds);
     }
     if (type === 'adapter') {
-      // Prefer the manifest name; fall back to the install root basename
-      // (the directory the package was installed into) rather than the
-      // staging dir basename (which is always the literal 'pkg').
       await this.deps.adapterManager.removeAdapter(
         located.manifest?.name ?? path.basename(located.installRoot)
       );
     }
-    if (type === 'shape' && req.deactivateShape !== false) {
+    if (type === 'shape' && !req.replacing) {
       await this.teardownShape(located);
     }
-    // Type-agnostic and therefore last: any package type may have generated
-    // schedule files outside its own install root, and removing the package does
-    // not remove those.
-    await this.removeGeneratedSchedules(stagingPath);
+    // Type-agnostic: any package type may have generated schedule files outside
+    // its own install root, and removing the package does not remove those.
+    await this.removeGeneratedSchedules(inputs.generatedSchedulePaths);
+    // Last, because nothing after it may fail and roll the package back
+    // without its agent: take an uninstalled agent package's agent off the team.
+    if (type === 'agent' && !req.replacing && journaled) {
+      return this.removeAgent(journaled);
+    }
+    return undefined;
+  }
+
+  /**
+   * Park `agent.json` as `.dork/uninstalled-agent.json` (so a reinstall of the
+   * same package can keep the agent's identity) and unregister the agent: the
+   * full cascade, which a reinstall does not restore. The journal records it
+   * before it happens, so a rollback knows to register the agent again.
+   *
+   * @internal
+   */
+  private async removeAgent(journaled: {
+    root: string;
+    sibling: string;
+    journal: UninstallJournal;
+  }): Promise<AgentRemovedSummary | undefined> {
+    if (!this.deps.agentRegistry) return undefined;
+    const manifest = path.join(journaled.root, ...AGENT_MANIFEST_PATH.split('/'));
+    const parked = path.join(journaled.root, ...UNINSTALLED_AGENT_PATH.split('/'));
+    // Journaled first, so a rollback knows to put the manifest back.
+    journaled.journal.agentUnregistered = true;
+    await writeJournal(journaled.sibling, journaled.journal);
+    if (await pathExists(manifest)) {
+      // Moved, so no live agent.json is left for a scan to register when the
+      // registry has no row to release it. A git-tracked one is copied instead
+      // and left to the unregister, which keeps it and denies the folder
+      // (DOR-1019): an uninstall never changes a person's source tree.
+      if (await isManifestGitTracked(journaled.root, this.deps.logger)) {
+        await copyFile(manifest, parked);
+      } else {
+        await rename(manifest, parked);
+      }
+    }
+    const removed = await this.deps.agentRegistry.unregisterAtPath(journaled.root);
+    if (!removed) return undefined;
+    return {
+      id: removed.id,
+      directoryDenied: removed.directoryDenied,
+      removed: [...AGENT_REMOVAL_EFFECTS],
+    };
   }
 
   /**
@@ -462,9 +773,7 @@ export class UninstallFlow {
    * @param stagingPath - The staged copy of the package being removed.
    * @internal
    */
-  private async removeGeneratedSchedules(stagingPath: string): Promise<void> {
-    const metadata = await readInstallMetadata(stagingPath);
-    const generated = metadata?.generatedSchedulePaths ?? [];
+  private async removeGeneratedSchedules(generated: readonly string[]): Promise<void> {
     if (generated.length === 0) return;
 
     for (const dirPath of generated) {
@@ -561,86 +870,10 @@ export class UninstallFlow {
    *
    * @internal
    */
-  private async disableBundledExtensions(stagingPath: string): Promise<void> {
-    const extDir = path.join(stagingPath, '.dork', 'extensions');
-    if (!(await pathExists(extDir))) return;
-    const entries = await readdir(extDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        await this.deps.extensionManager.disable(entry.name);
-        await this.deps.extensionManager.forgetRunApproval(entry.name);
-      }
-    }
-  }
-
-  /**
-   * Re-create `.dork/data/` and `.dork/secrets.json` in the original
-   * install location by copying them out of the staged package. Returns
-   * the list of preserved absolute paths.
-   *
-   * @internal
-   */
-  private async restorePreservedData(stagingPath: string, installRoot: string): Promise<string[]> {
-    const preserved: string[] = [];
-    const stagedDataDir = path.join(stagingPath, DATA_SUBPATH);
-    const stagedSecrets = path.join(stagingPath, SECRETS_SUBPATH);
-    const liveDataDir = path.join(installRoot, DATA_SUBPATH);
-    const liveSecrets = path.join(installRoot, SECRETS_SUBPATH);
-
-    if (await pathExists(stagedDataDir)) {
-      await mkdir(path.dirname(liveDataDir), { recursive: true });
-      await cp(stagedDataDir, liveDataDir, { recursive: true });
-      preserved.push(liveDataDir);
-    }
-    if (await pathExists(stagedSecrets)) {
-      await mkdir(path.dirname(liveSecrets), { recursive: true });
-      await cp(stagedSecrets, liveSecrets);
-      preserved.push(liveSecrets);
-    }
-    return preserved;
-  }
-
-  /**
-   * Move the staged copy back to its original location after a failure
-   * during side-effects. Cleanup errors are logged but never thrown so
-   * they cannot mask the original transaction error.
-   *
-   * @internal
-   */
-  private async rollbackFromStaging(
-    stagingPath: string,
-    installRoot: string,
-    stagingDir: string
-  ): Promise<void> {
-    try {
-      if (await pathExists(installRoot)) {
-        await rm(installRoot, { recursive: true, force: true });
-      }
-      await mkdir(path.dirname(installRoot), { recursive: true });
-      await atomicMove(stagingPath, installRoot);
-    } catch (rollbackErr) {
-      this.deps.logger.warn(
-        `[marketplace/uninstall] rollback failed for ${installRoot}: ${
-          rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)
-        }`
-      );
-    }
-    await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
-  }
-
-  /**
-   * Count the number of top-level entries in the staged package — used as
-   * the `removedFiles` reporter on the result. Returns 0 if the directory
-   * is unreadable.
-   *
-   * @internal
-   */
-  private async countTopLevelEntries(stagingPath: string): Promise<number> {
-    try {
-      const entries = await readdir(stagingPath);
-      return entries.length;
-    } catch {
-      return 0;
+  private async disableBundledExtensions(ids: readonly string[]): Promise<void> {
+    for (const id of ids) {
+      await this.deps.extensionManager.disable(id);
+      await this.deps.extensionManager.forgetRunApproval(id);
     }
   }
 }
@@ -669,4 +902,32 @@ async function readManifestIfPresent(
   } catch {
     return null;
   }
+}
+
+/**
+ * What an uninstall kept in `root`: every remaining entry, collapsed to the
+ * highest directory whose whole contents were kept. After an uninstall
+ * finishes, everything left is the person's except the pruned record, so a
+ * directory is listed whole unless the record sits inside it. Empty when the
+ * root is gone.
+ */
+async function keptEntries(root: string): Promise<string[]> {
+  const recordPath = path.join(root, '.dork', 'installed-files.json');
+  const kept: string[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const abs = path.join(dir, entry.name);
+      if (abs === recordPath) continue;
+      if (entry.isDirectory() && recordPath.startsWith(`${abs}${path.sep}`)) await walk(abs);
+      else kept.push(abs);
+    }
+  };
+  await walk(root);
+  return kept.sort();
 }

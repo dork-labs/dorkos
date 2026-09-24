@@ -243,7 +243,7 @@ interface MarketplaceBinding {
  * the binding is the whole guarantee: the user consented to one specific effect,
  * and a retry that changes any of these is a different effect. `purge` is the
  * sharpest case — approving a reversible uninstall must never license one that
- * deletes `.dork/data/` and `.dork/secrets.json`.
+ * deletes the files the person and their agents added or changed.
  *
  * It also binds the EXECUTABLE part of the permission preview — the hook command
  * strings and the scheduled jobs, via {@link disclosedEffectsOf} — because an
@@ -378,10 +378,16 @@ function summaryOf(req: ConfirmationRequest): string {
   switch (req.operation) {
     case 'install':
       return `Install ${name} from ${marketplace ?? 'any enabled marketplace'}${scopeOf(req)}`;
-    case 'uninstall':
-      return req.purge
-        ? `Uninstall ${name}${scopeOf(req)} and delete its saved data and secrets`
-        : `Uninstall ${name}${scopeOf(req)}, keeping its saved data`;
+    case 'uninstall': {
+      const base = req.purge
+        ? `Uninstall ${name}${scopeOf(req)} and delete the files you and your agents added or changed`
+        : `Uninstall ${name}${scopeOf(req)}, keeping the files you and your agents added or changed`;
+      // Removing an agent package removes the agent from the team, and a
+      // reinstall does not bring any of this back (DOR-2245).
+      return req.packageType === 'agent'
+        ? `${base}. This removes the agent from your team: its rooms, schedules (paused), sign-ins, access tokens, community memberships and connection access go, and reinstalling does not restore them`
+        : base;
+    }
     case 'update': {
       const count = req.updates?.length ?? 0;
       return `Update ${count} installed ${count === 1 ? 'package' : 'packages'} to a newer version, each where it is installed. What each new version runs is listed below.`;

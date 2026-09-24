@@ -25,7 +25,12 @@ import { MarketplacePackageManifestSchema, PackageNameSchema } from '@dorkos/mar
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { hasSchedule, isInvalidSchedule, readScheduleField } from '@dorkos/skills/schedule-schema';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
-import { listSkillDirs, CLAUDE_PLUGIN_ROOT_TOKEN, type SkillEntry } from '../scan/scanner.js';
+import {
+  listSkillDirs,
+  CLAUDE_PLUGIN_DATA_TOKEN,
+  CLAUDE_PLUGIN_ROOT_TOKEN,
+  type SkillEntry,
+} from '../scan/scanner.js';
 import { emptyHooksConfig } from '../generate/hooks.js';
 import type { ClaudeHooksConfig, HookCommand, HookMatcherGroup } from '../generate/hooks.js';
 
@@ -63,6 +68,12 @@ export interface InstalledSkill extends SkillEntry {
    * as a {@link ProjectionWarning}.
    */
   usesPluginRoot: boolean;
+  /**
+   * True when the skill's `SKILL.md` references `${CLAUDE_PLUGIN_DATA}`, which,
+   * like the root token, only resolves in plugin context. Optional so a skill
+   * built by hand (tests, the global scan) need not spell it.
+   */
+  usesPluginData?: boolean;
   /**
    * The skill's `SKILL.md` frontmatter `name`, when present. Claude Code keys a
    * skill by its DIRECTORY name (so the `<pkg>__<name>` projection namespacing
@@ -553,6 +564,7 @@ function toInstalledSkill(
   return {
     ...entry,
     usesPluginRoot: skillMd.includes(CLAUDE_PLUGIN_ROOT_TOKEN),
+    usesPluginData: skillMd.includes(CLAUDE_PLUGIN_DATA_TOKEN),
     ...(typeof frontmatter.name === 'string' ? { frontmatterName: frontmatter.name } : {}),
     ...(dorkHomeLink ? { linkedInDorkHome: dorkHomeLink(entry.name) } : {}),
     hasSchedule: declaresSchedule(frontmatter),

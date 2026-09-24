@@ -99,6 +99,27 @@ kind: skill
 The instructions your agent follows when it uses this skill.
 ```
 
+## Where your package keeps its settings
+
+People fill in settings, and agents write notes, inside an installed package's folder. DorkOS keeps every file your package didn't ship across updates, reinstalls and uninstalls. So a few habits keep your package's state safe:
+
+- **Write state to `${CLAUDE_PLUGIN_DATA}`**, the same variable Claude Code gives plugins. In DorkOS it points at the install's own `.dork/data` folder. There is one for each install, so the same package installed in two projects keeps two sets of settings. It survives updates, and only `dorkos uninstall --purge` removes it. Your commands and hooks can use it as `${CLAUDE_PLUGIN_DATA}` or read the environment variable.
+- **Don't write into files you ship.** If a person edits one, an update replaces it and saves their copy as `<file>.dork-old`.
+- **Mark shipped defaults that are meant to be edited** in `.dork/manifest.json`. For those files, a person's copy stays and a changed default is saved beside it as `<file>.dork-new`:
+
+  ```json
+  {
+    "userEditable": ["config/defaults.json", "prompts/**"]
+  }
+  ```
+
+  Each entry is an exact path, or a folder followed by `/**`. Older DorkOS versions ignore the field, so set `minDorkosVersion` if your package depends on it.
+
+  Files that decide what your package runs can't be marked this way: `hooks/`, `.mcp.json`, `.lsp.json`, `monitors/`, `bin/`, `.dork/extensions/`, `.dork/tasks/`, `skills/`, `commands/`, `agents/`, `output-styles/`, a root `SKILL.md`, `package.json`, and any other place your `plugin.json` points these at. When someone updates your package, they approve exactly what the new version runs, so an edited copy of one of these files must never be kept in its place.
+
+- **Don't ship these paths.** They belong to the person or to DorkOS, and validation refuses a package that includes them: `.dork/data/`, `.dork/secrets.json`, `.dork/install-metadata.json`, `.dork/installed-files.json`, `.dork/uninstalled-agent.json`, and any file ending in `.dork-old` or `.dork-new`.
+- **Dependencies** you declare in `package.json` are already installed into your package's own `node_modules`, so you don't need to install them into the data folder yourself.
+
 ## Scaffolding a new package
 
 The `dorkos` CLI can generate the starting files for you:

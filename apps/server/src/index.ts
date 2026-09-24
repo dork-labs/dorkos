@@ -244,6 +244,7 @@ import { MarketplaceSourceManager } from './services/marketplace/marketplace-sou
 import { MarketplaceCache } from './services/marketplace/marketplace-cache.js';
 import { PackageCacheRetention } from './services/marketplace/package-cache-retention.js';
 import { PackageResolver } from './services/marketplace/package-resolver.js';
+import { rebuildInstalledFiles } from './services/marketplace/lib/legacy-record.js';
 import { PackageFetcher } from './services/marketplace/package-fetcher.js';
 import { ConflictDetector } from './services/marketplace/conflict-detector.js';
 import { PermissionPreviewBuilder } from './services/marketplace/permission-preview.js';
@@ -577,6 +578,7 @@ function registeredAgentRoots(
  * @param summary - The sweep's totals.
  */
 function logInstallSweep(scope: string, summary: InstallSweepSummary): void {
+  registerRestoredAgents(summary.restoredAgentRoots);
   const { settled, kept, discarded, inFlightTargets } = summary;
   if (settled + kept + discarded + inFlightTargets.length > 0) {
     logger.info(
@@ -588,6 +590,35 @@ function logInstallSweep(scope: string, summary: InstallSweepSummary): void {
   retryInFlightTargetsLater(inFlightTargets, logger, (retry) =>
     logInstallSweep(`${scope} (retry)`, { ...retry, inFlightTargets: [] })
   );
+}
+
+/** Agent folders recovery restored before Mesh started, registered once it has. */
+const agentRootsAwaitingMesh: string[] = [];
+
+/**
+ * Register again the agents whose interrupted uninstall recovery rolled back
+ * (DOR-2245): their `agent.json` is back, but the uninstall had already taken
+ * them off the team. The global sweep runs before Mesh exists, so its roots
+ * wait for {@link flushRestoredAgents}.
+ *
+ * @param roots - {@link InstallSweepSummary.restoredAgentRoots}.
+ */
+function registerRestoredAgents(roots: readonly string[]): void {
+  if (!meshCore) {
+    agentRootsAwaitingMesh.push(...roots);
+    return;
+  }
+  const mesh = meshCore;
+  for (const root of roots) {
+    mesh.syncFromDisk(root).catch((err: unknown) => {
+      logger.warn(`[Marketplace] Could not register the restored agent at ${root}`, logError(err));
+    });
+  }
+}
+
+/** Register the agents {@link registerRestoredAgents} held until Mesh started. */
+function flushRestoredAgents(): void {
+  registerRestoredAgents(agentRootsAwaitingMesh.splice(0));
 }
 
 let taskFileWatcher: TaskFileWatcher | undefined;
@@ -2029,6 +2060,7 @@ async function start() {
     // itself was making there, and only to entries whose names prove they are
     // DorkOS's own records. Fire-and-forget: each target is settled under its
     // install lock, so an install that races it simply waits.
+    flushRestoredAgents();
     try {
       const projects = projectsOfAgents(meshCore.listWithPaths().map((a) => a.projectPath));
       recoverInterruptedInstalls(projects.flatMap(projectSweepDirs), logger)
@@ -4152,9 +4184,25 @@ async function start() {
       extensionManager,
       logger,
     });
+    // One agent-registry surface for the flows that take an agent off the team
+    // (DOR-2245): an uninstalled agent package, and an agent a different
+    // package with the same name replaces.
+    const marketplaceAgentRegistry = {
+      unregisterAtPath: async (projectPath: string) => {
+        const agent = meshCore?.getByPath(projectPath);
+        if (!meshCore || !agent) return null;
+        const { manifestKept } = await meshCore.unregister(agent.id);
+        return { id: agent.id, directoryDenied: manifestKept };
+      },
+      restoreAtPath: async (projectPath: string) => {
+        await meshCore?.syncFromDisk(projectPath);
+      },
+    };
     const marketplaceAgentFlow = new AgentInstallFlow({
       dorkHome,
       agentCreator: { createAgentWorkspace },
+      getMeshCore: () => meshCore,
+      agentRegistry: marketplaceAgentRegistry,
       logger,
     });
     const marketplaceSkillPackFlow = new SkillPackInstallFlow({ dorkHome, logger });
@@ -4176,6 +4224,13 @@ async function start() {
       shapeDeactivator: { getActiveShapeName, clearActiveShape },
       // Delete the schedules a removed Shape created so its tick stops firing.
       shapeScheduleTeardown: shapeScheduleService,
+      // An uninstalled agent package's agent leaves the team (DOR-2245): the
+      // full unregister cascade, and back again if the uninstall rolls back.
+      agentRegistry: marketplaceAgentRegistry,
+      // An install made before installed-files records existed gets one rebuilt
+      // from the commit it was installed at (DOR-2245 §9).
+      rebuildLegacy: (installRoot: string) =>
+        rebuildInstalledFiles(installRoot, { fetcher: marketplaceFetcher, logger }),
       logger,
     });
 

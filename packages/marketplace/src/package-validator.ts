@@ -15,7 +15,7 @@
  * @module @dorkos/marketplace/package-validator
  */
 
-import { promises as fs } from 'node:fs';
+import { promises as fs, type Dirent } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { scanSkillDirectory } from '@dorkos/skills/scanner';
@@ -32,6 +32,7 @@ import {
 import { requiresClaudePlugin } from './package-types.js';
 import { parseMarketplaceJson, parseDorkosSidecar } from './marketplace-json-parser.js';
 import { validateAgainstCcSchema } from './cc-validator.js';
+import { isReservedPackagePath, userEditableReaches } from './user-editable.js';
 
 /**
  * A single validation finding produced by {@link validatePackage}. Errors
@@ -52,6 +53,20 @@ export interface ValidationIssue {
    * Omitted for issues that are not tied to a specific file.
    */
   path?: string;
+}
+
+/**
+ * Options for {@link validatePackage}.
+ */
+export interface ValidatePackageOptions {
+  /**
+   * What kind of tree is being validated. `'package'` (the default) is a
+   * package as its author ships it: publishing, `dorkos marketplace validate`,
+   * and the install pipeline's staged tree. `'installed'` is an install root on
+   * disk, which legitimately holds the installer's own records and the
+   * person's data, so the reserved-path check is skipped there.
+   */
+  tree?: 'package' | 'installed';
 }
 
 /**
@@ -191,9 +206,13 @@ async function readVersionField(filePath: string): Promise<string | undefined> {
  * 6. Directory-name vs `manifest.name` check. Mismatches are warnings.
  *
  * @param packagePath - Absolute path to the package root directory.
+ * @param options - What kind of tree this is; see {@link ValidatePackageOptions}.
  * @returns A {@link ValidatePackageResult} describing all issues found.
  */
-export async function validatePackage(packagePath: string): Promise<ValidatePackageResult> {
+export async function validatePackage(
+  packagePath: string,
+  options: ValidatePackageOptions = {}
+): Promise<ValidatePackageResult> {
   const issues: ValidationIssue[] = [];
   // Read before any gate, so every result — failed ones included — says what
   // version the tree states. The update check relies on that for trees that
@@ -325,8 +344,134 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
   // 8. Declared schedules that point at nothing.
   await checkScheduleSkillRefs(packagePath, manifest, issues);
 
+  // 9. Paths that belong to the person or the installer (DOR-2245). Skipped on
+  //    an installed tree, which holds exactly those files by design.
+  if ((options.tree ?? 'package') === 'package') {
+    await checkReservedPaths(packagePath, issues);
+  }
+
+  // 10. userEditable entries that reach a path plugin.json declares hooks,
+  //     servers, monitors, skills or commands at (DOR-2245). The defaults are
+  //     refused by the manifest schema; these locations only plugin.json knows.
+  await checkUserEditableDeclaredPaths(packagePath, manifest.userEditable ?? [], issues);
+
   const hasErrors = issues.some((i) => i.level === 'error');
   return { ok: !hasErrors, issues, manifest, declaredVersion };
+}
+
+/** plugin.json fields whose string values name files or folders a package runs from. */
+const DECLARED_EFFECT_FIELDS = [
+  'hooks',
+  'mcpServers',
+  'lspServers',
+  'monitors',
+  'skills',
+  'commands',
+  'agents',
+  'outputStyles',
+];
+
+/** Every package-relative path a plugin.json field names (a string, or strings in an array). */
+function declaredPathsOf(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : [value];
+  return values
+    .filter((v): v is string => typeof v === 'string' && v.length > 0)
+    .map((v) =>
+      path.posix.normalize(v.split('\\').join('/')).replace(/^\.\//, '').replace(/\/$/, '')
+    )
+    .filter((v) => v !== '.' && !v.startsWith('../') && !path.posix.isAbsolute(v));
+}
+
+/**
+ * Fail for every `userEditable` entry that reaches a location plugin.json
+ * declares something runnable at. A person approves the new version's copy of
+ * those files on update, so an edited copy must never be kept over it
+ * (DOR-2245, DOR-2195). The manifest schema already refuses the default
+ * locations (`EFFECT_BEARING_PATHS`).
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param userEditable - The manifest's `userEditable` list.
+ * @param issues - Mutable issue list to append findings to.
+ * @internal
+ */
+async function checkUserEditableDeclaredPaths(
+  packagePath: string,
+  userEditable: readonly string[],
+  issues: ValidationIssue[]
+): Promise<void> {
+  if (userEditable.length === 0) return;
+  let pluginJson: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(
+      await fs.readFile(path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH), 'utf-8')
+    );
+    if (typeof parsed !== 'object' || parsed === null) return;
+    pluginJson = parsed as Record<string, unknown>;
+  } catch {
+    return;
+  }
+  const experimental = pluginJson.experimental as Record<string, unknown> | undefined;
+  const declared = [
+    ...DECLARED_EFFECT_FIELDS.flatMap((field) => declaredPathsOf(pluginJson[field])),
+    ...declaredPathsOf(experimental?.monitors),
+  ];
+  for (const pattern of userEditable) {
+    const reached = declared.find((p) => userEditableReaches(pattern, p));
+    if (reached === undefined) continue;
+    issues.push({
+      level: 'error',
+      code: 'USER_EDITABLE_EFFECT_PATH',
+      message:
+        `userEditable entry "${pattern}" reaches ${reached}, which plugin.json names as something ` +
+        "the package runs. A person approves the new version's copy on update, so it can't be user-editable.",
+      path: PACKAGE_MANIFEST_PATH,
+    });
+  }
+}
+
+/** Directories the reserved-path walk never enters: vendored code and git's own store. */
+const RESERVED_WALK_SKIP_DIRS = new Set(['node_modules', '.git']);
+
+/**
+ * Fail for every shipped file under a path DorkOS keeps for the person or the
+ * installer (`isReservedPackagePath`): the package's data directory, its
+ * secrets file, the installer's records, and `.dork-old` / `.dork-new` copies.
+ * A package that shipped one would, on the next update, own a file that is
+ * really a person's (ADR 260923-163513). The install copy step strips these
+ * too; this check is the one an author sees.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param issues - Mutable issue list to append findings to.
+ * @internal
+ */
+async function checkReservedPaths(packagePath: string, issues: ValidationIssue[]): Promise<void> {
+  const walk = async (relDir: string): Promise<void> => {
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(path.join(packagePath, relDir), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const rel = relDir === '' ? entry.name : `${relDir}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (RESERVED_WALK_SKIP_DIRS.has(entry.name)) continue;
+        await walk(rel);
+      } else if (isReservedPackagePath(rel)) {
+        issues.push({
+          level: 'error',
+          code: 'RESERVED_PATH_SHIPPED',
+          message:
+            `${rel} is a path DorkOS keeps for the person or the installer ` +
+            '(.dork/data/, .dork/secrets.json, .dork/install-metadata.json, ' +
+            '.dork/installed-files.json, .dork/uninstalled-agent.json, *.dork-old, ' +
+            '*.dork-new). Remove it from the package.',
+          path: rel,
+        });
+      }
+    }
+  };
+  await walk('');
 }
 
 /**

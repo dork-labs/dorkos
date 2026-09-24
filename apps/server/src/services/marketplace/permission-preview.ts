@@ -14,7 +14,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
-import { PackageTypeSchema } from '@dorkos/marketplace';
+import { EFFECT_BEARING_PATHS, PackageTypeSchema } from '@dorkos/marketplace';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema, hasSchedule } from '@dorkos/skills';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
@@ -123,7 +123,7 @@ async function pathExists(path: string): Promise<boolean> {
 async function readExtensionManifests(
   packagePath: string
 ): Promise<Array<{ id: string; manifest: ReturnType<typeof ExtensionManifestSchema.parse> }>> {
-  const extRoot = join(packagePath, '.dork', 'extensions');
+  const extRoot = join(packagePath, ...EFFECT_BEARING_PATHS.extensions.split('/'));
   if (!(await pathExists(extRoot))) return [];
 
   const entries = await readdir(extRoot, { withFileTypes: true });
@@ -184,7 +184,7 @@ async function readExtensionManifests(
  * file, or a task that is not already raised, clamps.
  */
 async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
-  const tasksRoot = join(packagePath, '.dork', 'tasks');
+  const tasksRoot = join(packagePath, ...EFFECT_BEARING_PATHS.tasks.split('/'));
   if (!(await pathExists(tasksRoot))) return [];
 
   const entries = await readdir(tasksRoot, { withFileTypes: true });

@@ -46,6 +46,14 @@ vi.mock('../installed-metadata.js', () => ({
   writeInstallMetadata: vi.fn().mockResolvedValue(undefined),
 }));
 
+// The skill-pack SKILL.md check reads the package tree; these tests stage at
+// fake paths (`/tmp/pkg`), so it reports nothing here. Its own behaviour is
+// covered by the ownership flow tests against real trees.
+vi.mock('../flows/install-skill-pack.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../flows/install-skill-pack.js')>()),
+  skillFileProblems: vi.fn().mockResolvedValue([]),
+}));
+
 // Mock the project-install record so its calls can be asserted without a real
 // data directory.
 vi.mock('../lib/project-install-index.js', () => ({
@@ -347,7 +355,16 @@ describe('MarketplaceInstaller', () => {
         manifest,
         expect.objectContaining({ projectPath: undefined })
       );
-      expect(pluginFlow.install).toHaveBeenCalledWith('/tmp/hello-plugin', manifest, req);
+      // The installer adds its ownership hand-off (DOR-2245): a local install
+      // records the directory it came from.
+      expect(pluginFlow.install).toHaveBeenCalledWith(
+        '/tmp/hello-plugin',
+        manifest,
+        expect.objectContaining({
+          ...req,
+          ownership: expect.objectContaining({ source: { localPath: '/tmp/hello-plugin' } }),
+        })
+      );
       expect(mockedReportInstallEvent).toHaveBeenCalledTimes(1);
       expect(mockedReportInstallEvent).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1300,14 +1317,14 @@ describe('MarketplaceInstaller', () => {
       const result = await installer.update({ name: 'updateable-plugin' });
 
       // Uninstall first, with purge: false (the data preservation contract)
-      // and deactivateShape: false (an update is a replace, not a removal —
+      // and replacing: true (an update is a replace, not a removal —
       // the active-Shape pointer must survive the round trip).
       expect(uninstallFlow.uninstall).toHaveBeenCalledTimes(1);
       expect(uninstallFlow.uninstall).toHaveBeenCalledWith({
         name: 'updateable-plugin',
         purge: false,
         projectPath: undefined,
-        deactivateShape: false,
+        replacing: true,
       });
 
       // Then install fresh with force: true (so any residual collision
@@ -1507,7 +1524,7 @@ describe('MarketplaceInstaller', () => {
 
     it('suppresses deactivation during the internal uninstall and re-applies the active Shape', async () => {
       // The full active-Shape update contract: the uninstall half must not
-      // clear ui.shapes.active (deactivateShape: false), and after the fresh
+      // clear ui.shapes.active (replacing: true), and after the fresh
       // version lands the Shape is re-applied so the cockpit picks it up.
       const { deps, shapeFlow, uninstallFlow, reapplyShape } = wireShapeUpdate('linear-ops');
 
@@ -1515,7 +1532,7 @@ describe('MarketplaceInstaller', () => {
       const result = await installer.update({ name: 'linear-ops' });
 
       expect(uninstallFlow.uninstall).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'linear-ops', deactivateShape: false })
+        expect.objectContaining({ name: 'linear-ops', replacing: true })
       );
       expect(shapeFlow.install).toHaveBeenCalledTimes(1);
       expect(reapplyShape).toHaveBeenCalledTimes(1);
