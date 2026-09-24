@@ -40,6 +40,7 @@ vi.mock('../../services/communities/remote/state.js', () => ({
 import { createCommunityConnectionsRouter } from '../community-connections.js';
 import { RemoteConnectionStore } from '../../services/communities/remote/connection-store.js';
 import {
+  RemoteCommunityLookupRateLimitedError,
   RemoteCommunityNameNotFoundError,
   RemoteCommunityPairingService,
   RemoteCommunitySelectionRequiredError,
@@ -185,6 +186,64 @@ describe('local connection route authority and public projection', () => {
     } finally {
       await new Promise<void>((resolve) => nameServer.close(() => resolve()));
       await rm(nameDirectory, { recursive: true, force: true });
+    }
+  });
+
+  // Purpose: a host rate limit on the name lookup gets its own message, not "unavailable".
+  it('answers 429 with a stable code when the host limits name lookups', async () => {
+    const limitedDirectory = await mkdtemp(join(tmpdir(), 'community-connections-limited-'));
+    const limitedService = new RemoteCommunityPairingService(
+      new RemoteConnectionStore(limitedDirectory)
+    );
+    vi.spyOn(limitedService, 'start').mockRejectedValue(
+      new RemoteCommunityLookupRateLimitedError()
+    );
+    const limitedApp = express();
+    limitedApp.use(express.json());
+    limitedApp.use('/api/community-connections', createCommunityConnectionsRouter(limitedService));
+    const limitedServer = limitedApp.listen(0, '127.0.0.1');
+    await once(limitedServer, 'listening');
+    try {
+      const response = await request(limitedServer)
+        .post('/api/community-connections')
+        .set('x-test-author', 'author-a')
+        .send({ url: 'https://community.example/acme', installName: 'Desktop' });
+      expect(response.status).toBe(429);
+      expect(response.body).toEqual({
+        code: 'COMMUNITY_LOOKUP_RATE_LIMITED',
+        error: 'Too many lookups — try again in a minute.',
+      });
+    } finally {
+      await new Promise<void>((resolve) => limitedServer.close(() => resolve()));
+      await rm(limitedDirectory, { recursive: true, force: true });
+    }
+  });
+
+  // Purpose: a reserved name is refused by the real parser as a bad address (400), before any
+  // request leaves this server.
+  it('answers 400 for a link whose short name is reserved', async () => {
+    const reservedDirectory = await mkdtemp(join(tmpdir(), 'community-connections-reserved-'));
+    const reservedService = new RemoteCommunityPairingService(
+      new RemoteConnectionStore(reservedDirectory)
+    );
+    const reservedApp = express();
+    reservedApp.use(express.json());
+    reservedApp.use(
+      '/api/community-connections',
+      createCommunityConnectionsRouter(reservedService)
+    );
+    const reservedServer = reservedApp.listen(0, '127.0.0.1');
+    await once(reservedServer, 'listening');
+    try {
+      const response = await request(reservedServer)
+        .post('/api/community-connections')
+        .set('x-test-author', 'author-a')
+        .send({ url: 'https://community.example/api', installName: 'Desktop' });
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'Enter an accessible HTTPS community address.' });
+    } finally {
+      await new Promise<void>((resolve) => reservedServer.close(() => resolve()));
+      await rm(reservedDirectory, { recursive: true, force: true });
     }
   });
 

@@ -152,6 +152,14 @@ export class RemoteCommunityNameNotFoundError extends Error {
   }
 }
 
+/** The host refused a short-name lookup because this server asked too often. */
+export class RemoteCommunityLookupRateLimitedError extends Error {
+  constructor() {
+    super('The community host is limiting short-name lookups');
+    this.name = 'RemoteCommunityLookupRateLimitedError';
+  }
+}
+
 /** Pairing orchestration scoped to the local owner's verified author ID. */
 export class RemoteCommunityPairingService {
   private readonly busy = new Set<CommunityRef>();
@@ -441,6 +449,8 @@ export class RemoteCommunityPairingService {
     } catch (error) {
       if (error instanceof PinnedHttpError && error.status === 404)
         throw new RemoteCommunityNameNotFoundError();
+      if (error instanceof PinnedHttpError && error.status === 429)
+        throw new RemoteCommunityLookupRateLimitedError();
       throw error;
     }
     const parsed = CommunityWireShortNameLookupSchema.safeParse(answer);

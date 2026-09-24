@@ -12,6 +12,7 @@ import {
 import { EncryptedFileCredentialStore } from '../../../core/credential-provider.js';
 import {
   RemoteCommunityPairingService,
+  RemoteCommunityLookupRateLimitedError,
   RemoteCommunityNameNotFoundError,
   RemoteCommunitySelectionRequiredError,
   RemoteCommunityUpgradeRequiredError,
@@ -100,7 +101,9 @@ beforeAll(async () => {
     const nameLookup = /^\/api\/v1\/community-names\/([^/]+)$/.exec(req.url ?? '');
     if (nameLookup) {
       const answer = shortNameAnswers.get(nameLookup[1]);
-      if (answer === 'redirect') {
+      if (answer === 'rate-limited') {
+        send({ code: 'RATE_LIMITED', message: 'Slow down.' }, 429);
+      } else if (answer === 'redirect') {
         res.statusCode = 301;
         res.setHeader('location', `${redirectedOrigin}/api/v1/community-names/${nameLookup[1]}`);
         res.end();
@@ -1310,6 +1313,21 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
         service.start('name-owner', `${origin}/nobody-here`, 'Unknown')
       ).rejects.toBeInstanceOf(RemoteCommunityNameNotFoundError);
       expect(pairingStarts()).toEqual([]);
+    });
+
+    // Purpose: a host rate limit on the lookup is its own error, and nothing is started.
+    it('reports a rate-limited lookup without starting a pairing', async () => {
+      shortNameAnswers.set('busy-club', 'rate-limited');
+      requests.length = 0;
+      try {
+        const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+        await expect(
+          service.start('name-owner', `${origin}/busy-club`, 'Limited')
+        ).rejects.toBeInstanceOf(RemoteCommunityLookupRateLimitedError);
+        expect(pairingStarts()).toEqual([]);
+      } finally {
+        shortNameAnswers.clear();
+      }
     });
 
     // Purpose: a lookup answer that is not exactly one canonical UUID is refused before any

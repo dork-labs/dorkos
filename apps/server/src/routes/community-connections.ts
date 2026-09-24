@@ -36,6 +36,7 @@ import {
 import {
   RemoteCommunityPairingService,
   RemotePairingBusyError,
+  RemoteCommunityLookupRateLimitedError,
   RemoteCommunityNameNotFoundError,
   RemoteCommunitySelectionRequiredError,
   RemoteCommunityUpgradeRequiredError,
@@ -96,6 +97,11 @@ function failure(res: Response, error: unknown): void {
     res.status(404).json({
       code: 'COMMUNITY_NAME_NOT_FOUND',
       error: 'No community at this address. Check the link and try again.',
+    });
+  } else if (error instanceof RemoteCommunityLookupRateLimitedError) {
+    res.status(429).json({
+      code: 'COMMUNITY_LOOKUP_RATE_LIMITED',
+      error: 'Too many lookups — try again in a minute.',
     });
   } else if (error instanceof RemoteCommunityUpgradeRequiredError) {
     res.status(426).json({
