@@ -223,25 +223,57 @@ export async function removeAttachment(
   input: { communityId: string; attachmentId: string; removedBy: RemovedBy },
   hooks: ContentRemovalHooks = {}
 ): Promise<{ entryId: string | null; entryTombstoned: boolean; blobKeys: string[] }> {
-  // A post that binds an unbound upload takes this same row lock, so once it is held the
-  // binding read from the locked row cannot change under the removal.
+  // Lock order is always entry, then file, as removeEntry takes them (it locks the entry and
+  // then deletes its files). Taking the file first would deadlock with a removal of its message.
+  const current = await client.query<{ entry_id: string | null }>(
+    'SELECT entry_id FROM attachments WHERE id=$2 AND community_id=$1',
+    [input.communityId, input.attachmentId]
+  );
+  if (!current.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'File not found.');
+  if (current.rows[0].entry_id)
+    return removeBoundAttachment(client, input, current.rows[0].entry_id, hooks);
+  // Unbound: only a post can take this file, and it binds it under this same row lock. If one
+  // did before the lock was granted, undo the lock (a savepoint releases it) and take the bound
+  // path, so the file is never held while waiting for its new message.
+  await client.query('SAVEPOINT unbound_file');
   const locked = await client.query<{ entry_id: string | null; blob_key: string }>(
     'SELECT entry_id,blob_key FROM attachments WHERE id=$2 AND community_id=$1 FOR UPDATE',
     [input.communityId, input.attachmentId]
   );
   const attachment = locked.rows[0];
   if (!attachment) throw new ApiError(404, 'NOT_FOUND', 'File not found.');
-  const blobKeys = [attachment.blob_key];
-  if (!attachment.entry_id) {
-    await client.query('DELETE FROM attachments WHERE id=$2 AND community_id=$1', [
-      input.communityId,
-      input.attachmentId,
-    ]);
-    await queueBlobs(client, input.communityId, blobKeys);
-    return { entryId: null, entryTombstoned: false, blobKeys };
+  if (attachment.entry_id) {
+    await client.query('ROLLBACK TO SAVEPOINT unbound_file');
+    return removeBoundAttachment(client, input, attachment.entry_id, hooks);
   }
-  const entry = await lockEntry(client, input.communityId, attachment.entry_id);
+  await client.query('RELEASE SAVEPOINT unbound_file');
+  const blobKeys = [attachment.blob_key];
+  await client.query('DELETE FROM attachments WHERE id=$2 AND community_id=$1', [
+    input.communityId,
+    input.attachmentId,
+  ]);
+  await queueBlobs(client, input.communityId, blobKeys);
+  return { entryId: null, entryTombstoned: false, blobKeys };
+}
+
+/** Remove a posted file: lock its message, then the file, and record the message's change. */
+async function removeBoundAttachment(
+  client: PoolClient,
+  input: { communityId: string; attachmentId: string; removedBy: RemovedBy },
+  entryId: string,
+  hooks: ContentRemovalHooks
+): Promise<{ entryId: string | null; entryTombstoned: boolean; blobKeys: string[] }> {
+  const entry = await lockEntry(client, input.communityId, entryId);
   if (!entry) throw new ApiError(404, 'NOT_FOUND', 'File not found.');
+  // A bound file never moves to another message, but it may be gone: removed with its message
+  // by the removal this one waited for.
+  const locked = await client.query<{ blob_key: string }>(
+    `SELECT blob_key FROM attachments WHERE id=$2 AND community_id=$1 AND entry_id=$3
+     FOR UPDATE`,
+    [input.communityId, input.attachmentId, entry.id]
+  );
+  if (!locked.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'File not found.');
+  const blobKeys = [locked.rows[0].blob_key];
   await bumpContentVersion(client, input.communityId);
   await hooks.afterVersionBump?.();
   await client.query('DELETE FROM attachments WHERE id=$2 AND community_id=$1', [

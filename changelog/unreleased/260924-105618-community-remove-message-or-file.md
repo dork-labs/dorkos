@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): remove one message or file in place (DOR-2288)'
+  - 'fix(community): lock message before file, and show nothing outside the channel (DOR-2288)'
 ---
 
 ### Added

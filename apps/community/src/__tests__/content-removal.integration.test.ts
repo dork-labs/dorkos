@@ -606,6 +606,69 @@ describe('who may remove (AC-4)', { timeout: 180_000 }, () => {
     expect(texts.rows[0]).toEqual({ text: REMOVED_ENTRY_TEXT.moderator, removed_by: 'moderator' });
   });
 
+  // Purpose: removal is not a way to read a channel. An admin who has not joined it gets no
+  // message text, files, or cursor back, and cannot tell a message it may not remove from one
+  // that does not exist; its author still gets the result.
+  it('answers an admin outside the channel without showing it anything', async () => {
+    const s = await scene('outside');
+    const admin = await person(
+      h,
+      await admit(h, s.communityId, s.owner.cookie, {
+        name: `Outside ${s.slug}`,
+        email: `outside-${s.slug}@x.test`,
+      })
+    );
+    await setRole(s, admin.memberId, 'admin');
+    const fileId = await upload(h, s.communityId, s.channelId, s.q.cookie, 'q.txt', 'q file');
+    const withFile = await say(s, { cookie: s.q.cookie }, 'private words', {
+      attachmentIds: [fileId],
+    });
+    const plain = await say(s, { cookie: s.q.cookie }, 'more private words');
+    const ownerEntry = await say(s, { cookie: s.owner.cookie }, 'owner words');
+    const outside = { cookie: admin.cookie };
+
+    const file = await removeFile(s, fileId, outside);
+    expect(file.status).toBe(204);
+    expect(await file.text()).toBe('');
+    expect(await count('SELECT 1 FROM attachments WHERE id=$1', [fileId])).toBe(0);
+    const message = await removeMessage(s, plain, outside);
+    expect(message.status).toBe(204);
+    expect(await message.text()).toBe('');
+    expect((await h.pool.query('SELECT text FROM entries WHERE id=$1', [plain])).rows[0].text).toBe(
+      REMOVED_ENTRY_TEXT.moderator
+    );
+
+    // A refusal looks exactly like an unknown id.
+    const refused = await removeMessage(s, ownerEntry, outside);
+    const unknown = await removeMessage(s, '00000000-0000-4000-8000-000000000000', outside);
+    expect([refused.status, unknown.status]).toEqual([404, 404]);
+    expect(await refused.json()).toEqual(await unknown.json());
+    const ownerFile = await upload(h, s.communityId, s.channelId, s.owner.cookie, 'o.txt', 'o');
+    await say(s, { cookie: s.owner.cookie }, 'owner file', { attachmentIds: [ownerFile] });
+    const refusedFile = await removeFile(s, ownerFile, outside);
+    const unknownFile = await removeFile(s, '00000000-0000-4000-8000-000000000000', outside);
+    expect([refusedFile.status, unknownFile.status]).toEqual([404, 404]);
+    expect(await refusedFile.json()).toEqual(await unknownFile.json());
+
+    // Joined, the same admin sees the result and a plain refusal.
+    await joinChannel(s, admin.cookie);
+    expect((await removeMessage(s, ownerEntry, outside)).status).toBe(403);
+    expect((await removed(await removeMessage(s, withFile, outside), 'joined')).text).toBe(
+      REMOVED_ENTRY_TEXT.moderator
+    );
+
+    // The author gets their own message back even after leaving the channel.
+    const own = await say(s, { cookie: s.p.cookie }, 'mine');
+    await body(
+      await h.call(`${s.base}/channels/${s.channelId}/leave`, { cookie: s.p.cookie, body: {} }),
+      200,
+      'leave'
+    );
+    expect((await removed(await removeMessage(s, own, { cookie: s.p.cookie }), 'own')).text).toBe(
+      REMOVED_ENTRY_TEXT.author
+    );
+  });
+
   // Purpose (AC-5 and the archived cells of AC-4): removal is not growth, so it runs in an
   // archived community for a browser session, but a history-only grant cannot, and a
   // suspended or closing community refuses it as it refuses every member request.
@@ -867,6 +930,72 @@ describe('concurrency (AC-8)', { timeout: 120_000 }, () => {
     for (const snapshot of seen) if (snapshot.includes(bId)) expect(snapshot).toContain(aId);
   });
 
+  // Purpose: removing a message and one of its files at once never deadlocks. Both removals take
+  // the message first and the file second; a file removal that locked the file first would wait
+  // on the message while the message removal waited on the file. The held message row queues
+  // them in a known order, so each order is exercised every run.
+  it.each(['message first', 'file first'] as const)(
+    'removes a message and one of its files together (%s)',
+    async (order) => {
+      const s = await scene(order === 'message first' ? 'pairm' : 'pairf');
+      const fileId = await upload(h, s.communityId, s.channelId, s.p.cookie, 'pair.txt', 'pair');
+      const entryId = await say(s, { cookie: s.p.cookie }, 'text and a file', {
+        attachmentIds: [fileId],
+      });
+      const [message, file] = await holdingLock(
+        h,
+        'SELECT 1 FROM entries WHERE id=$1 FOR NO KEY UPDATE',
+        [entryId],
+        async (release) => {
+          const first =
+            order === 'message first'
+              ? removeMessage(s, entryId, { cookie: s.p.cookie })
+              : removeFile(s, fileId, { cookie: s.p.cookie });
+          await waitForLockWaiters(h, 1);
+          const second =
+            order === 'message first'
+              ? removeFile(s, fileId, { cookie: s.p.cookie })
+              : removeMessage(s, entryId, { cookie: s.p.cookie });
+          await waitForLockWaiters(h, 2);
+          await release();
+          const [one, two] = await Promise.all([first, second]);
+          return order === 'message first' ? [one, two] : [two, one];
+        }
+      );
+      // The message removal took the file with it, so a file removal behind it finds nothing.
+      expect([message.status, file.status]).toEqual(
+        order === 'message first' ? [200, 404] : [200, 200]
+      );
+      expect(
+        (await h.pool.query('SELECT text FROM entries WHERE id=$1', [entryId])).rows[0].text
+      ).toBe(REMOVED_ENTRY_TEXT.author);
+      expect(await count('SELECT 1 FROM attachments WHERE id=$1', [fileId])).toBe(0);
+    }
+  );
+
+  // Purpose: removing a posted file bumps the version before it takes a redaction id, so the id
+  // becomes visible in the order it was assigned (as for a message, above).
+  it('bumps the version before taking a redaction id when removing a posted file', async () => {
+    const s = await scene('fileorder');
+    const fileId = await upload(h, s.communityId, s.channelId, s.p.cookie, 'order.txt', 'order');
+    const entryId = await say(s, { cookie: s.p.cookie }, 'a file', { attachmentIds: [fileId] });
+    const before = await redactionSequence();
+    const response = await holdingLock(
+      h,
+      'SELECT 1 FROM community_content_versions WHERE community_id=$1 FOR UPDATE',
+      [s.communityId],
+      async (release) => {
+        const pending = removeFile(s, fileId, { cookie: s.p.cookie });
+        await waitForLockWaiters(h, 1, 'community_content_versions');
+        expect(await redactionSequence()).toBe(before);
+        await release();
+        return pending;
+      }
+    );
+    expect(response.status).toBe(200);
+    expect(await redactionsOf(entryId)).toBe(1);
+  });
+
   // Purpose: removing an unposted upload while a post binds it ends one of two honest ways:
   // the upload went first (the post is refused, the file gone) or the post went first (the file
   // is bound, then removed from that entry with a redaction row). Never a bound file whose blob
@@ -915,10 +1044,11 @@ describe('concurrency (AC-8)', { timeout: 120_000 }, () => {
 });
 
 describe('erasure on the shared module (AC-10)', { timeout: 120_000 }, () => {
-  // Purpose: the first intended difference: every erasure transaction that writes redaction rows
-  // bumps the version before it takes a redaction id. The version row is held when the
-  // tombstone and mention steps start; each must wait there with no id taken. Before the
-  // refactor both steps inserted first and bumped last.
+  // Purpose: the intended differences: every erasure transaction that writes redaction rows
+  // bumps the version before it takes a redaction id. The version row is held when the file,
+  // tombstone, and mention steps start; each must wait there with no id taken. Before the
+  // refactor the tombstone and mention steps inserted first and bumped last, and the file step
+  // (whose scene has a posted file, so it now writes a row) wrote none.
   it('bumps the content version before taking a redaction id', async () => {
     const s = await scene('erasureorder');
     const checks: { step: string; unchanged: boolean }[] = [];
@@ -927,7 +1057,7 @@ describe('erasure on the shared module (AC-10)', { timeout: 120_000 }, () => {
       log: () => undefined,
       hooks: {
         afterStep: async (step) => {
-          if (step !== 'exports' && step !== 'tombstones') return;
+          if (!['end-access', 'exports', 'tombstones'].includes(step)) return;
           const holder = await h.pool.connect();
           await holder.query('BEGIN');
           await holder.query(
@@ -951,6 +1081,7 @@ describe('erasure on the shared module (AC-10)', { timeout: 120_000 }, () => {
     });
     await Promise.all(background);
     expect(checks).toEqual([
+      { step: 'end-access', unchanged: true },
       { step: 'exports', unchanged: true },
       { step: 'tombstones', unchanged: true },
     ]);

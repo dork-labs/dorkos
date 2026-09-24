@@ -187,23 +187,41 @@ export async function lockRemovalAuthority(
 
 /** The author of a message or file, as the rank rule needs it. */
 interface ContentAuthor {
+  channel_id: string;
   member_id: string | null;
   agent_id: string | null;
   agent_owner_member_id: string | null;
 }
 
+/** A removal the actor may make, and whether they can read the channel it is in. */
+interface Authorized {
+  removedBy: RemovedBy;
+  /** The actor has joined the channel, so it may see what the message still shows. */
+  joined: boolean;
+}
+
 /**
  * Lock the actor and the content's human, then apply the rank rule. Authorship never changes,
  * so it is read before the locks; the roles are read under them.
+ *
+ * An actor who has not joined the channel cannot read it, so a refusal there answers `404`,
+ * exactly as an unknown id does: a `403` would tell them the message exists.
  */
 async function authorize(
   client: PoolClient,
   principal: RemovalPrincipal,
   author: ContentAuthor,
-  refusal: string
-): Promise<RemovedBy> {
+  messages: { notFound: string; refusal: string }
+): Promise<Authorized> {
   const humanId = author.member_id ?? author.agent_owner_member_id!;
   const ranked = await lockRemovalAuthority(client, principal, humanId);
+  const membership = await client.query(
+    principal.kind === 'agent'
+      ? 'SELECT 1 FROM agent_channel_members WHERE channel_id=$1 AND agent_id=$2'
+      : 'SELECT 1 FROM channel_members WHERE channel_id=$1 AND member_id=$2',
+    [author.channel_id, principal.id]
+  );
+  const joined = Boolean(membership.rowCount);
   const actor = ranked.get(principal.ownerMemberId)!;
   const human = ranked.get(humanId)!;
   const removedBy = removalAuthority(
@@ -215,8 +233,20 @@ async function authorize(
       humanActive: human.active,
     }
   );
-  if (!removedBy) throw new ApiError(403, 'FORBIDDEN', refusal);
-  return removedBy;
+  if (!removedBy)
+    throw joined
+      ? new ApiError(403, 'FORBIDDEN', messages.refusal)
+      : new ApiError(404, 'NOT_FOUND', messages.notFound);
+  return { removedBy, joined };
+}
+
+/**
+ * Whether the answer may carry the message as it now stands. Its author always may; a moderator
+ * only in a channel they have joined, since the response would otherwise let them read the text,
+ * files, and cursor of a channel they cannot open.
+ */
+function mayProject({ removedBy, joined }: Authorized): boolean {
+  return removedBy === 'author' || joined;
 }
 
 /** Write the content-free tenant audit row for one removal: ids and field names only. */
@@ -263,7 +293,8 @@ async function currentEntry(
 /**
  * Register removal of one message (`DELETE /entries/:entryId`) and one file
  * (`DELETE /attachments/:attachmentId`). Both remove in place through `content-removal.ts`, in
- * one transaction with their audit row, and answer with the entry as it now stands.
+ * one transaction with their audit row, and answer with the entry as it now stands, or `204`
+ * when there is no message to show (an unposted upload) or the caller may not read its channel.
  */
 export function registerRemovalRoutes(
   app: Hono,
@@ -276,19 +307,18 @@ export function registerRemovalRoutes(
       throw new ApiError(404, 'NOT_FOUND', 'Entry not found.');
     const entry = await transaction(pool, async (client) => {
       const found = await client.query<ContentAuthor>(
-        `SELECT e.author_member_id AS member_id,e.author_agent_id AS agent_id,
+        `SELECT e.channel_id,e.author_member_id AS member_id,e.author_agent_id AS agent_id,
            a.owner_member_id AS agent_owner_member_id
          FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id
          WHERE e.id=$1 AND e.community_id=$2`,
         [entryId, principal.community_id]
       );
       if (!found.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Entry not found.');
-      const removedBy = await authorize(
-        client,
-        principal,
-        found.rows[0],
-        "You can't remove this message."
-      );
+      const authorized = await authorize(client, principal, found.rows[0], {
+        notFound: 'Entry not found.',
+        refusal: "You can't remove this message.",
+      });
+      const { removedBy } = authorized;
       const removed = await removeEntry(client, {
         communityId: principal.community_id,
         entryId,
@@ -302,8 +332,9 @@ export function registerRemovalRoutes(
           subjectId: entryId,
           fields: ['text', 'mentions', 'attachments'],
         });
-      return currentEntry(client, entryId, principal, config);
+      return mayProject(authorized) ? currentEntry(client, entryId, principal, config) : null;
     });
+    if (!entry) return c.body(null, 204);
     return json(c, CommunityWireEntryRemoveResponseSchema, { entry });
   });
 
@@ -314,19 +345,18 @@ export function registerRemovalRoutes(
       throw new ApiError(404, 'NOT_FOUND', 'File not found.');
     const entry = await transaction(pool, async (client) => {
       const found = await client.query<ContentAuthor>(
-        `SELECT f.uploader_member_id AS member_id,f.uploader_agent_id AS agent_id,
+        `SELECT f.channel_id,f.uploader_member_id AS member_id,f.uploader_agent_id AS agent_id,
            a.owner_member_id AS agent_owner_member_id
          FROM attachments f LEFT JOIN agents a ON a.id=f.uploader_agent_id
          WHERE f.id=$1 AND f.community_id=$2`,
         [attachmentId, principal.community_id]
       );
       if (!found.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'File not found.');
-      const removedBy = await authorize(
-        client,
-        principal,
-        found.rows[0],
-        "You can't remove this file."
-      );
+      const authorized = await authorize(client, principal, found.rows[0], {
+        notFound: 'File not found.',
+        refusal: "You can't remove this file.",
+      });
+      const { removedBy } = authorized;
       const removed = await removeAttachment(client, {
         communityId: principal.community_id,
         attachmentId,
@@ -338,7 +368,9 @@ export function registerRemovalRoutes(
         subjectId: attachmentId,
         fields: removed.entryTombstoned ? ['text', 'mentions', 'attachments'] : ['attachments'],
       });
-      return removed.entryId ? currentEntry(client, removed.entryId, principal, config) : null;
+      return removed.entryId && mayProject(authorized)
+        ? currentEntry(client, removed.entryId, principal, config)
+        : null;
     });
     if (!entry) return c.body(null, 204);
     return json(c, CommunityWireEntryRemoveResponseSchema, { entry });
