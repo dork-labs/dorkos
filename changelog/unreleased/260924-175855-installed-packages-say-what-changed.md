@@ -13,6 +13,7 @@ covers:
   - 'refactor: prepare is now Check files, in the API, the app and the CLI (DOR-2197, DOR-2320)'
   - 'fix(tasks): the older-install refusals point at Check files (DOR-2197, DOR-2320)'
   - 'fix: Check files can be retried after a mismatch, and the rebuild re-reads the sidecar under the lock (DOR-2197, DOR-2320)'
+  - 'refactor(server): one per-file digest for the installed-files record and the package content hash (DOR-2197)'
 ---
 
 ### Added
