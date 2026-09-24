@@ -1068,6 +1068,24 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .mockImplementation((approvalId: string) =>
         Promise.resolve({ ok: true, approvalId, outcome: 'denied' })
       ),
+    // Permissions (spec `agent-permissions`)
+    getPermissions: vi.fn().mockResolvedValue({
+      preset: null,
+      defaults: { areas: {}, actions: {} },
+      changeCount: 0,
+      areas: [],
+      exceptions: [],
+      agentCount: 0,
+    }),
+    getAgentPermissions: vi
+      .fn()
+      .mockImplementation((agentId: string) =>
+        Promise.resolve({ agentId, agentName: agentId, overrides: {}, areas: [] })
+      ),
+    setPermissionPreset: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
+    patchPermissionDefaults: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
+    patchAgentPermissions: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
+    getPermissionHistory: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
     // Standing permissions (spec `agent-approval-settings` §3.7)
     listStandingPermissions: vi.fn().mockResolvedValue({ grants: [] }),
     revokeStandingPermission: vi

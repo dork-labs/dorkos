@@ -242,6 +242,15 @@ import {
   ConnectorSessionConnectionsSchema,
 } from '@dorkos/shared/connector-resource-schemas';
 import { PackageTypeSchema } from '@dorkos/marketplace';
+import {
+  AgentPermissionsResponseSchema,
+  PatchAgentPermissionsBodySchema,
+  PatchPermissionDefaultsBodySchema,
+  PermissionHistoryQuerySchema,
+  PermissionHistoryResponseSchema,
+  PermissionsResponseSchema,
+  SetPermissionPresetBodySchema,
+} from '@dorkos/shared/permissions';
 import { z } from 'zod';
 
 /**
@@ -3806,6 +3815,163 @@ registry.registerPath({
       description: 'Expired before it was decided',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+  },
+});
+
+// === Permissions (spec `agent-permissions` D10) ===
+
+/** What every permission write answers with: the changes and the fresh view. */
+const PermissionWriteResponseSchema = (view: z.ZodTypeAny) =>
+  z.object({
+    changes: z.array(z.record(z.string(), z.unknown())),
+    permissions: view,
+  });
+
+/** The refusals every mutating permission route shares. */
+const PERMISSION_WRITE_REFUSALS = {
+  400: {
+    description:
+      'Refused: an unknown area or action (`UNKNOWN_AREA`, `UNKNOWN_ACTION`), an action with no ' +
+      'area (`ACTION_HAS_NO_AREA`), or Allowed on a floor area (`FLOOR_NEVER_ALLOWED`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  401: {
+    description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  403: {
+    description:
+      'Refused: only a person can change permissions. A caller presenting an agent identity ' +
+      '(`AGENT_CANNOT_DECIDE`) or an approval token (`REQUESTER_CANNOT_DECIDE`) is refused in ' +
+      'every posture, and with login on a per-user API key is refused (`operator_cookie_required`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+} as const;
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/permissions',
+  tags: ['Permissions'],
+  summary: 'Read what agents may do by default',
+  description:
+    'The preset, the changes a person made on top of it, every area with its actions and the ' +
+    'state each resolves to for everyone, and the agents that are set differently.',
+  responses: {
+    200: {
+      description: 'The default layer',
+      content: { 'application/json': { schema: PermissionsResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/permissions/preset',
+  tags: ['Permissions'],
+  summary: 'Choose a preset',
+  description:
+    'Sets the preset every area starts from and clears the changes on top of the old one. ' +
+    "`applyToAgents` also clears those agents' own settings, so they follow the new preset. " +
+    'Records one `permission.changed` Activity event.',
+  request: { body: { content: { 'application/json': { schema: SetPermissionPresetBodySchema } } } },
+  responses: {
+    200: {
+      description: 'The preset changed',
+      content: {
+        'application/json': { schema: PermissionWriteResponseSchema(PermissionsResponseSchema) },
+      },
+    },
+    ...PERMISSION_WRITE_REFUSALS,
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/permissions/defaults',
+  tags: ['Permissions'],
+  summary: 'Change what agents may do by default',
+  description:
+    'Sets areas and single actions to Blocked, Ask or Allowed for everyone; `null` removes a ' +
+    "change. `applyToAgents` removes those agents' own settings for the same keys in the same " +
+    'write. Records one `permission.changed` Activity event naming every agent touched.',
+  request: {
+    body: { content: { 'application/json': { schema: PatchPermissionDefaultsBodySchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The defaults changed',
+      content: {
+        'application/json': { schema: PermissionWriteResponseSchema(PermissionsResponseSchema) },
+      },
+    },
+    ...PERMISSION_WRITE_REFUSALS,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/permissions/history',
+  tags: ['Permissions'],
+  summary: 'Read the permission history',
+  description:
+    'Every permission change, newest first, with who made it. With `agentId`, the changes ' +
+    'that touched that agent, bulk changes included.',
+  request: { query: PermissionHistoryQuerySchema },
+  responses: {
+    200: {
+      description: 'Permission changes',
+      content: { 'application/json': { schema: PermissionHistoryResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/agents/{id}/permissions',
+  tags: ['Permissions'],
+  summary: "Read one agent's permissions",
+  description:
+    "The agent's resolved state per area and per action, where each came from, and what it " +
+    "would be without the agent's own settings.",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: "The agent's permissions",
+      content: { 'application/json': { schema: AgentPermissionsResponseSchema } },
+    },
+    404: {
+      description: 'No such agent (`UNKNOWN_AGENT`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/agents/{id}/permissions',
+  tags: ['Permissions'],
+  summary: "Change one agent's permissions",
+  description:
+    "Sets this agent's own areas and actions; `null` puts one back to the default. Records one " +
+    '`permission.changed` Activity event.',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { 'application/json': { schema: PatchAgentPermissionsBodySchema } } },
+  },
+  responses: {
+    200: {
+      description: "The agent's permissions changed",
+      content: {
+        'application/json': {
+          schema: PermissionWriteResponseSchema(AgentPermissionsResponseSchema),
+        },
+      },
+    },
+    404: {
+      description: 'No such agent (`UNKNOWN_AGENT`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    ...PERMISSION_WRITE_REFUSALS,
   },
 });
 

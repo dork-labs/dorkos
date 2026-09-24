@@ -32,10 +32,10 @@ export interface CategoryConfig {
 /**
  * Per-category color tokens consistent with the dashboard activity feed.
  * Matches the spec: tasks=purple-500, relay=teal-500, agent=indigo-500,
- * config=amber-500, system=neutral-500.
+ * config=amber-500, system=neutral-500, permissions=sky-500.
  */
 export const CATEGORY_CONFIG: Record<
-  'tasks' | 'relay' | 'agent' | 'config' | 'system',
+  'tasks' | 'relay' | 'agent' | 'config' | 'system' | 'permissions',
   CategoryConfig
 > = {
   tasks: { text: 'text-purple-500', bg: 'bg-purple-500/10', label: 'Schedules' },
@@ -43,6 +43,7 @@ export const CATEGORY_CONFIG: Record<
   agent: { text: 'text-indigo-500', bg: 'bg-indigo-500/10', label: 'Agent' },
   config: { text: 'text-amber-500', bg: 'bg-amber-500/10', label: 'Config' },
   system: { text: 'text-neutral-500', bg: 'bg-neutral-500/10', label: 'System' },
+  permissions: { text: 'text-sky-500', bg: 'bg-sky-500/10', label: 'Permissions' },
 };
 
 // ---------------------------------------------------------------------------

@@ -702,16 +702,14 @@ export class AgentRegistry {
       // reference that always misses.
       account: row.account || undefined,
       // enabledToolGroups is not persisted in the DB schema, so this cache cannot
-      // answer for it and hands back the empty default. **`{}` here does NOT mean
-      // "inherit global" any more**: the four documentation keys do inherit, but
-      // `roomsManage` (DOR-1611) is a grant where absent means OFF, so an empty
-      // object reads as "no grant" for that key.
+      // answer for it and hands back the empty default.
       //
-      // Nothing may make an authorization decision from this value. The tool-group
-      // gate reads `.dork/agent.json` directly for exactly that reason — asking
-      // here would report every agent as ungranted AND silently ignore a real
-      // grant a person had set. A future migration may add a JSON column; until
-      // then the manifest file is the only place the answer exists.
+      // `permissions` is absent for the same reason, and nothing may make an
+      // authorization decision from its absence here: the capability gate reads
+      // `.dork/agent.json` directly (spec `agent-permissions` D6), because asking
+      // this cache would report every agent as inheriting the defaults AND
+      // silently ignore a setting a person had made. The manifest file is the
+      // only place the answer exists.
       enabledToolGroups: {},
       // `tierCeiling` is absent for the same reason and with the same rule
       // attached (DOR-486): no DB column, so this cache cannot answer, and

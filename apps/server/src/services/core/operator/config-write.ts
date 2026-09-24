@@ -298,6 +298,28 @@ function displayNameSourcePatch(
   return source === undefined ? undefined : { profile: { displayNameSource: source } };
 }
 
+/** The refusal code a general config write answers a `permissions` patch with. */
+export const USE_PERMISSIONS_API_CODE = 'USE_PERMISSIONS_API';
+
+/** The sentence that refusal carries, naming where the change is made instead. */
+const USE_PERMISSIONS_API_MESSAGE =
+  'Permissions are changed on the Permissions page, so every change is recorded. ' +
+  'DorkOS changed nothing.';
+
+/**
+ * Whether a config patch names the `permissions` section at any depth.
+ *
+ * @param patch - The raw patch a caller supplied.
+ */
+function namesPermissions(patch: unknown): boolean {
+  return (
+    patch !== null &&
+    typeof patch === 'object' &&
+    !Array.isArray(patch) &&
+    Object.hasOwn(patch, 'permissions')
+  );
+}
+
 /**
  * Apply a general-purpose config write: the two policy bars, the autonomy
  * consent door, the write itself, and the audit line — in that order, once.
@@ -337,6 +359,26 @@ function displayNameSourcePatch(
  */
 export function applyGuardedConfigWrite(write: GuardedConfigWrite): GuardedConfigWriteResult {
   const { patch: requested, authority, source, writer } = write;
+
+  // Step 0, before either bar: what agents may do is never written through a
+  // general config door (spec `agent-permissions` D10). Every permission change
+  // must carry a person's yes AND one audit event, and only the permission
+  // routes write both, so this refuses outright rather than asking who is
+  // calling. `CONFIG_WRITE_POLICY` marks the same paths operator-only as a
+  // second line.
+  if (namesPermissions(requested)) {
+    return {
+      ok: false,
+      kind: 'refused',
+      refusal: {
+        status: 400,
+        code: USE_PERMISSIONS_API_CODE,
+        error: USE_PERMISSIONS_API_MESSAGE,
+        message: USE_PERMISSIONS_API_MESSAGE,
+        paths: ['permissions'],
+      },
+    };
+  }
 
   const loginRequired = findLoginRequiredPaths(requested);
   if (loginRequired.length > 0) {

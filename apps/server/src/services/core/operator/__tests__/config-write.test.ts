@@ -77,6 +77,30 @@ describe('applyGuardedConfigWrite', () => {
     return configManager.get('runtimes').claudeCode.defaultTrustStop;
   }
 
+  describe('the permissions section (spec `agent-permissions` D10)', () => {
+    it('refuses any permissions key from every door, even the operator, and writes nothing', () => {
+      // Only the permission routes write it, because only they carry a person's
+      // yes AND an audit event. The operator authority is the strongest one this
+      // function knows, so its refusal is the one that proves the rule.
+      for (const authority of [LOCAL_OPERATOR_AUTHORITY, OPERATOR_TOOL_AUTHORITY]) {
+        const result = applyGuardedConfigWrite({
+          patch: { permissions: { preset: 'full' } },
+          authority,
+          source: 'dorkos config set',
+          writer: { kind: 'unattributed' },
+        });
+        expect(result.ok).toBe(false);
+        if (result.ok || result.kind !== 'refused') throw new Error('unreachable');
+        expect(result.refusal).toMatchObject({
+          status: 400,
+          code: 'USE_PERMISSIONS_API',
+          paths: ['permissions'],
+        });
+      }
+      expect(configManager.get('permissions').preset).toBeNull();
+    });
+  });
+
   describe('as `dorkos config set`, under the operator authority', () => {
     it('writes an operator-only setting and leaves a line naming the leaf and the door', async () => {
       // The write the CLI could always make, now with the record it never left.

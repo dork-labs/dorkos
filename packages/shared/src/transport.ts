@@ -126,6 +126,23 @@ import type {
   StandingPermissionsResponse,
 } from './approval-schemas.js';
 import type {
+  AgentPermissionsResponse,
+  PatchAgentPermissionsBody,
+  PatchPermissionDefaultsBody,
+  PermissionChange,
+  PermissionHistoryResponse,
+  PermissionsResponse,
+  SetPermissionPresetBody,
+} from './permissions/index.js';
+
+/** What every permission write answers with: the changes and the fresh view. */
+export interface PermissionWriteResult<T> {
+  /** Every change the write made (empty when nothing moved). */
+  changes: PermissionChange[];
+  /** The permissions as they stand after the write. */
+  permissions: T;
+}
+import type {
   DeletePushSubscriptionResponse,
   ListNotificationsQuery,
   ListNotificationsResponse,
@@ -2452,6 +2469,66 @@ export interface Transport
    * @param grantId - The permission's id, from {@link listStandingPermissions}.
    */
   revokeStandingPermission(grantId: string): Promise<RevokeStandingPermissionResponse>;
+
+  // --- Permissions (spec `agent-permissions`) ---
+
+  /**
+   * What agents may do by default: the preset, the changes on top of it, every
+   * area with its actions, and the agents that are set differently.
+   */
+  getPermissions(): Promise<PermissionsResponse>;
+
+  /**
+   * One agent's permissions: its resolved state per area and action, where each
+   * came from, and what it would inherit without its own settings.
+   *
+   * @param agentId - The agent's id.
+   */
+  getAgentPermissions(agentId: string): Promise<AgentPermissionsResponse>;
+
+  /**
+   * Choose a preset. Clears the changes on top of the old one; `applyToAgents`
+   * also clears those agents' own settings. Only a person can call this.
+   *
+   * @param body - The preset, the agents to bring along, and where it came from.
+   */
+  setPermissionPreset(
+    body: SetPermissionPresetBody
+  ): Promise<PermissionWriteResult<PermissionsResponse>>;
+
+  /**
+   * Change the defaults; `null` removes a change. `applyToAgents` removes those
+   * agents' own settings for the same keys. Only a person can call this.
+   *
+   * @param body - The changes, the agents to bring along, and where it came from.
+   */
+  patchPermissionDefaults(
+    body: PatchPermissionDefaultsBody
+  ): Promise<PermissionWriteResult<PermissionsResponse>>;
+
+  /**
+   * Change one agent's own settings; `null` puts one back to the default. Only a
+   * person can call this.
+   *
+   * @param agentId - The agent's id.
+   * @param body - The changes and where they came from.
+   */
+  patchAgentPermissions(
+    agentId: string,
+    body: PatchAgentPermissionsBody
+  ): Promise<PermissionWriteResult<AgentPermissionsResponse>>;
+
+  /**
+   * The permission history, newest first; with `agentId`, the changes that
+   * touched that agent.
+   *
+   * @param query - Optional agent, cursor and page size.
+   */
+  getPermissionHistory(query?: {
+    agentId?: string;
+    before?: string;
+    limit?: number;
+  }): Promise<PermissionHistoryResponse>;
 
   // --- The Inbox (spec `notification-system`) ---
 

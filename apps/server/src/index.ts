@@ -200,6 +200,12 @@ import { setAgentPathLookup } from './services/mesh/agent-path-lookup.js';
 import { createA2aRouter } from './routes/a2a.js';
 import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { createAgentsRouter } from './routes/agents.js';
+import { createPermissionsRouter } from './routes/permissions.js';
+import {
+  createPermissionService,
+  readRawManifestFile,
+  runPermissionUpgradeSweep,
+} from './services/core/permissions/index.js';
 import { createTeamRouter } from './routes/team.js';
 import { createProfileRouter } from './routes/profile.js';
 import { createSearchRouter } from './routes/search.js';
@@ -1909,6 +1915,36 @@ async function start() {
       await ensureDorkBot(meshCore, dorkHome);
     } catch (err) {
       logger.warn('[Mesh] Failed to ensure DorkBot system agent', logError(err));
+    }
+
+    // The permission upgrade sweep (spec `agent-permissions` D13): once per server
+    // version, after the mesh and Activity are up, write folded manifests back
+    // and record what the upgrade changed. Non-fatal: a failure costs the audit
+    // line, never the boot, and the fold still happens on every read.
+    try {
+      const mesh = meshCore;
+      await runPermissionUpgradeSweep({
+        version: SERVER_VERSION,
+        config: {
+          get: () => configManager.get('permissions'),
+          set: (next) => configManager.set('permissions', next),
+        },
+        agents: () =>
+          mesh.listWithPaths().map((a) => ({
+            id: a.id,
+            name: a.name,
+            ...(a.displayName ? { displayName: a.displayName } : {}),
+            projectPath: a.projectPath,
+          })),
+        readRawManifest: readRawManifestFile,
+        writeFolded: async (agentId, fields) => {
+          await mesh.update(agentId, fields);
+        },
+        activity: activityService,
+        logger,
+      });
+    } catch (err) {
+      logger.warn('[Permissions] Upgrade sweep failed', logError(err));
     }
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();
@@ -3751,6 +3787,24 @@ async function start() {
   if (agentMcpOAuthService) {
     app.use('/api/agents/mcp-oauth', createMcpOAuthRouter(agentMcpOAuthService));
   }
+
+  // Permissions (spec `agent-permissions` D10): the one way in for what agents
+  // may do. Mounted at `/api` BEFORE the agents router so
+  // `/api/agents/:id/permissions` reaches it first. The registry is read lazily:
+  // it is composed after the routes are mounted.
+  app.use(
+    '/api',
+    createPermissionsRouter({
+      permissions: createPermissionService({
+        config: configManager,
+        mesh: () => meshCore,
+        registry: () => capabilityRegistry,
+        activity: activityService,
+      }),
+      activity: activityService,
+    })
+  );
+  mountedRouters.push('permissions');
 
   // Always mounted — not behind any feature flag.
   // ADR-0043: pass meshCore (when available) so writes sync to Mesh DB cache.
