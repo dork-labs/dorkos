@@ -41,6 +41,19 @@ import type { LaunchPlan } from '../plan.js';
 import { ProviderMutationError } from '../provider-mutation.js';
 import { classifyCommunityProviderPreflightFailure } from './versions.js';
 
+/** Stop before recording an intent while Fly still holds the name of an app a removal deleted. */
+export class FlyNameStillHeldError extends Error {
+  /**
+   * Create the stop with the exact next step.
+   *
+   * @param appName - The planned app name.
+   */
+  constructor(appName: string) {
+    super(`Fly is still releasing the name ${appName}. Try \`--resume\` again in a few minutes.`);
+    this.name = 'FlyNameStillHeldError';
+  }
+}
+
 /** Local executable and profile settings used by the default service assembly. */
 export interface CommunityServiceOptions {
   /** Fly CLI process boundary. */
@@ -143,7 +156,14 @@ async function exactNeonProject(
   };
 }
 
-async function useTigrisClient<T>(
+/**
+ * Run one consumer against the pinned Fly GraphQL client, holding the local Fly session token only
+ * for that call.
+ *
+ * @param options - Local executable and profile settings.
+ * @param consumer - Operations to run with the client.
+ */
+export async function useTigrisClient<T>(
   options: CommunityServiceOptions,
   consumer: (client: FlyTigrisGraphqlClient) => Promise<T>
 ): Promise<T> {
@@ -208,6 +228,18 @@ export function createDefaultCommunityCreationDependencies(input: {
     now: input.now,
     progress: input.progress,
     fly: {
+      // Runs before any intent is recorded, so a name Fly still holds can never strand the run.
+      prepare: async () => {
+        const name = input.plan.fly.appName;
+        const removed = (input.latestJournal().removals ?? []).some(
+          (removal) => removal.provider === 'fly' && removal.resourceName === name
+        );
+        if (!removed) return;
+        const available = await useTigrisClient(input.options, (client) =>
+          client.isAppNameAvailable(name)
+        );
+        if (!available) throw new FlyNameStillHeldError(name);
+      },
       create: async (marker) => {
         const created = await createFlyApp(
           input.options.fly,

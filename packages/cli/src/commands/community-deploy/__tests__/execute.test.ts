@@ -419,3 +419,44 @@ describe('Community creation executor', () => {
     });
   });
 });
+
+describe('creation after an uncertain-create removal', () => {
+  it('refuses to run while a removal owns the run', async () => {
+    const deps = dependencies();
+    await expect(
+      executeCommunityCreationPhase(
+        plan,
+        journal({
+          state: 'uncertain',
+          pendingIntent: {
+            provider: 'fly',
+            organizationId: 'dork-labs',
+            resourceName: 'dorkos-community-test',
+          },
+          pendingRemoval: {
+            provider: 'fly',
+            token: '4817203',
+            resourceName: 'dorkos-community-test',
+            proof: 'marker',
+            requestedAt: '2026-09-21T00:00:02.000Z',
+          },
+        }),
+        deps.value
+      )
+    ).rejects.toBeInstanceOf(CommunityCreationUncertainError);
+    expect(deps.value.persist).not.toHaveBeenCalled();
+    expect(deps.value.fly.create).not.toHaveBeenCalled();
+  });
+
+  it('stops before recording any intent while a prepare step refuses', async () => {
+    const deps = dependencies();
+    deps.value.fly.prepare = vi.fn(async () => {
+      throw new Error('Fly is still releasing the name dorkos-community-test.');
+    });
+    await expect(executeCommunityCreationPhase(plan, journal(), deps.value)).rejects.toThrow(
+      'Fly is still releasing the name'
+    );
+    expect(deps.value.persist).not.toHaveBeenCalled();
+    expect(deps.value.fly.create).not.toHaveBeenCalled();
+  });
+});

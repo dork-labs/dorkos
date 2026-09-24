@@ -4,13 +4,17 @@
  * @module commands/community-deploy/fly-graphql-client
  */
 import {
+  FLY_APP_NAME_AVAILABLE_QUERY,
   FLY_APP_PROVENANCE_QUERY,
+  FLY_TIGRIS_ON_APP_QUERY,
   FLY_TIGRIS_CREATE_MUTATION,
   FLY_TIGRIS_DELETE_MUTATION,
   FLY_TIGRIS_READ_QUERY,
   FLY_TIGRIS_TERMS_QUERY,
   createTigrisVariables,
+  parseAppNameAvailableResponse,
   parseFlyAppProvenanceResponse,
+  parseTigrisOnAppResponse,
   parseTigrisCreateResponse,
   parseTigrisDeleteResponse,
   parseTigrisReadResponse,
@@ -20,6 +24,7 @@ import {
   type FlyGraphqlContractErrorCode,
   type TigrisAddOnIdentity,
   type TigrisCreateInput,
+  type TigrisOnApp,
 } from './fly-graphql-contract.js';
 import { SAFE_PROVIDER_IDENTIFIER_PATTERN } from './provider-identifiers.js';
 
@@ -218,6 +223,41 @@ export class FlyTigrisGraphqlClient {
       FLY_APP_PROVENANCE_QUERY,
       { name: appName },
       parseFlyAppProvenanceResponse,
+      false
+    );
+  }
+
+  /**
+   * Read one app and the Tigris add-ons attached to it.
+   *
+   * @param appName - Planned app name.
+   * @returns The app and its add-ons, or `null` when Fly reports no app with that name.
+   */
+  async readTigrisOnApp(appName: string): Promise<TigrisOnApp | null> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(appName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(
+      FLY_TIGRIS_ON_APP_QUERY,
+      { name: appName },
+      parseTigrisOnAppResponse,
+      false
+    );
+  }
+
+  /**
+   * Read whether Fly would accept a new app with this name now.
+   *
+   * @param appName - Planned app name.
+   */
+  async isAppNameAvailable(appName: string): Promise<boolean> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(appName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(
+      FLY_APP_NAME_AVAILABLE_QUERY,
+      { name: appName },
+      parseAppNameAvailableResponse,
       false
     );
   }

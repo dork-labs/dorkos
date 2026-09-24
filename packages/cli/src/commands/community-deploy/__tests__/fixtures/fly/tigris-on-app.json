@@ -1,0 +1,25 @@
+{
+  "data": {
+    "app": {
+      "internalNumericId": 4817203,
+      "name": "community-fixture-app",
+      "network": "dorkos-7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a",
+      "organization": {
+        "slug": "fixture-org"
+      },
+      "addOns": {
+        "totalCount": 1,
+        "nodes": [
+          {
+            "id": "addon_fixture_01",
+            "name": "community-fixture-bucket",
+            "createdAt": "2026-09-23T10:33:12Z",
+            "organization": {
+              "slug": "fixture-org"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -327,6 +327,9 @@ export async function executeCommunityCreationPhase(
   journal: LaunchJournal,
   dependencies: CommunityCreationDependencies
 ): Promise<LaunchJournal> {
+  // A confirmed removal owns the run until `--remove-uncertain` finishes it.
+  if (journal.pendingRemoval)
+    throw new CommunityCreationUncertainError(journal.pendingRemoval.provider);
   let current = journal;
   const steps: CreationStep[] = [
     {

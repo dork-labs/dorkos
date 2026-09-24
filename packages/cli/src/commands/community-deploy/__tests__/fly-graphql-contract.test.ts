@@ -5,14 +5,18 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  FLY_APP_NAME_AVAILABLE_QUERY,
   FLY_APP_PROVENANCE_QUERY,
+  FLY_TIGRIS_ON_APP_QUERY,
   FLY_TIGRIS_CREATE_MUTATION,
   FLY_TIGRIS_DELETE_MUTATION,
   FLY_TIGRIS_READ_QUERY,
   FLY_TIGRIS_TERMS_QUERY,
   FlyGraphqlContractError,
   createTigrisVariables,
+  parseAppNameAvailableResponse,
   parseFlyAppProvenanceResponse,
+  parseTigrisOnAppResponse,
   parseTigrisCreateResponse,
   parseTigrisDeleteResponse,
   parseTigrisReadResponse,
@@ -197,6 +201,8 @@ describe('Fly Tigris GraphQL contract', () => {
     for (const name of [
       'app-provenance.json',
       'app-provenance-missing.json',
+      'tigris-on-app.json',
+      'app-name-available.json',
       'tigris-terms.json',
       'tigris-create.json',
       'tigris-read.json',
@@ -304,5 +310,78 @@ describe('Fly app provenance GraphQL contract', () => {
     expect(FLY_APP_PROVENANCE_QUERY).not.toMatch(
       /\b(password|environment|ssoLink|metadata|value|digest)\b/u
     );
+  });
+});
+
+describe('Fly Tigris-on-app and name GraphQL contracts', () => {
+  it('parses the app, its network and its Tigris add-ons from the pinned fixture', async () => {
+    expect(parseTigrisOnAppResponse(await fixture('tigris-on-app.json'))).toEqual({
+      internalNumericId: '4817203',
+      name: 'community-fixture-app',
+      network: 'dorkos-7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a',
+      organizationSlug: 'fixture-org',
+      totalCount: 1,
+      addOns: [
+        {
+          id: 'addon_fixture_01',
+          name: 'community-fixture-bucket',
+          createdAt: '2026-09-23T10:33:12Z',
+          organizationSlug: 'fixture-org',
+        },
+      ],
+    });
+    expect(parseTigrisOnAppResponse({ data: { app: null }, errors: [{ message: 'x' }] })).toBe(
+      null
+    );
+  });
+
+  // A removal trusts these fields to re-prove the app and to see a cut-short list.
+  it('rejects every missing or renamed field the Tigris binding proof reads', async () => {
+    const source = await fixture('tigris-on-app.json');
+    const paths = [
+      ['internalNumericId'],
+      ['name'],
+      ['network'],
+      ['organization', 'slug'],
+      ['addOns', 'totalCount'],
+      ['addOns', 'nodes'],
+      ['addOns', 'nodes', 0, 'id'],
+      ['addOns', 'nodes', 0, 'createdAt'],
+      ['addOns', 'nodes', 0, 'organization', 'slug'],
+    ];
+    for (const mutation of mutateTrustedProviderFields(
+      source,
+      paths.map((path) => ['data', 'app', ...path])
+    )) {
+      expect(() => parseTigrisOnAppResponse(mutation.value), mutation.label).toThrow(
+        FlyGraphqlContractError
+      );
+    }
+    const partial = (await fixture('tigris-on-app.json')) as Record<string, unknown>;
+    partial.errors = [{ message: 'CANARY_PARTIAL' }];
+    expect(() => parseTigrisOnAppResponse(partial)).toThrowError(
+      expect.objectContaining({ code: 'INVALID_RESPONSE' })
+    );
+  });
+
+  it('reads name availability and treats any error entry as a failed read', async () => {
+    expect(parseAppNameAvailableResponse(await fixture('app-name-available.json'))).toBe(false);
+    expect(parseAppNameAvailableResponse({ data: { appNameAvailable: true } })).toBe(true);
+    for (const bad of [
+      { data: { appNameAvailable: true }, errors: [{ message: 'x' }] },
+      { data: null },
+      { data: { appNameAvailable: 'yes' } },
+    ]) {
+      expect(() => parseAppNameAvailableResponse(bad)).toThrow(FlyGraphqlContractError);
+    }
+  });
+
+  it('pins minimal reads that never select secret material', () => {
+    expect(FLY_TIGRIS_ON_APP_QUERY).toContain('query DorkosFindTigrisOnApp($name: String!)');
+    expect(FLY_TIGRIS_ON_APP_QUERY).toContain('addOns(type: tigris)');
+    expect(FLY_APP_NAME_AVAILABLE_QUERY).toContain('appNameAvailable(name: $name)');
+    for (const query of [FLY_TIGRIS_ON_APP_QUERY, FLY_APP_NAME_AVAILABLE_QUERY]) {
+      expect(query).not.toMatch(/\b(password|environment|ssoLink|metadata|value|digest)\b/u);
+    }
   });
 });
