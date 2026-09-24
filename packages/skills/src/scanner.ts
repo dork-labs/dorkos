@@ -2,7 +2,11 @@ import { type Dirent } from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import type { z } from 'zod';
-import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
+import {
+  PACKAGE_TEXT_MAX_BYTES,
+  readPackageFileWithin,
+  readTextFileWithin,
+} from '@dorkos/shared/bounded-read';
 import { noopLogger, type Logger } from '@dorkos/shared/logger';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { SKILL_FILENAME, WIDGET_TEMPLATE_SUFFIX } from './constants.js';
@@ -52,8 +56,10 @@ export async function scanUiTemplates(skillDirPath: string): Promise<UiTemplateS
 
     let raw: string;
     try {
-      raw = await readTextFileWithin(
-        path.join(uiDir, entry.name),
+      // Never through a symbolic link, including a linked `ui/` (DOR-2319).
+      raw = await readPackageFileWithin(
+        skillDirPath,
+        relPath,
         PACKAGE_TEXT_MAX_BYTES,
         `The widget template ${relPath}`
       );
@@ -125,6 +131,11 @@ export async function scanUiTemplates(skillDirPath: string): Promise<UiTemplateS
  *   (e.g. the task-templates container inside a tasks directory); without it
  *   such a container reads as a skill that forgot its SKILL.md. Defaults to
  *   none, so every subdirectory is treated as a skill.
+ * @param options.packageTree - The directory belongs to a package that has
+ *   not been installed yet, so a SKILL.md reached through a symbolic link is
+ *   refused rather than followed: staging drops links, and following one
+ *   could read a file outside the package (DOR-2319). Callers must make sure
+ *   `dir` itself is not a link. Defaults to `false`, for a person's own skills.
  * @returns Array of parse results (both successes and failures)
  * @throws If `dir` exists but cannot be listed. A caller that reads absence as
  *   deletion must let this propagate rather than degrade it to an empty scan.
@@ -138,6 +149,7 @@ export async function scanSkillDirectory<T>(
     logger?: Logger;
     requireNameMatch?: boolean;
     ignoreDirs?: readonly string[];
+    packageTree?: boolean;
   }
 ): Promise<ParseResult<ParsedSkill<T>>[]> {
   const includeMissing = options?.includeMissing ?? true;
@@ -172,11 +184,14 @@ export async function scanSkillDirectory<T>(
 
     let content: string;
     try {
-      content = await readTextFileWithin(
-        skillPath,
-        PACKAGE_TEXT_MAX_BYTES,
-        `The ${SKILL_FILENAME}`
-      );
+      content = options?.packageTree
+        ? await readPackageFileWithin(
+            dir,
+            path.join(entry.name, SKILL_FILENAME),
+            PACKAGE_TEXT_MAX_BYTES,
+            `The ${SKILL_FILENAME}`
+          )
+        : await readTextFileWithin(skillPath, PACKAGE_TEXT_MAX_BYTES, `The ${SKILL_FILENAME}`);
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === 'ENOENT' || code === 'ENOTDIR') {

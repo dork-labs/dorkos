@@ -13,7 +13,7 @@
  */
 import { readdir, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
-import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
+import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { EFFECT_BEARING_PATHS, PackageTypeSchema } from '@dorkos/marketplace';
 import { parseSkillFile } from '@dorkos/skills/parser';
@@ -138,8 +138,10 @@ async function readExtensionManifests(
     const manifestPath = join(extRoot, entry.name, 'extension.json');
     if (!(await pathExists(manifestPath))) continue;
     try {
-      const raw = await readTextFileWithin(
-        manifestPath,
+      // Inside the package, never through a link out of it (DOR-2319).
+      const raw = await readPackageFileWithin(
+        packagePath,
+        join(EFFECT_BEARING_PATHS.extensions, entry.name, 'extension.json'),
         PACKAGE_TEXT_MAX_BYTES,
         "The package's extension.json"
       );
@@ -200,7 +202,12 @@ async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
     const skillPath = join(tasksRoot, entry.name, 'SKILL.md');
     if (!(await pathExists(skillPath))) continue;
     try {
-      const content = await readTextFileWithin(skillPath, PACKAGE_TEXT_MAX_BYTES, 'The SKILL.md');
+      const content = await readPackageFileWithin(
+        packagePath,
+        join(EFFECT_BEARING_PATHS.tasks, entry.name, 'SKILL.md'),
+        PACKAGE_TEXT_MAX_BYTES,
+        'The SKILL.md'
+      );
       // Read with the UNIFIED schema since DOR-1486: scheduling lives in the
       // `schedule:` block, and a package still shipping the retired top-level
       // fields declares no schedule at all — nothing materializes it, nothing

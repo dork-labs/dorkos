@@ -32,7 +32,8 @@ import {
 import {
   PACKAGE_TEXT_MAX_BYTES,
   TooLargeError,
-  readTextFileWithin,
+  UnsafeFileError,
+  readPackageFileWithin,
 } from '@dorkos/shared/bounded-read';
 import { requiresClaudePlugin } from './package-types.js';
 import { parseMarketplaceJson, parseDorkosSidecar } from './marketplace-json-parser.js';
@@ -153,48 +154,74 @@ const SCHEDULE_SKILL_SOURCE_DIRS = [
 const PermissiveSkillFrontmatterSchema = z.unknown();
 
 /**
- * Thrown by {@link readPackageFile} for a package file larger than DorkOS
- * reads. It carries the file's package-relative path so the validator can
+ * Thrown by {@link readPackageFile} for a package file DorkOS refuses to read:
+ * larger than it reads, reached through a symbolic link, or not a regular
+ * file. It carries the file's package-relative path so the validator can
  * report it by name, and it passes through the "missing or unreadable reads
- * as absent" catches below, so an oversized manifest is never mistaken for a
+ * as absent" catches below, so a refused manifest is never mistaken for a
  * missing one (DOR-2319).
  */
-class OversizedPackageFileError extends Error {
+class RefusedPackageFileError extends Error {
+  /** The issue code: `FILE_TOO_LARGE` or `FILE_REFUSED`. */
+  readonly code: 'FILE_TOO_LARGE' | 'FILE_REFUSED';
+
   /**
-   * Wrap one oversized read.
+   * Wrap one refused read.
    *
    * @param relPath - The file's path, relative to the package root.
-   * @param cause - The size refusal.
+   * @param cause - The refusal.
    */
   constructor(
     readonly relPath: string,
-    cause: TooLargeError
+    cause: TooLargeError | UnsafeFileError
   ) {
     super(cause.message, { cause });
-    this.name = 'OversizedPackageFileError';
+    this.name = 'RefusedPackageFileError';
+    this.code = cause instanceof TooLargeError ? 'FILE_TOO_LARGE' : 'FILE_REFUSED';
   }
 }
 
 /**
- * Read one package file as text, within {@link PACKAGE_TEXT_MAX_BYTES}.
+ * Read one package file as text, within {@link PACKAGE_TEXT_MAX_BYTES} and
+ * never through a symbolic link.
  *
  * @param packagePath - Absolute path to the package root.
  * @param relPath - The file's path, relative to the package root.
  * @returns The file's text.
- * @throws {OversizedPackageFileError} When the file is larger than the limit.
+ * @throws {RefusedPackageFileError} When the file is too large, reached
+ *   through a symbolic link, or not a regular file.
  * @throws The read error, unchanged, otherwise (for example `ENOENT`).
  */
 async function readPackageFile(packagePath: string, relPath: string): Promise<string> {
   try {
-    return await readTextFileWithin(
-      path.join(packagePath, relPath),
+    return await readPackageFileWithin(
+      packagePath,
+      relPath,
       PACKAGE_TEXT_MAX_BYTES,
       `The package's ${relPath}`
     );
   } catch (err) {
-    if (err instanceof TooLargeError) throw new OversizedPackageFileError(relPath, err);
+    if (err instanceof TooLargeError || err instanceof UnsafeFileError) {
+      throw new RefusedPackageFileError(relPath, err);
+    }
     throw err;
   }
+}
+
+/**
+ * Whether any directory from `packagePath` down to `relDir` is a symbolic link.
+ *
+ * @param packagePath - Absolute path to the package root.
+ * @param relDir - A directory, relative to the package root.
+ * @returns `true` when one of them is a link.
+ */
+async function reachedThroughLink(packagePath: string, relDir: string): Promise<boolean> {
+  let current = packagePath;
+  for (const part of path.normalize(relDir).split(path.sep)) {
+    current = path.join(current, part);
+    if ((await fs.lstat(current)).isSymbolicLink()) return true;
+  }
+  return false;
 }
 
 /**
@@ -214,8 +241,8 @@ async function readPackageFile(packagePath: string, relPath: string): Promise<st
  */
 export async function readDeclaredVersion(packagePath: string): Promise<string | undefined> {
   return (
-    (await readVersionField(path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH))) ??
-    (await readVersionField(path.join(packagePath, PACKAGE_MANIFEST_PATH)))
+    (await readVersionField(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH)) ??
+    (await readVersionField(packagePath, PACKAGE_MANIFEST_PATH))
   );
 }
 
@@ -224,13 +251,14 @@ export async function readDeclaredVersion(packagePath: string): Promise<string |
  * unreadable file, invalid JSON, a non-object, or a missing, empty or
  * non-string `version` all read as "declares none". Never throws.
  *
- * @param filePath - Absolute path to the JSON file.
+ * @param packagePath - Absolute path to the package root.
+ * @param relPath - The JSON file, relative to the package root.
  * @internal
  */
-async function readVersionField(filePath: string): Promise<string | undefined> {
+async function readVersionField(packagePath: string, relPath: string): Promise<string | undefined> {
   try {
     const parsed: unknown = JSON.parse(
-      await readTextFileWithin(filePath, PACKAGE_TEXT_MAX_BYTES, 'The file')
+      await readPackageFileWithin(packagePath, relPath, PACKAGE_TEXT_MAX_BYTES, 'The file')
     );
     if (parsed === null || typeof parsed !== 'object') return undefined;
     const version = (parsed as Record<string, unknown>).version;
@@ -268,19 +296,19 @@ export async function validatePackage(
   try {
     return await validatePackageFiles(packagePath, options);
   } catch (err) {
-    if (!(err instanceof OversizedPackageFileError)) throw err;
+    if (!(err instanceof RefusedPackageFileError)) throw err;
     return {
       ok: false,
-      issues: [{ level: 'error', code: 'FILE_TOO_LARGE', message: err.message, path: err.relPath }],
+      issues: [{ level: 'error', code: err.code, message: err.message, path: err.relPath }],
       declaredVersion: await readDeclaredVersion(packagePath),
     };
   }
 }
 
 /**
- * The body of {@link validatePackage}. An oversized package file anywhere in
- * it throws {@link OversizedPackageFileError}, which the caller turns into
- * one issue naming the file.
+ * The body of {@link validatePackage}. A refused package file anywhere in it
+ * throws {@link RefusedPackageFileError}, which the caller turns into one
+ * issue naming the file.
  *
  * @param packagePath - Absolute path to the package root directory.
  * @param options - What kind of tree this is.
@@ -305,7 +333,7 @@ async function validatePackageFiles(
   try {
     dorkManifestContent = await readPackageFile(packagePath, PACKAGE_MANIFEST_PATH);
   } catch (err) {
-    if (err instanceof OversizedPackageFileError) throw err;
+    if (err instanceof RefusedPackageFileError) throw err;
     // File not found — will attempt CC fallback below.
   }
 
@@ -397,6 +425,18 @@ async function validatePackageFiles(
     } catch {
       continue; // Directory doesn't exist — skip silently
     }
+    // A skill directory reached through a symbolic link is not the package's
+    // own: staging drops the link, and following it could read files outside
+    // the package (DOR-2319).
+    if (await reachedThroughLink(packagePath, dir)) {
+      issues.push({
+        level: 'error',
+        code: 'FILE_REFUSED',
+        message: `The package's ${dir} is reached through a symbolic link, which DorkOS does not follow inside a package.`,
+        path: dir,
+      });
+      continue;
+    }
     await validateSkillsInDirectory(fullDir, packagePath, issues);
   }
 
@@ -485,7 +525,7 @@ async function checkUserEditableDeclaredPaths(
     if (typeof parsed !== 'object' || parsed === null) return;
     pluginJson = parsed as Record<string, unknown>;
   } catch (err) {
-    if (err instanceof OversizedPackageFileError) throw err;
+    if (err instanceof RefusedPackageFileError) throw err;
     return;
   }
   const experimental = pluginJson.experimental as Record<string, unknown> | undefined;
@@ -583,7 +623,7 @@ async function checkVersionAgreement(
   try {
     plugin = JSON.parse(await readPackageFile(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH));
   } catch (err) {
-    if (err instanceof OversizedPackageFileError) throw err;
+    if (err instanceof RefusedPackageFileError) throw err;
     return;
   }
   if (plugin === null || typeof plugin !== 'object') return;
@@ -763,7 +803,7 @@ async function checkPackagedMcpServers(
   try {
     content = await readPackageFile(packagePath, AGENT_MANIFEST_PATH);
   } catch (err) {
-    if (err instanceof OversizedPackageFileError) throw err;
+    if (err instanceof RefusedPackageFileError) throw err;
     return; // No shipped agent.json — nothing to guard.
   }
 
@@ -820,6 +860,7 @@ async function validateSkillsInDirectory(
   let scanResults;
   try {
     scanResults = await scanSkillDirectory(fullDir, PermissiveSkillFrontmatterSchema, {
+      packageTree: true,
       includeMissing: false,
       requireNameMatch: false,
     });
@@ -976,7 +1017,7 @@ async function synthesizeFromCcManifest(
   try {
     content = await readPackageFile(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH);
   } catch (err) {
-    if (err instanceof OversizedPackageFileError) throw err;
+    if (err instanceof RefusedPackageFileError) throw err;
     return null;
   }
 

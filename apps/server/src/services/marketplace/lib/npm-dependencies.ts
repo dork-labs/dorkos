@@ -64,7 +64,7 @@
 import { spawn } from 'node:child_process';
 import { lstat, readdir, realpath, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
+import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
 import type { Logger } from '@dorkos/shared/logger';
 import { EFFECT_BEARING_PATHS } from '@dorkos/marketplace';
 
@@ -196,8 +196,9 @@ export async function readNpmDependencies(packageRoot: string): Promise<NpmDepen
   let parsed: unknown;
   try {
     parsed = JSON.parse(
-      await readTextFileWithin(
-        path.join(packageRoot, EFFECT_BEARING_PATHS.npmManifest),
+      await readPackageFileWithin(
+        packageRoot,
+        EFFECT_BEARING_PATHS.npmManifest,
         PACKAGE_TEXT_MAX_BYTES,
         "The package's package.json"
       )

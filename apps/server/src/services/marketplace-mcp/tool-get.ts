@@ -19,7 +19,7 @@
  */
 import path from 'node:path';
 import { z } from 'zod';
-import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
+import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
 import type { MarketplaceJsonEntry, MarketplacePackageManifest } from '@dorkos/marketplace';
 import type { MarketplaceSource } from '../marketplace/types.js';
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
@@ -213,8 +213,10 @@ async function loadManifestAndReadme(
  */
 async function readReadmeIfPresent(packagePath: string): Promise<string | undefined> {
   try {
-    return await readTextFileWithin(
-      path.join(packagePath, 'README.md'),
+    // Inside the package, never through a link out of it (DOR-2319).
+    return await readPackageFileWithin(
+      packagePath,
+      'README.md',
       PACKAGE_TEXT_MAX_BYTES,
       'The README'
     );

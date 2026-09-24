@@ -1,12 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { execFileSync, spawn } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import type { Stats } from 'node:fs';
+import { mkdir, mkdtemp, open, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   CATALOG_MAX_BYTES,
   PACKAGE_TEXT_MAX_BYTES,
   TooLargeError,
+  UnsafeFileError,
+  readPackageFileWithin,
   readResponseTextWithin,
   readTextFileWithin,
 } from '../bounded-read.js';
@@ -50,30 +53,46 @@ describe('readTextFileWithin', () => {
     );
   });
 
-  // Purpose: the read loop is the guarantee, not the size check before it. A
-  // named pipe reports size 0 and never ends; the read still stops one byte
-  // past the limit.
-  it.skipIf(process.platform === 'win32')(
-    'stops reading a source that reports no size at one byte past the limit',
-    async () => {
-      const fifo = path.join(dir, 'pipe');
-      execFileSync('mkfifo', [fifo]);
-      const writer = spawn(process.execPath, [
-        '-e',
-        `const fs = require('fs'); const fd = fs.openSync(${JSON.stringify(fifo)}, 'w');` +
-          `const chunk = Buffer.alloc(64 * 1024, 120);` +
-          `try { for (;;) fs.writeSync(fd, chunk); } catch {}`,
-      ]);
-      try {
-        await expect(readTextFileWithin(fifo, 256 * 1024, 'The pipe')).rejects.toBeInstanceOf(
-          TooLargeError
-        );
-      } finally {
-        writer.kill();
-      }
-    },
-    15_000
-  );
+  // Purpose: the read loop is the guarantee, not the size check before it:
+  // a file that reports a small size but holds more is still stopped.
+  it('stops a file that holds more than its reported size', async () => {
+    const file = path.join(dir, 'grows.md');
+    await writeFile(file, 'x'.repeat(4096));
+    const probe = await open(file, 'r');
+    const proto = Object.getPrototypeOf(probe) as { stat: () => Promise<Stats> };
+    await probe.close();
+    const realStat = proto.stat;
+    const spy = vi.spyOn(proto, 'stat').mockImplementation(async function (this: unknown) {
+      const stats = await realStat.call(this);
+      return Object.assign(Object.create(Object.getPrototypeOf(stats)), stats, { size: 10 });
+    });
+    try {
+      await expect(readTextFileWithin(file, 1024, 'The file')).rejects.toBeInstanceOf(
+        TooLargeError
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  // Purpose: a link to a pipe, a terminal or stdin would hold a thread-pool
+  // thread forever. The file opens without blocking and anything but a regular
+  // file is refused, quickly.
+  it.skipIf(process.platform === 'win32').each([
+    ['a named pipe with no writer', 'fifo'],
+    ['a link to /dev/stdin', 'stdin'],
+    ['a link to a directory', 'dir'],
+  ])('refuses %s without waiting', async (_label, kind) => {
+    const target = path.join(dir, 'target');
+    if (kind === 'fifo') execFileSync('mkfifo', [target]);
+    else if (kind === 'stdin') await symlink('/dev/stdin', target);
+    else await symlink(dir, target);
+    const started = Date.now();
+    await expect(readTextFileWithin(target, 1024, 'The file')).rejects.toThrow(
+      'The file is not a regular file, so DorkOS will not read it.'
+    );
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
 
   // Purpose: other read errors pass through unchanged, so callers that treat
   // a missing file as "absent" keep doing so.
@@ -161,5 +180,65 @@ describe('the limits sit well above real files', () => {
   it('keeps at least 10x headroom over the largest real files', () => {
     expect(CATALOG_MAX_BYTES).toBeGreaterThanOrEqual(10 * 188 * 1024);
     expect(PACKAGE_TEXT_MAX_BYTES).toBeGreaterThanOrEqual(10 * 65 * 1024);
+  });
+});
+
+describe('readPackageFileWithin', () => {
+  const SECRET = 'host-secret-7f3a';
+  let host: string;
+  let pkg: string;
+
+  beforeEach(async () => {
+    host = path.join(dir, 'host-secret.txt');
+    await writeFile(host, `---\nname: ${SECRET}\n---\n`);
+    pkg = path.join(dir, 'pkg');
+    await mkdir(path.join(pkg, 'skills', 'a'), { recursive: true });
+  });
+
+  // Purpose: an ordinary file inside the package reads normally.
+  it('reads a regular file inside the package', async () => {
+    await writeFile(path.join(pkg, 'skills', 'a', 'SKILL.md'), 'ok');
+    expect(await readPackageFileWithin(pkg, 'skills/a/SKILL.md', 1024, 'The SKILL.md')).toBe('ok');
+  });
+
+  // Purpose: a package cannot point DorkOS at a host file through a link,
+  // whether the file itself or a directory on the way is the link, and the
+  // refusal never carries the target's text.
+  it.each([
+    ['the file is a link', async () => symlink(host, path.join(pkg, 'skills', 'a', 'SKILL.md'))],
+    [
+      'a directory on the way is a link',
+      async () => {
+        await rm(path.join(pkg, 'skills', 'a'), { recursive: true });
+        await mkdir(path.join(dir, 'elsewhere'));
+        await writeFile(path.join(dir, 'elsewhere', 'SKILL.md'), `name: ${SECRET}`);
+        await symlink(path.join(dir, 'elsewhere'), path.join(pkg, 'skills', 'a'));
+      },
+    ],
+  ])('refuses a symbolic link when %s', async (_label, arrange) => {
+    await arrange();
+    const error = await readPackageFileWithin(pkg, 'skills/a/SKILL.md', 1024, 'The SKILL.md').catch(
+      (err: unknown) => err
+    );
+    expect(error).toBeInstanceOf(UnsafeFileError);
+    expect((error as Error).message).toBe(
+      'The SKILL.md is reached through a symbolic link, which DorkOS does not follow inside a package.'
+    );
+    expect(JSON.stringify(error)).not.toContain(SECRET);
+  });
+
+  // Purpose: a path cannot climb out of the package.
+  it.each(['../host-secret.txt', '/etc/hosts'])('refuses the path %j', async (rel) => {
+    await expect(readPackageFileWithin(pkg, rel, 1024, 'The file')).rejects.toThrow(
+      'The file is outside the package, so DorkOS will not read it.'
+    );
+  });
+
+  // Purpose: a missing file still reads as missing, so callers keep their
+  // "absent" answer.
+  it('passes a missing-file error through', async () => {
+    await expect(
+      readPackageFileWithin(pkg, 'skills/a/SKILL.md', 1024, 'The SKILL.md')
+    ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

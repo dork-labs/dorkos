@@ -11,7 +11,11 @@
  */
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
+import {
+  PACKAGE_TEXT_MAX_BYTES,
+  readPackageFileWithin,
+  readTextFileWithin,
+} from '@dorkos/shared/bounded-read';
 import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
@@ -416,8 +420,7 @@ export class ConflictDetector {
     const skillNames = await listSubdirectories(tasksDir);
     const records: SkillRecord[] = [];
     for (const skillName of skillNames) {
-      const skillPath = join(tasksDir, skillName, 'SKILL.md');
-      const cron = await readSkillCron(skillPath);
+      const cron = await readSkillCron(packageRoot, join('.dork', 'tasks', skillName, 'SKILL.md'));
       if (cron === undefined) continue;
       records.push({ packageName, skillName, cron });
     }
@@ -551,10 +554,19 @@ async function readSlotBindings(manifestPath: string): Promise<SlotBinding[]> {
  * `null` when the file exists but has no cron, and `undefined` when the
  * file is missing or unreadable (so callers can skip the record entirely).
  */
-async function readSkillCron(skillPath: string): Promise<string | null | undefined> {
+async function readSkillCron(
+  packageRoot: string,
+  skillPath: string
+): Promise<string | null | undefined> {
   let raw: string;
   try {
-    raw = await readTextFileWithin(skillPath, PACKAGE_TEXT_MAX_BYTES, 'The SKILL.md');
+    // Inside the package, never through a link out of it (DOR-2319).
+    raw = await readPackageFileWithin(
+      packageRoot,
+      skillPath,
+      PACKAGE_TEXT_MAX_BYTES,
+      'The SKILL.md'
+    );
   } catch {
     return undefined;
   }

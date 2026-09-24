@@ -1107,3 +1107,70 @@ describe('package files larger than DorkOS reads (DOR-2319)', () => {
     }
   );
 });
+
+describe('symbolic links in a package (DOR-2319)', () => {
+  const SECRET = 'host-secret-9c21';
+  const dirs: string[] = [];
+  afterEach(async () => {
+    for (const d of dirs.splice(0)) await fs.rm(d, { recursive: true, force: true });
+  });
+
+  /** A valid skill-pack package plus a host file that must never be read. */
+  async function packageAndHostFile(): Promise<{ pkg: string; host: string }> {
+    const root = await makeTempDir();
+    dirs.push(root);
+    const pkg = path.join(root, 'pkg');
+    const host = path.join(root, 'host-secret');
+    await writeText(host, `---\nname: ${SECRET}\nversion: ${SECRET}\n---\n`);
+    await writeJson(path.join(pkg, '.dork', 'manifest.json'), {
+      schemaVersion: 1,
+      name: 'pkg',
+      version: '1.0.0',
+      type: 'skill-pack',
+      description: 'x',
+      license: 'MIT',
+      tags: [],
+      layers: ['skills'],
+    });
+    await writeJson(path.join(pkg, '.claude-plugin', 'plugin.json'), {
+      name: 'pkg',
+      version: '1.0.0',
+    });
+    await writeText(
+      path.join(pkg, 'skills', 'a', 'SKILL.md'),
+      '---\nname: a\ndescription: x\n---\nbody\n'
+    );
+    return { pkg, host };
+  }
+
+  // Purpose: a package cannot point the validator at a host file. Each link is
+  // refused by name, the host file's text appears nowhere in the result, and a
+  // linked manifest is never mistaken for a missing one.
+  it.each([
+    ['a SKILL.md', 'skills/a/SKILL.md'],
+    ['the manifest', '.dork/manifest.json'],
+    ['plugin.json', '.claude-plugin/plugin.json'],
+  ])('refuses %s that is a symbolic link to a host file', async (_label, rel) => {
+    const { pkg, host } = await packageAndHostFile();
+    await fs.rm(path.join(pkg, rel));
+    await fs.symlink(host, path.join(pkg, rel));
+    const result = await validatePackage(pkg);
+    expect(result.ok).toBe(false);
+    expect(result.issues.some((i) => i.path === rel && /symbolic link/.test(i.message))).toBe(true);
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+  });
+
+  // Purpose: a skill directory that is itself a link out of the package is
+  // refused before anything under it is read.
+  it('refuses a skills directory that is a symbolic link', async () => {
+    const { pkg, host } = await packageAndHostFile();
+    const elsewhere = path.join(path.dirname(host), 'elsewhere');
+    await writeText(path.join(elsewhere, 'a', 'SKILL.md'), `---\nname: ${SECRET}\n---\n`);
+    await fs.rm(path.join(pkg, 'skills'), { recursive: true });
+    await fs.symlink(elsewhere, path.join(pkg, 'skills'));
+    const result = await validatePackage(pkg);
+    expect(result.ok).toBe(false);
+    expect(result.issues.some((i) => i.path === 'skills' && i.code === 'FILE_REFUSED')).toBe(true);
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+  });
+});

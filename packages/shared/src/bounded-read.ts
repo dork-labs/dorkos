@@ -14,12 +14,19 @@
  * `marketplace.json` seen is Anthropic's official catalog at about 188 KB, and
  * the largest SKILL.md or README about 65 KB.
  *
+ * Only regular files are read. A file opens without blocking, so a symbolic
+ * link to a pipe, a terminal or `/dev/stdin` is refused rather than waited on.
+ * Inside a package, {@link readPackageFileWithin} also refuses every symbolic
+ * link, so a package cannot point DorkOS at a file outside itself.
+ *
  * Node-only (`node:fs`); import it from server and package code, never the
  * client.
  *
  * @module shared/bounded-read
  */
-import { open } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, open, type FileHandle } from 'node:fs/promises';
+import path from 'node:path';
 
 /**
  * The most DorkOS reads of a marketplace catalog: `marketplace.json` or its
@@ -61,19 +68,76 @@ export class TooLargeError extends Error {
   }
 }
 
+/** Thrown when a path is not something DorkOS will read: not a regular file, or a link. */
+export class UnsafeFileError extends Error {
+  /**
+   * Build the error for one refused path.
+   *
+   * @param message - The whole sentence, already in plain words.
+   */
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnsafeFileError';
+  }
+}
+
+/** Open flags: read-only, and never block on a pipe or device. */
+const READ_FLAGS = constants.O_RDONLY | (constants.O_NONBLOCK ?? 0);
+
+/** {@link READ_FLAGS}, also refusing a symbolic link as the last component. */
+const READ_NOFOLLOW_FLAGS = READ_FLAGS | (constants.O_NOFOLLOW ?? 0);
+
+/**
+ * Read an opened file within `maxBytes`, refusing anything but a regular file.
+ * The size is checked first as an early exit; the read loop is the guarantee,
+ * since a file can grow while it is read.
+ *
+ * @param handle - The opened file.
+ * @param maxBytes - The largest size read, in bytes.
+ * @param what - What the file is, as the start of a sentence, for the errors.
+ * @returns The file's text.
+ */
+async function readOpenedWithin(
+  handle: FileHandle,
+  maxBytes: number,
+  what: string
+): Promise<string> {
+  const stats = await handle.stat();
+  if (!stats.isFile()) {
+    throw new UnsafeFileError(`${what} is not a regular file, so DorkOS will not read it.`);
+  }
+  if (stats.size > maxBytes) throw new TooLargeError(what, maxBytes);
+  // Read the reported size plus one byte first, then keep going in chunks,
+  // never asking for more than one byte past the limit in total.
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for (;;) {
+    const want = Math.min(maxBytes + 1 - total, Math.max(stats.size + 1 - total, 64 * 1024));
+    const chunk = Buffer.allocUnsafe(want);
+    const { bytesRead } = await handle.read(chunk, 0, want, null);
+    if (bytesRead === 0) break;
+    chunks.push(chunk.subarray(0, bytesRead));
+    total += bytesRead;
+    if (total > maxBytes) throw new TooLargeError(what, maxBytes);
+  }
+  return Buffer.concat(chunks, total).toString('utf8');
+}
+
 /**
  * Read a UTF-8 text file, refusing one larger than `maxBytes` without loading
  * it. Returns exactly what `readFile(path, 'utf-8')` would for a file within
  * the limit, byte-order mark included. The size is checked before reading and
  * the read stops one byte past the limit, so a file that grows while it is
- * read, or a special file that reports no size, cannot get past it either.
+ * read cannot get past it either. Anything but a regular file is refused.
  *
  * @param filePath - The file to read. Symbolic links are followed, as with
- *   `readFile`; callers that must not follow them check first.
+ *   `readFile`; for a file inside a package use {@link readPackageFileWithin}.
  * @param maxBytes - The largest size read, in bytes.
  * @param what - What the file is, as the start of a sentence, for the error.
  * @returns The file's text.
  * @throws {TooLargeError} When the file is larger than `maxBytes`.
+ * @throws {UnsafeFileError} When the path is not a regular file (a pipe, a
+ *   device), which it refuses without waiting on it.
  * @throws The underlying error, unchanged, when the file cannot be opened or
  *   read (for example `ENOENT`).
  */
@@ -82,26 +146,63 @@ export async function readTextFileWithin(
   maxBytes: number,
   what: string
 ): Promise<string> {
-  const handle = await open(filePath, 'r');
+  const handle = await open(filePath, READ_FLAGS);
   try {
-    const { size } = await handle.stat();
-    // An early exit that saves reading a megabyte to learn the obvious. The
-    // read loop below is the guarantee: a source can report no size or grow.
-    if (size > maxBytes) throw new TooLargeError(what, maxBytes);
-    // Read the reported size plus one byte first, then keep going in chunks,
-    // never asking for more than one byte past the limit in total.
-    const chunks: Buffer[] = [];
-    let total = 0;
-    for (;;) {
-      const want = Math.min(maxBytes + 1 - total, Math.max(size + 1 - total, 64 * 1024));
-      const chunk = Buffer.allocUnsafe(want);
-      const { bytesRead } = await handle.read(chunk, 0, want, null);
-      if (bytesRead === 0) break;
-      chunks.push(chunk.subarray(0, bytesRead));
-      total += bytesRead;
-      if (total > maxBytes) throw new TooLargeError(what, maxBytes);
-    }
-    return Buffer.concat(chunks, total).toString('utf8');
+    return await readOpenedWithin(handle, maxBytes, what);
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Read a text file inside a package, within `maxBytes`, refusing every
+ * symbolic link on the way: any directory between `root` and the file, and
+ * the file itself. A package is someone else's tree, and staging drops its
+ * links anyway, so following one could only read something the installed
+ * package will not have, or a file outside the package altogether (a key, a
+ * config file) whose text could then surface in an error or a preview.
+ *
+ * @param root - The package root. It may itself be reached through a link.
+ * @param relPath - The file, relative to `root`; it must stay inside it.
+ * @param maxBytes - The largest size read, in bytes.
+ * @param what - What the file is, as the start of a sentence, for the errors.
+ * @returns The file's text.
+ * @throws {UnsafeFileError} For a path outside `root`, a symbolic link, or
+ *   anything but a regular file.
+ * @throws {TooLargeError} When the file is larger than `maxBytes`.
+ * @throws The underlying error, unchanged, otherwise (for example `ENOENT`).
+ */
+export async function readPackageFileWithin(
+  root: string,
+  relPath: string,
+  maxBytes: number,
+  what: string
+): Promise<string> {
+  const inside = path.normalize(relPath);
+  if (path.isAbsolute(inside) || inside === '..' || inside.startsWith(`..${path.sep}`)) {
+    throw new UnsafeFileError(`${what} is outside the package, so DorkOS will not read it.`);
+  }
+  const linked = (): UnsafeFileError =>
+    new UnsafeFileError(
+      `${what} is reached through a symbolic link, which DorkOS does not follow inside a package.`
+    );
+  const parts = inside.split(path.sep);
+  let current = root;
+  for (const part of parts) {
+    current = path.join(current, part);
+    // Throws ENOENT/ENOTDIR as-is, so a missing file still reads as missing.
+    if ((await lstat(current)).isSymbolicLink()) throw linked();
+  }
+  let handle: FileHandle;
+  try {
+    handle = await open(current, READ_NOFOLLOW_FLAGS);
+  } catch (err) {
+    // A link swapped in after the check above.
+    if ((err as NodeJS.ErrnoException).code === 'ELOOP') throw linked();
+    throw err;
+  }
+  try {
+    return await readOpenedWithin(handle, maxBytes, what);
   } finally {
     await handle.close();
   }
