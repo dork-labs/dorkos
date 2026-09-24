@@ -673,8 +673,11 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     }
   }
 
-  /** Post and retain the server-confirmed native entry for the qualified local API. */
-  /** Read a browser thread including its authoritative root context entry. */
+  /**
+   * Read history for the browser: a thread page includes its authoritative
+   * root context entry, and a channel page carries the reply count on every
+   * root that has replies (see {@link RemoteCommunityAdapter.addThreadSummaries}).
+   */
   async listEntriesWithThreadRoot(
     roomId: string,
     opts: ListCommunityEntriesOpts = {}
@@ -702,6 +705,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     };
   }
 
+  /** Post and retain the server-confirmed native entry for the qualified local API. */
   async postEntry(
     roomId: string,
     input: PostCommunityEntryInput,

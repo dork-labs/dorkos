@@ -943,6 +943,10 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     },
     { route: 'GET /channels/:id/events', call: (x) => ({ path: `/channels/${x.channel}/events` }) },
     {
+      route: 'GET /channels/:id/threads',
+      call: (x) => ({ path: `/channels/${x.channel}/threads?roots=${x.entry}` }),
+    },
+    {
       route: 'POST /invites',
       call: (x) => ({ path: '/invites', body: { channelId: x.channel, seats: 1 } }),
     },

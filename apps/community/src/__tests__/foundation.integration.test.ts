@@ -349,6 +349,13 @@ describe('owner foundation over real HTTP and Postgres', () => {
     expect(foreign.status).toBe(200);
     expect((await foreign.json()).threads).toEqual([]);
     expect((await summaries('')).status).toBe(400);
+    // One page of roots at most: 101 is refused rather than silently cut.
+    const tooMany = Array.from({ length: 101 }, () => randomUUID()).join(',');
+    expect((await summaries(tooMany)).status).toBe(400);
+    // Nobody signed in reads nothing.
+    expect((await request(`/api/v1/channels/${channelId}/threads?roots=${busy.id}`)).status).toBe(
+      401
+    );
   });
 
   it('keeps read cursors monotonic and rejects over-advance', async () => {
@@ -406,6 +413,15 @@ describe('owner foundation over real HTTP and Postgres', () => {
     expect(
       (await request(`/api/v1/channels/${channelId}/entries`, { headers: { cookie: bobCookie } }))
         .status
+    ).toBe(403);
+    // Reply counts follow the same rule as the history they describe: a
+    // community member who has not joined this channel reads neither.
+    expect(
+      (
+        await request(`/api/v1/channels/${channelId}/threads?roots=${randomUUID()}`, {
+          headers: { cookie: bobCookie },
+        })
+      ).status
     ).toBe(403);
     expect(
       (
@@ -538,6 +554,15 @@ describe('owner foundation over real HTTP and Postgres', () => {
     expect(
       (await request(`/api/v1/channels/${privateId}/entries`, { headers: { cookie: bobCookie } }))
         .status
+    ).toBe(404);
+    // A private channel the caller has not joined does not exist for them,
+    // reply counts included.
+    expect(
+      (
+        await request(`/api/v1/channels/${privateId}/threads?roots=${randomUUID()}`, {
+          headers: { cookie: bobCookie },
+        })
+      ).status
     ).toBe(404);
     expect(
       (
