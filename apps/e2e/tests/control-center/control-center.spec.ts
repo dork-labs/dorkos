@@ -80,6 +80,24 @@ test.describe('Control Center @smoke', () => {
     await expect(controlCenter.presetPicker.locator('[role="radio"]:focus')).toHaveCount(1);
   });
 
+  test('on a phone, the sheet takes focus instead of leaving it on the glyph', async ({
+    controlCenter,
+    page,
+    basePage,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await basePage.goto();
+    await basePage.waitForAppReady();
+    // By test id: on a phone the glyph is not the only control with this name.
+    const glyph = page.getByTestId('control-center-trigger');
+    await glyph.click();
+    await controlCenter.body.waitFor({ state: 'visible' });
+    // Focus is inside the sheet, on the preset picker, not on the glyph the
+    // modal sheet hides from assistive technology.
+    await expect(controlCenter.presetPicker.locator('[role="radio"]:focus')).toHaveCount(1);
+    await expect(glyph).not.toBeFocused();
+  });
+
   test('a power switch writes its config patch', async ({ controlCenter, page, request }) => {
     const before = (await readConfig(request)).claudeCode?.persistentSession ?? true;
 
