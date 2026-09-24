@@ -208,10 +208,11 @@ export class RoomUpdates {
     // Already away: nothing to write, and no second notice.
     if (room.archived) return this.projection.withRoster(room, callerAuthorId);
     const name = this.displayNameOf(callerAuthorId);
-    // BEFORE the archive, because an archived room refuses every new entry,
-    // its own notices included.
-    this.systemPosts.postNotice(roomId, buildRoomArchivedNotice(name, callerAuthorId));
-    return this.applyRoomPatch(room, callerAuthorId, { archived: true });
+    // The archive first, the notice after: a notice written first would stay
+    // in the log saying the room was archived when the archive then failed.
+    const archived = this.applyRoomPatch(room, callerAuthorId, { archived: true });
+    this.systemPosts.postArchivedNotice(roomId, buildRoomArchivedNotice(name, callerAuthorId));
+    return archived;
   }
 
   /** A member's display name, as the room's notices name them. */

@@ -27,6 +27,7 @@ import type { AgentIdentity } from '../../core/agent-identity/index.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import { roomsDomain } from '../room-capabilities.js';
 import { FIND_ROOMS_MAX, type RoomService } from '../room-service.js';
+import { RoomStore } from '../room-store.js';
 import type { RoomTurnRequest } from '../room-trigger.js';
 import {
   agentLookupFor,
@@ -1596,7 +1597,7 @@ describe('the rooms MANAGEMENT verbs', () => {
 
       expect(service.listRooms(human).map((room) => room.id)).not.toContain(channel.id);
       expect(service.getRoom(channel.id, human)?.archived).toBe(true);
-      // The last line the room ever gains, written before the archive landed.
+      // The last line the room ever gains, written once the archive landed.
       const entries = harness.db
         .select()
         .from(roomEntries)
@@ -1605,6 +1606,24 @@ describe('the rooms MANAGEMENT verbs', () => {
       const notice = entries.map((entry) => JSON.parse(entry.body)).at(-1);
       expect(notice).toMatchObject({ notice: 'room_archived', subjectAuthorId: ana });
       expect(notice.text).toContain('Ana');
+    });
+
+    it('writes no notice when the archive itself fails', async () => {
+      const count = () =>
+        harness.db.select().from(roomEntries).where(eq(roomEntries.roomId, channel.id)).all()
+          .length;
+      const before = count();
+      const updateRoom = vi.spyOn(RoomStore.prototype, 'updateRoom').mockImplementationOnce(() => {
+        throw new Error('the database went away');
+      });
+      try {
+        await expect(call('rooms.archive', { roomId: channel.id })).rejects.toThrow();
+      } finally {
+        updateRoom.mockRestore();
+      }
+
+      expect(service.getRoom(channel.id, human)?.archived).toBe(false);
+      expect(count()).toBe(before);
     });
 
     it('lets the person bring it back afterwards', async () => {
