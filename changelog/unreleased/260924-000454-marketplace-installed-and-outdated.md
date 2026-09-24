@@ -3,6 +3,7 @@ covers:
   - 'feat(marketplace): flag a linked install on the installed listing (DOR-2193)'
   - 'feat(cli): make dorkos marketplace the home for package management (DOR-2193)'
   - 'docs(cli): document the marketplace package commands (DOR-2193)'
+  - 'fix(cli): explain an older running DorkOS to marketplace outdated (DOR-2193)'
 ---
 
 ### Added
