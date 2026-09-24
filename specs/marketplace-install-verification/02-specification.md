@@ -33,7 +33,7 @@ Installs made before DOR-2245 have no record. Today, a record is rebuilt only in
 
 Verification compares the live files with the record using `hashFile` in `lib/installed-files.ts`, the per-file SHA-256 that DOR-2245 records with. This item adds no new hash.
 
-**DOR-2306 dependency:** its unmerged `lib/content-hash.ts` (`hashTree`, `packageContentHash`) digests each file itself. Whichever of the two lands second makes `hashTree` digest files through `hashFile`, so the repo has one per-file primitive. A whole-tree hash would add nothing here: verification needs to know _which_ files changed, and the record already has per-file hashes.
+**DOR-2306 dependency (resolved: DOR-2306 landed first, and its `hashTree` now digests through `fileSha256Hex`, the primitive under `hashFile`):** its unmerged `lib/content-hash.ts` (`hashTree`, `packageContentHash`) digests each file itself. Whichever of the two lands second makes `hashTree` digest files through `hashFile`, so the repo has one per-file primitive. A whole-tree hash would add nothing here: verification needs to know _which_ files changed, and the record already has per-file hashes.
 
 **Hash cache:** `hashFile` streams the file. To keep repeated list calls cheap, `lib/integrity/file-hash-cache.ts` memoizes `hashFile` by absolute path. An entry is reused only while the file's `lstat` `size`, `mtimeMs`, `ctimeMs` and `ino` are unchanged, so a rename-over or an `mtime` restored with `utimes` still misses. It holds at most 20,000 entries (least recently used first) and is in memory only. The same `hashFile` still produces every hash.
 
