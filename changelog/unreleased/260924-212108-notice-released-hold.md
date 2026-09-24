@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(communities): notice when a host releases a hold, and do not resend refused posts'
+  - 'refactor(communities): keep the refusal mapping beside the remote adapter, and prove the release check through the real store'
 ---
 
 ### Fixed

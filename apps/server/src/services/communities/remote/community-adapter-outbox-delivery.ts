@@ -10,11 +10,11 @@ import type {
   PostCommunityEntryInput,
   UploadCommunityAttachmentInput,
 } from '@dorkos/shared/community-adapter';
-import { communityRefusal } from '../../../routes/remote-community-refusal.js';
 import type { AttachmentRowStore } from '../../rooms/attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from '../../rooms/attachments/room-attachment-store.js';
 import type { RoomStore } from '../../rooms/room-store.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
+import { communityRefusal } from './community-refusal.js';
 import type { CommunityOutboxItem, CommunityOutboxStore } from './community-outbox-store.js';
 import type {
   CommunityOutboxDelivery,

@@ -32,6 +32,10 @@ import {
   PinnedHttpError,
   PinnedOriginError,
 } from '../pinned-origin.js';
+import {
+  READ_ONLY_RECHECK_MS,
+  RemoteRoomSubscriptionRuntime,
+} from '../remote-room-subscription-runtime.js';
 
 let server: Server;
 let redirectedServer: Server;
@@ -52,6 +56,8 @@ let rejectedStatus = 403;
 let rejectedPath: string | undefined;
 /** What the host says to `/me/host-access`; `undefined` models a host built before it (404). */
 let hostAccessAnswer: { status: number; body: unknown } | undefined;
+/** What `/me/connection-access` reports: `archived` models a host hold, as installations see it. */
+let accessLifecycle: 'active' | 'archived' = 'active';
 const token = 'private-pairing-bearer-should-never-appear-in-dto';
 const remoteCommunityId = randomUUID();
 const secondRemoteCommunityId = randomUUID();
@@ -182,13 +188,15 @@ beforeAll(async () => {
       res.statusCode = 204;
       res.end();
     } else if (req.url === `${qualified}/me/connection-access`) {
+      const live = accessLifecycle === 'active';
+      const capabilities = { read: true, post: live, enrollAgent: live, stream: live };
       send({
         access: {
           state: 'verified',
-          effective: { read: true, post: true, enrollAgent: true, stream: true },
+          effective: capabilities,
           lastKnown: {
-            lifecycle: 'active',
-            capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+            lifecycle: accessLifecycle,
+            capabilities,
             verifiedAt: new Date().toISOString(),
           },
         },
@@ -867,6 +875,52 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       pollCount = 0;
     }
   });
+  it('learns a released hold for a member-only connection through the release check (AC-8)', async () => {
+    // Purpose: fails if the five-minute check does not reach the real pairing service and
+    // store, so a member-only connection kept its read-only access after the host released.
+    approved = true;
+    const store = new RemoteConnectionStore(directory);
+    const service = new RemoteCommunityPairingService(store);
+    const owner = 'release-check-owner';
+    const started = await service.start(owner, origin, 'Member-only install');
+    expect((await service.poll(started.connection.ref, owner)).status).toBe('connected');
+    approved = false;
+    const lifecycle = async () =>
+      (await store.list(owner)).find((row) => row.ref === started.connection.ref)?.access?.lastKnown
+        ?.lifecycle;
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const runtime = new RemoteRoomSubscriptionRuntime({
+      bridge: {} as never,
+      enrollments: { activeConnections: () => [] } as never,
+      adapters: vi.fn(),
+      resolveConnectionAccess: async (ref, ownerKey) =>
+        (await service.status(ref, ownerKey)).access,
+      readOnlyConnections: () => store.readOnlyConnections(),
+      resolveLocalAgentAuthor: () => null,
+      isReady: () => false,
+    });
+    try {
+      accessLifecycle = 'archived';
+      await service.status(started.connection.ref, owner);
+      expect(await lifecycle()).toBe('archived');
+      runtime.start();
+      // The host releases the hold; nobody opens the connection's status.
+      accessLifecycle = 'active';
+      await vi.advanceTimersByTimeAsync(READ_ONLY_RECHECK_MS - 1);
+      expect(await lifecycle()).toBe('archived');
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.waitFor(async () => expect(await lifecycle()).toBe('active'));
+      expect(
+        (await store.list(owner)).find((row) => row.ref === started.connection.ref)?.access
+      ).toMatchObject({ state: 'verified', effective: { post: true, stream: true } });
+    } finally {
+      runtime.stop();
+      vi.useRealTimers();
+      accessLifecycle = 'active';
+      await service.disconnect(started.connection.ref, owner);
+    }
+  });
+
   describe('disconnect revokes the grant on the Community', () => {
     async function connected(owner: string) {
       approved = true;
