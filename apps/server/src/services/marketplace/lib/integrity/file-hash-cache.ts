@@ -35,10 +35,16 @@ const cache = new Map<string, CachedHash>();
 
 /**
  * The seam tests spy on to count real reads; production calls go through it.
+ * `lstat` is wrapped rather than captured so that loading this module never
+ * reads the binding: a test that mocks `node:fs/promises` without `lstat`
+ * would otherwise fail on import, anywhere this module is reached.
  *
  * @internal
  */
-export const _internal = { hashFile, lstat };
+export const _internal = {
+  hashFile,
+  lstat: (absPath: string) => lstat(absPath),
+};
 
 /**
  * {@link hashFile} of `absPath`, reused while the file's `lstat` identity is
