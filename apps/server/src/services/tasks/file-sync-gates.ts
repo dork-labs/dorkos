@@ -24,6 +24,7 @@ import {
   resolveFilePermissionMode,
   type FileArmVerdict,
 } from './schedule-permission-clamp.js';
+import { effectiveTiming } from './timing/effective-timing.js';
 import { logger } from '../../lib/logger.js';
 
 /** Where a file-sourced write came from, and what is wrong with the file. */
@@ -60,6 +61,11 @@ export interface FileSyncVerdict {
    * scheduling column and that does not change.
    */
   keepsRowEnabled: boolean;
+  /**
+   * Whether the row's timing override is dropped by this sync, because its file
+   * is no longer a package's (DOR-2302). See {@link FileSyncGates.dropsTimingOverride}.
+   */
+  dropsTimingOverride: boolean;
 }
 
 /**
@@ -94,12 +100,23 @@ export class FileSyncGates {
     existing: typeof pulseSchedules.$inferSelect | undefined,
     options?: FileSyncSource
   ): FileSyncVerdict {
-    const incoming = { prompt: def.body, cron: def.meta.schedule.cron ?? '' };
+    const fileCron = def.meta.schedule.cron ?? '';
+    // Both gates compare what will RUN, not what the file says (DOR-2302). A
+    // package's schedule can carry a person's own cron on its row, which the
+    // sync never overwrites — so the incoming content runs on that cron, and a
+    // package update that changes only its default timing is not new work to
+    // approve. A changed prompt still is. An override this sync drops runs no
+    // longer, so it is not part of what arrives.
+    const dropsTimingOverride = this.dropsTimingOverride(existing, options);
+    const incoming = {
+      prompt: def.body,
+      cron: (dropsTimingOverride ? null : existing?.cronOverride) ?? fileCron,
+    };
     const approved = existing && {
       permissionMode: existing.permissionMode as PermissionMode,
       status: existing.status,
       prompt: existing.prompt,
-      cron: existing.cron,
+      cron: effectiveTiming(existing).cron,
       approvedContentKey: existing.approvedContentKey,
     };
 
@@ -108,7 +125,9 @@ export class FileSyncGates {
       approved,
       incoming
     );
-    this.reportRefusal(def, incoming.cron, clamped);
+    // The refusal is about the FILE asking for more than it got, so its log key
+    // is the file's own content.
+    this.reportRefusal(def, fileCron, clamped);
 
     // Only discovery is subject to the arm gate: a file DorkOS found is nobody's
     // decision to run, while a route write is a person's (ADR `260823-200726`).
@@ -117,7 +136,46 @@ export class FileSyncGates {
         ? resolveFileArmStatus(approved, incoming, options.problem)
         : null;
 
-    return { permissionMode, arm, keepsRowEnabled: this.keepsRowEnabled(existing, arm, options) };
+    return {
+      permissionMode,
+      arm,
+      keepsRowEnabled: this.keepsRowEnabled(existing, arm, options),
+      dropsTimingOverride,
+    };
+  }
+
+  /**
+   * Whether a person's timing override stops applying at this sync.
+   *
+   * An override exists only because DorkOS would not write the package's file.
+   * When discovery finds the file is no longer a package's — the package was
+   * uninstalled and left the file in place, so it is now the person's to edit —
+   * the file is the one source of timing again. Keeping the override would make
+   * a hand edit of the file's cron do nothing, and leave the Schedules page
+   * saying "the package runs this…" about a package that is gone.
+   *
+   * Only discovery answers `packageOwned`; a route or an install does not say
+   * (absent), and that is not an answer.
+   *
+   * The timing that runs changes with it, so the arm gate compares the file's
+   * own timing against the approval: it stays live when the two agree (the
+   * person wrote their timing into the file), and asks again otherwise.
+   *
+   * A package reinstalled over the same file later brings no override back.
+   * One that vanished and came back instead — an update, or an uninstall that
+   * took the file with it and a reinstall — never looked unowned, so its
+   * override is still there.
+   */
+  private dropsTimingOverride(
+    existing: typeof pulseSchedules.$inferSelect | undefined,
+    options?: FileSyncSource
+  ): boolean {
+    // `packageOwned` is only ever answered by discovery; absent is not `false`.
+    if (options?.packageOwned !== false) return false;
+    return (
+      existing !== undefined &&
+      (existing.cronOverride !== null || existing.timezoneOverride !== null)
+    );
   }
 
   /**

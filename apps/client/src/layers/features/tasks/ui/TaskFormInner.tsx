@@ -24,7 +24,11 @@ import { TaskExecutionFields } from './TaskExecutionFields';
 import { useAgentRuntimes, useTaskExecution } from './use-task-execution';
 import { usePostureConsent } from './use-posture-consent';
 import { useAgentPick } from './use-agent-pick';
-import { DEFAULT_MAX_RUNTIME, type ScheduleFormValues } from './task-form-values';
+import {
+  DEFAULT_MAX_RUNTIME,
+  changedUpdateFields,
+  type ScheduleFormValues,
+} from './task-form-values';
 
 const MAX_NAME_LENGTH = 100;
 
@@ -69,23 +73,14 @@ export function ScheduleForm({
       const cronTrimmed = value.cron.trim();
 
       if (editTask) {
-        const input = {
-          name: value.name.trim(),
-          description: value.description.trim(),
-          prompt: value.prompt.trim(),
-          cron: cronTrimmed || null,
-          ...(cronTrimmed && value.timezone ? { timezone: value.timezone } : {}),
-          permissionMode: value.permissionMode,
-          maxRuntime: value.maxRuntime.trim() || undefined,
-          sticky: value.sticky,
-          // Always sent, and `null` where the form is empty — that is how an
-          // update CLEARS an override (`UpdateTaskRequestSchema`). Omitting the
-          // key would mean "leave it as it was", which makes the first option
-          // in each select unreachable once a value has been saved.
-          runtime: value.runtime || null,
-          model: value.model || null,
-          effort: (value.effort || null) as EffortLevel | null,
-        };
+        // Only what the person changed (`changedUpdateFields`): a field sent
+        // unchanged is still a field the server has to act on, and a package's
+        // schedule refuses every one but its switch and its timing.
+        const input = changedUpdateFields(defaultValues, value);
+        if (Object.keys(input).length === 0) {
+          onSubmitSuccess();
+          return;
+        }
         updateTask.mutate({ id: editTask.id, ...input }, { onSuccess: onSubmitSuccess });
       } else {
         const target = resolvedAgentId ?? 'global';

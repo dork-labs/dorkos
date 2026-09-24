@@ -371,6 +371,53 @@ describe('CreateTaskDialog', () => {
     });
   });
 
+  describe('saving an edit', () => {
+    it('sends only the fields the person changed', async () => {
+      // Purpose (DOR-2302): the form used to send every field, and the server
+      // acts on each one it receives. `maxRuntime` alone made every save look
+      // like a file rewrite, so a package's schedule — whose file DorkOS never
+      // writes — could not be saved at all, not even to change when it runs.
+      const schedule = createMockSchedule({ id: 'sched-7', name: 'nightly', prompt: 'Old prompt' });
+      const transport = createMockTransport({
+        updateTask: vi.fn().mockResolvedValue(schedule),
+      });
+      const Wrapper = createWrapper(transport);
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+      await waitFor(() => expect(screen.getByDisplayValue('Old prompt')).toBeTruthy());
+
+      fireEvent.change(screen.getByDisplayValue('Old prompt'), { target: { value: 'New prompt' } });
+      fireEvent.click(screen.getByText('Save'));
+
+      await waitFor(() =>
+        expect(transport.updateTask).toHaveBeenCalledWith('sched-7', { prompt: 'New prompt' })
+      );
+    });
+
+    it('closes without a request when nothing changed', async () => {
+      // Purpose: an empty save is not a write; sending one would still wake the
+      // server's approval and file logic for nothing.
+      const schedule = createMockSchedule({ id: 'sched-8' });
+      const transport = createMockTransport({ updateTask: vi.fn() });
+      const onOpenChange = vi.fn();
+      const Wrapper = createWrapper(transport);
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={onOpenChange} editTask={schedule} />
+        </Wrapper>
+      );
+      await waitFor(() => expect(screen.getByDisplayValue('Review open PRs')).toBeTruthy());
+
+      fireEvent.click(screen.getByText('Save'));
+
+      await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+      expect(transport.updateTask).not.toHaveBeenCalled();
+    });
+  });
+
   describe('an invalid cron expression', () => {
     /** Advance a blank dialog to the form, fill the required fields, and type `cron`. */
     function fillFormWithCron(cron: string) {
@@ -976,9 +1023,14 @@ describe('CreateTaskDialog', () => {
       await waitFor(() => {
         expect(transport.updateTask).toHaveBeenCalledWith(
           'sched-plan',
-          expect.objectContaining({ name: 'New Name', permissionMode: 'plan' })
+          expect.objectContaining({ name: 'New Name' })
         );
       });
+      // Not sent at all: an edit carries only what the person changed, so a
+      // mode nobody touched cannot be widened — or even restated — by a save.
+      expect(vi.mocked(transport.updateTask).mock.calls[0]?.[1]).not.toHaveProperty(
+        'permissionMode'
+      );
     });
 
     it('replaces it when the person picks a stop on purpose', async () => {

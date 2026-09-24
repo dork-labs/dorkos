@@ -29,6 +29,7 @@ function createStubDeps(): MarketplaceMcpDeps {
     fetcher: {} as MarketplaceMcpDeps['fetcher'],
     cache: {} as MarketplaceMcpDeps['cache'],
     uninstallFlow: {} as MarketplaceMcpDeps['uninstallFlow'],
+    updateFlow: {} as MarketplaceMcpDeps['updateFlow'],
     confirmationProvider: {} as MarketplaceMcpDeps['confirmationProvider'],
     onPluginsChanged: vi.fn(),
     logger: {
@@ -52,6 +53,7 @@ const EXPECTED_TOOLS = [
   'marketplace_list_installed',
   'marketplace_recommend',
   'marketplace_install',
+  'marketplace_update',
   'marketplace_uninstall',
   'marketplace_create_package',
 ] as const;
@@ -132,6 +134,7 @@ describe('registerMarketplaceTools', () => {
     }
     for (const name of [
       'marketplace_install',
+      'marketplace_update',
       'marketplace_uninstall',
       'marketplace_create_package',
     ]) {
@@ -161,6 +164,7 @@ describe('MarketplaceMcpDeps', () => {
     expect(deps).toHaveProperty('fetcher');
     expect(deps).toHaveProperty('cache');
     expect(deps).toHaveProperty('uninstallFlow');
+    expect(deps).toHaveProperty('updateFlow');
     expect(deps).toHaveProperty('confirmationProvider');
     expect(deps).toHaveProperty('logger');
   });

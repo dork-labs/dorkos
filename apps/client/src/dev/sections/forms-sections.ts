@@ -8,13 +8,6 @@ import type { PlaygroundSection } from '../playground-registry';
 export const FORMS_SECTIONS: PlaygroundSection[] = [
   // FormShowcases — Primitives
   {
-    id: 'input',
-    title: 'Input',
-    page: 'forms',
-    category: 'Primitives',
-    keywords: ['text', 'field', 'form', 'type', 'placeholder', 'disabled'],
-  },
-  {
     id: 'textarea',
     title: 'Textarea',
     page: 'forms',
@@ -69,13 +62,6 @@ export const FORMS_SECTIONS: PlaygroundSection[] = [
     page: 'forms',
     category: 'Primitives',
     keywords: ['permission', 'blocked', 'ask', 'allowed', 'area', 'floor', 'switch'],
-  },
-  {
-    id: 'label',
-    title: 'Label',
-    page: 'forms',
-    category: 'Primitives',
-    keywords: ['label', 'form', 'accessibility', 'input', 'htmlfor'],
   },
   {
     id: 'command',

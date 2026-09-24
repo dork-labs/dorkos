@@ -39,6 +39,12 @@ const PREVIEW_WITH_SCHEDULE = {
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    unreadableDeclarations: [],
     schedules: [
       {
         name: 'overnight-sweep',

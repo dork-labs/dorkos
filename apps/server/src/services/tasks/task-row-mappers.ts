@@ -10,6 +10,7 @@
 import type { pulseSchedules, pulseRuns } from '@dorkos/db';
 import type { Task, TaskRun, TaskRunStatus, TaskRunTrigger } from '@dorkos/shared/types';
 import { EffortLevelSchema } from '@dorkos/shared/schemas';
+import { effectiveTiming } from './timing/effective-timing.js';
 
 /**
  * Read a stored effort rung, or `null` for one this build cannot read.
@@ -35,16 +36,26 @@ function readEffort(stored: string | null): Task['effort'] {
  * them — the name from the agent-identity service (async, and the store is a
  * synchronous data layer), the run times from the scheduler — so the store
  * never caches an answer that can go stale between a write and a read.
+ *
+ * `cron` and `timezone` are the timing that RUNS — a person's own for a
+ * package's schedule, else the file's (DOR-2302) — resolved here once, so the
+ * scheduler, the registrar, the preview and every API reader get the right one
+ * without each knowing there are two. The file's own values ride beside them
+ * as `defaultCron`/`defaultTimezone`.
  */
 export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
+  const timing = effectiveTiming(row);
   return {
     id: row.id,
     name: row.name,
     displayName: row.displayName ?? null,
     description: row.description ?? null,
     prompt: row.prompt,
-    cron: row.cron,
-    timezone: row.timezone,
+    cron: timing.cron,
+    timezone: timing.timezone,
+    defaultCron: row.cron,
+    defaultTimezone: row.timezone,
+    timingOverridden: row.cronOverride !== null || row.timezoneOverride !== null,
     agentId: row.agentId ?? null,
     enabled: row.enabled,
     sticky: row.sticky,

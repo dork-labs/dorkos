@@ -136,7 +136,11 @@ interface PatchResult {
 async function patch(existing: Task, data: UpdateTaskRequest): Promise<PatchResult> {
   const outcome = await applyTaskFileUpdate({ dorkHome, meshCore } as never, { existing, data });
   if (!outcome.ok) return { ok: false, code: outcome.code, error: outcome.error };
-  return { ok: true, task: store.updateTask(existing.id, data) ?? undefined };
+  return {
+    ok: true,
+    task:
+      store.updateTask(existing.id, data, { timingLandsOn: outcome.timingLandsOn }) ?? undefined,
+  };
 }
 
 describe('a schedule that came with an installed package', () => {
@@ -370,12 +374,15 @@ describe('a schedule that came with an installed package', () => {
   });
 
   it('still refuses a change to what it DOES, with nothing written', async () => {
+    // WHEN it runs is the person's to change since DOR-2302
+    // (`package-schedule-timing.integration.test.ts`); WHAT it does stays the
+    // package's.
     const task = await patch(await sweep(), { status: 'active', enabled: true });
 
-    const rescheduled = await patch(task.task!, { cron: '0 4 * * *' });
+    const renamed = await patch(task.task!, { name: 'something-else' });
     const rewritten = await patch(task.task!, { prompt: 'do something else entirely' });
 
-    for (const refused of [rescheduled, rewritten]) {
+    for (const refused of [renamed, rewritten]) {
       expect(refused.ok).toBe(false);
       expect(refused.code).toBe('schedule_package_owned');
     }
@@ -420,10 +427,10 @@ describe('a schedule that came with an installed package', () => {
 
   it('refuses a switch that rides along with a change to what it does', async () => {
     // The mixed request. `enabled` alone lands on the row, but it must not be a
-    // way to smuggle a cron edit into a package's checkout.
+    // way to smuggle a prompt edit into a package's checkout.
     const task = await patch(await sweep(), { status: 'active', enabled: true });
 
-    const refused = await patch(task.task!, { enabled: false, cron: '0 4 * * *' });
+    const refused = await patch(task.task!, { enabled: false, prompt: 'do something else' });
 
     expect(refused.ok).toBe(false);
     expect(refused.code).toBe('schedule_package_owned');

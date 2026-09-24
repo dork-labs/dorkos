@@ -11,7 +11,7 @@
  * @module features/tasks/ui/task-form-values
  */
 import type { TaskTemplate } from '@/layers/entities/tasks';
-import type { PermissionMode, Task } from '@dorkos/shared/types';
+import type { EffortLevel, PermissionMode, Task, UpdateTaskRequest } from '@dorkos/shared/types';
 
 /** Which half of the create dialog is on screen. */
 export type DialogStep = 'preset-picker' | 'form';
@@ -133,4 +133,60 @@ export function buildFormValues(
     model: '',
     effort: '',
   };
+}
+
+/**
+ * The update body a set of edit-form values stands for.
+ *
+ * `runtime`, `model` and `effort` spell an empty field as `null`, which is how
+ * an update CLEARS an override (`UpdateTaskRequestSchema`); `timezone` rides
+ * only with a cron, since a timezone with no timer means nothing.
+ *
+ * @param value - The form's values.
+ * @returns Every field the form can change, as the update would carry it.
+ */
+export function toUpdateRequest(value: ScheduleFormValues): UpdateTaskRequest {
+  const cron = value.cron.trim();
+  return {
+    name: value.name.trim(),
+    description: value.description.trim(),
+    prompt: value.prompt.trim(),
+    cron: cron || null,
+    ...(cron && value.timezone ? { timezone: value.timezone } : {}),
+    permissionMode: value.permissionMode,
+    maxRuntime: value.maxRuntime.trim() || undefined,
+    sticky: value.sticky,
+    runtime: value.runtime || null,
+    model: value.model || null,
+    effort: (value.effort || null) as EffortLevel | null,
+  };
+}
+
+/**
+ * What an edit actually changed: the fields of {@link toUpdateRequest} whose
+ * value differs from the one the form opened with.
+ *
+ * **An edit sends only what the person changed** (DOR-2302). Sending every
+ * field, as the form used to, made the server treat each one as a change it
+ * had to act on. `maxRuntime` alone — always present, and not comparable to
+ * the row's milliseconds — made every save look like it rewrote the task's
+ * file, so a schedule that came with an installed package, whose file DorkOS
+ * never writes, could not be saved at all, not even to change when it runs.
+ * Comparing against the OPENING values rather than the task is what keeps a
+ * field the person did not touch out of the request, whatever the form's own
+ * normalising did to it.
+ *
+ * @param opening - The values the form opened with.
+ * @param value - The values it is being saved with.
+ * @returns The changed fields; empty when nothing changed.
+ */
+export function changedUpdateFields(
+  opening: ScheduleFormValues,
+  value: ScheduleFormValues
+): UpdateTaskRequest {
+  const before = toUpdateRequest(opening) as Record<string, unknown>;
+  const after = toUpdateRequest(value) as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(after).filter(([field, next]) => next !== before[field])
+  ) as UpdateTaskRequest;
 }

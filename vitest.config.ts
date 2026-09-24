@@ -106,6 +106,7 @@ export default defineConfig({
     projects: [
       'apps/client',
       'apps/community',
+      'apps/design-system',
       'apps/desktop',
       // Only the capture pipeline's unit tests; the Playwright browser suite is
       // a separate task (`pnpm test:browser`) and no vitest project.
@@ -135,6 +136,7 @@ export default defineConfig({
       'packages/shared',
       'packages/skills',
       'packages/test-utils',
+      'packages/ui',
       // Repo-root scripts are outside the pnpm workspaces; `pnpm test:scripts`
       // runs this project, and `pnpm verify` runs that.
       'scripts',

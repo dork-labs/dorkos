@@ -35,6 +35,7 @@ const REPO_ROOT = path.resolve(PLUGIN_ROOT, '../..');
 
 const PLUGIN_CSS = fs.readFileSync(path.join(PLUGIN_ROOT, 'src/styles/plugin.css'), 'utf8');
 const CLIENT_CSS = fs.readFileSync(path.join(REPO_ROOT, 'apps/client/src/index.css'), 'utf8');
+const UI_CSS = fs.readFileSync(path.join(REPO_ROOT, 'packages/ui/tailwind.css'), 'utf8');
 
 /**
  * The built stylesheet, or a failure that names the fix.
@@ -168,9 +169,22 @@ describe('the plugin bridges the client’s colour family', () => {
     // is the same invisible element by a different route.
     const values = bridgedValues(PLUGIN_CSS);
     const unmapped = themeColorTokens(PLUGIN_CSS)
+      .filter((token) => !token.startsWith('--color-dui-'))
       .map((token) => token.replace(/^--color-/, '--'))
       .filter((source) => !values.has(source));
     expect(unmapped).toEqual([]);
+  });
+
+  it('maps every shared control colour to a full Obsidian value', () => {
+    // The package uses HSL channels, while this host supplies complete CSS
+    // colours. A missing compile-time override would make the control vanish.
+    const packageTokens = [...UI_CSS.matchAll(/--color-dui-[a-z-]+(?=:)/g)].map((m) => m[0]);
+    expect(packageTokens.length).toBeGreaterThan(15);
+    const missing = packageTokens.filter(
+      (token) => !new RegExp(`${token}: var\\(--[a-z-]+\\);`).test(PLUGIN_CSS)
+    );
+    expect(missing).toEqual([]);
+    expect(builtStylesheet()).toContain('bg-dui-primary{background-color:var(--primary)');
   });
 
   it('pins the Obsidian success green to the SAME literals the client uses (DOR-1080)', () => {
@@ -244,9 +258,11 @@ describe('the plugin bridges the client’s colour family', () => {
     // the OS no longer takes part, and the fill is decided by the vault alone.
     const built = builtStylesheet();
     expect(PLUGIN_CSS).toMatch(/@custom-variant dark \(&:is\(\.theme-dark \*\)\);/);
-    // The emitted rule is scoped by the class, not wrapped in the media query.
-    expect(built).toMatch(/\.dark\\:bg-destructive\\\/60:is\(\.theme-dark \*\)/);
-    expect(built).not.toMatch(/prefers-color-scheme:\s*dark/);
+    // Button now emits the package's variant; do not widen the embedded source
+    // scan merely to manufacture the obsolete app utility for this assertion.
+    // Package tokens retain a system fallback, but the embed overrides their colors.
+    // The rendered Button utility must use the vault class instead of that fallback.
+    expect(built).toMatch(/\.dui-dark\\:bg-dui-destructive\\\/60:where\(\.theme-dark/);
 
     const rgb = (hex: string) => {
       const n = parseInt(hex.slice(1), 16);
@@ -292,16 +308,14 @@ describe('the plugin bridges the client’s colour family', () => {
     expect(ratio(white, over(lightRed, 0.6, rgb('#f6f6f6')))).toBeLessThan(4.5);
   });
 
-  it("declares `--size-icon-*`, so `button.tsx`'s default icon size resolves (DOR-1750)", () => {
-    // button.tsx's base class is `[&_svg:not([class*='size-'])]:size-(--size-icon-sm)`
-    // — the default size for every unsized svg a `<Button>` renders, and
-    // `button.tsx` is on this file's `@source` list. An undeclared custom
-    // property makes `width`/`height` invalid at computed-value time, so the
-    // rule is emitted but resolves to nothing and a lucide icon falls back to
-    // its intrinsic 24px instead of the intended 16.
+  it('bridges the shared Button icon size to the embedded 16px size (DOR-1750)', () => {
+    // The package supplies a 20px mobile default. The embedded pane keeps its
+    // existing 16px icon even in a narrow Obsidian window.
     for (const token of ['--size-icon-xs', '--size-icon-sm', '--size-icon-md']) {
       expect(tokenValue(PLUGIN_CSS, token)).toBeTruthy();
     }
+    expect(tokenValue(copilotBlock(PLUGIN_CSS), '--dui-size-icon-sm')).toBe('1rem');
+    expect(builtStylesheet()).toContain('--dui-size-icon-sm:1rem');
   });
 
   it("gives `--chart-*` the client's bare-triple shape, not a wrapped hsl() (DOR-1750)", () => {

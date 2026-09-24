@@ -47,7 +47,7 @@ describe('TaskRegistrar', () => {
       const task = store.createTask(taskInput({ name: 'nightly', cron: '0 2 * * *' }));
       registrar.syncTask(task.id);
 
-      store.updateTask(task.id, { cron: '0 5 * * *' });
+      store.updateTask(task.id, { cron: '0 5 * * *' }, { timingLandsOn: 'file' });
       registrar.syncTask(task.id);
 
       expect(scheduler.cronFor(task.id)).toBe('0 5 * * *');

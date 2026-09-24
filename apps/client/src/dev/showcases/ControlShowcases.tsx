@@ -2,7 +2,6 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import {
-  Button,
   Badge,
   HoverBorderGradient,
   InlineCode,
@@ -12,7 +11,6 @@ import {
   PRESS_ROW,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
-import { Settings } from 'lucide-react';
 
 /**
  * The three press stops, side by side and pressable.
@@ -82,69 +80,10 @@ function PressLadderSection() {
   );
 }
 
-/** Button, Badge, HoverBorderGradient, Kbd, and InlineCode component showcases. */
-export function ButtonShowcases() {
+/** Client-local press, badge, and small utility showcases. */
+export function ControlShowcases() {
   return (
     <>
-      <PlaygroundSection
-        title="Button"
-        description="All variants, sizes, icon buttons, and disabled state."
-      >
-        <ShowcaseLabel>Variants</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="default">Default</Button>
-            <Button variant="secondary">Secondary</Button>
-            <Button variant="destructive">Destructive</Button>
-            <Button variant="outline">Outline</Button>
-            <Button variant="ghost">Ghost</Button>
-            <Button variant="brand">Brand</Button>
-            <Button variant="link">Link</Button>
-          </div>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Sizes</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="xs">Extra Small</Button>
-            <Button size="sm">Small</Button>
-            <Button size="md">Medium</Button>
-            <Button size="lg">Large</Button>
-          </div>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Icon Buttons</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="icon-xs" aria-label="Settings">
-              <Settings />
-            </Button>
-            <Button size="icon-sm" aria-label="Settings">
-              <Settings />
-            </Button>
-            <Button size="icon-md" aria-label="Settings">
-              <Settings />
-            </Button>
-            <Button size="icon-lg" aria-label="Settings">
-              <Settings />
-            </Button>
-          </div>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Disabled</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex flex-wrap gap-2">
-            <Button disabled>Disabled</Button>
-            <Button variant="secondary" disabled>
-              Disabled
-            </Button>
-            <Button variant="outline" disabled>
-              Disabled
-            </Button>
-          </div>
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
       <PressLadderSection />
 
       <PlaygroundSection
@@ -245,7 +184,7 @@ export function ButtonShowcases() {
         <ShowcaseDemo>
           <div className="max-w-sm space-y-2 text-sm">
             <p>
-              Run <InlineCode>dorkos start</InlineCode> to launch the cockpit.
+              Run <InlineCode>dorkos start</InlineCode> to launch the app.
             </p>
             <p>
               Config lives at <InlineCode>~/.dork/config.json</InlineCode>, and a very long token

@@ -19,7 +19,7 @@
  * new solid fill cannot skip that.
  *
  * **Contrast needs layout, and jsdom has none.** The browser measurement is in
- * the PR. What a unit test CAN own is the token: the value shipped in
+ * the PR. What a unit test CAN own is the token: the value shipped by the public UI package and bridged by
  * `index.css`, run through the WCAG math against the ground it sits on. The
  * math is pinned against known pairs first, and the discriminator is proven
  * both ways (the OLD values fail, the shipped ones pass), so a contrast
@@ -34,6 +34,8 @@ import { join, relative, resolve } from 'node:path';
 
 const SRC = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const INDEX_CSS = join(SRC, 'index.css');
+const UI_ROOT = resolve(SRC, '../../../packages/ui');
+const UI_SRC = join(UI_ROOT, 'src');
 
 /** WCAG AA threshold for normal-size text. */
 const AA = 4.5;
@@ -100,6 +102,15 @@ function section(css: string, start: string, end: string): string {
   return css.slice(from, to);
 }
 
+/** Resolve the client's shared aliases against the matching package theme. */
+function resolveSharedTokens(clientCss: string, paletteCss: string): string {
+  return clientCss.replace(/var\((--dui-[a-z-]+)\)/g, (_, name: string) => {
+    const declaration = paletteCss.match(new RegExp(`${name}:\\s*([^;]+);`));
+    expect(declaration, `shared token not found: ${name}`).not.toBeNull();
+    return declaration![1]!.trim();
+  });
+}
+
 /** The `H S% L%` triplet a token holds inside one section. */
 function hsl(sectionCss: string, name: string): Rgb {
   const m = sectionCss.match(
@@ -127,8 +138,20 @@ describe('destructive contrast', () => {
   // Light declarations live in `:root, .light { ... }`, dark ones in
   // `.dark { ... }`. Slicing by the block openers keeps the two
   // `--destructive` values apart.
-  const light = section(css, ':root,', '.dark {');
-  const dark = section(css, '.dark {', '.copilot-view-content');
+  const tokens = readFileSync(join(UI_ROOT, 'tokens.css'), 'utf8');
+  const light = resolveSharedTokens(
+    section(css, ':root,', '.dark {'),
+    section(tokens, ':root,', '@media')
+  );
+  const dark = resolveSharedTokens(
+    section(css, '.dark {', '.copilot-view-content'),
+    section(tokens, '\n.dark {', '\n}')
+  );
+
+  it('checks the package palette that the client actually consumes', () => {
+    // Copying literals back into the app would split ownership and bypass the package proof.
+    expect(css.match(/--destructive:\s*var\(--dui-destructive\)/g)).toHaveLength(2);
+  });
 
   // --- The math, pinned before it is trusted ---
 
@@ -350,13 +373,15 @@ function classUnit(src: string, lit: Literal, literals: Literal[]): string {
 }
 
 /** A class token the label on a red fill is painted with. */
-const LABEL = /(^|[\s'"`])(hover:)?text-(white|destructive-foreground)(?=[\s'"`]|$)/;
+const LABEL = /(^|[\s'"`])(hover:)?text-(white|(?:dui-)?destructive-foreground)(?=[\s'"`]|$)/;
 /** A solid (un-alpha'd) destructive fill. */
-const SOLID = /(^|[\s'"`])bg-destructive(?=[\s'"`]|$)/;
+const SOLID = /(^|[\s'"`])bg-(?:dui-)?destructive(?=[\s'"`]|$)/;
 /** A hover-only near-solid fill. */
-const HOVER_SOLID = /(^|[\s'"`])hover:bg-destructive\/(9\d|100)(?=[\s'"`]|$)/;
+const HOVER_SOLID = /(^|[\s'"`])hover:bg-(?:dui-)?destructive\/(9\d|100)(?=[\s'"`]|$)/;
 const DIMMED = /(^|[\s'"`])dark:bg-destructive\/60(?=[\s'"`]|$)/;
+const PACKAGE_DIMMED = /(^|[\s'"`])dui-dark:bg-dui-destructive\/60(?=[\s'"`]|$)/;
 const HOVER_DIMMED = /(^|[\s'"`])dark:hover:bg-destructive\/60(?=[\s'"`]|$)/;
+const PACKAGE_HOVER_DIMMED = /(^|[\s'"`])dui-dark:hover:bg-dui-destructive\/60(?=[\s'"`]|$)/;
 
 /**
  * The labelled red fills in `src` that skip the dark-mode dimming.
@@ -380,7 +405,10 @@ function undimmedFills(src: string): { offenders: string[]; inspected: number } 
     if (!LABEL.test(unit)) continue;
     inspected++;
     const solid = SOLID.test(unit);
-    if ((solid && !DIMMED.test(unit)) || (!solid && !HOVER_DIMMED.test(unit))) {
+    const packageFill = lit.text.includes('bg-dui-destructive');
+    const dimmed = packageFill ? PACKAGE_DIMMED : DIMMED;
+    const hoverDimmed = packageFill ? PACKAGE_HOVER_DIMMED : HOVER_DIMMED;
+    if ((solid && !dimmed.test(unit)) || (!solid && !hoverDimmed.test(unit))) {
       offenders.push(unit.replace(/\s+/g, ' ').slice(0, 100));
     }
   }
@@ -434,10 +462,27 @@ describe('solid destructive fills dim themselves in dark mode', () => {
     expect(undimmedFills(src)).toEqual({ offenders: [], inspected: 0 });
   });
 
-  it('every labelled solid fill in the app carries the dark dimming', () => {
+  it('catches namespaced package fills without their matching dark variant', () => {
+    const src = `x = 'bg-dui-destructive text-dui-destructive-foreground';`;
+    expect(undimmedFills(src).offenders).toHaveLength(1);
+    expect(
+      undimmedFills(src.replace("foreground'", "foreground dui-dark:bg-dui-destructive/60'"))
+    ).toEqual({
+      offenders: [],
+      inspected: 1,
+    });
+    expect(
+      undimmedFills(src.replace("foreground'", "foreground dark:bg-dui-destructive/60'")).offenders
+    ).toHaveLength(1);
+    const button = undimmedFills(readFileSync(join(UI_SRC, 'button.tsx'), 'utf8'));
+    expect(button.inspected).toBe(1);
+    expect(button.offenders).toEqual([]);
+  });
+
+  it('every labelled solid fill in the app and package carries the dark dimming', () => {
     const offenders: string[] = [];
     let inspected = 0;
-    for (const file of sourceFiles(SRC)) {
+    for (const file of [...sourceFiles(SRC), ...sourceFiles(UI_SRC)]) {
       const result = undimmedFills(readFileSync(file, 'utf8'));
       inspected += result.inspected;
       offenders.push(...result.offenders.map((o) => `${relative(SRC, file)}: ${o}`));

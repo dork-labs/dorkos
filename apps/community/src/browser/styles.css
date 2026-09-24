@@ -1,5 +1,7 @@
 @import 'tailwindcss';
-:root {
+@import '@dork-labs/ui/tailwind.css';
+:root,
+.light {
   color-scheme: light;
   --canvas: #f6f5f2;
   --panel: #fffefa;
@@ -24,7 +26,7 @@
     sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light):not(.dark) {
     color-scheme: dark;
     --canvas: #151a17;
     --panel: #1d2420;
@@ -40,6 +42,22 @@
     --shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
   }
 }
+.dark {
+  color-scheme: dark;
+  --canvas: #151a17;
+  --panel: #1d2420;
+  --panel-alt: #252e29;
+  --ink: #eef3ed;
+  --muted: #aab9ad;
+  --line: #3a493f;
+  --accent: #8bd7ab;
+  --accent-hover: #a9e8c2;
+  --accent-soft: #223b2b;
+  --danger: #ffaaa7;
+  --danger-soft: #442624;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -48,8 +66,8 @@ body {
   background: var(--canvas);
   color: var(--ink);
 }
-button,
-input,
+button:not([data-slot]),
+input:not([data-slot]),
 textarea,
 select {
   font: inherit;
@@ -57,7 +75,7 @@ select {
 button {
   cursor: pointer;
 }
-button:disabled {
+button:disabled:not([data-slot]) {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -69,7 +87,7 @@ button:disabled {
 }
 /* Still focusable and announced, so a keyboard or screen-reader user can learn why it is
    closed; the status text, not the fill, carries the meaning. */
-button[aria-disabled='true'] {
+button[aria-disabled='true']:not([data-slot]) {
   cursor: not-allowed;
   background: var(--panel-alt);
 }
@@ -79,7 +97,7 @@ a {
   text-decoration: underline;
   text-underline-offset: 0.18em;
 }
-:focus-visible {
+:focus-visible:not([data-slot]) {
   outline: 3px solid var(--accent);
   outline-offset: 3px;
 }

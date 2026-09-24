@@ -159,6 +159,12 @@ export const TASK_WRITE_POLICY = {
   // an agent must supply it. An operator-only verdict here would refuse every
   // proposal that did what it was asked to do.
   reason: 'agent-writable',
+  // Putting a package's schedule back on the package's own timing (DOR-2302).
+  // A timing choice, like `cron`, not a power one — and treated exactly like a
+  // cron change where it matters: a reset that changes when an approved
+  // schedule runs parks it for a person, the same as an agent's own cron would
+  // (`TaskStore.settleTimingChange`).
+  resetTiming: 'agent-writable',
   // WHICH backend does the work, and how hard it thinks (DOR-1615/DOR-1347).
   // Not a power choice: every runtime here runs under the SAME
   // `permissionMode`, which stays operator-only below, so moving a task from

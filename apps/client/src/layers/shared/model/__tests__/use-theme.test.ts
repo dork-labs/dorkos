@@ -12,10 +12,10 @@ beforeEach(() => {
   // light OS) and clear the root class the wiring keeps in sync.
   act(() => useThemeStore.setState({ theme: 'system', systemDark: false }));
   localStorage.clear();
-  document.documentElement.classList.remove('dark');
+  document.documentElement.classList.remove('dark', 'light');
 });
 afterEach(() => {
-  document.documentElement.classList.remove('dark');
+  document.documentElement.classList.remove('dark', 'light');
 });
 
 describe('useResolvedTheme', () => {
@@ -68,17 +68,20 @@ describe('useTheme — shared store (S2)', () => {
     expect(b.result.current).toBe('dark');
   });
 
-  it('keeps the root .dark class in sync with the resolved theme', () => {
+  it('keeps the root dark and light classes in sync with the resolved theme', () => {
     act(() => useThemeStore.getState().setTheme('dark'));
     expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('light')).toBe(false);
 
     act(() => useThemeStore.getState().setTheme('light'));
     expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(document.documentElement.classList.contains('light')).toBe(true);
 
     // Under "system" the resolved OS signal drives the class.
     act(() => useThemeStore.getState().setTheme('system'));
     act(() => useThemeStore.getState().setSystemDark(true));
     expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('light')).toBe(false);
   });
 
   it('persists the preference to localStorage', () => {
@@ -96,6 +99,7 @@ describe('useTheme — shared store (S2)', () => {
     act(() => useThemeStore.getState().setTheme('dark'));
     expect(result.current).toBe('dark');
     expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('light')).toBe(false);
 
     // A later OS change must NOT silently revert the explicit choice — the old
     // direct-classList override was reverted here by the matchMedia subscription.
@@ -103,6 +107,7 @@ describe('useTheme — shared store (S2)', () => {
     act(() => useThemeStore.getState().setSystemDark(false));
     expect(result.current).toBe('dark');
     expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('light')).toBe(false);
 
     // And it persisted like a user pick (the old direct toggle did not).
     expect(localStorage.getItem(STORAGE_KEY)).toBe('dark');

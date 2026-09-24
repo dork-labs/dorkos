@@ -31,6 +31,7 @@ dorkos/
 ├── apps/
 │   ├── client/           # @dorkos/client - React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)
 │   ├── community/        # @dorkos/community - Independent Hono/Postgres community service
+│   ├── design-system/    # @dorkos/design-system - Standalone shared UI catalog
 │   ├── server/           # @dorkos/server - Express 5 API (tsc, NodeNext)
 │   ├── site/             # @dorkos/site - Marketing site & docs (Next.js 16, Fumadocs)
 │   ├── desktop/          # @dorkos/desktop - Electron shell
@@ -51,6 +52,7 @@ dorkos/
 │   ├── operating-skills/ # @dorkos/operating-skills - First-party skill pack + version-stamped seeder
 │   ├── marketplace/      # @dorkos/marketplace - Package schemas, parser, validator, scaffolder
 │   ├── icons/            # @dorkos/icons - SVG icon & logo registry
+│   ├── ui/               # @dork-labs/ui - Portable UI primitives and namespaced theme CSS
 │   ├── evals/            # @dorkos/evals - Headless outcome-oracle eval harness
 │   ├── ci-steward/       # @dorkos/ci-steward - CI Steward engine: census, ledger, collector, verdicts
 │   ├── test-utils/       # @dorkos/test-utils - Mock factories, test helpers
@@ -129,7 +131,7 @@ Express **5** on `DORKOS_PORT` (default 4242, dev 6242) — mind Express 5 seman
 - `lib/dork-home.ts` is the single source of truth for the data directory (`~/.dork/` prod, `apps/server/.temp/.dork/` dev). `os.homedir()` is banned outside the six carve-outs in Hard Rule 3.
 - `lib/resolve-root.ts` resolves the default working directory; each app has its own Zod-validated `env.ts`.
 - Persistent user config: `~/.dork/config.json` via `conf` (`services/core/config-manager.ts`); Zod is the authoritative schema. Schema changes require a semver-keyed migration — `contributing/configuration.md` + the `adding-config-fields` skill.
-- External MCP server at `/mcp` (Streamable HTTP, stateless) exposes all DorkOS tools, including the 8 marketplace tools. Its auth is **fail-closed** (`middleware/mcp-auth.ts`): the per-instance local token gates every mutating call while login is off, per-user keys take over once login is on, and `MCP_API_KEY` is an optional static override for headless deployments — never the thing that turns auth on.
+- External MCP server at `/mcp` (Streamable HTTP, stateless) exposes all DorkOS tools, including the 9 marketplace tools. Its auth is **fail-closed** (`middleware/mcp-auth.ts`): the per-instance local token gates every mutating call while login is off, per-user keys take over once login is on, and `MCP_API_KEY` is an optional static override for headless deployments — never the thing that turns auth on.
 
 ### Sessions
 
@@ -145,7 +147,7 @@ One derived, rebuildable FTS5 index over everything that was said, read by `GET 
 
 ### Client (`apps/client/src/`)
 
-React 19 + Vite 6 + Tailwind 4 + shadcn/ui (new-york, neutral gray). **Feature-Sliced Design** with the inviolable layer rule `shared ← entities ← features ← widgets` (`.claude/rules/fsd-layers.md`); layers in `src/layers/`, app shell at `src/` root may import any layer. Always import from barrel `index.ts`, never internal paths. Routing: TanStack Router, code-based routes in `router.tsx` — `/`, `/activity`, `/team` (`/agents` redirects to it), `/session`, `/tasks`, `/channels`, `/workspaces`, `/connections`, `/marketplace`, `/marketplace/sources`, `/feedback-requests`. `/dev/*` is the one path the router never sees — `main.tsx` mounts the Dev Playground on it directly, and only under `import.meta.env.DEV`. Embedded mode (Obsidian) bypasses the router. State: Zustand for UI, TanStack Query for server state (`contributing/state-management.md`). `motion` for animation, `streamdown` for markdown; design system in `contributing/design-system.md`.
+React 19 + Vite 6 + Tailwind 4 + shadcn/ui (new-york, neutral gray). **Feature-Sliced Design** with the inviolable layer rule `shared ← entities ← features ← widgets` (`.claude/rules/fsd-layers.md`); layers in `src/layers/`, app shell at `src/` root may import any layer. Always import from barrel `index.ts`, never internal paths. Routing: TanStack Router, code-based routes in `router.tsx` — `/`, `/activity`, `/team` (`/agents` redirects to it), `/session`, `/tasks`, `/channels`, `/workspaces`, `/connections`, `/marketplace`, `/marketplace/sources`, `/feedback-requests`. `/dev/*` is the one path the router never sees — `main.tsx` mounts the Dev Playground on it directly, and only under `import.meta.env.DEV`. Embedded mode (Obsidian) bypasses the router. State: Zustand for UI, TanStack Query for server state (`contributing/state-management.md`). `motion` for animation, `streamdown` for markdown; design system in `contributing/design-system.md`. Portable Button/Input/Field/Notice implementations live in `packages/ui` behind the client facade; ownership and release rules are in `contributing/shared-ui.md`.
 
 ### Site, Shared, CLI
 

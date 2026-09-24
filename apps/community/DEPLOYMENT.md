@@ -21,6 +21,7 @@ Set these values before starting the service. Keep secrets in your deployment's 
 | `COMMUNITY_S3_BUCKET`, `COMMUNITY_S3_REGION`                           | S3 storage         | Bucket and region for attachment files.                                                                       |
 | `COMMUNITY_S3_ENDPOINT`                                                | No                 | Endpoint for a compatible object store.                                                                       |
 | `COMMUNITY_S3_ACCESS_KEY_ID`, `COMMUNITY_S3_SECRET_ACCESS_KEY`         | No                 | Credentials for an S3-compatible store. Set both, or let the host supply AWS credentials.                     |
+| `COMMUNITY_ERASURE_JOURNAL`                                            | No                 | Absolute path of a file that records each finished erasure, by id only. Keep it outside your backups.         |
 
 The service checks each setting before it opens its HTTP port. It rejects an incomplete sign-in pair, an incomplete invitation-key rotation pair, a non-HTTPS public address outside local development, or a filesystem path that is not absolute.
 

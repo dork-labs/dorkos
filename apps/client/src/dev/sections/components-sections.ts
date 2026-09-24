@@ -3,7 +3,7 @@ import type { PlaygroundSection } from '../playground-registry';
 /**
  * Component sections from ComponentsPage.
  *
- * Sources: LayoutShowcases, ButtonShowcases, FeedbackShowcases,
+ * Sources: LayoutShowcases, ControlShowcases, FeedbackShowcases,
  * NavigationShowcases, SidebarShowcases, OverlayShowcases, DataDisplayShowcases.
  */
 export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
@@ -34,24 +34,7 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Layout',
     keywords: ['card', 'surface', 'panel', 'tile', 'border', 'shadow', 'radius', 'interactive'],
   },
-  // ButtonShowcases
-  {
-    id: 'button',
-    title: 'Button',
-    page: 'components',
-    category: 'Buttons',
-    keywords: [
-      'btn',
-      'click',
-      'action',
-      'variant',
-      'destructive',
-      'ghost',
-      'outline',
-      'brand',
-      'link',
-    ],
-  },
+  // ControlShowcases
   {
     id: 'press-ladder',
     title: 'Press ladder',

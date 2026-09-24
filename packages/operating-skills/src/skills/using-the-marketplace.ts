@@ -5,10 +5,10 @@ import { TOOL_NAME_NOTE } from '../tool-name-note.js';
 export const usingTheMarketplace: OperatingSkill = {
   name: 'using-the-marketplace',
   description:
-    'Use when finding, inspecting, installing, or removing a DorkOS marketplace package ' +
+    'Use when finding, inspecting, installing, updating, or removing a DorkOS marketplace package ' +
     '(agent, plugin, skill pack, or adapter), or reading marketplace sources. Covers search, ' +
-    'the install confirmation flow, the uninstall approval flow, listing what is installed, and ' +
-    'why only a person may add or remove a source.',
+    'the install confirmation flow, checking for and applying updates, the uninstall approval ' +
+    'flow, listing what is installed, and why only a person may add or remove a source.',
   body: `# Using the marketplace
 
 ${TOOL_NAME_NOTE}
@@ -32,7 +32,10 @@ Every operation here is a capability, so each one is also reachable by id with
 ## See what is installed (tier: observe)
 
 - Tool: \`marketplace_list_installed\` (filter by \`type\`). One entry per install
-  across scopes, tagged \`global\` / \`agent-local\` / \`override\`.
+  across scopes, tagged \`global\` / \`agent-local\` / \`override\`. Pass
+  \`checkUpdates: true\` to also get an \`update\` block per entry (\`status\`,
+  \`latestVersion\`, \`note\`). It is slower, because it checks each package's
+  marketplace, so only ask when you need to know what is out of date.
 - Sources: \`marketplace_list_marketplaces\` lists configured sources with their
   enabled flag and package counts.
 
@@ -59,6 +62,20 @@ the user's machine.
 the running server. Use \`--marketplace\` to disambiguate when several sources
 carry the same package name, or \`--source\` for an explicit Git / marketplace.json
 URL.
+
+## Update installed packages (tier: act)
+
+\`marketplace_update\` checks installed packages for a newer version and, by
+default, changes nothing: one entry per installation, with \`status\`
+(\`update-available\`, \`current\`, or \`unknown\` with a \`note\` saying why), the
+versions, and where it is installed (\`installPath\`). Narrow it with \`names\` or
+\`installPaths\`.
+
+To install updates, call it with \`apply: true\`. It uses the \`confirmationToken\`
+handshake above; the \`updates\` it returns list what each new version runs, so
+tell the user that, wait, then call again with the SAME arguments plus the token.
+A linked install (a working copy) is never reinstalled. From a shell,
+\`dorkos update\` checks and \`dorkos update --apply\` installs.
 
 ## Remove a package (tier: destructive)
 
@@ -128,8 +145,9 @@ to a public marketplace is a separate step that is not part of this flow.
 
 ## Rule
 
-Installing, uninstalling, and scaffolding all change the user's system. State
-plainly what you are about to do, complete whichever gate the tool asks for
-(\`confirmationToken\` for install and scaffold, \`approvalToken\` for uninstall),
+Installing, updating, uninstalling, and scaffolding all change the user's system.
+State plainly what you are about to do, complete whichever gate the tool asks for
+(\`confirmationToken\` for install, update and scaffold, \`approvalToken\` for
+uninstall),
 then report what landed.`,
 };

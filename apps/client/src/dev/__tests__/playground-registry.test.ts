@@ -40,6 +40,15 @@ import {
 } from '../playground-config';
 
 describe('playground-registry', () => {
+  it('leaves portable pilot examples to the shared catalog', () => {
+    // These anchors moved with the package-owned primitives; a second local
+    // gallery would let the client and catalog drift independently again.
+    const titles = new Set(PLAYGROUND_REGISTRY.map((section) => section.title));
+    for (const moved of ['Semantic Colors', 'Button', 'Input', 'Label']) {
+      expect(titles.has(moved), `${moved} still has a client-owned pilot gallery`).toBe(false);
+    }
+  });
+
   it('has no duplicate section IDs across the full registry', () => {
     const ids = PLAYGROUND_REGISTRY.map((s) => s.id);
     const unique = new Set(ids);
@@ -159,6 +168,17 @@ describe('playground-config', () => {
  * anchor id, so the tag is the ground truth and the registry is what must match it.
  */
 const DEV_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+describe('playground and catalog navigation', () => {
+  it('links to the catalog through a configurable address', () => {
+    // The pilot sections have a new owner; the local playground must still
+    // provide a visible route to it when its port changes between worktrees.
+    const shell = readFileSync(join(DEV_DIR, 'DevPlayground.tsx'), 'utf8');
+    const link = readFileSync(join(DEV_DIR, 'catalog-link.ts'), 'utf8');
+    expect(shell).toContain('<a href={CATALOG_URL}>');
+    expect(link).toContain('VITE_DORKOS_CATALOG_URL');
+  });
+});
 
 /** Directories whose `.tsx` files may render a `<PlaygroundSection>`. */
 const SECTION_DIRS = ['showcases', 'pages'];

@@ -68,7 +68,7 @@ import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskReconciler } from '../../services/tasks/task-reconciler.js';
 import { ScheduleIdentityRegistry } from '../../services/tasks/schedule-identity.js';
 import { skillsRoot } from '../../services/tasks/__tests__/task-root-fixtures.js';
-import { TaskStore } from '../../services/tasks/task-store.js';
+import { TaskStore, type UpdateTaskOptions } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
 const fixtureTarget = swappableServer();
@@ -538,9 +538,21 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
     const before = await fs.readFile(filePath, 'utf-8');
     const id = seedParked('owned', filePath, '0 9 * * *');
 
-    const res = await request(fixtureServer).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
+    // What it DOES is the package's to say, so a prompt edit is refused...
+    const refused = await request(fixtureServer)
+      .patch(`/api/tasks/${id}`)
+      .send({ prompt: 'Do another thing.' });
+    expect(refused.status).toBe(409);
+    expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
 
-    expect(res.status).toBe(409);
+    // ...and WHEN it runs is the person's (DOR-2302): the new timing lands on
+    // the row, and the package's file is still left exactly as it shipped.
+    const retimed = await request(fixtureServer)
+      .patch(`/api/tasks/${id}`)
+      .send({ cron: '0 21 * * *' });
+    expect(retimed.status).toBe(200);
+    expect(retimed.body.cron).toBe('0 21 * * *');
+    expect(retimed.body.defaultCron).toBe('0 9 * * *');
     expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
   });
 
@@ -556,13 +568,15 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
     // Stand in for the watcher firing between the two writes.
     const realUpdate = store.updateTask.bind(store);
     let raced = false;
-    vi.spyOn(store, 'updateTask').mockImplementation((taskId, data) => {
-      if (!raced) {
-        raced = true;
-        realUpdate(taskId, { status: 'pending_approval' });
+    vi.spyOn(store, 'updateTask').mockImplementation(
+      (taskId, data, options?: UpdateTaskOptions) => {
+        if (!raced) {
+          raced = true;
+          realUpdate(taskId, { status: 'pending_approval' });
+        }
+        return realUpdate(taskId, data, options ?? { timingLandsOn: 'file' });
       }
-      return realUpdate(taskId, data);
-    });
+    );
 
     const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)

@@ -1,0 +1,43 @@
+/* Import once after tailwindcss in a Tailwind 4 consumer. */
+@import './tokens.css';
+
+@custom-variant dui-dark {
+  &:where(.dark, .dark *):not(:where(.light, .light *)) {
+    @slot;
+  }
+  /* A dark island inside an explicit light region takes back its own theme. */
+  &:where(.light .dark, .light .dark *):not(:where(.light .dark .light, .light .dark .light *)) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not(.light):not(.dark) *):not(:where(.light, .light *)) {
+      @slot;
+    }
+  }
+}
+
+@source './dist/**/*.js';
+@theme inline {
+  --color-dui-background: hsl(var(--dui-background));
+  --color-dui-foreground: hsl(var(--dui-foreground));
+  --color-dui-card: hsl(var(--dui-card));
+  --color-dui-card-foreground: hsl(var(--dui-card-foreground));
+  --color-dui-popover: hsl(var(--dui-popover));
+  --color-dui-popover-foreground: hsl(var(--dui-popover-foreground));
+  --color-dui-primary: hsl(var(--dui-primary));
+  --color-dui-primary-foreground: hsl(var(--dui-primary-foreground));
+  --color-dui-secondary: hsl(var(--dui-secondary));
+  --color-dui-secondary-foreground: hsl(var(--dui-secondary-foreground));
+  --color-dui-muted: hsl(var(--dui-muted));
+  --color-dui-muted-foreground: hsl(var(--dui-muted-foreground));
+  --color-dui-accent: hsl(var(--dui-accent));
+  --color-dui-accent-foreground: hsl(var(--dui-accent-foreground));
+  --color-dui-destructive: hsl(var(--dui-destructive));
+  --color-dui-destructive-foreground: hsl(var(--dui-destructive-foreground));
+  --color-dui-border: hsl(var(--dui-border));
+  --color-dui-input: hsl(var(--dui-input));
+  --color-dui-ring: hsl(var(--dui-ring));
+  --color-dui-brand: hsl(var(--dui-brand));
+  --color-dui-brand-foreground: hsl(var(--dui-brand-foreground));
+  --color-dui-success: hsl(var(--dui-success));
+}

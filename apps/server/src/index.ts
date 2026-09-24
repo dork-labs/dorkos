@@ -4350,6 +4350,7 @@ async function start() {
       fetcher: marketplaceFetcher,
       cache: marketplaceCache,
       uninstallFlow: marketplaceUninstallFlow,
+      updateFlow: marketplaceUpdateFlow,
       confirmationProvider,
       onPluginsChanged,
       listAgentScopes,

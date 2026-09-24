@@ -49,6 +49,8 @@ const NOT_READING_INSTALLS: Record<string, string> = {
     'reads the contents of the package being installed',
   'apps/server/src/services/marketplace/permission-preview.ts':
     'reads the contents of the package being previewed',
+  'apps/server/src/services/marketplace/lib/package-skills.ts':
+    'reads the skills of the package being previewed, not an install root',
   'apps/server/src/services/marketplace/flows/uninstall.ts':
     'reads the staged copy of the package it is removing',
   'packages/marketplace/src/package-validator.ts': 'reads the contents of a package',

@@ -148,6 +148,9 @@ function makeMockTasksStore(overrides: Partial<Record<string, ReturnType<typeof 
     upsertFromFile: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }),
     recordProposal: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }),
     updateTask: vi.fn().mockReturnValue(null),
+    // A row-only update (no file written) is settled against the approval
+    // (DOR-2302); these cases never change a package's timing, so nothing moves.
+    settleTimingChange: vi.fn().mockReturnValue('unchanged'),
     deleteTask: vi.fn().mockReturnValue(false),
     listRuns: vi.fn().mockReturnValue([]),
     ...overrides,
@@ -475,7 +478,9 @@ describe('MCP Tool Handlers', () => {
       // `acceptEdits` in the same call that lands the new prompt.
       expect(updateTask).toHaveBeenCalledWith(
         'u1',
-        expect.objectContaining({ prompt: 'a different prompt', permissionMode: 'acceptEdits' })
+        expect.objectContaining({ prompt: 'a different prompt', permissionMode: 'acceptEdits' }),
+        // Where the timing lands (DOR-2302); not this case's concern.
+        expect.anything()
       );
     });
 

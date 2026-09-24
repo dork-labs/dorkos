@@ -16,6 +16,12 @@ function makePreview(overrides: Partial<PreviewPayload> = {}): PreviewPayload {
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],
     secrets: [],
@@ -88,6 +94,69 @@ describe('renderPreview', () => {
 
     expect(out).toContain('Commands we could not read:');
     expect(out).toContain('hooks/hooks.json');
+  });
+
+  it('prints every program the package starts on its own, each argument quoted', () => {
+    // Purpose: MCP servers, language servers, monitors and bin/ commands run
+    // without being asked for by name; the terminal must name them like hooks.
+    const out = stripAnsi(
+      renderPreview(
+        'flow',
+        '0.5.0',
+        makePreview({
+          mcpServers: [
+            { name: 'db', transport: 'stdio', command: 'npx', args: ['-y', 'db mcp'] },
+            { name: 'web', transport: 'http', url: 'https://mcp.example.test' },
+          ],
+          lspServers: [{ name: 'go', command: 'gopls', args: ['serve'] }],
+          monitors: [{ name: 'deploy', command: './poll.sh', when: 'always' }],
+          executables: ['git'],
+          unreadableDeclarations: [{ path: '.mcp.json', kind: 'mcp-server', entry: 'odd' }],
+        })
+      )
+    );
+
+    expect(out).toContain('Programs this package starts on its own:');
+    expect(out).toContain('"npx" "-y" "db mcp"');
+    expect(out).toContain('connects to "https://mcp.example.test"');
+    expect(out).toContain('Language server go');
+    expect(out).toContain('"gopls" "serve"');
+    expect(out).toContain('Background monitor deploy (always)');
+    expect(out).toContain('"git"');
+    expect(out).toContain('does not start them');
+    expect(out).toContain('.mcp.json (odd)');
+  });
+
+  it("names a skill's hook as the skill's, and the tools a skill may use without asking", () => {
+    // Purpose: a skill's frontmatter hooks and allowed-tools run on the model's
+    // choice, not the person's; the terminal must show both.
+    const out = stripAnsi(
+      renderPreview(
+        'flow',
+        '0.5.0',
+        makePreview({
+          hooks: [{ event: 'Stop', command: 'echo hi', source: 'skills/all/SKILL.md' }],
+          skillTools: [{ source: 'skills/all/SKILL.md', skill: 'all', tools: ['Bash(curl:*)'] }],
+        })
+      )
+    );
+    expect(out).toContain('while skills/all/SKILL.md is in use');
+    expect(out).toContain('Tools a skill may use without asking you:');
+    expect(out).toContain('"Bash(curl:*)"');
+  });
+
+  it('shows a hidden direction-changing character instead of letting it rewrite the line', () => {
+    // Purpose: a right-to-left override can make a command read as something
+    // it is not; the person must see it is there.
+    const out = stripAnsi(
+      renderPreview(
+        'flow',
+        '0.5.0',
+        makePreview({ hooks: [{ event: 'Stop', command: 'echo \u202Egnp.exe' }] })
+      )
+    );
+    expect(out).toContain('echo <U+202E>gnp.exe');
+    expect(out).not.toContain('\u202E');
   });
 
   it('names a schedule permission mode in plain words, never as a raw id', () => {

@@ -29,6 +29,7 @@ import { capabilitiesDomain, UNREGISTERED_TOOL_FAMILIES } from '../capabilities-
 import {
   capabilityCatalogSchema,
   DEFAULT_CAPABILITY_LIMIT,
+  FULL_DETAIL_THRESHOLD,
   type ListCapabilitiesResult,
 } from '../catalog-projection.js';
 import { composeDorkOsCapabilityRegistry } from '../dorkos-registry.js';
@@ -120,7 +121,7 @@ describe('list_capabilities filtering + pagination (DOR-940)', () => {
     }
   });
 
-  it('domain:"marketplace" returns exactly the marketplace.* capabilities, at full detail', async () => {
+  it('domain:"marketplace" returns exactly the marketplace.* capabilities', async () => {
     const expected = allIds.filter((id) => id.startsWith('marketplace.')).sort();
     expect(expected.length).toBeGreaterThan(0);
     expect(expected.length).toBeLessThan(allIds.length); // a real filter, not the whole set
@@ -129,6 +130,15 @@ describe('list_capabilities filtering + pagination (DOR-940)', () => {
     expect(res.total).toBe(expected.length);
     expect(res.returned).toBe(expected.length);
     expect(res.capabilities.map((c) => c.id).sort()).toEqual(expected);
+  });
+
+  it('a filter selective enough comes back at full detail without being asked', async () => {
+    // `capabilities` is one capability, well under FULL_DETAIL_THRESHOLD. (The
+    // marketplace domain, which this used to use, grew past it with
+    // `marketplace.update`, and a filter that broad stays compact on purpose.)
+    const res = await invoke({ domain: 'capabilities' });
+    expect(res.total).toBeGreaterThan(0);
+    expect(res.total).toBeLessThanOrEqual(FULL_DETAIL_THRESHOLD);
     // A filter narrows detail to full, so the schemas are back for the few matches.
     expect(res.detail).toBe('full');
     for (const entry of res.capabilities) expect(entry).toHaveProperty('inputSchema');

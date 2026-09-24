@@ -66,6 +66,10 @@ const schema = z.object({
     100
   ),
   COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE: integer('COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE', 5, 20),
+  COMMUNITY_ERASURE_JOURNAL: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().min(1).optional()
+  ),
   COMMUNITY_GOOGLE_CLIENT_ID: z.string().optional(),
   COMMUNITY_GOOGLE_CLIENT_SECRET: z.string().optional(),
   COMMUNITY_GITHUB_CLIENT_ID: z.string().optional(),
@@ -119,6 +123,9 @@ export function parseConfig(env: Record<string, unknown>) {
       'COMMUNITY_PUBLIC_URL must be a bare origin without credentials, path, query or fragment'
     );
   }
+  if (value.COMMUNITY_ERASURE_JOURNAL && !isAbsolute(value.COMMUNITY_ERASURE_JOURNAL)) {
+    throw new Error('COMMUNITY_ERASURE_JOURNAL must be an absolute path');
+  }
   const storage = (() => {
     if (value.COMMUNITY_STORAGE_DRIVER === 'filesystem') {
       if (!value.COMMUNITY_STORAGE_PATH || !isAbsolute(value.COMMUNITY_STORAGE_PATH)) {
@@ -169,6 +176,8 @@ export function parseConfig(env: Record<string, unknown>) {
     storage,
     port: value.COMMUNITY_PORT,
     testRuntime: value.COMMUNITY_TEST_RUNTIME === 'true',
+    /** Where each completed erasure's id-only line is also appended, outside the database. */
+    erasureJournal: value.COMMUNITY_ERASURE_JOURNAL,
     oauth: {
       google:
         value.COMMUNITY_GOOGLE_CLIENT_ID && value.COMMUNITY_GOOGLE_CLIENT_SECRET

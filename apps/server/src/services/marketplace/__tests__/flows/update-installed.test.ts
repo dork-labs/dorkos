@@ -9,10 +9,13 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
+  applyApprovedUpdates,
   applyInstalledUpdates,
+  checkInstalledUpdates,
   type InstalledUpdatesDeps,
   type ReinstallGateInput,
 } from '../../flows/update-installed.js';
+import type { InstallationRecord } from '../../installed-scanner.js';
 
 /** Write a minimal plugin install at `root`. */
 async function stage(root: string, name: string): Promise<void> {
@@ -94,5 +97,155 @@ describe('applyInstalledUpdates', () => {
       { projectPath: undefined, packageName: 'alpha', action: 'install' },
       { projectPath: agentPath, packageName: 'alpha', action: 'install' },
     ]);
+  });
+});
+
+describe('checkInstalledUpdates', () => {
+  let dorkHome: string;
+  let checkInstallations: ReturnType<typeof vi.fn>;
+  let deps: InstalledUpdatesDeps;
+
+  beforeEach(async () => {
+    dorkHome = await mkdtemp(path.join(tmpdir(), 'update-installed-check-'));
+    await stage(path.join(dorkHome, 'plugins', 'alpha'), 'alpha');
+    await stage(path.join(dorkHome, 'plugins', 'beta'), 'beta');
+    checkInstallations = vi.fn(async () => ({ checks: [] }));
+    deps = {
+      dorkHome,
+      updateFlow: { checkInstallations } as unknown as InstalledUpdatesDeps['updateFlow'],
+      onPluginsChanged: vi.fn(),
+    };
+  });
+
+  afterEach(async () => {
+    await rm(dorkHome, { recursive: true, force: true });
+  });
+
+  it('checks only the selected installations, advisory', async () => {
+    // Purpose: an advisory check of one package must not fetch every other
+    // package's marketplace, and must never apply.
+    await checkInstalledUpdates(deps, undefined, { names: ['beta'] });
+
+    const [[req]] = checkInstallations.mock.calls as [
+      [{ installations: InstallationRecord[]; apply?: boolean }],
+    ];
+    expect(req.installations.map((r) => r.package.name)).toEqual(['beta']);
+    expect(req.apply).toBeUndefined();
+  });
+
+  it('refuses an unknown name before checking anything', async () => {
+    // Purpose: a typo must say so, not answer with an empty (all-clear) list.
+    await expect(checkInstalledUpdates(deps, undefined, { names: ['nope'] })).rejects.toThrow(
+      'Package not installed: nope'
+    );
+    expect(checkInstallations).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyApprovedUpdates', () => {
+  let dorkHome: string;
+  let planInstallations: ReturnType<typeof vi.fn>;
+  let applyPlan: ReturnType<typeof vi.fn>;
+  let onPluginsChanged: ReturnType<typeof vi.fn<InstalledUpdatesDeps['onPluginsChanged']>>;
+  let deps: InstalledUpdatesDeps;
+  const disclosed = { hooks: [], schedules: [], mcpServers: [] };
+
+  beforeEach(async () => {
+    dorkHome = await mkdtemp(path.join(tmpdir(), 'update-installed-approved-'));
+    await stage(path.join(dorkHome, 'plugins', 'alpha'), 'alpha');
+    await stage(path.join(dorkHome, 'plugins', 'beta'), 'beta');
+    const alpha = path.join(dorkHome, 'plugins', 'alpha');
+    const beta = path.join(dorkHome, 'plugins', 'beta');
+    planInstallations = vi.fn(async () => ({
+      checks: [
+        {
+          packageName: 'alpha',
+          installPath: alpha,
+          type: 'plugin',
+          scope: 'global',
+          status: 'update-available',
+          installedVersion: '1.0.0',
+          latestVersion: '2.0.0',
+          disclosed,
+        },
+        {
+          packageName: 'beta',
+          installPath: beta,
+          type: 'plugin',
+          scope: 'global',
+          status: 'current',
+          installedVersion: '1.0.0',
+          latestVersion: '1.0.0',
+        },
+      ],
+      steps: [],
+    }));
+    applyPlan = vi.fn(async () => ({
+      checks: [{ packageName: 'alpha', scope: 'global', applied: { packageName: 'alpha' } }],
+    }));
+    onPluginsChanged = vi.fn<InstalledUpdatesDeps['onPluginsChanged']>();
+    deps = {
+      dorkHome,
+      updateFlow: {
+        checkInstallations: vi.fn(),
+        planInstallations,
+        applyPlan,
+      } as unknown as InstalledUpdatesDeps['updateFlow'],
+      onPluginsChanged,
+    };
+  });
+
+  afterEach(async () => {
+    await rm(dorkHome, { recursive: true, force: true });
+  });
+
+  it('asks about exactly the stale installations, with what each new version runs', async () => {
+    // Purpose: the person approves what will change, not every installed package.
+    const gate = vi.fn(async () => undefined);
+
+    await applyApprovedUpdates(deps, {}, gate);
+
+    expect(planInstallations).toHaveBeenCalledWith(expect.objectContaining({ disclose: true }));
+    expect(gate).toHaveBeenCalledWith([
+      expect.objectContaining({
+        packageName: 'alpha',
+        installPath: path.join(dorkHome, 'plugins', 'alpha'),
+        installedVersion: '1.0.0',
+        latestVersion: '2.0.0',
+        disclosed,
+      }),
+    ]);
+  });
+
+  it('applies only what was approved, held to what it was shown to run, and refreshes it', async () => {
+    const outcome = await applyApprovedUpdates(deps, {}, async () => undefined);
+
+    expect('result' in outcome).toBe(true);
+    const [, approved] = applyPlan.mock.calls[0] as [unknown, Map<string, unknown>];
+    expect([...approved.entries()]).toEqual([[path.join(dorkHome, 'plugins', 'alpha'), disclosed]]);
+    expect(onPluginsChanged).toHaveBeenCalledWith({
+      projectPath: undefined,
+      packageName: 'alpha',
+      action: 'install',
+    });
+  });
+
+  it('runs nothing when the gate refuses', async () => {
+    const outcome = await applyApprovedUpdates(deps, {}, async () => 'no');
+
+    expect(outcome).toEqual({ refused: 'no' });
+    expect(applyPlan).not.toHaveBeenCalled();
+  });
+
+  it('does not ask at all when nothing is stale', async () => {
+    // Purpose: a card with nothing on it is a card a person learns to click past.
+    planInstallations.mockResolvedValue({ checks: [], steps: [] });
+    const gate = vi.fn(async () => undefined);
+
+    const outcome = await applyApprovedUpdates(deps, {}, gate);
+
+    expect(gate).not.toHaveBeenCalled();
+    expect(applyPlan).not.toHaveBeenCalled();
+    expect(outcome).toEqual({ result: { checks: [] } });
   });
 });

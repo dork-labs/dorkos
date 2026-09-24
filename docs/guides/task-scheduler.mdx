@@ -162,6 +162,14 @@ Because a job on a timer runs with nobody watching, giving it a level that never
 
 One thing it cannot do: a schedule that came inside an installed package lives in that package's folder, which DorkOS will not write to. Approving it works; approving it at a higher level is turned down with a note saying why.
 
+### Changing when a package's schedule runs
+
+You can still change **when** a package's schedule runs. Open it from the Schedules tab, choose **Edit**, and change the time or the timezone under **Schedule**. DorkOS keeps your timing itself, so the package's folder stays as it shipped and your choice survives the package's updates. The schedule stays approved, because you made the change.
+
+The row then says **Your timing**. Open it to see the package's own timing, and choose **Reset to the package's default** to go back to it. If an agent changes when one of these schedules runs, the schedule stops and waits for you to approve it again.
+
+What the schedule does, its instructions and its name, still belongs to the package. To change those, edit the package or make your own copy of the skill.
+
 ## Create one in DorkOS
 
 Prefer buttons to files? The Schedules tab builds the same thing for you.

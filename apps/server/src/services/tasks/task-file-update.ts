@@ -163,17 +163,27 @@ export function fileBackedChanges(
  * The file-backed fields a PACKAGE-OWNED schedule may still change, because
  * they can be applied to the row alone.
  *
- * One field, and the reasoning is the refusal's own promise: "you can switch
- * this schedule on or off here; to change what it does, edit the package". The
- * switch is the person's decision about a schedule they did not write, and it
- * has nowhere to live but the row — DorkOS never writes a file inside somebody
- * else's checkout. Everything else in {@link FILE_BACKED_COLUMN} describes what
- * the schedule DOES, which is the package's to say and stays refused.
+ * The reasoning is the refusal's own promise: "you can switch this schedule on
+ * or off, or change when it runs, here; to change what it does, edit the
+ * package". Those are the person's decisions about a schedule they did not
+ * write, and they have nowhere to live but the row — DorkOS never writes a
+ * file inside somebody else's checkout.
+ *
+ * - `enabled` is the switch (FB-26), kept on the row by the sync
+ *   (`file-sync-gates.ts`, `keepsRowEnabled`).
+ * - `cron` and `timezone` become the row's timing OVERRIDE (DOR-2302): the
+ *   file's timing stays the default the sync keeps writing, and the person's
+ *   wins (`timing/effective-timing.ts`). A change to either is still a change
+ *   to when the approved work runs, which the caller settles
+ *   (`TaskStore.settleTimingChange`).
+ *
+ * Everything else in {@link FILE_BACKED_COLUMN} describes what the schedule
+ * DOES, which is the package's to say and stays refused.
  *
  * `status` is absent because it was never here: it lives in the row and nowhere
  * else, so approving and parking never touched the file in the first place.
  */
-const ROW_ONLY_WHEN_PACKAGE_OWNED: ReadonlySet<string> = new Set(['enabled']);
+const ROW_ONLY_WHEN_PACKAGE_OWNED: ReadonlySet<string> = new Set(['enabled', 'cron', 'timezone']);
 
 /**
  * Whether a package-owned schedule can take this change without its file being

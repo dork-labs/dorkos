@@ -3,8 +3,8 @@
  *
  * The marketplace tool surface itself (`marketplace_search`, `marketplace_get`,
  * `marketplace_list_marketplaces`, `marketplace_list_installed`,
- * `marketplace_recommend`, `marketplace_install`, `marketplace_uninstall`,
- * `marketplace_create_package`) is declared once as the {@link marketplaceDomain}
+ * `marketplace_recommend`, `marketplace_install`, `marketplace_update`,
+ * `marketplace_uninstall`, `marketplace_create_package`) is declared once as the {@link marketplaceDomain}
  * capability set and generated onto both MCP servers by the Capability Registry
  * projection (`core/external-mcp/capability-mcp-tools.ts` and the in-session
  * `capability-mcp-tools.ts`) — there is no marketplace-specific registration
@@ -24,6 +24,7 @@ import type { MarketplaceSourceManager } from '../marketplace/marketplace-source
 import type { PackageFetcher } from '../marketplace/package-fetcher.js';
 import type { MarketplaceCache } from '../marketplace/marketplace-cache.js';
 import type { UninstallFlow } from '../marketplace/flows/uninstall.js';
+import type { UpdateFlow } from '../marketplace/flows/update.js';
 import type { AgentScopeRef } from '../marketplace/installed-scanner.js';
 import type { NotifyPluginsChanged } from '../marketplace/types.js';
 
@@ -51,11 +52,17 @@ export interface MarketplaceMcpDeps {
   cache: MarketplaceCache;
   /** Uninstall flow used by `marketplace_uninstall`. */
   uninstallFlow: UninstallFlow;
+  /**
+   * The server's one update flow, shared with the HTTP routes so both surfaces
+   * share its check memos and its server-wide cap on concurrent checks. Used by
+   * `marketplace_update` and by `marketplace_list_installed` with `checkUpdates`.
+   */
+  updateFlow: Pick<UpdateFlow, 'checkInstallations' | 'planInstallations' | 'applyPlan'>;
   /** Confirmation provider that gates mutation tools. */
   confirmationProvider: ConfirmationProvider;
   /**
    * Fired after an approved `marketplace_install` / `marketplace_uninstall`
-   * succeeds, so a package an agent installs is set up exactly as one installed
+   * succeeds, and once per reinstall an approved `marketplace_update` lands, so a package an agent installs is set up exactly as one installed
    * from the app. The same notifier the HTTP router receives (DOR-2057).
    */
   onPluginsChanged: NotifyPluginsChanged;

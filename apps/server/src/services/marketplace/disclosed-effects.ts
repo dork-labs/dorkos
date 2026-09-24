@@ -18,10 +18,29 @@
  * ## What is in
  *
  * Every hook command string (with the event and matcher that decide WHEN it
- * runs) and every scheduled job (with the cron and permission mode that decide
- * when it fires and how much it may do unattended). These are the parts of the
- * preview that execute on their own, with nothing between the install and the
- * running command except the clock.
+ * runs), every scheduled job (with the cron and permission mode that decide
+ * when it fires and how much it may do unattended), and every program the
+ * package starts on its own (DOR-2195): MCP servers (the command and arguments,
+ * or the address), language servers, background monitors, and the names of the
+ * commands it puts on the agent's `PATH` (a `bin/git` runs whenever the agent
+ * runs git). These are the parts of the preview that execute on their own: a
+ * global plugin is loaded into every session, and they start with it.
+ *
+ * Skills and commands are IN for what their frontmatter makes run: the model
+ * invokes a skill by its description, not only by name, and Claude Code
+ * registers a skill's frontmatter `hooks` while it is in use (no exclusion for
+ * plugin skills), so those hooks are bound with the plugin's own, each tagged
+ * with its `source`, and each skill's `allowed-tools` (the tools it may use
+ * without a prompt) is bound as `skillTools`. The skill's body is prose and is
+ * out, like any file.
+ *
+ * Agents are out with evidence: Claude Code ignores `hooks`, `mcpServers` and
+ * `permissionMode` in a plugin agent's frontmatter (plugins reference, "not
+ * supported in plugins"), so a plugin agent adds no program and no permission
+ * of its own. Workflows run only when invoked by name.
+ *
+ * A known leftover: an output style marked `force-for-plugin` changes the
+ * instructions every session gets. That is not a program and is not bound here.
  *
  * ## What is out, and the DIFFERENT reason for each group
  *
@@ -55,13 +74,18 @@
  * became readable, or stopped being readable, changes the hook list itself, so the
  * binding already moves without it.
  *
- * ## Order: semantic for hooks, not for schedules
+ * `unreadableDeclarations` is out of the hash for the same reason as
+ * `unreadableHooks`; an update refuses to offer a version that has any
+ * (`update.ts`), so nobody approves what could not be shown.
+ *
+ * ## Order: semantic for hooks, not for schedules or MCP servers
  *
  * Hooks are hashed in declaration order, because hooks on one event RUN in that
  * order — a reordering changes what executes. Schedules are sorted before hashing,
  * because they do not: each fires on its own clock, and the preview's order is
  * partly `readdir` order over `.dork/tasks/` (`readTaskSkills` in
  * `permission-preview.ts`), which the filesystem does not promise to keep stable.
+ * MCP servers are keyed by name and start independently, so they are sorted too.
  * A spurious re-ask is not a harmless false positive here — it is the thing that
  * teaches an operator to stop reading the card.
  *
@@ -79,6 +103,18 @@ export interface DisclosedHook {
   matcher: string | null;
   /** The literal shell command, verbatim — never paraphrased or normalized. */
   command: string;
+  /** The skill or command file it belongs to (it runs while that is in use); `null` for a plugin hook. */
+  source: string | null;
+}
+
+/** A skill or command's `allowed-tools`: tools it may use without asking. */
+export interface DisclosedSkillTools {
+  /** Package-relative path of the skill or command. */
+  source: string;
+  /** The skill's name. */
+  skill: string;
+  /** Each allowed-tools entry, verbatim. */
+  tools: string[];
 }
 
 /** One scheduled job the install would create, and what it may do unattended. */
@@ -97,6 +133,32 @@ export interface DisclosedSchedule {
   startsEnabled: boolean;
 }
 
+/** One MCP server the package starts, as the approval card showed it. */
+export interface DisclosedMcpServer {
+  /** The server's declared name. */
+  name: string;
+  /** `stdio` for a local program, else the remote transport. */
+  transport: string;
+  /** The program a local server runs, verbatim; `null` for a remote one. */
+  command: string | null;
+  /** Its arguments, verbatim and in order; empty for a remote server. */
+  args: string[];
+  /** The address a remote server connects to; `null` for a local one. */
+  url: string | null;
+}
+
+/** One language server or monitor: a named program and how it is started. */
+export interface DisclosedProgram {
+  /** Its declared name. */
+  name: string;
+  /** The program it runs, verbatim. */
+  command: string;
+  /** Its arguments, verbatim and in order. */
+  args: string[];
+  /** When it starts, for a monitor that says; `null` otherwise. */
+  when: string | null;
+}
+
 /**
  * Everything executable a permission preview disclosed, in the shape an approval
  * binds to. Plain JSON throughout, because `hashApprovalInput` refuses anything
@@ -107,6 +169,16 @@ export interface DisclosedEffects {
   hooks: DisclosedHook[];
   /** Every scheduled job the install would create, in preview order. */
   schedules: DisclosedSchedule[];
+  /** Every MCP server the package starts, sorted by name. */
+  mcpServers: DisclosedMcpServer[];
+  /** Every language server the package starts, sorted by name. */
+  lspServers: DisclosedProgram[];
+  /** Every background monitor the package runs, sorted by name. */
+  monitors: DisclosedProgram[];
+  /** The names of the commands the package puts on the agent's PATH, sorted. */
+  executables: string[];
+  /** Every skill or command's allowed tools, sorted by file. */
+  skillTools: DisclosedSkillTools[];
 }
 
 /**
@@ -148,6 +220,7 @@ export function disclosedEffectsOf(
       event: hook.event,
       matcher: hook.matcher ?? null,
       command: hook.command,
+      source: hook.source ?? null,
     })),
     schedules: preview.schedules
       .map((schedule) => ({
@@ -157,7 +230,46 @@ export function disclosedEffectsOf(
         startsEnabled: schedule.startsEnabled,
       }))
       .sort(compareSchedules),
+    mcpServers: preview.mcpServers
+      .map((server) => ({
+        name: server.name,
+        transport: server.transport,
+        command: server.command ?? null,
+        args: server.args ?? [],
+        url: server.url ?? null,
+      }))
+      // By name, then by everything else, so two same-named declarations (from
+      // `.mcp.json` and plugin.json) still have one order.
+      .sort(
+        (a, b) =>
+          a.name.localeCompare(b.name) || stableStringify(a).localeCompare(stableStringify(b))
+      ),
+    lspServers: preview.lspServers
+      .map((server) => ({
+        name: server.name,
+        command: server.command,
+        args: server.args,
+        when: null,
+      }))
+      .sort(comparePrograms),
+    monitors: preview.monitors
+      .map((monitor) => ({
+        name: monitor.name,
+        command: monitor.command,
+        args: [],
+        when: monitor.when ?? null,
+      }))
+      .sort(comparePrograms),
+    executables: [...preview.executables].sort(),
+    skillTools: preview.skillTools
+      .map((entry) => ({ source: entry.source, skill: entry.skill, tools: entry.tools }))
+      .sort((a, b) => a.source.localeCompare(b.source)),
   };
+}
+
+/** By name, then by everything else, so same-named declarations have one order. */
+function comparePrograms(a: DisclosedProgram, b: DisclosedProgram): number {
+  return a.name.localeCompare(b.name) || stableStringify(a).localeCompare(stableStringify(b));
 }
 
 /**
@@ -202,6 +314,18 @@ function describeSchedules(schedules: DisclosedSchedule[]): string {
   return `${count} (${modes})`;
 }
 
+/** Render the MCP half of {@link describeDisclosedEffects}. */
+function describeMcpServers(servers: DisclosedMcpServer[]): string {
+  if (servers.length === 0) return 'no MCP servers';
+  const named = servers
+    .slice(0, NAMED_COMMAND_LIMIT)
+    .map((server) => quoteSummaryValue(server.name))
+    .join(', ');
+  const rest = servers.length - NAMED_COMMAND_LIMIT;
+  const tail = rest > 0 ? `, and ${rest} more` : '';
+  return `${servers.length === 1 ? '1 MCP server' : `${servers.length} MCP servers`} (${named}${tail})`;
+}
+
 /**
  * Say, in one plain phrase, what a package declares right now.
  *
@@ -216,5 +340,14 @@ function describeSchedules(schedules: DisclosedSchedule[]): string {
  */
 export function describeDisclosedEffects(effects: DisclosedEffects | null): string {
   if (!effects) return 'nothing that runs on its own';
-  return `${describeHooks(effects.hooks)} and ${describeSchedules(effects.schedules)}`;
+  const others = effects.lspServers.length + effects.monitors.length + effects.executables.length;
+  const rest =
+    others === 0
+      ? ''
+      : `, and ${others} other ${others === 1 ? 'program' : 'programs'} (language servers, monitors, commands)`;
+  const tools =
+    effects.skillTools.length === 0
+      ? ''
+      : `, and ${effects.skillTools.length} ${effects.skillTools.length === 1 ? 'skill that uses' : 'skills that use'} tools without asking`;
+  return `${describeHooks(effects.hooks)}, ${describeSchedules(effects.schedules)} and ${describeMcpServers(effects.mcpServers)}${rest}${tools}`;
 }

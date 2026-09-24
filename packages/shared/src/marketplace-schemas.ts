@@ -323,6 +323,8 @@ export interface PreviewHook {
   matcher?: string;
   /** The literal shell command the hook runs, verbatim. */
   command: string;
+  /** The skill or command file whose frontmatter declares it, when it is one; it runs while that is in use. */
+  source?: string;
 }
 
 /**
@@ -335,6 +337,130 @@ export interface UnreadablePreviewHook {
   path: string;
   /** Set when a single event entry is malformed; absent when the whole file is. */
   event?: string;
+}
+
+/**
+ * An MCP server a package starts, as Claude Code would launch it.
+ *
+ * Mirrors `PreviewMcpServer` in `apps/server/src/services/marketplace/types.ts`.
+ */
+export interface PreviewMcpServer {
+  /** The server's name, the key it is declared under. */
+  name: string;
+  /** `stdio` for a local command, else the declared remote transport. */
+  transport: string;
+  /** The program a `stdio` server runs, verbatim. */
+  command?: string;
+  /** Its arguments, verbatim and in order. */
+  args?: string[];
+  /** The address a remote server is reached at. */
+  url?: string;
+}
+
+/**
+ * A language (LSP) server a package starts.
+ *
+ * Mirrors `PreviewLspServer` in `apps/server/src/services/marketplace/types.ts`.
+ */
+export interface PreviewLspServer {
+  /** The server's name, the key it is declared under. */
+  name: string;
+  /** The program it runs, verbatim. */
+  command: string;
+  /** Its arguments, verbatim and in order. */
+  args: string[];
+}
+
+/**
+ * The tools a skill or command lets the agent use without asking.
+ *
+ * Mirrors `PreviewSkillTools` in `apps/server/src/services/marketplace/types.ts`.
+ */
+export interface PreviewSkillTools {
+  /** Package-relative path of the skill or command file. */
+  source: string;
+  /** The skill's name. */
+  skill: string;
+  /** Each allowed-tools entry, verbatim. */
+  tools: string[];
+}
+
+/**
+ * A background monitor a package runs.
+ *
+ * Mirrors `PreviewMonitor` in `apps/server/src/services/marketplace/types.ts`.
+ */
+export interface PreviewMonitor {
+  /** The monitor's declared name. */
+  name: string;
+  /** The command it runs, verbatim. */
+  command: string;
+  /** When it starts (`always`, or `on-skill-invoke:<skill>`), when declared. */
+  when?: string;
+}
+
+/**
+ * A program declaration the package ships that could not be read, or points
+ * outside the package.
+ *
+ * Mirrors `UnreadableDeclaration` in `apps/server/src/services/marketplace/types.ts`.
+ */
+export interface UnreadableDeclaration {
+  /** Package-relative path of the declaration. */
+  path: string;
+  /** Which kind of program it declares. */
+  kind: 'mcp-server' | 'lsp-server' | 'monitor';
+  /** Set when one entry is malformed; absent when the whole declaration is. */
+  entry?: string;
+}
+
+/**
+ * When a plugin's own programs (MCP servers, language servers, monitors, the
+ * files in its `bin/`) actually run, in one sentence every consent surface shares.
+ * A globally installed plugin is loaded into every Claude Code session DorkOS
+ * starts (`plugin-activation.ts`); a project install is projected as files, and
+ * none of these are among them.
+ */
+export const PLUGIN_PROGRAMS_SCOPE_NOTE =
+  'A plugin installed for everyone is loaded into every session, and these start with it. ' +
+  'A plugin installed in one project does not start them.';
+
+/**
+ * A program and its arguments, each quoted exactly as it will be passed and with
+ * hidden characters shown, so a person reads the argument boundaries a plain
+ * space-joined line would blur.
+ *
+ * @param command - The program, verbatim.
+ * @param args - Its arguments, verbatim and in order.
+ * @returns One line, every part JSON-quoted.
+ */
+export function describeProgramLine(command: string, args: readonly string[] = []): string {
+  return [command, ...args].map((part) => revealHiddenCharacters(JSON.stringify(part))).join(' ');
+}
+
+/**
+ * Characters that change how text around them is displayed without being seen:
+ * bidirectional controls (which can make `rm -rf ~` read as something else) and
+ * zero-width characters.
+ */
+const HIDDEN_CHARACTERS =
+  /[\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+
+/**
+ * Show every invisible or direction-changing character in a string a person is
+ * about to approve, as a visible `<U+202E>` marker, so a command reads exactly
+ * as it will run. Used wherever a package's command, argument or address is
+ * displayed for consent: the install preview, `dorkos install`, and the update
+ * approval card.
+ *
+ * @param text - Text taken verbatim from a package.
+ * @returns The same text with each hidden character replaced by its code point.
+ */
+export function revealHiddenCharacters(text: string): string {
+  return text.replace(
+    HIDDEN_CHARACTERS,
+    (ch) => `<U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}>`
+  );
 }
 
 /**
@@ -391,6 +517,18 @@ export interface PermissionPreview {
   hooks: PreviewHook[];
   /** Hook declarations the package ships that could not be read. */
   unreadableHooks: UnreadablePreviewHook[];
+  /** MCP servers the package starts, with what each runs. */
+  mcpServers: PreviewMcpServer[];
+  /** Language (LSP) servers the package starts. */
+  lspServers: PreviewLspServer[];
+  /** Background monitors the package runs. */
+  monitors: PreviewMonitor[];
+  /** Programs the package puts on the agent's PATH (the files in its `bin/`). */
+  executables: string[];
+  /** Tools each skill or command lets the agent use without asking. */
+  skillTools: PreviewSkillTools[];
+  /** Program declarations that could not be read or point outside the package. */
+  unreadableDeclarations: UnreadableDeclaration[];
   /** Scheduled jobs that will be created, and what each may do unattended. */
   schedules: PreviewSchedule[];
   /** Secrets the package will request from the user. */

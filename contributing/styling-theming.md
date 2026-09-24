@@ -2,19 +2,20 @@
 
 ## Overview
 
-This project uses Tailwind CSS v4 (CSS-first configuration) with Shadcn UI components following the "Calm Tech" design language. All theme tokens are defined in `apps/client/src/index.css` using HSL CSS custom properties surfaced through the `@theme inline` block.
+This project uses Tailwind CSS v4 (CSS-first configuration) with Shadcn UI components following the "Calm Tech" design language. Portable palette tokens live in `packages/ui/tokens.css`; the client bridges its existing names in `apps/client/src/index.css`, which still owns app-specific tokens and font scaling. See [Shared UI Package](shared-ui.md) for ownership, imports, distribution checks and release.
 
 ## Key Files
 
-| Concept             | Location                                                            |
-| ------------------- | ------------------------------------------------------------------- |
-| Theme configuration | `apps/client/src/index.css` (via `@theme inline` + `:root`/`.dark`) |
-| Design system spec  | `contributing/design-system.md`                                     |
-| Shadcn components   | `apps/client/src/layers/shared/ui/` (barrel export)                 |
-| Animation patterns  | `contributing/animations.md`                                        |
-| cn() utility        | `apps/client/src/layers/shared/lib/utils.ts`                        |
-| Theme hook          | `apps/client/src/layers/shared/model/use-theme.ts`                  |
-| FilterBar UI        | `apps/client/src/layers/shared/ui/filter-bar/`                      |
+| Concept                     | Location                                                            |
+| --------------------------- | ------------------------------------------------------------------- |
+| Shared palette and controls | `packages/ui/` (namespaced tokens and production exports)           |
+| Theme configuration         | `apps/client/src/index.css` (via `@theme inline` + `:root`/`.dark`) |
+| Design system spec          | `contributing/design-system.md`                                     |
+| Shadcn components           | `apps/client/src/layers/shared/ui/` (barrel export)                 |
+| Animation patterns          | `contributing/animations.md`                                        |
+| cn() utility                | `apps/client/src/layers/shared/lib/utils.ts`                        |
+| Theme hook                  | `apps/client/src/layers/shared/model/use-theme.ts`                  |
+| FilterBar UI                | `apps/client/src/layers/shared/ui/filter-bar/`                      |
 
 ## When to Use What
 
@@ -33,52 +34,32 @@ This project uses Tailwind CSS v4 (CSS-first configuration) with Shadcn UI compo
 
 ## Core Patterns
 
-### Theme Token Definition (index.css)
+### Theme Token Ownership
 
-All design tokens live in `apps/client/src/index.css`. The pattern uses HSL custom properties defined in `:root`/`.dark` blocks, surfaced to Tailwind via `@theme inline`:
+The package owns portable colors, and the client keeps its existing semantic aliases. Import the package stylesheet after Tailwind, then define app-specific mappings and rules:
 
 ```css
 @import 'tailwindcss';
+@import '@dork-labs/ui/tailwind.css';
 @custom-variant dark (&:is(.dark *));
 @source '../node_modules/streamdown/dist/*.js';
 
 @theme inline {
-  /* Colors reference HSL variables */
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
-  --color-primary: hsl(var(--primary));
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-  /* ...all other tokens follow the same pattern */
-  --radius: var(--radius);
 }
 
-/* Light mode HSL values */
-:root {
-  --background: 0 0% 98%;
-  --foreground: 0 0% 9%;
-  --primary: 0 0% 9%;
-  --primary-foreground: 0 0% 98%;
-  --muted: 0 0% 96%;
-  --muted-foreground: 0 0% 32%;
-  --radius: 0.5rem;
-}
-
-/* Dark mode overrides */
+:root,
+.light,
 .dark {
-  --background: 0 0% 4%;
-  --foreground: 0 0% 93%;
-  --primary: 0 0% 93%;
-  --muted: 0 0% 9%;
-  --muted-foreground: 0 0% 64%;
+  --background: var(--dui-background);
+  --foreground: var(--dui-foreground);
 }
 ```
 
-Three things to note:
+Package controls use `dui-*` colors and the `dui-dark:` variant; existing client components retain their app classes. Explicit root `.light`/`.dark` choices keep the two in sync. Do not replace full-color host variables with HSL channels: embedded styling bridges the generated color names to host colors instead.
 
-- `@custom-variant dark (&:is(.dark *))` enables the `dark:` prefix using class-based dark mode (`.dark` on `<html>`).
-- `@source '../node_modules/streamdown/dist/*.js'` is required so Tailwind scans the `streamdown` markdown renderer for classes it injects at runtime. Without this, streamdown's utility classes are purged in production.
-- Fonts default to system stacks: `system-ui, -apple-system, ...` (set in `:root` as `--font-sans` and `--font-mono`). Users can override via Settings → Appearance, which loads Google Fonts dynamically and writes to `--font-sans`/`--font-mono` via JavaScript.
+The streamdown source declaration remains required for classes the markdown renderer emits. Fonts, user font scaling, the editor's layer order and application geometry stay in the client stylesheet.
 
 ### Using Semantic Tokens
 
@@ -379,21 +360,20 @@ See `contributing/design-system.md` for the full FilterBar component specificati
 </div>
 ```
 
-Shadcn files under `layers/shared/ui/` are **owned, not vendored** — there is no
-upstream sync to protect. Extend them in place with a new `cva` variant; keep
-the caller `className` prop as the escape hatch for one-off overrides. Never
-fork a primitive into a wrapper component — `button.tsx`'s own `brand` variant
-and `responsive` prop are exactly this pattern, done right.
+Primitives are **owned, not vendored**. Portable controls belong in `packages/ui`;
+remaining application controls belong in `layers/shared/ui/`. Extend the owning
+implementation with a `cva` variant, keeping `className` for one-off overrides.
+The client Button file is a re-export, so add its variants in the package.
 
 ```tsx
 // ✅ Add a variant to the primitive itself
-// File: apps/client/src/layers/shared/ui/button.tsx
+// File: packages/ui/src/button.tsx
 const buttonVariants = cva('...', {
   variants: {
     variant: {
-      default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+      default: 'bg-dui-primary text-dui-primary-foreground hover:bg-dui-primary/90',
       // New look? Add a variant here, not a new component.
-      brand: 'bg-brand text-brand-foreground hover:bg-brand/90',
+      brand: 'bg-dui-brand text-dui-brand-foreground hover:bg-dui-brand/90',
     },
   },
 });

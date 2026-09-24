@@ -9,6 +9,7 @@
    chunks that bundled a global preflight (DOR-1024). */
 @layer theme, base, components, blintz, border-defaults, utilities;
 @import 'tailwindcss';
+@import '@dork-labs/ui/tailwind.css';
 /* Animation utilities for Radix/shadcn surfaces (data-[state]:animate-in,
    slide-in-from-*, fade-*, zoom-*). Defined via Tailwind v4 `@utility`, so they
    land in the `utilities` layer above — above `blintz` in the pin, so the layer
@@ -47,6 +48,8 @@
   --_st: 1;
   --_si: 1;
   --_sb: 1;
+  /* Shared Button icons follow the app's mobile/user icon dial. */
+  --dui-size-icon-sm: calc(1rem * var(--_si));
 
   /* ============================================
      SIDEBAR GEOMETRY (specs/sidebar-simplification D1)
@@ -199,10 +202,9 @@
    properties inherit, and an element's own declaration beats one inherited from
    a `.dark` ancestor.
 
-   It exists for ONE job: the both-themes review pair the sidebar programme
-   requires (spec R1), where a light panel and a dark panel have to sit side by
-   side on a single screenshot. Nothing in the app sets it; the app switches
-   themes by putting `dark` on the document element, exactly as before.
+   The app also sets `.light` on the document for an explicit light preference,
+   so that preference wins even when the OS is in dark mode. A nested light
+   panel can still sit inside a dark page for a both-themes review pair.
 
    The caveat, stated so nobody is surprised by it: Tailwind's `dark:` variant
    keys off `.dark *`, so inside a `.light` island on a dark page the TOKENS
@@ -210,30 +212,28 @@
    way is token-driven, which is why the pair is honest. */
 :root,
 .light {
-  --background: 0 0% 98%;
-  --foreground: 0 0% 9%;
-  --card: 0 0% 100%;
-  --card-foreground: 0 0% 9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 9%;
-  --primary: 0 0% 9%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 0 0% 92%;
-  --secondary-foreground: 0 0% 9%;
-  --muted: 0 0% 96%;
-  --muted-foreground: 0 0% 32%;
-  --accent: 0 0% 94%;
-  --accent-foreground: 0 0% 9%;
-  /* Readable as text AND under a white label (WCAG AA). Contrast table and
-     guard: `__tests__/destructive-contrast.test.ts`. */
-  --destructive: 356 76% 45%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 83%;
-  --input: 0 0% 83%;
-  --ring: 24 90% 44%;
+  --background: var(--dui-background);
+  --foreground: var(--dui-foreground);
+  --card: var(--dui-card);
+  --card-foreground: var(--dui-card-foreground);
+  --popover: var(--dui-popover);
+  --popover-foreground: var(--dui-popover-foreground);
+  --primary: var(--dui-primary);
+  --primary-foreground: var(--dui-primary-foreground);
+  --secondary: var(--dui-secondary);
+  --secondary-foreground: var(--dui-secondary-foreground);
+  --muted: var(--dui-muted);
+  --muted-foreground: var(--dui-muted-foreground);
+  --accent: var(--dui-accent);
+  --accent-foreground: var(--dui-accent-foreground);
+  --destructive: var(--dui-destructive);
+  --destructive-foreground: var(--dui-destructive-foreground);
+  --border: var(--dui-border);
+  --input: var(--dui-input);
+  --ring: var(--dui-ring);
   --radius: 0.5rem;
-  --brand: 24 90% 44%;
-  --brand-foreground: 0 0% 100%;
+  --brand: var(--dui-brand);
+  --brand-foreground: var(--dui-brand-foreground);
 
   /* === Status tokens === */
   /* Green is text (dial caption, status word, "unattended" notes, session marks)
@@ -468,29 +468,27 @@
 }
 
 .dark {
-  --background: 0 0% 4%;
-  --foreground: 0 0% 87%;
-  --card: 0 0% 4%;
-  --card-foreground: 0 0% 87%;
-  --popover: 0 0% 4%;
-  --popover-foreground: 0 0% 87%;
-  --primary: 0 0% 87%;
-  --primary-foreground: 0 0% 9%;
-  --secondary: 0 0% 14%;
-  --secondary-foreground: 0 0% 87%;
-  --muted: 0 0% 9%;
-  --muted-foreground: 0 0% 64%;
-  --accent: 0 0% 12%;
-  --accent-foreground: 0 0% 87%;
-  /* Lighter, for text on near-black; too light to hold a white label, so solid
-     fills add `dark:bg-destructive/60`. See `__tests__/destructive-contrast.test.ts`. */
-  --destructive: 2.5 95% 62%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 25%;
-  --input: 0 0% 25%;
-  --ring: 24 88% 55%;
-  --brand: 24 88% 55%;
-  --brand-foreground: 0 0% 100%;
+  --background: var(--dui-background);
+  --foreground: var(--dui-foreground);
+  --card: var(--dui-card);
+  --card-foreground: var(--dui-card-foreground);
+  --popover: var(--dui-popover);
+  --popover-foreground: var(--dui-popover-foreground);
+  --primary: var(--dui-primary);
+  --primary-foreground: var(--dui-primary-foreground);
+  --secondary: var(--dui-secondary);
+  --secondary-foreground: var(--dui-secondary-foreground);
+  --muted: var(--dui-muted);
+  --muted-foreground: var(--dui-muted-foreground);
+  --accent: var(--dui-accent);
+  --accent-foreground: var(--dui-accent-foreground);
+  --destructive: var(--dui-destructive);
+  --destructive-foreground: var(--dui-destructive-foreground);
+  --border: var(--dui-border);
+  --input: var(--dui-input);
+  --ring: var(--dui-ring);
+  --brand: var(--dui-brand);
+  --brand-foreground: var(--dui-brand-foreground);
 
   --status-success: 152 69% 55%;
   --status-success-bg: 152 69% 12%;
@@ -2031,8 +2029,6 @@ body {
   --color-muted-foreground: var(--text-muted);
   --color-accent: var(--interactive-accent);
   --color-accent-foreground: var(--text-on-accent);
-  /* Light-vault red; `.theme-dark` below lifts it. Kept in sync with
-     apps/obsidian-plugin/src/styles/plugin.css. */
   --color-destructive: #ca1c27;
   --color-destructive-foreground: #fff;
   --color-border: var(--background-modifier-border);
@@ -2094,8 +2090,7 @@ body {
   font-family: var(--font-interface);
 }
 
-/* Dark-vault red (Obsidian puts `.theme-dark` on the body). Kept in sync with
-   apps/obsidian-plugin/src/styles/plugin.css. */
+/* Match the independent embedded stylesheet when the vault uses dark mode. */
 .theme-dark .copilot-view-content {
   --color-destructive: #ff554b;
 }

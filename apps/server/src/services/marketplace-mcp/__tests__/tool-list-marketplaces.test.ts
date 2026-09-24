@@ -70,6 +70,7 @@ function buildDeps(opts: {
     installer: {} as MarketplaceMcpDeps['installer'],
     cache: {} as MarketplaceMcpDeps['cache'],
     uninstallFlow: {} as MarketplaceMcpDeps['uninstallFlow'],
+    updateFlow: {} as MarketplaceMcpDeps['updateFlow'],
     confirmationProvider: {} as MarketplaceMcpDeps['confirmationProvider'],
     onPluginsChanged: vi.fn(),
     logger,

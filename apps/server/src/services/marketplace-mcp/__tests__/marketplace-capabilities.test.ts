@@ -93,6 +93,7 @@ function buildDeps(): {
     fetcher: {} as MarketplaceMcpDeps['fetcher'],
     cache: {} as MarketplaceMcpDeps['cache'],
     uninstallFlow: { uninstall: ranUninstall } as unknown as MarketplaceMcpDeps['uninstallFlow'],
+    updateFlow: {} as MarketplaceMcpDeps['updateFlow'],
     confirmationProvider,
     onPluginsChanged: vi.fn(),
     logger,

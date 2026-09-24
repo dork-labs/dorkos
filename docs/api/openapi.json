@@ -5846,6 +5846,24 @@
               "null"
             ]
           },
+          "defaultCron": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "defaultTimezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "timingOverridden": {
+            "type": "boolean",
+            "default": false
+          },
           "agentId": {
             "type": [
               "string",
@@ -6187,6 +6205,12 @@
           },
           "reason": {
             "type": "string"
+          },
+          "resetTiming": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
           }
         }
       },
@@ -19077,6 +19101,9 @@
                               },
                               "command": {
                                 "type": "string"
+                              },
+                              "source": {
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -19099,6 +19126,139 @@
                             },
                             "required": [
                               "path"
+                            ]
+                          }
+                        },
+                        "mcpServers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "transport": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "transport"
+                            ]
+                          }
+                        },
+                        "lspServers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "command",
+                              "args"
+                            ]
+                          }
+                        },
+                        "monitors": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "when": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "command"
+                            ]
+                          }
+                        },
+                        "executables": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "skillTools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "tools": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "tools"
+                            ]
+                          }
+                        },
+                        "unreadableDeclarations": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "mcp-server",
+                                  "lsp-server",
+                                  "monitor"
+                                ]
+                              },
+                              "entry": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "kind"
                             ]
                           }
                         },
@@ -19247,6 +19407,12 @@
                         "extensions",
                         "hooks",
                         "unreadableHooks",
+                        "mcpServers",
+                        "lspServers",
+                        "monitors",
+                        "executables",
+                        "skillTools",
+                        "unreadableDeclarations",
                         "schedules",
                         "secrets",
                         "npmDependencies",
@@ -19401,6 +19567,9 @@
                               },
                               "command": {
                                 "type": "string"
+                              },
+                              "source": {
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -19423,6 +19592,139 @@
                             },
                             "required": [
                               "path"
+                            ]
+                          }
+                        },
+                        "mcpServers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "transport": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "transport"
+                            ]
+                          }
+                        },
+                        "lspServers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "command",
+                              "args"
+                            ]
+                          }
+                        },
+                        "monitors": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "when": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "command"
+                            ]
+                          }
+                        },
+                        "executables": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "skillTools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "tools": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "tools"
+                            ]
+                          }
+                        },
+                        "unreadableDeclarations": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "mcp-server",
+                                  "lsp-server",
+                                  "monitor"
+                                ]
+                              },
+                              "entry": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "kind"
                             ]
                           }
                         },
@@ -19571,6 +19873,12 @@
                         "extensions",
                         "hooks",
                         "unreadableHooks",
+                        "mcpServers",
+                        "lspServers",
+                        "monitors",
+                        "executables",
+                        "skillTools",
+                        "unreadableDeclarations",
                         "schedules",
                         "secrets",
                         "npmDependencies",

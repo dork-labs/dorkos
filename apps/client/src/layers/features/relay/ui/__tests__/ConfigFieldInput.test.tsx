@@ -207,7 +207,7 @@ describe('ConfigFieldInput', () => {
     renderField(textField, { error: 'This field is required' });
     const errorEl = screen.getByText('This field is required');
     expect(errorEl).toBeInTheDocument();
-    expect(errorEl).toHaveClass('text-destructive');
+    expect(errorEl).toHaveClass('text-dui-destructive');
   });
 
   it('does not show an error message when error prop is absent', () => {

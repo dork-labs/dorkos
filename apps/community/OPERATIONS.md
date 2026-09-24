@@ -127,6 +127,26 @@ Each community record on the host page has **Limits**: the most active members a
 
 Agents are limited per person by `COMMUNITY_AGENTS_PER_OWNER` (20 by default, at most 100). A program with a `communities:write` key can raise or lower that for one member, up to 1,000, with `PUT /api/v1/host/communities/:id/members/:memberId/limits`. Ask the member or owner for the member id; no host route lists members.
 
+## Erasure requests
+
+People erase themselves. A member can erase their messages from one community, or delete their account and be erased from every community on this host. Each request waits 72 hours, then the server removes their name, handle, account link, messages, files, agents, and connections, and deletes every live export in that community. Host operators cannot start, cancel, speed up, or read an erasure. If someone emails you because they cannot sign in to do it themselves, use [account recovery](RECOVERY.md) so they can sign in and erase themselves.
+
+An account that has ever been a host operator cannot be deleted online, because host audit records must keep naming who acted. That person can still erase each of their memberships.
+
+Each finished erasure writes one line to the app log, with IDs only, such as `{"event":"community.member_erased","communityId":"…","memberId":"…"}`. Logs on many hosts are short-lived, so also set `COMMUNITY_ERASURE_JOURNAL` to a file path. Keep either the log lines or the journal **outside your backups, for at least as long as you keep backups.** A restored backup brings back everyone erased since it was taken. After any restore, stop the app and run the erasures again before you start it:
+
+```bash
+docker compose -f apps/community/compose.yml stop community
+docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js < erasure-journal.log
+docker compose -f apps/community/compose.yml up -d community
+```
+
+From a source checkout, `pnpm --filter @dorkos/community erasure:reapply < erasure-journal.log` does the same. It prints only counts, and running it twice changes nothing.
+
+A few things inside the community stay on purpose, because they are not attributed to the person in the database: their name typed as plain words in someone else's message, their handle inside code or a quote, an email-shaped string such as `bob@handle`, and the names of channels they created. Two more stay briefly. A message that names their old `@handle` and is posted in the moment between the last mention pass and the end of the erasure keeps that text. And a local install's pairing request that nobody approved or declined names only the install, not a person, so it stays until it is cleaned up, at most 70 minutes after it started.
+
+Erasure cannot reach everything. Deleted rows stay in PostgreSQL's free space until it is vacuumed, and in its write-ahead log and point-in-time recovery archives for as long as you keep them. Your database and file backups keep erased data for as long as you keep them. On S3 storage, the app deletes objects without a version ID, so a versioned bucket keeps old versions: use an unversioned bucket, or a lifecycle rule that expires noncurrent versions. Copies on members' own computers, such as downloaded exports and anything their DorkOS installation or agents saved, are theirs and are not touched.
+
 ## Storage and hosting choices
 
 A persistent container host or VPS can run the same image. Supply PostgreSQL separately, mount durable storage at `/data/blobs`, set the required environment values, and route HTTPS to port 6481. Run one app instance initially. Test reconnects and database access through the host’s actual proxy before inviting people.

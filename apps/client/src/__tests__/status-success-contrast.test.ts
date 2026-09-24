@@ -31,6 +31,10 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
 const INDEX_CSS = resolve(fileURLToPath(new URL('.', import.meta.url)), '../index.css');
+const UI_TOKENS_CSS = resolve(
+  fileURLToPath(new URL('.', import.meta.url)),
+  '../../../../packages/ui/tokens.css'
+);
 
 /** WCAG AA threshold for normal-size text. */
 const AA = 4.5;
@@ -106,9 +110,15 @@ function section(css: string, start: string, end: string): string {
 }
 
 /** The `H S% L%` triplet a token holds inside one section. */
-function hsl(sectionCss: string, name: string): Rgb {
-  const m = sectionCss.match(new RegExp(`${name}:\\s*([\\d.]+)\\s+([\\d.]+)%\\s+([\\d.]+)%`));
-  expect(m, `token not found: ${name}`).not.toBeNull();
+function hsl(sectionCss: string, name: string, sharedTokens?: string): Rgb {
+  const value = sectionCss.match(new RegExp(`${name}:\\s*([^;]+);`))?.[1]?.trim();
+  const alias = value?.match(/^var\((--dui-[a-z-]+)\)$/);
+  if (alias) {
+    expect(sharedTokens, `shared tokens not loaded for ${name}`).toBeDefined();
+    return hsl(sharedTokens!, alias[1]);
+  }
+  const m = value?.match(/^([\d.]+)\s+([\d.]+)%\s+([\d.]+)%$/);
+  expect(m, `token not found: ${name}`).toBeTruthy();
   return hslToRgb(Number(m![1]), Number(m![2]), Number(m![3]));
 }
 
@@ -119,6 +129,13 @@ describe('status-success contrast', () => {
   // values apart — reading the wrong block would compare a value against itself.
   const light = section(css, ':root,', '.dark {');
   const dark = section(css, '.dark {', '.copilot-view-content');
+  // Portable surfaces now bridge to @dork-labs/ui; measure the exact package
+  // triplet selected by each client block instead of assuming it is inlined.
+  const uiTokens = readFileSync(UI_TOKENS_CSS, 'utf8');
+  const sharedLight = section(uiTokens, ':root,', '@media');
+  const sharedDark = uiTokens.slice(uiTokens.lastIndexOf('\n.dark {'));
+  const lightHsl = (name: string) => hsl(light, name, sharedLight);
+  const darkHsl = (name: string) => hsl(dark, name, sharedDark);
 
   // --- The math, pinned before it is trusted ---
 
@@ -146,18 +163,18 @@ describe('status-success contrast', () => {
     // pass below is trustworthy.
     expect(contrast(hslToRgb(152, 69, 31), app)).toBeLessThan(AA);
     // And the shipped value must clear it — read from the file, not hard-coded.
-    expect(contrast(hsl(light, '--status-success'), app)).toBeGreaterThanOrEqual(AA);
+    expect(contrast(lightHsl('--status-success'), app)).toBeGreaterThanOrEqual(AA);
   });
 
   // --- The assertions those checks earn, against the real shipped tokens ---
 
   it('green text clears AA on every light ground it is painted on', () => {
-    const green = hsl(light, '--status-success');
+    const green = lightHsl('--status-success');
     const grounds = {
-      'app (--background)': hsl(light, '--background'),
-      'card (--card)': hsl(light, '--card'),
-      'muted (--muted)': hsl(light, '--muted'),
-      'sidebar (--sidebar)': hsl(light, '--sidebar'),
+      'app (--background)': lightHsl('--background'),
+      'card (--card)': lightHsl('--card'),
+      'muted (--muted)': lightHsl('--muted'),
+      'sidebar (--sidebar)': lightHsl('--sidebar'),
     };
     for (const [name, ground] of Object.entries(grounds)) {
       expect({ name, ratio: contrast(green, ground) >= AA }).toEqual({ name, ratio: true });
@@ -166,28 +183,28 @@ describe('status-success contrast', () => {
 
   it('the -fg text clears AA on the light green -bg fill (info boxes)', () => {
     expect(
-      contrast(hsl(light, '--status-success-fg'), hsl(light, '--status-success-bg'))
+      contrast(lightHsl('--status-success-fg'), lightHsl('--status-success-bg'))
     ).toBeGreaterThanOrEqual(AA);
   });
 
   it('the inverted white label clears AA on the green fill (door CTA)', () => {
-    expect(contrast([255, 255, 255], hsl(light, '--status-success'))).toBeGreaterThanOrEqual(AA);
+    expect(contrast([255, 255, 255], lightHsl('--status-success'))).toBeGreaterThanOrEqual(AA);
   });
 
   it('the green-on-green wash chips clear AA over the darkest ground (sidebar)', () => {
     // `bg-status-success/15` (the "N live" chip) and `/10` (the room run pill)
     // are a tint of the green over gray — the hardest surface a token change can
     // reach. Measured over the sidebar, the darkest common ground.
-    const green = hsl(light, '--status-success');
-    const sidebar = hsl(light, '--sidebar');
+    const green = lightHsl('--status-success');
+    const sidebar = lightHsl('--sidebar');
     expect(contrast(green, over(green, 0.15, sidebar))).toBeGreaterThanOrEqual(AA);
     expect(contrast(green, over(green, 0.1, sidebar))).toBeGreaterThanOrEqual(AA);
   });
 
   it('dark mode stays comfortably above AA (>= 7:1) and is not regressed', () => {
-    const green = hsl(dark, '--status-success');
-    expect(contrast(green, hsl(dark, '--background'))).toBeGreaterThanOrEqual(7);
-    expect(contrast(green, hsl(dark, '--card'))).toBeGreaterThanOrEqual(7);
+    const green = darkHsl('--status-success');
+    expect(contrast(green, darkHsl('--background'))).toBeGreaterThanOrEqual(7);
+    expect(contrast(green, darkHsl('--card'))).toBeGreaterThanOrEqual(7);
   });
 
   it('the Obsidian flat green pin clears AA on the Obsidian light theme (white)', () => {

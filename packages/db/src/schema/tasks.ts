@@ -9,6 +9,26 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   displayName: text('display_name'),
   cron: text('cron').notNull(),
   timezone: text('timezone').notNull().default('UTC'),
+  /**
+   * A person's own cron for a schedule whose file DorkOS will not write — one
+   * that came with an installed package (DOR-2302).
+   *
+   * `cron` above stays what the SKILL.md says, and every sync keeps writing it;
+   * this column is never touched by a sync, so the person's choice survives the
+   * package's updates. When it is set it is the cron that runs, the one the
+   * approval grant is keyed on, and the one every reader sees through
+   * `effectiveTiming` (`services/tasks/timing/effective-timing.ts`).
+   *
+   * NULL means "run on the file's cron". `''` is a real value, not an absent
+   * one: the person took the schedule off its timer, so it runs on demand.
+   */
+  cronOverride: text('cron_override'),
+  /**
+   * A person's own timezone for a package's schedule, beside
+   * {@link cronOverride} and for the same reason. NULL means "the file's
+   * timezone". Not part of the approval key, exactly as `timezone` is not.
+   */
+  timezoneOverride: text('timezone_override'),
   prompt: text('prompt').notNull(),
   agentId: text('agent_id'),
   /**

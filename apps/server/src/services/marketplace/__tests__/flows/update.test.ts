@@ -19,19 +19,19 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import type { MarketplaceJson, PluginPackageManifest, SourceKey } from '@dorkos/marketplace';
+import { UPDATE_CHECK_CONCURRENCY, UPDATE_MEMO_TTL_MS, UpdateFlow } from '../../flows/update.js';
 import {
   PackageNotInstalledForUpdateError,
-  UPDATE_CHECK_CONCURRENCY,
-  UPDATE_MEMO_TTL_MS,
-  UpdateFlow,
   pickInstallation,
   selectInstallations,
-  type UpdateResult,
-  type InstallationUpdateCheck,
-  type InstallerLike,
-  type UpdateCheckResult,
-  type UpdateFlowDeps,
-} from '../../flows/update.js';
+} from '../../flows/update-selection.js';
+import type {
+  InstallationUpdateCheck,
+  InstallerLike,
+  UpdateCheckResult,
+  UpdateFlowDeps,
+  UpdateResult,
+} from '../../flows/update-types.js';
 import type { InstallMetadata } from '../../installed-metadata.js';
 import { scanInstallationRecords } from '../../installed-scanner.js';
 import type {
@@ -39,8 +39,10 @@ import type {
   InstallResult,
   LatestResolution,
   MarketplaceSource,
+  PermissionPreview,
   ResolveLatestOptions,
 } from '../../types.js';
+import { disclosedEffectsOf } from '../../disclosed-effects.js';
 
 const SHA_A = 'a'.repeat(40);
 const SHA_B = 'b'.repeat(40);
@@ -226,6 +228,9 @@ async function buildDeps(opts: {
   installer: {
     update: ReturnType<typeof vi.fn>;
     resolveLatest: ReturnType<typeof vi.fn<ResolveLatestImpl>>;
+    preview: ReturnType<
+      typeof vi.fn<(req: InstallRequest) => Promise<{ preview: PermissionPreview }>>
+    >;
   };
   fetcher: {
     fetchMarketplaceJson: ReturnType<typeof vi.fn>;
@@ -243,6 +248,7 @@ async function buildDeps(opts: {
       buildInstallResult(req.name, '2.0.0', path.join(dorkHome, 'plugins', req.name))
     ),
     resolveLatest,
+    preview: vi.fn(async (_req: InstallRequest) => ({ preview: buildEmptyPreview() })),
   } satisfies InstallerLike;
   const sources = opts.sources ?? [buildSource()];
   const fetcher = {
@@ -264,6 +270,29 @@ async function buildDeps(opts: {
   };
 
   return { deps, dorkHome, installer, fetcher, sourceManager };
+}
+
+/** A preview that declares nothing, which a test overrides one field of. */
+function buildEmptyPreview(overrides: Partial<PermissionPreview> = {}): PermissionPreview {
+  return {
+    fileChanges: [],
+    extensions: [],
+    hooks: [],
+    unreadableHooks: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    unreadableDeclarations: [],
+    schedules: [],
+    secrets: [],
+    npmDependencies: [],
+    externalHosts: [],
+    requires: [],
+    conflicts: [],
+    ...overrides,
+  };
 }
 
 /** A fake `resolveLatest` that consults the memoized commit lookup, as the real one does. */
@@ -1059,6 +1088,122 @@ describe('UpdateFlow', () => {
 
       expect(checks.map((c) => c.status)).toEqual(['unknown', 'unknown']);
       expect(ctx.fetcher.lookupCommitSha).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('planning an approved apply (DOR-2195)', () => {
+    /** Two stale packages installed globally. */
+    async function stageTwo(ctx: Awaited<ReturnType<typeof setup>>) {
+      const alpha = await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'alpha', version: '1.0.0' }),
+      });
+      const beta = await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'beta', version: '1.0.0' }),
+      });
+      const installations = await scanInstallationRecords(ctx.dorkHome, { agents: [] });
+      return { alpha, beta, installations };
+    }
+
+    const HOOKED = buildEmptyPreview({ hooks: [{ event: 'Stop', command: 'echo new' }] });
+
+    it('says what each new version would run, and previews nothing that is current', async () => {
+      // Purpose: the card for an apply must show what the new version runs,
+      // read from the version that would be installed, in its own scope.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'alpha' }, { name: 'beta' }]),
+        latest: { alpha: '2.0.0', beta: '1.0.0' },
+      });
+      ctx.installer.preview.mockResolvedValue({ preview: HOOKED });
+      const { alpha, installations } = await stageTwo(ctx);
+
+      const plan = await new UpdateFlow(ctx.deps).planInstallations({
+        installations,
+        disclose: true,
+      });
+
+      const byPath = new Map(plan.checks.map((c) => [c.installPath, c]));
+      expect(byPath.get(alpha)).toMatchObject({
+        status: 'update-available',
+        disclosed: disclosedEffectsOf(HOOKED),
+      });
+      expect(plan.checks.find((c) => c.packageName === 'beta')).not.toHaveProperty('disclosed');
+      expect(ctx.installer.preview).toHaveBeenCalledTimes(1);
+      expect(ctx.installer.preview.mock.calls[0]![0]).toMatchObject({
+        name: 'alpha',
+        marketplace: 'fixture-marketplace',
+        projectPath: undefined,
+      });
+    });
+
+    it('never offers an update whose new version it could not read', async () => {
+      // Purpose: an update nobody could be shown must not be approvable.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'alpha' }, { name: 'beta' }]),
+        latest: { alpha: '2.0.0', beta: '1.0.0' },
+      });
+      ctx.installer.preview.mockRejectedValue(new Error('bad manifest'));
+      const { alpha, installations } = await stageTwo(ctx);
+      const flow = new UpdateFlow(ctx.deps);
+
+      const plan = await flow.planInstallations({ installations, disclose: true });
+      const check = plan.checks.find((c) => c.installPath === alpha)!;
+      expect(check).toMatchObject({ status: 'unknown', hasUpdate: false });
+      expect(check.note).toContain('bad manifest');
+
+      await flow.applyPlan(plan, new Map([[alpha, null]]));
+      expect(ctx.installer.update).not.toHaveBeenCalled();
+    });
+
+    it('never offers an update whose new version declares something it could not read', async () => {
+      // Purpose: an unreadable declaration vanishes from a card that lists what
+      // runs; approving it would approve something nobody could be shown.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'alpha' }, { name: 'beta' }]),
+        latest: { alpha: '2.0.0', beta: '1.0.0' },
+      });
+      ctx.installer.preview.mockResolvedValue({
+        preview: buildEmptyPreview({
+          unreadableHooks: [{ path: 'hooks/hooks.json', event: 'Stop' }],
+          unreadableDeclarations: [{ path: '.mcp.json', kind: 'mcp-server', entry: 'odd' }],
+        }),
+      });
+      const { alpha, installations } = await stageTwo(ctx);
+
+      const plan = await new UpdateFlow(ctx.deps).planInstallations({
+        installations,
+        disclose: true,
+      });
+
+      const check = plan.checks.find((c) => c.installPath === alpha)!;
+      expect(check).toMatchObject({ status: 'unknown', hasUpdate: false });
+      expect(check).not.toHaveProperty('disclosed');
+      expect(check.note).toContain('hooks/hooks.json (Stop)');
+      expect(check.note).toContain('.mcp.json (odd)');
+    });
+
+    it('reinstalls only the approved installations, each held to what was approved', async () => {
+      // Purpose: the approval is per installation; the installer refuses one
+      // whose new version declares something other than what the person saw.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'alpha' }, { name: 'beta' }]),
+        latest: { alpha: '2.0.0', beta: '2.0.0' },
+      });
+      ctx.installer.preview.mockResolvedValue({ preview: HOOKED });
+      const { alpha, installations } = await stageTwo(ctx);
+      const flow = new UpdateFlow(ctx.deps);
+
+      const plan = await flow.planInstallations({ installations, disclose: true });
+      const result = await flow.applyPlan(plan, new Map([[alpha, disclosedEffectsOf(HOOKED)]]));
+
+      expect(ctx.installer.update).toHaveBeenCalledTimes(1);
+      expect(ctx.installer.update.mock.calls[0]![0]).toMatchObject({
+        name: 'alpha',
+        installRoot: alpha,
+        approvedDisclosure: disclosedEffectsOf(HOOKED),
+      });
+      expect(result.checks.filter((c) => c.applied).map((c) => c.installPath)).toEqual([alpha]);
     });
   });
 

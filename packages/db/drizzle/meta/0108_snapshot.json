@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "cb85e4a4-2a01-49cc-b3b8-2446401b301c",
+  "id": "4cff9f5c-5804-491a-8353-94c0824c8bf7",
   "prevId": "fab1b5e5-f5c9-4a98-9658-4302b620020d",
   "tables": {
     "a2a_tasks": {
@@ -525,6 +525,14 @@
           "notNull": true,
           "autoincrement": false
         },
+        "tier_ceiling": {
+          "name": "tier_ceiling",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'destructive'"
+        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -792,6 +800,20 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'UTC'"
+        },
+        "cron_override": {
+          "name": "cron_override",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "timezone_override": {
+          "name": "timezone_override",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "prompt": {
           "name": "prompt",

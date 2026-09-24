@@ -54,6 +54,9 @@ export async function startTenancyHarness(
     now?: () => Date;
     hostKeyAttemptsPerMinute?: number;
     reauthAttemptsPerMinute?: number;
+    hooks?: Parameters<typeof createCommunityApp>[0]['hooks'];
+    /** Another BlobStore (S3) instead of the fixture's own folder. */
+    blobStore?: BlobStore;
   } = {}
 ): Promise<TenancyHarness> {
   const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
@@ -82,8 +85,13 @@ export async function startTenancyHarness(
     COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE: options.hostKeyAttemptsPerMinute ?? 100,
     COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE: options.reauthAttemptsPerMinute ?? 20,
   });
-  const blobStore = new FileSystemBlobStore(storagePath);
-  const app = createCommunityApp({ config, pool, blobStore, hooks: { now: options.now } });
+  const blobStore = options.blobStore ?? new FileSystemBlobStore(storagePath);
+  const app = createCommunityApp({
+    config,
+    pool,
+    blobStore,
+    hooks: { ...options.hooks, now: options.now },
+  });
   const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' });
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
@@ -282,7 +290,8 @@ export async function pairInstall(
   h: TenancyHarness,
   communityId: string,
   approverCookie: string,
-  scopes: string[] = ['read', 'post', 'enroll-agent']
+  scopes: string[] = ['read', 'post', 'enroll-agent'],
+  installName = `Install ${communityId.slice(0, 8)}`
 ): Promise<string> {
   const base = `/api/v1/communities/${communityId}`;
   const local = { origin: '' };
@@ -291,7 +300,7 @@ export async function pairInstall(
   const started = await expectStatus(
     await h.call(`${base}/pairings/start`, {
       headers: local,
-      body: { installName: `Install ${communityId.slice(0, 8)}`, challenge, scopes },
+      body: { installName, challenge, scopes },
     }),
     201,
     'pairing start'

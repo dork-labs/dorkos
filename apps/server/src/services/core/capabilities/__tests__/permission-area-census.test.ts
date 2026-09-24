@@ -105,6 +105,7 @@ const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
     'marketplace.create_package',
     'marketplace.install',
     'marketplace.uninstall',
+    'marketplace.update',
     'mcp.add',
     'mcp.disable',
     'mcp.enable',

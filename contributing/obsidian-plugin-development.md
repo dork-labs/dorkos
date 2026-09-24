@@ -618,16 +618,13 @@ See `contributing/architecture.md` > "Electron Compatibility Layer" for details 
 ### Package Scripts
 
 ```bash
-# From the monorepo root:
-turbo build --filter=@dorkos/obsidian-plugin
-
-# From apps/obsidian-plugin/:
-pnpm build
+# From the monorepo root; builds workspace dependencies, including shared UI:
+pnpm exec turbo build --filter=@dorkos/obsidian-plugin
 ```
 
 ### Development Workflow
 
-1. Run the build from the monorepo root or from `apps/obsidian-plugin/`
+1. Run the Turbo build above from the monorepo root.
 2. The build outputs to `apps/obsidian-plugin/dist/` which is symlinked (or hardlinked) into the vault's `.obsidian/plugins/dorkos-copilot/`
 3. Restart Obsidian (or use the Hot Reload plugin)
 4. Open dev console (`Cmd+Option+I`) to check for errors
@@ -935,7 +932,7 @@ If you don't see "main.js module loaded", the error is in module evaluation (top
 
 ### Development Workflow
 
-1. Run `turbo build --filter=@dorkos/obsidian-plugin` from the monorepo root, or `pnpm build` from `apps/obsidian-plugin/`
+1. Run `pnpm exec turbo build --filter=@dorkos/obsidian-plugin` from the monorepo root to build the plugin and its workspace dependencies.
 2. Restart Obsidian or use the Hot Reload plugin
 3. Open dev console (`Cmd+Option+I`) before enabling the plugin
 4. Check console for errors

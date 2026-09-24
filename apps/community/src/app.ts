@@ -34,6 +34,7 @@ import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
 import { createHostAuthority } from './host/authority.js';
 import { registerAdministrationRoutes } from './routes/administration.js';
+import { registerAccountErasureRoutes, registerOwnerErasureRoutes } from './routes/erasures.js';
 import { createBlobStore, type BlobStore } from './storage/index.js';
 import { DeliveryReceiptGate } from './delivery-receipt-gate.js';
 import { registerCommunityTestControlRoutes } from './routes/test-control.js';
@@ -56,6 +57,7 @@ export function createCommunityApp({
     beforeBootstrapChannelCreate?: () => Promise<void>;
     /** The clock host API key expiry is judged by. Tests move it; production uses the wall clock. */
     now?: () => Date;
+    afterExportSnapshot?: () => Promise<void>;
   };
   blobStore?: BlobStore;
 }) {
@@ -296,6 +298,7 @@ export function createCommunityApp({
   registerMembershipRoutes(hostApi, { pool, auth });
   registerHostLimitRoutes(hostApi, { pool, config, authority, now });
   registerHostKeyRoutes(hostApi, { pool, auth, authority, now, confirmPassword });
+  registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   app.route('/api/v1', hostApi);
 
   const communityApi = new Hono();
@@ -370,8 +373,9 @@ export function createCommunityApp({
   });
   registerAgentRoutes(communityApi, { pool, auth, config });
   registerAttachmentRoutes(communityApi, { pool, auth, config, blobStore });
-  registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
+  registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword, hooks });
   registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
+  registerOwnerErasureRoutes(communityApi, { pool, auth });
   app.route('/api/v1', communityApi);
   app.route('/api/v1/communities/:communityId', communityApi);
   return app;

@@ -43,7 +43,9 @@ import {
 } from '../installed-scanner.js';
 import { buildInstallerForTests } from './installer-harness.js';
 import { MarketplaceSourceManager } from '../marketplace-source-manager.js';
-import { UpdateFlow, pickInstallation, type UpdateResult } from '../flows/update.js';
+import { UpdateFlow } from '../flows/update.js';
+import { pickInstallation } from '../flows/update-selection.js';
+import type { UpdateResult } from '../flows/update-types.js';
 import { noopLogger } from '@dorkos/shared/logger';
 
 const __filename = fileURLToPath(import.meta.url);
