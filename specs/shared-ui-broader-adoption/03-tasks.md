@@ -1,6 +1,6 @@
 # Shared UI: broader primitive adoption and maintenance — tasks
 
-Canonical source: `03-tasks.json` • Generated 2026-09-24T13:11:00Z • 19 / 23 tasks complete
+Canonical source: `03-tasks.json` • Generated 2026-09-24T13:11:00Z • 23 / 23 tasks complete
 
 ## Phase 1: Portable contract and baseline
 
@@ -166,7 +166,7 @@ After public regression, exact packed proof, private candidate compatibility and
 
 ### Task 5.3: Deliver the public implementation through PR and CI
 
-- Status: pending; size: large; priority: high
+- Status: completed; size: large; priority: high
 - Depends on: 5.2
 - Parallel with: none
 
@@ -174,7 +174,7 @@ From the reviewed public worktree branch, open the normal pull request with a co
 
 ### Task 5.4: Publish and verify the exact 0.2.0 registry release
 
-- Status: pending; size: large; priority: high
+- Status: completed; size: large; priority: high
 - Depends on: 5.3
 - Parallel with: none
 
@@ -182,7 +182,7 @@ Follow the package owner's release procedure for @dork-labs/ui 0.2.0 from the re
 
 ### Task 5.5: Upgrade and deliver the independent private consumer
 
-- Status: pending; size: large; priority: high
+- Status: completed; size: large; priority: high
 - Depends on: 5.4
 - Parallel with: none
 
@@ -190,7 +190,7 @@ In the isolated private worktree, pin the real published @dork-labs/ui 0.2.0 reg
 
 ### Task 5.6: Close the evidence and task ledger against delivered results
 
-- Status: pending; size: medium; priority: high
+- Status: completed; size: medium; priority: high
 - Depends on: 5.5
 - Parallel with: none
 
