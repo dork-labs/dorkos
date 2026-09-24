@@ -87,6 +87,11 @@ describe('parseFrontmatter reads ordinary frontmatter unchanged', () => {
     ['yml', 'name: a'],
     ['YAML', 'name: a'],
     ['json', '{ "name": "a" }'],
+    // gray-matter aliases yaml/yml in any case but looks json up exactly as
+    // written, so these used to fail as an unregistered engine (DOR-2317).
+    ['JSON', '{ "name": "a" }'],
+    ['Json', '{ "name": "a" }'],
+    [' JSON ', '{ "name": "a" }'],
   ])('parses an explicit `---%s` block', (lang, block) => {
     expect(parseFrontmatter(`---${lang}\n${block}\n---\nbody`).data).toEqual({ name: 'a' });
   });
