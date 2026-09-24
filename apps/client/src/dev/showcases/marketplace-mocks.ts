@@ -608,9 +608,10 @@ export const MOCK_PERMISSION_PREVIEW_ESCAPES: PermissionPreview = {
 
 /**
  * What verification says about {@link MOCK_INSTALLED_FOR_UPDATES} (DOR-2197):
- * Release Bot's flow has files changed since install and an update waiting,
- * python-skills was installed by an older DorkOS, obsidian-sync is a linked
- * working copy, and the rest are as installed.
+ * Release Bot's flow has files edited, added and removed with an update
+ * waiting; python-skills was installed by an older DorkOS and can be checked;
+ * the global flow was checked and found to differ; obsidian-sync is a linked
+ * working copy; the rest are as installed.
  */
 export const MOCK_INSTALLED_VERIFIED: InstalledPackage[] = MOCK_INSTALLED_FOR_UPDATES.map((pkg) => {
   if (pkg.installPath === '/Users/kai/work/release-bot/.dork/plugins/flow') {
@@ -619,14 +620,38 @@ export const MOCK_INSTALLED_VERIFIED: InstalledPackage[] = MOCK_INSTALLED_FOR_UP
       integrity: {
         status: 'modified' as const,
         changed: ['skills/triage/SKILL.md', 'commands/ship.md'],
-        missing: [],
+        missing: ['README.md'],
         added: ['skills/my-notes/SKILL.md'],
         customized: [],
       },
     };
   }
+  if (pkg.installPath === '/Users/kai/.dork/plugins/flow') {
+    return {
+      ...pkg,
+      integrity: {
+        status: 'unknown' as const,
+        reason: 'no-record' as const,
+        check: {
+          source: 'fetchable' as const,
+          last: {
+            outcome: 'mismatch' as const,
+            message:
+              "Some of flow's files differ from the version you installed, so DorkOS can't tell your edits from the package's files. Its next update still keeps your copies.",
+          },
+        },
+      },
+    };
+  }
   if (pkg.name === 'python-skills') {
-    return { ...pkg, integrity: { status: 'unknown' as const, reason: 'no-record' as const } };
+    return {
+      ...pkg,
+      integrity: {
+        status: 'unknown' as const,
+        reason: 'no-record' as const,
+        check: { source: 'fetchable' as const },
+      },
+    };
   }
   if (pkg.name === 'obsidian-sync') {
     return { ...pkg, integrity: { status: 'unknown' as const, reason: 'linked' as const } };

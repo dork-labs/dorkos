@@ -12,7 +12,7 @@ export interface CheckPackageFilesArgs {
 }
 
 /**
- * Prepare a package an older DorkOS installed: record which of its files are
+ * Check the files of a package an older DorkOS installed: record which are
  * the package's, from the exact commit it was installed at (DOR-2320). The
  * server writes only on an exact match and otherwise says why; either way the
  * verified list is refreshed so the row shows where it stands now.

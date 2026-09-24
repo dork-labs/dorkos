@@ -60,7 +60,7 @@ describe('useInstalledIntegrity (DOR-2197)', () => {
 describe('useCheckPackageFiles (DOR-2320)', () => {
   // Purpose: preparing names the one installation, and refreshes the verified
   // list afterwards so the row stops saying it needs preparing.
-  it('prepares the installation and refreshes its integrity', async () => {
+  it("checks the installation's files and refreshes its integrity", async () => {
     const transport = createMockTransport({
       checkPackageFiles: vi
         .fn()

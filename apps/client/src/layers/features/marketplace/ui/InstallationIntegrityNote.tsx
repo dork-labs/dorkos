@@ -1,58 +1,152 @@
 /**
  * What an installation's integrity means for the person, on its row
- * (DOR-2197): files changed since install, or an install an older DorkOS made
- * without recording its files. A clean, linked or unverified installation adds
- * nothing.
+ * (DOR-2197): files changed since install, as a disclosure that opens to the
+ * paths, or an install an older DorkOS made without recording its files, and
+ * whether "Check files" can help. A clean, linked or unverified installation
+ * adds nothing.
+ *
+ * Only the icon carries colour. The text stays muted, so a real failure on the
+ * row (a red "Couldn't update") remains the one urgent line.
  *
  * @module features/marketplace/ui/InstallationIntegrityNote
  */
-import { FileWarning, History } from 'lucide-react';
+import { ChevronRight, FileWarning, History } from 'lucide-react';
 import type { InstallIntegrity } from '@dorkos/shared/marketplace-schemas';
 
-/** How many files a modified installation changed, counted the way the note says it. */
-export function changedFileCount(
-  integrity: Extract<InstallIntegrity, { status: 'modified' }>
-): number {
-  return integrity.changed.length + integrity.missing.length + integrity.added.length;
+/** A modified installation's integrity. */
+export type ModifiedIntegrity = Extract<InstallIntegrity, { status: 'modified' }>;
+
+/** What "Check files" does, said beside the button and in the CLI's help. */
+export const CHECK_FILES_EXPLANATION =
+  'Compares this package with the version you installed, so updates keep your edits.';
+
+/** "the file you edited" / "the 3 files you edited". */
+function theFiles(count: number, verb: string): string {
+  return count === 1 ? `the file you ${verb}` : `the ${count} files you ${verb}`;
 }
 
-/** Whether an installation was made by an older DorkOS and can be prepared. */
-export function needsPreparing(integrity: InstallIntegrity | undefined): boolean {
-  return integrity?.status === 'unknown' && integrity.reason === 'no-record';
+/** Join clauses as "a", "a and b", "a, b, and c". */
+function joinClauses(parts: string[]): string {
+  if (parts.length <= 1) return parts.join('');
+  return `${parts.slice(0, -1).join(', ')}${parts.length > 2 ? ',' : ''} and ${parts.at(-1)}`;
+}
+
+/**
+ * What an update does to the files a person changed, in one sentence, or
+ * `undefined` when nothing changed that an update touches. An update replaces
+ * edited files (keeping the person's copies), keeps files they added, and
+ * puts back files they removed.
+ *
+ * @param integrity - A modified installation's integrity.
+ */
+export function updateConsequence(integrity: ModifiedIntegrity): string | undefined {
+  const parts = [
+    integrity.changed.length > 0 &&
+      `replaces ${theFiles(integrity.changed.length, 'edited')} and keeps your copies beside them`,
+    integrity.added.length > 0 && `keeps ${theFiles(integrity.added.length, 'added')}`,
+    integrity.missing.length > 0 && `puts back ${theFiles(integrity.missing.length, 'removed')}`,
+  ].filter((p): p is string => typeof p === 'string');
+  return parts.length > 0 ? `Updating ${joinClauses(parts)}.` : undefined;
+}
+
+/** "3 files changed since install (2 edited, 1 added)". */
+function changeSummary(integrity: ModifiedIntegrity): string {
+  const kinds = [
+    [integrity.changed.length, 'edited'],
+    [integrity.added.length, 'added'],
+    [integrity.missing.length, 'removed'],
+  ] as const;
+  const present = kinds.filter(([count]) => count > 0);
+  const total = present.reduce((sum, [count]) => sum + count, 0);
+  const more = integrity.truncated ? '+' : '';
+  const head = `${total}${more} ${total === 1 ? 'file' : 'files'} changed since install`;
+  return present.length > 1
+    ? `${head} (${present.map(([count, kind]) => `${count} ${kind}`).join(', ')})`
+    : head;
+}
+
+/** Whether "Check files" can help this installation: an older install with an exact version to fetch, not already found to differ. */
+export function canCheckFiles(integrity: InstallIntegrity | undefined): boolean {
+  if (integrity?.status !== 'unknown' || integrity.reason !== 'no-record') return false;
+  if (integrity.check?.source === 'local') return false;
+  const last = integrity.check?.last?.outcome;
+  return last !== 'mismatch' && last !== 'no-source';
+}
+
+/** One group of paths in the opened disclosure. */
+function PathGroup({ title, paths }: { title: string; paths: string[] }) {
+  if (paths.length === 0) return null;
+  return (
+    <div>
+      <p className="text-3xs font-medium tracking-wide uppercase">{title}</p>
+      <ul aria-label={title} className="mt-0.5 space-y-0.5">
+        {paths.map((p) => (
+          <li key={p} className="font-mono text-xs [overflow-wrap:anywhere]">
+            {p}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 /**
  * The note under a row's metadata, or nothing.
  *
  * @param props.integrity - The installation's integrity, when verification has answered.
+ * @param props.updateAvailable - Whether this row offers an update, so the note says what it would do.
  */
-export function InstallationIntegrityNote({ integrity }: { integrity?: InstallIntegrity }) {
+export function InstallationIntegrityNote({
+  integrity,
+  updateAvailable,
+}: {
+  integrity?: InstallIntegrity;
+  updateAvailable: boolean;
+}) {
   if (integrity?.status === 'modified') {
-    const count = changedFileCount(integrity);
-    const paths = [...integrity.changed, ...integrity.added, ...integrity.missing];
+    const consequence = updateAvailable ? updateConsequence(integrity) : undefined;
     return (
-      <p
-        data-testid="installation-integrity"
-        title={paths.join('\n')}
-        className="mt-1 flex items-start gap-1 text-xs text-amber-600 dark:text-amber-400"
-      >
-        <FileWarning className="mt-0.5 size-3 shrink-0" aria-hidden />
-        <span>
-          {count}
-          {integrity.truncated ? '+' : ''} {count === 1 ? 'file' : 'files'} changed since install.
-          Updating replaces them and keeps your copies beside them.
-        </span>
-      </p>
+      <details data-testid="installation-integrity" className="group/files mt-1 text-xs">
+        <summary className="text-muted-foreground hover:text-foreground focus-ring flex cursor-pointer list-none items-start gap-1 rounded-sm select-none [&::-webkit-details-marker]:hidden">
+          <FileWarning
+            className="mt-0.5 size-3 shrink-0 text-amber-600 dark:text-amber-400"
+            aria-hidden
+          />
+          <span>
+            {changeSummary(integrity)}.{consequence && ` ${consequence}`}
+          </span>
+          <ChevronRight
+            className="mt-0.5 size-3 shrink-0 transition-transform duration-200 group-open/files:rotate-90"
+            aria-hidden
+          />
+        </summary>
+        <div className="text-muted-foreground mt-1.5 space-y-1.5 pl-4">
+          <PathGroup title="Edited" paths={integrity.changed} />
+          <PathGroup title="Added" paths={integrity.added} />
+          <PathGroup title="Removed" paths={integrity.missing} />
+          {integrity.truncated && <p>Only the first 50 of each are listed.</p>}
+        </div>
+      </details>
     );
   }
-  if (needsPreparing(integrity)) {
+  if (integrity?.status === 'unknown' && integrity.reason === 'no-record') {
+    const local = integrity.check?.source === 'local';
+    const last = integrity.check?.last;
+    const text = local
+      ? 'Installed from a folder by an older DorkOS, so there’s no version to compare it with. Reinstall it so updates keep your edits.'
+      : last
+        ? last.message
+        : `Installed by an older DorkOS. ${CHECK_FILES_EXPLANATION}`;
     return (
       <p
         data-testid="installation-integrity"
         className="text-muted-foreground mt-1 flex items-start gap-1 text-xs"
       >
-        <History className="mt-0.5 size-3 shrink-0" aria-hidden />
-        <span>Installed by an older DorkOS, so DorkOS can’t tell its files from yours yet.</span>
+        <History
+          className="mt-0.5 size-3 shrink-0 text-amber-600 dark:text-amber-400"
+          aria-hidden
+        />
+        <span>{text}</span>
       </p>
     );
   }

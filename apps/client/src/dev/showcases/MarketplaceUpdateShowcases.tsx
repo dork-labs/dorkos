@@ -88,8 +88,8 @@ export function InstalledPackagesViewShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Files changed since install (with what an update does to them), and an install an older
-        DorkOS made, with Prepare
+        Files changed since install (open it for the paths, and what an update does to them), an
+        install an older DorkOS made with Check files, and one whose files were found to differ
       </ShowcaseLabel>
       <ShowcaseDemo>
         <IsolatedQueryProvider seed={seedVerified}>

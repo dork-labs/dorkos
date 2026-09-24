@@ -1,9 +1,10 @@
 /**
- * Prepare-with-toast for a package an older DorkOS installed (DOR-2320).
+ * "Check files" with its toast, for a package an older DorkOS installed
+ * (DOR-2320).
  *
  * Wraps `useCheckPackageFiles` and says what happened in one toast: a loading
  * toast while the server fetches the version the package was installed from,
- * then the server's own sentence. A package that could not be prepared
+ * then the server's own sentence. A package whose files could not be checked
  * (changed files, no network, installed from a local folder) is a warning, not
  * an error: nothing broke, and the sentence says what to do.
  *
@@ -23,27 +24,27 @@ export type CheckFilesWithToastArgs = CheckPackageFilesArgs & { where?: string }
  * so a row can show its own busy state.
  */
 export function useCheckFilesWithToast() {
-  const prepare = useCheckPackageFiles();
-  const { mutate: baseMutate } = prepare;
+  const checkFiles = useCheckPackageFiles();
+  const { mutate: baseMutate } = checkFiles;
 
   const mutate = useCallback(
     ({ where, ...args }: CheckFilesWithToastArgs) => {
       const subject = where
         ? `${humanizePackageName(args.name)} on ${where}`
         : humanizePackageName(args.name);
-      const toastId = toast.loading(`Preparing ${subject}…`);
+      const toastId = toast.loading(`Checking the files of ${subject}…`);
       baseMutate(args, {
         onSuccess: (result) => {
           const done = result.outcome === 'rebuilt' || result.outcome === 'not-needed';
           (done ? toast.success : toast.warning)(result.message, { id: toastId });
         },
         onError: (err) => {
-          toast.error(`Couldn't prepare ${subject}: ${err.message}`, { id: toastId });
+          toast.error(`Couldn't check the files of ${subject}: ${err.message}`, { id: toastId });
         },
       });
     },
     [baseMutate]
   );
 
-  return { ...prepare, mutate };
+  return { ...checkFiles, mutate };
 }

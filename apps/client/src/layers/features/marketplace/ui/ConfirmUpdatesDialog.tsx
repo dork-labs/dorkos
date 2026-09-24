@@ -39,7 +39,7 @@ import {
   type StaleInstallation,
 } from '../lib/installed-updates';
 import { PermissionItem, withBreakPoints } from './PermissionPreviewSection';
-import { changedFileCount } from './InstallationIntegrityNote';
+import { updateConsequence } from './InstallationIntegrityNote';
 
 interface ConfirmUpdatesDialogProps {
   /** The installations to confirm; `null` keeps the dialog closed. */
@@ -188,10 +188,7 @@ function Disclosure(item: StaleInstallation) {
  * One installation in the list: its name, place and version change, and under
  * them what its new version runs.
  */
-function StaleItem({
-  integrity,
-  ...item
-}: StaleInstallation & { integrity?: InstallIntegrity }) {
+function StaleItem({ integrity, ...item }: StaleInstallation & { integrity?: InstallIntegrity }) {
   const { installation, check } = item;
   const place = installationPlace(installation);
   const from = formatCheckVersion(check.installedVersion, check.installedVersionSource);
@@ -214,12 +211,8 @@ function StaleItem({
           <span className="sr-only">to</span> {to}
         </div>
       </div>
-      {integrity?.status === 'modified' && (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
-          Your changes to {changedFileCount(integrity)}{' '}
-          {changedFileCount(integrity) === 1 ? 'file' : 'files'} will be replaced; your copies are
-          saved beside them (.dork-old).
-        </p>
+      {integrity?.status === 'modified' && updateConsequence(integrity) && (
+        <p className="text-muted-foreground text-xs">{updateConsequence(integrity)}</p>
       )}
       <Disclosure {...item} />
     </li>
