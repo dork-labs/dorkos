@@ -10,6 +10,8 @@ import type { Logger } from '@dorkos/shared/logger';
 import { createListInstalledHandler, ListInstalledInputSchema } from '../tool-list-installed.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import { INSTALL_METADATA_PATH } from '../../marketplace/installed-metadata.js';
+import { UpdateFlow } from '../../marketplace/flows/update.js';
+import type { InstallRequest, LatestResolution } from '../../marketplace/types.js';
 
 /**
  * Write a `.dork/manifest.json` to a package root, creating the directory tree
@@ -294,5 +296,105 @@ describe('createListInstalledHandler', () => {
     expect(global?.version).toBe('1.0.0');
     expect(override?.version).toBe('2.0.0');
     expect(override?.agentName).toBe('E2E Test Agent');
+  });
+});
+
+describe('createListInstalledHandler — checkUpdates', () => {
+  let dorkHome: string;
+  let resolveLatest: ReturnType<typeof vi.fn<(req: InstallRequest) => Promise<LatestResolution>>>;
+  let network: ReturnType<typeof vi.fn>[];
+  let deps: MarketplaceMcpDeps;
+
+  beforeEach(async () => {
+    dorkHome = await mkdtemp(join(tmpdir(), 'mcp-list-installed-updates-'));
+    for (const [name, type] of [
+      ['flow', 'plugin'],
+      ['helper', 'agent'],
+    ] as const) {
+      const root = join(dorkHome, type === 'plugin' ? 'plugins' : 'agents', name);
+      await writeManifest(root, { schemaVersion: 1, type, name, version: '1.0.0' });
+      await writeMetadata(root, { name, version: '1.0.0', type, installedFrom: 'fixture' });
+    }
+    const source = {
+      name: 'fixture',
+      source: 'https://example.com/marketplace',
+      enabled: true,
+      addedAt: '2025-01-01T00:00:00.000Z',
+    };
+    resolveLatest = vi.fn(async (req: InstallRequest): Promise<LatestResolution> => {
+      if (req.name === 'helper') throw new Error('network is down');
+      return { kind: 'resolved', declaredVersion: '1.2.0' };
+    });
+    const fetchMarketplaceJson = vi.fn(async () => ({
+      name: 'fixture',
+      owner: { name: 'Fixture' },
+      plugins: [
+        { name: 'flow', source: 'https://example.com/flow' },
+        { name: 'helper', source: 'https://example.com/helper' },
+      ],
+    }));
+    const lookupCommitSha = vi.fn(async () => 'a'.repeat(40));
+    const list = vi.fn(async () => [source]);
+    const get = vi.fn(async () => source);
+    // Every way the update check can reach the network, or the marketplace
+    // configuration it would read to get there.
+    network = [resolveLatest, fetchMarketplaceJson, lookupCommitSha, list, get];
+    deps = {
+      dorkHome,
+      logger: buildLogger(),
+      updateFlow: new UpdateFlow({
+        dorkHome,
+        installer: { resolveLatest, update: vi.fn(), preview: vi.fn() },
+        sourceManager: { list, get },
+        fetcher: { fetchMarketplaceJson, lookupCommitSha },
+        logger: buildLogger(),
+      }),
+    } as unknown as MarketplaceMcpDeps;
+  });
+
+  afterEach(async () => {
+    await rm(dorkHome, { recursive: true, force: true });
+  });
+
+  it('makes no network call, and adds nothing, without checkUpdates', async () => {
+    // Purpose: the plain listing is on a hot path. It must never pay for a
+    // marketplace fetch it was not asked for.
+    const body = JSON.parse((await createListInstalledHandler(deps)({})).content[0].text) as {
+      installed: Record<string, unknown>[];
+    };
+
+    expect(body.installed).toHaveLength(2);
+    expect(body.installed.every((p) => !('update' in p))).toBe(true);
+    for (const fn of network) expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('says, per installation, what is stale, and why it could not tell', async () => {
+    // Purpose: an agent can see what needs updating from the list it already
+    // reads; a check that fails is `unknown` with the reason, not a dropped row.
+    const body = JSON.parse(
+      (await createListInstalledHandler(deps)({ checkUpdates: true })).content[0].text
+    ) as { installed: Array<{ name: string; version: string; update: Record<string, unknown> }> };
+
+    const byName = new Map(body.installed.map((p) => [p.name, p]));
+    expect(byName.get('flow')).toMatchObject({
+      version: '1.0.0',
+      update: { status: 'update-available', latestVersion: '1.2.0', hasUpdate: true },
+    });
+    expect(byName.get('helper')!.update).toMatchObject({
+      status: 'unknown',
+      hasUpdate: false,
+      note: expect.stringContaining('network is down'),
+    });
+  });
+
+  it('checks only what the type filter keeps', async () => {
+    // Purpose: filtering after checking would pay for checks nobody sees.
+    const body = JSON.parse(
+      (await createListInstalledHandler(deps)({ type: 'plugin', checkUpdates: true })).content[0]
+        .text
+    ) as { installed: Array<{ name: string }> };
+
+    expect(body.installed.map((p) => p.name)).toEqual(['flow']);
+    expect(resolveLatest.mock.calls.map(([req]) => req.name)).toEqual(['flow']);
   });
 });

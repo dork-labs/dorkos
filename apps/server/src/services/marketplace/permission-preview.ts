@@ -21,20 +21,15 @@ import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { clampSchedulePermissionMode } from '../tasks/schedule-permission-clamp.js';
 import { installRootDirForType } from './lib/install-roots.js';
 import { readNpmDependencies } from './lib/npm-dependencies.js';
+import { readPluginJson } from './lib/package-declarations.js';
+import { readPackageHooks } from './lib/package-hooks.js';
+import { readPackagePrograms } from './lib/package-programs.js';
+import { readPackageSkills } from './lib/package-skills.js';
 import { packageSchedules, scheduleDisplayName } from './lib/package-schedules.js';
-import type {
-  ConflictReport,
-  PermissionPreview,
-  PreviewHook,
-  PreviewSchedule,
-  UnreadablePreviewHook,
-} from './types.js';
+import type { ConflictReport, PermissionPreview, PreviewSchedule } from './types.js';
 
 /** Directory names ignored when walking the package contents. */
 const IGNORED_DIRECTORIES = new Set(['node_modules', '.git', 'dist']);
-
-/** Package-relative path of a Claude-plugin hooks declaration. */
-const HOOKS_FILE = 'hooks/hooks.json';
 
 /**
  * Forward-declared interface for the conflict detector. The real
@@ -271,93 +266,6 @@ function readManifestSchedules(manifest: MarketplacePackageManifest): PreviewSch
 }
 
 /**
- * Read a package's Claude-plugin hooks (`hooks/hooks.json`) into flat
- * `{ event, matcher?, command }` rows, plus the declarations that could not be
- * read.
- *
- * Parsing mirrors `readPluginHooks` in `packages/harness/src/sources/installed.ts`,
- * the reader that feeds Harness Sync, including its tolerance for both the
- * settings-style `{ hooks: {…} }` wrapper and a bare `{ Event: […] }` object.
- * It is reimplemented rather than imported because the harness copy is module
- * private, and because the two want different things from a bad declaration:
- * the projector only needs what it can use, while the preview has to say out
- * loud what it could not read. Every discarded declaration therefore comes back
- * in `unreadable`.
- *
- * Facts this function deliberately does NOT encode, because the preview's job
- * is to disclose what the package declares, not to predict every downstream
- * filter:
- *
- * - Those hooks only reach a harness settings file for a PROJECT-scoped install
- *   of a `plugin` or `skill-pack` (`installed.ts` records global installs as
- *   identity-only; `projector.ts` filters to `PROJECTABLE_PLUGIN_TYPES`), and
- *   only after a person approves that exact command set for that project
- *   (`services/harness/hook-approval.ts`, DOR-522). An agent or Shape ships its
- *   `hooks/hooks.json` to disk and nothing ever reads it. The UI therefore says
- *   the package "declares" these commands rather than that it "will run" them —
- *   this preview is read BEFORE installing, the approval card BEFORE running.
- * - `readPluginHooks` salvages exactly the same commands this reader does — the
- *   same keep rule at the event, group and command level (DOR-646) — so what the
- *   preview discloses from a partially-bad file is what the projector will
- *   actually install. Both sides also report what they discarded: this reader in
- *   `unreadable`, the projector as a `ProjectionWarning` naming the file and the
- *   event, printed by `dorkos harness sync` (DOR-1724). Both are needed, because
- *   this preview runs BEFORE the install and cannot see a file that rots after it.
- */
-async function readPackageHooks(
-  packagePath: string
-): Promise<{ hooks: PreviewHook[]; unreadable: UnreadablePreviewHook[] }> {
-  const hooksPath = join(packagePath, 'hooks', 'hooks.json');
-  if (!(await pathExists(hooksPath))) return { hooks: [], unreadable: [] };
-
-  let raw: unknown;
-  try {
-    raw = JSON.parse(await readFile(hooksPath, 'utf-8'));
-  } catch {
-    return { hooks: [], unreadable: [{ path: HOOKS_FILE }] };
-  }
-
-  // Accept both `{ hooks: {…} }` (settings-style) and a bare `{ Event: […] }` object.
-  const hooksObj =
-    raw && typeof raw === 'object' && 'hooks' in raw ? (raw as { hooks: unknown }).hooks : raw;
-  if (!hooksObj || typeof hooksObj !== 'object') {
-    return { hooks: [], unreadable: [{ path: HOOKS_FILE }] };
-  }
-
-  const hooks: PreviewHook[] = [];
-  const unreadable: UnreadablePreviewHook[] = [];
-
-  for (const [event, groups] of Object.entries(hooksObj as Record<string, unknown>)) {
-    if (!Array.isArray(groups)) {
-      unreadable.push({ path: HOOKS_FILE, event });
-      continue;
-    }
-    let salvaged = 0;
-    for (const group of groups) {
-      if (!group || typeof group !== 'object') continue;
-      const { matcher, hooks: commands } = group as { matcher?: unknown; hooks?: unknown };
-      if (!Array.isArray(commands)) continue;
-      for (const command of commands) {
-        if (!command || typeof command !== 'object') continue;
-        const { command: text } = command as { command?: unknown };
-        if (typeof text !== 'string' || text.length === 0) continue;
-        hooks.push({
-          event,
-          ...(typeof matcher === 'string' && matcher.length > 0 ? { matcher } : {}),
-          command: text,
-        });
-        salvaged += 1;
-      }
-    }
-    // An event that declares matcher groups but yields no command string is a
-    // declaration we failed to read, not an empty one.
-    if (salvaged === 0 && groups.length > 0) unreadable.push({ path: HOOKS_FILE, event });
-  }
-
-  return { hooks, unreadable };
-}
-
-/**
  * Extract slot IDs from an extension manifest's `contributions` map.
  * Slots are the keys whose value is `true`.
  */
@@ -437,11 +345,18 @@ export class PermissionPreviewBuilder {
    *   in the package, expanded into `{ id, slots }` where `slots` are the
    *   extension's enabled `contributions` keys.
    * - `hooks` — every shell command declared in the package's
-   *   `hooks/hooks.json`, flattened to `{ event, matcher?, command }` with the
-   *   command string kept verbatim.
+   *   `hooks/hooks.json` and plugin.json `hooks` (`lib/package-hooks.ts`),
+   *   flattened to `{ event, matcher?, command }` with the command verbatim,
+   *   plus every hook in a skill's or command's frontmatter, tagged with its
+   *   `source` (`lib/package-skills.ts`), and each one's `allowed-tools` in
+   *   `skillTools`.
    * - `unreadableHooks` — every hook declaration the package ships that could
    *   not be parsed. Reported separately so "declares hooks we could not read"
    *   never renders as "declares no hooks".
+   * - `mcpServers`, `lspServers`, `monitors`, `executables` — every program
+   *   the package starts on its own, from its default files and plugin.json
+   *   (`lib/package-programs.ts`), verbatim. `unreadableDeclarations` names
+   *   every declaration that could not be read or points outside the package.
    * - `schedules` — every scheduled job the install creates, from both
    *   `.dork/tasks/<name>/SKILL.md` (parsed via `@dorkos/skills`) and a Shape
    *   manifest's `schedules[]`, captured as
@@ -481,6 +396,12 @@ export class PermissionPreviewBuilder {
       extensions: [],
       hooks: [],
       unreadableHooks: [],
+      mcpServers: [],
+      lspServers: [],
+      monitors: [],
+      executables: [],
+      skillTools: [],
+      unreadableDeclarations: [],
       schedules: [],
       secrets: [],
       npmDependencies: [],
@@ -497,9 +418,21 @@ export class PermissionPreviewBuilder {
       slots: extractSlots(extManifest.contributions),
     }));
 
-    const hookDeclarations = await readPackageHooks(packagePath);
-    preview.hooks = hookDeclarations.hooks;
-    preview.unreadableHooks = hookDeclarations.unreadable;
+    const pluginJson = await readPluginJson(packagePath);
+    const hookDeclarations = await readPackageHooks(packagePath, pluginJson);
+    // A skill's or command's frontmatter hooks run while it is in use, and the
+    // model picks skills by description, so they are listed with the plugin's.
+    const skills = await readPackageSkills(packagePath, pluginJson);
+    preview.hooks = [...hookDeclarations.hooks, ...skills.hooks];
+    preview.unreadableHooks = [...hookDeclarations.unreadable, ...skills.unreadable];
+    preview.skillTools = skills.skillTools;
+
+    const programs = await readPackagePrograms(packagePath, pluginJson);
+    preview.mcpServers = programs.mcpServers;
+    preview.lspServers = programs.lspServers;
+    preview.monitors = programs.monitors;
+    preview.executables = programs.executables;
+    preview.unreadableDeclarations = programs.unreadable;
 
     preview.schedules = [
       ...(await readTaskSkills(packagePath)),

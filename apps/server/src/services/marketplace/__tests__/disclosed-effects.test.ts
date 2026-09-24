@@ -13,6 +13,12 @@ function preview(overrides: Partial<PermissionPreview> = {}): PermissionPreview 
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],
     secrets: [],
@@ -28,7 +34,15 @@ describe('disclosedEffectsOf', () => {
     // An uninstall previews nothing at all; an install of an inert package
     // previews empty lists. Collapsing the two would let one hash as the other.
     expect(disclosedEffectsOf(undefined)).toBeNull();
-    expect(disclosedEffectsOf(preview())).toEqual({ hooks: [], schedules: [] });
+    expect(disclosedEffectsOf(preview())).toEqual({
+      hooks: [],
+      schedules: [],
+      mcpServers: [],
+      lspServers: [],
+      monitors: [],
+      executables: [],
+      skillTools: [],
+    });
   });
 
   it('keeps the command verbatim and binds an absent matcher as absent', () => {
@@ -36,8 +50,13 @@ describe('disclosedEffectsOf', () => {
       preview({ hooks: [{ event: 'Stop', command: '  rm  -rf ./tmp  ' }] })
     );
     expect(effects).toEqual({
-      hooks: [{ event: 'Stop', matcher: null, command: '  rm  -rf ./tmp  ' }],
+      hooks: [{ event: 'Stop', matcher: null, command: '  rm  -rf ./tmp  ', source: null }],
       schedules: [],
+      mcpServers: [],
+      lspServers: [],
+      monitors: [],
+      executables: [],
+      skillTools: [],
     });
   });
 
@@ -111,6 +130,92 @@ describe('disclosedEffectsOf', () => {
       })
     );
     expect(withFiles).toEqual(disclosedEffectsOf(preview()));
+  });
+});
+
+describe('disclosedEffectsOf — MCP servers', () => {
+  it('binds every MCP server a package starts, what it runs and where it connects', () => {
+    // Purpose: a plugin's MCP server runs in every session the plugin loads in,
+    // so an approval that did not cover it would attest to a program nobody saw.
+    const effects = disclosedEffectsOf(
+      preview({
+        mcpServers: [
+          { name: 'web', transport: 'http', url: 'https://mcp.example.test' },
+          { name: 'db', transport: 'stdio', command: 'npx', args: ['-y', 'db-mcp'] },
+        ],
+      })
+    );
+    expect(effects?.mcpServers).toEqual([
+      { name: 'db', transport: 'stdio', command: 'npx', args: ['-y', 'db-mcp'], url: null },
+      { name: 'web', transport: 'http', command: null, args: [], url: 'https://mcp.example.test' },
+    ]);
+  });
+
+  it('is a different disclosure as soon as a server changes what it runs', () => {
+    const before = disclosedEffectsOf(
+      preview({ mcpServers: [{ name: 'db', transport: 'stdio', command: 'npx', args: ['a'] }] })
+    );
+    const after = disclosedEffectsOf(
+      preview({ mcpServers: [{ name: 'db', transport: 'stdio', command: 'npx', args: ['b'] }] })
+    );
+    expect(sameDisclosedEffects(before, after)).toBe(false);
+  });
+
+  it('names MCP servers when it says what a package declares', () => {
+    const effects = disclosedEffectsOf(
+      preview({ mcpServers: [{ name: 'db', transport: 'stdio', command: 'npx', args: [] }] })
+    );
+    expect(describeDisclosedEffects(effects)).toContain('1 MCP server');
+  });
+});
+
+describe('disclosedEffectsOf — the other programs a plugin starts', () => {
+  it('binds language servers, monitors and bin/ commands', () => {
+    // Purpose: each runs with the plugin, unasked; an approval that did not
+    // cover them would attest to programs nobody saw.
+    const effects = disclosedEffectsOf(
+      preview({
+        lspServers: [{ name: 'go', command: 'gopls', args: ['serve'] }],
+        monitors: [{ name: 'deploy', command: './poll.sh', when: 'always' }],
+        executables: ['git', 'deploy'],
+      })
+    );
+    expect(effects).toMatchObject({
+      lspServers: [{ name: 'go', command: 'gopls', args: ['serve'], when: null }],
+      monitors: [{ name: 'deploy', command: './poll.sh', args: [], when: 'always' }],
+      executables: ['deploy', 'git'],
+    });
+  });
+
+  it("binds a skill's hooks to their skill, and each skill's allowed tools", () => {
+    // Purpose: a skill runs these on the model's choice; the approval must
+    // cover them, and moving a hook into a skill changes when it runs.
+    const plugin = disclosedEffectsOf(preview({ hooks: [{ event: 'Stop', command: 'x' }] }));
+    const skill = disclosedEffectsOf(
+      preview({ hooks: [{ event: 'Stop', command: 'x', source: 'skills/a/SKILL.md' }] })
+    );
+    expect(sameDisclosedEffects(plugin, skill)).toBe(false);
+    expect(
+      sameDisclosedEffects(
+        disclosedEffectsOf(preview()),
+        disclosedEffectsOf(
+          preview({ skillTools: [{ source: 'skills/a/SKILL.md', skill: 'a', tools: ['Bash'] }] })
+        )
+      )
+    ).toBe(false);
+  });
+
+  it('is a different disclosure when a monitor or a bin/ command appears', () => {
+    const base = disclosedEffectsOf(preview());
+    expect(
+      sameDisclosedEffects(
+        base,
+        disclosedEffectsOf(preview({ monitors: [{ name: 'm', command: 'x' }] }))
+      )
+    ).toBe(false);
+    expect(sameDisclosedEffects(base, disclosedEffectsOf(preview({ executables: ['git'] })))).toBe(
+      false
+    );
   });
 });
 

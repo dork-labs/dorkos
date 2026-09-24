@@ -111,6 +111,7 @@ function buildDeps(opts: {
     fetcher: {} as MarketplaceMcpDeps['fetcher'],
     cache: {} as MarketplaceMcpDeps['cache'],
     uninstallFlow: {} as MarketplaceMcpDeps['uninstallFlow'],
+    updateFlow: {} as MarketplaceMcpDeps['updateFlow'],
     confirmationProvider: opts.confirmationProvider,
     onPluginsChanged: vi.fn(),
     logger: opts.logger ?? buildLogger(),

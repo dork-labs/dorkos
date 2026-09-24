@@ -35,6 +35,8 @@ The authoritative request fields and response schemas are in the shared package.
 | Agents               | `GET`, `POST /api/v1/agents`; `POST /api/v1/agents/recover`, `/api/v1/agents/:id/rotate`; `DELETE /api/v1/agents/:id`                   | Enroll, inspect, renew and remove agent identities                          |
 | Agent channels       | `POST /api/v1/channels/:id/agents`; `DELETE /api/v1/channels/:id/agents/:agentId`                                                       | Join or eject an owned agent                                                |
 | Exports              | `POST /api/v1/me/export`, `/api/v1/owner/export`; `GET /api/v1/exports/:id`                                                             | Create and download a private ZIP archive                                   |
+| Erasure              | `GET /api/v1/account/former-memberships`; `GET`, `POST /api/v1/account/erasures`; `POST /api/v1/account/erasures/:id/cancel`            | A person erases one membership, or deletes their account, after 72 hours    |
+| Completed erasures   | `GET /api/v1/owner/erasures`                                                                                                            | The owner sees which members finished erasing themselves, by member ID      |
 
 Owner/admin powers do not bypass private-channel membership. Only the owner can promote another administrator or transfer ownership. Transfer requires password confirmation. An owner must transfer before leaving.
 
@@ -76,6 +78,14 @@ A host can cap how many active members a community has and how many bytes of att
 Usage returns counts of active members and agents, bytes by kind, the limits, and the UTC day of the newest message. It carries no names, text, files, or per-person numbers. Pages come in id order with a `next` cursor.
 
 When a request carries an `Authorization` header, a host route considers only the key and ignores any session cookie. A missing, unknown, revoked, or expired key is `401 UNAUTHENTICATED`; each failure counts against the caller's address (`COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`, then `429`). A key without the route's permission is `403 FORBIDDEN`. Every community route refuses a `dkh_` bearer with `401` before it looks at anything else. A revocation that lands while a request waits for a community is honored: the request fails with `401` and changes nothing. Each host change writes one host audit row naming the person, the key, or the offline command, with the names of the changed fields and never their values.
+
+## Erase a membership or an account
+
+Only the person can ask, from their own signed-in browser session. Every erasure route refuses a bearer credential with `403`, and host authority has no erasure route. `POST /api/v1/account/erasures` takes `{ "kind": "membership", "communityId", "password" }` or `{ "kind": "account", "confirmEmail", "password" }`. An account with a password must send it. An account that signs in only through Google or GitHub sends no password, and its session must be less than 5 minutes old, or the answer is `403 REAUTH_REQUIRED`. A repeat while a request is open returns that request with `200`.
+
+A request waits 72 hours in `scheduled`. Nothing about the person changes until then, and `POST /api/v1/account/erasures/:id/cancel` undoes it. After `executeAfter`, cancel answers `409`. The owner of a community cannot erase that membership (`403`) or delete their account (`409`) until they transfer ownership or the community is deleted. An account that has ever operated the host cannot be deleted online (`403`).
+
+When it runs, the person's messages and their agents' messages stay in place with the text `This message was erased.` and the author `Erased member` or `Erased agent`. IDs, sequence numbers, thread links, and cursors do not change, so the wire shape is the same. Their files and every live export in the community are deleted, and `@handle` mentions of them in other messages become `@[erased]`. An export that was being built while an erasure ran answers `409`; ask for it again.
 
 ## Recover an agent enrollment
 

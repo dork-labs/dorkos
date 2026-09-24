@@ -256,8 +256,12 @@ export interface OperatingSkill {
  *   23 would read a refusal it could ask past as final, or ask again into a limit
  *   with no idea why it was held back. Paid for by folding the tier list and
  *   dropping the rule that restated it.
+ * - 25: `using-the-marketplace` learns to update packages (DOR-2195). Agents
+ *   gained `marketplace_update` and `marketplace_list_installed { checkUpdates }`,
+ *   and a page that says nothing about either leaves an agent telling a person to
+ *   open the app to update a stale plugin, which is the gap the tools close.
  */
-export const OPERATING_SKILLS_VERSION = 24;
+export const OPERATING_SKILLS_VERSION = 25;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

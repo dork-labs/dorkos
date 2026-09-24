@@ -137,13 +137,16 @@ function deletionProjection(row: {
 }) {
   return {
     communityId: row.community_id,
-    lifecycle: row.lifecycle as 'active' | 'archived' | 'deletion_pending',
+    lifecycle: row.lifecycle as 'active' | 'archived' | 'suspended' | 'deletion_pending',
     lifecycleVersion: row.lifecycle_version,
     deleteAfter: row.delete_after?.toISOString() ?? null,
     state: row.state,
     attempts: row.attempts ?? 0,
   };
 }
+
+/** Lifecycles the owner may ask to delete from. A suspension must not trap an owner. */
+const DELETABLE: readonly string[] = ['active', 'archived', 'suspended'];
 
 /** Register settings and owner lifecycle operations for one tenant-qualified Community. */
 export function registerAdministrationRoutes(
@@ -456,7 +459,12 @@ export function registerAdministrationRoutes(
   });
 
   app.post('/owner/deletion', async (c) => {
-    const actor = await requireMember(c, auth, pool, { allowDeletionPending: true });
+    // The one member route a suspension does not close: an owner must be able to delete a
+    // suspended community, or they could never delete their own account.
+    const actor = await requireMember(c, auth, pool, {
+      allowDeletionPending: true,
+      allowSuspended: true,
+    });
     const body = await readJson(c, CommunityAdminDeletionRequestSchema);
     await confirmPassword(c, actor.user_id, body.password);
     const existing = await transaction(pool, async (client) => {
@@ -472,7 +480,7 @@ export function registerAdministrationRoutes(
         );
         return pending.rows[0];
       }
-      if (current.lifecycle !== 'active' && current.lifecycle !== 'archived') {
+      if (!DELETABLE.includes(current.lifecycle)) {
         throw new ApiError(409, 'STATE_CONFLICT', 'This community cannot be deleted now.');
       }
       if (current.lifecycle_version !== body.lifecycleVersion) {
@@ -506,7 +514,7 @@ export function registerAdministrationRoutes(
         );
         return existing.rows[0];
       }
-      if (current.lifecycle !== 'active' && current.lifecycle !== 'archived') {
+      if (!DELETABLE.includes(current.lifecycle)) {
         throw new ApiError(409, 'STATE_CONFLICT', 'This community cannot be deleted now.');
       }
       if (current.lifecycle_version !== body.lifecycleVersion) {
@@ -518,8 +526,12 @@ export function registerAdministrationRoutes(
       await revokeTenantAccess(client, current.id);
       const requestedAt = new Date();
       const deleteAfter = new Date(requestedAt.getTime() + 7 * 24 * 60 * 60_000);
+      // Entering deletion_pending clears the suspension, so remember where a cancel returns.
       const updated = await client.query<{ lifecycle_version: number }>(
         `UPDATE communities SET lifecycle='deletion_pending',archived_at=NULL,
+           deletion_from_state=lifecycle,
+           deletion_from_prior_state=CASE WHEN lifecycle='suspended' THEN suspended_from_state END,
+           suspended_from_state=NULL,suspended_at=NULL,
            delete_requested_at=$2,delete_after=$3,delete_requested_by=$4,
            lifecycle_version=lifecycle_version+1
          WHERE id=$1 RETURNING lifecycle_version`,
@@ -559,10 +571,16 @@ export function registerAdministrationRoutes(
     await confirmPassword(c, actor.user_id, body.password);
     const result = await transaction(pool, async (client) => {
       const current = await client.query<
-        SettingsRow & { delete_after: Date | null; delete_requested_by: string | null }
+        SettingsRow & {
+          delete_after: Date | null;
+          delete_requested_by: string | null;
+          deletion_from_state: string | null;
+          deletion_from_prior_state: 'active' | 'archived' | null;
+        }
       >(
         `SELECT id,name,description,admission_policy,icon_blob_key,settings_version,
-                lifecycle,lifecycle_version,delete_after,delete_requested_by
+                lifecycle,lifecycle_version,delete_after,delete_requested_by,
+                deletion_from_state,deletion_from_prior_state
          FROM communities WHERE id=$1 FOR UPDATE`,
         [actor.community_id]
       );
@@ -578,23 +596,31 @@ export function registerAdministrationRoutes(
       ) {
         throw new ApiError(409, 'STATE_CONFLICT', 'This deletion can no longer be cancelled.');
       }
+      // A deletion requested while suspended returns to that suspension, from where it began;
+      // one requested while active or archived keeps its content out of use, as archived.
+      const restored =
+        row.deletion_from_state === 'suspended' && row.deletion_from_prior_state
+          ? { lifecycle: 'suspended' as const, suspendedFrom: row.deletion_from_prior_state }
+          : { lifecycle: 'archived' as const, suspendedFrom: null };
       const updated = await client.query<{ lifecycle_version: number }>(
-        `UPDATE communities SET lifecycle='archived',archived_at=now(),
+        `UPDATE communities SET lifecycle=$2,
+           archived_at=CASE WHEN $2='archived' OR $3='archived' THEN now() END,
+           suspended_from_state=$3,suspended_at=CASE WHEN $2='suspended' THEN now() END,
            delete_requested_at=NULL,delete_after=NULL,delete_requested_by=NULL,
            lifecycle_version=lifecycle_version+1 WHERE id=$1 RETURNING lifecycle_version`,
-        [row.id]
+        [row.id, restored.lifecycle, restored.suspendedFrom]
       );
       await client.query('DELETE FROM community_deletion_jobs WHERE community_id=$1', [row.id]);
       await client.query(
         `INSERT INTO audit_events(
            community_id,actor_member_id,action,prior_state,next_state,changed_fields
-         ) VALUES($1,$2,'community.delete.cancel','deletion_pending','archived',
+         ) VALUES($1,$2,'community.delete.cancel','deletion_pending',$3,
                   ARRAY['lifecycle','delete_after'])`,
-        [row.id, currentActor.id]
+        [row.id, currentActor.id, restored.lifecycle]
       );
       return {
         community_id: row.id,
-        lifecycle: 'archived',
+        lifecycle: restored.lifecycle,
         lifecycle_version: updated.rows[0].lifecycle_version,
         delete_after: null,
         state: null,

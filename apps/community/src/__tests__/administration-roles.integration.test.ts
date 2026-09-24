@@ -1574,6 +1574,12 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'POST /pairings/poll': 'a local install polls its own pairing',
   'POST /pairings/exchange': 'a local install exchanges its own pairing',
   'POST /pairings/cancel': 'a local install cancels its own pairing',
+  'GET /account/former-memberships': "the caller's own former memberships",
+  'GET /account/erasures': "the caller's own erasure requests",
+  'POST /account/erasures': 'the caller erases their own membership or account',
+  'POST /account/erasures/:id/cancel': 'the caller cancels their own erasure',
+  'GET /owner/erasures':
+    'completed self-erasures only; member-erasure.integration.test.ts covers who may read it',
 };
 
 function refusalStatus(action: Action<unknown>, role: Role): number {

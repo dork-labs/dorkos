@@ -30,6 +30,7 @@ import { assertMemberRoom } from '../host/limits.js';
 import { inspectInvite, issueInvite } from '../invites.js';
 import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../security.js';
 import { mintHandle } from '../handles.js';
+import { readmissionBlocked } from '../erasure/guards.js';
 import { resolveCommunityContext } from '../tenant-context.js';
 
 interface InviteRow {
@@ -454,6 +455,14 @@ export function registerInviteRoutes(
           throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
         return grant.member_id;
       }
+      // Reactivating the member row mid-erasure would bring the person back while their data
+      // is being removed; the erasure's seal would then have to remove them again.
+      if (await readmissionBlocked(client, tenant.communityId, user.id))
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'This account is being erased here. Try again later.'
+        );
       const inviteResult = await client.query<InviteRow>(
         `SELECT i.* FROM invites i
          JOIN members issuer ON issuer.id=i.issuer_member_id AND issuer.community_id=i.community_id

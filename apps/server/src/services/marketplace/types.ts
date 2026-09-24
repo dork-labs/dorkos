@@ -61,6 +61,26 @@ export interface PreviewHook {
   matcher?: string;
   /** The literal shell command the hook runs. */
   command: string;
+  /**
+   * The skill or command file whose frontmatter declares this hook, when it is
+   * one: Claude Code registers such a hook while that skill is in use.
+   * Absent for a plugin-wide hook.
+   */
+  source?: string;
+}
+
+/**
+ * The tools a skill or command lets the agent use without asking
+ * (`allowed-tools` in its frontmatter). A skill is invoked by the model on the
+ * strength of its description, so this is permission the package grants itself.
+ */
+export interface PreviewSkillTools {
+  /** Package-relative path of the skill or command file. */
+  source: string;
+  /** The skill's name, from its frontmatter or its location. */
+  skill: string;
+  /** Each allowed-tools entry, verbatim. */
+  tools: string[];
 }
 
 /**
@@ -180,6 +200,18 @@ export interface PermissionPreview {
   hooks: PreviewHook[];
   /** Hook declarations the package ships that could not be read */
   unreadableHooks: UnreadablePreviewHook[];
+  /** MCP servers the package starts, with what each runs */
+  mcpServers: PreviewMcpServer[];
+  /** Language (LSP) servers the package starts, with what each runs */
+  lspServers: PreviewLspServer[];
+  /** Background monitors the package runs */
+  monitors: PreviewMonitor[];
+  /** Programs the package puts on the agent's PATH (the files in its `bin/`) */
+  executables: string[];
+  /** Tools each skill or command lets the agent use without asking */
+  skillTools: PreviewSkillTools[];
+  /** Program declarations (MCP, LSP, monitors) that could not be read */
+  unreadableDeclarations: UnreadableDeclaration[];
   /** Scheduled jobs that will be created, and what each may do unattended */
   schedules: PreviewSchedule[];
   /** Secrets the package will request */
@@ -197,6 +229,62 @@ export interface PermissionPreview {
   requires: { type: string; name: string; version?: string; satisfied: boolean }[];
   /** Conflicts with already-installed packages */
   conflicts: ConflictReport[];
+}
+
+/**
+ * An MCP server a package starts, as Claude Code would launch it. A plugin's
+ * servers load into every session the plugin loads in, so a person approving
+ * the install has to see what each one runs: the command and its arguments
+ * verbatim for a local (`stdio`) server, the address for a remote one.
+ */
+export interface PreviewMcpServer {
+  /** The server's name, the key it is declared under. */
+  name: string;
+  /** `stdio` for a local command, else the declared remote transport (`http`, `sse`, …). */
+  transport: string;
+  /** The program a `stdio` server runs, verbatim. */
+  command?: string;
+  /** Its arguments, verbatim and in order. */
+  args?: string[];
+  /** The address a remote server is reached at. */
+  url?: string;
+}
+
+/** A language (LSP) server a package starts, as Claude Code would launch it. */
+export interface PreviewLspServer {
+  /** The server's name, the key it is declared under. */
+  name: string;
+  /** The program it runs, verbatim. */
+  command: string;
+  /** Its arguments, verbatim and in order. */
+  args: string[];
+}
+
+/** A background monitor a package runs: a command Claude Code keeps running. */
+export interface PreviewMonitor {
+  /** The monitor's declared name. */
+  name: string;
+  /** The command it runs, verbatim. */
+  command: string;
+  /** When it starts (`always`, or `on-skill-invoke:<skill>`), when declared. */
+  when?: string;
+}
+
+/** Which kind of program a declaration we could not read was for. */
+export type UnreadableDeclarationKind = 'mcp-server' | 'lsp-server' | 'monitor';
+
+/**
+ * A program declaration the package ships that could not be read, or that
+ * points outside the package. Reported for the reason {@link UnreadablePreviewHook}
+ * is: "declares something we could not read" must never render as "declares none".
+ */
+export interface UnreadableDeclaration {
+  /** Package-relative path of the declaration (a default file, or where plugin.json points). */
+  path: string;
+  /** Which kind of program it declares. */
+  kind: UnreadableDeclarationKind;
+  /** Set when one entry is malformed; absent when the whole declaration is. */
+  entry?: string;
 }
 
 /**

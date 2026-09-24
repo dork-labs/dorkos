@@ -347,9 +347,36 @@ const LocalPermissionPreviewSchema = z.object({
       event: z.string(),
       matcher: z.string().optional(),
       command: z.string(),
+      source: z.string().optional(),
     })
   ),
   unreadableHooks: z.array(z.object({ path: z.string(), event: z.string().optional() })),
+  mcpServers: z.array(
+    z.object({
+      name: z.string(),
+      transport: z.string(),
+      command: z.string().optional(),
+      args: z.array(z.string()).optional(),
+      url: z.string().optional(),
+    })
+  ),
+  lspServers: z.array(
+    z.object({ name: z.string(), command: z.string(), args: z.array(z.string()) })
+  ),
+  monitors: z.array(
+    z.object({ name: z.string(), command: z.string(), when: z.string().optional() })
+  ),
+  executables: z.array(z.string()),
+  skillTools: z.array(
+    z.object({ source: z.string(), skill: z.string(), tools: z.array(z.string()) })
+  ),
+  unreadableDeclarations: z.array(
+    z.object({
+      path: z.string(),
+      kind: z.enum(['mcp-server', 'lsp-server', 'monitor']),
+      entry: z.string().optional(),
+    })
+  ),
   schedules: z.array(
     z.object({
       name: z.string(),

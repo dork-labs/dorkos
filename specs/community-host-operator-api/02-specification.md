@@ -231,7 +231,7 @@ Every host eventually has a community it must stop without destroying: an abuse 
 - **What people can do.** Exactly what they can do in `archived`: read history, threads, the roster, and authorized files; use the archived read-only pairing flow (`{read}` only, `history_only`). Nothing grows: no posts, uploads, invitations, joins, pairings with write scopes, agent enrollment, or settings edits (`423 COMMUNITY_HELD`).
 - **What the owner keeps.** Owner export (`POST /owner/export`, reauthenticated) and the owner's own deletion request. The owner cannot archive, restore, transfer, or release the hold.
 - **Member erasure stays allowed.** Erasure removes content rather than growing the community, so a person's erasure of their own content and the owner's erasure of a member (`specs/community-member-erasure/`, DOR-2247) are accepted and run while held, exactly as in `archived`. `423 COMMUNITY_HELD` never applies to them.
-- **Credentials.** Entering a hold runs `revokeTenantAccess`, like archive and suspension. Release revives nothing.
+- **Credentials.** Entering a hold revokes nothing: connections, agents, and invitations wait and resume on release; only suspension and deletion revoke. See `specs/community-hold-keeps-access/` (DOR-2284), which replaced the first design (a hold ran `revokeTenantAccess` and release revived nothing).
 - **Notice.** A hold may carry `deletionNoticeAt`, a date at least 7 days after it is set (`COMMUNITY_HOST_DELETION_NOTICE_DAYS`, default 14, minimum 7, maximum 365). Members see it in the community's banner: "This community is on hold by its host. You can read it but not post. The host plans to delete it after <date>. The owner can export it until then." Without a notice date the banner omits the last two sentences. The notice date can be moved later or cleared (`action: 'set_notice'`); moving it earlier than 7 days from now is refused. Host-started deletion also asks for the last eight characters of the community UUID, as the owner's deletion does, so a script cannot delete the wrong community by a slip.
 
 #### Host-started deletion
@@ -879,7 +879,7 @@ Each test carries a purpose comment. Every acceptance criterion below names the 
 **Hold and host-started deletion**
 
 - A held community refuses a post, upload, invitation, join, write-scope pairing, agent enrollment, and settings edit with `423 COMMUNITY_HELD`, and still serves history reads, the `{read}` archived pairing flow, and the owner's reauthenticated export. Fails if the hold reuses suspension (export blocked) or archive (owner can restore).
-- Holding revokes grants and agent credentials; release returns to the recorded prior state and revives none of them.
+- Holding revokes nothing; release returns to the recorded prior state and every kept connection, agent, and invitation works again (AC-1 and AC-2 of `specs/community-hold-keeps-access/`).
 - Host deletion is refused (`409`) for an active, archived, or suspended community, for a held community without a notice date, and before the notice date (clock injected); after it, the community enters `deletion_pending` with `delete_after` seven days later and a host requester. Fails if any gate is missing.
 - The owner cannot cancel a host-started deletion; the host can, back to `held`. An owner-requested deletion started from `held` cancels back to `held`. Fails if a cancel lifts a hold.
 - A notice date set less than 7 days ahead is refused. Fails if the notice can be shortened after the fact.
@@ -1035,5 +1035,6 @@ None. The operator answered every question on 2026-09-23; the answers are below.
 
 ## Changelog
 
+- **2026-09-23** — A hold no longer revokes credentials (`specs/community-hold-keeps-access/`, ADR `260923-214401`). A host takedown (`specs/community-host-takedown/`, ADR `260923-214421`) is a second, narrow host removal path beside host-started deletion. Owner export of any size and manifest version 2 (Open Question 6) are specified in `specs/community-export-any-size/`, which also changes P3's reader and adds parted uploads.
 - **2026-09-23** — Operator answered every open question. The agents-per-person default stays 20 (maximum 100, set by configuration); the per-member override ceiling is 1,000; host-started deletion is approved as specified; Q3–Q6 become follow-ups; member erasure is DOR-2247 and blocks launch. ADRs accepted.
 - **2026-09-23** — Aligned with `specs/community-member-erasure/`: erasure is allowed while held; host accounts cannot be closed today (the erasure spec builds account deletion); the owner export `LEFT JOIN` and nullable `members.user_id` are shared, and whichever spec lands first makes them. Decomposed into `03-tasks.json`.

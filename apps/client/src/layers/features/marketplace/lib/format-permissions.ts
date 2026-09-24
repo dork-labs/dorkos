@@ -7,7 +7,13 @@
  *
  * @module features/marketplace/lib/format-permissions
  */
-import { describeHookEvent, type PermissionPreview } from '@dorkos/shared/marketplace-schemas';
+import {
+  describeHookEvent,
+  describeProgramLine,
+  PLUGIN_PROGRAMS_SCOPE_NOTE,
+  revealHiddenCharacters,
+  type PermissionPreview,
+} from '@dorkos/shared/marketplace-schemas';
 import { describePreviewSchedule, runsUnattended } from '@/layers/entities/marketplace';
 
 // ---------------------------------------------------------------------------
@@ -332,7 +338,9 @@ function formatEffects(
 }
 
 /**
- * Format the `hooks` and `unreadableHooks` fields into the `commands` group.
+ * Format the `hooks` and every program the package starts on its own (MCP and
+ * language servers, monitors, `bin/` commands), plus whatever could not be
+ * read, into the `commands` group.
  *
  * The label is the shell command exactly as the package wrote it — this is the
  * one fact a person needs to judge whether to trust the package, so it is never
@@ -348,8 +356,10 @@ function formatEffects(
 function formatCommands(preview: PermissionPreview): FormattedPermission[] {
   const rows: FormattedPermission[] = preview.hooks.map((hook) => ({
     icon: 'terminal',
-    label: hook.command,
-    description: `Runs ${describeHookEvent(hook.event, hook.matcher)}`,
+    label: revealHiddenCharacters(hook.command),
+    description: hook.source
+      ? `Runs ${describeHookEvent(hook.event, hook.matcher)}, while ${revealHiddenCharacters(hook.source)} is in use`
+      : `Runs ${describeHookEvent(hook.event, hook.matcher)}`,
     mono: true,
   }));
 
@@ -359,6 +369,71 @@ function formatCommands(preview: PermissionPreview): FormattedPermission[] {
       label: 'This package sets up a command to run, but we could not read it',
       description: unreadable.event
         ? `${unreadable.path} declares "${unreadable.event}" in a form DorkOS cannot read`
+        : `${unreadable.path} is not readable`,
+      severity: 'warning' satisfies PermissionSeverity,
+    });
+  }
+
+  // The programs a plugin starts on its own sit beside the hook commands, each
+  // part quoted exactly as it is passed, never paraphrased. Whether they start
+  // at all depends on where the plugin is installed, which the description says.
+  const programRow = (label: string, name: string, local = true): FormattedPermission => ({
+    icon: local ? 'terminal' : 'globe',
+    label,
+    description: `${name}. ${PLUGIN_PROGRAMS_SCOPE_NOTE}`,
+    mono: true,
+  });
+  for (const server of preview.mcpServers) {
+    rows.push(
+      server.command !== undefined
+        ? programRow(
+            describeProgramLine(server.command, server.args),
+            `MCP server "${server.name}"`
+          )
+        : programRow(
+            revealHiddenCharacters(JSON.stringify(server.url ?? '')),
+            `Remote MCP server "${server.name}"`,
+            false
+          )
+    );
+  }
+  for (const server of preview.lspServers) {
+    rows.push(
+      programRow(
+        describeProgramLine(server.command, server.args),
+        `Language server "${server.name}"`
+      )
+    );
+  }
+  for (const monitor of preview.monitors) {
+    rows.push(
+      programRow(
+        describeProgramLine(monitor.command),
+        `Background monitor "${monitor.name}"${monitor.when ? `, ${monitor.when}` : ''}`
+      )
+    );
+  }
+  for (const name of preview.executables) {
+    rows.push(programRow(describeProgramLine(name), "Added to the agent's commands (bin/)"));
+  }
+
+  // A skill is picked by the model from its description, so the tools it may
+  // use without asking are permission the package grants itself.
+  for (const entry of preview.skillTools) {
+    rows.push({
+      icon: 'key',
+      label: entry.tools.map((t) => revealHiddenCharacters(JSON.stringify(t))).join(', '),
+      description: `Skill "${revealHiddenCharacters(entry.skill)}" may use these without asking you`,
+      mono: true,
+    });
+  }
+
+  for (const unreadable of preview.unreadableDeclarations) {
+    rows.push({
+      icon: 'alert-triangle',
+      label: 'This package sets up a program to run, but we could not read it',
+      description: unreadable.entry
+        ? `${unreadable.path} declares "${unreadable.entry}" in a form DorkOS cannot read`
         : `${unreadable.path} is not readable`,
       severity: 'warning' satisfies PermissionSeverity,
     });
@@ -453,7 +528,19 @@ export function summarizePermissionPreview(preview: PermissionPreview): string {
       ? 'Declares no commands'
       : `Declares ${commands} ${commands === 1 ? 'command' : 'commands'}`;
 
-  return `${files}. ${declares}.`;
+  // Only what it could read: an unreadable declaration has its own warning row,
+  // and counting it here would claim a program is known to start.
+  const programs =
+    preview.mcpServers.length +
+    preview.lspServers.length +
+    preview.monitors.length +
+    preview.executables.length;
+  const own =
+    programs === 0
+      ? ''
+      : ` Declares ${programs} ${programs === 1 ? 'program' : 'programs'} of its own.`;
+
+  return `${files}. ${declares}.${own}`;
 }
 
 /**

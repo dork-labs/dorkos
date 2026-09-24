@@ -18,4 +18,4 @@ Three tasks in two phases. The canonical machine-readable plan, with the full se
 
 ## Phase 2 — Redaction feed and DorkOS installations
 
-- [ ] **2.1 Publish redactions and replace cached copies in DorkOS** (large; depends on 1.1). The redaction feed route with the epoch in its signed cursor; the DorkOS mirror rewrites cached rows with `secure_delete`, updates the external author, never dispatches an agent, and re-indexes and optimizes room search. AC-12 (2.1 part), AC-13, AC-14.
+- [ ] **2.1 Publish redactions and replace cached copies in DorkOS** (large; hosted launch blocker since 2026-09-23, DOR-2266; depends on 1.1 and on `specs/community-single-item-delete/` task 1.1, which moves the removal helpers into `content-removal.ts` and bumps the content version before inserting redaction rows). The redaction feed route with the epoch in its signed cursor; the DorkOS mirror rewrites cached rows with `secure_delete`, updates the external author, never dispatches an agent, and re-indexes and optimizes room search. AC-12 (2.1 part), AC-13, AC-14.

@@ -37,6 +37,11 @@ export const communities = pgTable(
     deleteRequestedAt: timestamp('delete_requested_at', { withTimezone: true }),
     deleteAfter: timestamp('delete_after', { withTimezone: true }),
     deleteRequestedBy: uuid('delete_requested_by'),
+    deletionFromState: text('deletion_from_state'),
+    deletionFromPriorState: text('deletion_from_prior_state'),
+    redactionEpoch: bigint('redaction_epoch', { mode: 'bigint' })
+      .notNull()
+      .default(sql`(('x' || substr(md5(gen_random_uuid()::text), 1, 16))::bit(64)::bigint)`),
     createdAt: time('created_at'),
   },
   (table) => [
@@ -70,7 +75,23 @@ export const communities = pgTable(
       'communities_deletion_state',
       sql`(${table.lifecycle} = 'deletion_pending' AND ${table.deleteRequestedAt} IS NOT NULL AND ${table.deleteAfter} IS NOT NULL AND ${table.deleteRequestedBy} IS NOT NULL AND ${table.deleteAfter} = ${table.deleteRequestedAt} + interval '7 days') OR (${table.lifecycle} <> 'deletion_pending' AND ${table.deleteRequestedAt} IS NULL AND ${table.deleteAfter} IS NULL AND ${table.deleteRequestedBy} IS NULL)`
     ),
+    check(
+      'communities_deletion_from_state',
+      sql`(${table.deletionFromState} IS NULL OR ${table.deletionFromState} IN ('active','archived','suspended','held')) AND (${table.deletionFromPriorState} IS NULL OR ${table.deletionFromPriorState} IN ('active','archived','held')) AND ((${table.lifecycle} <> 'deletion_pending' AND ${table.deletionFromState} IS NULL AND ${table.deletionFromPriorState} IS NULL) OR (${table.lifecycle} = 'deletion_pending' AND (${table.deletionFromState} IS NOT NULL AND ${table.deletionFromState} IN ('suspended','held')) = (${table.deletionFromPriorState} IS NOT NULL)))`
+    ),
   ]
+);
+
+/** Per-community content version, bumped with every erasure change and read by export commit. */
+export const communityContentVersions = pgTable(
+  'community_content_versions',
+  {
+    communityId: uuid('community_id')
+      .primaryKey()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+    version: bigint('version', { mode: 'number' }).notNull().default(1),
+  },
+  (table) => [check('community_content_versions_version_check', sql`${table.version} > 0`)]
 );
 
 /** Irreversible history used to refuse a single-community backout after multi-tenant use. */
@@ -265,17 +286,24 @@ export const members = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    userId: text('user_id')
-      .notNull()
-      .references(() => users.id),
+    userId: text('user_id').references(() => users.id),
     displayName: text('display_name').notNull(),
     handle: text('handle').notNull(),
     role: text('role').notNull(),
     active: boolean('active').notNull().default(true),
     createdAt: time('created_at'),
     removedAt: timestamp('removed_at', { withTimezone: true }),
+    erasedAt: timestamp('erased_at', { withTimezone: true }),
   },
   (table) => [
+    check(
+      'members_user_presence',
+      sql`${table.userId} IS NOT NULL OR ${table.erasedAt} IS NOT NULL`
+    ),
+    check(
+      'members_erased_husk',
+      sql`${table.erasedAt} IS NULL OR (${table.userId} IS NULL AND NOT ${table.active})`
+    ),
     uniqueIndex('members_community_id_unique').on(table.communityId, table.id),
     uniqueIndex('members_community_user_unique').on(table.communityId, table.userId),
     uniqueIndex('members_handle_unique').on(table.communityId, table.handle),
@@ -735,20 +763,18 @@ export const entries = pgTable(
     idempotencyKey: text('idempotency_key').notNull(),
     payloadHash: text('payload_hash').notNull(),
     createdAt: time('created_at'),
+    erasedAt: timestamp('erased_at', { withTimezone: true }),
   },
   (table) => [
     uniqueIndex('entries_community_id_unique').on(table.communityId, table.id),
     uniqueIndex('entries_channel_seq_unique').on(table.channelId, table.seq),
-    uniqueIndex('entries_author_key_unique').on(
-      table.authorMemberId,
-      table.channelId,
-      table.idempotencyKey
-    ),
-    uniqueIndex('entries_agent_key_unique').on(
-      table.authorAgentId,
-      table.channelId,
-      table.idempotencyKey
-    ),
+    // Partial, so erasure's rewrite of idempotency_key is not a row-key update (0013).
+    uniqueIndex('entries_author_key_unique')
+      .on(table.authorMemberId, table.channelId, table.idempotencyKey)
+      .where(sql`${table.authorMemberId} IS NOT NULL`),
+    uniqueIndex('entries_agent_key_unique')
+      .on(table.authorAgentId, table.channelId, table.idempotencyKey)
+      .where(sql`${table.authorAgentId} IS NOT NULL`),
     check(
       'entries_exactly_one_author',
       sql`(${table.authorMemberId} IS NULL) <> (${table.authorAgentId} IS NULL)`
@@ -908,6 +934,8 @@ export const exportArchives = pgTable(
     cleanupNextAttemptAt: timestamp('cleanup_next_attempt_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+    /** Community content version at snapshot; NULL on rows written before erasure existed. */
+    contentVersion: bigint('content_version', { mode: 'number' }),
   },
   (table) => [
     uniqueIndex('export_archives_community_id_unique').on(table.communityId, table.id),
@@ -1229,5 +1257,98 @@ export const memberLimitOverrides = pgTable(
       'member_limit_overrides_agents_per_member_check',
       sql`${table.agentsPerMember} BETWEEN 1 AND 1000`
     ),
+  ]
+);
+
+/** A person's request to erase one membership or their whole account after 72 hours. */
+export const erasureRequests = pgTable(
+  'erasure_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').notNull(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    communityId: uuid('community_id').references(() => communities.id, { onDelete: 'cascade' }),
+    memberId: uuid('member_id'),
+    parentRequestId: uuid('parent_request_id'),
+    state: text('state').notNull().default('scheduled'),
+    executeAfter: timestamp('execute_after', { withTimezone: true }).notNull(),
+    createdAt: time('created_at'),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull(),
+    lastErrorClass: text('last_error_class'),
+  },
+  (table) => [
+    foreignKey({
+      name: 'erasure_requests_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'erasure_requests_parent_request_id_fkey',
+      columns: [table.parentRequestId],
+      foreignColumns: [table.id],
+    }),
+    check('erasure_requests_kind_check', sql`${table.kind} IN ('membership','account')`),
+    check(
+      'erasure_requests_state_check',
+      sql`${table.state} IN ('scheduled','running','completed','cancelled')`
+    ),
+    check('erasure_requests_attempts_check', sql`${table.attempts} >= 0`),
+    check(
+      'erasure_requests_last_error_class_check',
+      sql`${table.lastErrorClass} IS NULL OR ${table.lastErrorClass} ~ '^[A-Z][A-Z0-9_]{0,63}$'`
+    ),
+    check(
+      'erasure_requests_kind_shape',
+      sql`(${table.kind} = 'account' AND ${table.communityId} IS NULL AND ${table.memberId} IS NULL AND (${table.userId} IS NOT NULL OR ${table.state} IN ('completed','cancelled'))) OR (${table.kind} = 'membership' AND ${table.communityId} IS NOT NULL AND ${table.memberId} IS NOT NULL AND ${table.userId} IS NULL)`
+    ),
+    check('erasure_requests_window', sql`${table.executeAfter} >= ${table.createdAt}`),
+    check(
+      'erasure_requests_state_times',
+      sql`(${table.state} = 'scheduled' AND ${table.startedAt} IS NULL AND ${table.completedAt} IS NULL AND ${table.cancelledAt} IS NULL) OR (${table.state} = 'running' AND ${table.startedAt} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.cancelledAt} IS NULL) OR (${table.state} = 'completed' AND ${table.startedAt} IS NOT NULL AND ${table.completedAt} IS NOT NULL AND ${table.cancelledAt} IS NULL) OR (${table.state} = 'cancelled' AND ${table.startedAt} IS NULL AND ${table.completedAt} IS NULL AND ${table.cancelledAt} IS NOT NULL)`
+    ),
+    uniqueIndex('erasure_requests_open_membership_unique')
+      .on(table.communityId, table.memberId)
+      .where(sql`${table.state} IN ('scheduled','running')`),
+    uniqueIndex('erasure_requests_open_account_unique')
+      .on(table.userId)
+      .where(sql`${table.kind} = 'account' AND ${table.state} IN ('scheduled','running')`),
+    index('erasure_requests_due_idx')
+      .on(table.nextAttemptAt, table.executeAfter)
+      .where(sql`${table.state} IN ('scheduled','running')`),
+    index('erasure_requests_community_idx').on(table.communityId, table.state),
+    index('erasure_requests_parent_idx').on(table.parentRequestId),
+  ]
+);
+
+/** Content-free record of each entry an erasure changed, for the redaction feed. */
+export const entryRedactions = pgTable(
+  'entry_redactions',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+    channelId: uuid('channel_id').notNull(),
+    entryId: uuid('entry_id').notNull(),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    // DEFERRABLE INITIALLY DEFERRED in the migration, so a batch never holds the channel.
+    foreignKey({
+      name: 'entry_redactions_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'entry_redactions_entry_tenant_fk',
+      columns: [table.communityId, table.entryId],
+      foreignColumns: [entries.communityId, entries.id],
+    }).onDelete('cascade'),
+    index('entry_redactions_channel_idx').on(table.channelId, table.id),
+    index('entry_redactions_community_idx').on(table.communityId),
   ]
 );

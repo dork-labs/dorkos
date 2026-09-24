@@ -102,10 +102,11 @@ async function snapshot(pool: PoolClient, member: Member, scope: 'personal' | 'o
     owner ? [member.community_id, MAX_ROWS + 1] : [member.id, MAX_ROWS + 1, member.community_id]
   );
   const accessibleChannelIds = channels.rows.map((channel: { id: string }) => channel.id);
+  // LEFT JOIN: an erased member keeps their husk row, with no account and so no email.
   const members = await pool.query(
     owner
       ? `SELECT m.id,m.display_name,m.handle,m.role,m.active,m.created_at,m.removed_at,u.email
-         FROM members m JOIN "user" u ON u.id=m.user_id WHERE m.community_id=$1 ORDER BY m.id LIMIT $2`
+         FROM members m LEFT JOIN "user" u ON u.id=m.user_id WHERE m.community_id=$1 ORDER BY m.id LIMIT $2`
       : `SELECT m.id,m.display_name,m.handle,m.role,m.active,m.created_at,m.removed_at,u.email
          FROM members m JOIN "user" u ON u.id=m.user_id WHERE m.id=$1 LIMIT $2`,
     [owner ? member.community_id : member.id, MAX_ROWS + 1]
@@ -178,10 +179,29 @@ async function snapshot(pool: PoolClient, member: Member, scope: 'personal' | 'o
   if (manifestBytes.byteLength > MAX_MANIFEST_BYTES)
     throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'This export exceeds the archive limit.');
   return {
+    contentVersion: await readContentVersion(pool, member.community_id, false),
     manifestBytes,
     attachments: attachments.rows,
     channelIds: channels.rows.map((channel: { id: string }) => channel.id),
   };
+}
+
+/**
+ * Read the community's content version. An erasure bumps it in the same transaction as each
+ * change, and the export commit reads it for share, so one of the two waits for the other
+ * and an export snapshotted before an erasure change can never commit after it.
+ */
+async function readContentVersion(
+  client: PoolClient,
+  communityId: string,
+  lock: boolean
+): Promise<number> {
+  const result = await client.query<{ version: string }>(
+    `SELECT version::text AS version FROM community_content_versions WHERE community_id=$1${lock ? ' FOR SHARE' : ''}`,
+    [communityId]
+  );
+  if (!result.rows[0]) throw new ApiError(409, 'STATE_CONFLICT', 'This community is unavailable.');
+  return Number(result.rows[0].version);
 }
 
 async function requireCurrentChannels(
@@ -325,7 +345,14 @@ export function registerExportRoutes(
     auth,
     blobStore,
     confirmPassword,
-  }: { pool: Pool; auth: CommunityAuth; blobStore: BlobStore; confirmPassword: ConfirmPassword }
+    hooks,
+  }: {
+    pool: Pool;
+    auth: CommunityAuth;
+    blobStore: BlobStore;
+    confirmPassword: ConfirmPassword;
+    hooks?: { afterExportSnapshot?: () => Promise<void> };
+  }
 ) {
   const create = async (member: Member, scope: 'personal' | 'owner') => {
     const currentResult = await pool.query<Member>(
@@ -342,6 +369,7 @@ export function registerExportRoutes(
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
       return snapshot(client, current, scope);
     });
+    await hooks?.afterExportSnapshot?.();
     const reservation = await transaction(pool, (client) =>
       reserveManagedBlob(client, current.community_id, 'export', {
         allowArchived: scope === 'owner',
@@ -367,11 +395,17 @@ export function registerExportRoutes(
       return await transaction(pool, async (client) => {
         await lockExportAuthority(client, member, scope);
         if (scope === 'personal') await requireCurrentChannels(client, member.id, data.channelIds);
+        if ((await readContentVersion(client, member.community_id, true)) !== data.contentVersion)
+          throw new ApiError(
+            409,
+            'STATE_CONFLICT',
+            'The community changed while this export was being made. Try again.'
+          );
         await prepareManagedBlobCommit(client, reservation, stored);
         const result = await client.query<Omit<ExportArchiveRow, 'channel_ids'>>(
-          `INSERT INTO export_archives(community_id,requester_member_id,scope,blob_key,byte_size,expires_at)
-           VALUES($1,$2,$3,$4,$5,now()+interval '1 hour') RETURNING *`,
-          [member.community_id, member.id, scope, stored.key, stored.byteSize]
+          `INSERT INTO export_archives(community_id,requester_member_id,scope,blob_key,byte_size,expires_at,content_version)
+           VALUES($1,$2,$3,$4,$5,now()+interval '1 hour',$6) RETURNING *`,
+          [member.community_id, member.id, scope, stored.key, stored.byteSize, data.contentVersion]
         );
         await client.query(
           `INSERT INTO export_archive_channels(export_archive_id,position,community_id,channel_id)
