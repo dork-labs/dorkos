@@ -564,6 +564,14 @@ export class PackageFetcher {
         return await readTextFileWithin(claudePluginPath, CATALOG_MAX_BYTES, what);
       } catch (pluginErr) {
         if (pluginErr instanceof TooLargeError) throw pluginErr;
+        // Neither file is there: say so in words a person reads on the add
+        // note or a refresh (DOR-2304), and keep both paths in the log.
+        if (isMissingFile(rootErr) && isMissingFile(pluginErr)) {
+          this.logger.warn('package-fetcher: no local marketplace.json', {
+            tried: [rootPath, claudePluginPath],
+          });
+          throw new Error("there's no marketplace listing in that folder", { cause: pluginErr });
+        }
         // Two failures, and both survive: the root attempt as prose in the
         // message, the `.claude-plugin` attempt as the cause. Chaining the
         // second one is the deliberate half — it is the layout registries
@@ -747,6 +755,12 @@ export class PackageFetcher {
     });
     return `tmp-${Date.now()}`;
   }
+}
+
+/** True for a filesystem error that just means "no file there". */
+function isMissingFile(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return code === 'ENOENT' || code === 'ENOTDIR';
 }
 
 /**

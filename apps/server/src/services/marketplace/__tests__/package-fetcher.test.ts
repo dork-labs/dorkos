@@ -639,20 +639,25 @@ describe('PackageFetcher', () => {
       expect(cache.writeMarketplace).toHaveBeenCalledWith('root-wins', expect.any(Object));
     });
 
-    it('fetchMarketplaceJson throws a clear error naming both paths when neither layout exists', async () => {
+    it('says in plain words that a folder has no listing, and logs both paths it tried', async () => {
+      // Purpose: this reason reaches a person (the add note, refresh). Two
+      // absolute paths and an ENOENT dump filled a phone screen (DOR-2304);
+      // the paths belong in the log, where a support question is answered.
       workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
       // Note: do not seed marketplace.json at either the root or .claude-plugin/ on purpose.
 
       const cache = buildCacheMock();
-      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+      const logger = buildLogger();
+      const fetcher = new PackageFetcher(cache, buildGitMock(), logger);
 
       const sourceUrl = pathToFileURL(workDir).href;
       await expect(
         fetcher.fetchMarketplaceJson(buildSource({ name: 'personal', source: sourceUrl }))
-      ).rejects.toThrow(
-        /Failed to read local marketplace at .*marketplace\.json or .*\.claude-plugin[/\\]marketplace\.json:/
-      );
+      ).rejects.toThrow(/^there's no marketplace listing in that folder$/);
       expect(cache.writeMarketplace).not.toHaveBeenCalled();
+      const logged = JSON.stringify(logger.calls.filter((c) => c.level === 'warn'));
+      expect(logged).toMatch(/marketplace\.json/);
+      expect(logged).toMatch(/\.claude-plugin/);
     });
 
     it('fetchMarketplaceJson throws when the local marketplace.json is invalid JSON', async () => {

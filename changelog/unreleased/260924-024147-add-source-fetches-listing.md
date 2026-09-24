@@ -2,6 +2,9 @@
 covers:
   - "feat(marketplace): fetch a new source's listing when it is added (DOR-2304)"
   - "fix(marketplace): keep a new source's listing honest and show it in the app (DOR-2304)"
+  - 'fix(marketplace): safe source names, a disabled add clears the cache, and an honest refresh (DOR-2304)'
+  - 'fix(client): an accurate status dot, an inline Try again, and announced listing news (DOR-2304)'
+  - 'fix(marketplace): say a folder with no listing in plain words (DOR-2304)'
 ---
 
 ### Changed
