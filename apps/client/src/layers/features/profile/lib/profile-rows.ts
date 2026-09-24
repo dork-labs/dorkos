@@ -370,6 +370,9 @@ function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileR
           value: countValue(ctx.facts?.tools, 'server', 'servers'),
           page: 'tools',
         },
+        // What this agent may do, where it differs from everyone (spec
+        // `agent-permissions`).
+        { id: 'permissions', kind: 'nav', label: 'Permissions', value: null, page: 'permissions' },
         { id: 'connections', kind: 'nav', label: 'Connections', value: null, page: 'connections' },
         {
           id: 'instructions',
@@ -477,6 +480,9 @@ function systemAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRo
           value: countValue(ctx.facts?.tools, 'server', 'servers'),
           page: 'tools',
         },
+        // DorkBot's permissions are a person's to set like any agent's: it is
+        // the agent that most often needs Rooms (spec `agent-permissions`).
+        { id: 'permissions', kind: 'nav', label: 'Permissions', value: null, page: 'permissions' },
       ],
     },
   ];

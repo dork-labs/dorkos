@@ -229,13 +229,10 @@ describe('ToolsTab', () => {
       expect(view.queryByText('Connection management')).not.toBeInTheDocument();
       // ...and an explanatory note takes their place.
       expect(view.getByText(/does not support DorkOS tool groups/i)).toBeInTheDocument();
-      // The ONE switch still on screen is the rooms grant, which is deliberately
-      // not part of this branch: it is enforced for every runtime, and a Codex
-      // agent reaches the same capabilities over the external MCP server
-      // (DOR-1611). Asserted by name rather than by counting switches, so this
-      // row keeps saying "the four are gone" rather than "nothing is here".
-      expect(view.queryAllByRole('switch')).toHaveLength(1);
-      expect(view.getByLabelText('Manage rooms')).toBeInTheDocument();
+      // No switch is left: the rooms grant that used to stay here is the Rooms
+      // permission now, on the agent's Permissions page (spec
+      // `agent-permissions`).
+      expect(view.queryAllByRole('switch')).toHaveLength(0);
     });
 
     it('keeps the tool-group toggles for an MCP-capable runtime', () => {

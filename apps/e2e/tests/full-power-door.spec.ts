@@ -180,6 +180,9 @@ test.describe('Full-power consent door @full-power', () => {
     // never a 403 of the whole atomic write.
     expect(config.standingGrants).toBe(false);
     expect(await readMeshOpen(request)).toBe(true);
+    // The door also chooses the permission preset, so what agents may do
+    // follows the answer (spec `agent-permissions` D5).
+    expect((await (await request.get('/api/permissions')).json()).preset).toBe('full');
 
     // A plain reload (boot cache warm, config fresh) must NOT reopen it: the
     // decision is recorded, so the moment is ineligible.
@@ -206,6 +209,7 @@ test.describe('Full-power consent door @full-power', () => {
     expect(config.autonomyAcknowledgedAt).toBeNull();
     expect(config.standingGrants).toBe(false);
     expect(await readMeshOpen(request)).toBe(false);
+    expect((await (await request.get('/api/permissions')).json()).preset).toBe('careful');
 
     await basePage.goto();
     await basePage.waitForAppReady();

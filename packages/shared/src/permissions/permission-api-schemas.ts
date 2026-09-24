@@ -51,6 +51,9 @@ export const PermissionAreaEntrySchema = z
   })
   .openapi('PermissionAreaEntry');
 
+/** One area as the permissions pages list it. */
+export type PermissionAreaEntry = z.infer<typeof PermissionAreaEntrySchema>;
+
 /** An agent whose own setting differs from the default. */
 export const PermissionExceptionSchema = z
   .object({

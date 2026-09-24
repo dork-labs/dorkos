@@ -13,6 +13,7 @@ import {
   FlaskConical,
   Bell,
   MessagesSquare,
+  KeyRound,
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
@@ -22,6 +23,7 @@ import { AppearanceResetAction, AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
 import { NotificationsTab } from './tabs/NotificationsTab';
 import { RoomsTab } from './tabs/RoomsTab';
+import { PermissionsTab } from './tabs/PermissionsTab';
 import { RuntimesTab } from './runtimes/RuntimesTab';
 import { ServerTab } from './ServerTab';
 import { ToolsResetAction, ToolsTab } from './ToolsTab';
@@ -70,6 +72,15 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     icon: Wrench,
     component: ToolsTab,
     actions: <ToolsResetAction />,
+    group: 'Agents & sessions',
+  },
+  {
+    // What agents may do, for everyone (spec `agent-permissions`). First in the
+    // group because it is the answer to "why did my agent ask / refuse".
+    id: 'permissions',
+    label: 'Permissions',
+    icon: KeyRound,
+    component: PermissionsTab,
     group: 'Agents & sessions',
   },
   {
