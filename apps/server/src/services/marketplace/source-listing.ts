@@ -27,6 +27,7 @@
  */
 import type {
   RefreshedMarketplaceSource,
+  SourceLastFetch,
   SourceListingOutcome,
 } from '@dorkos/shared/marketplace-schemas';
 import { logger } from '../../lib/logger.js';
@@ -108,4 +109,44 @@ export async function refreshSourceListing(
       reason: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/**
+ * Describe how the most recent fetch of a source's listing went (DOR-2324),
+ * from the record the fetcher keeps beside the listing and the cached copy
+ * itself.
+ *
+ * A listing cached before those records existed has a copy and no record: it
+ * reads as `fetched` at the copy's own date, not as `never`.
+ *
+ * @param cache - The cache's two read doors.
+ * @param sourceName - The source's name.
+ * @returns The source's last-fetch state.
+ */
+export async function describeLastFetch(
+  cache: Pick<MarketplaceCache, 'readFetchStatus' | 'readMarketplace'>,
+  sourceName: string
+): Promise<SourceLastFetch> {
+  const [status, copy] = await Promise.all([
+    cache.readFetchStatus(sourceName),
+    cache.readMarketplace(sourceName),
+  ]);
+  if (status && !status.ok) {
+    const reason = status.reason ?? 'no reason was recorded';
+    return copy
+      ? {
+          state: 'stale',
+          checkedAt: status.checkedAt,
+          reason,
+          copyFetchedAt: copy.fetchedAt.toISOString(),
+          packageCount: copy.json.plugins.length,
+        }
+      : { state: 'failed', checkedAt: status.checkedAt, reason };
+  }
+  if (!copy) return { state: 'never' };
+  return {
+    state: 'fetched',
+    checkedAt: status?.checkedAt ?? copy.fetchedAt.toISOString(),
+    packageCount: copy.json.plugins.length,
+  };
 }

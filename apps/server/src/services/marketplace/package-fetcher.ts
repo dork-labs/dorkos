@@ -408,14 +408,26 @@ export class PackageFetcher {
     options: { staleFallback?: boolean } = {}
   ): Promise<MarketplaceJson> {
     if (isFileUrl(source.source)) {
-      return this.readLocalMarketplaceJson(source);
+      try {
+        const json = await this.readLocalMarketplaceJson(source);
+        await this.recordFetch(source.name, null);
+        return json;
+      } catch (err) {
+        await this.recordFetch(source.name, err);
+        throw err;
+      }
     }
     const url = resolveMarketplaceJsonUrl(source.source);
     try {
       const json = await this.fetchAndParseMarketplaceJson(url, source.name);
       await this.cache.writeMarketplace(source.name, json);
+      await this.recordFetch(source.name, null);
       return json;
     } catch (err) {
+      // Recorded as a failure even when an old copy is served below: the
+      // record is about THIS attempt, and GET /sources pairs it with the
+      // cached copy's own date to say "still showing the copy from …".
+      await this.recordFetch(source.name, err);
       // Surface the attempted URL alongside the marketplace name so it's
       // obvious from the log whether the failure is a wrong URL (404 on a
       // typo'd org) or a genuine upstream outage.
@@ -426,6 +438,34 @@ export class PackageFetcher {
       });
       if (options.staleFallback === false) throw err;
       return this.serveStaleMarketplace(source.name, err);
+    }
+  }
+
+  /**
+   * Write down how an attempt to fetch a listing went (DOR-2324), for
+   * `GET /sources` to report. Best effort: a record that cannot be written is
+   * logged and never costs the caller its listing.
+   *
+   * @param marketplaceName - The source's name.
+   * @param failure - The error the attempt failed with, or `null` on success.
+   */
+  private async recordFetch(marketplaceName: string, failure: unknown): Promise<void> {
+    try {
+      await this.cache.writeFetchStatus(
+        marketplaceName,
+        failure === null
+          ? { checkedAt: new Date().toISOString(), ok: true }
+          : {
+              checkedAt: new Date().toISOString(),
+              ok: false,
+              reason: failure instanceof Error ? failure.message : String(failure),
+            }
+      );
+    } catch (err) {
+      this.logger.debug('package-fetcher: could not record the fetch outcome', {
+        marketplaceName,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

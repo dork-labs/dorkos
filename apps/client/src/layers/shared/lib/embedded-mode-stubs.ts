@@ -190,9 +190,9 @@ import type {
   ApplyUpdatesOptions,
   InstallationUpdatesResult,
   InstalledPackage,
-  MarketplaceSource,
   AddSourceInput,
   AddedMarketplaceSource,
+  ListedMarketplaceSource,
   RefreshedMarketplaceSource,
   InstalledShapeSummary,
   ApplyShapeResult,
@@ -965,7 +965,7 @@ export const marketplaceStubs = {
     throw new Error('Marketplace is not supported in embedded mode');
   },
 
-  async listMarketplaceSources(): Promise<MarketplaceSource[]> {
+  async listMarketplaceSources(): Promise<ListedMarketplaceSource[]> {
     return [];
   },
 

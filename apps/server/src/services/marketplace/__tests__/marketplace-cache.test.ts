@@ -97,6 +97,48 @@ describe('MarketplaceCache', () => {
     });
   });
 
+  describe('fetch status (DOR-2324)', () => {
+    it('keeps the last fetch attempt beside the listing, and reads it back', async () => {
+      // Purpose: the outcome of the last fetch survives a reload and is the
+      // same for every window, so it lives on disk, not in a page.
+      await cache.writeFetchStatus('mp', {
+        checkedAt: '2026-09-24T10:00:00.000Z',
+        ok: false,
+        reason: "couldn't find a server at that address",
+      });
+
+      expect(await cache.readFetchStatus('mp')).toEqual({
+        checkedAt: '2026-09-24T10:00:00.000Z',
+        ok: false,
+        reason: "couldn't find a server at that address",
+      });
+    });
+
+    it('reads a missing, unreadable or unkeyable status as none', async () => {
+      expect(await cache.readFetchStatus('never')).toBeNull();
+      expect(await cache.readFetchStatus('x/..')).toBeNull();
+      await cache.writeFetchStatus('mp', { checkedAt: 'x', ok: true });
+      await writeFile(join(cache.cacheRoot, 'marketplaces', 'mp', '.last-check.json'), '{nope');
+      expect(await cache.readFetchStatus('mp')).toBeNull();
+      await writeFile(
+        join(cache.cacheRoot, 'marketplaces', 'mp', '.last-check.json'),
+        JSON.stringify({ checkedAt: 7, ok: 'yes' })
+      );
+      expect(await cache.readFetchStatus('mp')).toBeNull();
+    });
+
+    it('forgets the status together with the listing', async () => {
+      // Purpose: a removed source's last failure must not greet the next
+      // source given its name.
+      await cache.writeMarketplace('mp', buildMarketplaceJson());
+      await cache.writeFetchStatus('mp', { checkedAt: 'x', ok: false, reason: 'down' });
+
+      await cache.removeMarketplace('mp');
+
+      expect(await cache.readFetchStatus('mp')).toBeNull();
+    });
+  });
+
   describe('removeMarketplace', () => {
     it("forgets one marketplace's listing and leaves the others", async () => {
       // Purpose: a removed source's listing must not outlive it, or a new

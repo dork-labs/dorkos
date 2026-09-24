@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Plus, Trash2, Circle, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
+import type { ListedMarketplaceSource } from '@dorkos/shared/marketplace-schemas';
 import {
   Button,
   Dialog,
@@ -39,15 +40,42 @@ function formatWhen(iso: string): string {
 }
 
 /**
- * What went wrong with a source's listing on this visit: it didn't load at all
- * (`failed`), or the source couldn't be reached and the last copy is still
- * what's shown (`stale`). The server fetches on add and on refresh and says
- * why at the time; it keeps no record of it, so neither does the page.
+ * What went wrong with a source's listing: it didn't load at all (`failed`),
+ * or the source couldn't be fetched and an older copy is still what's listed
+ * (`stale`). Drawn from the server's record of the last fetch (DOR-2324), so
+ * it survives a reload and every window shows the same thing.
  */
 interface ListingStatus {
   kind: 'failed' | 'stale';
-  /** The sentence shown on the row and announced, reason included. */
+  /** The sentence shown on the row, reason included. */
   message: string;
+}
+
+/** A folder on this machine is read, not reached. */
+function isLocal(source: string): boolean {
+  return source.startsWith('file://');
+}
+
+/** "Couldn't reach it" for a remote source, "Couldn't read that folder" for a local one. */
+function unreachable(source: string): string {
+  return isLocal(source) ? "Couldn't read that folder" : "Couldn't reach it";
+}
+
+/** The row's listing status, from the server's record of the last fetch. */
+function listingStatusOf(source: ListedMarketplaceSource): ListingStatus | null {
+  const last = source.lastFetch;
+  if (last?.state === 'failed') {
+    return { kind: 'failed', message: `Its packages didn't load: ${sentence(last.reason)}` };
+  }
+  if (last?.state === 'stale') {
+    return {
+      kind: 'stale',
+      message:
+        `${unreachable(source.source)}: ${sentence(last.reason)} ` +
+        `Still showing the last copy, from ${formatWhen(last.copyFetchedAt)}.`,
+    };
+  }
+  return null;
 }
 
 /** The status dot's label: an accurate one, not "Enabled" over a problem. */
@@ -256,8 +284,6 @@ export function MarketplaceSourcesView() {
   const removeSource = useRemoveMarketplaceSource();
   const refreshSource = useRefreshMarketplaceSource();
   const [dialogOpen, setDialogOpen] = useState(false);
-  // What went wrong with each source's listing on this visit, by name.
-  const [listingStatuses, setListingStatuses] = useState<Record<string, ListingStatus>>({});
   // The last listing news, written into ONE persistent live region: a region
   // that mounts together with its text is not reliably announced.
   // `id` changes on every write, and the region renders the text in a node
@@ -266,13 +292,6 @@ export function MarketplaceSourcesView() {
   const [announcement, setAnnouncementState] = useState({ id: 0, text: '' });
   const setAnnouncement = (text: string) =>
     setAnnouncementState((prev) => ({ id: prev.id + 1, text }));
-
-  const setListingStatus = (name: string, status: ListingStatus | null) => {
-    setListingStatuses(({ [name]: _dropped, ...rest }) =>
-      status ? { ...rest, [name]: status } : rest
-    );
-    if (status) setAnnouncement(`${name}: ${status.message}`);
-  };
 
   // Adding a source fetches its listing once (DOR-2304). A failed fetch still
   // saved the source, so the dialog closes either way and the row says what
@@ -283,14 +302,16 @@ export function MarketplaceSourcesView() {
       {
         onSuccess: (added) => {
           setDialogOpen(false);
+          // The row itself redraws from the server's record once the list
+          // refetches; this announces and toasts the moment it happened.
           if (added.listing.fetched) {
-            setListingStatus(added.name, null);
-            toast.success(`Added ${added.name}. ${packagesReady(added.listing.packageCount)}`);
+            const ready = packagesReady(added.listing.packageCount);
+            setAnnouncement(`${added.name}: ${ready}`);
+            toast.success(`Added ${added.name}. ${ready}`);
           } else {
-            setListingStatus(added.name, {
-              kind: 'failed',
-              message: `Added, but its packages didn't load: ${sentence(added.listing.reason)}`,
-            });
+            setAnnouncement(
+              `${added.name}: Added, but its packages didn't load: ${sentence(added.listing.reason)}`
+            );
             toast.warning(`Added ${added.name}, but its packages didn't load.`);
           }
         },
@@ -308,39 +329,27 @@ export function MarketplaceSourcesView() {
     refreshSource.mutate(name, {
       onSuccess: (refreshed) => {
         if (refreshed.stale) {
-          // A folder on this machine is read, not reached.
-          const local = sources?.find((s) => s.name === name)?.source.startsWith('file://');
-          setListingStatus(name, {
-            kind: 'stale',
-            message:
-              `${local ? "Couldn't read that folder" : "Couldn't reach it"}: ` +
-              `${sentence(refreshed.reason ?? 'no reason given')} ` +
-              `Still showing the last copy, from ${formatWhen(refreshed.fetchedAt)}.`,
-          });
+          const source = sources?.find((s) => s.name === name)?.source ?? '';
+          setAnnouncement(
+            `${name}: ${unreachable(source)}: ${sentence(refreshed.reason ?? 'no reason given')} ` +
+              `Still showing the last copy, from ${formatWhen(refreshed.fetchedAt)}.`
+          );
           toast.warning(
-            `${local ? "Couldn't read" : "Couldn't reach"} ${name}. Still showing the last copy.`
+            `${isLocal(source) ? "Couldn't read" : "Couldn't reach"} ${name}. Still showing the last copy.`
           );
           return;
         }
         const ready = packagesReady(refreshed.marketplace.plugins.length);
-        setListingStatus(name, null);
         // Replaces the old news in the announcer, so it never reads a fixed
         // problem back as current.
         setAnnouncement(`${name}: ${ready}`);
         toast.success(`Refreshed ${name}. ${ready}`);
       },
       onError: (err) => {
-        setListingStatus(name, {
-          kind: 'failed',
-          message: `Its packages didn't load: ${sentence(err.message)}`,
-        });
+        setAnnouncement(`${name}: Its packages didn't load: ${sentence(err.message)}`);
         toast.warning(`Couldn't refresh ${name}.`);
       },
     });
-  };
-
-  const handleRemove = (name: string) => {
-    removeSource.mutate(name, { onSuccess: () => setListingStatus(name, null) });
   };
 
   // Closing the dialog drops the last refusal with it — reopening to try again
@@ -406,10 +415,10 @@ export function MarketplaceSourcesView() {
               source={s.source}
               enabled={s.enabled}
               addedAt={s.addedAt}
-              listing={listingStatuses[s.name] ?? null}
+              listing={listingStatusOf(s)}
               onRefresh={() => handleRefresh(s.name)}
               isRefreshing={isRefreshing(s.name)}
-              onRemove={() => handleRemove(s.name)}
+              onRemove={() => removeSource.mutate(s.name)}
               isRemoving={removeSource.isPending}
             />
           ))}

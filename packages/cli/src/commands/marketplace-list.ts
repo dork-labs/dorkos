@@ -2,12 +2,14 @@
  * CLI handler for `dorkos marketplace list`.
  *
  * Calls `GET /api/marketplace/sources` and renders the result as a small
- * fixed-width table. Empty state prints a friendly hint pointing at
- * `marketplace add`.
+ * fixed-width table, with how each source's last listing fetch went and, under
+ * the table, why any of them failed (DOR-2324). Empty state prints a friendly
+ * hint pointing at `marketplace add`.
  *
  * @module commands/marketplace-list
  */
 import { parseArgs } from 'node:util';
+import type { SourceLastFetch } from '@dorkos/shared/marketplace-schemas';
 import { ApiError, apiCall } from '../lib/api-client.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
@@ -17,6 +19,8 @@ interface MarketplaceSource {
   source: string;
   enabled: boolean;
   addedAt?: string;
+  /** How the last listing fetch went. Absent from servers older than DOR-2324. */
+  lastFetch?: SourceLastFetch;
 }
 
 /** Response shape for `GET /api/marketplace/sources`. */
@@ -69,19 +73,63 @@ function padRight(value: string, width: number): string {
   return value + ' '.repeat(width - value.length);
 }
 
+/** "12 packages" / "1 package". */
+function packages(count: number): string {
+  return `${count} ${count === 1 ? 'package' : 'packages'}`;
+}
+
+/** The PACKAGES cell: what a person can install from the source right now. */
+function packagesCell(lastFetch: SourceLastFetch | undefined): string {
+  switch (lastFetch?.state) {
+    case 'fetched':
+      return packages(lastFetch.packageCount);
+    case 'stale':
+      return `${packages(lastFetch.packageCount)} (older copy)`;
+    case 'failed':
+      return "didn't load";
+    case 'never':
+      return 'not fetched yet';
+    default:
+      return '';
+  }
+}
+
+/** The line under the table that says why a source's last fetch failed. */
+function failureNote(name: string, lastFetch: SourceLastFetch | undefined): string | null {
+  if (lastFetch?.state === 'failed') {
+    return (
+      `${name}: its packages didn't load: ${lastFetch.reason.replace(/\.$/, '')}. ` +
+      `Run \`dorkos marketplace refresh ${name}\` to try again.`
+    );
+  }
+  if (lastFetch?.state === 'stale') {
+    const when = new Date(lastFetch.copyFetchedAt).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+    return (
+      `${name}: couldn't fetch its listing: ${lastFetch.reason.replace(/\.$/, '')}. ` +
+      `Still listing the copy from ${when}.`
+    );
+  }
+  return null;
+}
+
 /**
  * Render the table for {@link runMarketplaceList}. Extracted as a pure
  * function so tests can verify formatting without mocking I/O.
  *
  * @param sources - The list of sources to render.
- * @returns A multi-line string with a header row followed by one row per source.
+ * @returns A multi-line string with a header row, one row per source, and a
+ *   line for each source whose last listing fetch failed.
  */
 export function renderSourcesTable(sources: MarketplaceSource[]): string {
-  const headers = { name: 'NAME', source: 'SOURCE', enabled: 'ENABLED' };
+  const headers = { name: 'NAME', source: 'SOURCE', enabled: 'ENABLED', packages: 'PACKAGES' };
   const rows = sources.map((s) => ({
     name: truncate(s.name),
     source: truncate(s.source),
     enabled: s.enabled ? 'yes' : 'no',
+    packages: packagesCell(s.lastFetch),
   }));
 
   // Column widths derived from the widest cell (header included), capped by
@@ -91,13 +139,17 @@ export function renderSourcesTable(sources: MarketplaceSource[]): string {
   const sourceWidth = Math.max(headers.source.length, ...rows.map((r) => r.source.length));
   const enabledWidth = Math.max(headers.enabled.length, ...rows.map((r) => r.enabled.length));
 
-  const formatRow = (name: string, source: string, enabled: string): string =>
-    `${padRight(name, nameWidth)}  ${padRight(source, sourceWidth)}  ${padRight(enabled, enabledWidth)}`.trimEnd();
+  const formatRow = (name: string, source: string, enabled: string, pkgs: string): string =>
+    `${padRight(name, nameWidth)}  ${padRight(source, sourceWidth)}  ${padRight(enabled, enabledWidth)}  ${pkgs}`.trimEnd();
 
-  const lines = [formatRow(headers.name, headers.source, headers.enabled)];
+  const lines = [formatRow(headers.name, headers.source, headers.enabled, headers.packages)];
   for (const row of rows) {
-    lines.push(formatRow(row.name, row.source, row.enabled));
+    lines.push(formatRow(row.name, row.source, row.enabled, row.packages));
   }
+  const notes = sources
+    .map((s) => failureNote(s.name, s.lastFetch))
+    .filter((note): note is string => note !== null);
+  if (notes.length > 0) lines.push('', ...notes);
   return lines.join('\n');
 }
 

@@ -363,6 +363,118 @@ describe('Marketplace Routes', () => {
     });
   });
 
+  describe('GET /sources reports each source last fetch (DOR-2324)', () => {
+    // Purpose: whether a source's packages loaded is a fact about the server,
+    // so it survives a reload and every window reads the same answer.
+    const listing = (names: string[]) => ({
+      name: 'mine',
+      owner: { name: 'Owner' },
+      plugins: names.map((name) => ({ name, source: `./plugins/${name}` })),
+    });
+    const lastFetchOf = async (name: string) => {
+      const res = await request(fixtureServer).get('/api/marketplace/sources');
+      expect(res.status).toBe(200);
+      return res.body.sources.find((s: { name: string }) => s.name === name)?.lastFetch;
+    };
+    const serve = (res: () => Response) =>
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => res())
+      );
+
+    beforeEach(() => {
+      mountRouter(new PackageFetcher(cache, {} as GitTreeSource, noopLogger));
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('says a source was never fetched', async () => {
+      await sourceManager.add({ name: 'quiet', source: 'https://github.com/me/quiet' });
+      expect(await lastFetchOf('quiet')).toEqual({ state: 'never' });
+    });
+
+    it('reports a listing the add fetched, with its package count', async () => {
+      serve(() => new Response(JSON.stringify(listing(['a', 'b']))));
+      await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'mine', source: 'https://github.com/me/mine' });
+
+      expect(await lastFetchOf('mine')).toEqual({
+        state: 'fetched',
+        checkedAt: expect.any(String),
+        packageCount: 2,
+      });
+    });
+
+    it('reports a listing that never loaded, with the reason', async () => {
+      serve(() => new Response('nope', { status: 404, statusText: 'Not Found' }));
+      await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'mine', source: 'https://github.com/me/mine' });
+
+      expect(await lastFetchOf('mine')).toEqual({
+        state: 'failed',
+        checkedAt: expect.any(String),
+        reason: "there's no marketplace listing at that address",
+      });
+    });
+
+    it('reports an older copy still shown after a failed refresh, and when that copy is from', async () => {
+      serve(() => new Response(JSON.stringify(listing(['a', 'b', 'c']))));
+      await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'mine', source: 'https://github.com/me/mine' });
+      const copyFetchedAt = (await cache.readMarketplace('mine'))!.fetchedAt.toISOString();
+      serve(() => {
+        throw new TypeError('fetch failed', {
+          cause: Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }),
+        });
+      });
+
+      await request(fixtureServer).post('/api/marketplace/sources/mine/refresh');
+
+      expect(await lastFetchOf('mine')).toEqual({
+        state: 'stale',
+        checkedAt: expect.any(String),
+        reason: 'the server at that address refused the connection',
+        copyFetchedAt,
+        packageCount: 3,
+      });
+    });
+
+    it('picks up a failure from browsing, not just from add and refresh', async () => {
+      // Purpose: the browse list fetches every enabled source; its outcome is
+      // just as much news about the source.
+      serve(() => new Response(JSON.stringify(listing(['a']))));
+      await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'mine', source: 'https://github.com/me/mine' });
+      serve(() => new Response('down', { status: 503, statusText: 'Service Unavailable' }));
+
+      await request(fixtureServer).get('/api/marketplace/packages');
+
+      expect(await lastFetchOf('mine')).toMatchObject({
+        state: 'stale',
+        reason: 'the marketplace server answered with an error (503 Service Unavailable)',
+      });
+    });
+
+    it('treats a listing cached before these records existed as fetched', async () => {
+      // Purpose: an install upgraded to this version has listings on disk and
+      // no records; they are not "never fetched".
+      await sourceManager.add({ name: 'old', source: 'https://github.com/me/old' });
+      await cache.writeMarketplace('old', listing(['a']));
+
+      expect(await lastFetchOf('old')).toEqual({
+        state: 'fetched',
+        checkedAt: (await cache.readMarketplace('old'))!.fetchedAt.toISOString(),
+        packageCount: 1,
+      });
+    });
+  });
+
   describe('POST /sources', () => {
     it('adds a new source and returns 201 with the created entry', async () => {
       const res = await request(fixtureServer)

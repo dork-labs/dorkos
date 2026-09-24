@@ -64,6 +64,14 @@ const MARKETPLACE_FILENAME = 'marketplace.json';
 /** Filename for the last-fetched timestamp stamp. */
 const LAST_FETCHED_FILENAME = '.last-fetched';
 
+/**
+ * The outcome of the last attempt to fetch a marketplace's listing, beside the
+ * listing itself (DOR-2324). `.last-fetched` says when the cached copy was
+ * fetched; this says how the most recent try went, which can be later and can
+ * have failed.
+ */
+const LAST_CHECK_FILENAME = '.last-check.json';
+
 /** Directory of verified package trees, under the cache root. */
 const TREES_DIRNAME = 'trees';
 
@@ -146,6 +154,32 @@ export interface MaterializedPackage {
   path: string;
   /** The full commit id the fetch reported; the entry's key. */
   commitSha: string;
+}
+
+/**
+ * The outcome of the last attempt to fetch a marketplace's listing, whichever
+ * door asked (adding a source, a refresh, a browse, an update check). Kept on
+ * disk beside the listing, so it survives a reload and every window reads the
+ * same answer (DOR-2324).
+ */
+export interface MarketplaceFetchStatus {
+  /** When the attempt finished, as an ISO timestamp. */
+  checkedAt: string;
+  /** Whether the listing was fetched. */
+  ok: boolean;
+  /** Why not, in the fetcher's plain words. Present only when `ok` is false. */
+  reason?: string;
+}
+
+/** True when a parsed `.last-check.json` has the {@link MarketplaceFetchStatus} shape. */
+function isFetchStatus(value: unknown): value is MarketplaceFetchStatus {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.checkedAt === 'string' &&
+    typeof v.ok === 'boolean' &&
+    (v.reason === undefined || typeof v.reason === 'string')
+  );
 }
 
 /**
@@ -276,8 +310,42 @@ export class MarketplaceCache {
   }
 
   /**
-   * Forget one marketplace's cached `marketplace.json`. No-op when nothing is
-   * cached under that name.
+   * Record how the latest attempt to fetch a marketplace's listing went.
+   *
+   * @param marketplaceName - The configured marketplace identifier.
+   * @param status - The attempt's outcome.
+   * @throws {PathEscapeError} When the name would place the file outside the
+   *   cache. Callers treat recording as best effort.
+   */
+  async writeFetchStatus(marketplaceName: string, status: MarketplaceFetchStatus): Promise<void> {
+    const dir = this.marketplaceDir(marketplaceName);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, LAST_CHECK_FILENAME), `${JSON.stringify(status)}\n`);
+  }
+
+  /**
+   * Read how the latest attempt to fetch a marketplace's listing went.
+   *
+   * @param marketplaceName - The configured marketplace identifier.
+   * @returns The recorded outcome, or `null` when none was recorded, the file
+   *   cannot be read or parsed, or the name cannot be a cache key.
+   */
+  async readFetchStatus(marketplaceName: string): Promise<MarketplaceFetchStatus | null> {
+    try {
+      const raw = await readFile(
+        join(this.marketplaceDir(marketplaceName), LAST_CHECK_FILENAME),
+        'utf-8'
+      );
+      const parsed: unknown = JSON.parse(raw);
+      return isFetchStatus(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Forget one marketplace's cached `marketplace.json`, and the record of its
+   * last fetch with it. No-op when nothing is cached under that name.
    *
    * A listing is keyed by the source's NAME, not its address, so a listing
    * that outlives its source is inherited by the next source given that name:

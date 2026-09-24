@@ -18116,13 +18116,109 @@
                           },
                           "addedAt": {
                             "type": "string"
+                          },
+                          "lastFetch": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "never"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "state"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "fetched"
+                                    ]
+                                  },
+                                  "checkedAt": {
+                                    "type": "string"
+                                  },
+                                  "packageCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "checkedAt",
+                                  "packageCount"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "failed"
+                                    ]
+                                  },
+                                  "checkedAt": {
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "checkedAt",
+                                  "reason"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "stale"
+                                    ]
+                                  },
+                                  "checkedAt": {
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  },
+                                  "copyFetchedAt": {
+                                    "type": "string"
+                                  },
+                                  "packageCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "checkedAt",
+                                  "reason",
+                                  "copyFetchedAt",
+                                  "packageCount"
+                                ]
+                              }
+                            ],
+                            "description": "How the most recent attempt to fetch the listing went, from adding, refreshing, browsing or an update check. `stale`: it failed and an older copy, fetched at `copyFetchedAt`, is still listed. `failed`: it failed with no copy. Kept by the server, so it survives a reload."
                           }
                         },
                         "required": [
                           "name",
                           "source",
                           "enabled",
-                          "addedAt"
+                          "addedAt",
+                          "lastFetch"
                         ]
                       }
                     }
