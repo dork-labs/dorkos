@@ -46,7 +46,7 @@ import type { AdapterInstallFlow } from './flows/install-adapter.js';
 import type { AgentInstallFlow } from './flows/install-agent.js';
 import type { PluginInstallFlow } from './flows/install-plugin.js';
 import type { ShapeInstallFlow } from './flows/install-shape.js';
-import type { SkillPackInstallFlow } from './flows/install-skill-pack.js';
+import { skillFileProblems, type SkillPackInstallFlow } from './flows/install-skill-pack.js';
 import type { UninstallFlow } from './flows/uninstall.js';
 import { reportInstallEvent, type InstallEvent } from './telemetry-hook.js';
 import { writeInstallMetadata } from './installed-metadata.js';
@@ -314,23 +314,10 @@ export class MarketplaceInstaller implements InstallerLike {
       resolved = staged.resolved;
       packageType = staged.manifest.type;
 
-      // The half of schedule validation the manifest schema cannot do: whether a
-      // cron MEANS anything (croner's question, and croner is a server
-      // dependency), whether a `skillRef` names a skill the package actually
-      // ships, and whether two declarations would collide on one directory. All
-      // describe a schedule that could never run, and all are checked here —
-      // before any flow touches disk — so the answer is a refused install with
-      // one clear sentence rather than a parked row found at boot weeks later.
-      //
-      // Deliberately in `install()` and NOT in `resolveAndValidate`, which
-      // `preview()` also calls: the preview backs the marketplace's package
-      // DETAIL page, and refusing there would turn one package's bad cron into a
-      // page a person cannot open to read about it. Browsing a broken package is
-      // fine; installing it is not.
-      const scheduleProblems = await validatePackageSchedules(staged.packagePath, staged.manifest);
-      if (scheduleProblems.length > 0) {
-        throw new InvalidPackageError(scheduleProblems);
-      }
+      // Refusals that depend only on the package's content: a schedule that
+      // could never run, an unparseable SKILL.md. Checked before any flow
+      // touches disk, so the answer is one clear sentence (see the helper).
+      await assertInstallable(staged);
 
       const preview = await this.deps.previewBuilder.build(staged.packagePath, staged.manifest, {
         projectPath: req.projectPath,
@@ -580,6 +567,12 @@ export class MarketplaceInstaller implements InstallerLike {
     // that one below (DOR-2195). A failed resolve or fetch now leaves the old
     // version in place, and nothing can land between the check and the install.
     const staged = await this.stageAndValidate(resolved, req);
+
+    // Every refusal that depends only on the new version's content runs here,
+    // before the uninstall, so a version that can never install leaves the old
+    // one installed rather than removed (DOR-2245 delta review). The install
+    // half runs the same checks again; they pass the second time by definition.
+    await assertInstallable(staged);
 
     // An approved update: check what the new version declares against what
     // the person approved, still before the uninstall, so a refusal leaves the
@@ -1000,6 +993,35 @@ function resolveRelativeSubpath(source: string, pluginRoot?: string): string {
 function isInsideDir(dir: string, target: string): boolean {
   const rel = path.relative(dir, target);
   return rel === '' || (rel.split(path.sep)[0] !== '..' && !path.isAbsolute(rel));
+}
+
+/**
+ * Refuse a staged package that can never install, from its content alone: a
+ * schedule that could never run (croner's reading of the cron and timezone, a
+ * `skillRef` the package does not ship, two schedules on one directory), and,
+ * for a skill pack, a `SKILL.md` DorkOS's parser rejects. Nothing here reads
+ * the install target, the network or npm, so an update runs it before its
+ * uninstall half.
+ *
+ * Deliberately not in `resolveAndValidate`, which `preview()` also calls: the
+ * preview backs the marketplace's package DETAIL page, and refusing there would
+ * turn one package's bad cron into a page a person cannot open to read about
+ * it. Browsing a broken package is fine; installing it is not.
+ *
+ * What is left in the install half can fail for reasons outside the package's
+ * text (npm, the disk, compiling an extension against the dependencies npm
+ * installs), and an update that fails there leaves the package uninstalled
+ * with the person's files and record in place for a retry.
+ *
+ * @param staged - The resolved, staged and schema-validated package.
+ * @throws {InvalidPackageError} Naming every problem found.
+ */
+async function assertInstallable(staged: StagedPackage): Promise<void> {
+  const problems = await validatePackageSchedules(staged.packagePath, staged.manifest);
+  if (staged.manifest.type === 'skill-pack') {
+    problems.push(...(await skillFileProblems(staged.packagePath)));
+  }
+  if (problems.length > 0) throw new InvalidPackageError(problems);
 }
 
 /**

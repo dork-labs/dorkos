@@ -209,6 +209,26 @@ function isUnderNodeModules(relativeDir: string): boolean {
 }
 
 /**
+ * Every `SKILL.md` under a package that DorkOS's parser rejects, one sentence
+ * each (outside `node_modules`). Content-only, so the installer runs it before
+ * an update's uninstall half (DOR-2245).
+ *
+ * @param packagePath - A package tree, staged or at its source.
+ * @returns One problem per rejected file; empty when all parse.
+ */
+export async function skillFileProblems(packagePath: string): Promise<string[]> {
+  const problems: string[] = [];
+  for (const absFile of await findSkillFiles(packagePath)) {
+    try {
+      await validateSkillFile(absFile);
+    } catch (err) {
+      problems.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  return problems;
+}
+
+/**
  * Parse a single SKILL.md file via `@dorkos/skills` and throw a clear
  * `Error` on failure. The error message includes both the offending
  * file path and the parser's diagnostic so the install transaction

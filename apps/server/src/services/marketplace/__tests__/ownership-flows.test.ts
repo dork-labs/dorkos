@@ -134,8 +134,89 @@ describe('update (uninstall then install, DOR-2245 §6)', () => {
       throw new Error('install half failed');
     };
     await expect(harness.installer.update({ name })).rejects.toThrow('install half failed');
+    // What survives a failure the early checks cannot see (npm, the disk): the
+    // package is uninstalled, the person's file and the pruned record stay,
+    // and nothing is left beside the root.
     expect(await readFile(path.join(root, 'config', 'mine.json'), 'utf8')).toBe('mine');
-    expect((await readInstalledFiles(root))?.uninstalledAt).toBeDefined();
+    const record = await readInstalledFiles(root);
+    expect(record?.uninstalledAt).toBeDefined();
+    expect(record?.files).toEqual({});
+    await expect(stat(path.join(root, '.dork', 'manifest.json'))).rejects.toThrow();
+    expect(await readdir(path.dirname(root))).toEqual([path.basename(root)]);
+
+    // A retry installs cleanly over what was left and keeps the person's file.
+    delete (installer as { installStaged?: unknown }).installStaged;
+    await harness.installer.install({ name });
+    expect(await readFile(path.join(root, 'config', 'mine.json'), 'utf8')).toBe('mine');
+    expect((await readInstalledFiles(root))?.uninstalledAt).toBeUndefined();
+  });
+});
+
+describe('an update the new version can never pass (delta review 1)', () => {
+  // Purpose: a check that depends only on the new version's content (here a
+  // schedule timezone only croner rejects) must refuse the update BEFORE the
+  // uninstall half. It used to run after it, leaving the package removed.
+  it('refuses before uninstalling, so the old version is still installed', async () => {
+    const source = path.join(dorkHome, 'src', 'valid-plugin');
+    await cp(path.join(FIXTURES_DIR, 'valid-plugin'), source, { recursive: true });
+    await initBoundary(path.dirname(dorkHome));
+    try {
+      const harness = buildInstallerForTests(dorkHome);
+      const { installPath: root } = await harness.installer.install({ name: source });
+      const shipped = '.dork/tasks/sample-task/SKILL.md';
+      const before = await readFile(path.join(root, shipped), 'utf8');
+      const manifestPath = path.join(source, '.dork', 'manifest.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      await writeFile(
+        manifestPath,
+        JSON.stringify({
+          ...manifest,
+          schedules: [
+            {
+              name: 'nightly',
+              description: 'd',
+              prompt: 'p',
+              cron: '0 3 * * *',
+              timezone: 'Not/AZone',
+            },
+          ],
+        })
+      );
+
+      await expect(harness.installer.update({ name: source })).rejects.toThrow(/Not\/AZone/);
+
+      expect(await readFile(path.join(root, shipped), 'utf8')).toBe(before);
+      expect(await stat(path.join(root, '.dork', 'manifest.json'))).toBeDefined();
+      const record = await readInstalledFiles(root);
+      expect(record?.uninstalledAt).toBeUndefined();
+      expect(record?.files[shipped]).toBeDefined();
+    } finally {
+      await initBoundary(FIXTURES_DIR);
+    }
+  });
+});
+
+describe('a skill pack whose new version has a broken SKILL.md (delta review 1)', () => {
+  // Purpose: an unparseable SKILL.md is known from the package's content alone,
+  // so the update is refused before the uninstall and the old skills stay.
+  it('refuses before uninstalling, so the old skills are still installed', async () => {
+    const source = path.join(dorkHome, 'src', 'valid-skill-pack');
+    await cp(path.join(FIXTURES_DIR, 'valid-skill-pack'), source, { recursive: true });
+    await initBoundary(path.dirname(dorkHome));
+    try {
+      const harness = buildInstallerForTests(dorkHome);
+      const { installPath: root } = await harness.installer.install({ name: source });
+      const skill = 'skills/analyzer/SKILL.md';
+      const before = await readFile(path.join(root, skill), 'utf8');
+      await writeFile(path.join(source, skill), 'no frontmatter at all\n');
+
+      await expect(harness.installer.update({ name: source })).rejects.toThrow(/Invalid SKILL\.md/);
+
+      expect(await readFile(path.join(root, skill), 'utf8')).toBe(before);
+      expect((await readInstalledFiles(root))?.uninstalledAt).toBeUndefined();
+    } finally {
+      await initBoundary(FIXTURES_DIR);
+    }
   });
 });
 

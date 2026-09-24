@@ -46,6 +46,14 @@ vi.mock('../installed-metadata.js', () => ({
   writeInstallMetadata: vi.fn().mockResolvedValue(undefined),
 }));
 
+// The skill-pack SKILL.md check reads the package tree; these tests stage at
+// fake paths (`/tmp/pkg`), so it reports nothing here. Its own behaviour is
+// covered by the ownership flow tests against real trees.
+vi.mock('../flows/install-skill-pack.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../flows/install-skill-pack.js')>()),
+  skillFileProblems: vi.fn().mockResolvedValue([]),
+}));
+
 // Mock the project-install record so its calls can be asserted without a real
 // data directory.
 vi.mock('../lib/project-install-index.js', () => ({
