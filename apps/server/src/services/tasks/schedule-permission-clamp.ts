@@ -24,7 +24,7 @@
  *
  * @module services/tasks/schedule-permission-clamp
  */
-import type { PermissionMode } from '@dorkos/shared/schemas';
+import { EffortLevelSchema, type PermissionMode } from '@dorkos/shared/schemas';
 
 /**
  * The mode a clamped schedule falls back to — the same value both content
@@ -145,7 +145,10 @@ export function scheduleSettingsOf(source: ScheduleSettings): ScheduleSettings {
     name: source.name,
     runtime: source.runtime ?? null,
     model: source.model ?? null,
-    effort: source.effort ?? null,
+    // Read the way the task reports it (`task-row-mappers.ts`): an effort the
+    // schema does not know is no effort, so the key of a row and the key of
+    // the task it maps to always agree.
+    effort: EffortLevelSchema.safeParse(source.effort).success ? source.effort : null,
     maxRuntime: source.maxRuntime ?? null,
     // Absent means off, as it does to the store and the runner.
     sticky: source.sticky === true,

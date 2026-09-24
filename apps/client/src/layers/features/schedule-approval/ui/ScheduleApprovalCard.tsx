@@ -75,6 +75,15 @@ export interface ScheduleApprovalCardProps {
   className?: string;
 }
 
+/** One side of a "what changed" line, kept whole when it is a single term. */
+function ChangeValue({ value, unbroken }: { value: string; unbroken: boolean }) {
+  return (
+    <span data-slot="schedule-change-value" className={cn(unbroken && 'whitespace-nowrap')}>
+      {value}
+    </span>
+  );
+}
+
 /**
  * One proposed schedule, as an informed decision rather than a shrug.
  *
@@ -483,7 +492,14 @@ export function ScheduleApprovalCard({
             {changeLines.map((line) => (
               <li key={line.label} className="min-w-0 break-words">
                 <span className="font-medium">{line.label}:</span>{' '}
-                {line.from === null ? line.to : `${line.from} → ${line.to}`}
+                {line.from === null ? (
+                  line.to
+                ) : (
+                  <>
+                    <ChangeValue value={line.from} unbroken={line.unbroken} /> →{' '}
+                    <ChangeValue value={line.to} unbroken={line.unbroken} />
+                  </>
+                )}
               </li>
             ))}
           </ul>

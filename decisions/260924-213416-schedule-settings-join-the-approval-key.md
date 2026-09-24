@@ -25,6 +25,7 @@ The key is `[prompt, cron, timezone, name, runtime, model, effort, maxRuntime, s
 - **maxRuntime** (judgment): included. It is the ceiling on how long, and so how much, one unattended run may spend; an agent raising it from 10 minutes to 8 hours changes the cost and blast radius the person agreed to. Lowering it is also a change, and is asked about too: an asymmetric key would be a second rule for one field, and agents rarely touch it.
 - **sticky** (judgment): included. It decides whether every run resumes one session and carries everything earlier runs saw, which changes what a run knows and can repeat, not only how it is bookkept.
 - **Not included:** `enabled` (the person's own switch), `permissionMode` (its own grant rule), `description` and `displayName` (nothing a run reads).
+- **The key holds the schedule's own values, not resolved ones.** A null runtime, model or effort means "follow the agent", and the key records that null. Changing the agent's own defaults (its `.dork/agent.json`, which an agent can edit because it is its working directory) or the server's default therefore changes what such a schedule runs without touching its approval. That gap is deliberate here and closed elsewhere: resolved values in the key would park every schedule that follows an agent whenever a person edits that agent's defaults. DOR-2328 gates an agent’s write to an agent's runtime, model or effort defaults behind a person's approval instead, the same pattern as schedules.
 
 An agent's change to any of them parks the schedule in the same request with `AGENT_SETTINGS_CHANGE_REASON` (the prompt and timing sentences keep priority in that order: prompt, settings, timing). A person's change re-approves, as before.
 
@@ -42,4 +43,5 @@ The approval a park withdraws is kept in `previous_approval_key` (migration `011
 ### Negative
 
 - Hand-editing any of these fields in a SKILL.md parks the schedule at the next sync, like a prompt edit.
+- A schedule that follows its agent's runtime, model or effort is still moved by a change to the agent's defaults, until DOR-2328 gates that write.
 - A downgrade to a build before this reads a nine-part key as unmatched and parks approved schedules once.

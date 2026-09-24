@@ -10,8 +10,9 @@ describe('describeApprovalChanges (DOR-2323)', () => {
         { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4' },
       ])
     ).toEqual([
-      { label: 'Runtime', from: 'the agent’s own', to: 'codex' },
-      { label: 'Model', from: 'claude-sonnet-4', to: 'claude-opus-4' },
+      { label: 'Runtime', from: 'the agent’s own', to: 'codex', unbroken: true },
+      // A model name is one word; the card never breaks it at a hyphen.
+      { label: 'Model', from: 'claude-sonnet-4', to: 'claude-opus-4', unbroken: true },
     ]);
   });
 
@@ -23,17 +24,17 @@ describe('describeApprovalChanges (DOR-2323)', () => {
         { field: 'effort', from: 'low', to: null },
       ])
     ).toEqual([
-      { label: 'Time limit', from: 'the default', to: '2h' },
-      { label: 'Remembers earlier runs', from: 'no', to: 'yes' },
-      { label: 'Effort', from: 'low', to: 'the agent’s own' },
+      { label: 'Time limit', from: 'the default', to: '2h', unbroken: true },
+      { label: 'Remembers earlier runs', from: 'no', to: 'yes', unbroken: true },
+      { label: 'Effort', from: 'low', to: 'the agent’s own', unbroken: true },
     ]);
   });
 
   it('says the instructions changed without quoting them', () => {
     // Purpose: the full prompt is one click away on the card; a diff here is noise.
-    expect(
-      describeApprovalChanges([{ field: 'prompt', from: 'Sweep.', to: 'Delete everything.' }])
-    ).toEqual([{ label: 'Instructions', from: null, to: 'changed (see below)' }]);
+    expect(describeApprovalChanges([{ field: 'prompt', from: null, to: null }])).toEqual([
+      { label: 'Instructions', from: null, to: 'changed (see below)', unbroken: false },
+    ]);
   });
 
   it('keeps timing readable', () => {
@@ -44,9 +45,10 @@ describe('describeApprovalChanges (DOR-2323)', () => {
         { field: 'name', from: 'sweep', to: 'purge' },
       ])
     ).toEqual([
-      { label: 'Schedule', from: '0 3 * * *', to: '* * * * *' },
-      { label: 'Timezone', from: 'UTC', to: 'Asia/Tokyo' },
-      { label: 'Name', from: 'sweep', to: 'purge' },
+      // In words, like the card's own cadence line, not as a raw expression.
+      { label: 'Schedule', from: 'At 03:00 AM', to: 'Every minute', unbroken: false },
+      { label: 'Timezone', from: 'UTC', to: 'Asia/Tokyo', unbroken: true },
+      { label: 'Name', from: 'sweep', to: 'purge', unbroken: true },
     ]);
   });
 });

@@ -37,11 +37,13 @@ function approvalChangesOf(row: typeof pulseSchedules.$inferSelect): Task['appro
   const approved = parseContentKey(row.previousApprovalKey);
   if (!approved) return [];
   const now = effectiveWork(row);
-  return WORK_FIELDS.filter((field) => approved[field] !== now[field]).map((field) => ({
-    field,
-    from: approved[field],
-    to: now[field],
-  }));
+  return WORK_FIELDS.filter((field) => approved[field] !== now[field]).map((field) =>
+    // The instructions are not quoted: the card says they changed and shows
+    // the new ones in full, and the old ones need not travel with every task.
+    field === 'prompt'
+      ? { field, from: null, to: null }
+      : { field, from: approved[field], to: now[field] }
+  );
 }
 
 /**

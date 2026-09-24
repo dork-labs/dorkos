@@ -652,6 +652,8 @@ export class TaskStore {
             filePath: to,
             status: 'pending_approval',
             approvedContentKey: null,
+            // Kept for the card's "what changed" (DOR-2323).
+            previousApprovalKey: existing.approvedContentKey ?? existing.previousApprovalKey,
             ...fileProvenance(existing, { reason }),
             updatedAt: now,
           })

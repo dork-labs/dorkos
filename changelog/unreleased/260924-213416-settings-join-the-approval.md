@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(tasks): a schedule's name, runtime, model, effort, time limit and memory are part of its approval (DOR-2323)"
+  - 'fix(tasks): review round for the settings approval (DOR-2323)'
 ---
 
 ### Security
@@ -9,4 +10,4 @@ covers:
 
 ### Added
 
-- When a schedule waits for your approval again, the card lists what changed since you approved it, with the old and the new value side by side, for example "Model: claude-sonnet-4 → claude-opus-4" (DOR-2323)
+- When a schedule waits for your approval again, the card lists what changed since you approved it, with the old and the new value side by side, for example "Model: claude-sonnet-4 → claude-opus-4". A change to when it runs is written out in words, and a change to its instructions is marked so you can read the new ones on the card (DOR-2323)

@@ -5,6 +5,7 @@
  * @module features/schedule-approval/lib/describe-approval-changes
  */
 import type { Task } from '@dorkos/shared/types';
+import { formatCadence } from './format-schedule-times';
 
 /** One line of the card's "what changed" list. */
 export interface ApprovalChangeLine {
@@ -14,6 +15,12 @@ export interface ApprovalChangeLine {
   from: string | null;
   /** The value that would run now. */
   to: string;
+  /**
+   * Whether the values are single terms the card keeps whole (a model name, a
+   * runtime, a limit), never broken at a hyphen. Sentences (a cadence, the
+   * instructions note) wrap like any text.
+   */
+  unbroken: boolean;
 }
 
 type Change = Task['approvalChanges'][number];
@@ -47,11 +54,13 @@ function formatDuration(ms: number): string {
 /** One value of one part, in words. */
 function formatValue(field: Change['field'], value: Change['from']): string {
   if (field === 'sticky') return value === true ? 'yes' : 'no';
+  // In words, like the card's own cadence line; the timezone has its own line.
+  if (field === 'cron') return formatCadence(typeof value === 'string' ? value : null, null);
   if (field === 'maxRuntime')
     return typeof value === 'number' ? formatDuration(value) : 'the default';
   if (value === null || value === '') {
-    // A null runtime, model or effort follows the agent; an empty cron runs on demand.
-    return field === 'cron' ? 'only when run by hand' : 'the agent’s own';
+    // A null runtime, model or effort follows the agent.
+    return 'the agent’s own';
   }
   return String(value);
 }
@@ -66,11 +75,12 @@ function formatValue(field: Change['field'], value: Change['from']): string {
 export function describeApprovalChanges(changes: Task['approvalChanges']): ApprovalChangeLine[] {
   return changes.map((change) =>
     change.field === 'prompt'
-      ? { label: LABEL.prompt, from: null, to: 'changed (see below)' }
+      ? { label: LABEL.prompt, from: null, to: 'changed (see below)', unbroken: false }
       : {
           label: LABEL[change.field],
           from: formatValue(change.field, change.from),
           to: formatValue(change.field, change.to),
+          unbroken: change.field !== 'cron',
         }
   );
 }

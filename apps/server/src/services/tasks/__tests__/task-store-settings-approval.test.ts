@@ -231,6 +231,50 @@ describe('the settings are part of the approval', () => {
     });
   });
 
+  it('does not quote the instructions in what changed', () => {
+    // Purpose: the card says "changed"; the old prompt stays out of the payload.
+    const id = approvedSchedule();
+    const before = { ...taskWorkOf(store.getTask(id)!), status: 'active' };
+    store.updateTask(id, { prompt: 'Delete the digest.' });
+    store.settleApprovedWorkChange(id, before, { trusted: false });
+
+    expect(store.getTask(id)!.approvalChanges).toEqual([{ field: 'prompt', from: null, to: null }]);
+  });
+
+  it('does not park over an effort value the API cannot show', () => {
+    // Purpose: a row holding an effort the schema does not know reads as "none"
+    // on the task; the key must read it the same way, or an unrelated edit
+    // would look like a change to the approved work.
+    const id = approvedSchedule();
+    db.update(pulseSchedules).set({ effort: 'turbo' }).where(eq(pulseSchedules.id, id)).run();
+    store.recordApproval(id);
+    const before = { ...taskWorkOf(store.getTask(id)!), status: 'active' };
+    store.updateTask(id, { description: 'Tidier words' });
+
+    expect(store.settleApprovedWorkChange(id, before, { trusted: false })).toBe('unchanged');
+    expect(store.getTask(id)!.status).toBe('active');
+  });
+
+  it('keeps the withdrawn approval when a migration parks a drifted row', () => {
+    // Purpose: the card's "what changed" must work for every park, the
+    // migration's included.
+    const id = approvedSchedule();
+    store.rekeyMigratedFile(FILE_PATH, '/new/home/SKILL.md', {
+      prompt: 'An edited prompt.',
+      cron: CRON,
+      timezone: 'UTC',
+    });
+
+    expect(store.getTask(id)).toMatchObject({ status: 'pending_approval' });
+    // The row takes the file's new prompt at the next sync of its new home.
+    const synced = store.upsertFromFile(
+      { ...definition({}, 'An edited prompt.'), filePath: '/new/home/SKILL.md' },
+      undefined,
+      DISCOVERY
+    );
+    expect(synced.approvalChanges).toEqual([{ field: 'prompt', from: null, to: null }]);
+  });
+
   it('says nothing changed on a schedule that is not waiting', () => {
     // Purpose: "what changed" belongs to a schedule waiting for a decision; a
     // running one with a stale record of a withdrawn approval shows nothing.

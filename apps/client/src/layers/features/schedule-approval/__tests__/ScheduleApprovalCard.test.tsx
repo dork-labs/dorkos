@@ -1373,6 +1373,10 @@ describe('what changed since the person approved it (DOR-2323)', () => {
     expect(changes).not.toBeNull();
     expect(changes).toHaveTextContent('Runtime: the agent’s own → codex');
     expect(changes).toHaveTextContent('Model: claude-sonnet-4 → claude-opus-4');
+    // Kept whole at any width: a model name broken at a hyphen reads as two.
+    expect(changes!.querySelector('[data-slot="schedule-change-value"]')).toHaveClass(
+      'whitespace-nowrap'
+    );
   });
 
   it('draws nothing when nothing changed since an approval', () => {
