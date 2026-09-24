@@ -139,16 +139,23 @@ const MATTER_OPTIONS = { language: 'yaml', engines: FRONTMATTER_ENGINES };
  * fourth character is not another `-`, and whatever follows on that first line
  * is the language.
  *
+ * An allowed language comes back lowercased on the fence line, because
+ * gray-matter matches `yaml`/`yml` in any case but looks `json` up exactly as
+ * written, so `---JSON` would otherwise fail as an unregistered engine.
+ *
  * @param content - Raw file content.
+ * @returns The content to hand gray-matter, with the fence language lowercased.
  * @throws {UnsupportedFrontmatterError} For any language but YAML or JSON.
  */
-function assertDataLanguage(content: string): void {
+function normalizeDataLanguage(content: string): string {
   const text = content.startsWith('\uFEFF') ? content.slice(1) : content;
-  if (!text.startsWith('---') || text.charAt(3) === '-') return;
-  const language = matter.language(text).name;
-  if (language !== '' && !DATA_LANGUAGES.has(language.toLowerCase())) {
-    throw new UnsupportedFrontmatterError(language);
+  if (!text.startsWith('---') || text.charAt(3) === '-') return content;
+  const { raw, name } = matter.language(text);
+  if (name === '') return content;
+  if (!DATA_LANGUAGES.has(name.toLowerCase())) {
+    throw new UnsupportedFrontmatterError(name);
   }
+  return `---${raw.toLowerCase()}${text.slice(3 + raw.length)}`;
 }
 
 /**
@@ -163,8 +170,7 @@ function assertDataLanguage(content: string): void {
  * @throws The YAML or JSON parser's error when the block is malformed.
  */
 export function parseFrontmatter(content: string): ParsedFrontmatter {
-  assertDataLanguage(content);
-  const parsed = matter(content, MATTER_OPTIONS);
+  const parsed = matter(normalizeDataLanguage(content), MATTER_OPTIONS);
   const data: unknown = parsed.data;
   if (data === null || typeof data !== 'object' || Array.isArray(data)) {
     throw new NonMappingFrontmatterError(
