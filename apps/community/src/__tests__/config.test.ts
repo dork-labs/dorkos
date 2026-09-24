@@ -150,6 +150,31 @@ describe('community startup config', () => {
     refuse('COMMUNITY_REPORT_ABUSE_URL', 'mailto:abuse@example.com?body=hello');
     refuse('COMMUNITY_REPORT_ABUSE_URL', 'mailto:not-an-address');
     refuse('COMMUNITY_REPORT_ABUSE_URL', 'data:text/html,hi');
+  });
+
+  it('accepts only one bare mailbox as a mailto report address, even once decoded', () => {
+    // Purpose: fails if a report address can swallow the body the Report link writes (a trailing
+    // `?` or `#`), or add a second recipient or a header, plainly or percent-encoded.
+    for (const value of [
+      'mailto:abuse@example.com?',
+      'mailto:abuse@example.com#',
+      'mailto:a,b@evil.com',
+      'mailto:a;b@x.com',
+      'mailto:abuse%0ABcc:x@evil.com',
+      'mailto:%0D%0Aabuse@x.com',
+      'mailto:abuse@example.com%3Fcc%3Dx',
+      'mailto:abuse@x.com&cc=e',
+      'mailto:abuse@example.com%20',
+      'mailto:abuse@example.com%',
+      'mailto:abuse@example',
+    ])
+      expect(() => parseConfig({ ...valid, COMMUNITY_REPORT_ABUSE_URL: value }), value).toThrow(
+        'COMMUNITY_REPORT_ABUSE_URL'
+      );
+    expect(
+      parseConfig({ ...valid, COMMUNITY_REPORT_ABUSE_URL: 'mailto:report+abuse@mail.example.com' })
+        .hostLinks.reportAbuseUrl
+    ).toBe('mailto:report+abuse@mail.example.com');
     expect(
       parseConfig({ ...valid, COMMUNITY_REPORT_ABUSE_URL: 'https://example.com/report?form=1' })
         .hostLinks.reportAbuseUrl

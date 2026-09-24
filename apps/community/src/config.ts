@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isAbsolute } from 'node:path';
+import { parseCommunityReportMailto } from '@dorkos/shared/community-wire';
 
 const integer = (name: string, fallback: number, ceiling: number) =>
   z.coerce.number().int().min(1, `${name} must be positive`).max(ceiling).default(fallback);
@@ -11,12 +12,19 @@ const optionalText = z.preprocess(
 );
 
 /**
- * Validate one host link: an `https:` page, or for abuse reports also a bare `mailto:` address.
+ * Validate one host link: an `https:` page, or for abuse reports also one bare `mailto:` mailbox.
  * Returns `null` when unset, so a self-hosted Community shows no link at all.
  */
 function hostLink(name: string, value: string | undefined, allowMailto = false): string | null {
   if (value === undefined) return null;
-  const allowed = allowMailto ? 'an https:// address or a mailto: address' : 'an https:// address';
+  const allowed = allowMailto
+    ? 'an https:// address or one mailto: address'
+    : 'an https:// address';
+  if (allowMailto && value.startsWith('mailto:')) {
+    const mailbox = parseCommunityReportMailto(value);
+    if (mailbox) return mailbox;
+    throw new Error(`${name} must be ${allowed}`);
+  }
   let url: URL;
   try {
     url = new URL(value);
@@ -24,15 +32,6 @@ function hostLink(name: string, value: string | undefined, allowMailto = false):
     throw new Error(`${name} must be ${allowed}`, { cause });
   }
   if (url.protocol === 'https:' && url.hostname && !url.username && !url.password) return url.href;
-  // A report link appends its own body, so the configured address carries no query of its own.
-  if (
-    allowMailto &&
-    url.protocol === 'mailto:' &&
-    /^[^@\s/?#]+@[^@\s/?#]+$/u.test(url.pathname) &&
-    !url.search &&
-    !url.hash
-  )
-    return url.href;
   throw new Error(`${name} must be ${allowed}`);
 }
 

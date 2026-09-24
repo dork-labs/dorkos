@@ -1,9 +1,40 @@
+import type { ReactNode } from 'react';
 import { ExternalLink, Flag } from 'lucide-react';
 import { reportAbuseHref, useHostLinks } from '../host-links.js';
 
-// Every host link leaves the community for a page the host runs, so it opens in a new tab and
-// passes no opener or referrer.
-const external = { target: '_blank', rel: 'noopener noreferrer' } as const;
+const NEW_TAB = '(opens in a new tab)';
+
+/**
+ * A link to a page the host runs. An `https:` page opens in a new tab with no opener or
+ * referrer, and says so to screen readers; a `mailto:` address hands off to the mail app in
+ * place, so it neither opens a tab nor claims to.
+ */
+function HostLink({
+  href,
+  className,
+  label,
+  children,
+}: {
+  href: string;
+  className?: string;
+  /** Replaces the visible text as the accessible name, before the new-tab note. */
+  label?: string;
+  children: ReactNode;
+}) {
+  const mail = href.startsWith('mailto:');
+  const tab = mail ? {} : ({ target: '_blank', rel: 'noopener noreferrer' } as const);
+  return (
+    <a
+      className={className}
+      href={href}
+      aria-label={label ? (mail ? label : `${label} ${NEW_TAB}`) : undefined}
+      {...tab}
+    >
+      {children}
+      {!label && !mail && <span className="sr-only"> {NEW_TAB}</span>}
+    </a>
+  );
+}
 
 /** Terms and Privacy under a sign-in or sign-up form; nothing when the host set neither. */
 export function HostPolicyLinks() {
@@ -11,16 +42,8 @@ export function HostPolicyLinks() {
   if (!termsUrl && !privacyUrl) return null;
   return (
     <nav className="row small muted mt-6 gap-4" aria-label="Host policies">
-      {termsUrl && (
-        <a href={termsUrl} {...external}>
-          Terms
-        </a>
-      )}
-      {privacyUrl && (
-        <a href={privacyUrl} {...external}>
-          Privacy
-        </a>
-      )}
+      {termsUrl && <HostLink href={termsUrl}>Terms</HostLink>}
+      {privacyUrl && <HostLink href={privacyUrl}>Privacy</HostLink>}
     </nav>
   );
 }
@@ -28,26 +51,27 @@ export function HostPolicyLinks() {
 /** The account settings panel with all three host links; nothing when the host set none. */
 export function HostLinksPanel({ communityId }: { communityId: string }) {
   const { termsUrl, privacyUrl, reportAbuseUrl } = useHostLinks();
-  if (!termsUrl && !privacyUrl && !reportAbuseUrl) return null;
+  const report = reportAbuseUrl ? reportAbuseHref(reportAbuseUrl, communityId) : null;
+  if (!termsUrl && !privacyUrl && !report) return null;
   return (
     <section className="panel" aria-labelledby="host-links-title">
       <h3 id="host-links-title">This host</h3>
       <p className="small muted">The host that runs this community sets these.</p>
       <div className="row flex-wrap gap-2">
         {termsUrl && (
-          <a className="button" href={termsUrl} {...external}>
+          <HostLink className="button" href={termsUrl}>
             Terms <ExternalLink size={14} aria-hidden="true" />
-          </a>
+          </HostLink>
         )}
         {privacyUrl && (
-          <a className="button" href={privacyUrl} {...external}>
+          <HostLink className="button" href={privacyUrl}>
             Privacy <ExternalLink size={14} aria-hidden="true" />
-          </a>
+          </HostLink>
         )}
-        {reportAbuseUrl && (
-          <a className="button" href={reportAbuseHref(reportAbuseUrl, communityId)} {...external}>
+        {report && (
+          <HostLink className="button" href={report}>
             Report a problem <ExternalLink size={14} aria-hidden="true" />
-          </a>
+          </HostLink>
         )}
       </div>
     </section>
@@ -63,14 +87,11 @@ export function ReportEntryLink({
   entryId: string;
 }) {
   const { reportAbuseUrl } = useHostLinks();
-  if (!reportAbuseUrl) return null;
+  const report = reportAbuseUrl ? reportAbuseHref(reportAbuseUrl, communityId, entryId) : null;
+  if (!report) return null;
   return (
-    <a
-      className="button ghost small mt-1"
-      href={reportAbuseHref(reportAbuseUrl, communityId, entryId)}
-      {...external}
-    >
+    <HostLink className="button ghost small mt-1" href={report} label="Report this message">
       <Flag size={14} aria-hidden="true" /> Report
-    </a>
+    </HostLink>
   );
 }

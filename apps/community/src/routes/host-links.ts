@@ -14,5 +14,9 @@ export function registerHostLinkRoutes(
   app: Hono,
   { config }: { config: Pick<CommunityConfig, 'hostLinks'> }
 ): void {
-  app.get('/api/v1/host-links', (c) => json(c, CommunityWireHostLinksSchema, config.hostLinks));
+  app.get('/api/v1/host-links', (c) => {
+    // Public and identical for everyone; it only changes when the host redeploys.
+    c.header('Cache-Control', 'public, max-age=300');
+    return json(c, CommunityWireHostLinksSchema, config.hostLinks);
+  });
 }

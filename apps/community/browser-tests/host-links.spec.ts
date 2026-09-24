@@ -160,7 +160,10 @@ test('a host with links shows Terms and Privacy at sign-in, all three in setting
   const page = await signedInPage(browser, linkedUrl);
   await page.goto(`${linkedUrl}/c/${communityId}`);
   const message = page.locator('article.entry', { hasText: SECRET_TEXT });
-  const report = message.getByRole('link', { name: 'Report' });
+  const report = message.getByRole('link', {
+    name: 'Report this message (opens in a new tab)',
+    exact: true,
+  });
   await expect(report).toHaveAttribute('target', '_blank');
   const href = new URL((await report.getAttribute('href')) ?? '');
   expect(`${href.origin}${href.pathname}`).toBe(REPORT);
@@ -172,7 +175,9 @@ test('a host with links shows Terms and Privacy at sign-in, all three in setting
 
   await page.goto(`${linkedUrl}/c/${communityId}/settings/account`);
   const hostPanel = page.getByRole('region', { name: 'This host' });
-  await expect(hostPanel.getByRole('link', { name: 'Terms' })).toHaveAttribute('href', TERMS);
+  await expect(
+    hostPanel.getByRole('link', { name: 'Terms (opens in a new tab)', exact: true })
+  ).toHaveAttribute('href', TERMS);
   await expect(hostPanel.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', PRIVACY);
   await expect(hostPanel.getByRole('link', { name: 'Report a problem' })).toHaveAttribute(
     'href',
@@ -198,7 +203,9 @@ test('a host without links shows no Terms, Privacy or Report anywhere', async ({
   await channelAnswered;
   await expect(page.locator('article.entry', { hasText: SECRET_TEXT })).toBeVisible();
   await expect(page.getByRole('link', { name: /Terms|Privacy|Report/u })).toHaveCount(0);
+  const settingsAnswered = linksAnswered(page);
   await page.goto(`${plainUrl}/c/${communityId}/settings/account`);
+  await settingsAnswered;
   await expect(page.getByRole('heading', { name: 'This browser' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'This host' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Terms|Privacy|Report/u })).toHaveCount(0);

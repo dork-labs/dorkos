@@ -18,7 +18,11 @@ async function read(env: Record<string, string>) {
   registerHostLinkRoutes(app, { config: parseConfig({ ...base, ...env }) });
   // No cookie, no tenant: the sign-in page reads this before anyone has an account.
   const response = await app.request('/api/v1/host-links');
-  return { status: response.status, body: (await response.json()) as unknown };
+  return {
+    status: response.status,
+    cache: response.headers.get('cache-control'),
+    body: (await response.json()) as unknown,
+  };
 }
 
 describe('GET /api/v1/host-links', () => {
@@ -26,6 +30,7 @@ describe('GET /api/v1/host-links', () => {
     // Purpose: fails if an unset link is sent as an empty string or placeholder the UI would show.
     expect(await read({})).toEqual({
       status: 200,
+      cache: 'public, max-age=300',
       body: { termsUrl: null, privacyUrl: null, reportAbuseUrl: null },
     });
   });
@@ -53,6 +58,9 @@ describe('GET /api/v1/host-links', () => {
       { ...links, termsUrl: 'http://example.com/terms' },
       { ...links, privacyUrl: 'mailto:privacy@example.com' },
       { ...links, reportAbuseUrl: 'javascript:alert(1)' },
+      { ...links, reportAbuseUrl: 'mailto:abuse@example.com?' },
+      { ...links, reportAbuseUrl: 'mailto:a,b@evil.com' },
+      { ...links, reportAbuseUrl: 'mailto:abuse%0ABcc:x@evil.com' },
       { ...links, extra: 'https://example.com' },
     ])
       expect(CommunityWireHostLinksSchema.safeParse(bad).success).toBe(false);
