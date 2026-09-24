@@ -38,6 +38,8 @@ import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
 import { registerHostLinkRoutes } from './routes/host-links.js';
 import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/imports.js';
+import { IMPORT_UPLOAD_IDLE_MS } from './imports/store.js';
+import { UploadSlots } from './imports/upload.js';
 import { createHostAuthority } from './host/authority.js';
 import { registerAdministrationRoutes } from './routes/administration.js';
 import { registerAccountErasureRoutes, registerOwnerErasureRoutes } from './routes/erasures.js';
@@ -65,6 +67,10 @@ export function createCommunityApp({
     /** The clock host API key expiry is judged by. Tests move it; production uses the wall clock. */
     now?: () => Date;
     afterExportSnapshot?: () => Promise<void>;
+    /** How long an export upload may go without a byte; tests shorten it. */
+    importUploadIdleMs?: number;
+    /** Free bytes in the temporary folder, as an upload's space check sees them. */
+    freeTempBytes?: () => Promise<number>;
   };
   blobStore?: BlobStore;
 }) {
@@ -324,6 +330,9 @@ export function createCommunityApp({
     now,
     limitTokenMiss: (c) =>
       limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
+    uploadSlots: new UploadSlots(config.limits.importUploads),
+    uploadIdleMs: hooks?.importUploadIdleMs ?? IMPORT_UPLOAD_IDLE_MS,
+    freeTempBytes: hooks?.freeTempBytes,
   });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   registerAccountPasswordRoutes(hostApi, { pool, auth });

@@ -204,6 +204,7 @@ const schema = z.object({
       .pipe(z.array(z.string().regex(COMMUNITY_SHORT_NAME_PATTERN)))
       .optional()
   ),
+  COMMUNITY_IMPORT_UPLOADS: integer('COMMUNITY_IMPORT_UPLOADS', 2, 16),
   COMMUNITY_ERASURE_JOURNAL: z.preprocess(
     (value) => (value === '' ? undefined : value),
     z.string().min(1).optional()
@@ -371,6 +372,8 @@ export function parseConfig(env: Record<string, unknown>) {
       hostDeletionNoticeDays: value.COMMUNITY_HOST_DELETION_NOTICE_DAYS,
       shortNameCooloffDays: value.COMMUNITY_SHORT_NAME_COOLOFF_DAYS,
       nameLookupsPerMinute: value.COMMUNITY_NAME_LOOKUPS_PER_MINUTE,
+      /** Export uploads one replica receives at once; each can stage up to twice its size. */
+      importUploads: value.COMMUNITY_IMPORT_UPLOADS,
     },
   };
 }

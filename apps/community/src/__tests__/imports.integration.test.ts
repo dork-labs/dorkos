@@ -14,6 +14,7 @@ import {
   buildArchive,
   createImport,
   droppedUpload,
+  slowUpload,
   issueKey,
   minimalManifest,
   ownerExport,
@@ -39,6 +40,7 @@ let keyImport = '';
 let keyRead = '';
 let keyWrite = '';
 const logged: string[] = [];
+let freeTemp = Number.MAX_SAFE_INTEGER;
 
 async function count(sql: string, params: unknown[] = []): Promise<number> {
   return (await h.pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM (${sql}) t`, params))
@@ -67,7 +69,11 @@ beforeAll(async () => {
       );
     });
   }
-  h = await startTenancyHarness('imports', { now: () => clock });
+  h = await startTenancyHarness('imports', {
+    now: () => clock,
+    hooks: { importUploadIdleMs: 700, freeTempBytes: async () => freeTemp },
+    env: { COMMUNITY_IMPORT_UPLOADS: 2 },
+  });
   const host = await bootstrapHost(h, 'Operator', 'operator@example.test');
   operatorCookie = host.cookie;
   a = host.communityId;
@@ -495,4 +501,110 @@ it('never shows or logs an upload token', async () => {
   const stored = await h.pool.query('SELECT row_to_json(i)::text AS row FROM community_imports i');
   for (const row of stored.rows) expect(row.row).not.toContain(uploadToken);
   expect(logged.join('\n')).not.toContain(uploadToken);
+});
+
+// Purpose: the upload token lives only as long as its window. Once the window closes, even a
+// repeat of an upload that already succeeded answers 401, as the published contract says.
+it('answers 401 to the upload token after its window, even for a finished upload', async () => {
+  const { importId, uploadToken } = await createImport(h, { bearer: keyImport });
+  const archive = buildArchive(minimalManifest());
+  await expectStatus(
+    await uploadArchive(h, importId, archive, { bearer: uploadToken }),
+    200,
+    'upload'
+  );
+  clock = new Date(Date.now() + 25 * 60 * 60_000);
+  try {
+    expect((await uploadArchive(h, importId, archive, { bearer: uploadToken })).status).toBe(401);
+    // Host authority is not bound to the window and still gets the idempotent answer.
+    expect((await uploadArchive(h, importId, archive, { bearer: keyImport })).status).toBe(200);
+  } finally {
+    clock = new Date();
+  }
+});
+
+// Purpose: one upload per import at a time. A second upload of the same import is refused
+// with 409 before its body is read, and the first one's lease is freed when it ends.
+it('receives one upload of an import at a time', async () => {
+  const { importId, uploadToken } = await createImport(h, { bearer: keyImport });
+  const archive = buildArchive(minimalManifest());
+  const first = await slowUpload(h, importId, archive, uploadToken, {
+    pieces: 4,
+    delayMs: 0,
+    holdOpen: true,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const second = await uploadArchive(h, importId, archive, { bearer: uploadToken });
+  expect(second.status).toBe(409);
+  expect((await second.json()).code).toBe('STATE_CONFLICT');
+  first.close();
+  await first.response;
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect((await uploadArchive(h, importId, archive, { bearer: uploadToken })).status).toBe(200);
+});
+
+// Purpose: a replica receives at most COMMUNITY_IMPORT_UPLOADS exports at once; one more is
+// refused with 429 before its body is read, and a slot frees when an upload ends.
+it('caps concurrent uploads on a replica', async () => {
+  const archive = buildArchive(minimalManifest());
+  const imports = await Promise.all([1, 2, 3].map(() => createImport(h, { bearer: keyImport })));
+  const held = await Promise.all(
+    imports.slice(0, 2).map((target) =>
+      slowUpload(h, target.importId, archive, target.uploadToken, {
+        pieces: 4,
+        delayMs: 0,
+        holdOpen: true,
+      })
+    )
+  );
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const third = await uploadArchive(h, imports[2].importId, archive, {
+    bearer: imports[2].uploadToken,
+  });
+  expect(third.status).toBe(429);
+  for (const upload of held) {
+    upload.close();
+    await upload.response;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(
+    (await uploadArchive(h, imports[2].importId, archive, { bearer: imports[2].uploadToken }))
+      .status
+  ).toBe(200);
+});
+
+// Purpose: an upload the temporary folder has no room for is refused before it is read,
+// without spending the token.
+it('refuses an upload when the temporary folder is too full', async () => {
+  const { importId, uploadToken } = await createImport(h, { bearer: keyImport });
+  const archive = buildArchive(minimalManifest());
+  freeTemp = archive.byteLength;
+  try {
+    const refused = await uploadArchive(h, importId, archive, { bearer: uploadToken });
+    expect(refused.status).toBe(503);
+  } finally {
+    freeTemp = Number.MAX_SAFE_INTEGER;
+  }
+  expect((await uploadArchive(h, importId, archive, { bearer: uploadToken })).status).toBe(200);
+});
+
+// Purpose: a long upload is judged by whether bytes keep arriving, not by how long it takes.
+// One that trickles for several idle periods succeeds; one that stalls past the idle limit is
+// dropped and keeps the token usable.
+it('keeps a slow upload that keeps sending, and drops one that stalls', async () => {
+  const { importId, uploadToken } = await createImport(h, { bearer: keyImport });
+  const archive = buildArchive(minimalManifest());
+  const stalled = await slowUpload(h, importId, archive, uploadToken, {
+    pieces: 2,
+    delayMs: 1_500,
+  });
+  expect(await stalled.response).toMatch(/^HTTP\/1\.1 400 /);
+  expect((await readImport(h, importId, keyRead)).state).toBe('awaiting_upload');
+  const started = Date.now();
+  const trickle = await slowUpload(h, importId, archive, uploadToken, {
+    pieces: 8,
+    delayMs: 400,
+  });
+  expect(await trickle.response).toMatch(/^HTTP\/1\.1 200 /);
+  expect(Date.now() - started).toBeGreaterThan(2 * 700);
 });

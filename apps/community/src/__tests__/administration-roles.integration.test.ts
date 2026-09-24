@@ -36,6 +36,7 @@ import { registerShortNameRoutes } from '../routes/short-names.js';
 import { registerOwnerClaimRoutes } from '../routes/owner-claims.js';
 import { registerHostKeyRoutes } from '../routes/host-keys.js';
 import { registerImportRoutes } from '../routes/imports.js';
+import { UploadSlots } from '../imports/upload.js';
 import { createHostAuthority } from '../host/authority.js';
 import { issueHostApiKey } from '../host/key-store.js';
 import { hashSecret, randomToken } from '../security.js';
@@ -2075,6 +2076,8 @@ it('classifies every registered route, and puts every host and settings route in
     authority,
     now,
     limitTokenMiss: () => undefined,
+    uploadSlots: new UploadSlots(1),
+    uploadIdleMs: 1_000,
   });
   registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });
   const administration = [

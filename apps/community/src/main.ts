@@ -18,6 +18,9 @@ import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './del
 import { ERASURE_POLL_MS, pruneErasureRequests, sweepErasures } from './erasure/worker.js';
 import { sweepExpiredPairings } from './routes/pairings.js';
 import { IMPORT_POLL_MS, pruneImports, sweepImports } from './imports/worker.js';
+import { IMPORT_UPLOAD_LEASE_MS } from './imports/store.js';
+import { sweepImportTempDirs } from './imports/upload.js';
+import { configureServerTimeouts } from './http.js';
 
 const config = parseConfig(process.env);
 await migrate(config.databaseUrl);
@@ -77,6 +80,9 @@ if (config.oidc)
   console.info(
     `Community single sign-on: register ${oidcCallbackUrl(config.publicUrl)} as the redirect URI`
   );
+configureServerTimeouts(server);
+// A crash while an export was arriving or being restored leaves its temporary folder behind.
+void sweepImportTempDirs(IMPORT_UPLOAD_LEASE_MS * 2).catch(() => undefined);
 const cleanup = setInterval(() => {
   void sweepExpiredAttachments(pool, blobStore).catch((error: unknown) => {
     console.error(

@@ -1237,8 +1237,11 @@ export const auditEvents = pgTable(
     nextState: text('next_state'),
     changedFields: text('changed_fields').array().notNull().default([]),
     createdAt: time('created_at'),
+    /** `imported` for an event an import restored from an owner export. */
+    origin: text('origin').notNull().default('native'),
   },
   (table) => [
+    check('audit_events_origin', sql`${table.origin} IN ('native','imported')`),
     index('audit_events_community_created_idx').on(table.communityId, table.createdAt),
     foreignKey({
       name: 'audit_events_actor_tenant_fk',
@@ -1450,6 +1453,9 @@ export const communityImports = pgTable(
     uploadExpiresAt: timestamp('upload_expires_at', { withTimezone: true }).notNull(),
     archiveSha256: text('archive_sha256'),
     archiveBytes: bigint('archive_bytes', { mode: 'number' }),
+    archiveReceivedAt: timestamp('archive_received_at', { withTimezone: true }),
+    uploadLeaseUntil: timestamp('upload_lease_until', { withTimezone: true }),
+    uploadLeaseToken: uuid('upload_lease_token'),
     stagingBlobKey: text('staging_blob_key')
       .unique()
       .references(() => managedBlobs.blobKey, { onDelete: 'set null' }),
@@ -1461,7 +1467,9 @@ export const communityImports = pgTable(
     nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
     leaseToken: uuid('lease_token'),
     settledAt: timestamp('settled_at', { withTimezone: true }),
-    createdByUserId: text('created_by_user_id').references(() => users.id),
+    createdByUserId: text('created_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     createdByApiKeyId: uuid('created_by_api_key_id').references(() => hostApiKeys.id),
     validatedAt: timestamp('validated_at', { withTimezone: true }),
     adoptMemberId: uuid('adopt_member_id').references(() => members.id, { onDelete: 'set null' }),
@@ -1481,7 +1489,7 @@ export const communityImports = pgTable(
     ),
     check(
       'community_imports_archive',
-      sql`(${table.archiveSha256} IS NULL) = (${table.archiveBytes} IS NULL) AND (${table.archiveSha256} IS NULL OR ${table.archiveSha256} ~ '^[a-f0-9]{64}$') AND (${table.archiveBytes} IS NULL OR ${table.archiveBytes} > 0) AND (${table.state} IN ('awaiting_upload','cancelled','failed') OR ${table.archiveSha256} IS NOT NULL)`
+      sql`(${table.archiveSha256} IS NULL) = (${table.archiveBytes} IS NULL) AND (${table.archiveSha256} IS NULL OR ${table.archiveSha256} ~ '^[a-f0-9]{64}$') AND (${table.archiveBytes} IS NULL OR ${table.archiveBytes} > 0) AND (${table.state} IN ('awaiting_upload','cancelled','failed') OR ${table.archiveSha256} IS NOT NULL) AND (${table.archiveSha256} IS NULL) = (${table.archiveReceivedAt} IS NULL)`
     ),
     check(
       'community_imports_manifest_version',
@@ -1498,7 +1506,7 @@ export const communityImports = pgTable(
     check('community_imports_attempts', sql`${table.attempts} >= 0`),
     check(
       'community_imports_creator',
-      sql`num_nonnulls(${table.createdByUserId}, ${table.createdByApiKeyId}) = 1`
+      sql`num_nonnulls(${table.createdByUserId}, ${table.createdByApiKeyId}) <= 1`
     ),
     check(
       'community_imports_community',

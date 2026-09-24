@@ -1,8 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdtemp, open, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { rm } from 'node:fs/promises';
 import type { Context, Hono } from 'hono';
 import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
@@ -23,6 +21,17 @@ import {
 } from '../host/authority.js';
 import { ApiError, json, readJson } from '../http.js';
 import {
+  acquireUploadLease,
+  archiveInvalid,
+  assertTempSpace,
+  receiveArchive,
+  releaseUploadLease,
+  renewUploadLease,
+  type ReceivedArchive,
+  type UploadSlots,
+} from '../imports/upload.js';
+import {
+  IMPORT_UPLOAD_LEASE_MS,
   IMPORT_UPLOAD_WINDOW_MS,
   MAX_IMPORT_ARCHIVE_BYTES,
   importCreator,
@@ -44,8 +53,6 @@ type CreateRequest = z.infer<typeof CommunityAdminImportCreateRequestSchema>;
 
 /** The route pattern an upload streams to; the JSON body limit in `app.ts` skips it. */
 export const IMPORT_ARCHIVE_UPLOAD_PATH = /^\/api\/v1\/imports\/[^/]+\/archive$/;
-
-const ZIP_LOCAL_HEADER = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 
 function payloadHash(body: CreateRequest): string {
   return createHash('sha256')
@@ -72,8 +79,6 @@ function parseImportId(value: string | undefined): string {
   return parsed.data;
 }
 
-const archiveInvalid = (message: string) => new ApiError(400, 'IMPORT_ARCHIVE_INVALID', message);
-
 /** The declared size and digest of an upload, checked before a byte of the body is read. */
 function uploadHeaders(c: Context): { bytes: number; sha256: string } {
   const length = c.req.header('content-length');
@@ -86,73 +91,6 @@ function uploadHeaders(c: Context): { bytes: number; sha256: string } {
   if (!sha256 || !/^[a-f0-9]{64}$/.test(sha256))
     throw archiveInvalid('Send the export with its SHA-256 in X-Archive-SHA256.');
   return { bytes, sha256 };
-}
-
-/** A received upload on local disk, verified against its declared size and digest. */
-interface ReceivedArchive {
-  directory: string;
-  path: string;
-}
-
-/**
- * Receive the request body into a private temporary file, refusing it the moment it runs past
- * its declared size, and check its length, digest, and zip signature before anything is
- * reserved in storage. A body that breaks off or does not match leaves nothing behind, so the
- * upload token stays usable for another try.
- */
-async function receiveArchive(
-  body: ReadableStream<Uint8Array>,
-  declared: { bytes: number; sha256: string },
-  signal: AbortSignal
-): Promise<ReceivedArchive> {
-  const directory = await mkdtemp(join(tmpdir(), 'community-import-'));
-  const path = join(directory, 'archive.zip');
-  let kept = false;
-  try {
-    const file = await open(path, 'wx', 0o600);
-    const hash = createHash('sha256');
-    let received = 0;
-    let head = Buffer.alloc(0);
-    const reader = body.getReader();
-    try {
-      while (true) {
-        if (signal.aborted) throw archiveInvalid('The upload was interrupted.');
-        let item: ReadableStreamReadResult<Uint8Array>;
-        try {
-          item = await reader.read();
-        } catch {
-          throw archiveInvalid('The upload was interrupted.');
-        }
-        if (item.done) break;
-        const chunk = item.value;
-        received += chunk.byteLength;
-        if (received > declared.bytes) {
-          await reader.cancel().catch(() => undefined);
-          throw archiveInvalid('The export is longer than its declared size.');
-        }
-        if (head.length < ZIP_LOCAL_HEADER.length)
-          head = Buffer.concat([head, chunk.subarray(0, ZIP_LOCAL_HEADER.length - head.length)]);
-        hash.update(chunk);
-        let offset = 0;
-        while (offset < chunk.byteLength) {
-          const result = await file.write(chunk, offset, chunk.byteLength - offset);
-          offset += result.bytesWritten;
-        }
-      }
-    } finally {
-      reader.releaseLock();
-      await file.close();
-    }
-    if (received !== declared.bytes)
-      throw archiveInvalid('The export is shorter than its declared size.');
-    if (hash.digest('hex') !== declared.sha256)
-      throw archiveInvalid('The export does not match its declared SHA-256.');
-    if (!head.equals(ZIP_LOCAL_HEADER)) throw archiveInvalid('The file is not a zip archive.');
-    kept = true;
-    return { directory, path };
-  } finally {
-    if (!kept) await rm(directory, { recursive: true, force: true });
-  }
 }
 
 /** Who may upload: the import's upload token, or host authority with `communities:import`. */
@@ -186,9 +124,16 @@ export function registerImportRoutes(
     now: () => Date;
     /** Count one failed upload-token attempt against the caller. */
     limitTokenMiss: (c: Context) => void;
+    /** Uploads this replica receives at once. */
+    uploadSlots: UploadSlots;
+    /** How long an upload may go without a byte. Tests shorten it. */
+    uploadIdleMs: number;
+    /** Free bytes in the temporary folder. Tests replace it. */
+    freeTempBytes?: () => Promise<number>;
   }
 ): void {
-  const { pool, blobStore, authority, now, limitTokenMiss } = deps;
+  const { pool, blobStore, authority, now, limitTokenMiss, uploadSlots, uploadIdleMs } = deps;
+  const freeTempBytes = deps.freeTempBytes;
 
   app.post('/host/imports', async (c) => {
     const actor = await authority.require(c, 'communities:import');
@@ -321,76 +266,106 @@ export function registerImportRoutes(
       }
       throw new ApiError(404, 'NOT_FOUND', 'Import not found.');
     }
+    // The token lives only as long as its window, even for a repeat of a finished upload.
+    if (uploader.kind === 'token' && admitted.upload_expires_at <= now())
+      throw new ApiError(401, 'UNAUTHENTICATED', 'The upload window for this import has closed.');
     if (admitted.state !== 'awaiting_upload')
       return json(c, CommunityAdminImportSchema, repeatedUpload(admitted, declared.sha256));
     if (admitted.upload_expires_at <= now())
       throw new ApiError(401, 'UNAUTHENTICATED', 'The upload window for this import has closed.');
     if (!c.req.raw.body) throw archiveInvalid('Send the export as the request body.');
 
-    const received = await receiveArchive(c.req.raw.body, declared, c.req.raw.signal);
+    // Everything that can refuse happens before a byte of the body is read.
+    const releaseSlot = uploadSlots.take();
+    let lease: string | null = null;
     try {
-      const reservation = await transaction(pool, (client) =>
-        reserveImportBlob(client, importId, 'import_staging', 'awaiting_upload')
-      );
-      let stored: StoredBlob;
-      try {
-        stored = await blobStore.put({
-          key: reservation.key,
-          source: createReadStream(received.path),
-          displayName: 'community-import.zip',
-          maxBytes: declared.bytes,
-          kind: 'export',
-          signal: managedBlobWriteSignal(),
-        });
-      } catch (error) {
-        await discardManagedBlob(pool, blobStore, reservation).catch(() => undefined);
-        console.error(
-          'Community import upload could not be stored',
-          error instanceof Error ? error.name : 'unknown'
-        );
-        throw new ApiError(503, 'UNAVAILABLE', 'The export could not be stored. Try again.');
-      }
-      const outcome = await transaction(pool, async (client) => {
-        const current = await loadImport(client, importId, 'FOR UPDATE');
-        if (!current) throw new ApiError(404, 'NOT_FOUND', 'Import not found.');
-        if (uploader.kind === 'host') await assertHostActor(client, uploader.actor, now());
-        if (current.state !== 'awaiting_upload') return { repeat: current };
-        if (current.upload_expires_at <= now())
-          throw new ApiError(
-            401,
-            'UNAUTHENTICATED',
-            'The upload window for this import has closed.'
-          );
-        await settleImportBlob(client, reservation, stored, 'committed');
-        const updated = await client.query<ImportRow>(
-          `UPDATE community_imports
-           SET state='validating',staging_blob_key=$2,archive_sha256=$3,archive_bytes=$4,
-             attempts=0,next_attempt_at=now(),updated_at=now()
-           WHERE id=$1 RETURNING *`,
-          [importId, stored.key, stored.sha256, stored.byteSize]
-        );
-        const actor: HostAuditActor =
-          uploader.kind === 'host' ? uploader.actor : importCreator(current);
-        await recordHostAudit(client, actor, {
-          action: 'import.upload',
-          communityId: current.community_id,
-          priorState: 'awaiting_upload',
-          nextState: 'validating',
-          changedFields: ['archive'],
-        });
-        return { row: updated.rows[0] };
-      }).catch(async (error: unknown) => {
-        await discardManagedBlob(pool, blobStore, reservation, stored).catch(() => undefined);
-        throw error;
+      await assertTempSpace(declared.bytes, freeTempBytes);
+      lease = await acquireUploadLease(pool, importId);
+      const leaseToken = lease;
+      let renewedAt = Date.now();
+      const received = await receiveArchive(c.req.raw.body, declared, {
+        signal: c.req.raw.signal,
+        idleMs: uploadIdleMs,
+        onProgress: async () => {
+          if (Date.now() - renewedAt < IMPORT_UPLOAD_LEASE_MS / 4) return;
+          renewedAt = Date.now();
+          await renewUploadLease(pool, importId, leaseToken);
+        },
       });
-      if ('repeat' in outcome && outcome.repeat) {
-        // Another upload of this import won the race; this copy is not needed either way.
-        await discardManagedBlob(pool, blobStore, reservation, stored).catch(() => undefined);
-        return json(c, CommunityAdminImportSchema, repeatedUpload(outcome.repeat, declared.sha256));
+      try {
+        return await storeArchive(c, importId, uploader, declared, received);
+      } finally {
+        await rm(received.directory, { recursive: true, force: true });
       }
-      return json(c, CommunityAdminImportSchema, projectImport(outcome.row!));
     } finally {
-      await rm(received.directory, { recursive: true, force: true });
+      if (lease) await releaseUploadLease(pool, importId, lease).catch(() => undefined);
+      releaseSlot();
     }
   });
+
+  /** Store a received, verified export and move its import on to `validating`. */
+  async function storeArchive(
+    c: Context,
+    importId: string,
+    uploader: Uploader,
+    declared: { bytes: number; sha256: string },
+    received: ReceivedArchive
+  ): Promise<Response> {
+    const reservation = await transaction(pool, (client) =>
+      reserveImportBlob(client, importId, 'import_staging', 'awaiting_upload')
+    );
+    let stored: StoredBlob;
+    try {
+      stored = await blobStore.put({
+        key: reservation.key,
+        source: createReadStream(received.path),
+        displayName: 'community-import.zip',
+        maxBytes: declared.bytes,
+        kind: 'export',
+        signal: managedBlobWriteSignal(),
+      });
+    } catch (error) {
+      await discardManagedBlob(pool, blobStore, reservation).catch(() => undefined);
+      console.error(
+        'Community import upload could not be stored',
+        error instanceof Error ? error.name : 'unknown'
+      );
+      throw new ApiError(503, 'UNAVAILABLE', 'The export could not be stored. Try again.');
+    }
+    const outcome = await transaction(pool, async (client) => {
+      const current = await loadImport(client, importId, 'FOR UPDATE');
+      if (!current) throw new ApiError(404, 'NOT_FOUND', 'Import not found.');
+      if (uploader.kind === 'host') await assertHostActor(client, uploader.actor, now());
+      if (current.state !== 'awaiting_upload') return { repeat: current };
+      if (current.upload_expires_at <= now())
+        throw new ApiError(401, 'UNAUTHENTICATED', 'The upload window for this import has closed.');
+      await settleImportBlob(client, reservation, stored, 'committed');
+      const updated = await client.query<ImportRow>(
+        `UPDATE community_imports
+         SET state='validating',staging_blob_key=$2,archive_sha256=$3,archive_bytes=$4,
+           archive_received_at=now(),attempts=0,next_attempt_at=now(),updated_at=now()
+         WHERE id=$1 RETURNING *`,
+        [importId, stored.key, stored.sha256, stored.byteSize]
+      );
+      const actor: HostAuditActor =
+        uploader.kind === 'host' ? uploader.actor : importCreator(current);
+      await recordHostAudit(client, actor, {
+        action: 'import.upload',
+        communityId: current.community_id,
+        priorState: 'awaiting_upload',
+        nextState: 'validating',
+        changedFields: ['archive'],
+      });
+      return { row: updated.rows[0] };
+    }).catch(async (error: unknown) => {
+      await discardManagedBlob(pool, blobStore, reservation, stored).catch(() => undefined);
+      throw error;
+    });
+    if ('repeat' in outcome && outcome.repeat) {
+      // A host upload that raced another one; this copy is not needed either way.
+      await discardManagedBlob(pool, blobStore, reservation, stored).catch(() => undefined);
+      return json(c, CommunityAdminImportSchema, repeatedUpload(outcome.repeat, declared.sha256));
+    }
+    return json(c, CommunityAdminImportSchema, projectImport(outcome.row!));
+  }
 }

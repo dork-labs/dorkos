@@ -16,6 +16,12 @@ export const MAX_IMPORT_ARCHIVE_BYTES = 1024 * 1024 * 1024;
 export const IMPORT_UPLOAD_WINDOW_MS = 24 * 60 * 60_000;
 /** How long a checked import waits at `validated` for the host to commit it. */
 export const IMPORT_COMMIT_WINDOW_MS = 7 * 24 * 60 * 60_000;
+/** How long an upload may go without receiving a byte before it is dropped. */
+export const IMPORT_UPLOAD_IDLE_MS = 60_000;
+/** How long one upload's lease lasts between renewals. */
+export const IMPORT_UPLOAD_LEASE_MS = 2 * 60_000;
+/** Temporary folders an import writes; swept at startup when a crash left one behind. */
+export const IMPORT_TEMP_PREFIXES = ['community-import-', 'community-import-file-'] as const;
 /** How long a claimed import job stays one worker's before another replica may take it. */
 export const IMPORT_LEASE_MS = 5 * 60_000;
 /** Settled imports whose community is gone are deleted this long after they settled. */
@@ -40,6 +46,9 @@ export interface ImportRow {
   upload_expires_at: Date;
   archive_sha256: string | null;
   archive_bytes: string | null;
+  archive_received_at: Date | null;
+  upload_lease_until: Date | null;
+  upload_lease_token: string | null;
   staging_blob_key: string | null;
   manifest_version: number | null;
   report: ImportReport | null;
@@ -91,7 +100,8 @@ export async function loadImport(
 export function importCreator(
   row: Pick<ImportRow, 'created_by_user_id' | 'created_by_api_key_id'>
 ): HostAuditActor {
-  return row.created_by_user_id
-    ? { kind: 'person', userId: row.created_by_user_id }
-    : { kind: 'api_key', keyId: row.created_by_api_key_id! };
+  if (row.created_by_user_id) return { kind: 'person', userId: row.created_by_user_id };
+  if (row.created_by_api_key_id) return { kind: 'api_key', keyId: row.created_by_api_key_id };
+  // The creator's account was deleted since; the upload token still speaks for the import.
+  return { kind: 'system' };
 }

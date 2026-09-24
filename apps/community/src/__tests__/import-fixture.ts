@@ -206,3 +206,49 @@ export async function ownerExport(
   );
   return Buffer.from(await download.arrayBuffer());
 }
+
+/**
+ * Send an upload over a raw connection in `pieces` parts, `delayMs` apart, and return the raw
+ * HTTP response. `holdOpen` stops after the first part and leaves the connection open (the
+ * returned `close` ends it), to keep an upload in flight while a test does something else.
+ */
+export async function slowUpload(
+  h: TenancyHarness,
+  importId: string,
+  archive: Uint8Array,
+  token: string,
+  options: { pieces: number; delayMs: number; holdOpen?: boolean }
+): Promise<{ response: Promise<string>; close: () => void }> {
+  const { port } = new URL(h.baseUrl);
+  const socket = connect(Number(port), '127.0.0.1');
+  const chunks: Buffer[] = [];
+  socket.on('data', (chunk: Buffer) => chunks.push(chunk));
+  socket.on('error', () => undefined);
+  const closed = new Promise<string>((resolve) =>
+    socket.once('close', () => resolve(Buffer.concat(chunks).toString('utf8')))
+  );
+  await new Promise<void>((resolve) => socket.once('connect', resolve));
+  socket.write(
+    [
+      `PUT /api/v1/imports/${importId}/archive HTTP/1.1`,
+      `Host: 127.0.0.1:${port}`,
+      `Authorization: Bearer ${token}`,
+      'Content-Type: application/zip',
+      `Content-Length: ${archive.byteLength}`,
+      `X-Archive-SHA256: ${sha256(archive)}`,
+      'Connection: close',
+      '',
+      '',
+    ].join('\r\n')
+  );
+  const size = Math.ceil(archive.byteLength / options.pieces);
+  const send = async () => {
+    for (let at = 0; at < archive.byteLength; at += size) {
+      socket.write(archive.subarray(at, at + size));
+      if (options.holdOpen) return;
+      await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+    }
+  };
+  await send();
+  return { response: closed, close: () => socket.destroy() };
+}
