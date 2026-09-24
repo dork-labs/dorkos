@@ -232,7 +232,7 @@ export function registerHostRoutes(
   app.delete('/host/communities/:id', async (c) => {
     const actor = await authority.require(c, 'communities:write');
     const communityId = parseHostCommunityId(c.req.param('id'));
-    await transaction(pool, async (client) => {
+    const outcome = await transaction(pool, async (client) => {
       const community = await client.query<{ lifecycle: string }>(
         'SELECT lifecycle FROM communities WHERE id=$1 FOR UPDATE',
         [communityId]
@@ -242,9 +242,34 @@ export function registerHostRoutes(
       if (community.rows[0].lifecycle !== 'pending_owner') {
         throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed community can be abandoned.');
       }
-      const imported = await client.query('SELECT 1 FROM community_imports WHERE community_id=$1', [
-        communityId,
-      ]);
+      const imported = await client.query<{ id: string; state: string }>(
+        'SELECT id,state FROM community_imports WHERE community_id=$1 FOR UPDATE',
+        [communityId]
+      );
+      if (imported.rows[0]?.state === 'ready') {
+        // Nobody has claimed it, so nobody has ever read it. It holds content, so its rows and
+        // files are removed in the background, with no grace period.
+        await client.query(
+          `UPDATE community_imports SET state='cancelled',settled_at=NULL,next_attempt_at=now(),
+             updated_at=now() WHERE id=$1`,
+          [imported.rows[0].id]
+        );
+        await client.query(
+          `UPDATE bootstrap_grants SET revoked_at=now(),revoked_by=$2,revoked_by_api_key_id=$3
+           WHERE community_id=$1 AND revoked_at IS NULL AND consumed_at IS NULL`,
+          [
+            communityId,
+            actor.kind === 'person' ? actor.userId : null,
+            actor.kind === 'api_key' ? actor.keyId : null,
+          ]
+        );
+        await recordHostAudit(client, actor, {
+          action: 'community.abandon',
+          communityId,
+          priorState: 'pending_owner',
+        });
+        return 'removing' as const;
+      }
       if (imported.rowCount) {
         throw new ApiError(
           409,
@@ -282,7 +307,8 @@ export function registerHostRoutes(
         communityId,
         priorState: 'pending_owner',
       });
+      return 'removed' as const;
     });
-    return c.body(null, 204);
+    return c.body(null, outcome === 'removing' ? 202 : 204);
   });
 }

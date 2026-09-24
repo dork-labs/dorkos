@@ -39,6 +39,7 @@ import { registerHostKeyRoutes } from './routes/host-keys.js';
 import { registerHostLinkRoutes } from './routes/host-links.js';
 import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/imports.js';
 import { UploadSlots } from './imports/upload.js';
+import { registerHistoryOriginRoute } from './routes/history-origin.js';
 import { createHostAuthority } from './host/authority.js';
 import { registerAdministrationRoutes } from './routes/administration.js';
 import { registerAccountErasureRoutes, registerOwnerErasureRoutes } from './routes/erasures.js';
@@ -442,6 +443,7 @@ export function createCommunityApp({
   registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword, hooks });
   registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
   registerOwnerErasureRoutes(communityApi, { pool, auth });
+  registerHistoryOriginRoute(communityApi, { pool, auth });
   app.route('/api/v1', communityApi);
   app.route('/api/v1/communities/:communityId', communityApi);
   return app;

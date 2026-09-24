@@ -896,6 +896,47 @@ const actions: Action<unknown>[] = [
     },
   }),
   define<{ importId: string }>({
+    rule: 'Commit a checked import: host operator yes, community roles no',
+    route: 'POST /host/imports/:id/commit',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: async () => {
+      const { importId } = await startImport();
+      // Stand in for the worker: the matrix tests who may commit, not how an export is checked.
+      await pool.query(
+        `UPDATE community_imports SET state='validated',validated_at=now(),
+           archive_sha256=$2,archive_bytes=1,report=$3 WHERE id=$1`,
+        [
+          importId,
+          'a'.repeat(64),
+          JSON.stringify({
+            manifestVersion: 1,
+            sourceLifecycle: 'active',
+            channels: 0,
+            entries: 0,
+            attachments: 0,
+            historicalMembers: 1,
+            historicalAgents: 0,
+            auditEvents: 0,
+            attachmentBytes: 0,
+            countedBytes: 0,
+            fitsStorageLimit: true,
+          }),
+        ]
+      );
+      return { importId };
+    },
+    call: ({ importId }) => ({
+      method: 'POST',
+      path: `/api/v1/host/imports/${importId}/commit`,
+      body: {},
+    }),
+    effect: async (_body, _role, { importId }) => {
+      const row = await pool.query('SELECT state FROM community_imports WHERE id=$1', [importId]);
+      expect(row.rows).toEqual([{ state: 'restoring' }]);
+    },
+  }),
+  define<{ importId: string }>({
     rule: 'Upload an import export: host operator or the upload token; community roles no',
     route: 'PUT /imports/:id/archive',
     allowed: HOST_ROLES,
@@ -1848,6 +1889,7 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'GET /auth-options': 'public sign-in options',
   'GET /host-links': "the host's public terms, privacy and report links",
   'GET /me': "the caller's own membership",
+  'GET /history-origin': "when the caller's own community's history was imported",
   'POST /me/leave': 'the caller leaves; no authority over anyone else',
   'POST /me/export': "the caller's personal export",
   'GET /me/grants': "the caller's own installation grants",
