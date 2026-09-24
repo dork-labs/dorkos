@@ -32,7 +32,7 @@
       "slug": "package-schedule-timing",
       "title": "Let a person change when a package's schedule runs",
       "created": "2026-09-24",
-      "status": "specified",
+      "status": "implemented",
       "project": "Marketplace Package Management",
       "linearIssue": "DOR-2302"
     },
