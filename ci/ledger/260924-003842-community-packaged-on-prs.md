@@ -2,7 +2,7 @@
 id: 260924-003842
 title: The packaged Community proof runs on pull requests that touch the community slice
 kind: experiment
-status: proposed
+status: active
 actor: agent
 gates:
   - wf.test.community-packaged
@@ -39,10 +39,10 @@ changed the driver since 2026-09-17 also touched a path in the new scope list
   list of what can reach the proof. Every way that path can fail to decide runs
   the proof; none skips it or reds the check.
 - The list is the community slice, not the whole Docker context: `apps/community/`,
-  community-named files under `apps/{client,server}/src` and `packages/shared/src`,
-  `packages/cloud-api/`, `packages/cli/scripts/build.ts`, the lockfile and
+  files named for communities, in any case, under `apps/{client,server}/src` and
+  `packages/shared/src`, `packages/db/src/schema/communities/`, `packages/cloud-api/`, `packages/cli/scripts/build.ts`, the lockfile and
   workspace file, `scripts/sweep-ephemeral-docker.sh`, the list itself and
-  `test.yml`. Over the 200 merges before 2026-09-23 that is 65 PRs (32%); the
+  `test.yml`. Over the 200 merges before 2026-09-23 that is 66 PRs (33%); the
   whole context would be 153 (77%). Breaks from outside the slice are still
   caught by the queue and the canary, just not at PR time.
 - Pinned twice: `scripts/test-community-packaged-scope.sh` (the list, in
@@ -56,6 +56,24 @@ About 6.3 runner-minutes (merge_group p50, 2026-09-17..22, n=180) per push of a
 PR in scope, on one extra concurrent job, and the PR leg now sees the proof's
 flakes (DOR-2164). At ~20 merges a day, ~6.5 in scope, 2-3 pushes each: roughly
 80-125 runner-minutes a day.
+
+## Reading the verdict
+
+`ejections_caused` is the metric, but most of the baseline's 22 ejections were
+not real catches: only 2 were (`real_catches`, 09-17 and 09-21); the rest were
+the proof's own flakes, 18 of them on 09-20 and 09-21, before #1958 (merged
+2026-09-21) made its retry path deterministic. So a drop in the after-window
+may be #1958's, not this change's. The signal that belongs to this change is
+the pair: ejections falling **and**
+`gate.wf.test.community-packaged.failure_rate@pull_request` above 0, i.e. the
+PR leg going red on a real break that would otherwise have reached the queue.
+Ejections falling with the PR leg never red says the drop was the flake fix.
+
+## Status
+
+`active` in this PR, as the other merged experiments are: a `proposed` entry
+gets no verdict (`verdicts.ts` skips it), and the after-window is anchored on
+the merge of the PR in `prs:`, so nobody has to flip it after merge.
 
 ## What would make us revert
 

@@ -92,6 +92,8 @@ interface Checkout {
   withBase?: boolean;
   /** Files the base branch changed after the pull request branched. */
   baseChanges?: string[];
+  /** End on the test-merge commit (true) or on the PR's own commit (false). */
+  merge?: boolean;
 }
 
 /**
@@ -103,6 +105,7 @@ function checkout({
   changes,
   withBase = true,
   baseChanges = [],
+  merge = true,
 }: Checkout): string {
   const repo = mkdtempSync(join(tmpdir(), 'community-packaged-scope-'));
   dirs.push(repo);
@@ -129,6 +132,7 @@ function checkout({
   for (const path of changes) write(repo, path, 'change\n');
   git(repo, 'add', '-A');
   git(repo, 'commit', '-q', '-m', 'pr change');
+  if (!merge) return repo;
   git(repo, 'checkout', '-q', 'main');
   for (const path of baseChanges) write(repo, path, 'base change\n');
   git(repo, 'add', '-A');
@@ -183,6 +187,20 @@ describe('community-packaged scope step', () => {
 
   it('runs the proof when there is no base commit to diff against', () => {
     const repo = checkout({ changes: ['docs/x.md'], withBase: false });
+    expect(decide(repo, 'pull_request')).toMatchObject({ code: 0, run: 'true' });
+  });
+
+  it('runs the proof when HEAD is not a test-merge commit', () => {
+    // HEAD^1 exists but is the PR's own parent, not the base it was merged
+    // onto, so a diff against it would not be the pull request's change.
+    const repo = checkout({ changes: ['docs/x.md'], merge: false });
+    const r = decide(repo, 'pull_request');
+    expect(r).toMatchObject({ code: 0, run: 'true' });
+    expect(r.log).toContain('no test-merge commit');
+  });
+
+  it('matches a non-ASCII path as itself, not as a quoted escape', () => {
+    const repo = checkout({ changes: ['apps/community/src/browser/naïve-välkommen.tsx'] });
     expect(decide(repo, 'pull_request')).toMatchObject({ code: 0, run: 'true' });
   });
 

@@ -56,6 +56,13 @@ for path in \
   apps/client/src/layers/entities/community/model/use-communities.ts \
   apps/client/src/layers/features/community-connections/ui/CommunityConnectionCard.tsx \
   apps/client/src/app/__tests__/community-route-memory.test.ts \
+  apps/client/src/layers/widgets/room-view/ui/RemoteCommunitySurface.tsx \
+  apps/client/src/layers/widgets/room-view/ui/RemoteCommunityAgents.tsx \
+  apps/client/src/layers/features/dashboard-sidebar/ui/context/CommunityContextSwitcher.tsx \
+  apps/server/src/services/core/COMMUNITY_NOTES.ts \
+  packages/shared/src/CommunitySchemas.ts \
+  packages/db/src/schema/communities/community-mirrors.ts \
+  'apps/community/src/browser/naïve-välkommen.tsx' \
   apps/server/src/services/communities/remote/remote-community-adapter.ts \
   apps/server/src/routes/communities.ts \
   packages/shared/src/community-adapter.ts \
@@ -77,6 +84,11 @@ for path in \
   apps/client/package.json \
   packages/shared/src/transport.ts \
   packages/shared/package.json \
+  packages/shared/src/handle.ts \
+  packages/shared/src/room-schemas.ts \
+  packages/db/src/schema/rooms.ts \
+  packages/db/drizzle/0042_communities.sql \
+  apps/site/src/app/Community/page.tsx \
   packages/cli/scripts/test-community-deploy-live.ts \
   packages/cli/package.json \
   packages/cli/scripts/build.tsx \

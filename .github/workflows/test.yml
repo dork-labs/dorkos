@@ -462,11 +462,18 @@ jobs:
       # merge_group and the canary events answer true without looking: the
       # queue and `main` HEAD always get the proof, exactly as before DOR-2220.
       # pull_request diffs the test-merge commit against its first parent, so
-      # it sees exactly the PR's change on top of the current base.
+      # it sees exactly the PR's change on top of the current base. That holds
+      # only while HEAD IS a merge, so the step also requires a second parent:
+      # a checkout that lands on a plain commit (a changed checkout ref, a
+      # fast-forward) would make HEAD^1 the PR's own previous commit and score
+      # only its last commit.
       #
       # Every failure on the PR path FAILS OPEN to running the proof, never to a
       # green that tested nothing and never to a red: a base git cannot resolve,
-      # a diff that errors, or a tree that predates the scope script all run it.
+      # a HEAD that is not a merge, a diff that errors, or a tree that predates
+      # the scope script all run it. `core.quotePath=false` so a path with a
+      # non-ASCII byte comes out as itself rather than as a quoted octal escape
+      # that no anchored pattern matches.
       # The diff is captured before it is matched, so a git failure is seen as a
       # failure and never as an empty, out-of-scope diff. `--no-renames` for the
       # reason scripts-test.yml gives: with rename detection on, moving a file
@@ -485,11 +492,12 @@ jobs:
           verdict=true
           if [ ! -f scripts/community-packaged-scope.sh ]; then
             echo "scripts/community-packaged-scope.sh is not in this tree; running the proof"
-          elif base=$(git rev-parse --verify --quiet 'HEAD^1') &&
-            changed=$(git diff --no-renames --name-only "$base" HEAD); then
+          elif git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
+            base=$(git rev-parse --verify --quiet 'HEAD^1') &&
+            changed=$(git -c core.quotePath=false diff --no-renames --name-only "$base" HEAD); then
             verdict=$(printf '%s\n' "$changed" | bash scripts/community-packaged-scope.sh) || verdict=true
           else
-            echo "cannot diff against the base; running the proof"
+            echo "cannot diff this pull request against its base (no test-merge commit, or git failed); running the proof"
           fi
           if [ "$verdict" != false ]; then
             verdict=true

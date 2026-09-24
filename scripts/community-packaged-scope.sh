@@ -21,18 +21,30 @@
 # that would run it on about three PRs in four (153 of the 200 merges before
 # 2026-09-23) and buy little, because the proof's breaks come from the community
 # slice. Every change to the driver on record came with one of these (#1916,
-# #1958, #1974, #1987, #1992, #2021):
+# #1958, #1974, #1981, #1987, #1992, #2021):
 #
 #   apps/community/                      the service, its browser pages, its
 #                                        migrations, and the proof itself:
 #                                        acceptance/{Dockerfile,run.sh,run.mjs,
 #                                        driver.spec.ts}
-#   apps/{client,server}/src/…communit…  the local app's half of the journey
-#                                        (entities/community, features/
-#                                        community-*, services/communities, the
-#                                        community routes)
+#   apps/{client,server}/src/…communit…  the local app's half of the journey:
+#                                        any file or directory named for
+#                                        communities, in ANY case, so the
+#                                        PascalCase components the driver
+#                                        asserts against count
+#                                        (RemoteCommunitySurface.tsx,
+#                                        RemoteCommunityAgents.tsx,
+#                                        CommunityContextSwitcher.tsx,
+#                                        CommunityChannelGroups.tsx) as well as
+#                                        entities/community, features/
+#                                        community-*, services/communities and
+#                                        the community routes
 #   packages/shared/src/…communit…       the contracts both halves speak
-#                                        (community-adapter, community schemas)
+#                                        (community-adapter, community schemas),
+#                                        same case rule
+#   packages/db/src/schema/communities/  the local mirror tables
+#                                        (community-mirrors.ts backs the
+#                                        proof's offline step)
 #   packages/cloud-api/                  built inside the image before shared
 #   packages/cli/scripts/build.ts        how the packaged `dorkos` is bundled
 #   pnpm-lock.yaml, pnpm-workspace.yaml  the image's install and the
@@ -42,11 +54,17 @@
 #   .github/workflows/test.yml           the job that runs the proof
 #
 # WHAT IS OUT, ON PURPOSE. The rest of apps/client, apps/server and packages/
-# (relay, rooms, onboarding and so on), which the proof also touches. A break
-# there is still caught before `main`, by the queue, and on `main` by the
-# canary; it is just not caught at PR time. That is about 65 of 200 merges in
-# scope, not 153. Widen the list when an ejection on record came from outside
-# it, and cite the PR beside the entry.
+# (relay, rooms, onboarding and so on), which the proof also touches. That
+# includes the shared contracts the community code imports but that are not
+# named for it (packages/shared/src/handle.ts, room-schemas.ts,
+# config-schema.ts, mesh-schemas.ts, relay-envelope-schemas.ts) and the drizzle
+# migrations under packages/db/drizzle/. They change often for reasons that have
+# nothing to do with communities, so matching them would run the proof on far
+# more PRs than it catches. A break there is still caught before `main`, by the
+# queue, and on `main` by the canary; it is just not caught at PR time. That
+# leaves 66 of the 200 merges before 2026-09-23 in scope, not 153. Widen the
+# list when an ejection on record came from outside it, and cite the PR beside
+# the entry.
 #
 # Translated from glob to extended regular expressions the same way as
 # scripts/scripts-test-scope.sh, which this mirrors:
@@ -67,10 +85,15 @@
 
 set -euo pipefail
 
+# "communit" in any case: `grep -i` would also loosen every other entry, so the
+# case rule lives in this one fragment instead.
+communit='[Cc][Oo][Mm][Mm][Uu][Nn][Ii][Tt]'
+
 SCOPE_PATTERNS=(
   '^apps/community/'
-  '^apps/(client|server)/src/.*communit'
-  '^packages/shared/src/.*communit'
+  "^apps/(client|server)/src/.*${communit}"
+  "^packages/shared/src/.*${communit}"
+  '^packages/db/src/schema/communities/'
   '^packages/cloud-api/'
   '^packages/cli/scripts/build\.ts$'
   '^pnpm-lock\.yaml$'
