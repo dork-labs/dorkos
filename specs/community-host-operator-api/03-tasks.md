@@ -22,6 +22,7 @@ Spec: `specs/community-host-operator-api/02-specification.md`. Generated 2026-09
 | 6.1  | Add host-configured terms, privacy, and report links                          | 4.2                          | small  |
 | 6.2  | Add optional OpenID Connect sign-in set by host configuration                 | 6.1                          | medium |
 | 7.1  | Write the Community host documentation for the new host tools                 | 1.2, 2.1, 3.1, 4.2, 6.1, 6.2 | medium |
+| 8.1  | Hold a suspended community in one call, and add a host legal hold             | 2.1                          | large  |
 
 ## Phase 1 — Host API keys, limits, and usage
 
@@ -264,3 +265,18 @@ Each code task already adds its own `API.md` routes and changelog fragment; this
 - `docs/` user guide: web addresses (short names, renames, old addresses still work).
 
 **Acceptance:** every configuration key parsed in `apps/community/src/config.ts` appears in `DEPLOYMENT.md`; no guide claims a hosted service, price, or plan; `docs:coverage` passes for any new MDX page; the banned-words and vocab gates pass.
+
+## Phase 8 — Host authority gaps
+
+### Task 8.1: Hold a suspended community in one call, and add a host legal hold
+
+**Size:** large · **Priority:** high · **Depends on:** 2.1 · **Issue:** DOR-2299
+
+**Files:** `apps/community/migrations/` (next free number; 0016 is single-item delete), `apps/community/src/migrate.ts`, `apps/community/src/schema.ts`, `apps/community/src/routes/host-lifecycle.ts`, `apps/community/src/routes/host.ts`, `apps/community/src/deletion-worker.ts`, `apps/community/src/host/communities.ts`, `packages/shared/src/community-admin-wire.ts`, `apps/community/src/browser/components/HostAdministration.tsx`, `apps/community/API.md`
+
+Two host-authority gaps (spec: "Holding a suspended community" and "Legal hold", both DOR-2299).
+
+1. `PATCH /host/communities/:id/lifecycle` with `action: 'hold'` accepts a `suspended` community in one transaction: from a suspension of `active`/`archived`, `held_from_state` = `suspended_from_state`; from a suspension of `held`, the kept `held_from_state` stands. Suspension columns clear, an optional new notice may be set, nothing is revived, one `community.hold` audit row with `priorState: 'suspended'`.
+2. A host legal hold: migration (next free number; 0016 is single-item delete) adding `communities.legal_hold_at`, `legal_hold_by_host_actor`, `legal_hold_reference` with a check, and `communities:legal_hold` in the host key scope check. Scope added to `CommunityAdminHostApiKeyScopeSchema` (max scopes 5). Routes `PUT` and `DELETE /host/communities/:id/legal-hold`, audited (`community.legal_hold.set|update|release`, reference never in the audit). The host projection gains `legalHold: { since, reference } | null`; no tenant schema changes. Host deletion and abandon answer `409 LEGAL_HOLD_ACTIVE`. The tenant deletion worker never claims a held community, re-checks under `FOR SHARE` before each blob and before the final row deletion; placing the hold takes the row `FOR UPDATE`. The owner's deletion request is accepted as usual and the owner is never told. The host page shows "Legal hold since <date>"; no button.
+
+**Acceptance:** the four DOR-2299 rows under "Hold from suspended and legal hold" in the spec, each failing before the change; the existing hold, deletion, erasure, and isolation suites stay green.

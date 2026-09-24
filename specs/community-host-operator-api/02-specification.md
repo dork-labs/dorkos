@@ -256,6 +256,37 @@ stateDiagram-v2
   deletion_pending --> held: host cancels a host-started deletion
 ```
 
+#### Holding a suspended community (DOR-2299)
+
+A host that suspended a community and then decides it should become read-only for its owner's export window used to need two calls: resume, then hold. If anything failed between them, the community was live again and nobody had meant it to be. `action: 'hold'` now also accepts a `suspended` community, in one transaction under the community lock:
+
+- From a suspension of `active` or `archived`: the community becomes `held` with `held_from_state` = the `suspended_from_state`, `held_at` = now, and the optional `deletionNoticeAt` (same rules as any hold). `suspended_from_state` and `suspended_at` clear.
+- From a suspension of a hold (`suspended_from_state = 'held'`): the community returns to that hold. `held_from_state` and `held_at` are kept; the suspension withdrew the old notice, so a new `deletionNoticeAt` may be published with the same call.
+- Nothing is revived. Suspension already revoked every credential, and a hold revives none.
+- One host audit row, `community.hold`, with `priorState: 'suspended'`.
+- There is never a moment in which the community is `active` or `archived`: the only states anyone can observe are `suspended` before and `held` after.
+
+#### Legal hold (DOR-2299)
+
+A host sometimes has a duty to preserve a community: a court order, a regulator's request, or pending litigation. Neither the lifecycle hold nor suspension can guarantee that. The owner can still request deletion of a held community, and after seven days the worker would carry it out. A **legal hold** is a separate flag that blocks every path that permanently deletes a community until the host releases it. It is independent of the lifecycle: a community can be under a legal hold in any state, and the flag changes nothing people can do.
+
+- **Scope.** A new host key scope, `communities:legal_hold`, and nothing else sets or releases one. `communities:lifecycle` does not imply it, so a key that can hold or delete a community cannot also lift the preservation that stops the deletion. A host operator's own session (person authority) may act, as for every host route.
+- **Routes.** `PUT /host/communities/:id/legal-hold { reference }` places the hold, or updates its reference if one is already in place (the start time is kept). `DELETE /host/communities/:id/legal-hold` releases it. `reference` is an optional free-text pointer to the host's own record (a case or ticket number), 1 to 200 characters, or `null`. It is host-only and never shown to members.
+- **Storage.** `communities.legal_hold_at`, `legal_hold_by_host_actor` (the same `person:`/`api_key:` form as host-started deletion), and `legal_hold_reference`, with a check that the first two are set together and the reference only with them.
+- **Audit.** `community.legal_hold.set`, `community.legal_hold.update`, and `community.legal_hold.release` host audit rows. The reference is not written to the audit row; the audit names the actor and the fields changed.
+- **What it blocks.**
+  - _The tenant deletion worker._ It never claims a job for a community under a legal hold. Each blob deletion re-checks the flag under a `FOR SHARE` lock on the community row, and so does the final step that removes the tenant's rows. Placing a hold takes that row `FOR UPDATE`, so once the hold commits the worker deletes no further byte or row. This one gate covers the owner's deletion, host-started deletion, and a takedown's community deletion (`specs/community-host-takedown/`), which all finish through this worker.
+  - _Host-started deletion_ (`POST /host/communities/:id/deletion`) and _abandoning an unclaimed community_ (`DELETE /host/communities/:id`): `409 LEGAL_HOLD_ACTIVE`. The host knows about its own hold, so it gets a clear refusal.
+  - _A takedown's community deletion_, when it lands, still enters `deletion_pending` (members must stop seeing the content at once) and then waits in the worker.
+- **What it does not block.**
+  - _The owner's deletion request_ is accepted as usual, and the community enters `deletion_pending`: people lose access as they asked. The purge simply does not run while the legal hold stands, and the owner can still cancel within the seven-day window. **Owners and members are not told** that a legal hold exists. No tenant route, projection, banner, error, or email mentions it, so a hold cannot tip off the person it may concern. After the hold is released, a deletion whose `delete_after` has passed is carried out by the next worker pass.
+  - _Item removals and member erasure_: single-item deletion, a moderator's removal, a takedown of one item, and member erasure keep working. A legal hold preserves the community's existence and whatever those paths leave behind; a host that must preserve specific content uses the takedown evidence store. Extending the hold to item removals and erasure is a follow-up for the operator to decide (see Open Questions).
+  - _Exports, holds, suspension, and every other lifecycle action_: unchanged.
+- **Host projection.** `CommunityAdminHostProjectionSchema` gains `legalHold: { since, reference } | null`. No tenant schema changes.
+- **Host page.** The host page shows "Legal hold since <date>" on the community's record. Placing and releasing a hold are API-only in this pass (a rare, deliberate step taken with a key that carries the scope); the page does not offer a button.
+
+ADR `260924-215422` records the decision that a legal hold blocks deletion silently for the owner.
+
 ### P6. Short names in the path
 
 #### Model
@@ -803,6 +834,7 @@ Hand-written SQL, each appended to the list in `src/migrate.ts` and mirrored in 
 - **`0012_host_keys_and_limits.sql` (phase 1).** `host_api_keys` (id, label, prefix, secret_hash UNIQUE, scopes text[] with a subset check, issued_via, issued_by_user_id NULL, created_at, expires_at, last_used_at, revoked_at, revoked_by_user_id NULL); the `host_audit_events` actor columns and check; nullable `community_creation_receipts.operator_user_id` plus `operator_api_key_id`; `bootstrap_grants.revoked_by_api_key_id` and the widened revocation check; `community_limits(community_id PK FK, max_active_members, max_storage_bytes, limits_version, updated_at)`; `member_limit_overrides(community_id, member_id, agents_per_member CHECK BETWEEN 1 AND 1000, updated_at, PRIMARY KEY (community_id, member_id))` with a composite tenant foreign key to `members(community_id, id)`; `managed_blobs_community_usage_idx`; `entries_community_created_idx`. The deletion worker deletes `community_limits`, `member_limit_overrides` rows with the tenant.
 - **`0014_host_hold.sql` (phase 2).** `communities_lifecycle` check gains `held`; `held_from_state`, `held_at`, `deletion_notice_at`, `deletion_from_state`, `delete_requested_by_host_actor`; `delete_requested_by` nullable; `community_deletion_jobs.requested_by_member_id` nullable beside `requested_by_host_actor` (key or user id) with an exactly-one check; the suspension check allows `suspended_from_state='held'`; the deletion check requires exactly one requester; `enforce_community_owner_lifecycle()` counts `held` among the states that need exactly one active owner. Old code never writes `held` and was never tested against a `held` row, so backing out phase 2 first releases every hold (see backout).
 - **`0015_short_names.sql` (phase 3).** `community_short_names` and its partial unique index; `released_short_names`; the deletion worker deletes the community's name rows and writes their hold rows.
+- **`0017_host_legal_hold.sql` (DOR-2299; renumber to the next free number at merge, since `0016` is taken by single-item delete).** `communities.legal_hold_at`, `legal_hold_by_host_actor`, `legal_hold_reference` and their check; `host_api_keys` scope check gains `communities:legal_hold`. Additive: old code ignores the columns, and backing out means releasing every legal hold first (old code would purge a community the host must preserve).
 - **`0016_imports.sql` (phase 4).** `members.user_id` nullable, `members.origin` and its check; `communities.imported_at`; `managed_blobs_purpose` check widened with `import_staging`; `community_imports`, `community_import_files`; a zero-grace rule for host deletion of an unclaimed imported community. This is the one migration old code cannot fully tolerate once used (see backout).
 
 P4 and P5 need no Community migration. P5 adds local configuration only if the app caches move state; it does not (state is read from the service on each poll).
@@ -884,6 +916,13 @@ Each test carries a purpose comment. Every acceptance criterion below names the 
 - The owner cannot cancel a host-started deletion; the host can, back to `held`. An owner-requested deletion started from `held` cancels back to `held`. Fails if a cancel lifts a hold.
 - Every published notice date, whether set with the hold or moved later, must be at least `COMMUNITY_HOST_DELETION_NOTICE_DAYS` (never fewer than 7) from the moment it is published, and a suspension withdraws it. Fails if a notice can be published or moved closer than that, or survive a suspension.
 - Community B is untouched by every hold, release, and host deletion of A (the existing two-community isolation fixture).
+
+**Hold from suspended and legal hold (DOR-2299)**
+
+- `hold` on a suspended community (from `active`, from `archived`, and from `held`) lands in `held` in one call with the right `held_from_state`, one audit row, and no revived credential. A concurrent reader sees only `suspended` or `held`, never `active` (a reader blocked on the lock during the call). Fails if the transition goes through `active`.
+- Only `communities:legal_hold` (or a host person) can place or release a legal hold; a key with every other scope gets `403`. Each change writes its audit row, and the reference never appears in it.
+- Under a legal hold: host-started deletion and abandon answer `409 LEGAL_HOLD_ACTIVE`; the owner's deletion request is accepted and the community enters `deletion_pending`; the worker, run past `delete_after`, deletes no blob and no row. A hold placed while the worker is mid-purge stops it before the next blob (a barrier holds the worker between two blobs). After release, the next worker pass completes the deletion. Fails if any path purges under a hold.
+- No tenant response (community, owner deletion status, admin projection, errors) contains any legal-hold field or wording. Fails if the owner can learn of the hold.
 
 **P6**
 
@@ -986,7 +1025,7 @@ Real Postgres and real BlobStores for everything in `apps/community`. The OIDC i
 
 ## Open Questions
 
-None. The operator answered every question on 2026-09-23; the answers are below.
+One, added 2026-09-24 (question 8, below). The operator answered every earlier question on 2026-09-23; the answers are below.
 
 ### Resolved by the operator (2026-09-23)
 
@@ -997,6 +1036,10 @@ None. The operator answered every question on 2026-09-23; the answers are below.
 5. ~~**Reauthentication for accounts that only use OIDC.**~~ (RESOLVED) **Answer:** a follow-up that accepts a fresh OIDC sign-in (`prompt=login`, `max_age` ≤ 5 minutes, `auth_time` checked) as reauthentication, specified on its own. Until it ships, those actions stay password-only and say so. **Rationale:** it changes a security ceremony and deserves its own review.
 6. ~~**Export manifest version 2.**~~ (RESOLVED) **Answer:** a follow-up that adds the community name, description, icon, and channel memberships to the owner export as version 2, with import accepting both versions. **Rationale:** it changes the owner export, which has its own reauthentication and size contract; version 1 import is useful now.
 7. ~~**Member erasure.**~~ (RESOLVED) **Answer:** specified in `specs/community-member-erasure/` (DOR-2247), owned by the person (self-service) and the community owner, never by host authority. **It blocks launch** of any hosted service in this project, though not the phases of this spec. It also builds host account deletion: Better Auth's `deleteUser` is not enabled in `auth.ts`, and five columns reference `"user"(id)` without a cascade, so a host account cannot be closed today. It runs in every lifecycle state, including `held`. **Rationale:** it rewrites immutable history (entries, mentions, attachments, export contents) and has to decide what a thread shows in place of an erased message; every host that serves people in the EU or California will be asked.
+
+### Open (2026-09-24)
+
+8. **Should a legal hold also stop item removals and member erasure?** This pass blocks only permanent deletion of the whole community. A single-item delete, a moderator's removal, an item takedown, and member erasure still remove content under a legal hold. Stopping them would conflict with a person's erasure right unless a legal-obligation exemption applies, which is a policy call per host. Proposed default until decided: unchanged, and a host that must preserve specific content uses the takedown evidence store.
 
 ### Resolved while specifying
 
@@ -1014,6 +1057,7 @@ None. The operator answered every question on 2026-09-23; the answers are below.
 - `260923-121151` — Host-set community limits are caps with typed errors, and usage exposes only enforcement aggregates (accepted 2026-09-23, from this spec)
 - `260923-121152` — Short names are a mutable path alias, never identity (accepted 2026-09-23, from this spec; reopens part of `260920-192429`)
 - `260923-121712` — A host hold stops growth without blocking export, and host-started deletion follows only a noticed hold (accepted 2026-09-23, from this spec; amends `260920-201101`)
+- `260924-215422` — A host legal hold silently blocks every permanent deletion of a community until released (draft 2026-09-24, from this spec; DOR-2299)
 - `260923-121153` — Import restores an owner export into a new community with derived IDs and historical members (accepted 2026-09-23, from this spec)
 - `260920-192429` — Scope host accounts through immutable community memberships
 - `260920-201101` — Separate community retention from permanent tenant deletion
@@ -1034,6 +1078,8 @@ None. The operator answered every question on 2026-09-23; the answers are below.
 - Better Auth `genericOAuth` plugin (1.7.x); RFC 4122 §4.3 (name-based UUIDs); OpenID Connect Discovery 1.0
 
 ## Changelog
+
+- **2026-09-24** — DOR-2299: a suspended community can be held in one call, and a host legal hold (scope `communities:legal_hold`) blocks every permanent deletion of a community until released, without telling the owner. ADR `260924-215422`. New open question 8 (should a legal hold also stop item removals and member erasure).
 
 - **2026-09-23** — A hold no longer revokes credentials (`specs/community-hold-keeps-access/`, ADR `260923-214401`). A host takedown (`specs/community-host-takedown/`, ADR `260923-214421`) is a second, narrow host removal path beside host-started deletion. Owner export of any size and manifest version 2 (Open Question 6) are specified in `specs/community-export-any-size/`, which also changes P3's reader and adds parted uploads.
 - **2026-09-23** — Operator answered every open question. The agents-per-person default stays 20 (maximum 100, set by configuration); the per-member override ceiling is 1,000; host-started deletion is approved as specified; Q3–Q6 become follow-ups; member erasure is DOR-2247 and blocks launch. ADRs accepted.
