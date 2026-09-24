@@ -49,8 +49,12 @@ export interface PermissionConfigInput {
 export interface ResolvePermissionInput {
   /** The action's declared area. */
   area: PermissionAreaId;
-  /** The capability id or hand-registered tool name. */
-  actionId: string;
+  /**
+   * The capability id or hand-registered tool name. Absent asks the area-level
+   * question only: how an area another action's input reaches is set, where
+   * that action's own entries, which belong to its own area, do not apply.
+   */
+  actionId?: string;
   /** The action's declared tier. */
   tier: CapabilityTier;
   /** The install's permission config. */
@@ -77,9 +81,11 @@ function isState(value: unknown): value is PermissionState {
 /** Own-property read, so an id like `__proto__` never reaches the prototype. */
 function own(
   record: Readonly<Record<string, PermissionState>> | undefined,
-  key: string
+  key: string | undefined
 ): PermissionState | undefined {
-  if (!record || !Object.prototype.hasOwnProperty.call(record, key)) return undefined;
+  if (!record || key === undefined || !Object.prototype.hasOwnProperty.call(record, key)) {
+    return undefined;
+  }
   const value = record[key];
   return isState(value) ? value : undefined;
 }

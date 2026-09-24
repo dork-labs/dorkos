@@ -425,9 +425,9 @@ function agentWriter(identity?: AgentIdentity): DisplayNameWriter {
  *
  * A patch that touches even one operator-only path is refused whole: no partial
  * write, so an agent cannot smuggle a posture change in behind a legitimate one.
- * The one way through is a person's yes: such a patch asks on a card in the
- * floor area it touches (`operatorOnlyAreaForPatch`, spec `agent-permissions`
- * D6), and when the gate spent that approval the write goes through
+ * The one way through is a person's yes: such a patch is decided in every floor
+ * area it touches, by the strictest of them (`operatorOnlyAreasForPatch`, spec
+ * `agent-permissions` D6), and asks on a card unless one of them is Blocked; and when the gate spent that approval the write goes through
  * {@link PERSON_APPROVED_AUTHORITY}, because the change is then the person's.
  *
  * **This is also where an agent-set display name gets its receipt** (DOR-1022).

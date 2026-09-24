@@ -23,7 +23,7 @@ import {
   OPERATOR_ONLY_STAKES,
   findOperatorOnlyPaths,
   describeOperatorOnlyRefusal,
-  operatorOnlyAreaForPatch,
+  operatorOnlyAreasForPatch,
 } from '../config-write-policy.js';
 
 /**
@@ -760,7 +760,7 @@ describe('describeOperatorOnlyRefusal', () => {
       expect(['safety', 'reach', 'permissions'], group.stake).toContain(group.area);
     }
     for (const path of OPERATOR_ONLY_CONFIG_PATHS) {
-      expect(operatorOnlyAreaForPatch(pathPatch(path)), path).not.toBeNull();
+      expect(operatorOnlyAreasForPatch(pathPatch(path)), path).toHaveLength(1);
     }
   });
 

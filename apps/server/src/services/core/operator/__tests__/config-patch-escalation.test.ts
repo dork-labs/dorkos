@@ -30,7 +30,7 @@ import {
   resetCapabilityTierGate,
 } from '../../capabilities/index.js';
 import {
-  areaForCall,
+  areasForCall,
   initPermissionGate,
   resetPermissionGate,
 } from '../../capabilities/permission-enforcement.js';
@@ -38,7 +38,7 @@ import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import { operatorDomain } from '../operator-capabilities.js';
 import { createConfigPatchHandler } from '../operator-tool-handlers.js';
-import { operatorOnlyAreaForPatch } from '../config-write-policy.js';
+import { operatorOnlyAreasForPatch } from '../config-write-policy.js';
 import type { AgentIdentity } from '../../agent-identity/agent-identity-service.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 
@@ -50,72 +50,61 @@ const AGENT: AgentIdentity = {
 
 const TUNNEL_PATCH = { patch: { tunnel: { enabled: true } } };
 
-describe('which area a config patch is asked about in', () => {
-  it('keeps an everyday setting in DorkOS settings', () => {
-    expect(operatorOnlyAreaForPatch({ ui: { theme: 'dark' } })).toBeNull();
+describe('which areas a config patch reaches', () => {
+  it('reaches no floor area for an everyday setting', () => {
+    expect(operatorOnlyAreasForPatch({ ui: { theme: 'dark' } })).toEqual([]);
   });
 
   it('puts the tunnel in Reach & secrets', () => {
-    expect(operatorOnlyAreaForPatch({ tunnel: { enabled: true } })).toBe('reach');
+    expect(operatorOnlyAreasForPatch({ tunnel: { enabled: true } })).toEqual(['reach']);
   });
 
   it('puts a room reply limit in Safety limits', () => {
-    expect(operatorOnlyAreaForPatch({ rooms: { maxAgentDepth: 9 } })).toBe('safety');
+    expect(operatorOnlyAreasForPatch({ rooms: { maxAgentDepth: 9 } })).toEqual(['safety']);
   });
 
   it('puts a trust stop and a consent stamp in Permissions', () => {
-    expect(operatorOnlyAreaForPatch({ runtimes: { defaultTrustStop: 'autonomy' } })).toBe(
-      'permissions'
-    );
-    expect(operatorOnlyAreaForPatch({ ui: { fullPowerChoice: 'full' } })).toBe('permissions');
+    expect(operatorOnlyAreasForPatch({ runtimes: { defaultTrustStop: 'autonomy' } })).toEqual([
+      'permissions',
+    ]);
+    expect(operatorOnlyAreasForPatch({ ui: { fullPowerChoice: 'full' } })).toEqual(['permissions']);
   });
 
-  it('asks a mixed patch in the strictest area it touches', () => {
-    // Permissions beats Reach & secrets beats Safety limits.
+  it('names every area a mixed patch reaches, each once', () => {
     expect(
-      operatorOnlyAreaForPatch({
+      operatorOnlyAreasForPatch({
         ui: { theme: 'dark' },
         tunnel: { enabled: true },
         rooms: { maxAgentDepth: 9 },
-      })
-    ).toBe('reach');
-    expect(
-      operatorOnlyAreaForPatch({
-        tunnel: { enabled: true },
         runtimes: { defaultTrustStop: 'act' },
-      })
-    ).toBe('permissions');
+      }).sort()
+    ).toEqual(['permissions', 'reach', 'safety']);
   });
 });
 
-describe('an input can only make a call stricter', () => {
+describe('the areas one call is decided in', () => {
   const base = { id: 'probe.escalate', tier: 'act' as const };
 
-  it('takes a floor area over an everyday one', () => {
-    expect(areaForCall({ ...base, area: 'settings', areaForInput: () => 'reach' }, {})).toBe(
-      'reach'
+  it('keeps its own area first and adds what the input reaches', () => {
+    expect(areasForCall({ ...base, area: 'settings', areasForInput: () => ['reach'] }, {})).toEqual(
+      ['settings', 'reach']
     );
   });
 
-  it('ignores an answer that would loosen a floor area', () => {
-    expect(areaForCall({ ...base, area: 'reach', areaForInput: () => 'settings' }, {})).toBe(
-      'reach'
-    );
+  it('keeps its own area when the input reaches nothing more', () => {
+    expect(areasForCall({ ...base, area: 'settings', areasForInput: () => [] }, {})).toEqual([
+      'settings',
+    ]);
   });
 
-  it('keeps the static area when the input asks for nothing', () => {
-    expect(areaForCall({ ...base, area: 'settings', areaForInput: () => null }, {})).toBe(
-      'settings'
-    );
-  });
-
-  it('decides in Permissions when the escalation itself fails', () => {
+  it('adds Permissions when the input cannot be read for its areas', () => {
     const throwing = () => {
       throw new Error('boom');
     };
-    expect(areaForCall({ ...base, area: 'settings', areaForInput: throwing }, {})).toBe(
-      'permissions'
-    );
+    expect(areasForCall({ ...base, area: 'settings', areasForInput: throwing }, {})).toEqual([
+      'settings',
+      'permissions',
+    ]);
   });
 });
 
@@ -123,16 +112,25 @@ describe('an agent patching a guarded setting', () => {
   let approvals: ApprovalService;
   let registry: CapabilityRegistry;
   let preset: PermissionPreset | null;
+  let defaultAreas: Record<string, 'blocked' | 'ask' | 'allowed'>;
+  let own:
+    | {
+        areas?: Record<string, 'blocked' | 'ask' | 'allowed'>;
+        actions?: Record<string, 'blocked' | 'ask' | 'allowed'>;
+      }
+    | undefined;
 
   beforeEach(() => {
     written.length = 0;
     preset = 'full';
+    defaultAreas = {};
+    own = undefined;
     approvals = new ApprovalService(createTestDb());
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
     initCapabilityTierGate({ approvals });
     initPermissionGate({
-      readConfig: () => ({ preset, defaults: { areas: {}, actions: {} } }),
-      readAgentPermissions: async () => undefined,
+      readConfig: () => ({ preset, defaults: { areas: defaultAreas, actions: {} } }),
+      readAgentPermissions: async () => own,
     });
     registry = composeRegistry([operatorDomain], {
       logger: { info() {}, warn() {}, error() {}, debug() {} } as never,
@@ -187,6 +185,53 @@ describe('an agent patching a guarded setting', () => {
     const decision = await refusal({ patch: { ui: { theme: 'dark' } } });
     expect(decision?.outcome).toBe('approval_required');
     expect(approvals.listPending()[0]).toMatchObject({ area: 'settings', alwaysOffered: true });
+  });
+
+  it('cannot carry a Blocked area past its setting by touching another floor area', async () => {
+    // Careful blocks Reach & secrets. Alone, a trust-stop change asks in
+    // Permissions; the tunnel riding along must not ride that card through.
+    preset = 'careful';
+    const decision = await refusal({
+      patch: { tunnel: { enabled: true }, runtimes: { defaultTrustStop: 'act' } },
+    });
+    expect(decision).toMatchObject({
+      outcome: 'denied',
+      payload: { reason: 'permission_blocked' },
+    });
+    expect(approvals.listPending()).toEqual([]);
+    expect(written).toEqual([]);
+  });
+
+  it('refuses when any area the patch reaches is Blocked for this agent', async () => {
+    own = { areas: { safety: 'blocked' } };
+    const decision = await refusal({
+      patch: { tunnel: { enabled: true }, rooms: { maxAgentDepth: 9 } },
+    });
+    expect(decision).toMatchObject({
+      outcome: 'denied',
+      payload: { reason: 'permission_blocked' },
+    });
+    expect(approvals.listPending()).toEqual([]);
+  });
+
+  it('keeps an Always allow on the tool to its own area', async () => {
+    // Allowed for config_patch runs everyday settings without asking, but it is
+    // no answer for Reach & secrets, which is decided there, area-level.
+    own = { actions: { 'operator.config_patch': 'allowed' } };
+    defaultAreas = { reach: 'blocked' };
+    const decision = await refusal(TUNNEL_PATCH);
+    expect(decision).toMatchObject({
+      outcome: 'denied',
+      payload: { reason: 'permission_blocked' },
+    });
+  });
+
+  it('asks in a floor area when every area it reaches asks', async () => {
+    const decision = await refusal({
+      patch: { tunnel: { enabled: true }, runtimes: { defaultTrustStop: 'act' } },
+    });
+    expect(decision?.outcome).toBe('approval_required');
+    expect(approvals.listPending()[0]).toMatchObject({ alwaysOffered: false });
   });
 
   it('is Blocked on an undecided install, as the refusal before it was', async () => {

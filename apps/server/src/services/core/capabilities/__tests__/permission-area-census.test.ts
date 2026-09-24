@@ -209,6 +209,8 @@ describe('permission-area census', () => {
     // Reach & secrets has no static member: a config patch touching the tunnel
     // is asked about there. Without this, its row would switch nothing at all.
     const configPatch = composeCapabilityRegistryForDocs().get('operator.config_patch');
-    expect(configPatch?.areaForInput?.({ patch: { tunnel: { enabled: true } } })).toBe('reach');
+    expect(configPatch?.areasForInput?.({ patch: { tunnel: { enabled: true } } })).toEqual([
+      'reach',
+    ]);
   });
 });

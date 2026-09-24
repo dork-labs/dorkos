@@ -179,10 +179,10 @@ export interface GatedAction {
    */
   area: PermissionAreaId | null;
   /**
-   * A stricter area for this call, decided from its input. See
-   * `CapabilityDefinition.areaForInput`; `permission-enforcement.ts` applies it.
+   * The other areas this call reaches, decided from its input. See
+   * `CapabilityDefinition.areasForInput`; `permission-enforcement.ts` applies it.
    */
-  areaForInput?: (input: unknown) => PermissionAreaId | null;
+  areasForInput?: (input: unknown) => readonly PermissionAreaId[];
   /** The input fields the approval card may show. Required on `destructive`. */
   approvalDisplayFields?: readonly string[];
   /**

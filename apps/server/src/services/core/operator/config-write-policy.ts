@@ -1099,28 +1099,26 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
 ];
 
-/** Floor areas, strictest first: the tie-break when a patch touches several. */
-const AREA_STRICTNESS: readonly OperatorOnlyArea[] = ['permissions', 'reach', 'safety'];
-
 /**
- * The floor area an agent's config patch asks in, or `null` when it touches no
- * operator-only setting (it then asks, or runs, in DorkOS settings). With paths
- * in several areas, the strictest wins: Permissions, then Reach & secrets, then
- * Safety limits. A path with no stake on file (the drift guard keeps that out of
- * normal use) is asked about in Permissions, the strictest answer there is.
+ * Every floor area an agent's config patch touches, each named once, or none
+ * when it touches no operator-only setting (it is then decided in DorkOS
+ * settings alone). The gate resolves EACH of them for the caller and decides the
+ * call by the strictest state it finds, so adding a path in one area can never
+ * carry a path in another past its own setting: a patch naming the tunnel and a
+ * trust stop is refused when Reach & secrets is Blocked, even though a
+ * Permissions change on its own would ask. A path with no stake on file (the
+ * drift guard keeps that out of normal use) counts as Permissions.
  *
  * @param patch - The raw patch a caller supplied.
  */
-export function operatorOnlyAreaForPatch(patch: unknown): OperatorOnlyArea | null {
-  const paths = findOperatorOnlyPaths(patch);
-  if (paths.length === 0) return null;
+export function operatorOnlyAreasForPatch(patch: unknown): OperatorOnlyArea[] {
   const areas = new Set<OperatorOnlyArea>(
-    paths.map(
+    findOperatorOnlyPaths(patch).map(
       (path) =>
         OPERATOR_ONLY_STAKES.find((group) => group.paths.includes(path))?.area ?? 'permissions'
     )
   );
-  return AREA_STRICTNESS.find((area) => areas.has(area)) ?? 'permissions';
+  return [...areas];
 }
 
 /**

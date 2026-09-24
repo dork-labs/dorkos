@@ -47,7 +47,7 @@ import {
   type SidebarRemoveFromGroupArgs,
   type FeedbackDraftArgs,
 } from './operator-tool-handlers.js';
-import { operatorOnlyAreaForPatch } from './config-write-policy.js';
+import { operatorOnlyAreasForPatch } from './config-write-policy.js';
 
 /**
  * The settings a config patch changes, as one line for its approval card:
@@ -626,7 +626,7 @@ export const operatorDomain: CapabilityDomain = {
       // A patch touching a setting only a person may change asks in that
       // setting's floor area instead (Safety limits, Reach & secrets or
       // Permissions), where Always allow is never offered.
-      areaForInput: (input) => operatorOnlyAreaForPatch((input as { patch?: unknown }).patch),
+      areasForInput: (input) => operatorOnlyAreasForPatch((input as { patch?: unknown }).patch),
       // The card lists the settings the patch changes, never the patch object
       // (which renders as "details") and never the value of a secret-named one.
       approvalDisplayFields: ['changes'],

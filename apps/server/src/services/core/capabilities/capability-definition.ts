@@ -120,16 +120,17 @@ export interface CapabilityDefinition<
    */
   areaNote?: string;
   /**
-   * A stricter area for one particular call, decided from its input (spec
+   * The other areas one particular call reaches, decided from its input (spec
    * `agent-permissions` D6). `operator.config_patch` is the one user: a patch
-   * touching a setting only a person may change asks in that setting's floor
-   * area rather than in DorkOS settings.
+   * touching a setting only a person may change also reaches that setting's
+   * floor area.
    *
-   * May only make a call stricter: the gate ignores (and logs) an answer that is
-   * not a floor area when the static {@link area} is not one, and `null` keeps
-   * the static area. Receives the parsed input.
+   * Can only make a call stricter: the gate resolves the static {@link area}
+   * AND every area named here, area-level (the action's own entries belong to
+   * its own area), and decides by the strictest state among them. Receives the
+   * parsed input.
    */
-  areaForInput?: (input: unknown) => PermissionAreaId | null;
+  areasForInput?: (input: unknown) => readonly PermissionAreaId[];
   /** Zod input contract; validated before `invoke`, projected as JSON Schema. */
   input: In;
   /** Zod output contract; projected as JSON Schema in the catalog. */
