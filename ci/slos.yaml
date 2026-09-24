@@ -205,7 +205,7 @@ slos:
     today: about 3.5 min
     floor: [{ stat: p90, op: '<=', value: 210, unit: seconds }]
     objective: [{ stat: p90, op: '<=', value: 20, unit: seconds }]
-    path: typecheck leaves pre-commit (it stays at push and in CI)
+    path: typecheck leaves pre-commit (it stays in pnpm verify and CI; ci/ledger/260919-175506-*); lint is then the one heavy command left
 
   - id: local-push
     kind: speed

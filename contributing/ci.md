@@ -50,7 +50,7 @@ This guide covers everything between an agent's edit and a change on `main`: the
 ```
 EDIT     Claude Code hooks: four PreToolUse guards on every Bash call; typecheck, eslint and an any-ban on every edit
 TURN END prettier --write on changed files (Stop hook); checkpoint in worktrees
-COMMIT   lefthook pre-commit: prettier, drizzle generate, dir-size, turbo lint --affected, turbo typecheck --affected (the last two under the machine-wide slot cap)
+COMMIT   lefthook pre-commit: prettier, drizzle generate, dir-size, turbo lint --affected (under the machine-wide slot cap). No typecheck at commit
 PUSH     lefthook pre-push: a prettier check on the changed files. No tests run at push (DOR-2160)
 PR       ~19-25 Actions jobs; the required checks below must pass ON THE PR before it may enter the queue
 ARM      agents arm with gh pr merge --auto; merge-tail (every 2-3 h, throttled) is the backstop
@@ -97,11 +97,11 @@ Admin bypass is narrowed to `pull_request`: nobody pushes to `main` directly, ad
 
 There are exactly three things now, and no more:
 
-| when      | what                                                                                                                    |
-| --------- | ----------------------------------------------------------------------------------------------------------------------- |
-| at commit | prettier on staged files, Drizzle migrations, a directory-size check, and `lint` + `typecheck` of the affected packages |
-| at push   | a formatting check on the changed files                                                                                 |
-| at merge  | everything, on the real merged tree                                                                                     |
+| when      | what                                                                                                      |
+| --------- | --------------------------------------------------------------------------------------------------------- |
+| at commit | prettier on staged files, Drizzle migrations, a directory-size check, and `lint` of the affected packages |
+| at push   | a formatting check on the changed files                                                                   |
+| at merge  | everything, on the real merged tree                                                                       |
 
 **Nothing at push claims to have tested anything**, and that is a decision rather than an omission.
 
@@ -119,7 +119,9 @@ Nothing that reaches `main` reaches it with less checking. The queue runs the fu
 
 **Why the formatting check stays.** It is the one local check whose verdict is both certain and cheaper than hearing it from CI: p90 10 s, deterministic, and it preempts `prettier --check .` inside the required `lint` job — which seven PRs across five sessions went red on in a single week, every one a single `prettier --write` from green.
 
-**The two heavy commit gates hold one of a small number of machine-wide slots** (`scripts/heavy-run-lock.sh`, `local.heavy_run_slots` in `ci/config.yaml`, default 3). Several agents each running a full affected sweep is what pinned this box: `turbo --affected` lets each task keep a worker per core, so four at once is four machines' work on one. The lock lives in `$(git rev-parse --git-common-dir)/ci-steward/heavy-locks`, which every worktree of the clone shares. It never blocks indefinitely and never silently stops capping: a slot whose owner is gone is reclaimed, a slot still being acquired is not, a process only ever releases a slot that is still its own, waiting is bounded by `local.heavy_lock_wait_seconds`, and a wait that runs out runs the command anyway with a `lock_timeout` note. Fast checks are not capped.
+**Why typecheck left `pre-commit`.** Over the week to 2026-09-24 it ran 838 times on the operator machine, for 12.9 hours in total (p90 139 s), and failed 35 times, 9 of them in 3 s or less, which is a lock or a stale dist rather than a type error. Commits outnumber merged PRs about 8 to 1, so it re-checked the same change about eight times per PR, while `typecheck` is a required check on the PR and in the queue and no type error can merge. **To typecheck before you open a PR, run `pnpm verify` (affected-only), or `pnpm --filter <pkg> typecheck` for one package.** Claude Code sessions also typecheck the edited file's package after every edit. The entry, with the revert condition (the PR-side `typecheck` failure rate), is `ci/ledger/260919-175506-*`.
+
+**The one heavy commit gate, `lint`, holds one of a small number of machine-wide slots** (`scripts/heavy-run-lock.sh`, `local.heavy_run_slots` in `ci/config.yaml`, default 3). Several agents each running a full affected sweep is what pinned this box: `turbo --affected` lets each task keep a worker per core, so four at once is four machines' work on one. The lock lives in `$(git rev-parse --git-common-dir)/ci-steward/heavy-locks`, which every worktree of the clone shares. It never blocks indefinitely and never silently stops capping: a slot whose owner is gone is reclaimed, a slot still being acquired is not, a process only ever releases a slot that is still its own, waiting is bounded by `local.heavy_lock_wait_seconds`, and a wait that runs out runs the command anyway with a `lock_timeout` note. Fast checks are not capped.
 
 **Split by what each is good at.** GitHub Actions splits by cost (2026-08-23/24, the CI-saturation fix):
 

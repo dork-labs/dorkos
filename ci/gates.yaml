@@ -211,9 +211,6 @@ gates:
   - id: lefthook.pre-commit.lint
     source: lefthook.yml
     purpose: Lints the packages the branch affects against origin/main, under the machine-wide heavy-run cap.
-  - id: lefthook.pre-commit.typecheck
-    source: lefthook.yml
-    purpose: Typechecks the packages the branch affects against origin/main, under the machine-wide heavy-run cap.
   - id: lefthook.pre-push.formatting
     source: lefthook.yml
     purpose: Fails a push whose changed files are not Prettier-clean, and prints the fix command.

@@ -24,7 +24,7 @@
 # things and they are all this file does:
 #
 #   at commit  prettier on staged files, Drizzle migrations, a directory-size
-#              check, and lint + typecheck of the affected packages
+#              check, and lint of the affected packages
 #   at push    a formatting check on the changed files
 #
 # Nothing at push claims to have tested anything. That is not an omission; it is
@@ -43,12 +43,23 @@
 # in `--no-verify`, which loses the cheap checks along with the expensive one.
 #
 # Two answers, and they are separate. The expensive gate left the push path
-# entirely (see `pre-push:`). The gates that remain expensive are the two at
-# commit time, so each holds one of a small number of machine-wide slots
+# entirely (see `pre-push:`). The one gate that remains expensive is `lint` at
+# commit time, so it holds one of a small number of machine-wide slots
 # (`scripts/heavy-run-lock.sh`), which stops several agents running a full
 # affected sweep at the same moment. Both the slot waits and every hook's load,
 # memory and swap are recorded in the local timings, so what this machine is
 # doing to these numbers is a figure in the daily report and not a feeling.
+#
+# NOTHING HERE TYPECHECKS, either (ci/ledger/260919-175506-*). Typecheck left
+# `pre-commit` on 2026-09-24, on the time-wrap's records for the week to that
+# day: 838 runs, 12.9 hours, p90 139 s, and 35 failures (4.2%), 9 of them in
+# 3 s or less and so a lock, a stale dist or the environment rather than a type
+# error. A commit re-checked the same change about eight times per merged PR.
+# `typecheck` is a required check on every PR and in the merge queue, so no
+# type error can land; the worst a missed one costs is a red PR. Before you open
+# a PR, typecheck with `pnpm verify` (affected-only), or one package with
+# `pnpm --filter <pkg> typecheck`. Claude Code sessions also typecheck the
+# edited file's package after every edit (`.claude/hooks/typecheck-changed.sh`).
 pre-commit:
   # STREAM THE OUTPUT AS IT ARRIVES, for the reason the `pre-push` block spells
   # out at length: lefthook buffers a command's output and prints it only once
@@ -56,9 +67,9 @@ pre-commit:
   # echoes at t+0 and exits at t+8 shows everything at t+9.
   #
   # It matters MORE here than it ever did at push, because DOR-2160 put a wait
-  # in front of the two slow commands. A contended commit now spends up to
-  # `heavy_lock_wait_seconds` queueing and then runs lint (409 s worst) or
-  # typecheck (473 s worst), and without this the terminal is empty for all of
+  # in front of the slow command. A contended commit can spend up to
+  # `heavy_lock_wait_seconds` queueing and then run lint (1485 s worst in the
+  # week to 2026-09-24), and without this the terminal is empty for all of
   # it — which is precisely the "cannot tell compiling from wedged" state that
   # taught everyone to reach for --no-verify in the first place. The lock's own
   # "waiting up to Ns for a slot" line is written to be the thing you see, and
@@ -84,8 +95,8 @@ pre-commit:
         bash scripts/check-dir-size.sh
       fail_text: 'Directory has too many files — split into subdirectories.'
     lint:
-      # AFFECTED-ONLY, on purpose (DOR-833). This command and the typecheck
-      # below were a bare `pnpm lint` / `pnpm typecheck`, walking every package
+      # AFFECTED-ONLY, on purpose (DOR-833). This command and a typecheck beside
+      # it were a bare `pnpm lint` / `pnpm typecheck`, walking every package
       # in the workspace on every commit — including commits that touch only
       # docs, a spec, a changelog fragment or this file. That cost 23 minutes
       # (lint 481s + typecheck 898s) on 2026-07-27 with five agent sessions
@@ -124,23 +135,23 @@ pre-commit:
       # to gate is always in scope. A file you changed but did not stage is in
       # scope too — over-inclusive, which is the safe direction for a gate.
       #
-      # No `dotenv --` wrapper (the old `pnpm typecheck` had one): neither task
-      # declares any `env` in turbo.json, so nothing about them depends on
-      # .env, and `pnpm verify` already runs both without it.
+      # No `dotenv --` wrapper (the old bare `pnpm typecheck` beside it had
+      # one): lint declares no `env` in turbo.json, so nothing about it depends
+      # on .env, and `pnpm verify` already runs it without one.
       #
-      # The whole tree is still checked before anything lands: `lint` and
-      # `typecheck` are required merge-queue checks and run unscoped there, so
-      # a break that only appears once two branches combine is caught by the
-      # queue rather than by this hook.
+      # The whole tree is still checked before anything lands: `lint` is a
+      # required merge-queue check and runs unscoped there, so a break that only
+      # appears once two branches combine is caught by the queue rather than by
+      # this hook.
       #
       # UNDER THE MACHINE-WIDE SLOT CAP (DOR-2160). With the test gate gone from
-      # `pre-push`, this and the typecheck below are the two heavy local
-      # commands left: affected-only made them cheap for a docs commit and left
-      # them expensive for a code one, measured p90 186 s and worst 409 s here,
-      # p90 160 s and worst 473 s for typecheck. Those are the runs that collide
-      # with three other agents' suites, and the cap is what stops four of them
-      # being in flight at once. It never refuses: waiting is bounded, and a
-      # wait that runs out runs the command anyway, loudly
+      # `pre-push` and typecheck gone from here (ci/ledger/260919-175506-*),
+      # this is the one heavy local command left: affected-only made it cheap
+      # for a docs commit and left it expensive for a code one, measured p90
+      # 140 s and worst 1485 s over the week to 2026-09-24. Those are the runs
+      # that collide with other agents' suites, and the cap is what stops too
+      # many of them being in flight at once. It never refuses: waiting is
+      # bounded, and a wait that runs out runs the command anyway, loudly
       # (scripts/heavy-run-lock.sh). Nothing here is time-bounded — a commit is
       # cheap to retry, and nothing downstream repeats lint for you until the PR
       # — so the cap is the whole of the change.
@@ -148,14 +159,6 @@ pre-commit:
         [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-commit lint
         TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" bash scripts/heavy-run-lock.sh pnpm exec turbo lint --affected
       fail_text: 'Lint failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
-    typecheck:
-      # Affected-only against origin/main, and under the same machine-wide slot
-      # cap — see the lint command above for both arguments and both sets of
-      # numbers.
-      run: |
-        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-commit typecheck
-        TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" bash scripts/heavy-run-lock.sh pnpm exec turbo typecheck --affected
-      fail_text: 'Typecheck failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
 
 pre-push:
   # WHAT HAPPENS AT PUSH NOW: one formatting check, and nothing else (DOR-2160).
