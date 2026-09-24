@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   FRONTMATTER_ENGINES,
+  FRONTMATTER_LIMITS,
   NonMappingFrontmatterError,
+  OversizedFrontmatterError,
   UnsupportedFrontmatterError,
   parseFrontmatter,
   stringifyFrontmatter,
@@ -207,5 +209,85 @@ describe('stringifyFrontmatter refuses values YAML cannot hold', () => {
     ['in a list', { name: 'a', tags: ['x', undefined] }],
   ])('throws on `undefined` at the %s', (_label, data) => {
     expect(() => stringifyFrontmatter('body', data)).toThrow(/undefined/);
+  });
+});
+
+/**
+ * A YAML alias bomb: nine levels, each a list of nine aliases to the level
+ * below, so a few hundred bytes describe 9^9 leaves once expanded (DOR-2311).
+ */
+function aliasBomb(levels = 9, width = 9): string {
+  const names = 'abcdefghijklmnop';
+  const lines = [`a: &a [${Array(width).fill('"x"').join(', ')}]`];
+  for (let i = 1; i < levels; i++) {
+    lines.push(
+      `${names[i]}: &${names[i]} [${Array(width)
+        .fill(`*${names[i - 1]}`)
+        .join(', ')}]`
+    );
+  }
+  return `---\n${lines.join('\n')}\n---\nbody\n`;
+}
+
+describe('frontmatter has a size budget (DOR-2311)', () => {
+  // Purpose: the reviewer's repro. A ~540-byte block that expands
+  // exponentially is refused while parsing, before any caller walks or
+  // serialises it, and quickly.
+  it('refuses a YAML alias bomb, fast', () => {
+    const content = aliasBomb();
+    expect(content.length).toBeLessThan(700);
+    const started = Date.now();
+    expect(() => parseFrontmatter(content)).toThrow(OversizedFrontmatterError);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  // Purpose: aliases to one long string amplify by characters, not nodes. The
+  // budget counts expanded characters too.
+  it('refuses a long string repeated through aliases', () => {
+    const long = 'y'.repeat(20_000);
+    const refs = Array(200).fill('*s').join(', ');
+    const content = `---\ns: &s "${long}"\nt: [${refs}]\n---\n`;
+    expect(() => parseFrontmatter(content)).toThrow(OversizedFrontmatterError);
+  });
+
+  // Purpose: nesting depth is bounded, so a recursive walker downstream cannot
+  // overflow its stack. (js-yaml stops at 100 on its own; 80 sits between
+  // that and this limit, so it is this check that refuses it.)
+  it.each([
+    ['YAML', `---\na: ${'['.repeat(80)}${']'.repeat(80)}\n---\n`],
+    ['JSON', `---json\n{"a": ${'['.repeat(200)}${']'.repeat(200)}}\n---\n`],
+  ])('refuses %s nested deeper than the limit', (_label, content) => {
+    expect(() => parseFrontmatter(content)).toThrow(OversizedFrontmatterError);
+  });
+
+  // Purpose: the raw block has a byte cap, whatever it contains.
+  it.each([
+    ['YAML', (n: string) => `---\nnote: "${n}"\n---\n`],
+    ['JSON', (n: string) => `---json\n{"note": "${n}"}\n---\n`],
+  ])('refuses a %s block over the byte cap', (_label, make) => {
+    const content = make('z'.repeat(FRONTMATTER_LIMITS.maxBytes));
+    expect(() => parseFrontmatter(content)).toThrow(OversizedFrontmatterError);
+  });
+
+  // Purpose: the budget sits at the engine, so it holds even with the
+  // language check and gray-matter out of the way.
+  it('bounds the YAML engine itself', () => {
+    expect(() => FRONTMATTER_ENGINES.yaml.parse(aliasBomb().split('---')[1])).toThrow(
+      OversizedFrontmatterError
+    );
+  });
+
+  // Purpose: ordinary anchors and aliases, and a long body, are unaffected.
+  it('still reads small anchors and aliases, and ignores body length', () => {
+    const content = `---\nbase: &b { model: fast, tags: [a, b] }\nother: *b\n---\n${'long body '.repeat(20_000)}`;
+    expect(parseFrontmatter(content).data).toEqual({
+      base: { model: 'fast', tags: ['a', 'b'] },
+      other: { model: 'fast', tags: ['a', 'b'] },
+    });
+  });
+
+  // Purpose: the refusal reads as plain words a package author can act on.
+  it('says what is wrong in plain words', () => {
+    expect(() => parseFrontmatter(aliasBomb())).toThrow(/too large/i);
   });
 });

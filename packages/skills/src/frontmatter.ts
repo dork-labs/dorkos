@@ -21,6 +21,16 @@
  *    v4 has no `!!js/function`-style types at all, so YAML's own tags cannot
  *    construct code either. JSON goes through `JSON.parse`.
  *
+ * Reading is also bounded (DOR-2311). YAML aliases (`*name`) are shared
+ * references, so a few hundred bytes can describe billions of values once
+ * anything walks, copies or serialises the result, and a package's frontmatter
+ * reaches schema validation, `JSON.stringify` and the install preview. Every
+ * engine refuses a raw block over {@link FRONTMATTER_LIMITS}`.maxBytes`, then
+ * walks the parsed value the way a consumer would, alias targets expanded,
+ * and refuses it as soon as it grows past `maxExpanded` units (one per value
+ * plus one per character of every string and key) or nests past `maxDepth`.
+ * The walk stops at the limit, so refusing costs at most the budget.
+ *
  * Writing never parses: gray-matter's `stringify(string, data)` runs the body
  * through `matter()` first, so a body opening with `---js` was evaluated on
  * the way OUT. {@link stringifyFrontmatter} hands it a file object instead.
@@ -53,6 +63,88 @@ export class UnsupportedFrontmatterError extends Error {
     this.name = 'UnsupportedFrontmatterError';
     this.language = language;
   }
+}
+
+/**
+ * How much frontmatter DorkOS will read. Real skill, command and agent headers
+ * are a few hundred bytes to a few kilobytes and expand to a few thousand
+ * units, so these leave two orders of magnitude of headroom.
+ */
+export const FRONTMATTER_LIMITS = {
+  /** Largest raw frontmatter block, in UTF-16 code units (about bytes). */
+  maxBytes: 64 * 1024,
+  /** Largest expanded size: one per value, plus every string and key length. */
+  maxExpanded: 1_000_000,
+  /** Deepest nesting of lists and mappings. */
+  maxDepth: 64,
+} as const;
+
+/** Thrown when a frontmatter block is larger, or expands larger, than DorkOS reads. */
+export class OversizedFrontmatterError extends Error {
+  /**
+   * Build the error for one exceeded limit.
+   *
+   * @param detail - Which limit was exceeded, in plain words.
+   */
+  constructor(detail: string) {
+    super(`Frontmatter is too large to read: ${detail}.`);
+    this.name = 'OversizedFrontmatterError';
+  }
+}
+
+/**
+ * Refuse a parsed value that is larger than {@link FRONTMATTER_LIMITS} once its
+ * shared references are expanded, walking it as a consumer would and stopping
+ * the moment it goes over, so the check never costs more than the budget.
+ *
+ * @param value - The parsed frontmatter value.
+ * @throws {OversizedFrontmatterError} When it expands or nests past the limits.
+ */
+function assertWithinBudget(value: unknown): void {
+  let expanded = 0;
+  const stack: Array<[unknown, number]> = [[value, 0]];
+  while (stack.length > 0) {
+    const [node, depth] = stack.pop()!;
+    expanded += typeof node === 'string' ? 1 + node.length : 1;
+    if (expanded > FRONTMATTER_LIMITS.maxExpanded) {
+      throw new OversizedFrontmatterError(
+        `it expands to more than ${FRONTMATTER_LIMITS.maxExpanded.toLocaleString('en-US')} values and characters, usually because of repeated YAML aliases (*name)`
+      );
+    }
+    if (node === null || typeof node !== 'object') continue;
+    if (depth >= FRONTMATTER_LIMITS.maxDepth) {
+      throw new OversizedFrontmatterError(
+        `it is nested more than ${FRONTMATTER_LIMITS.maxDepth} levels deep`
+      );
+    }
+    if (Array.isArray(node)) {
+      for (const child of node) stack.push([child, depth + 1]);
+    } else {
+      for (const [key, child] of Object.entries(node)) {
+        expanded += key.length;
+        stack.push([child, depth + 1]);
+      }
+    }
+  }
+}
+
+/**
+ * Parse one raw frontmatter block with `parse`, inside the size budget.
+ *
+ * @param str - The raw block gray-matter found between the fences.
+ * @param parse - The data parser for its language.
+ * @returns The parsed value.
+ * @throws {OversizedFrontmatterError} When the block or its expansion is too large.
+ */
+function parseWithinBudget(str: string, parse: (source: string) => unknown): object {
+  if (str.length > FRONTMATTER_LIMITS.maxBytes) {
+    throw new OversizedFrontmatterError(
+      `it is longer than ${FRONTMATTER_LIMITS.maxBytes / 1024} KB`
+    );
+  }
+  const value = parse(str);
+  assertWithinBudget(value);
+  return value as object;
 }
 
 /** The result of {@link parseFrontmatter}. */
@@ -113,14 +205,15 @@ function assertNoUndefined(value: unknown, at: string): void {
  */
 export const FRONTMATTER_ENGINES = {
   yaml: {
-    parse: (str: string): object => yaml.load(str, { schema: yaml.DEFAULT_SCHEMA }) as object,
+    parse: (str: string): object =>
+      parseWithinBudget(str, (source) => yaml.load(source, { schema: yaml.DEFAULT_SCHEMA })),
     stringify: (data: object): string => {
       assertNoUndefined(data, '');
       return yaml.dump(data, { schema: yaml.DEFAULT_SCHEMA });
     },
   },
   json: {
-    parse: (str: string): object => JSON.parse(str) as object,
+    parse: (str: string): object => parseWithinBudget(str, (source) => JSON.parse(source)),
     stringify: (data: object): string => JSON.stringify(data, null, 2),
   },
   javascript: refusingEngine,
@@ -165,6 +258,8 @@ function normalizeDataLanguage(content: string): string {
  * @returns The frontmatter data and the untrimmed body.
  * @throws {UnsupportedFrontmatterError} When the block is written in a language
  *   other than YAML or JSON (for example `---js`).
+ * @throws {OversizedFrontmatterError} When the block is too long, expands too
+ *   large through YAML aliases, or nests too deep (DOR-2311).
  * @throws {NonMappingFrontmatterError} When the block is a scalar, list or null
  *   rather than `key: value` fields.
  * @throws The YAML or JSON parser's error when the block is malformed.

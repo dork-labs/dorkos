@@ -151,3 +151,41 @@ describe('install preview of a package with `---js` frontmatter (DOR-2308)', () 
     expect(sentinel()).toBeUndefined();
   });
 });
+
+/** A ~500-byte YAML alias bomb: nine levels of nine aliases each (DOR-2311). */
+function aliasBombSkill(): string {
+  const names = 'abcdefghi';
+  const lines = ['name: bomb', 'description: x', `a: &a [${Array(9).fill('"x"').join(', ')}]`];
+  for (let i = 1; i < 9; i++) {
+    lines.push(
+      `${names[i]}: &${names[i]} [${Array(9)
+        .fill(`*${names[i - 1]}`)
+        .join(', ')}]`
+    );
+  }
+  return `---\n${lines.join('\n')}\nschedule: { cron: '0 9 * * *' }\n---\n\nBody.\n`;
+}
+
+describe('install preview of a package with an alias-bomb SKILL.md (DOR-2311)', () => {
+  // Purpose: the reviewer's repro, end to end. The validator refuses the file
+  // as too large, promptly, instead of the preview walking or serialising an
+  // expansion of billions of values.
+  it('reports the SKILL.md as too large, promptly', async () => {
+    await writeFile(path.join(packagePath, 'skills', 'evil', 'SKILL.md'), aliasBombSkill());
+    await writeFile(
+      path.join(packagePath, '.dork', 'tasks', 'evil-task', 'SKILL.md'),
+      aliasBombSkill()
+    );
+
+    const started = Date.now();
+    const error = await buildInstaller()
+      .preview({ name: 'evil-pack' })
+      .catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(InvalidPackageError);
+    expect((error as InvalidPackageError).errors.join('\n')).toMatch(
+      /Frontmatter is too large to read/
+    );
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+});
