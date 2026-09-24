@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import cronstrue from 'cronstrue';
-import { MoreHorizontal, Pencil, Play, Trash2, AlertCircle, Shield } from 'lucide-react';
+import { MoreHorizontal, Pencil, Play, Trash2, AlertCircle, Shield, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   isScheduleAwaitingApproval,
@@ -57,6 +57,17 @@ function formatCron(cron: string): string {
   } catch {
     return cron;
   }
+}
+
+/**
+ * The package's own timing for a schedule a person has retimed, as a sentence
+ * fragment: "every hour, UTC", "at 09:00 AM, Europe/Berlin", "on demand".
+ */
+function describePackageTiming(task: Task): string {
+  if (!task.defaultCron) return 'on demand';
+  const words = formatCron(task.defaultCron);
+  const lowered = words.charAt(0).toLowerCase() + words.slice(1);
+  return task.defaultTimezone ? `${lowered}, ${task.defaultTimezone}` : lowered;
 }
 
 /**
@@ -194,6 +205,18 @@ export function TaskRow({
     deleteTask.mutate(task.id);
   };
 
+  // A schedule that came with an installed package, running on the person's
+  // own timing (DOR-2302): put it back on the package's. A person's reset is
+  // itself the approval of the timing it restores, so it stays live.
+  const handleResetTiming = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    // No local onError: the shared mutation toast reports a failure.
+    updateTask.mutate(
+      { id: task.id, resetTiming: true },
+      { onSuccess: () => toast('Back on the package’s timing') }
+    );
+  };
+
   const confirmDelete = () => {
     // No local onError: the shared mutation toast (`useDeleteTask`'s
     // `meta.errorLabel`) reports a failure.
@@ -260,6 +283,13 @@ export function TaskRow({
             {shouldShowCron && (
               <div className="text-muted-foreground text-xs">
                 {task.cron ? formatCron(task.cron) : 'On-demand'}
+                {/* The timing a person set for a package's schedule, in place
+                    of the package's own (DOR-2302). Said on the collapsed row,
+                    because it is the answer to "why is this not running when
+                    the package says it does". */}
+                {task.timingOverridden && (
+                  <span data-slot="task-timing-override"> &middot; Your timing</span>
+                )}
                 {task.nextRun && <> &middot; Next: {new Date(task.nextRun).toLocaleString()}</>}
               </div>
             )}
@@ -392,6 +422,12 @@ export function TaskRow({
                     <Play className="mr-2 size-3.5" />
                     Run Now
                   </DropdownMenuItem>
+                  {task.timingOverridden && (
+                    <DropdownMenuItem onClick={handleResetTiming}>
+                      <RotateCcw className="mr-2 size-3.5" />
+                      Reset to the package’s default
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={(e) => {
@@ -425,6 +461,21 @@ export function TaskRow({
                   <p className="text-muted-foreground text-2xs mb-2 truncate font-mono">
                     {shortenHomePath(task.filePath)}
                   </p>
+                )}
+                {task.timingOverridden && (
+                  <div
+                    data-slot="task-package-timing"
+                    className="text-muted-foreground mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+                  >
+                    <span>The package runs this {describePackageTiming(task)}.</span>
+                    <button
+                      className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center gap-1 rounded-md border bg-transparent px-2 py-0.5 text-xs font-medium shadow-sm transition-colors"
+                      onClick={handleResetTiming}
+                    >
+                      <RotateCcw className="size-3" />
+                      Reset to the package’s default
+                    </button>
+                  </div>
                 )}
                 <TaskRunHistoryPanel scheduleId={task.id} scheduleCwd={null} />
               </div>
