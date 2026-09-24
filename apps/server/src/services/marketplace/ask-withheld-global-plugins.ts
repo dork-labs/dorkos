@@ -43,7 +43,6 @@ import type { HookApprovalGateway } from '../harness/hook-approval.js';
 import { logger } from '../../lib/logger.js';
 import { describeEffectsInFull, type DisclosedEffects } from './disclosed-effects.js';
 import {
-  forgetRefusal,
   partitionGlobalPlugins,
   readActivationState,
   recordGlobalActivationApproval,
@@ -357,7 +356,8 @@ export async function reviewHeldBackPackage(
     throw new HeldBackReviewError(state.note);
   }
   if (askingNow.has(name)) return;
-  if (plugin.reason === 'refused') forgetRefusal(name, plugin.effects, plugin.contentHash);
+  // A refused package is asked again as it is: a yes on this card replaces the
+  // refusal (`recordApprovedEntry` clears it); an expired card leaves it.
   const askable: Askable = { ...plugin, effects: plugin.effects, contentHash: plugin.contentHash };
   void raiseCard(opts, askable, await originOf(plugin.packageDir));
 }

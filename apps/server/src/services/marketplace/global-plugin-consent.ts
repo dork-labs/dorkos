@@ -80,7 +80,6 @@ import { stableStringify } from '@dorkos/shared/capabilities';
 import { disclosesAnything } from '@dorkos/shared/marketplace-schemas';
 import {
   forgetApprovedEntries,
-  forgetRefusedEntry,
   GLOBAL_ACTIVATION_ENTRY_MARKER,
   recordApprovedEntry,
   recordRefusedEntry,
@@ -390,21 +389,6 @@ export function recordGlobalActivationRefusal(
 }
 
 /**
- * Forget a person's refusal of this global package as it is now, so they can
- * decide again (the Review button on a refused package).
- *
- * @param name - The package's directory name.
- * @param effects - What it runs.
- * @param contentHash - {@link installedContentHash} of what they refused.
- */
-export function forgetRefusal(name: string, effects: DisclosedEffects, contentHash: string): void {
-  forgetRefusedEntry(
-    globalActivationEntry(name, effects, contentHash),
-    'deciding a global package again'
-  );
-}
-
-/**
  * Forget every approval for a global package: it was replaced or removed, so
  * no earlier yes may cover whatever is put there next.
  *
@@ -459,9 +443,10 @@ export const globalConsentRecorder: GlobalConsentRecorder = {
     if (!approved) return;
     const reading = await readActivationState(install.installPath);
     if ('unreadable' in reading || !disclosesAnything(reading.effects)) return;
-    // What landed must be what the person saw: the same programs, and the
-    // same bytes. Anything else stays held back and asks with a card.
-    if (!sameDisclosedEffects(reading.effects, activationEffectsOf(approved.disclosed))) return;
+    // What landed must be the bytes the person was shown (which also pins
+    // every declaration: they are files among them). Anything else stays held
+    // back and asks with a card. The installer already held the install to
+    // the disclosure itself before writing anything.
     let shipped: string;
     try {
       shipped = await shippedContentHash(install.installPath);

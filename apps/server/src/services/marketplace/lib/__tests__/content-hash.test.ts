@@ -12,7 +12,6 @@ import {
   shippedContentHash,
   TreeHashCache,
   TreeUnhashableError,
-  walkTree,
 } from '../content-hash.js';
 
 let root = '';
@@ -103,14 +102,16 @@ describe('TreeHashCache', () => {
   it('re-hashes only when the tree was written, and sees a same-size rewrite with the old mtime', async () => {
     // Purpose: activation checks every turn, cheaply, and a hostile rewrite
     // that restores size and mtime still changes ctime, so it is caught.
+    const file = path.join(root, 'hooks', 'fmt.sh');
+    // A whole-second mtime, so restoring it later is exact.
+    await utimes(file, 1_700_000_000, 1_700_000_000);
     const cache = new TreeHashCache();
     const first = await cache.hash(root, 'k');
     expect(await cache.hash(root, 'k')).toBe(first);
 
-    const file = path.join(root, 'hooks', 'fmt.sh');
-    const { stat } = (await walkTree(root)).entries.find((e) => e.path === 'hooks/fmt.sh')!;
+    // Same size, same inode, same mtime: only ctime tells.
     await writeFile(file, 'echo evil\n');
-    await utimes(file, stat.mtimeMs / 1000, stat.mtimeMs / 1000);
+    await utimes(file, 1_700_000_000, 1_700_000_000);
 
     expect(await cache.hash(root, 'k')).not.toBe(first);
   });

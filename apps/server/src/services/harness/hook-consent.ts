@@ -334,21 +334,6 @@ export function recordApprovedEntry(
 }
 
 /**
- * Forget one stored no, so the decision can be made again.
- *
- * @param entry - The `<packageName>@<digest>` entry to forget.
- * @param reason - What the audit log says was happening.
- */
-export function forgetRefusedEntry(entry: string, reason: string): void {
-  const { approved, refused } = storedHookDecisions();
-  writeDecisions(
-    reason,
-    [...approved],
-    refused.filter((stored) => stored !== entry)
-  );
-}
-
-/**
  * Forget every stored yes a predicate matches, leaving every no in place.
  * Used when a global package is replaced or removed, so an old approval can
  * never cover the same bytes coming back later (a downgrade).

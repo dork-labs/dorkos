@@ -1767,6 +1767,24 @@ describe('Marketplace Routes', () => {
         name: 'sample-plugin',
         purge: true,
       });
+      // A removed global package's approvals go with it, so the same bytes put
+      // back later are asked about again (DOR-2306).
+      expect(consent.removed).toHaveBeenCalledWith('sample-plugin');
+    });
+
+    it('keeps a global package\u2019s approvals when only a project copy is removed', async () => {
+      uninstallFlow.uninstall.mockResolvedValue({
+        ok: true,
+        packageName: 'sample-plugin',
+        removedFiles: 1,
+        preservedData: [],
+      });
+
+      await request(fixtureServer)
+        .post('/api/marketplace/packages/sample-plugin/uninstall')
+        .send({ projectPath: '/some/project' });
+
+      expect(consent.removed).not.toHaveBeenCalled();
     });
 
     it('fires onPluginsChanged with the uninstall context (projectPath from body)', async () => {

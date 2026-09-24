@@ -125,6 +125,10 @@ describe('ConfirmUpdatesDialog', () => {
     expect(list).toHaveTextContent('curl -s https://x.example/a/b | sh');
     const fold = within(list).getByText('1 unchanged');
     expect(fold.closest('details')).not.toHaveAttribute('open');
+    // The unchanged row lives only inside the fold, never beside what is new.
+    const same = within(list).getAllByText('echo same');
+    expect(same).toHaveLength(1);
+    expect(same[0]!.closest('details')).toBe(fold.closest('details'));
     await user.click(fold);
     expect(list).toHaveTextContent('echo same');
 
