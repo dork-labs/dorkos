@@ -335,14 +335,13 @@ local:
   # commit whose affected set is empty, which holds a slot for a second, and
   # serialising those would add waiting to runs that cost nothing. Three allows
   # roughly 3x oversubscription — bad, but a long way from the ~10x measured —
-  # and it leaves a slot free when one agent's pre-commit takes two, because
-  # lint and typecheck run concurrently in that hook. Raise it only with a
-  # ledger entry and the load numbers from the daily report; lowering it is
-  # cheaper to try.
+  # and one agent's pre-commit holds at most one slot at a time. Raise it only
+  # with a ledger entry and the load numbers from the daily report; lowering it
+  # is cheaper to try.
   #
-  # WHAT HOLDS A SLOT, as of DOR-2160: the pre-commit `lint` and `typecheck`
-  # commands, and nothing else. The pre-push test gate was the third and it no
-  # longer exists. Fast checks are never capped.
+  # WHAT HOLDS A SLOT, as of 2026-09-24: the pre-commit `lint` command, and
+  # nothing else. The pre-push test gate left in DOR-2160 and the pre-commit
+  # `typecheck` in ci/ledger/260919-175506-*. Fast checks are never capped.
   #
   # The script reads these three with `sed`, because it runs before any
   # node_modules exist; local.test.ts pins its fallbacks to the values here so
@@ -354,14 +353,17 @@ local:
   # against a 120 s pre-push budget, so the wait was carved out of time the gate
   # already had; with the test gate gone, both commands this guards are
   # unbounded and every second here is latency ADDED to a commit. 45 s is chosen
-  # against the commands themselves: it is about a quarter of lint's 186 s p90,
+  # against the command itself: it is about a quarter of lint's 186 s p90,
   # so a full wait is a visible but minor tax on the run it protects, and it is
   # long enough that a colliding sweep usually clears. Past it the command runs
   # uncapped, which is worse for the machine and better than a commit that
   # waits on other agents indefinitely.
   heavy_lock_wait_seconds: 45
-  # A slot held longer than this is reclaimable even if its owner is alive. The
-  # slowest heavy command measured here is a pre-commit typecheck at 473 s (lint
-  # peaked at 409 s); 900 is well above both and far below anything a healthy
-  # run reaches.
+  # A slot held longer than this is reclaimable even if its owner is alive. When
+  # this was set, the slowest heavy command measured here was a pre-commit
+  # typecheck at 473 s (lint peaked at 409 s); 900 was well above both and far
+  # below anything a healthy run reaches. Typecheck has since left the hook, and
+  # lint's worst in the week to 2026-09-24 was 1485 s under heavy load, so a run
+  # that slow can lose its slot to a waiter; the cost is one extra concurrent
+  # run, not a wrong verdict.
   heavy_lock_max_hold_seconds: 900

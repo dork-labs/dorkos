@@ -140,9 +140,9 @@ export function machineNote(inp: DailyReportInput): Html {
   // Both numbers are per hook RUN, which is what `ci/metrics.yaml` declares and
   // what the sentence says. The hook-level note counts are runs-with-at-least-one
   // rather than a sum over commands — see `aggregateDays`, which is where that
-  // distinction has to be made, because one pre-commit run can leave two
-  // `lock_timeout` notes (lint and typecheck wait concurrently) and summing them
-  // here printed "Of 1 hook runs ... 2 ran without waiting for a free slot".
+  // distinction has to be made, because one run can leave two `lock_timeout`
+  // notes (pre-commit lint and typecheck both did, until typecheck left the hook
+  // on 2026-09-24) and summing them here printed "Of 1 hook runs ... 2 ran without waiting for a free slot".
   let runs = 0;
   let killed = 0;
   let uncapped = 0;

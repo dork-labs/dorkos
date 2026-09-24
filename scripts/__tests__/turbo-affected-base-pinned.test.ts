@@ -199,18 +199,19 @@ describe('local turbo --affected gates pin their diff base', () => {
   it('finds the call sites at all', () => {
     // Without this, every assertion below passes vacuously the day someone
     // renames a hook or the scanner stops matching — the exact way a guard
-    // dies quietly. THREE known sites today: pre-commit lint, pre-commit
-    // typecheck, and `pnpm verify`. There were four until DOR-2160 removed the
-    // pre-push `tests` command, whose measured runs either proved nothing or
-    // could not finish; the site list shrinking is the expected consequence,
-    // and this line is where a fifth appearing gets noticed.
+    // dies quietly. TWO known sites today: pre-commit lint and `pnpm verify`.
+    // There were four until DOR-2160 removed the pre-push `tests` command,
+    // whose measured runs either proved nothing or could not finish, and three
+    // until pre-commit typecheck left the hook (ci/ledger/260919-175506-*),
+    // re-checking the same change about eight times per PR while CI typechecks
+    // it anyway. The site list shrinking is the expected consequence of both,
+    // and this line is where a new one appearing gets noticed.
     const sites = affectedCommands([
       ...lefthookCommands(lefthookText),
       ...rootScripts(packageText),
     ]);
     expect(sites.map((s) => s.label).sort()).toEqual([
       'lefthook.yml pre-commit.lint',
-      'lefthook.yml pre-commit.typecheck',
       'package.json scripts.verify',
     ]);
   });

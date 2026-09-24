@@ -156,11 +156,12 @@ describe('lefthook.yml wiring', () => {
   );
 
   it('finds the commands', () => {
-    // Six since DOR-2160 removed the pre-push test gate: five at commit, one at
-    // push. A floor rather than an equality, because adding a hook command is
+    // Five since typecheck left pre-commit (ci/ledger/260919-175506-*): four at
+    // commit, one at push. It was six after DOR-2160 removed the pre-push test
+    // gate. A floor rather than an equality, because adding a hook command is
     // ordinary and the thing this guards is the scanner silently matching
     // nothing — but the floor moves down with the file, or it stops guarding.
-    expect(commands.length).toBeGreaterThanOrEqual(6);
+    expect(commands.length).toBeGreaterThanOrEqual(5);
   });
 
   it.each(commands.map((c) => [`${c.hook}.${c.name}`, c] as const))(
@@ -537,8 +538,10 @@ describe('the heavy-run lock agrees with ci/config.yaml', () => {
  * A hook run's notes are counted once per RUN, its commands' once per COMMAND.
  *
  * `ci/metrics.yaml` declares `tracked.gate-cut-short` a share of hook runs, and
- * one pre-commit run can leave two `lock_timeout` notes because `lint` and
- * `typecheck` run concurrently and can both give up waiting for a slot. Summing
+ * one run can leave two `lock_timeout` notes when two of its commands wait for
+ * a slot. The fixture is the real case: pre-commit `lint` and `typecheck` both
+ * held slots until typecheck left the hook on 2026-09-24
+ * (ci/ledger/260919-175506-*), and those records are still in the file. Summing
  * them into the hook bucket made a numerator that could exceed its denominator,
  * and the daily report printed "Of 1 hook runs ... 2 ran without waiting for a
  * free slot" — a number that cannot happen, on the one surface a person reads.
