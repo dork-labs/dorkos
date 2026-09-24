@@ -165,7 +165,10 @@ export function CommunityApp() {
             setAdmissionResume({ kind: 'lost' });
           } catch (cause) {
             if (!active) return;
-            if (cause instanceof RequestError && cause.status === 409) {
+            if (
+              cause instanceof RequestError &&
+              (cause.status === 409 || cause.code === 'COMMUNITY_HELD')
+            ) {
               setAdmissionResume({ kind: 'refused', cause });
               setMe(null);
               return;

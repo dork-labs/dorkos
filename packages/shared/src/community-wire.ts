@@ -531,11 +531,15 @@ export const CommunityWireInvitePreflightResponseSchema = z.strictObject({
 });
 /** Preview and redeem consume a fragment token through same-origin POST. */
 export const CommunityWireInviteTokenRequestSchema = z.strictObject({ token: id });
-/** Rate-limited preview reveals only name, inviter and optional channel. */
+/**
+ * Rate-limited preview reveals only name, inviter, optional channel, and whether the host holds
+ * the community: a held community keeps its invitations, and they work again after release.
+ */
 export const CommunityWireInvitePreviewResponseSchema = z.strictObject({
   communityName: z.string().min(1),
   inviterName: z.string().min(1),
   channelName: z.string().nullable(),
+  held: z.boolean(),
 });
 /**
  * A reload reads its still-live pending admission back from the HttpOnly cookie, so the review

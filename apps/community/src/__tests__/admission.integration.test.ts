@@ -890,6 +890,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect(Object.keys(await preview.json()).sort()).toEqual([
       'channelName',
       'communityName',
+      'held',
       'inviterName',
     ]);
     expect(

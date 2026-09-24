@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, KeyRound, Laptop2, ShieldCheck } from 'lucide-react';
-import { describeError, RequestError, request } from '../api.js';
+import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
+import { describeError, hostRequest, RequestError, request } from '../api.js';
 import { HostPolicyLinks } from './HostLinks.js';
 
 type PairingStatus = {
@@ -15,6 +16,26 @@ const scopeLabel = {
   post: 'Post messages',
   'enroll-agent': 'Add your agents',
 };
+/**
+ * Whether the host holds the community in this page's path. A pairing approved during a hold
+ * stays read-only after release, so the page says so before anyone approves it. Any failure
+ * reads as not held: the note is advice, and the server decides what the grant can do.
+ */
+async function isHeldCommunity(path = window.location.pathname): Promise<boolean> {
+  const communityId = path.match(/^\/c\/([^/]+)\//u)?.[1];
+  if (!communityId) return false;
+  try {
+    const body = await hostRequest<{ memberships: CommunityWireMembershipSummary[] }>(
+      '/api/v1/memberships'
+    );
+    return body.memberships.some(
+      (membership) => membership.communityId === communityId && membership.lifecycle === 'held'
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Review and decide on a verifier-bound local install request. */
 export function Pairing({ search = location.search }: { search?: string }) {
   const pairingId = new URLSearchParams(search).get('pairingId');
@@ -24,6 +45,7 @@ export function Pairing({ search = location.search }: { search?: string }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [held, setHeld] = useState(false);
   const emailInput = useRef<HTMLInputElement>(null);
 
   const loadPairing = useCallback(
@@ -37,6 +59,8 @@ export function Pairing({ search = location.search }: { search?: string }) {
         setStatus(body);
         setNeedsSignIn(false);
         setError('');
+        const onHold = await isHeldCommunity();
+        if (isCurrent()) setHeld(onHold);
       } catch (cause) {
         if (!isCurrent()) return;
         setStatus(null);
@@ -176,6 +200,12 @@ export function Pairing({ search = location.search }: { search?: string }) {
                 </li>
               ))}
             </ul>
+            {held && status.status === 'pending' && (
+              <p className="notice mb-5">
+                The community is on hold, so this connection can only read. Connect again after the
+                hold ends to post.
+              </p>
+            )}
             {status.status === 'pending' ? (
               <div className="row">
                 <button

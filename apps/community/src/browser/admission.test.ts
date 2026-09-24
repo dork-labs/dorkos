@@ -66,6 +66,24 @@ describe('describeAdmissionFailure', () => {
     }
   });
 
+  it('says a held community can be joined after the hold, and offers no retry', () => {
+    // Purpose: a hold keeps invitations. Fails if a held join reads as a dead link or a retry.
+    const cause = new RequestError(
+      423,
+      'COMMUNITY_HELD',
+      'This community is on hold by its host. You can read it but not post.'
+    );
+    for (const context of [check, join]) {
+      const failure = describeAdmissionFailure(cause, context);
+      expect(failure).toEqual({
+        title: 'Membership was not added.',
+        detail: 'This community is on hold. You can join when the hold ends.',
+        recovery: 'wait-for-release',
+      });
+      expect(recoveryInstruction(failure.recovery)).not.toMatch(/new (invitation )?link/u);
+    }
+  });
+
   it('asks to reopen the link when the join attempt itself is gone or bound elsewhere', () => {
     expect(
       describeAdmissionFailure(

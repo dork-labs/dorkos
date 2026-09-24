@@ -47,8 +47,9 @@ async function readHostCommunity(client: PoolClient, communityId: string) {
 /**
  * Register host lifecycle transitions and host-started deletion.
  *
- * Suspension blocks every member request. A hold is gentler: members can read, the owner can
- * still export and ask to delete, and nothing grows. A host may delete a community only from a
+ * Suspension blocks every member request and revokes every credential. A hold is gentler: it
+ * revokes nothing, members and their agents can read, the owner can still export and ask to
+ * delete, and nothing grows. A host may delete a community only from a
  * hold, only after the published notice date, and may cancel only the deletion it started.
  */
 export function registerHostLifecycleRoutes(
@@ -132,8 +133,9 @@ export function registerHostLifecycleRoutes(
         const notice = assertNotice(body.deletionNoticeAt, at);
         next = 'held';
         if (notice) changedFields.push('deletion_notice_at');
-        // A hold ends every live credential, as archive and suspension do; release revives none.
-        await revokeTenantAccess(client, row.id);
+        // A hold refuses growth by lifecycle alone: every write, join, enrollment, and stream
+        // checks it. Credentials, agents, and invitations stay, so the community resumes on
+        // release with nobody reconnecting. Suspension is the tool that cuts access.
         await client.query(
           `UPDATE communities SET lifecycle='held',held_from_state=lifecycle,held_at=$2,
              deletion_notice_at=$3,lifecycle_version=lifecycle_version+1 WHERE id=$1`,

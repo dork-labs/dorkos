@@ -92,6 +92,8 @@ export function ChannelView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [livePaused, setLivePaused] = useState(false);
+  // Bumped to open the live stream again after the server refused it outright.
+  const [streamAttempt, setStreamAttempt] = useState(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [readCursor, setReadCursor] = useState<string | null>(null);
   const threadRef = useRef(thread);
@@ -167,6 +169,11 @@ export function ChannelView({
           );
           setReadCursor(event.cursor);
           onChanged();
+        } else if (event.type === 'closed' && event.reason === 'archived') {
+          // The community (held or archived) or this channel became read-only. History stays;
+          // refreshing the community shows why, and a release opens the stream again.
+          source.close();
+          onChanged();
         } else {
           setError('Your access to this channel has changed.');
           setErrorAction('reload');
@@ -181,14 +188,24 @@ export function ChannelView({
     source.addEventListener('snapshot', receive);
     source.addEventListener('entry', receive);
     source.addEventListener('closed', receive);
+    let retry: number | undefined;
     source.onerror = () => {
       // EventSource reconnects on its own. A later snapshot or entry clears
       // this transient status, so a recovered stream never leaves a stale
       // warning covering the composer.
       setLivePaused(true);
+      if (source.readyState !== EventSource.CLOSED) return;
+      // A refused open (a hold answers 423) is final for EventSource, which never retries it.
+      // Refresh the community once so a hold shows as read-only, and try the stream once a
+      // minute, never in a loop; the lifecycle refresh reopens it sooner when a hold ends.
+      onChanged();
+      retry = window.setTimeout(() => setStreamAttempt((attempt) => attempt + 1), 60_000);
     };
-    return () => source.close();
-  }, [channel.id, channel.joined, onChanged, readOnly]);
+    return () => {
+      source.close();
+      window.clearTimeout(retry);
+    };
+  }, [channel.id, channel.joined, onChanged, readOnly, streamAttempt]);
   useEffect(() => {
     if (!threadId) return;
     let active = true;
@@ -367,7 +384,7 @@ export function ChannelView({
             ))}
           </>
         )}
-        {(error || livePaused) && (
+        {(error || (livePaused && !readOnly)) && (
           <div role="alert" className="notice error row mt-3">
             {error || 'Live updates paused. Reconnecting…'}
             {errorAction === 'remove-file' && rejectedFile ? (

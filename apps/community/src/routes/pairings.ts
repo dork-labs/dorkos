@@ -47,6 +47,27 @@ function privateCaller(origin: string | undefined) {
     throw new ApiError(403, 'FORBIDDEN', 'A local install must make this request directly.');
 }
 
+/**
+ * What a grant can do right now, from its scopes and the lifecycle an installation is told.
+ *
+ * A held community is reported as `archived`, and read-only either way: a grant kept through a
+ * hold reads, and posts, enrolls agents, and streams again only after release. A history-only
+ * grant never gains write access, whatever the lifecycle.
+ */
+function grantCapabilities(
+  scopes: readonly string[],
+  historyOnly: boolean,
+  lifecycle: 'active' | 'archived'
+) {
+  const live = lifecycle === 'active' && !historyOnly;
+  return {
+    read: scopes.includes('read'),
+    post: live && scopes.includes('post'),
+    enrollAgent: live && scopes.includes('enroll-agent'),
+    stream: live && scopes.includes('read'),
+  };
+}
+
 function exactArchivedRead(scopes: readonly string[]): boolean {
   return scopes.length === 1 && scopes[0] === 'read';
 }
@@ -154,12 +175,7 @@ export function registerPairingRoutes(
 ) {
   app.get('/me/connection-access', async (c) => {
     const { member: grant, lifecycle } = await requireConnectionGrant(c, pool, 'read');
-    const capabilities = {
-      read: true,
-      post: grant.scopes.includes('post') && !grant.history_only,
-      enrollAgent: grant.scopes.includes('enroll-agent') && !grant.history_only,
-      stream: !grant.history_only,
-    };
+    const capabilities = grantCapabilities(grant.scopes, grant.history_only, lifecycle);
     return json(c, CommunityWireConnectionAccessResponseSchema, {
       access: {
         state: 'verified',
@@ -473,12 +489,11 @@ export function registerPairingRoutes(
           memberId: grant.rows[0].member_id,
           scopes: grant.rows[0].scopes,
           lifecycle,
-          capabilities: {
-            read: grant.rows[0].scopes.includes('read'),
-            post: grant.rows[0].scopes.includes('post'),
-            enrollAgent: grant.rows[0].scopes.includes('enroll-agent'),
-            stream: grant.rows[0].scopes.includes('read') && !grant.rows[0].history_only,
-          },
+          capabilities: grantCapabilities(
+            grant.rows[0].scopes,
+            grant.rows[0].history_only,
+            lifecycle
+          ),
           installName: row.install_name,
           createdAt: grant.rows[0].created_at.toISOString(),
         },
@@ -544,12 +559,7 @@ export function registerPairingRoutes(
         memberId: row.member_id,
         scopes: row.scopes,
         lifecycle: row.lifecycle,
-        capabilities: {
-          read: row.scopes.includes('read'),
-          post: row.scopes.includes('post'),
-          enrollAgent: row.scopes.includes('enroll-agent'),
-          stream: row.scopes.includes('read') && !row.history_only,
-        },
+        capabilities: grantCapabilities(row.scopes, row.history_only, row.lifecycle),
         installName: row.install_name,
         createdAt: row.created_at.toISOString(),
       })),
