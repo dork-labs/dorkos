@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): hold a suspended community in one step, and add a host legal hold (DOR-2299)'
+  - 'fix(community): harden the legal hold after review (DOR-2299)'
 ---
 
 ### Added
