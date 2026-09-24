@@ -27,6 +27,11 @@
  *   is written, so a record that cannot be saved never absorbs a change.
  * - **Keyed by agent id**, so an agent registered anew at an old folder starts
  *   fresh instead of inheriting its predecessor's record.
+ * - **An unreadable record is said out loud.** It is never treated as empty
+ *   (which would re-seed every agent and hide a change); instead each agent's
+ *   history gets one line per episode saying the check is not running.
+ * - **A failed save is retried** on the next read, so a restart does not
+ *   compare against a stale file and report the same edit twice.
  * - **The first sighting is silent.** An agent with no snapshot yet (a fresh
  *   install, a new agent, the first boot after an upgrade) is seeded, not
  *   reported: there is nothing to compare against.
@@ -45,7 +50,11 @@ import {
 } from '@dorkos/shared/permissions';
 
 import type { ActivityService } from '../../activity/activity-service.js';
-import { recordPermissionChange, type PermissionWriter } from './permission-history.js';
+import {
+  PERMISSION_CHECK_UNAVAILABLE_EVENT,
+  recordPermissionChange,
+  type PermissionWriter,
+} from './permission-history.js';
 
 /** The writer an out-of-band change is recorded under. */
 export const OUTSIDE_WRITER: PermissionWriter = {
@@ -68,6 +77,8 @@ export interface PermissionObserverDeps {
   agentAt: (agentPath: string) => ObservedAgentRef | undefined;
   /** The area an action belongs to, or `null` for an action with none. */
   areaOfAction: (actionId: string) => PermissionAreaId | null | undefined;
+  /** Reads an agent's permissions off its manifest, fresh. */
+  read: (agentPath: string) => Promise<AgentPermissions | undefined>;
   /** The Activity writer. */
   activity: Pick<ActivityService, 'emit'> | undefined;
   /** Where a failure to record is reported; recording never fails a read. */
@@ -136,6 +147,18 @@ function diff(
   return changes;
 }
 
+/** What that event says, after the agent's name. */
+export const UNCHECKABLE_SUMMARY =
+  "DorkOS can't check this agent's settings for outside changes right now";
+
+/** The last-seen record exists but cannot be read. */
+class UnreadableRecordError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = 'UnreadableRecordError';
+  }
+}
+
 /** A generation counter's value, captured before a read. */
 export type ReadTicket = { agentId: string; generation: number } | undefined;
 
@@ -152,6 +175,13 @@ export class PermissionObserver {
   private readonly generations = new Map<string, number>();
   /** Persists run one at a time, because they share one file. */
   private persistChain: Promise<unknown> = Promise.resolve();
+  /** True while the file on disk is behind the in-memory values. */
+  private unsaved = false;
+  /**
+   * Agents already told, this episode, that the record cannot be read. Cleared
+   * when it can be read again, so the next episode is reported afresh.
+   */
+  private readonly uncheckable = new Set<string>();
 
   constructor(private readonly deps: PermissionObserverDeps) {}
 
@@ -177,9 +207,10 @@ export class PermissionObserver {
     try {
       raw = JSON.parse(await fs.readFile(this.deps.snapshotFile, 'utf-8')) as unknown;
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw new UnreadableRecordError(err);
       raw = {};
     }
+    this.uncheckable.clear();
     this.snapshots = new Map(
       raw && typeof raw === 'object' && !Array.isArray(raw)
         ? Object.entries(raw as Record<string, unknown>).filter(
@@ -207,7 +238,9 @@ export class PermissionObserver {
           'utf-8'
         );
         await fs.rename(tmp, this.deps.snapshotFile);
+        this.unsaved = false;
       } catch (err) {
+        this.unsaved = true;
         this.deps.logger.warn('[Permissions] Could not save the last-seen permissions', {
           err: err instanceof Error ? err.message : String(err),
         });
@@ -260,7 +293,12 @@ export class PermissionObserver {
         const now = canonical(permissions);
         const serialized = JSON.stringify(now);
         const last = snapshots.get(agentId);
-        if (last === serialized) return;
+        if (last === serialized) {
+          // A save that failed earlier is retried, so a restart does not
+          // compare against a stale file and report the same edit twice.
+          if (this.unsaved) await this.persist();
+          return;
+        }
         if (last !== undefined) {
           const changes = diff(
             JSON.parse(last) as Canonical,
@@ -277,6 +315,10 @@ export class PermissionObserver {
         snapshots.set(agentId, serialized);
         await this.persist();
       } catch (err) {
+        if (err instanceof UnreadableRecordError) {
+          await this.reportUncheckable(agentId, agentPath, err);
+          return;
+        }
         this.deps.logger.warn('[Permissions] Could not check for a change made outside DorkOS', {
           agentPath,
           err: err instanceof Error ? err.message : String(err),
@@ -286,15 +328,57 @@ export class PermissionObserver {
   }
 
   /**
+   * Say once per agent, per episode, that its settings cannot be checked for
+   * outside changes while the record is unreadable. Quiet on every later read.
+   */
+  private async reportUncheckable(
+    agentId: string,
+    agentPath: string,
+    err: UnreadableRecordError
+  ): Promise<void> {
+    this.deps.logger.warn('[Permissions] The last-seen permissions record cannot be read', {
+      agentPath,
+      err: err.message,
+    });
+    if (this.uncheckable.has(agentId)) return;
+    const agent = this.deps.agentAt(agentPath);
+    if (!agent || !this.deps.activity) return;
+    try {
+      await this.deps.activity.emit({
+        actorType: 'system',
+        actorLabel: 'DorkOS',
+        category: 'permissions',
+        eventType: PERMISSION_CHECK_UNAVAILABLE_EVENT,
+        resourceType: 'agent',
+        resourceId: agentId,
+        resourceLabel: agent.name,
+        summary: `${agent.name}: ${UNCHECKABLE_SUMMARY}`,
+        linkPath: null,
+        metadata: { agentPath },
+      });
+      this.uncheckable.add(agentId);
+    } catch (emitErr) {
+      this.deps.logger.warn(
+        '[Permissions] Could not record that outside changes cannot be checked',
+        {
+          agentPath,
+          err: emitErr instanceof Error ? emitErr.message : String(emitErr),
+        }
+      );
+    }
+  }
+
+  /**
    * Read an agent's settings and observe them, taking the ticket first.
    *
    * @param agentPath - The agent's project directory.
-   * @param read - Reads the manifest's permissions.
+   * @param read - Reads the manifest's permissions; the observer's own reader
+   *   by default.
    * @returns What the read found; a failure to observe never fails it.
    */
   async readObserved(
     agentPath: string,
-    read: (agentPath: string) => Promise<AgentPermissions | undefined>
+    read: (agentPath: string) => Promise<AgentPermissions | undefined> = this.deps.read
   ): Promise<AgentPermissions | undefined> {
     const ticket = this.ticket(agentPath);
     const permissions = await read(agentPath);
@@ -323,14 +407,29 @@ export class PermissionObserver {
     const bump = () => this.generations.set(agentId, (this.generations.get(agentId) ?? 0) + 1);
     return this.exclusive(agentId, async () => {
       bump();
+      let landed: AgentPermissions | undefined = next;
       try {
         await write();
+      } catch (writeErr) {
+        // The write may have reached the file before failing (the manifest
+        // saved, the registry update after it threw). Sync to what is really
+        // there, so the next read does not report DorkOS's own half-write as
+        // an outside edit.
+        try {
+          landed = await this.deps.read(agentPath);
+          const snapshots = await this.load();
+          snapshots.set(agentId, JSON.stringify(canonical(landed)));
+          await this.persist();
+        } catch {
+          // Unknown state: the next read compares against the old record.
+        }
+        throw writeErr;
       } finally {
         bump();
       }
       try {
         const snapshots = await this.load();
-        snapshots.set(agentId, JSON.stringify(canonical(next)));
+        snapshots.set(agentId, JSON.stringify(canonical(landed)));
         await this.persist();
       } catch (err) {
         this.deps.logger.warn('[Permissions] Could not remember a permission write', {

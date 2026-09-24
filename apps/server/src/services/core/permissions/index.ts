@@ -9,7 +9,6 @@ import type { AgentPermissions } from '@dorkos/shared/permissions';
 
 import { MCP_TOOL_TIERS, type McpToolTier } from '../mcp-tool-tiers.js';
 import type { CapabilityRegistry } from '../capabilities/index.js';
-import { readAgentPermissionsFromManifest } from '../capabilities/permission-enforcement.js';
 import type { ConfigManager } from '../config-manager.js';
 import type { ActivityService } from '../../activity/activity-service.js';
 import type { PermissionObserver } from './permission-observer.js';
@@ -27,6 +26,7 @@ export {
 } from './permission-service.js';
 export { readRawManifestFile, runPermissionUpgradeSweep } from './permission-upgrade-sweep.js';
 export { PermissionObserver } from './permission-observer.js';
+export { readAgentPermissionsFromManifest } from '../capabilities/permission-enforcement.js';
 export {
   listPermissionHistory,
   personWriter,
@@ -86,7 +86,7 @@ export interface PermissionServiceWiring {
 export function observedPermissionReader(
   observer: PermissionObserver
 ): (agentPath: string) => Promise<AgentPermissions | undefined> {
-  return (agentPath) => observer.readObserved(agentPath, readAgentPermissionsFromManifest);
+  return (agentPath) => observer.readObserved(agentPath);
 }
 
 /**

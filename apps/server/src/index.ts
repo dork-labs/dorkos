@@ -209,6 +209,7 @@ import {
   createPermissionService,
   observedPermissionReader,
   permissionActions,
+  readAgentPermissionsFromManifest,
   readRawManifestFile,
   runPermissionUpgradeSweep,
 } from './services/core/permissions/index.js';
@@ -926,6 +927,7 @@ async function start() {
     },
     // The whole static catalog, not the live registry: this is built before the
     // live registry is composed, and every action's area is fixed in code.
+    read: readAgentPermissionsFromManifest,
     areaOfAction: (() => {
       let areas: Map<string, PermissionAreaId | null> | undefined;
       return (actionId: string) => {

@@ -10,7 +10,12 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AgentPermissions } from '@dorkos/shared/permissions';
 
-import { listPermissionHistory, observedPermissionReader, PermissionService } from '../index.js';
+import {
+  listPermissionHistory,
+  observedPermissionReader,
+  PermissionService,
+  readAgentPermissionsFromManifest,
+} from '../index.js';
 import { PermissionObserver } from '../permission-observer.js';
 import { createPermissionWorld } from './permission-fixtures.js';
 
@@ -46,6 +51,7 @@ describe('PermissionObserver', () => {
       snapshotFile: path.join(snapshotDir(), 'observed.json'),
       agentAt: (p) => (p === agentPath ? { id: registeredId, name: 'Ana' } : undefined),
       areaOfAction: (id) => (id.startsWith('rooms.') ? 'rooms' : null),
+      read: readAgentPermissionsFromManifest,
       activity: { emit: (event) => activity.emit(event as never) },
       logger: { warn: () => {} },
     });
@@ -268,6 +274,7 @@ describe('PermissionObserver', () => {
             ? { id: 'agent-bo', name: 'Bo' }
             : undefined,
       areaOfAction: () => 'rooms',
+      read: async () => undefined,
       activity: world.activity,
       logger: { warn: () => {} },
     });
@@ -283,5 +290,81 @@ describe('PermissionObserver', () => {
     slow.resolve();
     await stuck;
     expect(winner).toBe('bo');
+  });
+
+  it('discards a read whose ticket was taken while a DorkOS write was under way', async () => {
+    await read(agentPath);
+
+    // The write has started (and so moved the counter once) but not finished.
+    const gate = deferred();
+    const entered = deferred();
+    const writing = observer.writing(agentPath, { areas: { rooms: 'ask' } }, async () => {
+      entered.resolve();
+      await gate.promise;
+      editFile({ areas: { rooms: 'ask' } });
+    });
+    await entered.promise;
+    // A read takes its ticket mid-write and sees the file from before it.
+    const stale = deferred<AgentPermissions | undefined>();
+    const inFlight = observer.readObserved(agentPath, () => stale.promise);
+    gate.resolve();
+    await writing;
+    stale.resolve({ areas: { rooms: 'blocked' } });
+    await inFlight;
+    await read(agentPath);
+
+    expect(await history()).toEqual([]);
+  });
+
+  it('does not re-seed from an unreadable record, and says so once per episode', async () => {
+    await read(agentPath);
+    const record = path.join(snapshotDir(), 'observed.json');
+    fs.chmodSync(record, 0o000);
+    editFile({ areas: { rooms: 'allowed' } });
+
+    // A restart while the record cannot be read: several reads, one notice.
+    const restarted = observedPermissionReader(newObserver());
+    await restarted(agentPath);
+    await restarted(agentPath);
+    await restarted(agentPath);
+    let events = await history();
+    expect(events.map((e) => e.summary)).toEqual([
+      "Ana: DorkOS can't check this agent's settings for outside changes right now",
+    ]);
+    expect(events[0]!.actorDetail).toMatch(/won't be noticed until it can/);
+
+    // Readable again: the edit is still caught, because nothing was re-seeded.
+    fs.chmodSync(record, 0o644);
+    await restarted(agentPath);
+    events = await history();
+    expect(events[0]).toMatchObject({ actorLabel: 'Changed outside DorkOS' });
+    expect(events).toHaveLength(2);
+  });
+
+  it('re-saves a record that fell behind, so a restart reports nothing twice', async () => {
+    await read(agentPath);
+    fs.chmodSync(snapshotDir(), 0o555);
+    editFile({ areas: { rooms: 'allowed' } });
+    await read(agentPath); // recorded, but the save fails
+    fs.chmodSync(snapshotDir(), 0o755);
+    await read(agentPath); // nothing new: the save is retried
+
+    await observedPermissionReader(newObserver())(agentPath);
+
+    expect(await history()).toHaveLength(1);
+  });
+
+  it('syncs to the file when a DorkOS write lands and then fails', async () => {
+    await read(agentPath);
+    await expect(
+      observer.writing(agentPath, { areas: { rooms: 'ask' } }, async () => {
+        editFile({ areas: { rooms: 'ask' } });
+        throw new Error('the registry update failed after the save');
+      })
+    ).rejects.toThrow('the registry update failed');
+
+    await read(agentPath);
+
+    expect(await history()).toEqual([]);
   });
 });

@@ -233,6 +233,19 @@ export async function recordPermissionChange(
 const OUTSIDE_ACTOR_DETAIL =
   "This agent's settings file was edited directly. DorkOS follows the file, so the change is in effect.";
 
+/**
+ * The Activity event the permission observer records, once per agent per
+ * episode, while its record of last-seen settings cannot be read. It changes
+ * no permission, so it is not a `permission.changed`, but it belongs in the
+ * history: it is the one line that says the "Changed outside DorkOS" check is
+ * not running.
+ */
+export const PERMISSION_CHECK_UNAVAILABLE_EVENT = 'permission.check_unavailable';
+
+/** The honesty line that event carries. */
+const UNCHECKABLE_ACTOR_DETAIL =
+  "DorkOS's record of this agent's last-seen settings can't be read, so an edit made outside DorkOS won't be noticed until it can.";
+
 /** The extra line a history row shows under its actor. */
 function actorDetailFor(attribution: PermissionAttribution): string | null {
   if (attribution === 'local-trust') return LOCAL_TRUST_ACTOR_DETAIL;
@@ -269,6 +282,20 @@ export async function listPermissionHistory(
     });
     for (const row of page.items) {
       cursor = row.occurredAt;
+      if (row.eventType === PERMISSION_CHECK_UNAVAILABLE_EVENT) {
+        if (query.agentId && row.resourceId !== query.agentId) continue;
+        items.push({
+          id: row.id,
+          occurredAt: row.occurredAt,
+          actorLabel: row.actorLabel,
+          actorDetail: UNCHECKABLE_ACTOR_DETAIL,
+          summary: row.summary,
+          // A notice, not a change: no rows, and the outside-check's own labels.
+          metadata: { changes: [], surface: 'file-edit', attribution: 'outside' },
+        });
+        if (items.length === query.limit) break;
+        continue;
+      }
       if (row.eventType !== PERMISSION_CHANGED_EVENT) continue;
       const parsed = PermissionChangedMetadataSchema.safeParse(row.metadata);
       if (!parsed.success) continue;
