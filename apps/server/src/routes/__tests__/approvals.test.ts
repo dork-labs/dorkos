@@ -28,6 +28,7 @@ import { eventFanOut } from '../../services/core/event-fan-out.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
 import { createApprovalsRouter } from '../approvals.js';
 import { createPermissionWorld } from '../../services/core/permissions/__tests__/permission-fixtures.js';
+import { UPGRADE_WRITER } from '../../services/core/permissions/permission-history.js';
 
 /** The action every test in this file asks approval for. */
 const BINDING = {
@@ -664,6 +665,69 @@ describe('approvals routes', () => {
         expect(res.body.code).toBe('ALWAYS_ALLOW_NOT_UNDONE');
         expect(emitted).toEqual([]);
       });
+    });
+
+    it('never takes back a change somebody else made in the gap', async () => {
+      // The undo is a compare-and-set: the action goes back only while it still
+      // holds what this answer wrote.
+      const ticket = requestRoom();
+      const setAgent = world.service.setAgent.bind(world.service);
+      vi.spyOn(world.service, 'setAgent').mockImplementation(async (...args) => {
+        const changes = await setAgent(...args);
+        if (args[1].surface === 'request-card') {
+          approvals.deny(ticket.approvalId);
+          await setAgent(
+            'agent-dorkbot',
+            { actions: { 'rooms.create': 'ask' }, surface: 'agent-page' },
+            UPGRADE_WRITER
+          );
+        }
+        return changes;
+      });
+
+      const res = await request(app)
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send({ answer: 'always' });
+
+      expect(res.status).toBe(409);
+      expect(world.agents.get('agent-dorkbot')?.permissions?.actions?.['rooms.create']).toBe('ask');
+      const surfaces = world.events
+        .filter((e) => e.eventType === 'permission.changed')
+        .map((e) => (e.metadata as { surface: string }).surface);
+      expect(surfaces).toEqual(['request-card', 'agent-page']);
+    });
+
+    it('runs two Always allows on one card one after the other, so the loser undoes nothing', async () => {
+      // Side by side, both would read "not set" before either wrote; the one
+      // whose yes lost would then take back the winner's setting. Each call
+      // waits here for the other (or a short while, when it never arrives
+      // because the two are already running one after the other).
+      const ticket = requestRoom();
+      const setAgent = world.service.setAgent.bind(world.service);
+      let arrived = 0;
+      let bothHere!: () => void;
+      const barrier = new Promise<void>((resolve) => (bothHere = resolve));
+      vi.spyOn(world.service, 'setAgent').mockImplementation(async (...args) => {
+        if (args[1].surface === 'request-card') {
+          if (++arrived === 2) bothHere();
+          await Promise.race([barrier, new Promise((r) => setTimeout(r, 100))]);
+        }
+        return setAgent(...args);
+      });
+
+      const answer = () =>
+        request(app).post(`/api/approvals/${ticket.approvalId}/grant`).send({ answer: 'always' });
+      const results = await Promise.all([answer(), answer()]);
+
+      expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+      expect(world.agents.get('agent-dorkbot')?.permissions).toEqual({
+        actions: { 'rooms.create': 'allowed' },
+      });
+      const surfaces = world.events
+        .filter((e) => e.eventType === 'permission.changed')
+        .map((e) => (e.metadata as { surface: string }).surface);
+      expect(surfaces).toEqual(['request-card']);
+      expect(emitted.map((e) => e.eventType)).toEqual(['permission.answered']);
     });
 
     it('writes no setting for a card that was already answered', async () => {

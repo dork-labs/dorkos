@@ -83,7 +83,12 @@
  * that happens the route puts the setting back as it was, through the same
  * service with `surface: 'undo'` and the approval's id, so the history shows
  * both the write and its reversal and no Always allow outlives a card that was
- * not answered yes. Only a failure of that reversal itself can leave the
+ * not answered yes. The reversal is a compare-and-set: a key goes back only
+ * while it still holds what this write put there, so it never undoes a change
+ * somebody made in the gap. And two Always allows for the same agent and
+ * action run one after the other rather than side by side, so they can never
+ * both read "not set", both write, and have the loser's reversal take back the
+ * winner's setting. Only a failure of the reversal itself can leave the
  * setting behind; it is logged, and the person is told to check the agent's
  * Permissions page.
  *
@@ -91,7 +96,11 @@
  */
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { DenyApprovalBodySchema, GrantApprovalBodySchema } from '@dorkos/shared/approval-schemas';
+import {
+  DenyApprovalBodySchema,
+  GrantApprovalBodySchema,
+  type ApprovalAnswer,
+} from '@dorkos/shared/approval-schemas';
 import {
   PERMISSION_ANSWERED_EVENT,
   type PermissionAnswer,
@@ -355,7 +364,8 @@ export function createApprovalsRouter(
    * Each key goes back to its value from before the write; a key the write did
    * not change is left alone.
    *
-   * @returns Whether the setting is back as it was.
+   * @returns Whether the setting is back as it was, or was left alone because
+   *   something else changed it since.
    */
   const undoAlwaysAllow = async (
     permissions: NonNullable<ApprovalsRouterOptions['permissions']>,
@@ -364,13 +374,21 @@ export function createApprovalsRouter(
     writer: PermissionWriter
   ): Promise<boolean> => {
     const actions: Record<string, PermissionState | null> = {};
+    const expectActions: Record<string, PermissionState | null> = {};
     for (const change of write.changes) {
       if (change.key.kind !== 'action') continue;
       actions[change.key.action] = change.before as PermissionState | null;
+      expectActions[change.key.action] = change.after as PermissionState | null;
     }
     if (Object.keys(actions).length === 0) return true;
     try {
-      await permissions.setAgent(write.agentId, { actions, surface: 'undo', approvalId }, writer);
+      // Compare-and-set: a key goes back only while it still holds what THIS
+      // write put there, so a later change by anyone else is never undone.
+      await permissions.setAgent(
+        write.agentId,
+        { actions, expectActions, surface: 'undo', approvalId },
+        writer
+      );
       return true;
     } catch (err) {
       logger.error('[Approvals] Always allow was saved but its yes was refused, and undo failed', {
@@ -381,29 +399,43 @@ export function createApprovalsRouter(
     }
   };
 
-  // GET /pending -- approvals still waiting on a person
-  router.get('/pending', (_req, res) => {
-    res.json({ approvals: approvals.listPending() });
-  });
+  /** The tail of each Always allow for one agent and action; see the grant route. */
+  const alwaysQueue = new Map<string, Promise<unknown>>();
 
-  // POST /:id/grant -- allow the requested action, once or from now on
-  router.post('/:id/grant', async (req, res) => {
-    const authority = personOrRefuse(req, res);
-    if (!authority) return;
+  /**
+   * Run `work` after every earlier Always allow for the same agent and action
+   * has finished, in arrival order.
+   *
+   * @param key - The agent and the action.
+   * @param work - The answer to run.
+   */
+  const serializedAlways = <T>(key: string, work: () => Promise<T>): Promise<T> => {
+    const previous = alwaysQueue.get(key) ?? Promise.resolve();
+    const run = previous.then(work, work);
+    const tail = run.catch(() => undefined);
+    alwaysQueue.set(key, tail);
+    void tail.then(() => {
+      if (alwaysQueue.get(key) === tail) alwaysQueue.delete(key);
+    });
+    return run;
+  };
 
-    // Express 5 leaves `req.body` undefined on an empty POST, and `answer`
-    // defaults to `once`, so an absent body is a plain one-time yes.
-    const parsed = GrantApprovalBodySchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: 'Validation failed',
-        code: 'INVALID_GRANT_BODY',
-        details: z.flattenError(parsed.error),
-      });
-    }
-    const { answer } = parsed.data;
-
-    const scope = approvals.answerScope(req.params.id);
+  /**
+   * Answer yes to one card, once or always, reading the card afresh (a queued
+   * Always allow may find it already answered).
+   *
+   * @param approvalId - The card being answered.
+   * @param res - The response the answer is written to.
+   * @param authority - The person bars' verdict.
+   * @param answer - Once or always.
+   */
+  const grantAnswer = async (
+    approvalId: string,
+    res: Response,
+    authority: Extract<DecisionAuthorityResult, { allowed: true }>,
+    answer: ApprovalAnswer
+  ) => {
+    const scope = approvals.answerScope(approvalId);
     if (!scope) {
       const mapped = decisionFailureResponse('unknown');
       return res.status(mapped.status).json(mapped.body);
@@ -434,7 +466,7 @@ export function createApprovalsRouter(
           {
             actions: { [scope.capabilityId]: 'allowed' },
             surface: 'request-card',
-            approvalId: req.params.id,
+            approvalId,
           },
           writerForPosture(authority.posture, res)
         );
@@ -444,7 +476,7 @@ export function createApprovalsRouter(
           return res.status(409).json({ error: err.message, code: err.code });
         }
         logger.error('[Approvals] Always allow could not be recorded; nothing was granted', {
-          approvalId: req.params.id,
+          approvalId,
           err: err instanceof Error ? err.message : String(err),
         });
         return res.status(500).json({
@@ -454,7 +486,7 @@ export function createApprovalsRouter(
       }
     }
 
-    const failure = approvals.grant(req.params.id);
+    const failure = approvals.grant(approvalId);
     if (failure) {
       // Another answer won the card while the setting was being saved: the yes
       // did not happen, so neither may the setting it came with.
@@ -462,7 +494,7 @@ export function createApprovalsRouter(
         const undone = await undoAlwaysAllow(
           options.permissions,
           alwaysWrite,
-          req.params.id,
+          approvalId,
           writerForPosture(authority.posture, res)
         );
         if (!undone) {
@@ -477,8 +509,42 @@ export function createApprovalsRouter(
       const mapped = decisionFailureResponse(failure);
       return res.status(mapped.status).json(mapped.body);
     }
-    auditAnswer(req.params.id, scope, answer, authority, res);
-    return res.json({ ok: true, approvalId: req.params.id, outcome: 'granted', answer });
+    auditAnswer(approvalId, scope, answer, authority, res);
+    return res.json({ ok: true, approvalId, outcome: 'granted', answer });
+  };
+
+  // GET /pending -- approvals still waiting on a person
+  router.get('/pending', (_req, res) => {
+    res.json({ approvals: approvals.listPending() });
+  });
+
+  // POST /:id/grant -- allow the requested action, once or from now on
+  router.post('/:id/grant', async (req, res) => {
+    const authority = personOrRefuse(req, res);
+    if (!authority) return;
+
+    // Express 5 leaves `req.body` undefined on an empty POST, and `answer`
+    // defaults to `once`, so an absent body is a plain one-time yes.
+    const parsed = GrantApprovalBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        code: 'INVALID_GRANT_BODY',
+        details: z.flattenError(parsed.error),
+      });
+    }
+    const { answer } = parsed.data;
+
+    // Two Always allows for the same agent and action run one after the other:
+    // run side by side, both would read "not set" before either wrote, and the
+    // loser's undo would take back the winner's setting (see the module TSDoc).
+    const first = approvals.answerScope(req.params.id);
+    const key =
+      answer === 'always' && first?.agentPath
+        ? `${first.agentPath}\0${first.capabilityId}`
+        : undefined;
+    const answerIt = () => grantAnswer(req.params.id, res, authority, answer);
+    return key ? serializedAlways(key, answerIt) : answerIt();
   });
 
   // POST /:id/deny -- refuse the requested action
