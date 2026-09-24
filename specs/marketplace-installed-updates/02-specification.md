@@ -265,8 +265,11 @@ All three ship in one PR with this spec.
 - Focus: the row's Update button is one element through "Updating…" (`aria-disabled`, not `disabled`), and when it leaves, focus moves to the row's status line; "Update all…" stays mounted during an apply and hands focus to the summary line when it leaves. Focus is only moved when it fell to the page.
 - A failed re-check no longer shows the earlier answer (decision: ignore it; an answer that failed to refresh is not current).
 - An applied check settles at `applied.version` (the latest side's source when it matches, else `package`), and the apply stays pending until the installed list shows the new versions, so a row goes straight from "Updating…" to "Up to date".
-- `batch_update_needs_approval` gets a plain sentence.
+- `batch_update_needs_approval` gets a plain sentence and a next step: "Update it from the terminal with `dorkos marketplace update <name>`" (the package's own name for one; the CLI form from DOR-2193).
 - The `marketplace-installed` product shot waits for the summary's settled headline.
+
+**Round 2 (independent, 2026-09-24):** all round-1 findings resolved; the product-media capture was verified with a real run. One behaviour recorded as intended: after an apply, the installed-list change marks the check stale, so the next visit to the Installed view re-runs the full check (one request, with the server's 60-second memo cleared by the apply). That is the price of never showing an answer the list has moved past.
+
 - Prepared for DOR-2306: `ApplyUpdatesOptions.targets` (objects, not paths) and the general `ConfirmUpdatesDialog`.
 
 ## Related ADRs

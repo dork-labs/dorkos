@@ -108,9 +108,15 @@ const BATCH_NEEDS_APPROVAL = 'batch_update_needs_approval';
  * with its own code gets a sentence of its own; the server's message names an
  * API route, which is not something a person can act on.
  */
-function describeFailure(err: unknown): string {
+function describeFailure(err: unknown, requested: readonly StaleInstallation[]): string {
   if ((err as { code?: unknown } | null)?.code === BATCH_NEEDS_APPROVAL) {
-    return 'Each of these installs needs your approval first, and DorkOS can’t ask for it here.';
+    // The next step names the command, with the package's own name when there
+    // is one package (the name the update check and the CLI both use).
+    const next =
+      requested.length === 1
+        ? `Update it from the terminal with \`dorkos marketplace update ${requested[0]!.check.packageName}\`.`
+        : 'Update each one from the terminal with `dorkos marketplace update <name>`.';
+    return `Each of these installs needs your approval first, and DorkOS can’t ask for it here. ${next}`;
   }
   return err instanceof Error ? err.message : String(err);
 }
@@ -150,7 +156,7 @@ export function useApplyUpdatesWithToast() {
         .catch((err: unknown) =>
           toast.error(`Couldn’t update ${label}`, {
             id: toastId,
-            description: describeFailure(err),
+            description: describeFailure(err, fresh),
           })
         )
         .finally(() => {

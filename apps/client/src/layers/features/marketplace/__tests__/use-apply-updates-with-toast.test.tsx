@@ -314,9 +314,28 @@ describe('useApplyUpdatesWithToast', () => {
     ];
     expect(headline).toBe('Couldn’t update 2 packages');
     expect(options.description).toBe(
-      'Each of these installs needs your approval first, and DorkOS can’t ask for it here.'
+      'Each of these installs needs your approval first, and DorkOS can’t ask for it here. ' +
+        'Update each one from the terminal with `dorkos marketplace update <name>`.'
     );
     expect(options.description).not.toMatch(/\/api\//);
+  });
+
+  it('names the command for the one package it refused', async () => {
+    // Purpose: the refusal carries its next step, and for one package the
+    // command is ready to paste.
+    const refusal = Object.assign(new Error('refused'), {
+      code: 'batch_update_needs_approval',
+      status: 403,
+    });
+    await runApply([makeCheck()], { error: refusal });
+
+    const [, options] = toastMock.error.mock.calls[0] as unknown as [
+      string,
+      { description: string },
+    ];
+    expect(options.description).toMatch(
+      /Update it from the terminal with `dorkos marketplace update @dorkos\/reviewer`\.$/
+    );
   });
 
   it('ignores a second apply for an installation already being updated', async () => {
