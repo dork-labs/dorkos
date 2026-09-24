@@ -150,6 +150,8 @@ dorkos marketplace uninstall <package> --purge            # Also remove preserve
 dorkos marketplace uninstall <package> --project <path>   # Uninstall from a specific project
 
 dorkos marketplace installed                              # List every installed package, and where
+dorkos marketplace installed --verify                     # ...and whether each one's files changed since install
+dorkos marketplace prepare <package>                      # Record the files of a package an older DorkOS installed
 dorkos marketplace outdated                               # List only the packages that have an update
 dorkos marketplace update                                 # Check every installed package, wherever it's installed
 dorkos marketplace update <package> --apply               # Review and install an available update
@@ -169,6 +171,8 @@ dorkos marketplace validate <path-or-url>                 # Validate a marketpla
 `dorkos install`, `dorkos update` and `dorkos uninstall` are shorter names for the same three commands. They take the same options and do exactly the same thing, so use whichever you like.
 
 `installed` shows one row per installation. A package you installed for everyone and for two agents shows up three times, and each row says where it lives: `global`, or the agent's name. A row marked `linked` is a folder linked to a working copy on your computer. DorkOS never updates a linked package, so update its source instead.
+
+Add `--verify` to see whether each package's files still match what was installed. The FILES column says `as installed`, `changed (3)` when files were edited, removed or added where the package keeps what it runs, or `unknown`. `unknown` usually means an older version of DorkOS installed the package and didn't record its files. Run `dorkos marketplace prepare <package>` to record them. DorkOS does this only when the files still match the version the package came from. Otherwise it changes nothing and tells you why.
 
 For each package, `update` tells you one of three things: a newer version is available, the package is up to date, or it couldn't be checked (with the reason, for example when you're offline). On its own it only checks. Add `--apply` to install the updates it finds. It first prints everything each new version runs on its own and asks you, and then installs exactly that. Each package is updated where it's installed. A package installed for one agent is shown with that agent's name, like `flow [Alpha]`.
 

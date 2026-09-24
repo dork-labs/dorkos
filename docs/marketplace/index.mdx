@@ -181,6 +181,10 @@ While the check runs, each package says **Checking for updates…**. It can take
 
 **Update all…** opens a list of every package it will update, where each one is installed (all agents, or a named agent), and which version it moves to. Under each package it lists what the new version runs on its own: each command and when it runs, each server or program and whether it starts in every session. What is new or changed since the version you have is marked and comes first; what is the same is folded under a count you can open. A line at the top says how many of the packages run things on their own and how many add something. Nothing changes until you confirm, and then only those packages are updated, exactly as listed. If a package changes what it runs after you opened the list, DorkOS updates nothing and asks you to review it again. If one fails, the others still update, and the failed one shows why. **Check again** runs the check again whenever you like.
 
+A package whose files you or an agent changed since it was installed says how many, for example **3 files changed since install**. Hover it to see which ones. When you update it, the new version replaces those files and your copies are saved beside them. **Update all…** says so for each package it affects.
+
+A package installed by an older version of DorkOS says **Installed by an older DorkOS**, because that version didn't record which files were the package's. DorkOS records them for you in the background, from the exact version the package came from, when every file still matches that version. If it can't, for example because you're offline or a file was changed, press **Prepare** to try again and see why.
+
 ## Managing installed packages
 
 A package can be installed in more than one place: globally, and separately on individual agents. When you open the detail sheet for a package you've installed, the **Installed** panel lists every installation, one row per scope:

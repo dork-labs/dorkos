@@ -2,7 +2,7 @@
 slug: marketplace-install-verification
 number: 260924-175336
 created: 2026-09-24
-status: specified
+status: implemented
 linear-issue: DOR-2197
 project: Marketplace Package Management
 ---
@@ -35,9 +35,9 @@ Verification compares the live files with the record using `hashFile` in `lib/in
 
 **DOR-2306 dependency:** its unmerged `lib/content-hash.ts` (`hashTree`, `packageContentHash`) digests each file itself. Whichever of the two lands second makes `hashTree` digest files through `hashFile`, so the repo has one per-file primitive. A whole-tree hash would add nothing here: verification needs to know _which_ files changed, and the record already has per-file hashes.
 
-**Hash cache:** `hashFile` streams the file. To keep repeated list calls cheap, `lib/file-hash-cache.ts` memoizes `hashFile` by absolute path. An entry is reused only while the file's `lstat` `size`, `mtimeMs`, `ctimeMs` and `ino` are unchanged, so a rename-over or an `mtime` restored with `utimes` still misses. It holds at most 20,000 entries (least recently used first) and is in memory only. The same `hashFile` still produces every hash.
+**Hash cache:** `hashFile` streams the file. To keep repeated list calls cheap, `lib/integrity/file-hash-cache.ts` memoizes `hashFile` by absolute path. An entry is reused only while the file's `lstat` `size`, `mtimeMs`, `ctimeMs` and `ino` are unchanged, so a rename-over or an `mtime` restored with `utimes` still misses. It holds at most 20,000 entries (least recently used first) and is in memory only. The same `hashFile` still produces every hash.
 
-## 4. Verify: `lib/verify-install.ts`
+## 4. Verify: `lib/integrity/verify-install.ts`
 
 ```ts
 type InstallIntegrity =
@@ -58,7 +58,7 @@ verifyInstall(root: string): Promise<InstallIntegrity>
 - **Status:** `modified` if `changed`, `missing` or `added` is non-empty; otherwise `clean`. Every list is sorted, and each carries at most 50 paths, plus a `truncated: true` flag when there were more.
 - **Read-only:** verification writes nothing and takes no lock. A concurrent install can make one answer stale, and the next call corrects it.
 
-## 5. Strict rebuild: `rebuildRecordStrict` (`lib/legacy-record.ts`)
+## 5. Strict rebuild: `rebuildRecordStrict` (`lib/integrity/strict-record.ts`)
 
 ```ts
 rebuildRecordStrict(root, { fetcher, logger }): Promise<StrictRebuildResult>
@@ -85,7 +85,7 @@ type StrictRebuildResult =
 
 `rebuildInstalledFiles`, the update and uninstall path, keeps its behaviour. Its fetched-tree trust check and its fallback are unchanged. Both functions share one private helper that fetches, stages and injects the old tree, so the two can't drift.
 
-## 6. Background rebuild after boot: `lib/legacy-record-sweep.ts`
+## 6. Background rebuild after boot: `lib/integrity/legacy-record-sweep.ts`
 
 - `rebuildLegacyRecords(dirs, deps) → { rebuilt, mismatch, noSource, fetchFailed, skipped }`.
   - It lists each directory's children (never recursing), and keeps a child that is a directory, not a symlink, not an install sibling (`isInstallSiblingName`), has a package identity, and has no record.
@@ -122,7 +122,7 @@ type StrictRebuildResult =
 **Surface:**
 
 - **Route:** `POST /api/marketplace/packages/:name/prepare`, body `{ projectPath?, installRoot? }`.
-  - The name is checked with `assertPackageName`, then gated at the `marketplace.install` tier, because it writes into an install root.
+  - The name is checked with `assertPackageName`, and **not tier-gated** (a change from the first draft): it writes only a record that must match the live files byte for byte, so it cannot change what runs or claim a person's file. Gating it as `marketplace.install` would also have bound its approval hash to an install of the same name, a token replayable as an install.
   - It finds the root with `locateInstallRoot`, as update and uninstall do, and returns 404 `PackageNotInstalledError` when there is none.
   - Response: `{ outcome, message }`, where `message` is one sentence per outcome:
     - `rebuilt`: "DorkOS now knows which of {name}'s files are yours."
@@ -158,7 +158,7 @@ type StrictRebuildResult =
 - **Route:**
   - prepare's five outcomes with their messages
   - 404
-  - tier gate
+  - installRoot narrows and never widens
   - name guard before the gate
   - `installed?verify=true` adds `integrity`, and without the flag the response is unchanged
 - **MCP:** the `verify` flag.

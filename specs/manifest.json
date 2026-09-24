@@ -6,7 +6,7 @@
       "slug": "marketplace-install-verification",
       "title": "Say whether an installed package still matches what was installed",
       "created": "2026-09-24",
-      "status": "specified",
+      "status": "implemented",
       "project": "Marketplace Package Management",
       "linearIssue": "DOR-2197"
     },
