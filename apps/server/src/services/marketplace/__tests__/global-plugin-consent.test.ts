@@ -324,8 +324,11 @@ describe('partitionGlobalPlugins', () => {
       hooks: [{ event: 'Stop', matcher: null, command: '${CLAUDE_PLUGIN_ROOT}/.dork/database.sh' }],
       executables: ['.dork/data'],
       monitors: [{ name: 'm', command: 'sh', args: ['.dork/./data/watch.sh'], when: null }],
-    } as DisclosedEffects;
+      lspServers: [{ name: 'l', command: '${CLAUDE_PLUGIN_ROOT}/.DORK/Secrets.json', args: [] }],
+    } as unknown as DisclosedEffects;
     expect(declarationsIntoUncheckedPaths(effects)).toEqual([
+      // Another case names the same folder on a case-insensitive disk.
+      '${CLAUDE_PLUGIN_ROOT}/.DORK/Secrets.json (runs from a folder DorkOS never checks)',
       // A `/./` in the middle names the same folder, and is caught.
       '.dork/./data/watch.sh (runs from a folder DorkOS never checks)',
       '.dork/data (runs from a folder DorkOS never checks)',

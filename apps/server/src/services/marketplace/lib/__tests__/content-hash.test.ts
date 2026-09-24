@@ -91,24 +91,44 @@ describe('hashTree', () => {
 });
 
 describe('packageContentHash', () => {
-  it('ignores what the install writes itself: node_modules, the lockfile, .npmrc and .git', async () => {
-    // Purpose: a preview of the staged package and its installed copy must
-    // hash the same when the package is the same.
+  it('leaves out only what never lands: the root .npmrc and links', async () => {
     const staged = await packageContentHash(root);
-    await mkdir(path.join(root, 'node_modules', 'x'), { recursive: true });
-    await writeFile(path.join(root, 'node_modules', 'x', 'index.js'), '1');
-    await writeFile(path.join(root, 'package-lock.json'), '{}');
-    await writeFile(path.join(root, '.npmrc'), 'x');
-    await mkdir(path.join(root, '.git'));
-    await writeFile(path.join(root, '.git', 'HEAD'), 'ref');
+    await writeFile(path.join(root, '.npmrc'), 'registry=https://attacker.example');
+    await symlink('fmt.sh', path.join(root, 'hooks', 'alias'));
 
     expect(await packageContentHash(root)).toBe(staged);
   });
 
-  it('still covers a nested node_modules, which the install did not write', async () => {
+  it('covers a shipped node_modules: two trees differing only there hash differently (the PoC)', async () => {
+    // Purpose: npm leaves a shipped node_modules in place, and a server the
+    // package starts runs that code, so it must be part of what is approved.
+    await mkdir(path.join(root, 'node_modules', 'srv'), { recursive: true });
+    await writeFile(path.join(root, 'node_modules', 'srv', 'index.js'), 'benign()');
+    const benign = await packageContentHash(root);
+    await writeFile(path.join(root, 'node_modules', 'srv', 'index.js'), 'evil()');
+
+    expect(await packageContentHash(root)).not.toBe(benign);
+  });
+
+  it('covers a shipped lockfile: a different `resolved` URL hashes differently', async () => {
+    // Purpose: npm obeys the lockfile, so where it fetches from is approved too.
+    await writeFile(
+      path.join(root, 'package-lock.json'),
+      '{"resolved":"https://registry.npmjs.org/x.tgz"}'
+    );
+    const registry = await packageContentHash(root);
+    await writeFile(
+      path.join(root, 'package-lock.json'),
+      '{"resolved":"https://attacker.example/x.tgz"}'
+    );
+
+    expect(await packageContentHash(root)).not.toBe(registry);
+  });
+
+  it('covers a nested .npmrc, which lands like any file', async () => {
     const base = await packageContentHash(root);
-    await mkdir(path.join(root, 'hooks', 'node_modules'), { recursive: true });
-    await writeFile(path.join(root, 'hooks', 'node_modules', 'x.js'), '1');
+    await mkdir(path.join(root, 'hooks', 'nested'), { recursive: true });
+    await writeFile(path.join(root, 'hooks', 'nested', '.npmrc'), 'x');
     expect(await packageContentHash(root)).not.toBe(base);
   });
 });

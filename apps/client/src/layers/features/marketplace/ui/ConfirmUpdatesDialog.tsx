@@ -108,9 +108,9 @@ function ChangeBadge({ change }: { change: DisclosureRow['change'] }) {
 }
 
 /**
- * A row with its mark beside it. A changed row also shows what the installed
- * version runs in its place, muted and labelled, so the person compares the
- * two values instead of taking "Changed" on trust.
+ * A row with its mark beside it. A changed row also shows the command the
+ * installed version runs in its place, muted and labelled, so the person
+ * compares the two values instead of taking "Changed" on trust.
  */
 function MarkedRow({ row, change, previous }: DisclosureRow) {
   return (
@@ -125,7 +125,8 @@ function MarkedRow({ row, change, previous }: DisclosureRow) {
               Installed now
             </p>
             <ul aria-label="What the installed version runs instead">
-              <PermissionItem item={previous} />
+              {/* Just the old command: its description repeats the new row's. */}
+              <PermissionItem item={{ ...previous, description: undefined, details: undefined }} />
             </ul>
           </div>
         )}

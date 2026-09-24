@@ -242,11 +242,14 @@ function commandsOf(effects: DisclosedEffects): string[] {
 
 /**
  * One pattern per runtime-state path, matched as whole path segments (so
- * `.dork/data` catches `.dork/data/run.sh` but not `.dork/database.sh`). The
- * paths hold no regex character but the dot.
+ * `.dork/data` catches `.dork/data/run.sh` but not `.dork/database.sh`), and
+ * ignoring case: on a case-insensitive disk (the macOS and Windows default)
+ * `.DORK/Data/run.sh` IS the skipped folder. The hash's own skip stays exact,
+ * so on a case-sensitive disk such a folder is simply hashed. The paths hold
+ * no regex character but the dot.
  */
 const UNCHECKED_PATH_PATTERNS = RUNTIME_STATE_PATHS.map(
-  (unchecked) => new RegExp(`(^|[^\\w.-])${unchecked.replaceAll('.', '\\.')}(?=$|[^\\w.-])`)
+  (unchecked) => new RegExp(`(^|[^\\w.-])${unchecked.replaceAll('.', '\\.')}(?=$|[^\\w.-])`, 'i')
 );
 
 /**

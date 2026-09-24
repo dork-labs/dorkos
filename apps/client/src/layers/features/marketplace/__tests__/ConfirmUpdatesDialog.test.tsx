@@ -167,5 +167,7 @@ describe('ConfirmUpdatesDialog', () => {
     });
     expect(before).toHaveTextContent('db-mcp');
     expect(before).not.toHaveTextContent('--serve-everything');
+    // Just the old command: the new row already says what the server is.
+    expect(before).not.toHaveTextContent('MCP server');
   });
 });

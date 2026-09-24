@@ -6,8 +6,8 @@
  * arrived from its source, not only of the list of commands it declares:
  * `hooks.json` naming `${CLAUDE_PLUGIN_ROOT}/hooks/fmt.sh` says nothing about
  * what `fmt.sh` does. So the preview hashes the staged package, the installer
- * records the landed package's hash in its install metadata, and an approval
- * binds that hash.
+ * records the same hash of the same staged package (taken before the npm step)
+ * in its install metadata, and an approval binds that hash.
  *
  * ## The threat boundary
  *
@@ -29,11 +29,13 @@
  *   ({@link assertShipsNoRuntimeState}), so nothing unhashed can arrive in them,
  *   and a shipped install record can never stand in for the one the installer
  *   writes.
- * - What the install writes itself: the npm step's `node_modules` and
- *   lockfile, and the root `.npmrc` it strips. `node_modules` is fetched with
- *   `--ignore-scripts` for the `package.json` that IS hashed, the same
- *   declared-dependency residual the install preview states.
- * - `.git`, and symbolic links (the install strips links).
+ * - The root `.npmrc` and symbolic links, which the install strips before
+ *   anything lands.
+ *
+ * A shipped `node_modules` and lockfile ARE covered: npm obeys both. What npm
+ * then fetches for the hashed `package.json` and lockfile (with
+ * `--ignore-scripts`) is the declared-dependency residual the install preview
+ * states.
  *
  * Anything that is neither a file, a directory nor a link makes the tree
  * unhashable ({@link TreeUnhashableError}).
@@ -137,25 +139,27 @@ export async function hashTree(
   return `sha256:${outer.digest('hex')}`;
 }
 
-/** Root-level entries the install writes or strips itself. */
-const INSTALL_WRITTEN_AT_ROOT: ReadonlySet<string> = new Set([
-  'node_modules',
-  'package-lock.json',
-  '.npmrc',
-  '.git',
-]);
+/**
+ * The one shipped file the install never lands: the root `.npmrc`, which
+ * `stage-package.ts` strips before the npm step can read it.
+ */
+const STRIPPED_AT_ROOT = '.npmrc';
 
 /** What {@link packageContentHash} leaves out. */
 function skipsForPackage(posixPath: string): boolean {
-  return isRuntimeStatePath(posixPath) || INSTALL_WRITTEN_AT_ROOT.has(posixPath);
+  return isRuntimeStatePath(posixPath) || posixPath === STRIPPED_AT_ROOT;
 }
 
 /**
- * The package's content hash: the same for a staged package and its installed
- * copy when they hold the same package. What the installer records in the
- * install metadata after a successful install or update.
+ * The package's content hash, taken over the STAGED package exactly as it
+ * came through the channel, before the npm step: a shipped `node_modules` and
+ * lockfile are in it, because npm obeys them and a server the package starts
+ * runs that code. The preview, the approval card and the install metadata all
+ * carry this one hash; the installer never re-hashes the landed folder after
+ * npm wrote into it. A review of a package installed before hashes were
+ * recorded takes it over the installed folder instead, as it is now.
  *
- * @param root - A staged or installed package root.
+ * @param root - A staged package root (or, for that review, an installed one).
  * @returns `sha256:<hex>`.
  * @throws {TreeUnhashableError} See {@link hashTree}.
  */

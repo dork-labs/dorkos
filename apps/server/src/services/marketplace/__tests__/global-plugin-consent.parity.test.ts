@@ -33,6 +33,23 @@ vi.mock('../../core/config-manager.js', () => ({
   },
 }));
 
+// The npm step, standing in for npm: it writes into the flow's staging copy,
+// exactly where real npm writes, so the landed folder differs from what was
+// shipped. The installer must record the SHIPPED hash, never re-hash this.
+vi.mock('../lib/npm-dependencies.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/npm-dependencies.js')>();
+  const { mkdir: mk, writeFile: wf } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  return {
+    ...actual,
+    installStagedNpmDependencies: async (opts: { stagingDir: string }) => {
+      await mk(join(opts.stagingDir, 'node_modules', '.fetched'), { recursive: true });
+      await wf(join(opts.stagingDir, 'node_modules', '.fetched', 'dep.js'), 'fetched by npm');
+      return [];
+    },
+  };
+});
+
 import { initBoundary } from '../../../lib/boundary.js';
 import { disclosedEffectsOf } from '../disclosed-effects.js';
 import { globalConsentRecorder, partitionGlobalPlugins } from '../global-plugin-consent.js';
@@ -79,6 +96,14 @@ beforeEach(async () => {
     path.join(source, 'skills', 'jot', 'SKILL.md'),
     '---\nname: jot\ndescription: Jot a note\nallowed-tools: Bash(echo:*)\n---\n# jot\n'
   );
+  // A package that vendors its own dependencies: shipped as they are, and
+  // part of what is approved (DOR-2306).
+  await mkdir(path.join(source, 'node_modules', 'notes-lib'), { recursive: true });
+  await writeFile(path.join(source, 'node_modules', 'notes-lib', 'index.js'), 'benign()');
+  await writeFile(
+    path.join(source, 'package-lock.json'),
+    JSON.stringify({ lockfileVersion: 3, packages: {} })
+  );
   await initBoundary(root);
   config.harness = { approvedHooks: [], refusedHooks: [] };
 });
@@ -104,8 +129,10 @@ describe('global activation consent, through the real installer', () => {
 
     // Held back until someone approves it...
     const result = await installer.install({ name: source, approvedDisclosure: shown });
-    // ...with the install event recorded: the landed copy hashes as staged.
+    // ...with the install event recorded: the hash of what was shipped, the
+    // one the preview showed, not a re-hash of the folder npm then wrote into.
     expect((await readInstallMetadata(result.installPath))?.contentHash).toBe(contentHash);
+    expect(await packageContentHash(result.installPath)).not.toBe(contentHash);
     expect((await partitionGlobalPlugins(dorkHome)).withheld.map((w) => w.reason)).toEqual([
       'unasked',
     ]);
@@ -120,6 +147,26 @@ describe('global activation consent, through the real installer', () => {
       activate: ['valid-plugin'],
       withheld: [],
     });
+  });
+
+  it('holds back an install whose source moved after the preview, even inside node_modules', async () => {
+    // Purpose: the reviewer's PoC. The declarations stay the same, so the
+    // install is not refused, but the recorded hash is of what actually came
+    // through the channel, so the approval of the previewed hash covers nothing.
+    const { installer } = buildInstallerForTests(dorkHome);
+    const { preview, packagePath } = await installer.preview({ name: source });
+    const shown = disclosedEffectsOf(preview);
+    const contentHash = await packageContentHash(packagePath);
+
+    await writeFile(path.join(source, 'node_modules', 'notes-lib', 'index.js'), 'evil()');
+    const result = await installer.install({ name: source, approvedDisclosure: shown });
+    await globalConsentRecorder.settle(
+      { installPath: result.installPath, type: result.type, global: true },
+      { disclosed: shown, contentHash }
+    );
+
+    expect((await readInstallMetadata(result.installPath))?.contentHash).not.toBe(contentHash);
+    expect((await partitionGlobalPlugins(dorkHome)).activate).toEqual([]);
   });
 
   it.each(['.dork/data/run.sh', '.dork/secrets.json', '.dork/install-metadata.json'])(
