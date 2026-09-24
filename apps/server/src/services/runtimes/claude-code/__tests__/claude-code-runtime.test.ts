@@ -124,15 +124,22 @@ vi.mock('../../../core/event-fan-out.js', () => ({
 }));
 // Mock the dynamic imports refreshActivatedPlugins() pulls in so the plugin-set
 // swap is deterministic and never touches the real filesystem.
-const { _mockListEnabledPluginNames, _mockBuildPluginsArray } = vi.hoisted(() => ({
-  _mockListEnabledPluginNames: vi.fn().mockResolvedValue([]),
-  _mockBuildPluginsArray: vi.fn().mockResolvedValue([]),
-}));
+const { _mockListEnabledPluginNames, _mockListConsentedPluginNames, _mockBuildPluginsArray } =
+  vi.hoisted(() => ({
+    _mockListEnabledPluginNames: vi.fn().mockResolvedValue([]),
+    _mockListConsentedPluginNames: vi.fn().mockResolvedValue([]),
+    _mockBuildPluginsArray: vi.fn().mockResolvedValue([]),
+  }));
 vi.mock('../../../../lib/dork-home.js', () => ({
   resolveDorkHome: vi.fn().mockReturnValue('/tmp/dorkos-test'),
 }));
 vi.mock('../../../marketplace/installed-scanner.js', () => ({
   listEnabledPluginNames: _mockListEnabledPluginNames,
+}));
+// Which global packages a person approved is decided in the marketplace layer
+// (DOR-2306); the runtime must hand the SDK that list and nothing wider.
+vi.mock('../../../marketplace/global-plugin-consent.js', () => ({
+  listConsentedPluginNames: _mockListConsentedPluginNames,
 }));
 vi.mock('../messaging/plugin-activation.js', () => ({
   buildClaudeAgentSdkPluginsArray: _mockBuildPluginsArray,
@@ -1580,7 +1587,21 @@ describe('ClaudeCodeRuntime', () => {
     beforeEach(() => {
       _mockBroadcast.mockClear();
       _mockListEnabledPluginNames.mockResolvedValue([]);
+      _mockListConsentedPluginNames.mockResolvedValue([]);
       _mockBuildPluginsArray.mockResolvedValue([]);
+    });
+
+    it('hands the SDK only the global packages a person approved (DOR-2306)', async () => {
+      // Purpose: every installed global package is a candidate, but one whose
+      // programs nobody approved must never reach a session.
+      _mockListEnabledPluginNames.mockResolvedValue(['approved', 'held-back']);
+      _mockListConsentedPluginNames.mockResolvedValue(['approved']);
+
+      await agentManager.refreshActivatedPlugins();
+
+      expect(_mockBuildPluginsArray).toHaveBeenCalledWith(
+        expect.objectContaining({ enabledPluginNames: ['approved'] })
+      );
     });
 
     it('broadcasts commands_changed so clients re-fetch the registry', async () => {

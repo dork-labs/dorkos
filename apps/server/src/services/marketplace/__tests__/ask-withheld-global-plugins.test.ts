@@ -140,6 +140,10 @@ describe('askAboutWithheldGlobalPlugins', () => {
   it('never raises a second card for a package whose card is already open', async () => {
     await installHooked('tool', 'echo done');
     const { gateway, requests } = answering('pending');
+    // Only the first card stays open; any second one expires at once, so a
+    // regression shows up as a second request rather than a loop.
+    gateway.consume = (token) =>
+      ({ outcome: token === 't1' ? 'pending' : 'expired' }) as ApprovalConsumeResult;
     let release: () => void = () => {};
     vi.spyOn(_internal, 'sleep').mockImplementationOnce(
       () =>
