@@ -73,12 +73,38 @@ export class BlobStoreError extends Error {
       | 'BLOB_NOT_FOUND'
       | 'BLOB_RANGE_NOT_SATISFIABLE'
       | 'BLOB_TOO_LARGE'
-      | 'BLOB_TYPE_REJECTED',
+      | 'BLOB_TYPE_REJECTED'
+      | 'BLOB_UNAVAILABLE',
     message: string
   ) {
     super(message);
     this.name = 'BlobStoreError';
   }
+}
+
+/**
+ * Whether a storage provider's error says to try again: a server-side fault, throttling, or
+ * a timeout. Provider SDKs mark these without a Node error code (the AWS SDK sets `$fault`,
+ * `$retryable`, and `$metadata.httpStatusCode`), so they are read here.
+ */
+export function isRetryableProviderError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const provider = error as {
+    name?: unknown;
+    $fault?: unknown;
+    $retryable?: unknown;
+    $metadata?: { httpStatusCode?: unknown };
+  };
+  const status = provider.$metadata?.httpStatusCode;
+  return (
+    provider.$fault === 'server' ||
+    Boolean(provider.$retryable) ||
+    (typeof status === 'number' && (status >= 500 || status === 429)) ||
+    (typeof provider.name === 'string' &&
+      /^(SlowDown|InternalError|ServiceUnavailable|RequestTimeout|TimeoutError|ThrottlingException)$/.test(
+        provider.name
+      ))
+  );
 }
 
 /** Backend-neutral byte store. Authorization and metadata lifetime belong to Postgres callers. */

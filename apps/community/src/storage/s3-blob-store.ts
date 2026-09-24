@@ -20,6 +20,7 @@ import type {
 import {
   assertNotAborted,
   BlobStoreError,
+  isRetryableProviderError,
   stageBlob,
   validateBlobKey,
   validateBlobRange,
@@ -81,6 +82,8 @@ export class S3BlobStore implements BlobStore {
       }
       if (input.signal?.aborted)
         throw new BlobStoreError('BLOB_ABORTED', 'Blob operation cancelled');
+      if (isRetryableProviderError(error))
+        throw new BlobStoreError('BLOB_UNAVAILABLE', 'Storage did not answer; try again');
       throw error;
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -140,6 +143,8 @@ export class S3BlobStore implements BlobStore {
       if (options.signal?.aborted)
         throw new BlobStoreError('BLOB_ABORTED', 'Blob operation cancelled');
       if (isMissing(error)) throw new BlobStoreError('BLOB_NOT_FOUND', 'Blob not found');
+      if (isRetryableProviderError(error))
+        throw new BlobStoreError('BLOB_UNAVAILABLE', 'Storage did not answer; try again');
       if (isRangeNotSatisfiable(error)) {
         throw new BlobStoreError('BLOB_RANGE_NOT_SATISFIABLE', 'Range is past the end of the blob');
       }
@@ -158,6 +163,8 @@ export class S3BlobStore implements BlobStore {
     } catch (error) {
       if (options.signal?.aborted)
         throw new BlobStoreError('BLOB_ABORTED', 'Blob operation cancelled');
+      if (isRetryableProviderError(error))
+        throw new BlobStoreError('BLOB_UNAVAILABLE', 'Storage did not answer; try again');
       throw error;
     }
   }

@@ -16,6 +16,7 @@ import {
   type BlobStore,
   type StoredBlob,
 } from '../storage/index.js';
+import { isRetryableProviderError } from '../storage/blob-store.js';
 import { cleanupBackoffSql } from '../storage/pending-deletions.js';
 import { openExport, verifiedFile, type OpenedExport } from './archive.js';
 import { checkManifest, ImportFailure, type ImportLimits } from './manifest.js';
@@ -392,6 +393,7 @@ function isTransient(error: unknown): boolean {
   // A missing object will stay missing; only storage that failed to answer may recover.
   if (error instanceof BlobStoreError)
     return error.code !== 'BLOB_TYPE_REJECTED' && error.code !== 'BLOB_NOT_FOUND';
+  if (isRetryableProviderError(error)) return true;
   const code = (error as { code?: unknown } | null)?.code;
   if (typeof code !== 'string') return false;
   // Node network errors, and Postgres connection, resource, and operator-intervention classes.
