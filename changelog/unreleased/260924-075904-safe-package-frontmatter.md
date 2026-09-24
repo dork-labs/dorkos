@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(security): refuse executable frontmatter in package markdown (DOR-2308)'
+  - 'fix(security): tighten the frontmatter wrapper after review (DOR-2308)'
+  - 'fix(security): read plugin skill frontmatter through the safe reader (DOR-2308)'
 ---
 
 ### Security
