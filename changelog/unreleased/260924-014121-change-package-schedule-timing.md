@@ -2,6 +2,7 @@
 covers:
   - "feat(server,db,shared): a person can change when a package's schedule runs (DOR-2302)"
   - "feat(client): the Schedules page marks and resets a package schedule's own timing (DOR-2302)"
+  - 'fix(server,client): review round for package schedule timing (DOR-2302)'
 ---
 
 ### Added
