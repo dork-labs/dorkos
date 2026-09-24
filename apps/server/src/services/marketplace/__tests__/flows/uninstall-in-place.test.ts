@@ -147,6 +147,25 @@ describe('in-place uninstall (DOR-2245)', () => {
     ).toContain('mine');
   });
 
+  // Purpose (code review 9): the .dork-old copy of an edited identity file is
+  // made for an uninstall that finishes; a rolled-back one leaves no copy.
+  it('removes the identity .dork-old copy when the uninstall rolls back', async () => {
+    const dorkHome = await home();
+    const root = path.join(dorkHome, 'plugins', 'pkg');
+    await installed(root, {
+      '.claude-plugin/plugin.json': '{"name":"pkg"}',
+      '.dork/extensions/ext/extension.json': '{}',
+    });
+    await put(root, '.claude-plugin/plugin.json', '{"name":"pkg","mine":true}');
+    const d = deps(dorkHome);
+    d.extensionManager.disable.mockRejectedValue(new Error('disable failed'));
+    await expect(new UninstallFlow(d).uninstall({ name: 'pkg' })).rejects.toThrow('disable failed');
+    expect(await readFile(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8')).toContain(
+      'mine'
+    );
+    expect(await exists(path.join(root, '.claude-plugin', 'plugin.json.dork-old'))).toBe(false);
+  });
+
   // Purpose: an untouched package leaves nothing, not even an empty .dork/data.
   it('leaves no folder behind for an untouched package', async () => {
     const dorkHome = await home();

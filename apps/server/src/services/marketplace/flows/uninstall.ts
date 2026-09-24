@@ -360,7 +360,7 @@ export class UninstallFlow {
     let agentRemoved: AgentRemovedSummary | undefined;
     try {
       await writeJournal(sibling, journal);
-      for (const move of await this.planMoves(root, record)) {
+      for (const move of await this.planMoves(root, record, { sibling, journal })) {
         await journaledMove({ root, sibling, journal, move });
       }
       journal.phase = 'side-effects';
@@ -430,7 +430,8 @@ export class UninstallFlow {
    */
   private async planMoves(
     root: string,
-    record: InstalledFiles | null
+    record: InstalledFiles | null,
+    journaled: { sibling: string; journal: UninstallJournal }
   ): Promise<{ path: string; unitFiles?: string[] }[]> {
     const ownedPaths = record?.ownedPaths ?? ['node_modules'];
     const installerFiles = [INSTALL_METADATA_POSIX_PATH];
@@ -485,6 +486,10 @@ export class UninstallFlow {
         if (!(await pathExists(abs))) continue;
         let saved = `${abs}.dork-old`;
         for (let n = 2; await pathExists(saved); n++) saved = `${abs}.dork-old.${n}`;
+        // Journaled before it is written, so a rollback removes it.
+        const rel = path.relative(root, saved).split(path.sep).join('/');
+        journaled.journal.savedCopies = [...(journaled.journal.savedCopies ?? []), rel];
+        await writeJournal(journaled.sibling, journaled.journal);
         await copyFile(abs, saved);
       }
     }

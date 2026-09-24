@@ -52,6 +52,12 @@ export const UninstallJournalSchema = z.object({
   phase: z.enum(['moving', 'side-effects', 'committed']),
   /** Set when the agent was unregistered, so a rollback can register it again. */
   agentUnregistered: z.boolean().optional(),
+  /**
+   * `.dork-old` copies of edited identity files this uninstall wrote into the
+   * root (root-relative). Logged before each is written; a rollback deletes
+   * them, since the originals come back.
+   */
+  savedCopies: z.array(z.string().min(1)).optional(),
 });
 
 /** See {@link UninstallJournalSchema}. */
@@ -206,8 +212,9 @@ export async function returnStrays(opts: {
 /**
  * Undo an uncommitted uninstall: rename every journaled move back, newest
  * first (so the identity files, moved last, return first), tolerating a move
- * that was logged but never made. Leaves the sibling on disk until every entry
- * is back, so a crash part-way is retried; then removes it.
+ * that was logged but never made, and delete the `.dork-old` identity copies
+ * it wrote. Leaves the sibling on disk until every entry is back, so a crash
+ * part-way is retried; then removes it.
  *
  * @param sibling - The uninstall sibling.
  * @param journal - Its journal.
@@ -220,6 +227,9 @@ export async function rollBackUninstall(sibling: string, journal: UninstallJourn
     if (await exists(to)) to = fsPath(journal.root, await freeSavedName(journal.root, move.path));
     await mkdir(path.dirname(to), { recursive: true });
     await rename(from, to);
+  }
+  for (const copy of journal.savedCopies ?? []) {
+    await rm(fsPath(journal.root, copy), { force: true });
   }
   await rm(sibling, { recursive: true, force: true });
 }
