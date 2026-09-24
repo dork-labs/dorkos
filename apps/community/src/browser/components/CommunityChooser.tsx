@@ -49,6 +49,8 @@ function describeChoice(membership: CommunityWireMembershipSummary, remembered: 
   if (deletionRecovery) return { available: true, deletionRecovery, status: 'Review deletion' };
   if (membership.lifecycle === 'archived')
     return { available: true, deletionRecovery, status: 'Read history' };
+  if (membership.lifecycle === 'held')
+    return { available: true, deletionRecovery, status: 'On hold: read only' };
   if (membership.lifecycle === 'active')
     return { available: true, deletionRecovery, status: remembered ? 'Last opened' : 'Open' };
   if (membership.lifecycle === 'suspended')

@@ -135,6 +135,8 @@ export const CommunityWireMembershipSummarySchema = z.strictObject({
   name: z.string().min(1),
   description: z.string().nullable(),
   lifecycle: CommunityAdminLifecycleSchema,
+  /** While held: the date after which the host plans to delete the community, if published. */
+  deletionNoticeAt: timestamp.nullable(),
   memberId: id,
   displayName: z.string().min(1),
   role: z.enum(['owner', 'admin', 'member']),
@@ -823,6 +825,7 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'MEMBER_LIMIT_REACHED',
   'STORAGE_LIMIT_REACHED',
   'AGENT_LIMIT_REACHED',
+  'COMMUNITY_HELD',
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;

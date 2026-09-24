@@ -520,6 +520,21 @@ describe('every lifecycle (AC-9)', () => {
       'suspend'
     );
   }
+  async function hold(s: Scene) {
+    await body(
+      await h.call(`/api/v1/host/communities/${s.communityId}/lifecycle`, {
+        method: 'PATCH',
+        cookie: host.cookie,
+        body: {
+          action: 'hold',
+          lifecycleVersion: await lifecycleVersion(s.communityId),
+          deletionNoticeAt: null,
+        },
+      }),
+      200,
+      'hold'
+    );
+  }
   async function requestDeletion(s: Scene) {
     const name = (await h.pool.query('SELECT name FROM communities WHERE id=$1', [s.communityId]))
       .rows[0].name;
@@ -538,6 +553,7 @@ describe('every lifecycle (AC-9)', () => {
     for (const [label, transition] of [
       ['archived', archive],
       ['suspended', suspend],
+      ['held', hold],
       ['deletion', async (s: Scene) => void (await body(await requestDeletion(s), 200, 'delete'))],
     ] as const) {
       const s = await scene(label);
@@ -554,6 +570,36 @@ describe('every lifecycle (AC-9)', () => {
       );
       expect(texts.rows, label).toEqual([{ text: 'This message was erased.' }]);
     }
+  });
+
+  it('accepts and completes membership and account erasures asked for while the community is held', async () => {
+    // Purpose: a host's hold stops a community growing; it must never stop a person leaving it.
+    const s = await scene('heldask');
+    await hold(s);
+    await requestErasure(s.p.cookie, s.communityId);
+    const email = (await h.pool.query('SELECT email FROM "user" WHERE id=$1', [s.q.userId])).rows[0]
+      .email;
+    await body(
+      await h.call('/api/v1/account/erasures', {
+        cookie: s.q.cookie,
+        body: { kind: 'account', confirmEmail: email, password: PASSWORD },
+      }),
+      201,
+      'account erasure while held'
+    );
+    await runErasures(h.pool, hoursFromNow(73));
+    const husks = await h.pool.query(
+      'SELECT id,display_name,user_id FROM members WHERE id=ANY($1::uuid[]) ORDER BY id',
+      [[s.p.memberId, s.q.memberId]]
+    );
+    expect(husks.rows.map((row) => [row.display_name, row.user_id])).toEqual([
+      ['Erased member', null],
+      ['Erased member', null],
+    ]);
+    expect(
+      (await h.pool.query('SELECT lifecycle FROM communities WHERE id=$1', [s.communityId])).rows[0]
+        .lifecycle
+    ).toBe('held');
   });
 
   it('lets the owner delete a suspended community, and a cancel restores the suspension', async () => {

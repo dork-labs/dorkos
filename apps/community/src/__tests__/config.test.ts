@@ -41,6 +41,17 @@ describe('community startup config', () => {
     expect(() => parseConfig({ ...valid, COMMUNITY_AGENTS_PER_OWNER: '101' })).toThrow();
   });
 
+  it('requires at least a week of notice before a host may delete a held community', () => {
+    // Purpose: fails if a host could configure a notice too short for an owner to export.
+    expect(parseConfig(valid).limits.hostDeletionNoticeDays).toBe(14);
+    expect(() => parseConfig({ ...valid, COMMUNITY_HOST_DELETION_NOTICE_DAYS: '6' })).toThrow();
+    expect(() => parseConfig({ ...valid, COMMUNITY_HOST_DELETION_NOTICE_DAYS: '366' })).toThrow();
+    expect(
+      parseConfig({ ...valid, COMMUNITY_HOST_DELETION_NOTICE_DAYS: '7' }).limits
+        .hostDeletionNoticeDays
+    ).toBe(7);
+  });
+
   it('selects filesystem storage and validates its persistent path', () => {
     expect(parseConfig(valid).storage).toEqual({
       kind: 'filesystem',

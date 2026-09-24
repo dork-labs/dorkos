@@ -7,13 +7,16 @@ export interface HostCommunityRow {
   id: string;
   name: string;
   description: string | null;
-  lifecycle: 'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
+  lifecycle: 'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
   lifecycle_version: number;
   settings_version: number;
   created_at: Date;
   owner_present: boolean;
   deletion_state: 'waiting' | 'deleting' | 'retrying' | null;
-  suspended_from_state?: 'active' | 'archived' | null;
+  suspended_from_state?: 'active' | 'archived' | 'held' | null;
+  held_from_state?: 'active' | 'archived' | null;
+  deletion_notice_at: Date | null;
+  deletion_requested_by: 'owner' | 'host' | null;
 }
 
 /** The host projection of one community row. */
@@ -27,13 +30,17 @@ export function projectCommunity(row: HostCommunityRow) {
     settingsVersion: row.settings_version,
     ownerPresent: row.owner_present,
     deletionState: row.deletion_state,
+    deletionNoticeAt: row.deletion_notice_at?.toISOString() ?? null,
+    deletionRequestedBy: row.deletion_requested_by,
     createdAt: row.created_at.toISOString(),
   };
 }
 
 /** Select every host-visible column; append a `WHERE` or `ORDER BY` for the rows wanted. */
 export const hostProjectionSql = `SELECT c.id,c.name,c.description,c.lifecycle,c.lifecycle_version,
-  c.settings_version,c.created_at,c.suspended_from_state,
+  c.settings_version,c.created_at,c.suspended_from_state,c.held_from_state,c.deletion_notice_at,
+  CASE WHEN c.delete_requested_by_host_actor IS NOT NULL THEN 'host'
+       WHEN c.delete_requested_by IS NOT NULL THEN 'owner' END AS deletion_requested_by,
   EXISTS(SELECT 1 FROM members m WHERE m.community_id=c.id AND m.role='owner' AND m.active) AS owner_present,
   j.state AS deletion_state
   FROM communities c LEFT JOIN community_deletion_jobs j ON j.community_id=c.id`;

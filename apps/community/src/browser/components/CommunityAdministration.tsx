@@ -11,16 +11,25 @@ type Settings = {
   admissionPolicy: 'invite_only' | 'closed';
   hasIcon: boolean;
   settingsVersion: number;
-  lifecycle: 'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
+  lifecycle: 'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
   lifecycleVersion: number;
 };
 type DeletionStatus = {
   communityId: string;
-  lifecycle: 'active' | 'archived' | 'deletion_pending';
+  lifecycle: 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
   lifecycleVersion: number;
   deleteAfter: string | null;
   state: 'waiting' | 'deleting' | 'retrying' | null;
   attempts: number;
+  requestedBy: 'owner' | 'host' | null;
+  returnsTo: 'archived' | 'suspended' | 'held' | null;
+};
+
+/** What a cancelled deletion returns to, said plainly. */
+const RETURNS_TO: Record<'archived' | 'suspended' | 'held', string> = {
+  archived: 'The community will return as an archive. People can read history after reconnecting.',
+  suspended: 'The community will return to its suspension. The host decides when it resumes.',
+  held: 'The community will return to the host’s hold. People can read it, and you can export it.',
 };
 type Conflict = { code?: string; message?: string; current?: Settings };
 type DialogKind = 'archive' | 'restore' | 'delete' | 'cancel-delete';
@@ -381,7 +390,11 @@ export function CommunityAdministration({
         setDeletion(null);
         await refresh();
       },
-      'Deletion cancelled. The community remains archived.',
+      deletion?.returnsTo === 'held'
+        ? 'Deletion cancelled. The community is on hold again.'
+        : deletion?.returnsTo === 'suspended'
+          ? 'Deletion cancelled. The community is suspended again.'
+          : 'Deletion cancelled. The community remains archived.',
       false,
       false
     );
@@ -426,20 +439,29 @@ export function CommunityAdministration({
           <p role="timer" className="eyebrow">
             {formatRemaining(deletion.deleteAfter, clock)}
           </p>
-          <p className="small muted">
-            Cleanup is {deletion.state ?? 'waiting'}
-            {deletion.attempts ? ` after ${deletion.attempts} attempts` : ''}. Cancelling keeps the
-            community archived and does not restore old credentials.
-          </p>
-          <button className="button" onClick={() => setDialog('cancel-delete')}>
-            Cancel deletion
-          </button>
+          {deletion.requestedBy === 'host' ? (
+            <p className="small muted">
+              The host started this deletion after the notice date it published. Only the host can
+              cancel it. The community can no longer be exported.
+            </p>
+          ) : (
+            <>
+              <p className="small muted">
+                Cleanup is {deletion.state ?? 'waiting'}
+                {deletion.attempts ? ` after ${deletion.attempts} attempts` : ''}. The community
+                cannot be exported while its deletion is pending.{' '}
+                {deletion.returnsTo ? RETURNS_TO[deletion.returnsTo] : ''} Cancelling does not
+                restore old credentials.
+              </p>
+              <button className="button" onClick={() => setDialog('cancel-delete')}>
+                Cancel deletion
+              </button>
+            </>
+          )}
         </section>
         {dialog === 'cancel-delete' && (
           <FocusDialog title="Cancel community deletion?" onClose={resetDialog} error={error}>
-            <p>
-              The community will return as an archive. People can read history after reconnecting.
-            </p>
+            <p>{RETURNS_TO[deletion.returnsTo ?? 'archived']}</p>
             <label className="field" htmlFor="cancel-delete-password">
               Password
               <input
@@ -480,6 +502,17 @@ export function CommunityAdministration({
         <div role="status" className="notice success admin-full-width">
           {message}
         </div>
+      )}
+      {current.lifecycle === 'held' && (
+        <section className="panel admin-full-width">
+          <h3>On hold</h3>
+          <p className="muted">
+            The host has put this community on hold. Members can read it, but no one can post, join,
+            or change settings. {owner && 'You can still export it or schedule its deletion. '}
+            Archive, restore, and ownership transfer are unavailable until the host releases the
+            hold.
+          </p>
+        </section>
       )}
       {current.lifecycle === 'archived' && (
         <section className="panel admin-full-width">
@@ -629,12 +662,14 @@ export function CommunityAdministration({
             Archive preserves history. Deletion permanently removes this community after seven days.
           </p>
           <div className="row flex-wrap gap-2">
-            <button
-              className="button danger"
-              onClick={() => setDialog(current.lifecycle === 'archived' ? 'restore' : 'archive')}
-            >
-              {current.lifecycle === 'archived' ? 'Restore community' : 'Archive community'}
-            </button>
+            {current.lifecycle !== 'held' && (
+              <button
+                className="button danger"
+                onClick={() => setDialog(current.lifecycle === 'archived' ? 'restore' : 'archive')}
+              >
+                {current.lifecycle === 'archived' ? 'Restore community' : 'Archive community'}
+              </button>
+            )}
             <button className="button danger" onClick={() => setDialog('delete')}>
               Schedule deletion
             </button>

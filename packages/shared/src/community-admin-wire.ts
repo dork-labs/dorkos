@@ -11,6 +11,7 @@ export const CommunityAdminLifecycleSchema = z.enum([
   'active',
   'archived',
   'suspended',
+  'held',
   'deletion_pending',
 ]);
 /** Community admission policy. */
@@ -26,6 +27,10 @@ export const CommunityAdminHostProjectionSchema = z.strictObject({
   settingsVersion: version,
   ownerPresent: z.boolean(),
   deletionState: z.enum(['waiting', 'deleting', 'retrying']).nullable(),
+  /** The published date after which the host may delete a held community. */
+  deletionNoticeAt: timestamp.nullable(),
+  /** Who asked for a pending deletion; the host cannot cancel or speed an owner's. */
+  deletionRequestedBy: z.enum(['owner', 'host']).nullable(),
   createdAt: timestamp,
 });
 
@@ -134,10 +139,30 @@ export const CommunityAdminSettingsUpdateRequestSchema = z
   })
   .refine((value) => Object.keys(value).length > 0);
 
-/** Host suspension transition uses the current lifecycle version. */
-export const CommunityAdminHostLifecycleRequestSchema = z.strictObject({
-  action: z.enum(['suspend', 'resume']),
+/**
+ * Host lifecycle transitions, each against the current lifecycle version. A hold makes a
+ * community read-only while its owner can still export it; a notice date is when the host may
+ * delete it at the earliest.
+ */
+export const CommunityAdminHostLifecycleRequestSchema = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('suspend'), lifecycleVersion: version }),
+  z.strictObject({ action: z.literal('resume'), lifecycleVersion: version }),
+  z.strictObject({
+    action: z.literal('hold'),
+    lifecycleVersion: version,
+    deletionNoticeAt: timestamp.nullable(),
+  }),
+  z.strictObject({ action: z.literal('release'), lifecycleVersion: version }),
+  z.strictObject({
+    action: z.literal('set_notice'),
+    lifecycleVersion: version,
+    deletionNoticeAt: timestamp.nullable(),
+  }),
+]);
+/** Host-started deletion of a held community whose notice date has passed. */
+export const CommunityAdminHostDeletionRequestSchema = z.strictObject({
   lifecycleVersion: version,
+  confirmIdSuffix: z.string().length(8),
 });
 
 /** Owner lifecycle mutation with recent password confirmation. */
@@ -163,6 +188,10 @@ export const CommunityAdminDeletionStatusSchema = z.strictObject({
   deleteAfter: timestamp.nullable(),
   state: z.enum(['waiting', 'deleting', 'retrying']).nullable(),
   attempts: z.int().nonnegative(),
+  /** Who asked for a pending deletion. Only the owner can cancel their own; only the host its. */
+  requestedBy: z.enum(['owner', 'host']).nullable(),
+  /** Where a cancel of a pending deletion returns the community. */
+  returnsTo: z.enum(['archived', 'suspended', 'held']).nullable(),
 });
 
 /** Host API key scopes. Host authority only; no scope reaches community content. */

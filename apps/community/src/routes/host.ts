@@ -5,15 +5,14 @@ import type { z } from 'zod';
 import {
   CommunityAdminCreateRequestSchema,
   CommunityAdminCreateResponseSchema,
-  CommunityAdminHostLifecycleRequestSchema,
   CommunityAdminHostProjectionSchema,
 } from '@dorkos/shared/community-admin-wire';
+import type { CommunityConfig } from '../config.js';
 import { transaction } from '../data.js';
 import {
   hostProjectionSql,
   parseHostCommunityId,
   projectCommunity,
-  revokeTenantAccess,
   type HostCommunityRow,
 } from '../host/communities.js';
 import {
@@ -145,16 +144,26 @@ async function createPendingCommunity(
 /** Register the host plane's community records: list, read, create, abandon, and lifecycle. */
 export function registerHostRoutes(
   app: Hono,
-  deps: { pool: Pool; blobStore: BlobStore; authority: HostAuthority; now: () => Date }
+  deps: {
+    pool: Pool;
+    config: CommunityConfig;
+    blobStore: BlobStore;
+    authority: HostAuthority;
+    now: () => Date;
+  }
 ): void {
-  const { pool, blobStore, authority, now } = deps;
+  const { pool, config, blobStore, authority, now } = deps;
 
   app.get('/host/communities', async (c) => {
     await authority.require(c, 'communities:read');
     const communities = await pool.query<HostCommunityRow>(
       `${hostProjectionSql} ORDER BY c.created_at,c.id`
     );
-    return c.json({ communities: communities.rows.map(projectCommunity) });
+    return c.json({
+      communities: communities.rows.map(projectCommunity),
+      // The least notice this host allows before deleting a held community, for its own page.
+      deletionNoticeDays: config.limits.hostDeletionNoticeDays,
+    });
   });
 
   app.get('/host/communities/:id', async (c) => {
@@ -262,56 +271,5 @@ export function registerHostRoutes(
       });
     });
     return c.body(null, 204);
-  });
-
-  app.patch('/host/communities/:id/lifecycle', async (c) => {
-    const actor = await authority.require(c, 'communities:lifecycle');
-    const body = await readJson(c, CommunityAdminHostLifecycleRequestSchema);
-    const communityId = parseHostCommunityId(c.req.param('id'));
-    const community = await transaction(pool, async (client) => {
-      const current = await client.query<HostCommunityRow>(
-        `${hostProjectionSql} WHERE c.id=$1 FOR UPDATE OF c`,
-        [communityId]
-      );
-      await assertHostActor(client, actor, now());
-      const row = current.rows[0];
-      if (!row) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
-      if (row.lifecycle_version !== body.lifecycleVersion) {
-        throw new ApiError(409, 'STATE_CONFLICT', 'Community lifecycle changed.');
-      }
-      let next: 'active' | 'archived' | 'suspended';
-      if (body.action === 'suspend') {
-        if (row.lifecycle !== 'active' && row.lifecycle !== 'archived') {
-          throw new ApiError(409, 'STATE_CONFLICT', 'This community cannot be suspended.');
-        }
-        next = 'suspended';
-        await revokeTenantAccess(client, row.id);
-        await client.query(
-          `UPDATE communities SET lifecycle='suspended',suspended_from_state=$2,
-             suspended_at=now(),lifecycle_version=lifecycle_version+1 WHERE id=$1`,
-          [row.id, row.lifecycle]
-        );
-      } else {
-        if (row.lifecycle !== 'suspended' || !row.suspended_from_state) {
-          throw new ApiError(409, 'STATE_CONFLICT', 'This community is not suspended.');
-        }
-        next = row.suspended_from_state;
-        await client.query(
-          `UPDATE communities SET lifecycle=$2,suspended_from_state=NULL,suspended_at=NULL,
-             lifecycle_version=lifecycle_version+1 WHERE id=$1`,
-          [row.id, next]
-        );
-      }
-      await recordHostAudit(client, actor, {
-        action: `community.${body.action}`,
-        communityId: row.id,
-        priorState: row.lifecycle,
-        nextState: next,
-        changedFields: ['lifecycle'],
-      });
-      return (await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [row.id]))
-        .rows[0];
-    });
-    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community));
   });
 }

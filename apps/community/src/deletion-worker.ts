@@ -199,8 +199,12 @@ export async function sweepCommunityDeletions(
       community.rows[0].lifecycle_version !== job.lifecycle_version
     )
       return false;
-    const locked = await client.query<{ created_at: Date; attempts: number }>(
-      `SELECT created_at,attempts FROM community_deletion_jobs
+    const locked = await client.query<{
+      created_at: Date;
+      attempts: number;
+      requested_by_host_actor: string | null;
+    }>(
+      `SELECT created_at,attempts,requested_by_host_actor FROM community_deletion_jobs
        WHERE community_id=$1 AND delete_after<=now() FOR UPDATE`,
       [job.community_id]
     );
@@ -250,7 +254,9 @@ export async function sweepCommunityDeletions(
     await client.query(
       `UPDATE communities SET lifecycle='pending_owner',icon_blob_key=NULL,icon_content_type=NULL,
          suspended_from_state=NULL,suspended_at=NULL,archived_at=NULL,
+         held_from_state=NULL,held_at=NULL,deletion_notice_at=NULL,
          delete_requested_at=NULL,delete_after=NULL,delete_requested_by=NULL,
+         delete_requested_by_host_actor=NULL,
          lifecycle_version=lifecycle_version+1 WHERE id=$1`,
       [job.community_id]
     );
@@ -306,9 +312,17 @@ export async function sweepCommunityDeletions(
     const now = new Date();
     await client.query(
       `INSERT INTO community_deletion_tombstones(
-         community_id,requested_at,completed_at,outcome,retry_count,expires_at
-       ) VALUES($1,$2,$3,'deleted',$4,$3::timestamptz+interval '30 days')`,
-      [job.community_id, locked.rows[0].created_at, now, locked.rows[0].attempts]
+         community_id,requested_at,completed_at,outcome,retry_count,expires_at,
+         requested_by,requested_by_host_actor
+       ) VALUES($1,$2,$3,'deleted',$4,$3::timestamptz+interval '30 days',$5,$6)`,
+      [
+        job.community_id,
+        locked.rows[0].created_at,
+        now,
+        locked.rows[0].attempts,
+        locked.rows[0].requested_by_host_actor ? 'host' : 'owner',
+        locked.rows[0].requested_by_host_actor,
+      ]
     );
     await client.query('DELETE FROM communities WHERE id=$1', [job.community_id]);
     return true;

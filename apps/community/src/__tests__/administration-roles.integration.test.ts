@@ -31,6 +31,7 @@ import { registerAdministrationRoutes } from '../routes/administration.js';
 import { registerHostRoutes } from '../routes/host.js';
 import { registerMembershipRoutes } from '../routes/memberships.js';
 import { registerHostLimitRoutes } from '../routes/host-limits.js';
+import { registerHostLifecycleRoutes } from '../routes/host-lifecycle.js';
 import { registerOwnerClaimRoutes } from '../routes/owner-claims.js';
 import { registerHostKeyRoutes } from '../routes/host-keys.js';
 import { createHostAuthority } from '../host/authority.js';
@@ -255,6 +256,45 @@ async function offlineKey(): Promise<{ id: string }> {
     });
     await client.query('COMMIT');
     return { id: issued.key.id };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * A claimed community already held by its host with a notice date in the past, so a host may
+ * delete it. Built in SQL: the matrix proves the deletion route's roles, not the hold's steps.
+ */
+async function heldPastNotice(): Promise<{ id: string; version: number }> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const userId = `held-owner-${randomUUID()}`;
+    await client.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
+      userId,
+      'Held Owner',
+      `${userId}@roles.test`,
+    ]);
+    const community = await client.query<{ id: string }>(
+      "INSERT INTO communities(name,lifecycle) VALUES('Held for deletion','pending_owner') RETURNING id"
+    );
+    const id = community.rows[0].id;
+    await client.query(
+      `INSERT INTO members(community_id,user_id,display_name,handle,role)
+       VALUES($1,$2,'Held Owner',$3,'owner')`,
+      [id, userId, `held-${id.slice(0, 8)}`]
+    );
+    const held = await client.query<{ lifecycle_version: number }>(
+      `UPDATE communities SET lifecycle='held',activated_at=now(),held_from_state='active',
+         held_at=now()-interval '30 days',deletion_notice_at=now()-interval '1 day',
+         lifecycle_version=3 WHERE id=$1 RETURNING lifecycle_version`,
+      [id]
+    );
+    await client.query('COMMIT');
+    return { id, version: held.rows[0].lifecycle_version };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -549,6 +589,8 @@ const actions: Action<unknown>[] = [
         // Metadata only: no member directory, content counts, or messages.
         expect(Object.keys(row).sort()).toEqual([
           'createdAt',
+          'deletionNoticeAt',
+          'deletionRequestedBy',
           'deletionState',
           'description',
           'id',
@@ -594,6 +636,8 @@ const actions: Action<unknown>[] = [
       // The same metadata-only projection as the list.
       expect(Object.keys(row).sort()).toEqual([
         'createdAt',
+        'deletionNoticeAt',
+        'deletionRequestedBy',
         'deletionState',
         'description',
         'id',
@@ -742,6 +786,49 @@ const actions: Action<unknown>[] = [
     effect: async (body) => {
       const page = JSON.parse(body.toString('utf8')) as { items: { communityId: string }[] };
       expect(page.items.map((item) => item.communityId)).toContain(alphaId);
+    },
+  }),
+  define<{ id: string; version: number }>({
+    rule: 'Delete a held community after its notice date: host operator only',
+    route: 'POST /host/communities/:id/deletion',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: heldPastNotice,
+    call: ({ id, version }) => ({
+      method: 'POST',
+      path: `/api/v1/host/communities/${id}/deletion`,
+      body: { lifecycleVersion: version, confirmIdSuffix: id.slice(-8) },
+    }),
+    effect: async (_body, _role, { id }) => {
+      const row = await pool.query(
+        'SELECT lifecycle,delete_requested_by_host_actor IS NOT NULL AS host FROM communities WHERE id=$1',
+        [id]
+      );
+      expect(row.rows).toEqual([{ lifecycle: 'deletion_pending', host: true }]);
+    },
+  }),
+  define<{ id: string }>({
+    rule: 'Cancel a host-started deletion: host operator only',
+    route: 'DELETE /host/communities/:id/deletion',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: async () => {
+      const held = await heldPastNotice();
+      await ok(
+        {
+          method: 'POST',
+          path: `/api/v1/host/communities/${held.id}/deletion`,
+          body: { lifecycleVersion: held.version, confirmIdSuffix: held.id.slice(-8) },
+        },
+        'founder',
+        200
+      );
+      return { id: held.id };
+    },
+    call: ({ id }) => ({ method: 'DELETE', path: `/api/v1/host/communities/${id}/deletion` }),
+    effect: async (_body, _role, { id }) => {
+      const row = await pool.query('SELECT lifecycle FROM communities WHERE id=$1', [id]);
+      expect(row.rows).toEqual([{ lifecycle: 'held' }]);
     },
   }),
   define<{ key: string }>({
@@ -1751,10 +1838,11 @@ it('classifies every registered route, and puts every host and settings route in
   const authority = createHostAuthority({ auth, pool, now, limitKeyMiss: () => undefined });
   // Only the route table is read here; no request ever runs.
   const unused = async () => undefined;
-  registerHostRoutes(modules, { pool, blobStore, authority, now });
+  registerHostRoutes(modules, { pool, config, blobStore, authority, now });
   registerOwnerClaimRoutes(modules, { pool, auth, config, authority, now });
   registerMembershipRoutes(modules, { pool, auth });
   registerHostLimitRoutes(modules, { pool, config, authority, now });
+  registerHostLifecycleRoutes(modules, { pool, config, blobStore, authority, now });
   registerHostKeyRoutes(modules, { pool, auth, authority, now, confirmPassword: unused });
   registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });
   const administration = [

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { transaction } from '../data.js';
 import { ApiError } from '../http.js';
+import { isReadOnlyLifecycle } from '../tenant-context.js';
 import type { BlobStore, StoredBlob } from './blob-store.js';
 
 /** Maximum time an attachment or export writer owns an active reservation. */
@@ -34,7 +35,8 @@ export async function reserveManagedBlob(
   const allowArchived = purpose === 'export' && options.allowArchived === true;
   if (
     !community ||
-    (community.lifecycle !== 'active' && !(allowArchived && community.lifecycle === 'archived'))
+    (community.lifecycle !== 'active' &&
+      !(allowArchived && isReadOnlyLifecycle(community.lifecycle)))
   ) {
     throw new ApiError(409, 'STATE_CONFLICT', 'This community is not accepting new files.');
   }
@@ -68,7 +70,7 @@ export async function prepareManagedBlobCommit(
   if (
     !community ||
     (community.lifecycle !== 'active' &&
-      !(reservation.allowArchived && community.lifecycle === 'archived')) ||
+      !(reservation.allowArchived && isReadOnlyLifecycle(community.lifecycle))) ||
     community.lifecycle_version !== reservation.lifecycleVersion
   ) {
     throw new ApiError(

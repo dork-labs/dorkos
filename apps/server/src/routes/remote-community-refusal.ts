@@ -131,6 +131,13 @@ export function communityRefusal(
         error: 'This community doesn’t accept that type of file.',
       };
     case 423:
+      if (remoteCode === 'COMMUNITY_HELD')
+        return {
+          status: 423,
+          code: 'COMMUNITY_HELD',
+          error:
+            'The host has put this community on hold. You can read it, but no one can post. Its owner can still export it.',
+        };
       return remoteCode === 'COMMUNITY_DELETION_PENDING'
         ? { status: 423, code: 'COMMUNITY_READ_ONLY', error: 'This community is being deleted.' }
         : {

@@ -41,6 +41,7 @@ Most people can keep the default limits. Restart the service after changing one.
 | `COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE`        |                      5 per IP |            100 per IP |
 | `COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`       |                     20 per IP |            100 per IP |
 | `COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`         | 5 wrong passwords per account |        20 per account |
+| `COMMUNITY_HOST_DELETION_NOTICE_DAYS`          |             14 days of notice | 365 days (at least 7) |
 
 ## Optional Google and GitHub sign-in
 

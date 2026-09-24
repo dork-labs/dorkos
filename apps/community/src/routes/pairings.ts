@@ -34,7 +34,7 @@ import {
 import type { ConfirmPassword } from '../password-confirmation.js';
 import { ApiError, json, readJson } from '../http.js';
 import { equalSecret, hashSecret, randomToken } from '../security.js';
-import { resolveCommunityContext } from '../tenant-context.js';
+import { isReadOnlyLifecycle, resolveCommunityContext } from '../tenant-context.js';
 
 const uuid = z.uuid();
 
@@ -69,9 +69,13 @@ async function lockPairingCommunity(
     [communityId]
   );
   const lifecycle = result.rows[0]?.lifecycle;
-  if (lifecycle === 'active' || (lifecycle === 'archived' && allowArchivedRead)) return lifecycle;
+  if (lifecycle === 'active') return lifecycle;
+  // A held community pairs exactly as an archived one: read-only, history only.
+  if (isReadOnlyLifecycle(lifecycle) && allowArchivedRead) return 'archived';
   if (lifecycle === 'archived')
     throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'Archived communities accept read-only pairing.');
+  if (lifecycle === 'held')
+    throw new ApiError(423, 'COMMUNITY_HELD', 'Held communities accept read-only pairing.');
   if (lifecycle === 'suspended')
     throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This community is suspended.');
   if (lifecycle === 'deletion_pending')
@@ -101,7 +105,8 @@ async function lockRevocationMember(
 ): Promise<void> {
   const community = await client.query<{ lifecycle: string }>(
     `SELECT lifecycle FROM communities
-     WHERE id=$1 AND lifecycle IN ('active','archived','suspended','deletion_pending') FOR SHARE`,
+     WHERE id=$1 AND lifecycle IN ('active','archived','suspended','held','deletion_pending')
+     FOR SHARE`,
     [actor.community_id]
   );
   if (!community.rowCount)
@@ -200,7 +205,9 @@ export function registerPairingRoutes(
     const expiry = new Date(Date.now() + 600_000);
     const community = await resolveCommunityContext(c, pool);
     const archivedRead =
-      community.qualified && community.lifecycle === 'archived' && exactArchivedRead(body.scopes);
+      community.qualified &&
+      isReadOnlyLifecycle(community.lifecycle) &&
+      exactArchivedRead(body.scopes);
     await transaction(pool, async (client) => {
       await lockPairingCommunity(client, community.communityId, archivedRead);
       await client.query(
@@ -522,7 +529,9 @@ export function registerPairingRoutes(
         lifecycle: 'active' | 'archived';
         created_at: Date;
       }>(
-        `SELECT g.id,g.member_id,g.scopes,g.install_name,g.history_only,g.created_at,c.lifecycle
+        // A hold reads as an archive to installations, which know only that word.
+        `SELECT g.id,g.member_id,g.scopes,g.install_name,g.history_only,g.created_at,
+                CASE WHEN c.lifecycle='held' THEN 'archived' ELSE c.lifecycle END AS lifecycle
          FROM connection_grants g JOIN communities c ON c.id=g.community_id
          WHERE g.member_id=$1 AND g.community_id=$2 AND g.revoked_at IS NULL
          ORDER BY g.created_at,g.id`,

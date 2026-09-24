@@ -10,6 +10,7 @@ import {
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
 import {
+  communityHeld,
   lockActiveCommunity,
   requireLiveRole,
   requireMember,
@@ -187,6 +188,8 @@ export function registerMemberRoutes(
         'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR UPDATE',
         [actor.community_id]
       );
+      // Ownership cannot move during a host's hold; only the host can lift it.
+      if (community.rows[0]?.lifecycle === 'held') throw communityHeld();
       if (
         community.rows[0]?.lifecycle !== 'active' ||
         community.rows[0].lifecycle_version !== body.lifecycleVersion
