@@ -8,6 +8,8 @@ Point your domain at a reverse proxy that terminates HTTPS and forwards requests
 
 Allow streaming responses on channel event routes. Disable response buffering and caching for `/api`; preserve cookies and `Last-Event-ID`. Set the proxy’s idle timeout above the event heartbeat interval. Allow request bodies large enough for your configured attachment limit. Test a live channel through the public address, including reconnecting after briefly disconnecting the browser.
 
+Limits that count attempts per caller (sign-up, first-host setup, invitation previews, pairing, failed host API keys, and web-address lookups) count by network address. Behind a proxy the server sees only the proxy's address, so every caller shares one limit. If your proxy always sets a header to the caller's address, name it in `COMMUNITY_TRUSTED_PROXY_HEADER` (for example `Fly-Client-IP` on Fly, or `X-Forwarded-For`), and each caller gets their own limit again. When the header holds a list, the last address counts, because that is the one your proxy added. Set it only when every request reaches the server through that proxy; otherwise anyone could send the header and choose their own limit.
+
 The supplied Compose file publishes port 6481 on all host interfaces. If the proxy runs on this host, change that binding to `127.0.0.1:6481:6481`. If it runs in Docker, put both services on a private Docker network and remove the public port binding.
 
 ## Back up both the database and files
@@ -115,7 +117,7 @@ docker compose -f apps/community/compose.yml run --rm --no-deps -T community \
 
 `list` shows every key without its secret, and `revoke <id>` stops one at once. Anyone who can run these commands already controls the database, so treat that access like the database password. Each command writes a host audit row.
 
-Failed key attempts are limited per network address (`COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`). The server sees the address that connected to it, so behind a reverse proxy every caller shares the proxy's address and one limit. A program that keeps sending a wrong key can then briefly block other programs' failed attempts; programs with a valid key are never blocked.
+Failed key attempts are limited per network address (`COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`). Behind a reverse proxy, set `COMMUNITY_TRUSTED_PROXY_HEADER` (see the start of this guide); without it every caller shares the proxy's address and one limit, and a program that keeps sending a wrong key can briefly block other programs' failed attempts. Programs with a valid key are never blocked.
 
 Wrong passwords work differently. Leaving, disconnecting all installations, transferring ownership, exporting, archiving, deleting, and issuing or replacing a host key all ask for the person's password. Wrong passwords count per account, not per address (`COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`). After too many in a minute, that account must wait the rest of the minute, even with the right password. Everyone else behind the same proxy is unaffected.
 
@@ -134,6 +136,10 @@ When you must stop a community without destroying it, for example while you look
 If you intend to delete a held community, publish a deletion notice: a date at least `COMMUNITY_HOST_DELETION_NOTICE_DAYS` away (14 days unless you change it; never fewer than 7). Members see the date on every channel, with a reminder that the owner can export until then. After the date passes, **Delete** asks for the last eight characters of the community's ID and schedules the same seven-day deletion an owner's request does; you can cancel it during those seven days, and the owner cannot. A suspended community cannot be deleted this way, because its owner could not export: hold it with a notice date first.
 
 Before you roll back to a release without holds, release every hold and cancel every deletion you started. Older releases do not know the held state.
+
+## Web addresses
+
+Give a community a short **web address** under **Web address** on its host record, so people can open it at `https://your-host/<name>`. Changing the address keeps the old one working and moves visitors to the new one; no other community can take it. Release an old address only on purpose, for example after a trademark request. A released address, or the address of a deleted community, stays unavailable for `COMMUNITY_SHORT_NAME_COOLOFF_DAYS` (90 days unless you change it). Rotating `COMMUNITY_AUTH_SECRET` ends those cool-offs early. To keep names for yourself, list them in `COMMUNITY_RESERVED_SHORT_NAMES`, separated by commas. If a community already has an address that later becomes reserved, by an upgrade or by your own list, that address stops opening it; the server names each such community in its log when it starts, so you can give it another.
 
 ## Erasure requests
 

@@ -6,6 +6,8 @@ import { createCommunityApp } from './app.js';
 import { parseConfig } from './config.js';
 import { migrate } from './migrate.js';
 import { createSignalHandler, createStop } from './shutdown.js';
+import { reservedBoundShortNames, shortNameHoldKey } from './host/short-names.js';
+import { registerShortNamePages } from './short-names/pages.js';
 import { createBlobStore } from './storage/index.js';
 import { sweepExpiredAttachments } from './routes/attachments.js';
 import { sweepExpiredExports } from './routes/exports.js';
@@ -52,6 +54,21 @@ app.get(
   '/c/:communityId/*',
   serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
 );
+registerShortNamePages(app, {
+  indexPath: fileURLToPath(new URL('../dist/index.html', import.meta.url)),
+  reservedNames: config.reservedShortNames,
+});
+// A name a community already holds may have become reserved since, by an upgrade or the host's
+// own list; that address no longer opens the community, so say so where the host will see it.
+for (const bound of await reservedBoundShortNames(pool, config.reservedShortNames)) {
+  console.warn(
+    `Community ${bound.communityId} has the web address /${bound.shortName}, which is now reserved and no longer opens it. Give the community another address on the host page.`
+  );
+}
+const shortNameHolds = {
+  key: shortNameHoldKey(config.authSecret),
+  cooloffDays: config.limits.shortNameCooloffDays,
+};
 const server = serve({ fetch: app.fetch, port: config.port });
 const cleanup = setInterval(() => {
   void sweepExpiredAttachments(pool, blobStore).catch((error: unknown) => {
@@ -78,12 +95,14 @@ const cleanup = setInterval(() => {
       error instanceof Error ? error.name : 'unknown'
     );
   });
-  void sweepCommunityDeletions(pool, blobStore).catch((error: unknown) => {
-    console.error(
-      'Community deletion unavailable',
-      error instanceof Error ? error.name : 'unknown'
-    );
-  });
+  void sweepCommunityDeletions(pool, blobStore, undefined, { shortNameHolds }).catch(
+    (error: unknown) => {
+      console.error(
+        'Community deletion unavailable',
+        error instanceof Error ? error.name : 'unknown'
+      );
+    }
+  );
   void sweepCommunityDeletionTombstones(pool).catch((error: unknown) => {
     console.error(
       'Community deletion receipt cleanup unavailable',
