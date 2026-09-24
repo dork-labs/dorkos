@@ -91,7 +91,7 @@ describe('parseInstallArgs', () => {
 
   it('throws on unknown option', () => {
     expect(() => parseInstallArgs(['demo-pkg', '--nope'])).toThrow(
-      /Unknown option for 'install': --nope/
+      /Unknown option for 'marketplace install': --nope/
     );
   });
 });
