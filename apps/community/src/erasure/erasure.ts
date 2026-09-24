@@ -264,17 +264,29 @@ async function eraseFiles(target: Target): Promise<void> {
 
 async function deleteExports(target: Target): Promise<void> {
   await withMember(target, async (client) => {
-    // Every live archive in the community holds this person's data. The rows go too: an
-    // archive row that still names its blob would keep the cleanup sweep from deleting it.
-    const deleted = await client.query<{ blob_key: string }>(
-      'DELETE FROM export_archives WHERE community_id=$1 AND deleted_at IS NULL RETURNING blob_key',
+    // Every ready archive in the community holds this person's data. The rows go too: an
+    // archive row that still names its blob would keep the cleanup sweep from deleting it. A
+    // version 2 archive's blobs are its segments, which cascade away with the row, so their
+    // keys are read and queued first. Jobs still in progress are left to their rebuild, which
+    // sees this erasure's redaction rows and version bumps before it can commit.
+    const ready = await client.query<{ id: string; blob_key: string | null }>(
+      `SELECT id,blob_key FROM export_archives
+       WHERE community_id=$1 AND state='ready' AND deleted_at IS NULL FOR UPDATE`,
       [target.communityId]
     );
-    await queueBlobs(
-      client,
-      target.communityId,
-      deleted.rows.map((row) => row.blob_key)
+    const ids = ready.rows.map((row) => row.id);
+    const segments = await client.query<{ blob_key: string }>(
+      'SELECT blob_key FROM export_segments WHERE community_id=$1 AND export_id=ANY($2::uuid[])',
+      [target.communityId, ids]
     );
+    await queueBlobs(client, target.communityId, [
+      ...ready.rows.flatMap((row) => (row.blob_key ? [row.blob_key] : [])),
+      ...segments.rows.map((row) => row.blob_key),
+    ]);
+    await client.query('DELETE FROM export_archives WHERE community_id=$1 AND id=ANY($2::uuid[])', [
+      target.communityId,
+      ids,
+    ]);
     await bumpContentVersion(client, target.communityId);
   });
 }
@@ -456,7 +468,8 @@ async function applyHusk(
       `SELECT 1 WHERE $3::boolean
          OR EXISTS (SELECT 1 FROM entries WHERE ${AUTHORED_ENTRY})
          OR EXISTS (SELECT 1 FROM attachments WHERE ${AUTHORED_ATTACHMENT})
-         OR EXISTS (SELECT 1 FROM export_archives WHERE community_id=$1 AND deleted_at IS NULL)
+         OR EXISTS (SELECT 1 FROM export_archives
+           WHERE community_id=$1 AND state='ready' AND deleted_at IS NULL)
          OR EXISTS (SELECT 1 FROM connection_grants WHERE member_id=$2 AND community_id=$1)
          OR EXISTS (SELECT 1 FROM agents WHERE owner_member_id=$2 AND community_id=$1 AND active)`,
       [target.communityId, target.memberId, member.active]

@@ -11,7 +11,8 @@ import { reservedBoundShortNames, shortNameHoldKey } from './host/short-names.js
 import { registerShortNamePages } from './short-names/pages.js';
 import { createBlobStore } from './storage/index.js';
 import { sweepExpiredAttachments } from './routes/attachments.js';
-import { sweepExpiredExports } from './routes/exports.js';
+import { sweepExpiredExports } from './exports/sweep.js';
+import { startExportWorker } from './exports/worker.js';
 import { sweepExpiredAdmissions } from './routes/invites.js';
 import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './deletion-worker.js';
@@ -151,6 +152,15 @@ const erasures = setInterval(() => {
     });
 }, ERASURE_POLL_MS);
 erasures.unref();
-const onSignal = createSignalHandler(createStop({ server, pool, timers: [cleanup, erasures] }));
+// A job a stopped replica leaves behind is picked up by any replica once its lease expires.
+const exports = startExportWorker({
+  pool,
+  blobStore,
+  settings: config.exports,
+  concurrency: config.exports.concurrency,
+});
+const onSignal = createSignalHandler(
+  createStop({ server, pool, timers: [cleanup, erasures, exports] })
+);
 process.on('SIGINT', onSignal);
 process.on('SIGTERM', onSignal);

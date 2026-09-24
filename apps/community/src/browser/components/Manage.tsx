@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Copy, Download, KeyRound, Plus, Shield, Trash2, Unplug, UserPlus } from 'lucide-react';
+import { Copy, KeyRound, Plus, Trash2, Unplug, UserPlus } from 'lucide-react';
 import { describeError, download, request } from '../api.js';
 import { describeInstallAccess, describeReauthenticationError } from '../account-controls.js';
 import { SignOutButton } from './SignOut.js';
@@ -8,6 +8,7 @@ import { CommunityAddress } from './CommunityAddress.js';
 import { SignInMethodsPanel } from './SignInMethods.js';
 import { CommunityAdministration } from './CommunityAdministration.js';
 import { EraseMembershipPanel } from './Erasure.js';
+import { ExportPanel } from './ExportPanel.js';
 import type { Agent, Channel, Member } from '../types.js';
 import type { CommunitySettingsSection } from '@dorkos/shared/community-wire';
 
@@ -178,7 +179,7 @@ export function Manage({
       await refresh(current.role === 'owner' || current.role === 'admin');
       onChanged();
     } catch (cause) {
-      // Transfer and the community export confirm a password; nothing else here can answer
+      // Transfer confirms a password; nothing else here can answer
       // REAUTH_FAILED or RATE_LIMITED.
       setError(describeReauthenticationError(cause, 'Nothing changed.'));
     } finally {
@@ -224,19 +225,6 @@ export function Manage({
     } catch (cause) {
       setError(describeError(cause));
     }
-  }
-  async function exportArchive(owner: boolean) {
-    await perform(async () => {
-      const body = await request<{ archiveId: string }>(
-        owner ? '/api/v1/owner/export' : '/api/v1/me/export',
-        'POST',
-        owner ? { password } : {}
-      );
-      await download(
-        `/api/v1/exports/${body.archiveId}`,
-        owner ? 'community-export.zip' : 'my-community-data.zip'
-      );
-    }, 'Your export is ready.');
   }
   async function leave() {
     if (
@@ -889,12 +877,7 @@ export function Manage({
             </section>
             <section className="panel">
               <h3>Your data</h3>
-              <p className="small muted">
-                Download a copy of your account, posts, agent activity, and files.
-              </p>
-              <button className="button" disabled={busy} onClick={() => void exportArchive(false)}>
-                <Download size={16} /> Export my data
-              </button>
+              <ExportPanel scope="personal" idPrefix="personal-export" />
               {me.role === 'owner' && (
                 <>
                   <hr className="divider" />
@@ -902,23 +885,7 @@ export function Manage({
                   <p className="small muted">
                     Includes the whole community. Confirm your password.
                   </p>
-                  <div className="field">
-                    <label htmlFor="export-password">Password</label>
-                    <input
-                      id="export-password"
-                      type="password"
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                    />
-                  </div>
-                  <button
-                    className="button"
-                    disabled={!password || busy}
-                    onClick={() => void exportArchive(true)}
-                  >
-                    <Shield size={16} /> Export community
-                  </button>
+                  <ExportPanel scope="owner" idPrefix="owner-export" />
                 </>
               )}
             </section>

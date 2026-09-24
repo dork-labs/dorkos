@@ -29,6 +29,7 @@ import {
   requestErasure as requestFor,
   shapeDigest,
 } from './member-erasure-scenes.js';
+import { drainExports, openArchive } from './export-test-helpers.js';
 
 // Purpose: crash safety and idempotence (AC-8), the export and upload races (AC-4), lock
 // behaviour (AC-11), pairing cleanup, and re-applying erasures after a backup restore (AC-12).
@@ -37,19 +38,9 @@ let h: TenancyHarness;
 let host: { cookie: string; communityId: string };
 const scene = (label: string) => makeScene(h, host.cookie, label);
 const requestErasure = (cookie: string, communityId: string) => requestFor(h, cookie, communityId);
-let exportGate: { entered: () => void; release: Promise<void> } | null = null;
 
 beforeAll(async () => {
-  h = await startTenancyHarness('erasurerecovery', {
-    hooks: {
-      afterExportSnapshot: async () => {
-        const gate = exportGate;
-        if (!gate) return;
-        gate.entered();
-        await gate.release;
-      },
-    },
-  });
+  h = await startTenancyHarness('erasurerecovery');
   host = await bootstrapHost(h, 'Hana Host', 'hana@host.test');
 }, 60_000);
 
@@ -258,51 +249,85 @@ describe('crash and repeat (AC-8)', { timeout: 120_000 }, () => {
 });
 
 describe('files and export races (AC-4)', () => {
-  it('refuses an export snapshotted before the erasure and committed after it', async () => {
+  /** Ask for an owner export in a scene and return its id. */
+  async function ownerExport(s: Awaited<ReturnType<typeof scene>>): Promise<string> {
+    const created = await body<{ export: { id: string } }>(
+      await h.call(`${s.base}/owner/export`, {
+        cookie: s.owner.cookie,
+        body: { password: PASSWORD },
+      }),
+      202,
+      'owner export'
+    );
+    return created.export.id;
+  }
+
+  /** The archive's member row and messages for one person. */
+  async function exportedPerson(
+    s: Awaited<ReturnType<typeof scene>>,
+    exportId: string,
+    memberId: string
+  ) {
+    const response = await h.call(`${s.base}/exports/${exportId}/archive`, {
+      cookie: s.owner.cookie,
+    });
+    expect(response.status).toBe(200);
+    const archive = await openArchive(Buffer.from(await response.arrayBuffer()));
+    return {
+      member: archive
+        .rows<{ id: string; display_name: string; email: string | null }>('members')
+        .find((row) => row.id === memberId),
+      entries: archive
+        .rows<{ author_member_id: string | null; removal: string | null }>('entries')
+        .filter((row) => row.author_member_id === memberId),
+    };
+  }
+
+  // Purpose (AC-4, on the job model): an export whose segments were written before an erasure
+  // never commits them unchanged: the erasure's redaction rows and version bumps make it
+  // rebuild, so the archive holds the husk and tombstones only. Fails if a pre-erasure segment
+  // or member row reaches the finished archive.
+  it('never commits content an erasure changed after the export read it', async () => {
     const s = await scene('exportrace');
     await requestErasure(s.p.cookie, s.communityId);
-    let entered!: () => void;
-    const reached = new Promise<void>((resolve) => (entered = resolve));
-    let release!: () => void;
-    exportGate = { entered, release: new Promise<void>((resolve) => (release = resolve)) };
-    const blobsBefore = new Set(await readdir(storageDirectory(h)));
-    const pending = h.call(`${s.base}/owner/export`, {
-      cookie: s.owner.cookie,
-      body: { password: PASSWORD },
+    const exportId = await ownerExport(s);
+    let erased = false;
+    await drainExports(h.pool, h.blobStore, {
+      hooks: {
+        afterSegment: async ({ kind }) => {
+          if (kind !== 'data' || erased) return;
+          erased = true;
+          await runErasures(h.pool, hoursFromNow(73));
+        },
+      },
     });
-    await reached;
-    exportGate = null;
-    await runErasures(h.pool, hoursFromNow(73));
-    release();
-    const response = await pending;
-    expect(response.status).toBe(409);
-    expect((await response.json()).message).toContain('changed while this export was being made');
-    await drainCleanup(h);
-    const added = (await readdir(storageDirectory(h))).filter((key) => !blobsBefore.has(key));
-    expect(added).toEqual([]);
-    expect(
-      (await h.pool.query('SELECT 1 FROM export_archives WHERE community_id=$1', [s.communityId]))
-        .rowCount
-    ).toBe(0);
+    expect(erased).toBe(true);
+    const exported = await exportedPerson(s, exportId, s.p.memberId);
+    expect(exported.member).toMatchObject({ display_name: 'Erased member', email: null });
+    expect(exported.entries.length).toBeGreaterThan(0);
+    expect(exported.entries.every((row) => row.removal === 'erased')).toBe(true);
   });
 
-  it('refuses an export whose commit waits on the seal, because the seal bumps in its own transaction', async () => {
+  // Purpose (AC-4): the seal bumps the content version in its own transaction, so an export
+  // whose final commit waits on it goes round again and holds the husk. Fails if the tail
+  // commits the member as they were before the seal.
+  it('rebuilds an export whose commit waits on the seal, because the seal bumps in its own transaction', async () => {
     const s = await scene('sealrace');
     await requestErasure(s.p.cookie, s.communityId);
-    let response: Promise<Response> | undefined;
+    const exportId = await ownerExport(s);
+    let job: Promise<string[]> | undefined;
     await runErasures(h.pool, hoursFromNow(73), {
       hooks: {
         inBatch: async (step) => {
-          if (step !== 'seal') return;
-          response = h.call(`${s.base}/owner/export`, {
-            cookie: s.owner.cookie,
-            body: { password: PASSWORD },
-          });
+          if (step !== 'seal' || job) return;
+          job = drainExports(h.pool, h.blobStore);
           await waitForLockWaiters(h, 1, 'community_content_versions');
         },
       },
     });
-    expect((await response!).status).toBe(409);
+    expect(await job!).toEqual([exportId]);
+    const exported = await exportedPerson(s, exportId, s.p.memberId);
+    expect(exported.member).toMatchObject({ display_name: 'Erased member' });
   });
 
   it('refuses an upload that started before the erasure and committed after it', async () => {

@@ -11,11 +11,14 @@ import {
   primaryKey,
   check,
   foreignKey,
+  jsonb,
+  customType,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 const time = (name: string) => timestamp(name, { withTimezone: true }).notNull().defaultNow();
+const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
 
 /** Immutable identity and display record for this independent deployment. */
 export const communities = pgTable(
@@ -931,7 +934,11 @@ export const attachments = pgTable(
     }),
   ]
 );
-/** One-hour private export lifecycle; bytes remain in the configured BlobStore. */
+/**
+ * One export: a background job while `queued` or `building`, then a private archive until it
+ * expires. Version 1 rows hold one blob in `blobKey`; version 2 rows keep their blobs in
+ * {@link exportSegments}.
+ */
 export const exportArchives = pgTable(
   'export_archives',
   {
@@ -943,30 +950,142 @@ export const exportArchives = pgTable(
       .notNull()
       .references(() => members.id),
     scope: text('scope').notNull(),
-    blobKey: text('blob_key').notNull().unique(),
-    byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
+    blobKey: text('blob_key').unique(),
+    byteSize: bigint('byte_size', { mode: 'number' }),
     createdAt: time('created_at'),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     cleanupAttempts: integer('cleanup_attempts').notNull().default(0),
     cleanupNextAttemptAt: timestamp('cleanup_next_attempt_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
-    /** Community content version at snapshot; NULL on rows written before erasure existed. */
+    /** Community content version at snapshot; set only on version 1 rows written after erasure. */
     contentVersion: bigint('content_version', { mode: 'number' }),
+    formatVersion: integer('format_version').notNull().default(1),
+    state: text('state').notNull().default('ready'),
+    /** max(seq) per exported channel when the job started. */
+    watermark: jsonb('watermark'),
+    startRedactionId: bigint('start_redaction_id', { mode: 'number' }),
+    lastCheckedRedactionId: bigint('last_checked_redaction_id', { mode: 'number' }),
+    verifiedContentVersion: bigint('verified_content_version', { mode: 'number' }),
+    rebuildPasses: integer('rebuild_passes').notNull().default(0),
+    progressDone: bigint('progress_done', { mode: 'number' }).notNull().default(0),
+    progressTotal: bigint('progress_total', { mode: 'number' }),
+    dataComplete: boolean('data_complete').notNull().default(false),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+    deadlineAt: timestamp('deadline_at', { withTimezone: true }),
+    readyAt: timestamp('ready_at', { withTimezone: true }),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    failureCode: text('failure_code'),
   },
   (table) => [
     uniqueIndex('export_archives_community_id_unique').on(table.communityId, table.id),
     check('export_archives_scope', sql`${table.scope} IN ('personal','owner')`),
+    check('export_archives_format_version', sql`${table.formatVersion} IN (1,2)`),
+    check(
+      'export_archives_state',
+      sql`${table.state} IN ('queued','building','ready','failed','cancelled')`
+    ),
+    check(
+      'export_archives_blob_key_format',
+      sql`(${table.formatVersion} = 1) = (${table.blobKey} IS NOT NULL)`
+    ),
+    check(
+      'export_archives_ready_fields',
+      sql`(${table.state} = 'ready') = (${table.byteSize} IS NOT NULL AND ${table.expiresAt} IS NOT NULL)`
+    ),
+    check(
+      'export_archives_version_one_ready',
+      sql`${table.formatVersion} = 2 OR ${table.state} = 'ready'`
+    ),
+    check(
+      'export_archives_ended',
+      sql`(${table.state} IN ('failed','cancelled')) = (${table.endedAt} IS NOT NULL)`
+    ),
+    check(
+      'export_archives_failure',
+      sql`(${table.state} = 'failed') = (${table.failureCode} IS NOT NULL)`
+    ),
+    check('export_archives_failure_code', sql`${table.failureCode} ~ '^[A-Z][A-Z0-9_]{0,63}$'`),
+    check('export_archives_rebuild_passes', sql`${table.rebuildPasses} >= 0`),
+    check(
+      'export_archives_progress',
+      sql`${table.progressDone} >= 0 AND (${table.progressTotal} IS NULL OR ${table.progressTotal} >= 0)`
+    ),
     index('export_archives_community_idx').on(table.communityId),
     index('export_archives_expiry_idx')
       .on(table.cleanupNextAttemptAt, table.expiresAt, table.id)
       .where(sql`${table.deletedAt} IS NULL`),
+    uniqueIndex('export_archives_open_owner_unique')
+      .on(table.communityId)
+      .where(sql`${table.scope} = 'owner' AND ${table.state} IN ('queued','building')`),
+    uniqueIndex('export_archives_open_personal_unique')
+      .on(table.requesterMemberId)
+      .where(sql`${table.scope} = 'personal' AND ${table.state} IN ('queued','building')`),
+    index('export_archives_due_idx')
+      .on(table.nextAttemptAt, table.createdAt)
+      .where(sql`${table.state} IN ('queued','building')`),
+    index('export_archives_requester_idx').on(
+      table.communityId,
+      table.requesterMemberId,
+      table.createdAt.desc()
+    ),
+    index('export_archives_ended_idx')
+      .on(table.endedAt)
+      .where(sql`${table.state} IN ('failed','cancelled')`),
     foreignKey({
       name: 'export_archives_requester_tenant_fk',
       columns: [table.communityId, table.requesterMemberId],
       foreignColumns: [members.communityId, members.id],
     }),
+  ]
+);
+/**
+ * The consecutive blobs of one version 2 archive, each holding whole zip entries. A row exists
+ * only while its blob is committed; every path that queues the blob deletes the row with it.
+ */
+export const exportSegments = pgTable(
+  'export_segments',
+  {
+    exportId: uuid('export_id').notNull(),
+    segmentNo: integer('segment_no').notNull(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    kind: text('kind').notNull(),
+    blobKey: text('blob_key').notNull().unique(),
+    byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
+    firstChannelId: uuid('first_channel_id'),
+    firstSeq: bigint('first_seq', { mode: 'number' }),
+    lastChannelId: uuid('last_channel_id'),
+    lastSeq: bigint('last_seq', { mode: 'number' }),
+    readRedactionId: bigint('read_redaction_id', { mode: 'number' }),
+    entriesIndex: bytea('entries_index').notNull(),
+    contentDigest: text('content_digest').notNull(),
+    entryCount: integer('entry_count').notNull(),
+    fileCount: integer('file_count').notNull(),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.exportId, table.segmentNo] }),
+    foreignKey({
+      name: 'export_segments_archive_tenant_fk',
+      columns: [table.communityId, table.exportId],
+      foreignColumns: [exportArchives.communityId, exportArchives.id],
+    }).onDelete('cascade'),
+    check('export_segments_segment_no', sql`${table.segmentNo} > 0`),
+    check('export_segments_kind', sql`${table.kind} IN ('data','collection','tail')`),
+    check('export_segments_byte_size', sql`${table.byteSize} > 0`),
+    check('export_segments_content_digest', sql`${table.contentDigest} ~ '^[a-f0-9]{64}$'`),
+    check('export_segments_entry_count', sql`${table.entryCount} >= 0`),
+    check('export_segments_file_count', sql`${table.fileCount} >= 0`),
+    check(
+      'export_segments_data_range',
+      sql`(${table.kind} = 'data') = (${table.firstChannelId} IS NOT NULL AND ${table.firstSeq} IS NOT NULL AND ${table.lastChannelId} IS NOT NULL AND ${table.lastSeq} IS NOT NULL AND ${table.readRedactionId} IS NOT NULL)`
+    ),
+    index('export_segments_community_idx').on(table.communityId),
   ]
 );
 /** Ordered, tenant-qualified channel selection captured by one export archive. */

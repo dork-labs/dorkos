@@ -165,6 +165,19 @@ A few things inside the community stay on purpose, because they are not attribut
 
 Erasure cannot reach everything. Deleted rows stay in PostgreSQL's free space until it is vacuumed, and in its write-ahead log and point-in-time recovery archives for as long as you keep them. Your database and file backups keep erased data for as long as you keep them. On S3 storage, the app deletes objects without a version ID, so a versioned bucket keeps old versions: use an unversioned bucket, or a lifecycle rule that expires noncurrent versions. Copies on members' own computers, such as downloaded exports and anything their DorkOS installation or agents saved, are theirs and are not touched.
 
+## Exports
+
+An owner can export the whole community and any member can export their own messages and files. The server prepares each export in the background and stores it as a series of pieces of about `COMMUNITY_EXPORT_SEGMENT_BYTES` (256 MiB unless you change it). The person downloads them as one `.zip`, and a stopped download can resume where it left off.
+
+- **Disk.** Every piece is staged on local disk before it is stored, the S3 store included, so each running export needs free space for one piece. Each server runs at most `COMMUNITY_EXPORT_CONCURRENCY` exports at a time (1 unless you change it), so plan for that many pieces of free space.
+- **Storage.** A finished export uses as much storage as the community's files plus its messages, and exports never count against a community's file space limit. The host usage report shows them as export bytes.
+- **Lifetime.** A finished export is kept for `COMMUNITY_EXPORT_TTL_HOURS` (24 hours) and then deleted by the cleanup sweep. An export still being prepared after `COMMUNITY_EXPORT_MAX_HOURS` (24 hours) stops, and the person is told it took too long.
+- **Restarts.** A server that stops mid-export loses at most the piece it was writing. Any server picks the export up about five minutes later and carries on from there.
+- **Changes while it runs.** Messages posted after an export starts are not in it. A message removed or erased while it is being prepared is rewritten in the pieces already written, so the finished export never holds what was removed. A community that keeps changing that way may make an export give up after five rounds; the person can try again later.
+- **Erasure.** Erasing a member deletes every finished export in that community, including one being downloaded, which stops within a few seconds.
+
+To return to a release from before background exports, first run `pnpm --filter @dorkos/community exports:purge-v2` with `COMMUNITY_DATABASE_URL` set. It cancels exports in progress and deletes every export made by this release, queuing their files for cleanup, so the older release only sees exports it can read.
+
 ## Storage and hosting choices
 
 A persistent container host or VPS can run the same image. Supply PostgreSQL separately, mount durable storage at `/data/blobs`, set the required environment values, and route HTTPS to port 6481. Run one app instance initially. Test reconnects and database access through the host’s actual proxy before inviting people.

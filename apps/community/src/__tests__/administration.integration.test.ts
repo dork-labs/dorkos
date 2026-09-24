@@ -5,13 +5,14 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { serve } from '@hono/node-server';
 import { Pool } from 'pg';
-import { strFromU8, unzipSync } from 'fflate';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from '../deletion-worker.js';
 import { migrate } from '../migrate.js';
 import { hashSecret, randomToken, signValue } from '../security.js';
 import { bootstrapFirstHost } from './bootstrap-test-helper.js';
+import { drainExports, openArchive } from './export-test-helpers.js';
+import { runNextExport } from '../exports/worker.js';
 import { FileSystemBlobStore, type BlobStore } from '../storage/index.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
@@ -34,7 +35,6 @@ let settingsVersion = 1;
 let lifecycleVersion = 1;
 const password = 'password1234';
 let beforeExportStored: (() => Promise<void>) | undefined;
-let afterExportStored: (() => Promise<void>) | undefined;
 
 function cookieOf(response: Response): string {
   return response.headers
@@ -97,6 +97,7 @@ const TENANT_TABLES = [
   'erasure_requests',
   'export_archive_channels',
   'export_archives',
+  'export_segments',
   'host_audit_events',
   'invite_uses',
   'invites',
@@ -166,10 +167,8 @@ beforeAll(async () => {
   const filesystem = new FileSystemBlobStore(storagePath);
   blobStore = {
     put: async (input) => {
-      if (input.kind === 'export') await beforeExportStored?.();
-      const result = await filesystem.put(input);
-      if (input.kind === 'export') await afterExportStored?.();
-      return result;
+      if (input.kind === 'export_segment') await beforeExportStored?.();
+      return filesystem.put(input);
     },
     get: (key, options) => filesystem.get(key, options),
     delete: (key, options) => filesystem.delete(key, options),
@@ -316,12 +315,14 @@ it('returns an in-flight singleton deletion job before reconciling missing bytes
     'POST',
     { password }
   );
-  expect(exportResponse.status).toBe(201);
-  const { archiveId } = await exportResponse.json();
+  expect(exportResponse.status).toBe(202);
+  const { export: exported } = await exportResponse.json();
+  await drainExports(pool, blobStore);
   const referencedBlobKey = (
-    await pool.query<{ blob_key: string }>('SELECT blob_key FROM export_archives WHERE id=$1', [
-      archiveId,
-    ])
+    await pool.query<{ blob_key: string }>(
+      'SELECT blob_key FROM export_segments WHERE export_id=$1 ORDER BY segment_no LIMIT 1',
+      [exported.id]
+    )
   ).rows[0].blob_key;
   const referencedBytes = await readFile(join(storagePath, referencedBlobKey));
 
@@ -514,17 +515,30 @@ it('locks community before membership when committing an owner export', async ()
   const administrator = await pool.connect();
   const { pid } = (await administrator.query<{ pid: number }>('SELECT pg_backend_pid() AS pid'))
     .rows[0];
+  // An earlier test's ready archive would answer instead of a new job.
+  await pool.query(
+    "UPDATE export_archives SET expires_at=now()-interval '1 second' WHERE community_id=$1 AND state='ready'",
+    [communityId]
+  );
+  const requested = await jsonRequest(`/api/v1/communities/${communityId}/owner/export`, 'POST', {
+    password,
+  });
+  expect(requested.status).toBe(202);
   let signalStored!: () => void;
   const stored = new Promise<void>((resolve) => {
     signalStored = resolve;
   });
-  afterExportStored = async () => {
-    await administrator.query('BEGIN');
-    await administrator.query('SELECT id FROM communities WHERE id=$1 FOR UPDATE', [communityId]);
-    signalStored();
-  };
-  const exported = jsonRequest(`/api/v1/communities/${communityId}/owner/export`, 'POST', {
-    password,
+  // Every segment is stored; before the final commit an administrator takes the lifecycle.
+  const built = drainExports(pool, blobStore, {
+    hooks: {
+      beforeTailCommit: async () => {
+        await administrator.query('BEGIN');
+        await administrator.query('SELECT id FROM communities WHERE id=$1 FOR UPDATE', [
+          communityId,
+        ]);
+        signalStored();
+      },
+    },
   });
   try {
     await stored;
@@ -537,17 +551,21 @@ it('locks community before membership when committing an owner export', async ()
         return blocked.rowCount;
       })
       .toBe(1);
-    // A competing administration transaction can still take membership while
-    // export waits on lifecycle. The old member-first path fails with 55P03.
+    // A competing administration transaction can still take membership while the export's
+    // commit waits on lifecycle. A member-first commit would make this fail with 55P03.
     await administrator.query('SELECT id FROM members WHERE id=$1 FOR UPDATE NOWAIT', [
       ownerMemberId,
     ]);
   } finally {
-    afterExportStored = undefined;
     await administrator.query('ROLLBACK');
     administrator.release();
   }
-  expect((await exported).status).toBe(201);
+  await built;
+  const state = await pool.query(
+    "SELECT state FROM export_archives WHERE community_id=$1 AND scope='owner' ORDER BY created_at DESC LIMIT 1",
+    [communityId]
+  );
+  expect(state.rows[0].state).toBe('ready');
 });
 
 it.each(['active', 'archived'] as const)(
@@ -596,35 +614,33 @@ it.each(['active', 'archived'] as const)(
       'POST',
       { password }
     );
-    expect(exported.status).toBe(201);
-    const { archiveId } = await exported.json();
+    expect(exported.status).toBe(202);
+    const { export: queued } = await exported.json();
+    await drainExports(pool, blobStore);
     const download = await request(
-      `/api/v1/communities/${exportCommunityId}/exports/${archiveId}`,
+      `/api/v1/communities/${exportCommunityId}/exports/${queued.id}/archive`,
       {
         headers: { cookie: ownerCookie },
       }
     );
     expect(download.status).toBe(200);
-    const archive = unzipSync(new Uint8Array(await download.arrayBuffer()));
-    const manifest = JSON.parse(strFromU8(archive['manifest.json']));
-    expect(manifest.community).toEqual({
+    const archive = await openArchive(Buffer.from(await download.arrayBuffer()));
+    expect(archive.manifest.community).toMatchObject({
       id: exportCommunityId,
       lifecycle,
       lifecycleVersion: lifecycle === 'active' ? 2 : 3,
       settingsVersion: 1,
     });
-    expect(manifest.auditEvents).toEqual(
+    const auditEvents = archive.rows<{ community_id: string; action: string }>('auditEvents');
+    expect(auditEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ community_id: exportCommunityId, action: 'owner_claim.consume' }),
       ])
     );
-    expect(
-      manifest.auditEvents.every(
-        (event: { community_id: string }) => event.community_id === exportCommunityId
-      )
-    ).toBe(true);
-    expect(manifest.members).toHaveLength(1);
-    expect(manifest.members[0].id).toBe(claimed.memberId);
+    expect(auditEvents.every((event) => event.community_id === exportCommunityId)).toBe(true);
+    const members = archive.rows<{ id: string }>('members');
+    expect(members).toHaveLength(1);
+    expect(members[0].id).toBe(claimed.memberId);
   }
 );
 
@@ -685,12 +701,15 @@ it('rejects foreign objects on every id-taking community route, even for an owne
       [otherId]
     )
   ).rows[0].id;
-  const archive = (
-    await pool.query<{ id: string }>(
-      'SELECT id FROM export_archives WHERE community_id=$1 LIMIT 1',
-      [otherId]
-    )
-  ).rows[0].id;
+  // A ready export in B, so its archive and cancel routes answer at B's own URL.
+  await pool.query(
+    "UPDATE export_archives SET expires_at=now()-interval '1 second' WHERE community_id=$1 AND state='ready'",
+    [otherId]
+  );
+  const exportedInOther = await jsonRequest(`${other}/owner/export`, 'POST', { password });
+  expect(exportedInOther.status).toBe(202);
+  const archive = (await exportedInOther.json()).export.id as string;
+  await drainExports(pool, blobStore);
   const upload = await request(`${other}/channels/${channel}/attachments`, {
     method: 'POST',
     headers: {
@@ -790,6 +809,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     `/channels/${publicChannel}/members`,
     `/channels/${publicChannel}/read-cursor`,
     `/exports/${archive}`,
+    `/exports/${archive}/archive`,
   ]) {
     const response = await request(`${other}${path}`, { headers: { cookie: ownerCookie } });
     expect(response.status, `positive control ${path}`).toBe(200);
@@ -1003,6 +1023,14 @@ it('rejects foreign objects on every id-taking community route, even for an owne
       call: (x) => ({ path: '/invites/pending', cookie: x.admission }),
     },
     { route: 'GET /exports/:id', call: (x) => ({ path: `/exports/${x.archive}` }) },
+    {
+      route: 'GET /exports/:id/archive',
+      call: (x) => ({ path: `/exports/${x.archive}/archive` }),
+    },
+    {
+      route: 'POST /exports/:id/cancel',
+      call: (x) => ({ path: `/exports/${x.archive}/cancel`, body: {} }),
+    },
     { route: 'GET /pairings/:id', call: (x) => ({ path: `/pairings/${x.pairing}` }) },
     {
       route: 'POST /pairings/approve',
@@ -1086,6 +1114,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     'GET /owner/erasures': 'reads the URL community only',
     'POST /owner/export': 'exports the URL community; takes only a password',
     'POST /me/export': 'exports the caller; no body',
+    'GET /exports': "lists the caller's own exports",
     'GET /me': 'the caller only',
     'POST /me/leave': 'the caller only',
     'DELETE /me/grants': "revokes all of the caller's own grants; takes only a password",
@@ -1575,9 +1604,27 @@ it('deletes only the due tenant after every owned blob is confirmed absent', asy
       signalExportStarted();
       await exportReleased;
     };
-    const heldExport = jsonRequest(`/api/v1/communities/${communityId}/owner/export`, 'POST', {
-      password,
-    });
+    // An earlier test's ready archive would answer instead of a new job.
+    await pool.query(
+      "UPDATE export_archives SET expires_at=now()-interval '1 second' WHERE community_id=$1 AND state='ready'",
+      [communityId]
+    );
+    // The export's first segment is being written when deletion is requested.
+    const heldExport = (async () => {
+      const response = await jsonRequest(
+        `/api/v1/communities/${communityId}/owner/export`,
+        'POST',
+        { password }
+      );
+      expect(response.status).toBe(202);
+      const exported = (await response.json()).export.id as string;
+      await runNextExport({
+        pool,
+        blobStore,
+        settings: { segmentBytes: 256 * 1024 * 1024, ttlHours: 24, maxHours: 24 },
+      });
+      return exported;
+    })();
     await exportStarted;
     const heldBlob = (
       await pool.query<{ blob_key: string }>(
@@ -1610,8 +1657,8 @@ it('deletes only the due tenant after every owned blob is confirmed absent', asy
       [communityId]
     );
 
-    const blobStore = new FileSystemBlobStore(storagePath);
-    const heldResult = await sweepCommunityDeletions(pool, blobStore, 100);
+    const diskStore = new FileSystemBlobStore(storagePath);
+    const heldResult = await sweepCommunityDeletions(pool, diskStore, 100);
     const heldProgress = (
       await pool.query(
         `SELECT p.state,m.state AS managed_state
@@ -1633,15 +1680,18 @@ it('deletes only the due tenant after every owned blob is confirmed absent', asy
       'UPDATE community_deletion_jobs SET next_attempt_at=now() WHERE community_id=$1',
       [communityId]
     );
-    const legacyProgressResult = await sweepCommunityDeletions(pool, blobStore, 100);
+    const legacyProgressResult = await sweepCommunityDeletions(pool, diskStore, 100);
     const legacyCommunityRetained = (
       await pool.query('SELECT 1 FROM communities WHERE id=$1', [communityId])
     ).rowCount;
 
     beforeExportStored = undefined;
     releaseExport();
-    expect((await heldExport).status).toBe(409);
-    expect((await blobStore.listNamespace()).keys).not.toContain(heldBlob.blob_key);
+    // The segment cannot commit into a community being deleted; its blob is discarded.
+    const heldId = await heldExport;
+    const held = await pool.query('SELECT state FROM export_archives WHERE id=$1', [heldId]);
+    expect(held.rows[0]?.state).not.toBe('ready');
+    expect((await diskStore.listNamespace()).keys).not.toContain(heldBlob.blob_key);
     expect(heldResult).toMatchObject({ claimed: 1, completed: 0, failed: 0 });
     expect(legacyProgressResult).toMatchObject({ claimed: 1, completed: 0, failed: 0 });
     expect(heldProgress).toEqual({ state: 'retrying', managed_state: 'reserved' });
@@ -1659,15 +1709,15 @@ it('deletes only the due tenant after every owned blob is confirmed absent', asy
     );
     let failNextDelete = true;
     const failingBlobStore: BlobStore = {
-      put: (input) => blobStore.put(input),
-      get: (key, options) => blobStore.get(key, options),
-      listNamespace: (options) => blobStore.listNamespace(options),
+      put: (input) => diskStore.put(input),
+      get: (key, options) => diskStore.get(key, options),
+      listNamespace: (options) => diskStore.listNamespace(options),
       delete: async (key, options) => {
         if (failNextDelete) {
           failNextDelete = false;
           throw new Error('injected provider failure');
         }
-        await blobStore.delete(key, options);
+        await diskStore.delete(key, options);
       },
     };
     const failed = await sweepCommunityDeletions(pool, failingBlobStore, 1);
@@ -1687,13 +1737,13 @@ it('deletes only the due tenant after every owned blob is confirmed absent', asy
       'UPDATE community_deletion_blob_progress SET next_attempt_at=now() WHERE community_id=$1',
       [communityId]
     );
-    let result = await sweepCommunityDeletions(pool, blobStore, 1);
+    let result = await sweepCommunityDeletions(pool, diskStore, 1);
     for (let index = 0; index < 10 && !result.completed; index++) {
       await pool.query(
         'UPDATE community_deletion_jobs SET next_attempt_at=now() WHERE community_id=$1',
         [communityId]
       );
-      result = await sweepCommunityDeletions(pool, blobStore, 1);
+      result = await sweepCommunityDeletions(pool, diskStore, 1);
     }
     expect(result.completed).toBe(1);
     expect(

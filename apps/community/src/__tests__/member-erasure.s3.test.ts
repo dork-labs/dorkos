@@ -26,6 +26,7 @@ import {
   runErasures,
   upload,
 } from './member-erasure-fixture.js';
+import { drainExports } from './export-test-helpers.js';
 
 // Purpose: erasure removes a person's file bytes and every live export from S3 storage too,
 // and no inventory row keeps their checksums, not only on the filesystem store.
@@ -95,17 +96,23 @@ it('deletes the erased member’s objects and every live export from S3', async 
       cookie: owner.cookie,
       body: { password: PASSWORD },
     }),
-    201,
+    202,
     'owner export'
   );
+  await drainExports(h.pool, h.blobStore);
   const blobs = (
     await h.pool.query<{ blob_key: string }>(
       'SELECT blob_key FROM managed_blobs WHERE community_id=$1',
       [communityId]
     )
   ).rows.map((row) => row.blob_key);
-  expect(blobs).toHaveLength(2);
-  expect((await objectNames()).filter((name) => blobs.includes(name))).toHaveLength(2);
+  // The file and every segment of the ready archive.
+  const segments = await h.pool.query('SELECT 1 FROM export_segments WHERE community_id=$1', [
+    communityId,
+  ]);
+  expect(segments.rowCount).toBeGreaterThan(0);
+  expect(blobs).toHaveLength(1 + segments.rowCount!);
+  expect((await objectNames()).filter((name) => blobs.includes(name))).toHaveLength(blobs.length);
 
   await body(
     await h.call('/api/v1/account/erasures', {

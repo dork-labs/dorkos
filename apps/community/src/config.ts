@@ -8,6 +8,10 @@ import { parseCommunityReportMailto } from '@dorkos/shared/community-wire';
 
 const integer = (name: string, fallback: number, ceiling: number) =>
   z.coerce.number().int().min(1, `${name} must be positive`).max(ceiling).default(fallback);
+const between = (floor: number, fallback: number, ceiling: number) =>
+  z.coerce.number().int().min(floor).max(ceiling).default(fallback);
+
+const MIB = 1024 * 1024;
 
 /** An optional setting that Compose may pass through as an empty string. */
 const optionalText = z.preprocess(
@@ -204,6 +208,10 @@ const schema = z.object({
       .pipe(z.array(z.string().regex(COMMUNITY_SHORT_NAME_PATTERN)))
       .optional()
   ),
+  COMMUNITY_EXPORT_SEGMENT_BYTES: between(64 * MIB, 256 * MIB, 1024 * MIB),
+  COMMUNITY_EXPORT_TTL_HOURS: between(1, 24, 168),
+  COMMUNITY_EXPORT_MAX_HOURS: between(1, 24, 168),
+  COMMUNITY_EXPORT_CONCURRENCY: between(1, 1, 8),
   COMMUNITY_ERASURE_JOURNAL: z.preprocess(
     (value) => (value === '' ? undefined : value),
     z.string().min(1).optional()
@@ -328,6 +336,13 @@ export function parseConfig(env: Record<string, unknown>) {
     storage,
     port: value.COMMUNITY_PORT,
     testRuntime: value.COMMUNITY_TEST_RUNTIME === 'true',
+    /** Background exports: segment size, archive lifetime, per-job deadline, jobs per replica. */
+    exports: {
+      segmentBytes: value.COMMUNITY_EXPORT_SEGMENT_BYTES,
+      ttlHours: value.COMMUNITY_EXPORT_TTL_HOURS,
+      maxHours: value.COMMUNITY_EXPORT_MAX_HOURS,
+      concurrency: value.COMMUNITY_EXPORT_CONCURRENCY,
+    },
     /** Where each completed erasure's id-only line is also appended, outside the database. */
     erasureJournal: value.COMMUNITY_ERASURE_JOURNAL,
     hostLinks,

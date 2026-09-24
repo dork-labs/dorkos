@@ -32,6 +32,33 @@ describe('community startup config', () => {
     expect(() => parseConfig({ ...valid, COMMUNITY_TEXT_BYTES: '0' })).toThrow();
   });
 
+  it('bounds the export settings and keeps their defaults', () => {
+    // Purpose: a segment below 64 MiB or above the 1 GiB blob ceiling, an archive that outlives a
+    // week, or more than 8 jobs a replica must be refused at startup, not discovered mid-export.
+    expect(parseConfig(valid).exports).toEqual({
+      segmentBytes: 256 * 1024 * 1024,
+      ttlHours: 24,
+      maxHours: 24,
+      concurrency: 1,
+    });
+    const mib = 1024 * 1024;
+    expect(
+      parseConfig({ ...valid, COMMUNITY_EXPORT_SEGMENT_BYTES: String(64 * mib) }).exports
+        .segmentBytes
+    ).toBe(64 * mib);
+    for (const [name, value] of [
+      ['COMMUNITY_EXPORT_SEGMENT_BYTES', String(64 * mib - 1)],
+      ['COMMUNITY_EXPORT_SEGMENT_BYTES', String(1024 * mib + 1)],
+      ['COMMUNITY_EXPORT_TTL_HOURS', '0'],
+      ['COMMUNITY_EXPORT_TTL_HOURS', '169'],
+      ['COMMUNITY_EXPORT_MAX_HOURS', '169'],
+      ['COMMUNITY_EXPORT_CONCURRENCY', '9'],
+      ['COMMUNITY_EXPORT_CONCURRENCY', '0'],
+    ] as const) {
+      expect(() => parseConfig({ ...valid, [name]: value }), `${name}=${value}`).toThrow();
+    }
+  });
+
   it('keeps the agents-per-person default at 20 with a maximum of 100', () => {
     // Purpose: a per-member override may go higher (to 1,000); the host-wide setting may not.
     expect(parseConfig(valid).limits.agentsPerOwner).toBe(20);

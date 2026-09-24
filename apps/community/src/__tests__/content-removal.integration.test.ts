@@ -38,23 +38,14 @@ import {
   type Person,
 } from './member-erasure-fixture.js';
 import { communityDigest, makeScene, type Scene } from './member-erasure-scenes.js';
+import { drainExports, openArchive } from './export-test-helpers.js';
 
 let h: TenancyHarness;
 let host: { cookie: string; communityId: string };
-let exportGate: { entered: () => void; release: Promise<void> } | null = null;
 let keyCounter = 0;
 
 beforeAll(async () => {
-  h = await startTenancyHarness('removal', {
-    hooks: {
-      afterExportSnapshot: async () => {
-        const gate = exportGate;
-        if (!gate) return;
-        gate.entered();
-        await gate.release;
-      },
-    },
-  });
+  h = await startTenancyHarness('removal');
   host = await bootstrapHost(h, 'Rhea Host', 'rhea@host.test');
 }, 60_000);
 
@@ -932,25 +923,38 @@ describe('concurrency (AC-8)', { timeout: 120_000 }, () => {
     expect(row.erased_at).toBeInstanceOf(Date);
   });
 
-  // Purpose: the removal bumps the content version, so an export snapshotted before it can
-  // never commit the deleted message, and leaves no blob behind.
-  it('refuses an export snapshotted before the delete and committed after it', async () => {
+  // Purpose: the removal bumps the content version and writes a redaction row, so an export
+  // whose segment was written before it rewrites that segment and never commits the message.
+  it('never commits a message deleted while its export is being built', async () => {
     const s = await scene('export');
     const entryId = await say(s, { cookie: s.p.cookie }, 'soon gone');
-    const blobsBefore = new Set(await readdir(storageDirectory(h)));
-    let release!: () => void;
-    const reached = new Promise<void>((resolve) => {
-      exportGate = { entered: resolve, release: new Promise<void>((done) => (release = done)) };
+    const created = await body<{ export: { id: string } }>(
+      await h.call(`${s.base}/me/export`, { cookie: s.p.cookie, body: {} }),
+      202,
+      'export'
+    );
+    let deleted = false;
+    await drainExports(h.pool, h.blobStore, {
+      hooks: {
+        afterSegment: async ({ kind }) => {
+          if (kind !== 'data' || deleted) return;
+          deleted = true;
+          await removed(await removeMessage(s, entryId, { cookie: s.p.cookie }), 'delete');
+        },
+      },
     });
-    const pending = h.call(`${s.base}/me/export`, { cookie: s.p.cookie, body: {} });
-    await reached;
-    exportGate = null;
-    await removed(await removeMessage(s, entryId, { cookie: s.p.cookie }), 'delete');
-    release();
-    const response = await pending;
-    expect(response.status).toBe(409);
-    await drainCleanup(h);
-    expect((await readdir(storageDirectory(h))).filter((key) => !blobsBefore.has(key))).toEqual([]);
+    expect(deleted).toBe(true);
+    const response = await h.call(`${s.base}/exports/${created.export.id}/archive`, {
+      cookie: s.p.cookie,
+    });
+    expect(response.status).toBe(200);
+    const archive = await openArchive(Buffer.from(await response.arrayBuffer()));
+    expect(
+      archive
+        .rows<{ id: string; removal: string | null }>('entries')
+        .find((row) => row.id === entryId)
+    ).toMatchObject({ removal: 'author', text: REMOVED_ENTRY_TEXT.author });
+    expect([...archive.files.values()].join('')).not.toContain('soon gone');
   });
 
   /** Where the redaction id sequence stands; identity values are handed out outside commits. */
