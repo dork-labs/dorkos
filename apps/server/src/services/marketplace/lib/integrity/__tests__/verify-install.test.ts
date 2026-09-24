@@ -5,17 +5,21 @@
  * temp trees; the record is computed the way an install computes it.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { computeInstalledFiles, writeInstalledFiles } from '../../installed-files.js';
 import { cachedHashFile, _internal, _resetHashCacheForTests } from '../file-hash-cache.js';
 import { verifyInstall, INTEGRITY_LIST_LIMIT } from '../verify-install.js';
+import { rebuildRecordStrict } from '../strict-record.js';
+import { _resetCheckResultsForTests } from '../check-results.js';
+import { noopLogger } from '@dorkos/shared/logger';
 
 const dirs: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
   _resetHashCacheForTests();
+  _resetCheckResultsForTests();
   for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
 });
 
@@ -90,6 +94,52 @@ describe('verifyInstall', () => {
     });
   });
 
+  // Purpose (review 9): plugin.json can put skills or hooks anywhere; a file
+  // added under a location it declares changes what runs just the same.
+  it('names files added under a location plugin.json declares', async () => {
+    const root = await installed({
+      '.claude-plugin/plugin.json': JSON.stringify({ name: 'pkg', skills: './my-skills' }),
+      'my-skills/a/SKILL.md': 'a',
+    });
+    await put(root, 'my-skills/b/SKILL.md', 'new');
+    expect(await verifyInstall(root)).toMatchObject({
+      status: 'modified',
+      added: ['my-skills/b/SKILL.md'],
+    });
+  });
+
+  // Purpose (review 2): a record's userEditable is only trusted where the
+  // schema accepts it. A record naming `skills/**` (written before the rule, or
+  // by hand) must not turn an edited skill into a "customized" file.
+  it("ignores a record's userEditable entry the schema refuses", async () => {
+    const root = await installed({ 'skills/a/SKILL.md': 'a' });
+    const recordPath = path.join(root, '.dork', 'installed-files.json');
+    const record = JSON.parse(await readFile(recordPath, 'utf8'));
+    await writeFile(recordPath, JSON.stringify({ ...record, userEditable: ['skills/**'] }));
+    await put(root, 'skills/a/SKILL.md', 'EVIL');
+    expect(await verifyInstall(root)).toMatchObject({
+      status: 'modified',
+      changed: ['skills/a/SKILL.md'],
+    });
+  });
+
+  // Purpose (review 8): an editable file replaced by a folder or a symlink is
+  // still the person's change to it, reported as customized, never ignored.
+  it('reports an editable path that became a symlink or folder as customized', async () => {
+    const root = await installed(
+      { 'config/defaults.json': '{}', 'prompts/a.md': 'a' },
+      { userEditable: ['config/defaults.json', 'prompts/**'] }
+    );
+    await rm(path.join(root, 'config', 'defaults.json'));
+    await symlink('/etc/hosts', path.join(root, 'config', 'defaults.json'));
+    await rm(path.join(root, 'prompts', 'a.md'));
+    await mkdir(path.join(root, 'prompts', 'a.md'));
+    expect(await verifyInstall(root)).toEqual({
+      status: 'clean',
+      customized: ['config/defaults.json', 'prompts/a.md'],
+    });
+  });
+
   // Purpose: an agent package's identity files are the agent's, never "added".
   it("does not count an agent's identity files as added", async () => {
     const root = await installed({ 'skills/a/SKILL.md': 'a' }, { type: 'agent' });
@@ -131,7 +181,11 @@ describe('verifyInstall', () => {
   it('reports no-record, unreadable-record and linked installs as unknown', async () => {
     const legacy = path.join(await tmp(), 'legacy');
     await put(legacy, '.dork/manifest.json', '{}');
-    expect(await verifyInstall(legacy)).toEqual({ status: 'unknown', reason: 'no-record' });
+    expect(await verifyInstall(legacy)).toEqual({
+      status: 'unknown',
+      reason: 'no-record',
+      check: { source: 'local' },
+    });
 
     const broken = await installed({ 'a.md': 'a' });
     await put(broken, '.dork/installed-files.json', '{not json');
@@ -141,6 +195,49 @@ describe('verifyInstall', () => {
     const link = path.join(await tmp(), 'linked');
     await symlink(target, link);
     expect(await verifyInstall(link)).toEqual({ status: 'unknown', reason: 'linked' });
+  });
+
+  // Purpose (review 5): an older install says whether "Check files" can help
+  // (an exact commit to fetch, or a local folder), and the last attempt's
+  // reason, so the app shows that instead of a button that cannot succeed.
+  it('says whether an older install can be checked, and what the last check said', async () => {
+    const legacy = path.join(await tmp(), 'flow');
+    await put(legacy, '.dork/manifest.json', '{}');
+    await put(
+      legacy,
+      '.dork/install-metadata.json',
+      JSON.stringify({
+        name: 'flow',
+        version: '1.0.0',
+        type: 'plugin',
+        installedAt: 'x',
+        commitSha: 'c'.repeat(40),
+        sourceKey: { cloneUrl: 'https://github.com/acme/p', subpath: 'flow', ref: 'main' },
+      })
+    );
+    expect(await verifyInstall(legacy)).toEqual({
+      status: 'unknown',
+      reason: 'no-record',
+      check: { source: 'fetchable' },
+    });
+
+    await rebuildRecordStrict(legacy, {
+      fetcher: { fetchAtCommit: async () => Promise.reject(new Error('offline')) },
+      logger: noopLogger,
+    });
+
+    expect(await verifyInstall(legacy)).toEqual({
+      status: 'unknown',
+      reason: 'no-record',
+      check: {
+        source: 'fetchable',
+        last: {
+          outcome: 'fetch-failed',
+          message:
+            "Couldn't fetch the version flow was installed from (offline). Try again when you're online.",
+        },
+      },
+    });
   });
 
   // Purpose: a very edited install names at most the limit per list, and says

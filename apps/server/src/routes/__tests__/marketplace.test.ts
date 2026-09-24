@@ -531,12 +531,16 @@ describe('Marketplace Routes', () => {
         ])
       );
       expect(byName['my-plugin']).toEqual({ status: 'clean', customized: [] });
-      expect(byName['old-plugin']).toEqual({ status: 'unknown', reason: 'no-record' });
+      expect(byName['old-plugin']).toEqual({
+        status: 'unknown',
+        reason: 'no-record',
+        check: { source: 'local' },
+      });
 
       const one = await request(fixtureServer).get(
         '/api/marketplace/installed/old-plugin?verify=true'
       );
-      expect(one.body.installations[0].integrity).toEqual({
+      expect(one.body.installations[0].integrity).toMatchObject({
         status: 'unknown',
         reason: 'no-record',
       });

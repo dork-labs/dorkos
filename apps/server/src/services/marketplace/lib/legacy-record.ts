@@ -35,6 +35,7 @@ import {
   AGENT_IDENTITY_FILES,
   isReservedPackagePath,
   MarketplacePackageManifestSchema,
+  validUserEditable,
   type MarketplacePackageManifest,
   type PackageType,
 } from '@dorkos/marketplace';
@@ -86,9 +87,9 @@ export async function userEditableOf(tree: string): Promise<string[]> {
     const manifest = JSON.parse(await readFile(fsPath(tree, '.dork/manifest.json'), 'utf-8')) as {
       userEditable?: unknown;
     };
-    return Array.isArray(manifest.userEditable)
-      ? manifest.userEditable.filter((p): p is string => typeof p === 'string')
-      : [];
+    // Read off a tree that may predate the rules: an entry the schema now
+    // refuses (`skills/**`, `**`) is never trusted (DOR-2197 review).
+    return Array.isArray(manifest.userEditable) ? validUserEditable(manifest.userEditable) : [];
   } catch {
     return [];
   }

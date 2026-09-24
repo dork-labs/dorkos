@@ -37,6 +37,11 @@ import {
 } from '../legacy-record.js';
 import { hasPackageIdentity } from '../locate-install.js';
 import { cachedHashFile } from './file-hash-cache.js';
+import { rememberCheck } from './check-results.js';
+import { addedEffectFiles } from './verify-install.js';
+
+/** The prefix of every scratch folder a strict rebuild stages into, for leftover cleanup. */
+export const STRICT_RECORD_TEMP_PREFIX = 'dorkos-strict-record-';
 
 /** Most differing paths a mismatch names. */
 export const STRICT_MISMATCH_LIST_LIMIT = 50;
@@ -66,9 +71,23 @@ async function exists(p: string): Promise<boolean> {
   return (await lstat(p).catch(() => undefined)) !== undefined;
 }
 
+/** Whether `root` is a legacy install, or why it needs no rebuild. */
+async function legacyState(
+  root: string
+): Promise<'legacy' | 'linked' | 'has-record' | 'not-installed'> {
+  if ((await lstat(root).catch(() => undefined))?.isSymbolicLink()) return 'linked';
+  if (await exists(fsPath(root, INSTALLED_FILES_PATH))) return 'has-record';
+  if (!(await hasPackageIdentity(root))) return 'not-installed';
+  return 'legacy';
+}
+
 /**
  * Rebuild the installed-files record of the legacy install at `root`, or
  * write nothing. See the module header for the rules.
+ *
+ * The fetch and the staging run before the install lock is taken, so a slow
+ * network never holds up an install of the same package. Only the re-check,
+ * the comparison and the write run under the lock.
  *
  * @param root - The install folder.
  * @param deps - The fetcher and a logger.
@@ -78,71 +97,84 @@ export async function rebuildRecordStrict(
   root: string,
   deps: StrictRecordDeps
 ): Promise<StrictRebuildResult> {
-  if ((await lstat(root).catch(() => undefined))?.isSymbolicLink()) {
-    return { outcome: 'not-needed', why: 'linked' };
+  const before = await legacyState(root);
+  if (before !== 'legacy') return { outcome: 'not-needed', why: before };
+
+  let metadata: InstallMetadata | null = null;
+  try {
+    metadata = await readInstallMetadataStrict(root);
+  } catch (err) {
+    deps.logger.warn('[marketplace/strict-record] unreadable install sidecar', {
+      root,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
-  return withInstallTargetLock(root, async () => {
-    // Re-checked under the lock: an install, update or uninstall that held it
-    // may have changed what stands here.
-    if (await exists(fsPath(root, INSTALLED_FILES_PATH))) {
-      return { outcome: 'not-needed', why: 'has-record' };
-    }
-    if (!(await hasPackageIdentity(root))) return { outcome: 'not-needed', why: 'not-installed' };
+  const remember = (result: StrictRebuildResult): StrictRebuildResult => {
+    rememberCheck(root, metadata?.name ?? path.basename(root), result);
+    return result;
+  };
+  const source = fetchableSourceOf(metadata);
+  if (!source) return remember({ outcome: 'no-source' });
 
-    let metadata: InstallMetadata | null = null;
+  const scratch = await mkdtemp(path.join(tmpdir(), STRICT_RECORD_TEMP_PREFIX));
+  try {
+    const fetched = path.join(scratch, 'installed');
     try {
-      metadata = await readInstallMetadataStrict(root);
+      await stageInstalledCommit(source, fetched, deps);
     } catch (err) {
-      deps.logger.warn('[marketplace/strict-record] unreadable install sidecar', {
-        root,
-        error: err instanceof Error ? err.message : String(err),
+      return remember({
+        outcome: 'fetch-failed',
+        message: err instanceof Error ? err.message : String(err),
       });
     }
-    const source = fetchableSourceOf(metadata);
-    if (!source) return { outcome: 'no-source' };
+    const userEditable = await userEditableOf(fetched);
+    const record = await computeInstalledFiles(fetched, {
+      identity: recordIdentityOf(metadata, path.basename(root), 'plugin'),
+      userEditable,
+      npmRan: await exists(path.join(root, 'node_modules')),
+    });
 
-    const scratch = await mkdtemp(path.join(tmpdir(), 'dorkos-strict-record-'));
-    try {
-      const fetched = path.join(scratch, 'installed');
-      try {
-        await stageInstalledCommit(source, fetched, deps);
-      } catch (err) {
-        return {
-          outcome: 'fetch-failed',
-          message: err instanceof Error ? err.message : String(err),
-        };
-      }
-      const userEditable = await userEditableOf(fetched);
-      const record = await computeInstalledFiles(fetched, {
-        identity: recordIdentityOf(metadata, path.basename(root), 'plugin'),
-        userEditable,
-        npmRan: await exists(path.join(root, 'node_modules')),
-      });
+    return remember(
+      await withInstallTargetLock(root, async (): Promise<StrictRebuildResult> => {
+        // Re-checked under the lock: an install, update or uninstall that held
+        // it may have changed what stands here.
+        const now = await legacyState(root);
+        if (now !== 'legacy') return { outcome: 'not-needed', why: now };
 
-      const differing: string[] = [];
-      for (const [p, hash] of Object.entries(record.files).sort(([a], [b]) => (a < b ? -1 : 1))) {
-        if (matchesUserEditable(p, userEditable)) continue;
-        const { kind } = await lstatChain(root, p);
-        if (kind !== 'file' || (await cachedHashFile(fsPath(root, p))) !== hash) differing.push(p);
-      }
-      if (differing.length > 0) {
-        deps.logger.info('[marketplace/strict-record] the installed commit does not match', {
+        const differing: string[] = [];
+        for (const [p, hash] of Object.entries(record.files)) {
+          if (matchesUserEditable(p, userEditable)) continue;
+          const { kind } = await lstatChain(root, p);
+          if (kind !== 'file' || (await cachedHashFile(fsPath(root, p))) !== hash)
+            differing.push(p);
+        }
+        // The live folder must also hold nothing extra where a package keeps
+        // what it runs: an unrecorded skill or hook would otherwise verify
+        // clean while it runs. This also catches a case-only rename, whose
+        // live spelling is unrecorded.
+        differing.push(...(await addedEffectFiles(root, record)));
+        if (differing.length > 0) {
+          deps.logger.info('[marketplace/strict-record] the installed commit does not match', {
+            root,
+            differing: differing.length,
+          });
+          return {
+            outcome: 'mismatch',
+            differing: [...new Set(differing)].sort().slice(0, STRICT_MISMATCH_LIST_LIMIT),
+          };
+        }
+
+        await writeInstalledFiles(root, record);
+        deps.logger.info('[marketplace/strict-record] rebuilt a record from the installed commit', {
           root,
-          differing: differing.length,
+          files: Object.keys(record.files).length,
         });
-        return { outcome: 'mismatch', differing: differing.slice(0, STRICT_MISMATCH_LIST_LIMIT) };
-      }
-
-      await writeInstalledFiles(root, record);
-      deps.logger.info('[marketplace/strict-record] rebuilt a record from the installed commit', {
-        root,
-        files: Object.keys(record.files).length,
-      });
-      return { outcome: 'rebuilt', files: Object.keys(record.files).length };
-    } finally {
-      await rm(scratch, { recursive: true, force: true });
-    }
-  });
+        return { outcome: 'rebuilt', files: Object.keys(record.files).length };
+      })
+    );
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
 }
 
 /**

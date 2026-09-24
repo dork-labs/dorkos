@@ -19,15 +19,21 @@
  *
  * @module services/marketplace/lib/integrity/verify-install
  */
-import { lstat } from 'node:fs/promises';
+import { lstat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
+  CLAUDE_PLUGIN_MANIFEST_PATH,
+  declaredEffectPaths,
   EFFECT_BEARING_PATHS,
   INSTALLED_FILES_PATH,
   isReservedPackagePath,
   matchesUserEditable,
+  validUserEditable,
 } from '@dorkos/marketplace';
-import type { InstallIntegrity } from '@dorkos/shared/marketplace-schemas';
+import type { InstallCheckInfo, InstallIntegrity } from '@dorkos/shared/marketplace-schemas';
+import { readInstallMetadataStrict } from '../../installed-metadata.js';
+import { fetchableSourceOf } from '../legacy-record.js';
+import { lastCheck } from './check-results.js';
 import {
   isNeverCarried,
   lstatChain,
@@ -36,6 +42,19 @@ import {
   type InstalledFiles,
 } from '../installed-files.js';
 import { cachedHashFile } from './file-hash-cache.js';
+
+/**
+ * Whether "Check files" can record a legacy install's files (its sidecar names
+ * an exact commit to fetch) and what the last attempt said.
+ */
+async function checkInfoOf(root: string): Promise<InstallCheckInfo> {
+  const metadata = await readInstallMetadataStrict(root).catch(() => null);
+  const last = lastCheck(root);
+  return {
+    source: fetchableSourceOf(metadata) ? 'fetchable' : 'local',
+    ...(last && { last }),
+  };
+}
 
 /** Most paths any one list in an {@link InstallIntegrity} carries. */
 export const INTEGRITY_LIST_LIMIT = 50;
@@ -58,17 +77,22 @@ export async function verifyInstall(root: string): Promise<InstallIntegrity> {
   if (!record) {
     const hasFile =
       (await lstat(fsPath(root, INSTALLED_FILES_PATH)).catch(() => undefined)) !== undefined;
-    return { status: 'unknown', reason: hasFile ? 'unreadable-record' : 'no-record' };
+    if (hasFile) return { status: 'unknown', reason: 'unreadable-record' };
+    return { status: 'unknown', reason: 'no-record', check: await checkInfoOf(root) };
   }
 
   const changed: string[] = [];
   const missing: string[] = [];
   const customized: string[] = [];
+  const userEditable = validUserEditable(record.userEditable);
   for (const [p, hash] of Object.entries(record.files)) {
-    const editable = matchesUserEditable(p, record.userEditable);
+    const editable = matchesUserEditable(p, userEditable);
     const { kind } = await lstatChain(root, p);
     if (kind !== 'file') {
+      // An editable file that is gone is the person's call (row 3a); one they
+      // replaced with a folder or a link is still their change to it.
       if (!editable) missing.push(p);
+      else if (kind !== 'missing') customized.push(p);
       continue;
     }
     if ((await cachedHashFile(fsPath(root, p))) === hash) continue;
@@ -96,17 +120,38 @@ export async function verifyInstall(root: string): Promise<InstallIntegrity> {
 }
 
 /**
- * Unrecorded files and links at or under an effect-bearing path, found without
- * following any link. The installer's files, reserved paths (data, secrets,
+ * The locations the install's own plugin.json declares something runnable at
+ * (`declaredEffectPaths`), read only when it is a regular file reached through
+ * real directories. None when it is absent or unreadable.
+ */
+async function declaredLocationsOf(root: string): Promise<string[]> {
+  if ((await lstatChain(root, CLAUDE_PLUGIN_MANIFEST_PATH)).kind !== 'file') return [];
+  try {
+    return declaredEffectPaths(
+      JSON.parse(await readFile(fsPath(root, CLAUDE_PLUGIN_MANIFEST_PATH), 'utf-8'))
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Unrecorded files and links at or under an effect-bearing path (the defaults,
+ * and every location the install's plugin.json declares), found without
+ * following any link. Exported for the strict rebuild, which must find none. The installer's files, reserved paths (data, secrets,
  * `.dork-old` / `.dork-new` copies) and owned paths are never counted. An
  * agent's identity files (`.dork/agent.json`, `.dork/SOUL.md`, …) sit outside
  * every effect-bearing path, so they never reach this check.
  */
-async function addedEffectFiles(root: string, record: InstalledFiles): Promise<string[]> {
+export async function addedEffectFiles(root: string, record: InstalledFiles): Promise<string[]> {
   const counts = (p: string): boolean =>
     !(p in record.files) && !isReservedPackagePath(p) && !isNeverCarried(p, record.ownedPaths);
   const added = new Set<string>();
-  for (const effectPath of new Set(Object.values(EFFECT_BEARING_PATHS))) {
+  const effectPaths = new Set<string>([
+    ...Object.values(EFFECT_BEARING_PATHS),
+    ...(await declaredLocationsOf(root)),
+  ]);
+  for (const effectPath of effectPaths) {
     const { kind } = await lstatChain(root, effectPath);
     if (kind === 'file' || kind === 'symlink') {
       if (counts(effectPath)) added.add(effectPath);

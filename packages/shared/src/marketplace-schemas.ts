@@ -1154,7 +1154,8 @@ export type InstallIntegrityUnknownReason = 'no-record' | 'unreadable-record' | 
  *   `added` files sit where a package keeps what it runs (a new skill, a
  *   hook), so they change what runs.
  * - `unknown`: the record cannot speak for the install. `no-record` is an
- *   install made before DorkOS recorded a package's files (it can be prepared);
+ *   install made before DorkOS recorded a package's files ("Check files" can
+ *   record them; see `check`);
  *   `unreadable-record` is a damaged record; `linked` is a developer's working
  *   copy.
  */
@@ -1168,7 +1169,33 @@ export type InstallIntegrity =
       customized: string[];
       truncated?: true;
     }
-  | { status: 'unknown'; reason: InstallIntegrityUnknownReason };
+  | {
+      status: 'unknown';
+      reason: InstallIntegrityUnknownReason;
+      /** Present for `no-record` only: whether "Check files" can record its files. */
+      check?: InstallCheckInfo;
+    };
+
+/**
+ * Whether an install made before DorkOS recorded package files can have them
+ * recorded ("Check files", DOR-2320), and what the last attempt said.
+ */
+export interface InstallCheckInfo {
+  /**
+   * `fetchable`: DorkOS can fetch the exact version it came from. `local`: it
+   * was installed from a folder on this computer, so nothing can be fetched and
+   * a reinstall is the way to start tracking its files.
+   */
+  source: 'fetchable' | 'local';
+  /** Why the last attempt (the background check after boot, or a person's) recorded nothing. */
+  last?: InstallCheckResult;
+}
+
+/** A "Check files" attempt that recorded nothing, and why, in one sentence. */
+export interface InstallCheckResult {
+  outcome: 'mismatch' | 'fetch-failed' | 'no-source';
+  message: string;
+}
 
 // ---------------------------------------------------------------------------
 // Sources

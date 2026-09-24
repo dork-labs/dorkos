@@ -231,8 +231,9 @@ describe('rebuildRecordStrict', () => {
     expect(fetcher.fetchAtCommit).not.toHaveBeenCalled();
   });
 
-  // Purpose: the rebuild holds the install lock, and re-checks inside it: an
-  // update that wrote a record while it waited makes it a no-op.
+  // Purpose: the rebuild writes under the install lock, and re-checks inside
+  // it: an update that wrote a record while it waited makes it a no-op, and
+  // the update's record is left as it wrote it.
   it('waits for the install lock and re-checks the install inside it', async () => {
     const root = await legacyInstall(shipped());
     const fetcher = fetcherFor(await tree(shipped()));
@@ -246,12 +247,10 @@ describe('rebuildRecordStrict', () => {
 
     const pending = rebuildRecordStrict(root, { fetcher, logger: noopLogger });
     await new Promise((r) => setTimeout(r, 30));
-    expect(fetcher.fetchAtCommit).not.toHaveBeenCalled();
     release();
     await holder;
 
     expect(await pending).toEqual({ outcome: 'not-needed', why: 'has-record' });
-    expect(fetcher.fetchAtCommit).not.toHaveBeenCalled();
     expect(await readFile(path.join(root, '.dork/installed-files.json'), 'utf8')).toContain(
       'by the update'
     );
@@ -312,6 +311,80 @@ describe('rebuildRecordStrict', () => {
     const plain = await readInstalledFiles(withoutNpm);
     expect(plain!.ownedPaths).toEqual([]);
     expect(plain!.files['package-lock.json']).toBeDefined();
+  });
+
+  // Purpose (review 1): the rebuild must also prove the live folder holds
+  // nothing extra where a package keeps what it runs. An extra skill (a newer
+  // version's file copied in, or the person's own) would otherwise be recorded
+  // as neither, and the install would verify clean while it runs.
+  it('writes nothing when the live folder has extra files where a package keeps what it runs', async () => {
+    const root = await legacyInstall({
+      ...shipped(),
+      'skills/b/SKILL.md': '---\nname: b\ndescription: B.\n---\n\nB.\n',
+    });
+    const before = await snapshot(root);
+
+    const result = await rebuildRecordStrict(root, {
+      fetcher: fetcherFor(await tree(shipped())),
+      logger: noopLogger,
+    });
+
+    expect(result).toEqual({ outcome: 'mismatch', differing: ['skills/b/SKILL.md'] });
+    expect(await snapshot(root)).toEqual(before);
+  });
+
+  // Purpose (review 1, S5): on a case-insensitive volume a fetched
+  // `commands/Go.md` matches a live `commands/go.md`; the live spelling is then
+  // an unrecorded file under an effect path, so it is a mismatch, not a match.
+  it('treats a case-only difference as a mismatch', async () => {
+    const files = { ...shipped(), 'commands/go.md': undefined as unknown as string };
+    delete (files as Record<string, string | undefined>)['commands/go.md'];
+    const root = await legacyInstall({ ...files, 'commands/go.md': 'go' });
+    const fetched = await tree({ ...files, 'commands/Go.md': 'go' });
+
+    const result = await rebuildRecordStrict(root, {
+      fetcher: fetcherFor(fetched),
+      logger: noopLogger,
+    });
+
+    expect(result.outcome).toBe('mismatch');
+    expect(await readInstalledFiles(root)).toBeNull();
+  });
+
+  // Purpose (review 2, S2/S4): an older manifest's userEditable entry the
+  // schema now refuses (`skills/**`, `**`) is not trusted, so an edited skill
+  // is a mismatch rather than a "customized" file under a bogus rule.
+  it.each([['skills/**'], ['**']])(
+    'ignores a userEditable entry the schema refuses (%s)',
+    async (entry) => {
+      const manifest = JSON.stringify({ ...JSON.parse(MANIFEST), userEditable: [entry] });
+      const files = shipped({ '.dork/manifest.json': manifest });
+      const root = await legacyInstall({ ...files, 'skills/a/SKILL.md': 'EVIL' });
+
+      const result = await rebuildRecordStrict(root, {
+        fetcher: fetcherFor(await tree(files)),
+        logger: noopLogger,
+      });
+
+      expect(result).toEqual({ outcome: 'mismatch', differing: ['skills/a/SKILL.md'] });
+    }
+  );
+
+  // Purpose (review 8): the fetch and the staging run before the lock is
+  // taken, so a slow network never holds up an install of the same package.
+  it('fetches before taking the install lock', async () => {
+    const root = await legacyInstall(shipped());
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const holder = withInstallTargetLock(root, () => held);
+    const fetcher = fetcherFor(await tree(shipped()));
+
+    const pending = rebuildRecordStrict(root, { fetcher, logger: noopLogger });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(fetcher.fetchAtCommit).toHaveBeenCalledTimes(1);
+    release();
+    await holder;
+    expect((await pending).outcome).toBe('rebuilt');
   });
 
   // Purpose: a FIFO or a symlink at a recorded path is not the recorded file,

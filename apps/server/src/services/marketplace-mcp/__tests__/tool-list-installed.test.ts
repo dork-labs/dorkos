@@ -205,7 +205,11 @@ describe('createListInstalledHandler', () => {
     expect(plain.installed[0]).not.toHaveProperty('integrity');
 
     const verified = parseToolResult(await handler({ verify: true }));
-    expect(verified.installed[0].integrity).toEqual({ status: 'unknown', reason: 'no-record' });
+    expect(verified.installed[0].integrity).toEqual({
+      status: 'unknown',
+      reason: 'no-record',
+      check: { source: 'local' },
+    });
   });
 
   it('filters by type when the `type` arg is supplied', async () => {
