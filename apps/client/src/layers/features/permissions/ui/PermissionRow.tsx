@@ -49,49 +49,51 @@ export function PermissionRow({
   disabled = false,
   footer,
 }: PermissionRowProps) {
+  // Sized by its own width, not the viewport's: the agent page lives in a
+  // narrow side panel on a wide screen, where a viewport breakpoint would put
+  // the switch beside the text and squeeze the description to a word a line.
   return (
-    <div
-      className="flex flex-col gap-3 py-3 md:flex-row md:items-start md:justify-between md:gap-6"
-      data-testid={`permission-row-${areaId}`}
-    >
-      <div className="min-w-0 space-y-1">
-        <div className="flex items-center gap-1.5">
-          {changed ? (
-            <span
-              className="bg-primary size-1.5 shrink-0 rounded-full"
-              aria-label="Set differently for this agent"
-              role="img"
-            />
-          ) : null}
-          <span className="text-sm font-medium">{label}</span>
-          {floor ? (
-            <Lock className="text-muted-foreground size-3.5" aria-label="Never Allowed" />
-          ) : null}
+    <div className="@container" data-testid={`permission-row-${areaId}`}>
+      <div className="flex flex-col gap-3 py-3 @lg:flex-row @lg:items-start @lg:justify-between @lg:gap-6">
+        <div className="min-w-0 space-y-1">
+          <div className="flex items-center gap-1.5">
+            {changed ? (
+              <span
+                className="bg-primary size-1.5 shrink-0 rounded-full"
+                aria-label="Set differently for this agent"
+                role="img"
+              />
+            ) : null}
+            <span className="text-sm font-medium">{label}</span>
+            {floor ? (
+              <Lock className="text-muted-foreground size-3.5" aria-label="Never Allowed" />
+            ) : null}
+          </div>
+          <p className="text-muted-foreground text-sm">{description}</p>
+          <p className="text-muted-foreground text-xs">{sourceText}</p>
         </div>
-        <p className="text-muted-foreground text-sm">{description}</p>
-        <p className="text-muted-foreground text-xs">{sourceText}</p>
-      </div>
-      <div className="flex shrink-0 flex-col gap-2 md:items-end">
-        <PermissionStateSwitch
-          value={value}
-          onChange={onChange}
-          floor={floor}
-          disabled={disabled}
-          aria-label={label}
-        />
-        {changed && onReset ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="self-start md:self-end"
-            onClick={onReset}
+        <div className="flex shrink-0 flex-col gap-2 @lg:items-end">
+          <PermissionStateSwitch
+            value={value}
+            onChange={onChange}
+            floor={floor}
             disabled={disabled}
-          >
-            <RotateCcw className="size-3.5" aria-hidden />
-            Reset to default
-          </Button>
-        ) : null}
-        {footer}
+            aria-label={label}
+          />
+          {changed && onReset ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="self-start @lg:self-end"
+              onClick={onReset}
+              disabled={disabled}
+            >
+              <RotateCcw className="size-3.5" aria-hidden />
+              Reset to default
+            </Button>
+          ) : null}
+          {footer}
+        </div>
       </div>
     </div>
   );
