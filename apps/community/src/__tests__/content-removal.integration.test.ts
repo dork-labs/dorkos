@@ -711,6 +711,63 @@ describe('who may remove (AC-4)', { timeout: 180_000 }, () => {
       await count('SELECT 1 FROM entries WHERE id=ANY($1::uuid[]) AND removed_at IS NULL', [ids])
     ).toBe(2);
   });
+
+  // Purpose (the held cells of AC-4 and AC-5): a host hold stops a community growing, not its
+  // members cleaning it up. resolveCommunityContext lets a held community through, so a browser
+  // session still removes (its own, or as the owner); the hold revoked every grant and agent
+  // credential (host-lifecycle.ts), so those answer 401 like any revoked credential.
+  it('removes in a held community through a browser session', async () => {
+    const s = await scene('held');
+    const [own, members, viaGrant, viaAgent] = [
+      await say(s, { cookie: s.p.cookie }),
+      await say(s, { cookie: s.q.cookie }),
+      await say(s, { cookie: s.p.cookie }),
+      await say(s, { bearer: s.agent.token }),
+    ];
+    const version = (
+      await h.pool.query<{ lifecycle_version: number }>(
+        'SELECT lifecycle_version FROM communities WHERE id=$1',
+        [s.communityId]
+      )
+    ).rows[0].lifecycle_version;
+    await body(
+      await h.call(`/api/v1/host/communities/${s.communityId}/lifecycle`, {
+        method: 'PATCH',
+        cookie: host.cookie,
+        body: { action: 'hold', lifecycleVersion: version, deletionNoticeAt: null },
+      }),
+      200,
+      'hold'
+    );
+    expect(
+      (await h.pool.query('SELECT lifecycle FROM communities WHERE id=$1', [s.communityId])).rows[0]
+        .lifecycle
+    ).toBe('held');
+    // Held is read-only for growth: a new post is refused.
+    const posting = await h.call(`${s.base}/channels/${s.channelId}/entries`, {
+      cookie: s.p.cookie,
+      body: { text: 'new while held', idempotencyKey: 'held-post' },
+    });
+    expect((await posting.json()).code).toBe('COMMUNITY_HELD');
+    expect(
+      (await removed(await removeMessage(s, own, { cookie: s.p.cookie }), 'own while held')).text
+    ).toBe(REMOVED_ENTRY_TEXT.author);
+    expect(
+      (
+        await removed(
+          await removeMessage(s, members, { cookie: s.owner.cookie }),
+          'owner while held'
+        )
+      ).text
+    ).toBe(REMOVED_ENTRY_TEXT.moderator);
+    expect((await removeMessage(s, viaGrant, { bearer: s.grant })).status).toBe(401);
+    expect((await removeMessage(s, viaAgent, { bearer: s.agent.token })).status).toBe(401);
+    expect(
+      await count('SELECT 1 FROM entries WHERE id=ANY($1::uuid[]) AND removed_at IS NULL', [
+        [viaGrant, viaAgent],
+      ])
+    ).toBe(2);
+  });
 });
 
 describe('removing a file (AC-7)', { timeout: 120_000 }, () => {
