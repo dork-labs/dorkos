@@ -1,6 +1,12 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { appendFile } from 'node:fs/promises';
 import type { Pool, PoolClient } from 'pg';
+import {
+  bumpContentVersion,
+  eraseEntries,
+  queueBlobs,
+  recordRedactions,
+} from '../content-removal.js';
 import { transaction } from '../data.js';
 import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../mentions.js';
 import { remove } from '../routes/members.js';
@@ -102,15 +108,6 @@ interface Target {
 /** Per-channel highest sequence number when the mention step started. */
 type Watermark = Map<string, number>;
 
-/** SHA-256 of an erased entry's payload, in the shape a post hashes its own payload. */
-export function tombstonePayloadHash(parentEntryId: string | null): string {
-  return createHash('sha256')
-    .update(
-      JSON.stringify({ text: ERASED_ENTRY_TEXT, mentions: [], parentEntryId, attachmentIds: [] })
-    )
-    .digest('hex');
-}
-
 /** An unguessable replacement handle, so the husk cannot be used to find the person again. */
 export function randomHuskHandle(): string {
   // 256 is a multiple of 32, so taking each byte modulo 32 is unbiased.
@@ -139,14 +136,6 @@ export function rewriteHandleTokens(text: string, handles: readonly string[]): s
     copied = at + 1 + raw.length;
   }
   return copied ? rewritten + text.slice(copied) : text;
-}
-
-async function bumpContentVersion(client: PoolClient, communityId: string): Promise<void> {
-  const bumped = await client.query(
-    'UPDATE community_content_versions SET version=version+1 WHERE community_id=$1',
-    [communityId]
-  );
-  if (bumped.rowCount !== 1) throw new ErasureError('CONTENT_VERSION_MISSING');
 }
 
 /**
@@ -230,23 +219,6 @@ async function endAccess(target: Target): Promise<void> {
   });
 }
 
-/** Delete one batch of rows, then queue their blobs, in the transaction that removed them. */
-async function queueBlobs(client: PoolClient, communityId: string, keys: string[]): Promise<void> {
-  if (!keys.length) return;
-  // The same two statements queueCommittedBlobDeletion and discardManagedBlob run; the
-  // pending-deletion sweep removes the bytes and then the inventory row with its checksum.
-  await client.query(
-    `UPDATE managed_blobs SET state='pending_delete'
-     WHERE community_id=$1 AND blob_key=ANY($2::text[]) AND state IN ('committed','stored')`,
-    [communityId, keys]
-  );
-  await client.query(
-    `INSERT INTO pending_blob_deletions(blob_key,attempts,next_attempt_at)
-     SELECT key,0,now() FROM unnest($1::text[]) AS key ON CONFLICT(blob_key) DO NOTHING`,
-    [keys]
-  );
-}
-
 const AUTHORED_ATTACHMENT = `community_id=$1 AND (uploader_member_id=$2 OR uploader_agent_id IN
   (SELECT id FROM agents WHERE owner_member_id=$2 AND community_id=$1))`;
 
@@ -259,9 +231,16 @@ async function eraseFiles(target: Target): Promise<void> {
     );
     if (!candidates.rows.length) return;
     await withMember(target, async (client) => {
-      const deleted = await client.query<{ blob_key: string }>(
+      // Bump first: this transaction writes redaction rows (content-removal.ts).
+      await bumpContentVersion(client, target.communityId);
+      const deleted = await client.query<{
+        blob_key: string;
+        entry_id: string | null;
+        channel_id: string;
+      }>(
+        // content-change: erasure-files
         `DELETE FROM attachments WHERE id=ANY($3::uuid[]) AND ${AUTHORED_ATTACHMENT}
-         RETURNING blob_key`,
+         RETURNING blob_key,entry_id,channel_id`,
         [target.communityId, target.memberId, candidates.rows.map((row) => row.id)]
       );
       await queueBlobs(
@@ -269,7 +248,15 @@ async function eraseFiles(target: Target): Promise<void> {
         target.communityId,
         deleted.rows.map((row) => row.blob_key)
       );
-      await bumpContentVersion(client, target.communityId);
+      // A posted file's message now lists one file fewer. It is tombstoned in a later step,
+      // but until then a reader of the redaction feed must be told its file list changed.
+      const bound = new Map<string, string>();
+      for (const row of deleted.rows) if (row.entry_id) bound.set(row.entry_id, row.channel_id);
+      await recordRedactions(
+        client,
+        target.communityId,
+        [...bound].map(([entryId, channelId]) => ({ entryId, channelId }))
+      );
       await target.options.hooks?.inBatch?.('files');
     });
     if (candidates.rows.length < target.batchSize) return;
@@ -315,34 +302,19 @@ async function tombstone(target: Target): Promise<void> {
          WHERE id=ANY($3::uuid[]) AND ${AUTHORED_ENTRY} FOR NO KEY UPDATE`,
         [target.communityId, target.memberId, candidates.rows.map((row) => row.id)]
       );
-      const ids = locked.rows.map((row) => row.id);
-      if (!ids.length) return;
-      await client.query(
-        `UPDATE entries e SET text=$2,
-           author_display_name=CASE WHEN e.author_agent_id IS NULL THEN $3 ELSE $4 END,
-           idempotency_key='erased:' || e.id::text,payload_hash=erased.hash,erased_at=now()
-         FROM unnest($5::uuid[],$6::text[]) AS erased(id,hash)
-         WHERE e.id=erased.id AND e.community_id=$1`,
-        [
-          target.communityId,
-          ERASED_ENTRY_TEXT,
-          ERASED_MEMBER_NAME,
-          ERASED_AGENT_NAME,
-          ids,
-          locked.rows.map((row) => tombstonePayloadHash(row.parent_entry_id)),
-        ]
-      );
-      await client.query(
-        'DELETE FROM entry_mentions WHERE community_id=$1 AND entry_id=ANY($2::uuid[])',
-        [target.communityId, ids]
-      );
-      await client.query(
-        `INSERT INTO entry_redactions(community_id,channel_id,entry_id)
-         SELECT $1,changed.channel_id,changed.id
-         FROM unnest($2::uuid[],$3::uuid[]) AS changed(id,channel_id)`,
-        [target.communityId, ids, locked.rows.map((row) => row.channel_id)]
-      );
+      if (!locked.rows.length) return;
       await bumpContentVersion(client, target.communityId);
+      await eraseEntries(
+        client,
+        target.communityId,
+        locked.rows.map((row) => ({ id: row.id, parentEntryId: row.parent_entry_id })),
+        { text: ERASED_ENTRY_TEXT, memberName: ERASED_MEMBER_NAME, agentName: ERASED_AGENT_NAME }
+      );
+      await recordRedactions(
+        client,
+        target.communityId,
+        locked.rows.map((row) => ({ entryId: row.id, channelId: row.channel_id }))
+      );
       await target.options.hooks?.inBatch?.('tombstones');
     });
     if (candidates.rows.length < target.batchSize) return;
@@ -428,6 +400,7 @@ async function rewriteMentions(target: Target, above: Watermark | null): Promise
         [target.communityId, ids]
       );
       const unmentioned = await client.query<{ entry_id: string }>(
+        // content-change: erasure-rewrite-mentions
         `DELETE FROM entry_mentions WHERE community_id=$1 AND entry_id=ANY($2::uuid[])
            AND (mentioned_member_id=$3 OR mentioned_agent_id=ANY($4::uuid[]))
          RETURNING entry_id`,
@@ -440,6 +413,7 @@ async function rewriteMentions(target: Target, above: Watermark | null): Promise
       if (rewrites.length) {
         // Their payload_hash and idempotency_key stay, so their own retries still replay.
         await client.query(
+          // content-change: erasure-rewrite-mentions
           `UPDATE entries e SET text=rewritten.text
            FROM unnest($2::uuid[],$3::text[]) AS rewritten(id,text)
            WHERE e.id=rewritten.id AND e.community_id=$1`,
@@ -450,13 +424,13 @@ async function rewriteMentions(target: Target, above: Watermark | null): Promise
       if (!changed.size) return;
       const channelOf = new Map(locked.rows.map((row) => [row.id, row.channel_id]));
       const changedIds = [...changed].filter((id) => channelOf.has(id));
-      await client.query(
-        `INSERT INTO entry_redactions(community_id,channel_id,entry_id)
-         SELECT $1,changed.channel_id,changed.id
-         FROM unnest($2::uuid[],$3::uuid[]) AS changed(id,channel_id)`,
-        [target.communityId, changedIds, changedIds.map((id) => channelOf.get(id))]
-      );
+      // Bump before the redaction rows, so their ids become visible in the order assigned.
       await bumpContentVersion(client, target.communityId);
+      await recordRedactions(
+        client,
+        target.communityId,
+        changedIds.map((id) => ({ entryId: id, channelId: channelOf.get(id)! }))
+      );
       await target.options.hooks?.inBatch?.('mentions');
     });
     if (candidates.rows.length < target.batchSize) return;

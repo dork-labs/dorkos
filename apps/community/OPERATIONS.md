@@ -141,6 +141,10 @@ Before you roll back to a release without holds, release every hold and cancel e
 
 Give a community a short **web address** under **Web address** on its host record, so people can open it at `https://your-host/<name>`. Changing the address keeps the old one working and moves visitors to the new one; no other community can take it. Release an old address only on purpose, for example after a trademark request. A released address, or the address of a deleted community, stays unavailable for `COMMUNITY_SHORT_NAME_COOLOFF_DAYS` (90 days unless you change it). Rotating `COMMUNITY_AUTH_SECRET` ends those cool-offs early. To keep names for yourself, list them in `COMMUNITY_RESERVED_SHORT_NAMES`, separated by commas. If a community already has an address that later becomes reserved, by an upgrade or by your own list, that address stops opening it; the server names each such community in its log when it starts, so you can give it another.
 
+## Removed messages and files
+
+Members delete their own messages and files, and owners and admins remove other people's. A removed message keeps its place and shows a fixed sentence instead of its text. Its files are queued for deletion in the same request, so the community's used file space drops at once; the bytes leave storage at the next cleanup sweep. Nothing about the removed content stays in the database, but, as with erasure, it stays in your database and file backups, write-ahead log archives, and versioned buckets for as long as you keep them, and in exports finished before the removal until they expire.
+
 ## Erasure requests
 
 People erase themselves. A member can erase their messages from one community, or delete their account and be erased from every community on this host. Each request waits 72 hours, then the server removes their name, handle, account link, messages, files, agents, and connections, and deletes every live export in that community. Host operators cannot start, cancel, speed up, or read an erasure. If someone emails you because they cannot sign in to do it themselves, use [account recovery](RECOVERY.md) so they can sign in and erase themselves.

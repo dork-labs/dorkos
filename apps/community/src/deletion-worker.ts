@@ -314,6 +314,7 @@ export async function sweepCommunityDeletions(
       'agents',
       'channels',
     ]) {
+      // content-change: tenant-deletion
       await client.query(`DELETE FROM ${table} WHERE community_id=$1`, [job.community_id]);
     }
     await client.query('DELETE FROM community_creation_receipts WHERE community_id=$1', [
