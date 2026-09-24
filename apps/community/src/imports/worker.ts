@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import type { BlobStore } from '../storage/index.js';
+import type { ImportLimits } from './manifest.js';
 import { claimImport, processImport, type ImportWorkerHooks } from './process.js';
 import { IMPORT_COMMIT_WINDOW_MS, IMPORT_RETENTION } from './store.js';
 import { teardownImport } from './teardown.js';
@@ -37,18 +38,20 @@ export async function expireImports(pool: Pool, now = new Date()): Promise<numbe
  * cancelled or failed. Work is claimed with `SKIP LOCKED` and a lease, so replicas never work
  * on the same import at once, and the main loop runs one import at a time per replica.
  *
+ * @param limits - This host's content limits, which every import is held to.
  * @returns Whether an import was claimed, and whether its work settled it.
  */
 export async function sweepImports(
   pool: Pool,
   blobStore: BlobStore,
+  limits: ImportLimits,
   now = new Date(),
   hooks: ImportWorkerHooks = {}
 ): Promise<{ claimed: number; settled: number }> {
   await expireImports(pool, now);
   const job = await claimImport(pool, now);
   if (job) {
-    await processImport(pool, blobStore, job, hooks);
+    await processImport(pool, blobStore, job, limits, hooks);
     return { claimed: 1, settled: 0 };
   }
   const due = await pool.query<{ id: string }>(

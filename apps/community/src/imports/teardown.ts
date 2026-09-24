@@ -72,12 +72,21 @@ export async function teardownImport(
       'SELECT lifecycle FROM communities WHERE id=$1',
       [communityId]
     );
-    // Only an unclaimed community is torn down; nobody has ever been able to read it.
-    if (community.rows[0]?.lifecycle !== 'pending_owner') return null;
-    // A ready import that the host abandoned has restored rows. They go first, children
-    // before parents, so every file below is unreferenced.
-    for (const table of IMPORTED_TABLES) {
-      await client.query(`DELETE FROM ${table} WHERE community_id=$1`, [communityId]);
+    // Only an unclaimed community is torn down; nobody has ever been able to read it. If it
+    // somehow moved on, only the import's own files go, and the community stays.
+    const unclaimed = community.rows[0]?.lifecycle === 'pending_owner';
+    const own = await client.query<{ blob_key: string }>(
+      `SELECT blob_key FROM community_import_files WHERE import_id=$1
+       UNION ALL SELECT staging_blob_key FROM community_imports
+       WHERE id=$1 AND staging_blob_key IS NOT NULL`,
+      [importId]
+    );
+    if (unclaimed) {
+      // A ready import that the host abandoned has restored rows. They go first, children
+      // before parents, so every file below is unreferenced.
+      for (const table of IMPORTED_TABLES) {
+        await client.query(`DELETE FROM ${table} WHERE community_id=$1`, [communityId]);
+      }
     }
     // Progress rows and the staging reference are what keep these files from the cleanup
     // sweeps; they go too.
@@ -88,9 +97,17 @@ export async function teardownImport(
     const settled = await client.query<{ blob_key: string }>(
       `UPDATE managed_blobs SET state='pending_delete'
        WHERE community_id=$1 AND state IN ('stored','committed')
+         AND ($2 OR blob_key=ANY($3::text[]))
        RETURNING blob_key`,
-      [communityId]
+      [communityId, unclaimed, own.rows.map((row) => row.blob_key)]
     );
+    if (!unclaimed) {
+      await client.query(
+        `UPDATE community_imports SET settled_at=now(),lease_token=NULL,updated_at=now()
+         WHERE id=$1`,
+        [importId]
+      );
+    }
     // Every one of these writers finished (stored or committed), so a delete settles it: the
     // error timestamp marks the outcome as known for the sweep that retries a failure.
     await client.query(
@@ -99,7 +116,7 @@ export async function teardownImport(
        ON CONFLICT(blob_key) DO NOTHING`,
       [settled.rows.map((row) => row.blob_key)]
     );
-    return { communityId, keys: settled.rows.map((row) => row.blob_key) };
+    return { communityId, keys: settled.rows.map((row) => row.blob_key), unclaimed };
   });
   if (!queued) return 'skipped';
 
@@ -128,6 +145,7 @@ export async function teardownImport(
     });
   }
 
+  if (!queued.unclaimed) return 'settled';
   return transaction(pool, async (client) => {
     const communityId = await lockTarget(client, importId, false);
     if (!communityId) return 'skipped';

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): check, restore, and claim an imported community (DOR-2259)'
+  - 'fix(community): hold imports to the member API and this host's content limits (DOR-2259)'
 ---
 
 ### Added

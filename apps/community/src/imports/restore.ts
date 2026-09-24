@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import type { CommunityExportManifestV1 } from '@dorkos/shared/community-wire';
 import { sanitizeDisplayName } from '../storage/blob-store.js';
 import { uuidv5 } from './derived-id.js';
+import { ImportFailure } from './manifest.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -17,7 +18,8 @@ export interface RestoredFile {
  * transaction, with IDs derived from the import and the source IDs. Nothing here is visible
  * until that transaction commits.
  *
- * Members and agents are historical: no account, inactive, `origin='imported'`; agents are
+ * Audit events keep `origin='imported'`, so nothing an export claims passes for an event this
+ * host wrote. Members and agents are historical: no account, inactive, `origin='imported'`; agents are
  * revoked. The owner who made the export is the one row the claimant later adopts, and it is
  * added to every channel. Emails are dropped. Entries keep their sequence, thread, mentions,
  * author name, and time.
@@ -169,7 +171,7 @@ export async function insertImportedRows(
        content_type text,byte_size integer,checksum text,uploaded_at timestamptz)`,
     manifest.attachments.map((attachment) => {
       const file = files.get(attachment.id);
-      if (!file) throw new Error('A restored file is missing');
+      if (!file) throw new ImportFailure('IMPORT_STORAGE_UNAVAILABLE');
       return {
         id: derive(attachment.id),
         channel_id: derive(attachment.channelId),
@@ -188,9 +190,10 @@ export async function insertImportedRows(
   );
   await insert(
     `INSERT INTO audit_events(id,community_id,actor_member_id,actor_kind,action,subject_id,
-       prior_state,next_state,changed_fields,created_at)
+       prior_state,next_state,changed_fields,created_at,origin)
      SELECT r.id,$2,r.actor_member_id,r.actor_kind,r.action,r.subject_id,r.prior_state,
-       r.next_state,ARRAY(SELECT jsonb_array_elements_text(r.changed_fields)),r.created_at
+       r.next_state,ARRAY(SELECT jsonb_array_elements_text(r.changed_fields)),r.created_at,
+       'imported'
      FROM jsonb_to_recordset($1::jsonb) AS r(id uuid,actor_member_id uuid,actor_kind text,
        action text,subject_id text,prior_state text,next_state text,changed_fields jsonb,
        created_at timestamptz)`,

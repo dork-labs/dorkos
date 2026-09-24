@@ -95,7 +95,7 @@ it('stores an uploaded export in S3 and removes it when the import is cancelled'
       'UPDATE community_imports SET next_attempt_at=now() WHERE settled_at IS NULL'
     );
     await drainCleanup(h);
-    if (!(await sweepImports(h.pool, h.blobStore)).claimed) break;
+    if (!(await sweepImports(h.pool, h.blobStore, h.config.limits)).claimed) break;
   }
   expect(new Set(await objectNames())).toEqual(before);
   expect(
@@ -171,7 +171,7 @@ it('restores an export’s files into S3 and removes them when the community is 
       'UPDATE community_imports SET next_attempt_at=now() WHERE settled_at IS NULL'
     );
     await drainCleanup(h);
-    if (!(await sweepImports(h.pool, h.blobStore)).claimed) break;
+    if (!(await sweepImports(h.pool, h.blobStore, h.config.limits)).claimed) break;
   }
   const restored = await h.pool.query<{ blob_key: string }>(
     'SELECT blob_key FROM attachments WHERE community_id=$1',
@@ -193,7 +193,7 @@ it('restores an export’s files into S3 and removes them when the community is 
       'UPDATE community_imports SET next_attempt_at=now() WHERE settled_at IS NULL'
     );
     await drainCleanup(h);
-    if (!(await sweepImports(h.pool, h.blobStore)).claimed) break;
+    if (!(await sweepImports(h.pool, h.blobStore, h.config.limits)).claimed) break;
   }
   expect(new Set(await objectNames())).toEqual(before);
 });

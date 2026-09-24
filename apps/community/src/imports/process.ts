@@ -18,7 +18,7 @@ import {
 } from '../storage/index.js';
 import { cleanupBackoffSql } from '../storage/pending-deletions.js';
 import { openExport, verifiedFile, type OpenedExport } from './archive.js';
-import { checkManifest, ImportFailure } from './manifest.js';
+import { checkManifest, ImportFailure, type ImportLimits } from './manifest.js';
 import { insertImportedRows, type RestoredFile } from './restore.js';
 import {
   IMPORT_LEASE_MS,
@@ -44,6 +44,19 @@ export interface ClaimedImport {
   id: string;
   state: 'validating' | 'restoring';
   lease: string;
+}
+
+/** The import's community is no longer one it may write into; the import is cancelled. */
+class ImportAbandoned extends Error {
+  constructor() {
+    super('The import can no longer finish');
+    this.name = 'ImportAbandoned';
+  }
+}
+
+function receivedAt(row: ImportRow): Date {
+  if (!row.archive_received_at) throw new ImportFailure('IMPORT_STORAGE_UNAVAILABLE');
+  return row.archive_received_at;
 }
 
 /** The job's lease was taken by a cancel or another worker; stop without writing. */
@@ -113,7 +126,8 @@ async function renewLease(pool: Pool, job: ClaimedImport): Promise<void> {
 }
 
 async function openStaged(blobStore: BlobStore, row: ImportRow): Promise<OpenedExport> {
-  if (!row.staging_blob_key || row.archive_bytes === null) throw new LeaseLost();
+  if (!row.staging_blob_key || row.archive_bytes === null)
+    throw new ImportFailure('IMPORT_STORAGE_UNAVAILABLE');
   return openExport(blobStore, {
     key: row.staging_blob_key,
     byteSize: Number(row.archive_bytes),
@@ -126,11 +140,16 @@ async function openStaged(blobStore: BlobStore, row: ImportRow): Promise<OpenedE
  * fit the community's storage limit. A passing export pauses at `validated` with a report of
  * counts and sizes, or goes straight on to restore when the host asked for `autoCommit`.
  */
-async function validate(pool: Pool, blobStore: BlobStore, job: ClaimedImport): Promise<void> {
+async function validate(
+  pool: Pool,
+  blobStore: BlobStore,
+  job: ClaimedImport,
+  limits: ImportLimits
+): Promise<void> {
   const row = await loadImport(pool, job.id);
   if (!row?.community_id) throw new LeaseLost();
   const opened = await openStaged(blobStore, row);
-  const counts = checkManifest(opened.manifest);
+  const counts = checkManifest(opened.manifest, limits, receivedAt(row));
   for (const attachment of opened.manifest.attachments) {
     for await (const _chunk of verifiedFile(opened, attachment)) {
       // Only the length and digest matter here; the bytes are stored during restore.
@@ -197,13 +216,14 @@ async function restore(
   pool: Pool,
   blobStore: BlobStore,
   job: ClaimedImport,
+  limits: ImportLimits,
   hooks: ImportWorkerHooks
 ): Promise<void> {
   const row = await loadImport(pool, job.id);
   if (!row?.community_id) throw new LeaseLost();
   const communityId = row.community_id;
   const opened = await openStaged(blobStore, row);
-  checkManifest(opened.manifest);
+  checkManifest(opened.manifest, limits, receivedAt(row));
   const progress = await pool.query<{ source_attachment_id: string }>(
     'SELECT source_attachment_id FROM community_import_files WHERE import_id=$1',
     [job.id]
@@ -264,7 +284,9 @@ async function restore(
         'SELECT lifecycle FROM communities WHERE id=$1',
         [communityId]
       );
-      if (community.rows[0]?.lifecycle !== 'pending_owner') throw new LeaseLost();
+      // Nothing but a claim moves an unclaimed community on, and a claim needs a ready import;
+      // if it moved anyway, this import can never finish, so it ends instead of retrying.
+      if (community.rows[0]?.lifecycle !== 'pending_owner') throw new ImportAbandoned();
       const recorded = await client.query<{
         source_attachment_id: string;
         blob_key: string;
@@ -362,18 +384,49 @@ async function fail(pool: Pool, job: ClaimedImport, code: ImportFailureCode): Pr
 }
 
 /**
- * A database refusal of the rows themselves is a property of the export, so it is final; any
- * other error (storage or a connection) may pass, so it is retried.
+ * Whether an error may pass on its own: storage that failed to answer, or a lost database
+ * connection. Anything else (a refusal of the rows themselves, or a fault this code did not
+ * foresee) would fail the same way again, so it ends the import instead of retrying.
  */
-function isDataRefusal(error: unknown): boolean {
+function isTransient(error: unknown): boolean {
+  // A missing object will stay missing; only storage that failed to answer may recover.
+  if (error instanceof BlobStoreError)
+    return error.code !== 'BLOB_TYPE_REJECTED' && error.code !== 'BLOB_NOT_FOUND';
   const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === 'string' && /^(22|23)[0-9A-Z]{3}$/.test(code);
+  if (typeof code !== 'string') return false;
+  // Node network errors, and Postgres connection, resource, and operator-intervention classes.
+  return /^E[A-Z]+$/.test(code) || /^(08|53|57)[0-9A-Z]{3}$/.test(code) || code === '40001';
+}
+
+/** End an import this worker holds as cancelled, for the teardown to remove what it left. */
+async function cancel(pool: Pool, job: ClaimedImport): Promise<void> {
+  await transaction(pool, async (client) => {
+    const row = await loadImport(client, job.id, 'FOR UPDATE');
+    if (!row || row.lease_token !== job.lease || row.state !== job.state) return;
+    await client.query(
+      `UPDATE community_imports SET state='cancelled',lease_token=NULL,next_attempt_at=now(),
+         updated_at=now() WHERE id=$1`,
+      [job.id]
+    );
+    await recordHostAudit(
+      client,
+      { kind: 'system' },
+      {
+        action: 'import.cancel',
+        communityId: row.community_id,
+        priorState: row.state,
+        nextState: 'cancelled',
+        changedFields: ['state'],
+      }
+    );
+  });
 }
 
 /**
- * Check or restore one claimed import. A validation failure is final; a storage failure is
- * retried with the cleanup backoff and becomes `IMPORT_STORAGE_UNAVAILABLE` after
- * {@link IMPORT_MAX_ATTEMPTS} tries.
+ * Check or restore one claimed import. A refusal of the export is final; a storage or
+ * connection failure is retried with the cleanup backoff and becomes
+ * `IMPORT_STORAGE_UNAVAILABLE` after {@link IMPORT_MAX_ATTEMPTS} tries; any other error ends
+ * the import at once rather than repeating it.
  *
  * @returns Whether the import reached its next state.
  */
@@ -381,20 +434,32 @@ export async function processImport(
   pool: Pool,
   blobStore: BlobStore,
   job: ClaimedImport,
+  limits: ImportLimits,
   hooks: ImportWorkerHooks = {}
 ): Promise<boolean> {
   try {
-    if (job.state === 'validating') await validate(pool, blobStore, job);
-    else await restore(pool, blobStore, job, hooks);
+    if (job.state === 'validating') await validate(pool, blobStore, job, limits);
+    else await restore(pool, blobStore, job, limits, hooks);
     return true;
   } catch (error) {
     if (error instanceof LeaseLost) return false;
-    if (error instanceof ImportFailure || isDataRefusal(error)) {
-      await fail(pool, job, error instanceof ImportFailure ? error.code : 'IMPORT_ARCHIVE_INVALID');
+    if (error instanceof ImportAbandoned) {
+      await cancel(pool, job);
       return false;
     }
     // An error class only: a message can carry a value from the export.
-    console.error('Community import deferred', error instanceof Error ? error.name : 'unknown');
+    console.error('Community import stopped', error instanceof Error ? error.name : 'unknown');
+    if (error instanceof ImportFailure) {
+      await fail(pool, job, error.code);
+      return false;
+    }
+    if (!isTransient(error)) {
+      const code = (error as { code?: unknown } | null)?.code;
+      // A database refusal of the rows is a property of the export.
+      const refused = typeof code === 'string' && /^(22|23)[0-9A-Z]{3}$/.test(code);
+      await fail(pool, job, refused ? 'IMPORT_ARCHIVE_INVALID' : 'IMPORT_STORAGE_UNAVAILABLE');
+      return false;
+    }
     const retried = await pool.query<{ attempts: number }>(
       `UPDATE community_imports SET attempts=attempts+1,
          next_attempt_at=now() + ${cleanupBackoffSql('attempts')},updated_at=now()

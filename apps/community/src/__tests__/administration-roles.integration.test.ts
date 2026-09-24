@@ -905,7 +905,7 @@ const actions: Action<unknown>[] = [
       // Stand in for the worker: the matrix tests who may commit, not how an export is checked.
       await pool.query(
         `UPDATE community_imports SET state='validated',validated_at=now(),
-           archive_sha256=$2,archive_bytes=1,report=$3 WHERE id=$1`,
+           archive_sha256=$2,archive_bytes=1,archive_received_at=now(),report=$3 WHERE id=$1`,
         [
           importId,
           'a'.repeat(64),
