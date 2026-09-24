@@ -3,10 +3,11 @@
  * cover the happy paths; these pin the two properties a crash depends on.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { rollBackUninstall, type UninstallJournal } from '../uninstall-journal.js';
+import { finishUninstall, rollBackUninstall, type UninstallJournal } from '../uninstall-journal.js';
+import { readInstalledFiles, writeInstalledFiles } from '../installed-files.js';
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -63,5 +64,42 @@ describe('rollBackUninstall', () => {
       rollBackUninstall(sibling, journal(root, ['blocked/x.md', '.dork/manifest.json']))
     ).rejects.toThrow();
     expect(await readFile(path.join(root, '.dork', 'manifest.json'), 'utf8')).toBe('{}');
+  });
+});
+
+describe('finishUninstall', () => {
+  // Purpose (code review 4): the record is pruned BEFORE the sibling (and its
+  // journal) is deleted. A crash between the two used to leave a full record
+  // with no journal, so the next reinstall read moved-out editable defaults as
+  // "deleted by the person" (row 3a) and dropped them. Here the sibling's
+  // removal fails, standing in for that crash.
+  it('prunes the record before deleting the sibling, and a retry finishes', async () => {
+    const { root, sibling } = await setup();
+    await put(root, 'edited.md', 'mine');
+    await put(sibling, 'moved.md', 'pkg');
+    await put(sibling, 'locked/x.md', 'x');
+    await writeInstalledFiles(root, {
+      version: 1,
+      package: { name: 'pkg', type: 'plugin' },
+      ownedPaths: [],
+      files: { 'moved.md': `sha256:${'a'.repeat(64)}`, 'edited.md': `sha256:${'b'.repeat(64)}` },
+      pendingDefaults: {},
+      userEditable: [],
+    });
+    const committed = { ...journal(root, ['moved.md']), phase: 'committed' as const };
+    await chmod(path.join(sibling, 'locked'), 0o555);
+    try {
+      await expect(finishUninstall(sibling, committed)).rejects.toThrow();
+      const pruned = await readInstalledFiles(root);
+      expect(Object.keys(pruned!.files)).toEqual(['edited.md']);
+      expect(pruned!.uninstalledAt).toBeDefined();
+    } finally {
+      await chmod(path.join(sibling, 'locked'), 0o755);
+    }
+
+    await finishUninstall(sibling, committed);
+
+    expect(await lstat(sibling).catch(() => undefined)).toBeUndefined();
+    expect(Object.keys((await readInstalledFiles(root))!.files)).toEqual(['edited.md']);
   });
 });

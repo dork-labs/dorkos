@@ -226,7 +226,7 @@ export async function rollBackUninstall(sibling: string, journal: UninstallJourn
 
 /**
  * Finish a committed uninstall: prune the root's record to the entries still
- * present, mark it uninstalled, delete the sibling, and prune empty
+ * present and mark it uninstalled, then delete the sibling, and prune empty
  * directories. When nothing but the record would remain, the record and the
  * root go too: an untouched package leaves nothing behind.
  *
@@ -236,8 +236,12 @@ export async function rollBackUninstall(sibling: string, journal: UninstallJourn
 export async function finishUninstall(sibling: string, journal: UninstallJournal): Promise<void> {
   const root = journal.root;
   const record = await readInstalledFiles(root);
-  await rm(sibling, { recursive: true, force: true });
+  // Prune first, atomically, then delete the sibling and its journal. The
+  // other order leaves, after a crash between the two, a full record with no
+  // journal, and the next install reads every moved-out editable default as
+  // one the person deleted. Pruning again on a retry is harmless.
   if (record) await pruneRecord(root, record);
+  await rm(sibling, { recursive: true, force: true });
   await pruneEmptyDirs(root);
   const remaining = await listFiles(root);
   if (remaining.length === 0 || (remaining.length === 1 && remaining[0] === INSTALLED_FILES_PATH)) {
