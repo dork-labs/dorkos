@@ -63,9 +63,22 @@ export interface ParsedFrontmatter {
   content: string;
 }
 
+/** Thrown when a frontmatter block parses to something other than a mapping. */
+export class NonMappingFrontmatterError extends Error {
+  /**
+   * Build the error for a block that is a scalar, list or null.
+   *
+   * @param kind - What the block parsed to (`string`, `array`, `null`, ...).
+   */
+  constructor(kind: string) {
+    super(`Frontmatter must be a list of "key: value" fields, but this one is ${kind}.`);
+    this.name = 'NonMappingFrontmatterError';
+  }
+}
+
 /** Engine that refuses to run, standing in for gray-matter's `eval` engine. */
 const refusingEngine = {
-  parse(): never {
+  parse(_source?: string): never {
     throw new UnsupportedFrontmatterError('javascript');
   },
   stringify(): never {
@@ -74,24 +87,51 @@ const refusingEngine = {
 };
 
 /**
+ * Throw on an `undefined` anywhere in `value`. js-yaml v4 silently drops an
+ * `undefined` key where v3 (gray-matter's own) threw, and a silently dropped
+ * `schedule` key would un-schedule a skill with no error at all.
+ *
+ * @param value - The data about to be written.
+ * @param at - Dotted path of `value`, for the message.
+ */
+function assertNoUndefined(value: unknown, at: string): void {
+  if (value === undefined) {
+    throw new TypeError(`Frontmatter value at "${at}" is undefined, which YAML cannot hold.`);
+  }
+  if (value === null || typeof value !== 'object') return;
+  for (const [key, child] of Object.entries(value)) {
+    assertNoUndefined(child, at === '' ? key : `${at}.${key}`);
+  }
+}
+
+/**
+ * The engines every gray-matter call uses. Exported only so tests can prove
+ * each layer on its own; call {@link parseFrontmatter} and
+ * {@link stringifyFrontmatter} instead.
+ *
+ * @internal
+ */
+export const FRONTMATTER_ENGINES = {
+  yaml: {
+    parse: (str: string): object => yaml.load(str, { schema: yaml.DEFAULT_SCHEMA }) as object,
+    stringify: (data: object): string => {
+      assertNoUndefined(data, '');
+      return yaml.dump(data, { schema: yaml.DEFAULT_SCHEMA });
+    },
+  },
+  json: {
+    parse: (str: string): object => JSON.parse(str) as object,
+    stringify: (data: object): string => JSON.stringify(data, null, 2),
+  },
+  javascript: refusingEngine,
+  js: refusingEngine,
+};
+
+/**
  * Options passed to every gray-matter call. Passing any options object also
  * bypasses gray-matter's cache in both directions.
  */
-const MATTER_OPTIONS = {
-  language: 'yaml',
-  engines: {
-    yaml: {
-      parse: (str: string): object => yaml.load(str, { schema: yaml.DEFAULT_SCHEMA }) as object,
-      stringify: (data: object): string => yaml.dump(data, { schema: yaml.DEFAULT_SCHEMA }),
-    },
-    json: {
-      parse: (str: string): object => JSON.parse(str) as object,
-      stringify: (data: object): string => JSON.stringify(data, null, 2),
-    },
-    javascript: refusingEngine,
-    js: refusingEngine,
-  },
-};
+const MATTER_OPTIONS = { language: 'yaml', engines: FRONTMATTER_ENGINES };
 
 /**
  * Refuse a frontmatter block that names a non-data language, using gray-matter's
@@ -118,12 +158,20 @@ function assertDataLanguage(content: string): void {
  * @returns The frontmatter data and the untrimmed body.
  * @throws {UnsupportedFrontmatterError} When the block is written in a language
  *   other than YAML or JSON (for example `---js`).
+ * @throws {NonMappingFrontmatterError} When the block is a scalar, list or null
+ *   rather than `key: value` fields.
  * @throws The YAML or JSON parser's error when the block is malformed.
  */
 export function parseFrontmatter(content: string): ParsedFrontmatter {
   assertDataLanguage(content);
   const parsed = matter(content, MATTER_OPTIONS);
-  return { data: parsed.data, content: parsed.content };
+  const data: unknown = parsed.data;
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    throw new NonMappingFrontmatterError(
+      Array.isArray(data) ? 'a list' : `a ${data === null ? 'null' : typeof data}`
+    );
+  }
+  return { data: data as Record<string, unknown>, content: parsed.content };
 }
 
 /**
@@ -133,7 +181,10 @@ export function parseFrontmatter(content: string): ParsedFrontmatter {
  * @param body - Markdown body.
  * @param data - Frontmatter fields. An empty object writes the body alone.
  * @returns The full file text.
- * @throws js-yaml's error for a value YAML cannot represent (e.g. `undefined`).
+ * @throws {TypeError} When any value, at any depth, is `undefined` (js-yaml v4
+ *   would silently drop the key; the wrapper refuses instead).
+ * @throws js-yaml's error for any other value YAML cannot represent (e.g. a
+ *   function).
  */
 export function stringifyFrontmatter(body: string, data: Record<string, unknown>): string {
   return matter.stringify({ content: body }, data, MATTER_OPTIONS);

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  FRONTMATTER_ENGINES,
+  NonMappingFrontmatterError,
   UnsupportedFrontmatterError,
   parseFrontmatter,
   stringifyFrontmatter,
@@ -62,6 +64,8 @@ describe('parseFrontmatter refuses every non-data language', () => {
 
   // Purpose: YAML's own escape hatch. js-yaml v3's full schema constructs
   // functions from `!!js/function`; the pinned safe schema must refuse the tag.
+  // (gray-matter's own v3 `safeLoad` refused it too, so this guards against a
+  // regression to an unsafe loader rather than proving the fix.)
   it('refuses a `!!js/function` YAML tag without constructing it', () => {
     const content = `---\nname: !!js/function "function () { globalThis.${SENTINEL} = 1 }"\n---\n`;
     expect(() => parseFrontmatter(content)).toThrow();
@@ -136,5 +140,67 @@ describe('stringifyFrontmatter', () => {
   // Purpose: a skill with no frontmatter fields is written as body alone.
   it('writes the body alone when there is no data', () => {
     expect(stringifyFrontmatter('body', {})).toBe('body\n');
+  });
+});
+
+describe('each layer holds on its own', () => {
+  // Purpose: layer 2 in isolation. Reaching the engines directly skips the
+  // language check, so this fails if the `eval` engine is ever un-replaced.
+  it.each(['javascript', 'js'] as const)('the `%s` engine refuses without running', (name) => {
+    const engine = FRONTMATTER_ENGINES[name];
+    expect(() => engine.parse(`{ a: (globalThis.${SENTINEL} = 1, 2) }`)).toThrow(
+      UnsupportedFrontmatterError
+    );
+    expect(sentinel()).toBeUndefined();
+  });
+
+  // Purpose: layer 3. js-yaml v3's full-schema `load` builds these types; the
+  // pinned v4 DEFAULT_SCHEMA has no JavaScript types and must refuse them.
+  it.each(['!!js/undefined ~', '!!js/regexp /x/', '!!js/function "function () {}"'])(
+    'the YAML engine refuses `%s`',
+    (tagged) => {
+      expect(() => FRONTMATTER_ENGINES.yaml.parse(`a: ${tagged}`)).toThrow();
+    }
+  );
+
+  // Purpose: proves the pinned js-yaml v4 parser is the one in use, not
+  // gray-matter's bundled v3: v3 reads `0123` as octal (83), v4 as 123.
+  it('parses with js-yaml v4 (a leading zero is not octal)', () => {
+    expect(parseFrontmatter('---\na: 0123\n---\n').data).toEqual({ a: 123 });
+  });
+});
+
+describe('frontmatter must be a mapping', () => {
+  // Purpose: `data` is typed as a record, and callers read keys off it. A
+  // top-level scalar or list is refused with a parse error rather than handed
+  // back as a string or array. (A null block reaches callers as `{}`: gray-matter
+  // itself normalises it, covered below.)
+  it.each([
+    ['a scalar', '---\nhello\n---\n'],
+    ['a list', '---\n- a\n- b\n---\n'],
+    ['a JSON array', '---json\n[1, 2]\n---\n'],
+  ])('refuses %s', (_label, content) => {
+    expect(() => parseFrontmatter(content)).toThrow(NonMappingFrontmatterError);
+  });
+
+  // Purpose: an empty, comment-only or null block is still "no fields", not an error.
+  it.each(['---\n---\nbody', '---\n# only a comment\n---\nbody', '---\n~\n---\nbody'])(
+    'reads an empty block as no fields',
+    (content) => {
+      expect(parseFrontmatter(content).data).toEqual({});
+    }
+  );
+});
+
+describe('stringifyFrontmatter refuses values YAML cannot hold', () => {
+  // Purpose: js-yaml v4 silently DROPS an `undefined` key where v3 threw. A
+  // dropped `schedule` key would quietly un-schedule a skill, so the wrapper
+  // restores the throw, at any depth.
+  it.each([
+    ['top level', { name: 'a', schedule: undefined }],
+    ['nested', { name: 'a', schedule: { cron: undefined } }],
+    ['in a list', { name: 'a', tags: ['x', undefined] }],
+  ])('throws on `undefined` at the %s', (_label, data) => {
+    expect(() => stringifyFrontmatter('body', data)).toThrow(/undefined/);
   });
 });

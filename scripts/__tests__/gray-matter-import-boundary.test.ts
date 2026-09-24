@@ -20,12 +20,16 @@ vi.setConfig({ testTimeout: 15_000 });
  */
 const GRAY_MATTER_OWNER = 'packages/skills/src/frontmatter.ts';
 
-/** Detect static, dynamic, re-export, and CommonJS imports of gray-matter. */
+/**
+ * Detect every import spelling of gray-matter or any path inside it: static,
+ * side-effect, dynamic, re-export and CommonJS, with a quoted or
+ * template-literal specifier.
+ */
 function importsGrayMatter(source: string): boolean {
   const packageName = ['gray', 'matter'].join('-');
-  return new RegExp(String.raw`(?:from\s*|import\s*\(|require\s*\()\s*['"]${packageName}['"]`).test(
-    source
-  );
+  return new RegExp(
+    String.raw`(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\brequire\s*\(\s*)(['"\x60])${packageName}(?:/[^'"\x60]*)?\1`
+  ).test(source);
 }
 
 describe('gray-matter import boundary (DOR-2308)', () => {
@@ -43,6 +47,8 @@ describe('gray-matter import boundary (DOR-2308)', () => {
         '*.js',
         '*.mjs',
         '*.cjs',
+        '*.mts',
+        '*.cts',
       ],
       { encoding: 'utf8' }
     )
@@ -64,6 +70,16 @@ describe('gray-matter import boundary (DOR-2308)', () => {
     expect(importsGrayMatter(`const m = await import("${name}");`)).toBe(true);
     expect(importsGrayMatter(`const m = require('${name}');`)).toBe(true);
     expect(importsGrayMatter(`export { default } from '${name}';`)).toBe(true);
+    expect(importsGrayMatter(`import '${name}';`)).toBe(true);
+    // Deep paths reach the eval engine just as well as the package root.
+    expect(importsGrayMatter(`const e = await import('${name}/lib/engines.js');`)).toBe(true);
+    expect(importsGrayMatter(`const e = require("${name}/lib/engines");`)).toBe(true);
+    // A template-literal specifier is still a static string.
+    expect(importsGrayMatter('const m = require(`' + name + '`);')).toBe(true);
+    expect(importsGrayMatter('const m = await import(`' + name + '/lib/parse.js`);')).toBe(true);
+    // Mentions that are not imports, and look-alike packages, do not match.
     expect(importsGrayMatter(`// see ${name} docs`)).toBe(false);
+    expect(importsGrayMatter(`import x from '${name}-extra';`)).toBe(false);
+    expect(importsGrayMatter(`const externals = ['${name}'];`)).toBe(false);
   });
 });

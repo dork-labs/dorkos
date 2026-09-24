@@ -668,8 +668,8 @@ describe('collisions and failures', () => {
     // Not every manifest reaching the materializer was parsed: one read off disk
     // by an older build arrives with the keys the schema would have defaulted
     // simply missing. Handing an `undefined` to `scheduleToFrontmatter` makes
-    // js-yaml throw ("unacceptable kind of an object to dump"), which took the
-    // whole schedule down before the fields were coalesced.
+    // the frontmatter writer throw ("is undefined, which YAML cannot hold"),
+    // which took the whole schedule down before the fields were coalesced.
     const raw = {
       schemaVersion: 1,
       name: 'nightly-tools',

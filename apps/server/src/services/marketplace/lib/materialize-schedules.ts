@@ -224,9 +224,10 @@ function buildScheduleBlock(
   // apply to a declaration that went through a parse, and not every one does —
   // a manifest read off disk by an older build reaches here with keys missing.
   // The cost of assuming otherwise is not a wrong default but a THROW:
-  // `scheduleToFrontmatter` hands whatever it is given to js-yaml, which refuses
-  // an `undefined` with "unacceptable kind of an object to dump" and takes the
-  // whole schedule down. Its own TSDoc names that failure; this is the guard.
+  // `scheduleToFrontmatter` hands whatever it is given to the frontmatter
+  // writer, which refuses an `undefined` ("is undefined, which YAML cannot
+  // hold") rather than silently dropping the key, and takes the whole schedule
+  // down. Its own TSDoc names that failure; this is the guard.
   const { mode, clamped } = clampSchedulePermissionMode(schedule.permissionMode ?? 'acceptEdits');
   const block: ScheduleBlock = {
     ...(schedule.cron != null && { cron: schedule.cron }),
