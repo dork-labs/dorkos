@@ -94,6 +94,19 @@ describe('deriveDefaultName', () => {
   it('handles SSH-style git URLs by treating the whole string as a path', () => {
     expect(deriveDefaultName('git@github.com:dorkos/marketplace.git')).toBe('marketplace');
   });
+
+  it.each([
+    ['https://github.com/acme/.github', 'github'],
+    ['https://github.com/acme/-team_tools', 'team_tools'],
+    ['https://example.com/my%20plugins', 'my-plugins'],
+    ['file:///Users/me/My Marketplace', 'my-marketplace'],
+    ['https://github.com/acme/...', 'marketplace'],
+  ])('derives a name the server accepts from %s (DOR-2304)', (url, name) => {
+    // Purpose: the server now refuses names that could not key the listing
+    // cache, and a name the CLI made up itself must never be one of them.
+    expect(deriveDefaultName(url)).toBe(name);
+    expect(deriveDefaultName(url)).toMatch(/^[a-z0-9][a-z0-9._-]{0,127}$/);
+  });
 });
 
 describe('runMarketplaceAdd', () => {

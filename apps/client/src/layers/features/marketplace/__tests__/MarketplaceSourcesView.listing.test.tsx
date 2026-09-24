@@ -144,7 +144,7 @@ describe('MarketplaceSourcesView — the new source listing (DOR-2304)', () => {
     const row = await findRow('my-team');
     expect(await within(row).findByText(note)).toBeInTheDocument();
     // The retry sits in the note itself: on a phone the row's Refresh is an icon.
-    expect(within(row).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Try again for my-team' })).toBeInTheDocument();
     // The dot no longer says all is well.
     expect(within(row).getByLabelText("Enabled, but its packages didn't load")).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -171,7 +171,7 @@ describe('MarketplaceSourcesView — the new source listing (DOR-2304)', () => {
 
     await addSource(user);
     const row = await findRow('my-team');
-    await user.click(await within(row).findByRole('button', { name: 'Try again' }));
+    await user.click(await within(row).findByRole('button', { name: 'Try again for my-team' }));
 
     expect(transport.refreshMarketplaceSource).toHaveBeenCalledWith('my-team');
     expect(toastSuccess).toHaveBeenCalledWith(
@@ -245,6 +245,56 @@ describe('MarketplaceSourcesView — the new source listing (DOR-2304)', () => {
     expect(toastSuccess).not.toHaveBeenCalled();
     expect(toastWarning).toHaveBeenCalledWith(
       "Couldn't reach my-team. Still showing the last copy."
+    );
+  });
+
+  it('announces the same failure again when it happens again', async () => {
+    // Purpose: a live region only speaks when its content changes, so a second
+    // identical failure used to pass in silence.
+    const user = userEvent.setup();
+    renderView({
+      listMarketplaceSources: vi.fn().mockResolvedValue([SAVED]),
+      refreshMarketplaceSource: vi.fn().mockRejectedValue(new Error('the server went away')),
+    });
+    const row = await findRow('my-team');
+    const refresh = within(row).getByRole('button', { name: 'Refresh my-team' });
+
+    await user.click(refresh);
+    await within(row).findByText(/the server went away/);
+    const first = liveRegion().firstElementChild;
+    await user.click(refresh);
+    await vi.waitFor(() => expect(liveRegion().firstElementChild).not.toBe(first));
+
+    expect(liveRegion()).toHaveTextContent(
+      "my-team: Its packages didn't load: the server went away."
+    );
+  });
+
+  it('says it could not read the folder when a local source goes stale', async () => {
+    // Purpose: "couldn't reach it" is a network sentence; a folder on this
+    // machine is read, not reached.
+    const user = userEvent.setup();
+    const local = { ...SAVED, source: 'file:///Users/me/team-marketplace' };
+    renderView({
+      listMarketplaceSources: vi.fn().mockResolvedValue([local]),
+      refreshMarketplaceSource: vi.fn().mockResolvedValue({
+        marketplace: { plugins: [{}] },
+        fetchedAt: '2026-09-20T08:00:00.000Z',
+        stale: true,
+        reason: "there's no marketplace listing in that folder",
+      }),
+    });
+
+    const row = await findRow('my-team');
+    await user.click(within(row).getByRole('button', { name: 'Refresh my-team' }));
+
+    expect(
+      await within(row).findByText(
+        /^Couldn't read that folder: there's no marketplace listing in that folder\. Still showing the last copy/
+      )
+    ).toBeInTheDocument();
+    expect(toastWarning).toHaveBeenCalledWith(
+      "Couldn't read my-team. Still showing the last copy."
     );
   });
 });

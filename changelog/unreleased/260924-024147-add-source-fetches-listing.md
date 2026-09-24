@@ -5,6 +5,7 @@ covers:
   - 'fix(marketplace): safe source names, a disabled add clears the cache, and an honest refresh (DOR-2304)'
   - 'fix(client): an accurate status dot, an inline Try again, and announced listing news (DOR-2304)'
   - 'fix(marketplace): say a folder with no listing in plain words (DOR-2304)'
+  - 'fix(marketplace): re-announce repeated listing news, name each Try again, and derive valid source names (DOR-2304)'
 ---
 
 ### Changed

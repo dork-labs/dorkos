@@ -77,8 +77,10 @@ export function parseMarketplaceAddArgs(rawArgs: string[]): MarketplaceAddArgs {
 /**
  * Derive a default marketplace name from a source URL. Strips the
  * scheme/host and pulls the last non-empty path segment, lowercased and
- * with any trailing `.git` suffix removed. Falls back to `'marketplace'`
- * when no usable segment exists.
+ * with any trailing `.git` suffix removed, then shaped into a name the
+ * server accepts: runs of other characters become `-` and anything before
+ * the first letter or number is dropped (`.github` → `github`). Falls back
+ * to `'marketplace'` when no usable segment exists.
  *
  * Examples:
  *
@@ -110,8 +112,21 @@ export function deriveDefaultName(url: string): string {
     return 'marketplace';
   }
 
-  const last = segments[segments.length - 1].replace(/\.git$/i, '').toLowerCase();
-  return last.length > 0 ? last : 'marketplace';
+  let last = segments[segments.length - 1];
+  try {
+    last = decodeURIComponent(last);
+  } catch {
+    // A stray `%` is not an escape; keep the segment as typed.
+  }
+  // Shape it into a name the server accepts (DOR-2304): letters, numbers,
+  // dots, dashes and underscores, starting with a letter or number.
+  const name = last
+    .replace(/\.git$/i, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^[^a-z0-9]+/, '')
+    .slice(0, 128);
+  return name.length > 0 ? name : 'marketplace';
 }
 
 /**

@@ -118,6 +118,7 @@ function SourceCard({
                 size="sm"
                 onClick={onRefresh}
                 aria-busy={isRefreshing}
+                aria-label={`Try again for ${name}`}
                 className="h-auto p-0 text-xs text-amber-700 underline dark:text-amber-400"
               >
                 Try again
@@ -259,7 +260,12 @@ export function MarketplaceSourcesView() {
   const [listingStatuses, setListingStatuses] = useState<Record<string, ListingStatus>>({});
   // The last listing news, written into ONE persistent live region: a region
   // that mounts together with its text is not reliably announced.
-  const [announcement, setAnnouncement] = useState('');
+  // `id` changes on every write, and the region renders the text in a node
+  // keyed by it: a live region only speaks when its content changes, so the
+  // same failure twice would otherwise pass in silence.
+  const [announcement, setAnnouncementState] = useState({ id: 0, text: '' });
+  const setAnnouncement = (text: string) =>
+    setAnnouncementState((prev) => ({ id: prev.id + 1, text }));
 
   const setListingStatus = (name: string, status: ListingStatus | null) => {
     setListingStatuses(({ [name]: _dropped, ...rest }) =>
@@ -302,13 +308,18 @@ export function MarketplaceSourcesView() {
     refreshSource.mutate(name, {
       onSuccess: (refreshed) => {
         if (refreshed.stale) {
+          // A folder on this machine is read, not reached.
+          const local = sources?.find((s) => s.name === name)?.source.startsWith('file://');
           setListingStatus(name, {
             kind: 'stale',
             message:
-              `Couldn't reach it: ${sentence(refreshed.reason ?? 'no reason given')} ` +
+              `${local ? "Couldn't read that folder" : "Couldn't reach it"}: ` +
+              `${sentence(refreshed.reason ?? 'no reason given')} ` +
               `Still showing the last copy, from ${formatWhen(refreshed.fetchedAt)}.`,
           });
-          toast.warning(`Couldn't reach ${name}. Still showing the last copy.`);
+          toast.warning(
+            `${local ? "Couldn't read" : "Couldn't reach"} ${name}. Still showing the last copy.`
+          );
           return;
         }
         const ready = packagesReady(refreshed.marketplace.plugins.length);
@@ -346,7 +357,7 @@ export function MarketplaceSourcesView() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div>
           {/* Not drawn (design decision E1): the bar overhead already says
               "Marketplace Sources". Kept for the outline — the bar's title is
@@ -406,7 +417,7 @@ export function MarketplaceSourcesView() {
       )}
 
       <div data-slot="listing-announcer" role="status" aria-live="polite" className="sr-only">
-        {announcement}
+        <span key={announcement.id}>{announcement.text}</span>
       </div>
 
       {/* Add dialog */}
