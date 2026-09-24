@@ -16,8 +16,15 @@
  * - **Codex**: `.codex/` (`config.toml`, `hooks.json`).
  * - **OpenCode**: `opencode.json`, `opencode.jsonc` and `.opencode/` (its
  *   permission rules, servers, and plugins that run in-process).
+ * - **Gemini CLI**: `.gemini/settings.json` (hooks, servers). DorkOS does not
+ *   run Gemini sessions, but Harness Sync can project for it; refused so the
+ *   rule holds for every harness, not only the ones run today.
  * - **Harness Sync**: `.agents/harness.manifest.json`, which chooses the
  *   harnesses DorkOS projects the folder's hooks into. DorkOS writes it.
+ *
+ * A `.claude/` folder is allowed only at the package root: Claude Code also
+ * loads one below the root (nested skills and settings, when it works in that
+ * folder), so a nested one is refused whatever it holds.
  *
  * ## The rule
  *
@@ -43,7 +50,9 @@
  * that sets none of the three fields above.
  *
  * Names are compared the way a case-insensitive disk compares them, where
- * `.Claude/Settings.json` IS the file Claude Code loads.
+ * `.Claude/Settings.json` IS the file Claude Code loads. Everything fails
+ * closed: a subagent whose header DorkOS cannot read the way Claude Code does
+ * (not YAML, a repeated key) is refused, and so is one too deep to walk.
  *
  * @module agent-workspace-config
  */
@@ -74,20 +83,31 @@ const HARNESS_OF: Record<string, string> = {
   'opencode.jsonc': 'OpenCode',
   '.opencode': 'OpenCode',
   '.agents/harness.manifest.json': 'Harness Sync',
+  '.gemini/settings.json': 'Gemini CLI',
+  'nested .claude': 'Claude Code',
 };
 
 /** Subagent frontmatter fields that take effect in the agent's own sessions. */
 const SUBAGENT_EFFECT_FIELDS = ['hooks', 'mcpServers', 'permissionMode'] as const;
 
-/** How deep `.claude/agents/` is walked; subagents are one or two levels down. */
+/**
+ * How deep `.claude/agents/` is walked; subagents are one or two levels down.
+ * A folder deeper than this is refused, not skipped.
+ */
 const MAX_AGENTS_DEPTH = 3;
+
+/** Folders the nested-`.claude` walk never enters: git's store, never shipped. */
+const NESTED_WALK_SKIP = new Set(['.git']);
 
 /** The sentence for a refused harness file. */
 function refusal(shipped: string, canonical: string): AgentWorkspaceConfigFinding {
   return {
     path: shipped,
     message:
-      `An agent package can't ship ${shipped}: its folder is the agent's working directory, so ` +
+      (canonical === 'nested .claude'
+        ? `An agent package can ship a .claude folder only at its root, not ${shipped}: `
+        : `An agent package can't ship ${shipped}: `) +
+      `its folder is the agent's working directory, so ` +
       `${HARNESS_OF[canonical]} would load it into every session the agent runs, without it ` +
       'being shown to you. Leave it out; hooks, servers and permissions are added after install ' +
       'through DorkOS, where a person approves each one.',
@@ -117,7 +137,16 @@ async function refusedSubagents(
 ): Promise<AgentWorkspaceConfigFinding[]> {
   const found: AgentWorkspaceConfigFinding[] = [];
   const visit = async (rel: string, depth: number): Promise<void> => {
-    if (depth > MAX_AGENTS_DEPTH) return;
+    if (depth > MAX_AGENTS_DEPTH) {
+      found.push({
+        path: rel,
+        message:
+          `${rel} holds subagents deeper than DorkOS checks, so it cannot tell whether they ` +
+          'run hooks or servers in the agent’s sessions. Keep subagents at most ' +
+          `${MAX_AGENTS_DEPTH - 1} folders below .claude/agents.`,
+      });
+      return;
+    }
     for (const entry of await entriesOf(path.join(packagePath, rel))) {
       const child = `${rel}/${entry.name}`;
       if (entry.isDirectory) {
@@ -127,13 +156,20 @@ async function refusedSubagents(
       if (!fold(entry.name).endsWith('.md')) continue;
       let data: Record<string, unknown>;
       try {
-        data = parseFrontmatter(await fs.readFile(path.join(packagePath, child), 'utf-8')).data;
+        const text = await fs.readFile(path.join(packagePath, child), 'utf-8');
+        // Claude Code reads a subagent's header as YAML only. A `---json` or
+        // other header is one DorkOS and Claude Code could read differently
+        // (JSON keeps the last of a repeated key silently), so it is refused;
+        // YAML itself refuses a repeated key.
+        if (/^---[^\S\r\n]*\S/.test(text)) throw new Error('not a YAML header');
+        data = parseFrontmatter(text).data;
       } catch {
         found.push({
           path: child,
           message:
-            `${child} is a subagent whose settings DorkOS cannot read, so it cannot tell whether ` +
-            'it runs hooks or servers in the agent’s sessions. Fix its frontmatter.',
+            `${child} is a subagent whose settings DorkOS cannot read the way Claude Code does, ` +
+            'so it cannot tell whether it runs hooks or servers in the agent’s sessions. Give it ' +
+            'a YAML header (---) with each setting once.',
         });
         continue;
       }
@@ -186,7 +222,37 @@ export async function findAgentWorkspaceConfig(
           found.push(refusal(`${entry.name}/${child.name}`, '.agents/harness.manifest.json'));
         }
       }
+    } else if (name === '.gemini' && entry.isDirectory) {
+      for (const child of await entriesOf(path.join(packagePath, entry.name))) {
+        if (fold(child.name) === 'settings.json') {
+          found.push(refusal(`${entry.name}/${child.name}`, '.gemini/settings.json'));
+        }
+      }
     }
   }
+  found.push(...(await nestedClaudeFolders(packagePath)));
   return found.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/**
+ * Every `.claude` folder below the package root, in any case. The walk skips
+ * links (staging strips them) and git's own store, and has no depth limit: a
+ * package's size is already bounded when it is fetched (DOR-2319), and a depth
+ * limit here would be a place to hide one.
+ */
+async function nestedClaudeFolders(packagePath: string): Promise<AgentWorkspaceConfigFinding[]> {
+  const found: AgentWorkspaceConfigFinding[] = [];
+  const visit = async (rel: string): Promise<void> => {
+    for (const entry of await entriesOf(path.join(packagePath, rel))) {
+      if (!entry.isDirectory || NESTED_WALK_SKIP.has(entry.name)) continue;
+      const child = rel === '' ? entry.name : `${rel}/${entry.name}`;
+      if (rel !== '' && fold(entry.name) === '.claude') {
+        found.push(refusal(child, 'nested .claude'));
+        continue;
+      }
+      await visit(child);
+    }
+  };
+  await visit('');
+  return found;
 }

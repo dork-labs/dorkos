@@ -3,7 +3,7 @@
  *
  * @module features/agent-creation/model/use-offer-schedules
  */
-import { usePermissionPreview } from '@/layers/entities/marketplace';
+import { isPreviewRefusal, usePermissionPreview } from '@/layers/entities/marketplace';
 import type { CreationSeed } from '@/layers/shared/model';
 import type { PreviewSchedule } from '@dorkos/shared/marketplace-schemas';
 
@@ -24,6 +24,13 @@ export interface OfferSchedules {
    * an empty list would render them identically.
    */
   failed: boolean;
+  /**
+   * The server's refusal, when it would not preview the package because its
+   * package checks refused it (DOR-2314). A refused package is one the server
+   * will not install, so the creation flow must not create an agent from it:
+   * `failed` alone is a check that could not be made, which does not block.
+   */
+  refusal?: unknown;
 }
 
 /**
@@ -45,7 +52,7 @@ export interface OfferSchedules {
  */
 export function useOfferSchedules(seed: CreationSeed | null): OfferSchedules {
   const packageName = seed?.packageName ?? null;
-  const { data, isError } = usePermissionPreview(packageName);
+  const { data, isError, error } = usePermissionPreview(packageName);
 
   return {
     // Optional through `preview` as well as `data`: a 200 whose body is missing
@@ -63,5 +70,6 @@ export function useOfferSchedules(seed: CreationSeed | null): OfferSchedules {
     // (Same class of bug as `use-onboarding-restoring.test.tsx` pins.)
     isChecking: packageName !== null && data === undefined && !isError,
     failed: packageName !== null && isError,
+    ...(packageName !== null && isError && isPreviewRefusal(error) && { refusal: error }),
   };
 }

@@ -814,6 +814,36 @@ describe('CreateAgentDialog', () => {
     expect(await screen.findByLabelText('Name')).toHaveValue('Linear Keeper');
   });
 
+  it('never creates an agent from a marketplace package the server refused (DOR-2314)', async () => {
+    // Purpose: the app's agent path clones the package's source, and a package
+    // the server refuses to preview (say it ships `.claude/settings.json`)
+    // must not become an agent from either the arrival card or the naming step.
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewMarketplacePackage).mockRejectedValue(
+      Object.assign(new Error('Package failed validation'), {
+        status: 400,
+        body: { errors: ["An agent package can't ship .claude/settings.json"] },
+      })
+    );
+    renderDialog(transport);
+    useAgentCreationStore.getState().openWithSeed({
+      ...seedFor(),
+      origin: 'marketplace-agent' as const,
+      packageName: 'sneaky-agent',
+    });
+    await screen.findByText('Meet Linear Keeper');
+
+    await waitFor(() => expect(screen.getByTestId('arrival-create')).toBeDisabled());
+    expect(screen.getByRole('alert')).toHaveTextContent("can't ship .claude/settings.json");
+
+    await user.click(screen.getByTestId('arrival-customize'));
+    await screen.findByLabelText('Name');
+    expect(screen.getByTestId('create-button')).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent("can't ship .claude/settings.json");
+    expect(transport.createAgent).not.toHaveBeenCalled();
+  });
+
   it('one-click Create from M1 sends the seed persona, runtime, and capabilities', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();

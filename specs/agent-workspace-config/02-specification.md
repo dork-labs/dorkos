@@ -34,7 +34,9 @@ One rule: **a packaged agent carries what the agent IS (instructions, persona, s
 - `.codex/`;
 - `opencode.json`, `opencode.jsonc` and `.opencode/`;
 - `.agents/harness.manifest.json`;
-- a `.claude/agents/**/*.md` subagent that sets `hooks`, `mcpServers` or `permissionMode`, or whose frontmatter cannot be read.
+- `.gemini/settings.json`, so the rule holds for every harness Harness Sync knows, not only the ones DorkOS runs today;
+- a `.claude` folder anywhere below the root (Claude Code loads nested skills and settings);
+- a `.claude/agents/**/*.md` subagent that sets `hooks`, `mcpServers` or `permissionMode`, whose header is not YAML (a `---json` header keeps the last of a repeated key silently), that repeats a key, or that sits deeper than the walk checks. All fail closed.
 
 Preview, install and update all run the validator, so each refuses before anything lands.
 
@@ -56,6 +58,7 @@ Settings files mix dozens of keys that run programs or widen trust, and each har
 
 ## Non-goals and residuals
 
-- **The app's agent path.** It creates the agent by cloning `pkg.source` as a template (`agent-package-seed.ts`, then `template-downloader.ts`). No validation runs there, so this rule, and every other marketplace check, does not reach an agent created from the app. That is a separate decision, reported with this change.
-- A skill's `` !`cmd` `` injection, which runs at render time subject to permission rules. Plugin skills have it too, and the preview does not list it.
+- **The app's agent path** (DOR-2325). It creates the agent by cloning `pkg.source` as a template (`agent-package-seed.ts`, then `template-downloader.ts`), and no validation runs there. This change closes the visible part: the arrival card and naming step disable **Create** and show the refusal whenever the server refuses the package's preview (`use-offer-schedules` `refusal`). The clone itself is not bound to what was previewed, and the route is ungated; DOR-2325 routes marketplace agents through the installer and checks raw templates.
+- A skill's `` !`cmd` `` injection and ` ```! ` blocks, which run at render time subject to permission rules: DOR-2327.
+- A git directory shipped at an agent package's root: DOR-2326.
 - Plugin, skill-pack and adapter packages: their folders are never a working directory, and their copies of these files are inert.

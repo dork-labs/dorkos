@@ -8,7 +8,10 @@
  * an agent's session settings, and the install button live until the install
  * itself failed. This says plainly that it will not be installed, and why.
  *
- * @module features/marketplace/ui/PreviewRefusedNotice
+ * Lives in the marketplace entity because both the install dialog and the
+ * agent creation flow (a marketplace agent's arrival) must say it.
+ *
+ * @module entities/marketplace/ui/PreviewRefusedNotice
  */
 import { ShieldX } from 'lucide-react';
 
@@ -23,6 +26,17 @@ function reasonsOf(error: unknown): { reasons: string[]; checked: boolean } {
     reasons: error instanceof Error && error.message ? [error.message] : [],
     checked: false,
   };
+}
+
+/**
+ * Whether a preview error is the server REFUSING the package (its package
+ * checks answered with reasons), as opposed to a preview that could not be
+ * fetched. A refused package is one the server will not install.
+ *
+ * @param error - The preview query's error.
+ */
+export function isPreviewRefusal(error: unknown): boolean {
+  return reasonsOf(error).checked;
 }
 
 /**

@@ -28,7 +28,11 @@ import { PackageDetailSheet } from '../ui/PackageDetailSheet';
 // so the component reads that feature-layer wrapper, not the entity hook.
 // ---------------------------------------------------------------------------
 
-vi.mock('@/layers/entities/marketplace', () => ({
+vi.mock('@/layers/entities/marketplace', async () => ({
+  // The real notice: what a refused preview says is part of what is tested.
+  ...(await vi.importActual<typeof import('@/layers/entities/marketplace/ui/PreviewRefusedNotice')>(
+    '@/layers/entities/marketplace/ui/PreviewRefusedNotice'
+  )),
   useMarketplacePackage: vi.fn(),
   useMarketplacePackages: vi.fn(),
   usePermissionPreview: vi.fn(),

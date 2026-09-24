@@ -48,6 +48,7 @@ import {
   usePermissionPreview,
   useInstalledPackages,
   usePackageInstallations,
+  PreviewRefusedNotice,
 } from '@/layers/entities/marketplace';
 import { useConfig } from '@/layers/entities/config';
 import { useRequestInstall } from '../model/use-request-install';
@@ -55,7 +56,6 @@ import { useMarketplaceParams } from '../model/use-marketplace-params';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { PackageTypeBadge } from './PackageTypeBadge';
 import { PermissionPreviewSection } from './PermissionPreviewSection';
-import { PreviewRefusedNotice } from './PreviewRefusedNotice';
 
 // ---------------------------------------------------------------------------
 // Helpers

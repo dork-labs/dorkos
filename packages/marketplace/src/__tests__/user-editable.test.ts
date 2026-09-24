@@ -157,6 +157,8 @@ describe('manifest userEditable', () => {
     '.opencode/**',
     'opencode.json',
     'OpenCode.jsonc',
+    '.gemini/**',
+    '.gemini/settings.json',
   ])('refuses the effect-bearing path %s', (value) => {
     expect(UserEditablePathSchema.safeParse(value).success).toBe(false);
   });

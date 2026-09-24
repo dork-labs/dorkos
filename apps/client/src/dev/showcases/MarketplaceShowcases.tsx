@@ -39,10 +39,9 @@ import { FeaturedRail } from '@/layers/features/marketplace/ui/FeaturedRail';
 import { PackageDetailSheet } from '@/layers/features/marketplace/ui/PackageDetailSheet';
 import { InstallConfirmationDialog } from '@/layers/features/marketplace/ui/InstallConfirmationDialog';
 import { PermissionPreviewSection } from '@/layers/features/marketplace/ui/PermissionPreviewSection';
-import { PreviewRefusedNotice } from '@/layers/features/marketplace/ui/PreviewRefusedNotice';
 import { MarketplaceToolbar } from '@/layers/features/marketplace/ui/MarketplaceToolbar';
 
-import { marketplaceKeys } from '@/layers/entities/marketplace';
+import { marketplaceKeys, PreviewRefusedNotice } from '@/layers/entities/marketplace';
 
 import {
   MOCK_PACKAGES,

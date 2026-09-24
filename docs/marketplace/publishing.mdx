@@ -115,7 +115,7 @@ People fill in settings, and agents write notes, inside an installed package's f
 
   Each entry is an exact path, or a folder followed by `/**`. Older DorkOS versions ignore the field, so set `minDorkosVersion` if your package depends on it.
 
-  Files that decide what your package runs can't be marked this way: `hooks/`, `.mcp.json`, `.lsp.json`, `monitors/`, `bin/`, `.dork/extensions/`, `.dork/tasks/`, `skills/`, `commands/`, `agents/`, `output-styles/`, a root `SKILL.md`, `package.json`, the folders coding agents read their settings from (`.claude/`, `.agents/`, `.codex/`, `.opencode/`, `opencode.json`, `opencode.jsonc`), and any other place your `plugin.json` points these at. When someone updates your package, they approve exactly what the new version runs, so an edited copy of one of these files must never be kept in its place.
+  Files that decide what your package runs can't be marked this way: `hooks/`, `.mcp.json`, `.lsp.json`, `monitors/`, `bin/`, `.dork/extensions/`, `.dork/tasks/`, `skills/`, `commands/`, `agents/`, `output-styles/`, a root `SKILL.md`, `package.json`, the folders coding agents read their settings from (`.claude/`, `.agents/`, `.codex/`, `.opencode/`, `.gemini/`, `opencode.json`, `opencode.jsonc`), and any other place your `plugin.json` points these at. When someone updates your package, they approve exactly what the new version runs, so an edited copy of one of these files must never be kept in its place.
 
 - **Don't ship these paths.** They belong to the person or to DorkOS, and validation refuses a package that includes them: `.dork/data/`, `.dork/secrets.json`, `.dork/install-metadata.json`, `.dork/installed-files.json`, `.dork/uninstalled-agent.json`, and any file ending in `.dork-old` or `.dork-new`.
 - **An agent package can't ship settings for its own sessions.** An agent's package folder is also the folder its sessions run in, so Claude Code, Codex and OpenCode would load any settings there without anyone seeing them. Validation refuses an agent package that includes:
@@ -124,7 +124,9 @@ People fill in settings, and agents write notes, inside an installed package's f
   - `.codex/`;
   - `opencode.json`, `opencode.jsonc` or `.opencode/`;
   - `.agents/harness.manifest.json`;
-  - a subagent in `.claude/agents/` that sets `hooks`, `mcpServers` or `permissionMode`.
+  - Gemini CLI's `.gemini/settings.json`;
+  - a `.claude` folder anywhere below the top of the package;
+  - a subagent in `.claude/agents/` that sets `hooks`, `mcpServers` or `permissionMode`, or whose header isn't plain YAML with each setting once.
 
   Instructions (`CLAUDE.md`, `AGENTS.md`, `.claude/rules/`), output styles and skills (`.claude/skills/`, `.claude/commands/`, `.agents/skills/`) are fine: the install screen shows what each skill may do without asking. For hooks or servers, ship a plugin your agent `requires`, so a person approves them.
 

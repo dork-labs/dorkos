@@ -272,6 +272,7 @@ export function CreateAgentDialog() {
                     packageSchedules={offerSchedules.schedules}
                     isCheckingOffer={offerSchedules.isChecking}
                     offerCheckFailed={offerSchedules.failed}
+                    offerRefusal={offerSchedules.refusal}
                     resolvedDirectory={form.resolvedDirectory}
                     canSubmit={form.canSubmit}
                     isCreating={createAgent.isPending}
@@ -292,6 +293,7 @@ export function CreateAgentDialog() {
                     isCreating={createAgent.isPending}
                     packageSchedules={offerSchedules.schedules}
                     offerCheckFailed={offerSchedules.failed}
+                    offerRefusal={offerSchedules.refusal}
                     isCheckingOffer={offerSchedules.isChecking}
                   />
                 )}

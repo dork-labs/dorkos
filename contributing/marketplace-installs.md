@@ -234,11 +234,12 @@ An AGENT's HTTP install of a global package of an activated type that runs anyth
 
 - **Read by the preview:** for `type: 'agent'` (and for an installed agent's `installedDisclosed`), `readRunnableDeclarations(path, { agentWorkspace: true })` also reads `.claude/skills`, `.claude/commands` and `.agents/skills`. Links there are skipped, because in an installed agent they are Harness Sync's own projections.
 - **Refused at validation:** `@dorkos/marketplace` `agent-workspace-config.ts` refuses the rest, `AGENT_WORKSPACE_CONFIG_FORBIDDEN`, package trees only, names case-folded:
-  - `.claude/settings*.json`, a root `.mcp.json`, `.codex/`, `opencode.json(c)`, `.opencode/` and `.agents/harness.manifest.json`;
-  - a `.claude/agents` subagent that sets `hooks`, `mcpServers` or `permissionMode`, or whose frontmatter cannot be read.
+  - `.claude/settings*.json`, a root `.mcp.json`, `.codex/`, `opencode.json(c)`, `.opencode/`, `.gemini/settings.json` and `.agents/harness.manifest.json`;
+  - a `.claude` folder anywhere below the root;
+  - a `.claude/agents` subagent that sets `hooks`, `mcpServers` or `permissionMode`, or that fails closed: not a YAML header, a repeated key, or deeper than `MAX_AGENTS_DEPTH`.
 - **Not `userEditable`, in any package:** these folders are on `EFFECT_BEARING_PATHS`.
-- **In the app:** a refused preview renders `PreviewRefusedNotice`, and Install is disabled.
-- **Known gap:** the app creates a marketplace agent by cloning its source as a template (`template-downloader.ts`), which runs no marketplace validation at all.
+- **In the app:** a refused preview renders `PreviewRefusedNotice` (entities/marketplace), and Install is disabled. The agent creation flow does the same through `useOfferSchedules().refusal`, disabling Create on the arrival card and the naming step.
+- **Known gap (DOR-2325):** the app creates a marketplace agent by cloning its source as a template (`template-downloader.ts`), which runs no marketplace validation, and nothing binds that clone to the preview.
 
 **Memos.** `UpdateFlow` is one instance per server and holds two memos for 60 seconds (`UPDATE_MEMO_TTL_MS`): the commit lookup per (clone URL, ref) and the marketplace index per source. A named `dorkos update <name>` and the app's per-row Update send one request per package, so a per-request memo would never span them. Each stores the in-flight promise, so concurrent checks share one lookup, and a failure or placeholder commit is dropped as soon as it settles. Both are cleared after every apply and by `POST /sources/:name/refresh` (`dorkos marketplace refresh`). The honest claim is "shared within one CLI run or UI burst": without a refresh, a push from the last minute can still read as current.
 

@@ -34,7 +34,9 @@ The validator refuses an agent package that ships any of these, matched case-ins
 - `.codex/`;
 - `opencode.json`, `opencode.jsonc` or `.opencode/`;
 - `.agents/harness.manifest.json`;
-- a subagent that sets `hooks`, `mcpServers` or `permissionMode`.
+- `.gemini/settings.json`;
+- a `.claude` folder anywhere below the root;
+- a subagent that sets `hooks`, `mcpServers` or `permissionMode`, or that DorkOS can't read the way Claude Code does (not YAML, a repeated key, deeper than it walks).
 
 The skills an agent's sessions load from its folder (`.claude/skills`, `.claude/commands`, `.agents/skills`) are read by the install preview. The approved disclosure binds them. None of these paths can be `userEditable`, in any package.
 
@@ -50,4 +52,4 @@ This extends ADR 260803-233420's third guarantee from `.dork/agent.json` to ever
 ### Negative
 
 - A package author who wants an agent with hooks has to ship them in a plugin the agent `requires`. Those hooks then go through hook consent.
-- The app creates a marketplace agent by cloning its source as a template, and no validation runs there. This rule does not reach that path until it does.
+- The app creates a marketplace agent by cloning its source as a template, and no validation runs there. The app blocks creation when the server refuses the package's preview, but the clone is not bound to it; DOR-2325 closes that.

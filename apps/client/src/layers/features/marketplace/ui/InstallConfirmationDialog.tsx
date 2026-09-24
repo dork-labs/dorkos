@@ -22,8 +22,11 @@ import {
 } from '@/layers/shared/ui';
 import { packageDisplayLabel } from '@/layers/shared/lib';
 import type { PackageScope } from '@dorkos/shared/marketplace-schemas';
-import { usePermissionPreview, useInstalledPackages } from '@/layers/entities/marketplace';
-import { PreviewRefusedNotice } from './PreviewRefusedNotice';
+import {
+  PreviewRefusedNotice,
+  usePermissionPreview,
+  useInstalledPackages,
+} from '@/layers/entities/marketplace';
 import { useConfig } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { AgentPicker } from '@/layers/features/tasks';

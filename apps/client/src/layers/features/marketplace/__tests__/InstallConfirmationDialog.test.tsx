@@ -26,7 +26,11 @@ import { InstallConfirmationDialog } from '../ui/InstallConfirmationDialog';
 // the scope-aware reinstall detection.
 // ---------------------------------------------------------------------------
 
-vi.mock('@/layers/entities/marketplace', () => ({
+vi.mock('@/layers/entities/marketplace', async () => ({
+  // The real notice: what a refused preview says is part of what is tested.
+  ...(await vi.importActual<typeof import('@/layers/entities/marketplace/ui/PreviewRefusedNotice')>(
+    '@/layers/entities/marketplace/ui/PreviewRefusedNotice'
+  )),
   usePermissionPreview: vi.fn(),
   useInstallPackage: vi.fn(),
   useInstalledPackages: vi.fn(),

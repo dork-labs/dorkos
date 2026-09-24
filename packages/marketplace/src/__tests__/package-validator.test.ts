@@ -673,6 +673,53 @@ describe('validatePackage', () => {
       expect(forbidden(result.issues)).toEqual(['.claude/agents/helper.md']);
     });
 
+    // Purpose (review): a subagent's settings must be read the one way Claude
+    // Code reads them. A repeated key could hide one value from DorkOS, and a
+    // non-YAML header is one DorkOS and Claude Code could read differently.
+    it.each([
+      ['a repeated key', '---\nname: helper\ntools: Read\ntools: Bash\n---\nx'],
+      ['a JSON header', '---json\n{"name":"helper","tools":"Read","tools":"Bash"}\n---\nx'],
+      ['a header in another language', '---toml\nname = "helper"\n---\nx'],
+    ])('refuses a subagent with %s', async (_why, content) => {
+      const result = await validatePackage(
+        await writeAgentWith({ '.claude/agents/helper.md': content })
+      );
+      expect(forbidden(result.issues)).toEqual(['.claude/agents/helper.md']);
+    });
+
+    // Purpose (review): a subagent too deep to walk is refused, never skipped,
+    // so depth is no way to hide one.
+    it('refuses a subagent below the depth it checks', async () => {
+      const deep = '.claude/agents/a/b/c/d/helper.md';
+      const result = await validatePackage(
+        await writeAgentWith({ [deep]: '---\nname: helper\n---\nx' })
+      );
+      expect(forbidden(result.issues)).toEqual(['.claude/agents/a/b/c']);
+    });
+
+    // Purpose (review): Claude Code loads a `.claude/` folder below the root too
+    // (nested skills and settings when it works in that folder), so an agent
+    // package may ship `.claude/` only at its root.
+    it.each([
+      'docs/.claude/settings.json',
+      'src/tools/.claude/skills/x/SKILL.md',
+      'nested/.CLAUDE/agents/a.md',
+    ])('refuses a nested .claude folder (%s)', async (rel) => {
+      const result = await validatePackage(await writeAgentWith({ [rel]: '---\nname: x\n---\n' }));
+      expect(forbidden(result.issues)).toHaveLength(1);
+      expect(forbidden(result.issues)[0]).toMatch(/\.claude$/i);
+    });
+
+    it("does not look inside git's own store for a nested .claude", async () => {
+      const result = await validatePackage(await writeAgentWith({ '.git/refs/.claude/x': 'ref' }));
+      expect(forbidden(result.issues)).toEqual([]);
+    });
+
+    it('refuses Gemini CLI settings too, so the rule covers every harness', async () => {
+      const result = await validatePackage(await writeAgentWith({ '.gemini/settings.json': '{}' }));
+      expect(forbidden(result.issues)).toEqual(['.gemini/settings.json']);
+    });
+
     it('refuses a subagent whose frontmatter cannot be read', async () => {
       const result = await validatePackage(
         await writeAgentWith({ '.claude/agents/helper.md': '---\nname: [unclosed\n---\nx' })
