@@ -120,34 +120,7 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Feedback',
     keywords: ['loading', 'placeholder', 'tasks', 'shimmer', 'spinner'],
   },
-  {
-    id: 'separator',
-    title: 'Separator',
-    page: 'components',
-    category: 'Feedback',
-    keywords: ['divider', 'line', 'horizontal', 'vertical', 'hr'],
-  },
-  {
-    id: 'tooltip',
-    title: 'Tooltip',
-    page: 'components',
-    category: 'Feedback',
-    keywords: ['hover', 'popover', 'hint', 'label', 'info'],
-  },
-  {
-    id: 'hovercard',
-    title: 'HoverCard',
-    page: 'components',
-    category: 'Feedback',
-    keywords: ['hover', 'card', 'preview', 'popover', 'trigger'],
-  },
-  {
-    id: 'collapsible',
-    title: 'Collapsible',
-    page: 'components',
-    category: 'Feedback',
-    keywords: ['collapse', 'expand', 'toggle', 'accordion', 'disclosure'],
-  },
+
   {
     id: 'copy-feedback',
     title: 'Copy feedback',
@@ -289,41 +262,7 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     ],
   },
   // OverlayShowcases
-  {
-    id: 'dialog',
-    title: 'Dialog',
-    page: 'components',
-    category: 'Overlays',
-    keywords: ['modal', 'overlay', 'popup', 'confirm', 'alert'],
-  },
-  {
-    id: 'alertdialog',
-    title: 'AlertDialog',
-    page: 'components',
-    category: 'Overlays',
-    keywords: ['modal', 'confirm', 'destructive', 'delete', 'danger', 'alert'],
-  },
-  {
-    id: 'popover',
-    title: 'Popover',
-    page: 'components',
-    category: 'Overlays',
-    keywords: ['floating', 'overlay', 'panel', 'anchor', 'tooltip'],
-  },
-  {
-    id: 'dropdownmenu',
-    title: 'DropdownMenu',
-    page: 'components',
-    category: 'Overlays',
-    keywords: ['menu', 'context', 'dropdown', 'action', 'item'],
-  },
-  {
-    id: 'sheet',
-    title: 'Sheet',
-    page: 'components',
-    category: 'Overlays',
-    keywords: ['sheet', 'panel', 'slide', 'side', 'drawer', 'left', 'right'],
-  },
+
   {
     id: 'responsivesheet',
     title: 'ResponsiveSheet',
@@ -437,13 +376,7 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Data Display',
     keywords: ['feature', 'disabled', 'empty', 'state', 'placeholder', 'subsystem'],
   },
-  {
-    id: 'scrollarea',
-    title: 'ScrollArea',
-    page: 'components',
-    category: 'Data Display',
-    keywords: ['scroll', 'area', 'overflow', 'scrollbar', 'custom', 'vertical', 'horizontal'],
-  },
+
   {
     id: 'identityavatar',
     title: 'IdentityAvatar',

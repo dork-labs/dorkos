@@ -10,12 +10,6 @@
 @layer theme, base, components, blintz, border-defaults, utilities;
 @import 'tailwindcss';
 @import '@dork-labs/ui/tailwind.css';
-/* Animation utilities for Radix/shadcn surfaces (data-[state]:animate-in,
-   slide-in-from-*, fade-*, zoom-*). Defined via Tailwind v4 `@utility`, so they
-   land in the `utilities` layer above — above `blintz` in the pin, so the layer
-   order is untouched. Without this, sheets/dialogs/popovers/menus/tooltips have
-   no enter/exit animation and simply pop. Must sit after `@import 'tailwindcss'`. */
-@import 'tw-animate-css';
 @import '@xyflow/react/dist/style.css';
 
 @custom-variant dark (&:is(.dark *));
@@ -48,8 +42,10 @@
   --_st: 1;
   --_si: 1;
   --_sb: 1;
-  /* Shared Button icons follow the app's mobile/user icon dial. */
+  /* Shared primitive icons follow the app's mobile/user icon dial. */
+  --dui-size-icon-xs: calc(0.75rem * var(--_si));
   --dui-size-icon-sm: calc(1rem * var(--_si));
+  --dui-size-icon-md: calc(1.25rem * var(--_si));
 
   /* ============================================
      SIDEBAR GEOMETRY (specs/sidebar-simplification D1)
@@ -1009,13 +1005,6 @@ body {
   animation-iteration-count: 1;
   animation-fill-mode: forwards;
 }
-
-/* Radix Collapsible opening and closing (DOR-1751): `animate-collapsible-down`
-   / `animate-collapsible-up`, worn by `shared/ui/collapsible.tsx`, come from
-   `tw-animate-css` (imported above) — it already ships both keyframes reading
-   Radix's own `--radix-collapsible-content-height`, 200ms ease-out. Nothing
-   to declare here; the global reduced-motion reset in this file flattens the
-   animation to 0.01ms, so the call site needs no `motion-safe:` gate. */
 
 /* The message action capsule's entrance: a 5px rise that overshoots a pixel and
    settles (design record §5.1). The overshoot is a KEYFRAME, not the curve —

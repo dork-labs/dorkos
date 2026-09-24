@@ -6360,6 +6360,17 @@
         "apps/server/src/services/core/agent-creator.ts",
         "packages/shared/src/convention-files-io.ts"
       ]
+    },
+    {
+      "id": "260924-130508",
+      "slug": "keep-shared-ui-portals-in-caller-owned-containers",
+      "title": "Keep shared UI portals in caller-owned containers",
+      "status": "accepted",
+      "created": "2026-09-24",
+      "extractedFrom": "shared-ui-broader-adoption",
+      "specSlug": "shared-ui-broader-adoption",
+      "supersedes": null,
+      "affects": ["packages/ui/", "apps/design-system/", "apps/client/src/layers/shared/ui/"]
     }
   ]
 }

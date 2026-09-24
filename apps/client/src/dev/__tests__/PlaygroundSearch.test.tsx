@@ -83,10 +83,12 @@ describe('PlaygroundSearch', () => {
     expect(screen.getByText('Spacing')).toBeInTheDocument();
   });
 
-  it('renders sections from the components page', () => {
+  it('renders application components while portable primitives live in the catalog', () => {
     renderSearch();
-    expect(screen.getByText('Dialog')).toBeInTheDocument();
-    expect(screen.getByText('AlertDialog')).toBeInTheDocument();
+    expect(screen.getByText('ResponsiveDialog')).toBeInTheDocument();
+    expect(screen.getByText('ResponsiveSheet')).toBeInTheDocument();
+    expect(screen.queryByText('Dialog', { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText('AlertDialog', { exact: true })).not.toBeInTheDocument();
   });
 
   it('renders sections from the conversation page', () => {

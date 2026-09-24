@@ -19,7 +19,7 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | `architecture.md` | Local implementation, Transport, runtimes and streams | `transport.ts\|direct-transport\|http-transport\|apps/server/src/services/core/streams/\|apps/server/src/services/runtimes/\|apps/obsidian-plugin/build-plugins` |
 | `system-architecture.md` | Deployment boundaries, protocols, ports, Community, Cloud and marketplace; diagrams | `apps/community/\|packages/cloud-api/\|apps/server/src/services/core/cloud/\|apps/server/src/services/core/auth/cloud-link\|apps/server/src/services/core/streams/\|apps/server/src/services/communities/\|apps/server/src/services/connectors/\|apps/server/src/services/marketplace/\|packages/harness/\|packages/shared/src/agent-runtime\|packages/shared/src/memory-provider\|apps/desktop/src/main/` |
 | `design-system.md` | Color palette, typography, spacing, motion specs | `packages/ui/\|apps/design-system/\|apps/client/src/index.css\|apps/client/src/layers/shared/ui/` |
-| `shared-ui.md` | Shared primitive ownership, CSS imports, catalog, packed proof and release | `packages/ui/\|apps/design-system/\|apps/client/src/layers/shared/ui/\|apps/community/src/browser/components/Admission` |
+| `shared-ui.md` | Shared primitive ownership, portal themes, CSS imports, catalog, packed proof, release and upgrades | `packages/ui/\|apps/design-system/\|apps/client/src/layers/shared/ui/\|apps/community/src/browser/components/Admission` |
 | `api-reference.md` | OpenAPI spec, Scalar docs UI, Zod schema patterns | `openapi-registry\|apps/server/src/routes/\|packages/shared/src/schemas` |
 | `configuration.md` | Config file system, settings reference, CLI commands, precedence | `config-manager\|config-schema\|packages/cli/` |
 | `interactive-tools.md` | Tool approval, AskUserQuestion, TaskList interactive flows | `interactive-handlers\|apps/client/src/layers/features/chat/` |
@@ -75,6 +75,8 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 - `styling-theming.md` via `apps/client/src/layers/shared/ui/`
 
 ## Maintenance Tracking
+
+Shared UI guide refreshed on 2026-09-24 for broader primitive ownership, portal hosts and independent upgrades.
 
 Architecture reconciliation on 2026-09-16 used source snapshot `9688d2db0`. This was scoped to the system map and the claims below, not a full re-audit of every guide.
 

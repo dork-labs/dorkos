@@ -17,6 +17,15 @@
  * build is a test nobody can read.
  */
 @source not '../__tests__/**/*';
+/*
+ * The package registers every primitive's emitted source for ordinary consumers.
+ * This unverified embed retains its existing foundation controls and ScrollArea
+ * only: newly extracted controls and window-level overlays must not broaden its
+ * stylesheet merely because their implementation moved behind the package.
+ */
+@source not
+  '../../../../packages/ui/dist/{textarea,checkbox,radio-group,switch,slider,tabs,collapsible,progress,dialog,alert-dialog,sheet,popover,hover-card,tooltip,select,dropdown-menu,context-menu}.js';
+
 /* The embed has no full-pane overlay; keep this candidate out even when the
    package's FieldSeparator source contains it. */
 @source not inline('inset-0');
@@ -140,9 +149,9 @@
    * separate palette). The embedded pane keeps that icon size even when the
    * Obsidian window narrows, so there is no client mobile-scale dial to carry.
    *
-   * The shared Button uses `--dui-size-icon-sm`; override the package's 20px
-   * mobile default inside the embedded pane so its unsized icons stay at the
-   * host's existing 16px. `plugin-styles.test.ts` pins this bridge.
+   * Shared primitives use `--dui-size-icon-*`; override package mobile
+   * defaults inside the embedded pane so icons retain the host's existing
+   * desktop sizes. `plugin-styles.test.ts` pins this bridge.
    */
   --size-icon-xs: 0.75rem;
   --size-icon-sm: 1rem;
@@ -394,7 +403,9 @@
  * Tailwind color-* tokens directly instead of the HSL variable layer.
  */
 .copilot-view-content {
+  --dui-size-icon-xs: 0.75rem;
   --dui-size-icon-sm: 1rem;
+  --dui-size-icon-md: 1.25rem;
   --color-background: var(--background-secondary);
   --color-foreground: var(--text-normal);
   --color-card: var(--background-secondary-alt);

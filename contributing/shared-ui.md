@@ -10,7 +10,7 @@
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | Public exports and release metadata           | `packages/ui/package.json`, `packages/ui/src/index.ts`                                                  |
 | Theme values and Tailwind source registration | `packages/ui/tokens.css`, `packages/ui/tailwind.css`                                                    |
-| Behavior tests                                | `packages/ui/src/__tests__/primitives.test.tsx`                                                         |
+| Behavior tests                                | `packages/ui/src/__tests__/`                                                                            |
 | Client FSD facade                             | `apps/client/src/layers/shared/ui/index.ts`                                                             |
 | Standalone examples                           | `apps/design-system/`                                                                                   |
 | Client feature simulations                    | `apps/client/src/dev/`                                                                                  |
@@ -20,7 +20,7 @@
 
 | Scenario                                                               | Approach                                     | Why                                                |
 | ---------------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------- |
-| Change Button, Input, Field, Label, Separator or Notice behavior       | Edit `packages/ui`                           | All consumers receive the same implementation      |
+| Change a package-owned primitive (ownership table below)               | Edit `packages/ui`                           | All consumers receive the same implementation      |
 | Use those controls inside the client                                   | Import from `@/layers/shared/ui`             | Preserves the FSD boundary                         |
 | Use them in another application                                        | Import from `@dork-labs/ui`                  | No client application initialization               |
 | Compose password visibility, validation or server errors               | Keep the composition in the application      | Application behavior has its own release and tests |
@@ -40,11 +40,61 @@ The package targets React 19 and Tailwind 4. It distributes ESM JavaScript, decl
 @import '@dork-labs/ui/tailwind.css';
 ```
 
-`tailwind.css` imports the tokens and registers the installed `dist/**/*.js` as a Tailwind source. Do not point production configuration at a sibling repository or the package's TypeScript source. Build the workspace package before building a local consumer.
+`tailwind.css` imports the tokens and registers the installed `dist/**/*.js` as a Tailwind source and imports `tw-animate-css`. Do not import that animation stylesheet a second time in a consumer. Do not point production configuration at a sibling repository or the package's TypeScript source. Build the workspace package before building a local consumer.
 
 Use `.light` or `.dark` on the document root to choose a theme; without an explicit choice, the system preference applies. The package uses HSL-channel `--dui-*` values and `dui-*` utilities, keeping application tokens with other formats separate. A single opposing theme region is covered by browser proof in both directions. Arbitrarily alternating nested themes are outside the tested contract.
 
 The client retains its existing semantic color names through a palette bridge. Its font-scale and editor/layer rules remain local. Embedded builds must explicitly bridge shared colors to host colors and preserve their stylesheet boundary; a successful CSS build is not a claim of runtime platform verification.
+
+### Ownership and contribution
+
+The package maintains the existing customized shadcn/Radix implementations. It does not regenerate components from upstream or switch primitive libraries.
+
+| Owner                | Modules and responsibility                                                                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/ui`        | Button, Input, Field, Label, Separator, Notice, touch-target constants                                                                                      |
+| `packages/ui`        | Textarea, Checkbox, RadioGroup, Switch, Slider, Tabs, Collapsible, Progress, ScrollArea                                                                     |
+| `packages/ui`        | Dialog, AlertDialog, Sheet, Popover, HoverCard, Tooltip, Select, DropdownMenu, ContextMenu, UiProvider                                                      |
+| Client shared layer  | Card, Skeleton, Badge, Drawer, responsive app wrappers, routing controls, identity/domain components, notifications, Markdown, data tables and form engines |
+| Applications         | State, auth, validation, requests, navigation, theme choice and portal-host lifetime                                                                        |
+| `apps/design-system` | Generic examples of package exports, independent of application providers                                                                                   |
+| Client playground    | Feature simulations and application-specific compositions                                                                                                   |
+
+Client code keeps importing its FSD facade. The selected leaf files explicitly re-export the package implementations; they must not grow a second implementation. Package users can import the root or matching kebab-case subpaths, such as `@dork-labs/ui/dialog` and `@dork-labs/ui/ui-provider`. Existing source-only exports, including Switch track tables and ContextMenuPortal/ContextMenuShortcut, remain available from their leaves and the package.
+
+For a component change, edit its package source and add a behavior regression test. Preserve public props, refs, events, data slots and accessible semantics. Show the change in the catalog and run consumer tests for the affected composition. Add a subpath when adding a module; keep React and ReactDOM as peers, never runtime bundles. Only public dependencies belong in the package.
+
+Package semantic colors use `dui-*`; built-in icon sizes use `--dui-size-icon-xs/sm/md`. Animated primitives own their reduced-motion classes. Give borders an explicit semantic color rather than relying on an application reset. Client font-scale bridges and fixed embedded dimensions stay in the owning application stylesheet.
+
+### Scope portal themes explicitly
+
+A default overlay still portals to `document.body`. A theme on a nested trigger does not follow it there. Use a stable mounted host inside the intended theme region:
+
+```tsx
+import { useState } from 'react';
+import { UiProvider, Button, Popover, PopoverTrigger, PopoverContent } from '@dork-labs/ui';
+
+export function DarkPanel() {
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
+  return (
+    <section className="dark">
+      <UiProvider portalContainer={host}>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button>Show details</Button>
+          </PopoverTrigger>
+          <PopoverContent>Details inherit this dark region.</PopoverContent>
+        </Popover>
+        <div ref={setHost} />
+      </UiProvider>
+    </section>
+  );
+}
+```
+
+`UiProvider` renders no DOM and never changes document classes. Nested providers override their parent; sibling providers are independent. Omitted/null provider containers keep Radix's body default. An explicit exported Portal `container` prop wins, including explicit `null` (body) and a `DocumentFragment`. Keep the host mounted for the entire open lifetime. Choose a host without clipping or unintended stacking contexts; the package does not silently move portals under their triggers.
+
+Self-portalling content and nested dropdown portals use the nearest provider. Existing non-portalled subcomponents keep that behavior. The catalog's **Portal themes** section demonstrates opposing hosts, nested menus/dialogs and an explicit return to body behavior.
 
 ### Keep the form behavior local
 
@@ -111,7 +161,7 @@ The first candidate was tested with React 19.3.0, Tailwind 4.3.3, Vite 6.4.3 and
    pnpm --filter @dork-labs/ui build
    pnpm --filter @dork-labs/ui typecheck
    pnpm --filter @dork-labs/ui lint
-   pnpm vitest run packages/ui/src/__tests__/primitives.test.tsx
+   pnpm vitest run packages/ui/src/__tests__
    ```
 
 2. Pack into an ignored directory in the worktree. Inspect the file list: only selected built modules/declarations, CSS, README, license and metadata belong in it. Confirm React is a peer, CSS is retained as a side effect, and no runtime dependency uses `workspace:`.
@@ -122,6 +172,16 @@ The first candidate was tested with React 19.3.0, Tailwind 4.3.3, Vite 6.4.3 and
 7. Consumers outside this workspace install the actual registry version and regenerate their lockfiles. Repeat their checks before landing adoption. Archive-only validation does not establish registry adoption.
 
 No CI release pipeline, deployment or package publication is implied by the local verification commands.
+
+## Upgrading an independent consumer from 0.1 to 0.2
+
+1. Confirm `0.2.0` is actually published before changing the dependency. Install the exact registry version and regenerate the consumer lockfile. Never commit the candidate archive path.
+2. Keep the existing CSS import order. Remove a separate `tw-animate-css` import when the package entry now provides it. Build with Tailwind 4 scanning the installed JavaScript.
+3. Existing 0.1 imports remain compatible. Adopt new primitives only where they fit the consumer; an intentional native select need not change.
+4. For nested themes or embedded hosts, configure `UiProvider` before opening an overlay. Default body portals are unchanged.
+5. Verify the consumer's adopted forms, focus, disabled/pending states, light/dark/system themes and phone layout. Re-run normal build/typecheck/lint/tests and browser checks before its adoption PR lands.
+
+The public package owner reviews compatibility and authorizes each concrete release. Consumers own their upgrade timing and release process. Additive primitives use a minor version; compatible fixes use a patch; a breaking public API or visual contract needs an explicit migration plan and version decision. Record the exact archive hash, verification evidence and registry version with the release. Keep private consumer implementation and business details out of public evidence.
 
 ## Troubleshooting
 
